@@ -1,12 +1,18 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmSettings } from '../types';
+import type { LlmSettings, ChatMessage } from '../types';
 
 interface AiState {
   isGenerating: boolean;
   isExplaining: boolean;
   settings: LlmSettings | null;
   error: string | null;
+
+  // Multi-turn chat
+  chatHistory: ChatMessage[];
+  isChatting: boolean;
+  sendChat: (message: string, connectionId: number | null) => Promise<string>;
+  clearHistory: () => void;
 
   loadSettings: () => Promise<void>;
   saveSettings: (settings: LlmSettings) => Promise<void>;
@@ -28,6 +34,36 @@ export const useAiStore = create<AiState>((set) => ({
   isCreatingTable: false,
   settings: null,
   error: null,
+
+  // Multi-turn chat
+  chatHistory: [],
+  isChatting: false,
+
+  clearHistory: () => set({ chatHistory: [] }),
+
+  sendChat: async (message, connectionId) => {
+    set(s => ({
+      isChatting: true,
+      chatHistory: [...s.chatHistory, { role: 'user', content: message }],
+    }));
+    try {
+      const reply = await invoke<string>('ai_generate_sql', {
+        prompt: message,
+        connectionId: connectionId ?? 0,
+      });
+      set(s => ({
+        chatHistory: [...s.chatHistory, { role: 'assistant', content: reply }],
+        isChatting: false,
+      }));
+      return reply;
+    } catch (e) {
+      set(s => ({
+        chatHistory: [...s.chatHistory, { role: 'assistant', content: `Error: ${String(e)}` }],
+        isChatting: false,
+      }));
+      throw e;
+    }
+  },
 
   loadSettings: async () => {
     try {

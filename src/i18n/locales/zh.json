@@ -30,7 +30,11 @@
     "inputPlaceholder": "描述你的查询需求... (Enter 发送)",
     "aiGenerateSql": "AI 生成 SQL",
     "generateSql": "生成 SQL",
-    "sendMessage": "发送消息"
+    "sendMessage": "发送消息",
+    "clearHistory": "清空历史",
+    "historyCleared": "对话历史已清空",
+    "insertToEditor": "插入到编辑器",
+    "sqlInserted": "SQL 已插入编辑器"
   },
   "connectionModal": {
     "editConnection": "编辑连接",

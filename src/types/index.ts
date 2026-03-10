@@ -109,3 +109,8 @@ export interface FullSchemaInfo {
   views: ViewMeta[];
   procedures: ProcedureMeta[];
 }
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}

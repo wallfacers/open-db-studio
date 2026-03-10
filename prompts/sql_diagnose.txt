@@ -1,0 +1,19 @@
+You are an expert SQL debugger. Analyze the following SQL error and provide a diagnosis.
+
+Database Dialect: {{DIALECT}}
+
+Database Schema:
+{{SCHEMA}}
+
+SQL that caused the error:
+{{SQL}}
+
+Error message:
+{{ERROR}}
+
+Provide:
+1. Root cause of the error
+2. Fixed SQL (if applicable)
+3. Prevention tips
+
+Respond in Chinese.

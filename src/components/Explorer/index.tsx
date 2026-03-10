@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard } from 'lucide-react';
+import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Pencil, Trash2 } from 'lucide-react';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
@@ -16,6 +16,7 @@ interface ExplorerProps {
   toggleFolder: (folder: string) => void;
   activeActivity: string;
   onTableClick: (tableName: string, dbName?: string) => void;
+  onNewQuery: (connId: number, connName: string) => void;
 }
 
 export const Explorer: React.FC<ExplorerProps> = ({
@@ -28,7 +29,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
   expandedFolders,
   toggleFolder,
   activeActivity,
-  onTableClick
+  onTableClick,
+  onNewQuery
 }) => {
   const { t } = useTranslation();
   const { connections, activeConnectionId, tables, loadConnections, setActiveConnection, loadTables, deleteConnection } = useConnectionStore();
@@ -167,33 +169,47 @@ export const Explorer: React.FC<ExplorerProps> = ({
           style={{ left: connContextMenu.x, top: connContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
               if (conn) handleConnectionClick(conn.id);
               setConnContextMenu(null);
             }}
           >
+            <PlugZap size={13} />
             {t('explorer.connect')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"
+            onClick={() => {
+              const conn = connections.find(c => c.id === connContextMenu.connId);
+              if (conn) onNewQuery(conn.id, conn.name);
+              setConnContextMenu(null);
+            }}
+          >
+            <FilePlus size={13} />
+            新建查询
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
               if (conn) setEditingConn(conn);
               setConnContextMenu(null);
             }}
           >
+            <Pencil size={13} />
             {t('explorer.edit')}
           </button>
           <div className="h-px bg-[#3c3c3c] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#094771] hover:text-red-300"
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#094771] hover:text-red-300 flex items-center gap-2"
             onClick={() => {
               handleDeleteConnection(connContextMenu.connId);
               setConnContextMenu(null);
             }}
           >
+            <Trash2 size={13} />
             {t('explorer.delete')}
           </button>
         </div>

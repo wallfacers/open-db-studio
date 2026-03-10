@@ -15,6 +15,7 @@ import '@xyflow/react/dist/style.css';
 import { Plus, Download, LayoutTemplate } from 'lucide-react';
 import dagre from 'dagre';
 import { toPng } from 'html-to-image';
+import { useTranslation } from 'react-i18next';
 
 import TableNode from './TableNode';
 import { initialNodes, initialEdges } from '../data/initialElements';
@@ -53,6 +54,7 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'LR') => {
 };
 
 export default function ERDiagram() {
+  const { t } = useTranslation();
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -144,13 +146,13 @@ export default function ERDiagram() {
           showZoom={false} 
           className="!bg-[#1e1e1e] border border-[#3c3c3c] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[#1e1e1e] [&_button]:!border-b [&_button]:!border-[#3c3c3c] [&_button:last-child]:!border-b-0 [&_button]:!fill-[#d4d4d4] hover:[&_button]:!bg-[#2b2b2b] hover:[&_button]:!fill-white hover:[&_button_svg]:text-white [&_button_svg]:text-[#d4d4d4]"
         >
-          <ControlButton onClick={onAddTable} title="添加表">
+          <ControlButton onClick={onAddTable} title={t('erDiagram.addTable')}>
             <Plus size={16} strokeWidth={2.5} />
           </ControlButton>
-          <ControlButton onClick={onLayout} title="自动布局">
+          <ControlButton onClick={onLayout} title={t('erDiagram.autoLayout')}>
             <LayoutTemplate size={16} strokeWidth={2} />
           </ControlButton>
-          <ControlButton onClick={onDownload} title="导出图片">
+          <ControlButton onClick={onDownload} title={t('erDiagram.exportImage')}>
             <Download size={16} strokeWidth={2} />
           </ControlButton>
         </Controls>

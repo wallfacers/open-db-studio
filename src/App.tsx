@@ -161,6 +161,13 @@ JOIN
     setActiveTab(tabId);
   };
 
+  const handleNewQuery = (connId: number, connName: string) => {
+    const tabId = `query_${connId}_${Date.now()}`;
+    const queryCount = tabs.filter(t => t.type === 'query').length + 1;
+    setTabs(prev => [...prev, { id: tabId, type: 'query', title: `查询${queryCount}`, db: connName }]);
+    setActiveTab(tabId);
+  };
+
   const handleExecute = () => {
     setIsExecuting(true);
     setResultsTab('result1');
@@ -290,7 +297,7 @@ JOIN
   }, [t]);
 
   return (
-    <div className="h-screen w-screen flex bg-[#141414] text-[#cccccc] overflow-hidden font-sans text-[13px] select-none">
+    <div className="h-screen w-screen flex bg-[#141414] text-[#cccccc] overflow-hidden font-sans text-[13px]">
       <ActivityBar 
         activeActivity={activeActivity}
         setActiveActivity={setActiveActivity}
@@ -313,6 +320,7 @@ JOIN
           toggleFolder={toggleFolder}
           activeActivity={activeActivity}
           onTableClick={handleTableClick}
+          onNewQuery={handleNewQuery}
         />
       )}
 

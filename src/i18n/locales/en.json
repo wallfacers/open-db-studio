@@ -4,7 +4,7 @@
     "openUserProfile": "Opening User Profile",
     "collapse": "Collapse",
     "expand": "Expand",
-    "databaseExplorer": "Database Explorer",
+    "databaseExplorer": "Database",
     "dashboard": "Dashboard",
     "aiAssistant": "AI Assistant",
     "gridView": "Grid View",
@@ -145,6 +145,18 @@
     "chatMsg1": "Help me analyze the birth rate changes in Shanghai in 2023",
     "chatMsg2": "Based on user input, matched the following tables",
     "chatMsg3": "To analyze the birth rate changes in Shanghai in 2023, we need to extract from"
+  },
+  "settings": {
+    "title": "Settings",
+    "aiModel": "AI Model",
+    "appearance": "Appearance",
+    "shortcuts": "Shortcuts",
+    "about": "About",
+    "appearanceDesc": "Theme, font and other interface settings, stay tuned.",
+    "shortcutsDesc": "Customize keyboard shortcuts, stay tuned.",
+    "appName": "App Name:",
+    "positioning": "Positioning:",
+    "techStack": "Tech Stack:"
   },
   "erDiagram": {
     "addTable": "Add Table",

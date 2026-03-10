@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
 import { Bot, Keyboard, Palette, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { LlmSettingsPanel } from './LlmSettings';
-
-const NAV_ITEMS = [
-  { id: 'ai', icon: Bot, label: 'AI 模型' },
-  { id: 'appearance', icon: Palette, label: '外观' },
-  { id: 'shortcuts', icon: Keyboard, label: '快捷键' },
-  { id: 'about', icon: Info, label: '关于' },
-];
 
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState('ai');
+  const { t } = useTranslation();
+
+  const NAV_ITEMS = [
+    { id: 'ai', icon: Bot, label: t('settings.aiModel') },
+    { id: 'appearance', icon: Palette, label: t('settings.appearance') },
+    { id: 'shortcuts', icon: Keyboard, label: t('settings.shortcuts') },
+    { id: 'about', icon: Info, label: t('settings.about') },
+  ];
 
   return (
     <div className="flex-1 flex min-w-0 bg-[#1e1e1e]">
       {/* 左侧导航 */}
       <div className="w-48 flex-shrink-0 bg-[#181818] border-r border-[#2b2b2b] pt-4">
-        <div className="px-4 pb-3 text-xs text-[#858585] font-medium uppercase tracking-wider">设置</div>
+        <div className="px-4 pb-3 text-xs text-[#858585] font-medium uppercase tracking-wider">{t('settings.title')}</div>
         {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
@@ -37,12 +39,12 @@ export function SettingsPage() {
       <div className="flex-1 overflow-y-auto">
         {activeSection === 'ai' && <LlmSettingsPanel />}
         {activeSection === 'appearance' && (
-          <PlaceholderSection title="外观" description="主题、字体等界面设置，敬请期待。" />
+          <PlaceholderSection title={t('settings.appearance')} description={t('settings.appearanceDesc')} />
         )}
         {activeSection === 'shortcuts' && (
-          <PlaceholderSection title="快捷键" description="自定义键盘快捷键，敬请期待。" />
+          <PlaceholderSection title={t('settings.shortcuts')} description={t('settings.shortcutsDesc')} />
         )}
-        {activeSection === 'about' && <AboutSection />}
+        {activeSection === 'about' && <AboutSection t={t} />}
       </div>
     </div>
   );
@@ -57,14 +59,14 @@ function PlaceholderSection({ title, description }: { title: string; description
   );
 }
 
-function AboutSection() {
+function AboutSection({ t }: { t: any }) {
   return (
     <div className="p-6 space-y-3 max-w-lg">
-      <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">关于</h3>
+      <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">{t('settings.about')}</h3>
       <div className="space-y-2 text-xs text-[#858585]">
-        <p><span className="text-[#d4d4d4]">应用名称：</span>open-db-studio</p>
-        <p><span className="text-[#d4d4d4]">定位：</span>AI-Native Database Client</p>
-        <p><span className="text-[#d4d4d4]">技术栈：</span>Tauri 2.x · React 18 · Rust</p>
+        <p><span className="text-[#d4d4d4]">{t('settings.appName')}</span>open-db-studio</p>
+        <p><span className="text-[#d4d4d4]">{t('settings.positioning')}</span>AI-Native Database Client</p>
+        <p><span className="text-[#d4d4d4]">{t('settings.techStack')}</span>Tauri 2.x · React 18 · Rust</p>
       </div>
     </div>
   );

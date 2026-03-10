@@ -97,6 +97,18 @@ export function LlmSettingsPanel() {
     setForm((f) => ({ ...f, [key]: value, preset: null }));
   };
 
+  const handleApiTypeChange = (type: ApiType) => {
+    setForm((f) => {
+      const defaultBaseUrls: Record<ApiType, string> = {
+        openai: 'https://api.openai.com/v1',
+        anthropic: 'https://api.anthropic.com',
+      };
+      // 只有在使用预设时才同步重置 base_url，手动配置时保留用户值
+      const base_url = f.preset !== null ? defaultBaseUrls[type] : f.base_url;
+      return { ...f, api_type: type, base_url, preset: null };
+    });
+  };
+
   const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
@@ -148,7 +160,7 @@ export function LlmSettingsPanel() {
                   name="api_type"
                   value={type}
                   checked={form.api_type === type}
-                  onChange={() => handleFieldChange('api_type', type)}
+                  onChange={() => handleApiTypeChange(type)}
                   className="accent-[#009e84]"
                 />
                 {type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}

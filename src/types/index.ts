@@ -94,6 +94,15 @@ export interface TableDetail {
   foreign_keys: ForeignKeyMeta[];
 }
 
+export interface TableDataParams {
+  connection_id: number;
+  table: string;
+  page: number;
+  page_size: number;
+  where_clause?: string | null;
+  order_clause?: string | null;
+}
+
 export interface ViewMeta {
   name: string;
   definition: string | null;

@@ -12,7 +12,10 @@ static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
 
 /// 初始化内置 SQLite 数据库
 pub fn init(app_data_dir: &str) -> AppResult<()> {
-    let db_path = format!("{}/open-db-studio.db", app_data_dir);
+    // 确保目录存在（Windows 上 Tauri 不一定自动创建）
+    std::fs::create_dir_all(app_data_dir)
+        .map_err(|e| crate::AppError::Other(format!("Failed to create app data dir: {}", e)))?;
+    let db_path = std::path::Path::new(app_data_dir).join("open-db-studio.db");
     let conn = Connection::open(&db_path)?;
 
     // 开启 WAL 模式提升并发性能
@@ -23,7 +26,7 @@ pub fn init(app_data_dir: &str) -> AppResult<()> {
     DB.set(Mutex::new(conn))
         .map_err(|_| crate::AppError::Other("DB already initialized".into()))?;
 
-    log::info!("SQLite initialized at {}", db_path);
+    log::info!("SQLite initialized at {}", db_path.display());
     Ok(())
 }
 

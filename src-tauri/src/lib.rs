@@ -1,3 +1,4 @@
+mod db;
 mod error;
 
 pub use error::{AppError, AppResult};

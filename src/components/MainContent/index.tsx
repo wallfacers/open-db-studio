@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import MonacoEditor, { type BeforeMount } from '@monaco-editor/react';
+import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@monaco-editor/react';
+import type { languages as MonacoLanguages } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
+import { FullSchemaInfo } from '../../types';
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('odb-dark', {
@@ -99,6 +102,64 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [explanation, setExplanation] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const schemaRef = useRef<FullSchemaInfo | null>(null);
+
+  // Fetch full schema whenever the active connection changes
+  useEffect(() => {
+    if (!activeConnectionId) {
+      schemaRef.current = null;
+      return;
+    }
+    invoke<FullSchemaInfo>('get_full_schema', { connectionId: activeConnectionId })
+      .then((schema) => { schemaRef.current = schema; })
+      .catch(() => { schemaRef.current = null; });
+  }, [activeConnectionId]);
+
+  // Register Monaco completion provider once (module-level guard)
+  const completionProviderRegistered = useRef(false);
+
+  const handleEditorDidMount: OnMount = (_editor, monaco: Monaco) => {
+    if (completionProviderRegistered.current) return;
+    completionProviderRegistered.current = true;
+
+    monaco.languages.registerCompletionItemProvider('sql', {
+      provideCompletionItems: (
+        model: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[0],
+        position: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[1],
+      ) => {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn,
+        };
+        const schema = schemaRef.current;
+        if (!schema) return { suggestions: [] };
+
+        const suggestions: MonacoLanguages.CompletionItem[] = [];
+        schema.tables.forEach(t => {
+          suggestions.push({
+            label: t.name,
+            kind: monaco.languages.CompletionItemKind.Class,
+            insertText: t.name,
+            range,
+            detail: 'Table',
+          });
+          t.columns.forEach(c => {
+            suggestions.push({
+              label: `${t.name}.${c.name}`,
+              kind: monaco.languages.CompletionItemKind.Field,
+              insertText: c.name,
+              range,
+              detail: `${t.name} (${c.data_type})`,
+            });
+          });
+        });
+        return { suggestions };
+      },
+    });
+  };
 
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
@@ -255,6 +316,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 language="sql"
                 theme="odb-dark"
                 beforeMount={handleEditorWillMount}
+                onMount={handleEditorDidMount}
                 value={currentSql}
                 onChange={(val) => setSql(activeTab, val ?? '')}
                 options={{
@@ -280,7 +342,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* Results Resizer */}
             <div
-              className="h-2 cursor-row-resize z-10 flex flex-col justify-center group"
+              className="h-1 cursor-row-resize z-10 flex flex-col justify-center group"
               onMouseDown={handleResultsResize}
             >
               <div className="h-px bg-[#1e2d42] group-hover:bg-[#00c9a7] transition-colors" />

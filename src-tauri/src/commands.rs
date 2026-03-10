@@ -89,7 +89,9 @@ fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let api_key = crate::crypto::decrypt(&api_key_enc)?;
     let base_url = crate::db::get_setting("llm.base_url")?;
     let model = crate::db::get_setting("llm.model")?;
-    Ok(crate::llm::client::LlmClient::new(api_key, base_url, model, None))
+    let api_type = crate::db::get_setting("llm.api_type")?
+        .and_then(|v| serde_json::from_str::<crate::llm::ApiType>(&format!("\"{}\"", v)).ok());
+    Ok(crate::llm::client::LlmClient::new(api_key, base_url, model, api_type))
 }
 
 #[tauri::command]
@@ -129,6 +131,7 @@ pub struct LlmSettings {
     pub api_key: String,
     pub base_url: String,
     pub model: String,
+    pub api_type: crate::llm::ApiType,
 }
 
 #[tauri::command]
@@ -143,6 +146,9 @@ pub async fn get_llm_settings() -> AppResult<LlmSettings> {
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
         model: crate::db::get_setting("llm.model")?
             .unwrap_or_else(|| "gpt-4o-mini".to_string()),
+        api_type: crate::db::get_setting("llm.api_type")?
+            .and_then(|v| serde_json::from_str::<crate::llm::ApiType>(&format!("\"{}\"", v)).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -153,6 +159,11 @@ pub async fn set_llm_settings(settings: LlmSettings) -> AppResult<()> {
     crate::db::set_setting("llm.api_key", &enc_key)?;
     crate::db::set_setting("llm.base_url", &settings.base_url)?;
     crate::db::set_setting("llm.model", &settings.model)?;
+    let api_type_str = match settings.api_type {
+        crate::llm::ApiType::Openai => "openai",
+        crate::llm::ApiType::Anthropic => "anthropic",
+    };
+    crate::db::set_setting("llm.api_type", api_type_str)?;
     Ok(())
 }
 
@@ -162,7 +173,7 @@ pub async fn test_llm_connection(settings: LlmSettings) -> AppResult<()> {
         settings.api_key,
         Some(settings.base_url),
         Some(settings.model),
-        None,
+        Some(settings.api_type),
     );
     let messages = vec![crate::llm::ChatMessage {
         role: "user".into(),

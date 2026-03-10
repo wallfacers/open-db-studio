@@ -65,7 +65,17 @@
     "databaseOverview": "Database Overview",
     "connect": "Connect",
     "edit": "Edit",
-    "delete": "Delete"
+    "delete": "Delete",
+    "tables": "Tables",
+    "objects": "Objects"
+  },
+  "objectPanel": {
+    "views": "Views",
+    "procedures": "Procedures / Functions",
+    "noViews": "No views",
+    "noProcedures": "No procedures",
+    "noDefinition": "No definition available",
+    "selectConnection": "Please select a connection first"
   },
   "mainContent": {
     "selectConnectionFirst": "Please select a database connection on the left",

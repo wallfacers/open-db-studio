@@ -65,7 +65,17 @@
     "databaseOverview": "数据库总览信息",
     "connect": "连接",
     "edit": "编辑",
-    "delete": "删除"
+    "delete": "删除",
+    "tables": "表",
+    "objects": "对象"
+  },
+  "objectPanel": {
+    "views": "视图",
+    "procedures": "存储过程 / 函数",
+    "noViews": "暂无视图",
+    "noProcedures": "暂无存储过程",
+    "noDefinition": "暂无定义",
+    "selectConnection": "请先选择连接"
   },
   "mainContent": {
     "selectConnectionFirst": "请先在左侧选择一个数据库连接",

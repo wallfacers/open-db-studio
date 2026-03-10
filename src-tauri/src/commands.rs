@@ -375,6 +375,10 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
             out
         }
         "sql" => {
+            let quoted_table = match config.driver.as_str() {
+                "mysql" => format!("`{}`", params.table.replace('`', "``")),
+                _ => format!("\"{}\"", params.table.replace('"', "\"\"")),
+            };
             let mut out = format!("-- Export: {}\n", params.table);
             for row in &result.rows {
                 let values: Vec<String> = row.iter().map(|v| match v {
@@ -384,7 +388,7 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
                     serde_json::Value::Bool(b) => if *b { "1".into() } else { "0".into() },
                     other => format!("'{}'", other.to_string().replace('\'', "''")),
                 }).collect();
-                out += &format!("INSERT INTO {} VALUES ({});\n", params.table, values.join(", "));
+                out += &format!("INSERT INTO {} VALUES ({});\n", quoted_table, values.join(", "));
             }
             out
         }

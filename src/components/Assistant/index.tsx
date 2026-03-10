@@ -99,9 +99,9 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#2b2b2b]">
         <div className="text-[13px] font-medium truncate flex-1 text-[#d4d4d4]">AI 助手</div>
         <div className="flex items-center space-x-3 text-[#858585]">
-          <Plus size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => { setChatMessages([]); showToast('已开启新对话'); }} title="New Chat" />
-          <History size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => showToast('打开历史会话记录')} title="Chat History" />
-          <X size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => { setIsAssistantOpen(false); showToast('已关闭 AI 助手'); }} title="Close Assistant" />
+          <Plus size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => { setChatMessages([]); showToast('已开启新对话'); }} />
+          <History size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => showToast('打开历史会话记录')} />
+          <X size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => { setIsAssistantOpen(false); showToast('已关闭 AI 助手'); }} />
         </div>
       </div>
 

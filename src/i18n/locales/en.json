@@ -142,7 +142,13 @@
     "testConnection": "Test Connection",
     "testing": "Testing...",
     "testSuccess": "Connection successful",
-    "supportInfo": "Supports OpenAI compatible interfaces (OpenAI, Azure OpenAI, local Ollama, third-party proxies, etc.). API Key is stored locally using AES-256-GCM encryption."
+    "supportInfo": "Supports OpenAI-compatible and Anthropic native API (Alibaba Cloud Bailian, Claude proxies, etc.). API Key is encrypted with AES-256-GCM locally.",
+    "preset": "Provider Preset",
+    "custom": "Custom",
+    "alicloud": "Alibaba Cloud Bailian",
+    "apiType": "API Protocol",
+    "openaiCompat": "OpenAI Compatible",
+    "anthropicCompat": "Anthropic Compatible"
   },
   "app": {
     "chatMsg1": "Help me analyze the birth rate changes in Shanghai in 2023",

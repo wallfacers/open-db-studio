@@ -252,9 +252,9 @@ export function LlmSettingsPanel() {
           <div className="pt-2 space-y-2">
             <p className="text-xs text-[#7a9bb8]">{t('llmSettings.supportInfoCodingPlan')}</p>
             <div className="bg-[#0d1a26] border border-[#1e2d42] rounded px-3 py-2 font-mono text-xs text-[#7ecba1] space-y-0.5">
-              <div><span className="text-[#5b8ab0]">ANTHROPIC_AUTH_TOKEN</span>=<span className="text-[#c8daea]">{form.api_key || 'YOUR_API_KEY'}</span></div>
-              <div><span className="text-[#5b8ab0]">ANTHROPIC_BASE_URL</span>=<span className="text-[#c8daea]">{form.base_url}</span></div>
-              <div><span className="text-[#5b8ab0]">ANTHROPIC_MODEL</span>=<span className="text-[#c8daea]">{form.model}</span></div>
+              <div><span className="text-[#5b8ab0]">ANTHROPIC_AUTH_TOKEN</span>=<span className="text-[#c8daea]">YOUR_API_KEY</span></div>
+              <div><span className="text-[#5b8ab0]">ANTHROPIC_BASE_URL</span>=<span className="text-[#c8daea]">https://coding.dashscope.aliyuncs.com/apps/anthropic</span></div>
+              <div><span className="text-[#5b8ab0]">ANTHROPIC_MODEL</span>=<span className="text-[#c8daea]">qwen3.5-plus</span></div>
             </div>
           </div>
         ) : (

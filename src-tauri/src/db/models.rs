@@ -28,6 +28,7 @@ pub struct CreateConnectionRequest {
     pub extra_params: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConnectionGroup {
     pub id: i64,
@@ -47,6 +48,7 @@ pub struct QueryHistory {
     pub error_msg: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SavedQuery {
     pub id: i64,

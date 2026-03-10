@@ -131,10 +131,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           {isExpanded && <span className="text-[13px] truncate">Notifications</span>}
         </div>
         
-        <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent`}
-          title="Settings" 
-          onClick={() => showToast('打开全局设置')}
+        <div
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
+          title="Settings"
+          onClick={() => { setActiveActivity('settings'); setIsSidebarOpen(true); }}
         >
           <Settings size={24} className={`transition-transform duration-300 hover:rotate-90 ${isExpanded ? 'mr-3 flex-shrink-0' : ''}`} />
           {isExpanded && <span className="text-[13px] truncate">Settings</span>}

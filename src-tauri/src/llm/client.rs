@@ -147,6 +147,7 @@ impl LlmClient {
             .post(format!("{}/v1/messages", base))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
+            .header("user-agent", "claude-code/1.0.0")
             .json(&req)
             .send()
             .await?;

@@ -91,4 +91,20 @@ impl LlmClient {
 
         self.chat(messages).await
     }
+
+    /// SQL 解释
+    pub async fn explain_sql(
+        &self,
+        sql: &str,
+        sql_dialect: &str,
+    ) -> AppResult<String> {
+        let system_prompt = include_str!("../../../prompts/sql_explain.txt")
+            .replace("{{DIALECT}}", sql_dialect);
+
+        let messages = vec![
+            ChatMessage { role: "system".into(), content: system_prompt },
+            ChatMessage { role: "user".into(), content: sql.to_string() },
+        ];
+        self.chat(messages).await
+    }
 }

@@ -72,7 +72,7 @@ export default function ERDiagram() {
     setNodes([...layoutedNodes]);
     setEdges([...layoutedEdges]);
     setTimeout(() => {
-      rfInstance.current?.fitView({ duration: 800, padding: 0.2 });
+      rfInstance.current?.fitView({ duration: 800, padding: 0.2, maxZoom: 0.8 });
     }, 50);
   }, [nodes, edges, setNodes, setEdges]);
 
@@ -133,6 +133,7 @@ export default function ERDiagram() {
         onInit={(instance) => { rfInstance.current = instance; }}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={{ maxZoom: 0.8, padding: 0.2 }}
         deleteKeyCode={['Backspace', 'Delete']}
         selectionKeyCode={['Shift', 'Meta', 'Control']}
         defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: '#a1a1aa', strokeWidth: 2 }, interactionWidth: 20 }}

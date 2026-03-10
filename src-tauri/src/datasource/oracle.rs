@@ -1,28 +1,125 @@
-// TODO: Oracle 支持，当前为占位实现
 use async_trait::async_trait;
 use super::{ConnectionConfig, DataSource, QueryResult, SchemaInfo, TableMeta};
 use crate::{AppError, AppResult};
 
-pub struct OracleDataSource;
+#[cfg(feature = "oracle-driver")]
+use oracle as oracle_crate;
+
+pub struct OracleDataSource {
+    #[cfg(feature = "oracle-driver")]
+    connection_string: String,
+    #[cfg(feature = "oracle-driver")]
+    username: String,
+    #[cfg(feature = "oracle-driver")]
+    password: String,
+}
 
 impl OracleDataSource {
-    pub async fn new(_config: &ConnectionConfig) -> AppResult<Self> {
-        Err(AppError::Datasource("Oracle support not yet implemented".into()))
+    pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
+        #[cfg(not(feature = "oracle-driver"))]
+        {
+            let _ = config;
+            Err(AppError::Datasource(
+                "Oracle driver not enabled. Build with --features oracle-driver (requires Oracle Instant Client).".into()
+            ))
+        }
+        #[cfg(feature = "oracle-driver")]
+        {
+            Ok(Self {
+                connection_string: format!("//{}:{}/{}", config.host, config.port, config.database),
+                username: config.username.clone(),
+                password: config.password.clone(),
+            })
+        }
     }
 }
 
 #[async_trait]
 impl DataSource for OracleDataSource {
     async fn test_connection(&self) -> AppResult<()> {
-        Err(AppError::Datasource("Oracle support not yet implemented".into()))
+        #[cfg(not(feature = "oracle-driver"))]
+        return Err(AppError::Datasource("Oracle driver not enabled.".into()));
+
+        #[cfg(feature = "oracle-driver")]
+        {
+            let conn_str = self.connection_string.clone();
+            let user = self.username.clone();
+            let pass = self.password.clone();
+            tokio::task::spawn_blocking(move || {
+                oracle_crate::Connection::connect(&user, &pass, &conn_str)
+                    .map(|_| ())
+                    .map_err(|e| AppError::Datasource(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::Datasource(e.to_string()))?
+        }
     }
-    async fn execute(&self, _sql: &str) -> AppResult<QueryResult> {
-        Err(AppError::Datasource("Oracle support not yet implemented".into()))
+
+    async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
+        #[cfg(not(feature = "oracle-driver"))]
+        {
+            let _ = sql;
+            return Err(AppError::Datasource("Oracle driver not enabled.".into()));
+        }
+
+        #[cfg(feature = "oracle-driver")]
+        {
+            let conn_str = self.connection_string.clone();
+            let user = self.username.clone();
+            let pass = self.password.clone();
+            let sql = sql.to_string();
+            let start = std::time::Instant::now();
+
+            tokio::task::spawn_blocking(move || {
+                let conn = oracle_crate::Connection::connect(&user, &pass, &conn_str)
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+                let mut stmt = conn.statement(&sql).build()
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+                let rows = stmt.query(&[])
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+                let column_info = rows.column_info();
+                let columns: Vec<String> = column_info.iter().map(|c| c.name().to_string()).collect();
+                let mut result_rows: Vec<Vec<serde_json::Value>> = Vec::new();
+
+                for row_result in rows {
+                    let row = row_result.map_err(|e| AppError::Datasource(e.to_string()))?;
+                    let values: Vec<serde_json::Value> = (0..columns.len())
+                        .map(|i| {
+                            let val: Option<String> = row.get(i).ok().flatten();
+                            match val {
+                                Some(s) => serde_json::Value::String(s),
+                                None => serde_json::Value::Null,
+                            }
+                        })
+                        .collect();
+                    result_rows.push(values);
+                }
+
+                let duration_ms = start.elapsed().as_millis() as u64;
+                let row_count = result_rows.len();
+                Ok(QueryResult { columns, rows: result_rows, row_count, duration_ms })
+            })
+            .await
+            .map_err(|e| AppError::Datasource(e.to_string()))?
+        }
     }
+
     async fn get_tables(&self) -> AppResult<Vec<TableMeta>> {
-        Err(AppError::Datasource("Oracle support not yet implemented".into()))
+        let result = self.execute(
+            "SELECT owner, table_name, 'TABLE' as table_type FROM all_tables \
+             WHERE owner = SYS_CONTEXT('USERENV','CURRENT_SCHEMA') ORDER BY table_name"
+        ).await?;
+
+        Ok(result.rows.into_iter().map(|row| TableMeta {
+            schema: row.first().and_then(|v| v.as_str().map(String::from)),
+            name: row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            table_type: "TABLE".to_string(),
+        }).collect())
     }
+
     async fn get_schema(&self) -> AppResult<SchemaInfo> {
-        Err(AppError::Datasource("Oracle support not yet implemented".into()))
+        let tables = self.get_tables().await?;
+        Ok(SchemaInfo { tables })
     }
 }

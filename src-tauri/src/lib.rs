@@ -1,4 +1,5 @@
 mod commands;
+mod crypto;
 mod datasource;
 mod db;
 mod error;
@@ -12,6 +13,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            use tauri::Manager;
+            let app_data_dir = app.path().app_data_dir()
+                .expect("Failed to get app data dir")
+                .to_string_lossy()
+                .to_string();
+            crate::db::init(&app_data_dir)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_connections,
             commands::create_connection,
@@ -22,8 +32,11 @@ pub fn run() {
             commands::get_schema,
             commands::ai_chat,
             commands::ai_generate_sql,
+            commands::ai_explain_sql,
             commands::get_query_history,
             commands::save_query,
+            commands::get_llm_settings,
+            commands::set_llm_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -159,6 +159,31 @@ JOIN
     }
   };
 
+  const closeAllTabs = () => {
+    setTabs([]);
+    setActiveTab('');
+  };
+
+  const closeTabsLeft = (tabId: string) => {
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx <= 0) return;
+    const newTabs = tabs.slice(idx);
+    setTabs(newTabs);
+    if (!newTabs.find(t => t.id === activeTab)) {
+      setActiveTab(newTabs[0]?.id ?? '');
+    }
+  };
+
+  const closeTabsRight = (tabId: string) => {
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx === tabs.length - 1) return;
+    const newTabs = tabs.slice(0, idx + 1);
+    setTabs(newTabs);
+    if (!newTabs.find(t => t.id === activeTab)) {
+      setActiveTab(newTabs[newTabs.length - 1]?.id ?? '');
+    }
+  };
+
   const handleTableClick = (tableName: string, dbName: string = 'MySQL_demo') => {
     const tabId = `table_${dbName}_${tableName}`;
     setTabs(prev => {
@@ -294,11 +319,14 @@ JOIN
         onTableClick={handleTableClick}
       />
 
-      <MainContent 
+      <MainContent
         tabs={tabs}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         closeTab={closeTab}
+        closeAllTabs={closeAllTabs}
+        closeTabsLeft={closeTabsLeft}
+        closeTabsRight={closeTabsRight}
         sqlContent={sqlContent}
         setSqlContent={setSqlContent}
         handleExecute={handleExecute}

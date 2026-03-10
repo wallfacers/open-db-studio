@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { format as formatSql } from 'sql-formatter';
 import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
@@ -189,8 +190,19 @@ JOIN
   };
 
   const handleFormat = () => {
-    // Simple mock formatting - just add some spaces
-    setSqlContent(prev => prev.replace(/SELECT/g, '\nSELECT').trim());
+    setSqlContent(prev => {
+      if (!prev.trim()) return prev;
+      try {
+        return formatSql(prev, {
+          language: 'sql',
+          tabWidth: 2,
+          keywordCase: 'upper',
+        });
+      } catch {
+        showToast('SQL 格式化失败');
+        return prev;
+      }
+    });
   };
 
   const handleClear = () => {

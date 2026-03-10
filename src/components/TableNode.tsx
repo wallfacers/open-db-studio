@@ -163,8 +163,8 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
               setIsEditingKey(!isEditingKey);
             }}
           >
-            {col.isPrimary && <Key className="w-3.5 h-3.5 text-[#eab308] shrink-0" title="主键" />}
-            {col.isForeign && <Key className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" title="外键" />}
+            {col.isPrimary && <Key className="w-3.5 h-3.5 text-[#eab308] shrink-0" />}
+            {col.isForeign && <Key className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" />}
             {!col.isPrimary && !col.isForeign && (
               <Key className="w-3.5 h-3.5 text-gray-500 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
             )}

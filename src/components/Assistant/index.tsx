@@ -92,7 +92,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   if (!isAssistantOpen) return null;
 
   return (
-    <div className="flex flex-col bg-[#080d12] flex-shrink-0 border-l border-[#1e2d42] relative" style={{ width: assistantWidth }}>
+    <div className="flex flex-col bg-[#111922] flex-shrink-0 border-l border-[#1e2d42] relative" style={{ width: assistantWidth }}>
       <div
         className="absolute left-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
         onMouseDown={handleAssistantResize}

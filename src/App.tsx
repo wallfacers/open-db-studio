@@ -8,6 +8,7 @@ import { Assistant } from './components/Assistant';
 import { Toast } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
+import { useQueryStore } from './store/queryStore';
 
 export interface TabData {
   id: string;
@@ -190,19 +191,19 @@ JOIN
   };
 
   const handleFormat = () => {
-    setSqlContent(prev => {
-      if (!prev.trim()) return prev;
-      try {
-        return formatSql(prev, {
-          language: 'sql',
-          tabWidth: 2,
-          keywordCase: 'upper',
-        });
-      } catch {
-        showToast('SQL 格式化失败');
-        return prev;
-      }
-    });
+    const { activeTabId, sqlContent, setSql } = useQueryStore.getState();
+    const current = sqlContent[activeTabId] ?? '';
+    if (!current.trim()) return;
+    try {
+      const formatted = formatSql(current, {
+        language: 'sql',
+        tabWidth: 2,
+        keywordCase: 'upper',
+      });
+      setSql(activeTabId, formatted);
+    } catch {
+      showToast('SQL 格式化失败');
+    }
   };
 
   const handleClear = () => {

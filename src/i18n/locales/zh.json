@@ -129,7 +129,8 @@
     "noData": "暂无数据",
     "confirmDelete": "确认删除该行？",
     "updateSuccess": "更新成功",
-    "deleteSuccess": "删除成功"
+    "deleteSuccess": "删除成功",
+    "rowsPerPage": "行 / 页"
   },
   "queryHistory": {
     "selectConnectionFirst": "请先选择一个连接",

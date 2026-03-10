@@ -20,7 +20,6 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
   const [pkColumn, setPkColumn] = useState<string>('id');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100);
-  const [total, setTotal] = useState(0);
   const [whereClause, setWhereClause] = useState('');
   const [orderClause, setOrderClause] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -41,7 +40,6 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
         }
       });
       setData(result);
-      setTotal(result.row_count);
     } catch (e) {
       showToast(String(e));
     } finally {
@@ -109,8 +107,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
           <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30">|&lt;</button>
           <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
           <span className="text-[#d4d4d4]">{page}</span>
-          <button onClick={() => setPage(p => p + 1)} className="p-1 hover:bg-[#2b2b2b] rounded"><ChevronRight size={14}/></button>
-          <span className="text-[#858585]">{t('tableDataView.total')} {total}</span>
+          <button
+            disabled={!data || data.rows.length < pageSize}
+            onClick={() => setPage(p => p + 1)}
+            className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30"
+          ><ChevronRight size={14}/></button>
+          <span className="text-[#858585]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
           <button onClick={loadData} className="p-1 hover:bg-[#2b2b2b] rounded" title={t('tableDataView.refreshData')}><RefreshCw size={14}/></button>
         </div>
       </div>
@@ -124,7 +126,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
           placeholder={t('tableDataView.enterCondition')}
           value={whereClause}
           onChange={e => setWhereClause(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && loadData()}
+          onKeyDown={e => { if (e.key === 'Enter') { if (page !== 1) setPage(1); else loadData(); } }}
         />
         <span className="text-[#858585]">ORDER BY</span>
         <input
@@ -132,7 +134,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
           placeholder={t('tableDataView.enterOrder')}
           value={orderClause}
           onChange={e => setOrderClause(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && loadData()}
+          onKeyDown={e => { if (e.key === 'Enter') { if (page !== 1) setPage(1); else loadData(); } }}
         />
       </div>
 
@@ -173,7 +175,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
                             value={editingCell.value}
                             onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
                             onKeyDown={e => { if (e.key === 'Enter') handleCellSave(); if (e.key === 'Escape') setEditingCell(null); }}
-                            onBlur={handleCellSave}
+                            onBlur={() => setEditingCell(null)}
                           />
                         ) : (
                           <span className="truncate block">{cell === null ? <span className="text-[#858585] italic">NULL</span> : String(cell)}</span>

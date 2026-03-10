@@ -129,7 +129,8 @@
     "noData": "No data",
     "confirmDelete": "Delete this row?",
     "updateSuccess": "Updated successfully",
-    "deleteSuccess": "Deleted successfully"
+    "deleteSuccess": "Deleted successfully",
+    "rowsPerPage": "rows / page"
   },
   "queryHistory": {
     "selectConnectionFirst": "Please select a connection first",

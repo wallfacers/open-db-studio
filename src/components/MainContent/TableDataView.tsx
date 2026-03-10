@@ -3,7 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download } from 'lucide-react';
+import { ExportDialog } from '../ExportDialog';
 
 interface TableDataViewProps {
   tableName: string;
@@ -24,6 +25,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
   const [orderClause, setOrderClause] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [editingCell, setEditingCell] = useState<{row: number; col: string; value: string} | null>(null);
+  const [showExport, setShowExport] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
@@ -115,6 +117,11 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
           <span className="text-[#858585]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
           <button onClick={loadData} className="p-1 hover:bg-[#2b2b2b] rounded" title={t('tableDataView.refreshData')}><RefreshCw size={14}/></button>
         </div>
+        <div className="flex items-center text-[#858585]">
+          <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#2b2b2b] rounded" title={t('export.exportData')}>
+            <Download size={14}/>
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -201,6 +208,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
       <div className="h-7 flex items-center px-3 border-t border-[#2b2b2b] bg-[#181818] text-[#858585] text-xs">
         {data && <span>{data.row_count} {t('tableDataView.row')} · {data.duration_ms}ms</span>}
       </div>
+
+      {showExport && activeConnectionId && (
+        <ExportDialog
+          connectionId={activeConnectionId}
+          tableName={tableName}
+          onClose={() => setShowExport(false)}
+          showToast={showToast}
+        />
+      )}
     </div>
   );
 };

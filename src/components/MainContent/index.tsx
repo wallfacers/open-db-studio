@@ -1,7 +1,21 @@
-import React from 'react';
-import Editor from 'react-simple-code-editor';
-import Prism from 'prismjs';
-import 'prismjs/components/prism-sql';
+import React, { useEffect, useRef, useState } from 'react';
+import MonacoEditor, { type BeforeMount } from '@monaco-editor/react';
+
+const handleEditorWillMount: BeforeMount = (monaco) => {
+  monaco.editor.defineTheme('odb-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#1e1e1e',
+      'editorGutter.background': '#141414',
+      'editorLineNumber.foreground': '#4a4a4a',
+      'editorLineNumber.activeForeground': '#3794ff',
+      'editor.lineHighlightBackground': '#1e2a3a',
+      'editor.lineHighlightBorder': '#00000000',
+    },
+  });
+};
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
   RefreshCw, Download, Search, Filter, TableProperties, Plus
@@ -9,12 +23,16 @@ import {
 import { TabData } from '../../App';
 import { TableDataView } from './TableDataView';
 import ERDiagram from '../ERDiagram';
+import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 
 interface MainContentProps {
   tabs: TabData[];
   activeTab: string;
   setActiveTab: (tabId: string) => void;
   closeTab: (e: React.MouseEvent, tabId: string) => void;
+  closeAllTabs: () => void;
+  closeTabsLeft: (tabId: string) => void;
+  closeTabsRight: (tabId: string) => void;
   sqlContent: string;
   setSqlContent: (content: string) => void;
   handleExecute: () => void;
@@ -38,25 +56,95 @@ interface MainContentProps {
   executionTime: number;
 }
 
+interface ContextMenu {
+  tabId: string;
+  x: number;
+  y: number;
+}
+
 export const MainContent: React.FC<MainContentProps> = ({
-  tabs, activeTab, setActiveTab, closeTab,
-  sqlContent, setSqlContent, handleExecute, isExecuting, handleFormat, handleClear, showToast,
+  tabs, activeTab, setActiveTab, closeTab, closeAllTabs, closeTabsLeft, closeTabsRight,
+  handleFormat, showToast,
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize, resultsTab, setResultsTab,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
-  tableData, executionTime
 }) => {
+  const { sqlContent, setSql, executeQuery, isExecuting, results, error } = useQueryStore();
+  const { activeConnectionId } = useConnectionStore();
+  const { explainSql, isExplaining } = useAiStore();
+  const [explanation, setExplanation] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
   const activeTabObj = tabs.find(t => t.id === activeTab);
+  const currentSql = sqlContent[activeTab] ?? '';
+  const currentResult = results[activeTab];
+
+  const handleExecute = () => {
+    if (!activeConnectionId) {
+      showToast('请先在左侧选择一个数据库连接');
+      return;
+    }
+    executeQuery(activeConnectionId, activeTab);
+    setResultsTab('result1');
+  };
+
+  const handleClear = () => {
+    setSql(activeTab, '');
+  };
+
+  const handleExplain = async () => {
+    if (!currentSql.trim() || !activeConnectionId) {
+      showToast('请先输入 SQL 并选择连接');
+      return;
+    }
+    try {
+      const result = await explainSql(currentSql, activeConnectionId);
+      setExplanation(result);
+    } catch {
+      showToast('AI 解释失败，请检查 LLM 配置');
+    }
+  };
+
+  // 关闭右键菜单
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleTabContextMenu = (e: React.MouseEvent, tabId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ tabId, x: e.clientX, y: e.clientY });
+  };
+
+  // F5 快捷键
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F5') {
+        e.preventDefault();
+        handleExecute();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeConnectionId, activeTab]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
       {/* Tabs */}
-      <div className="flex items-center bg-[#181818] border-b border-[#2b2b2b] overflow-x-auto no-scrollbar">
+      <div className="flex-shrink-0 h-10 flex items-start bg-[#181818] border-b border-[#2b2b2b] overflow-x-auto no-scrollbar">
         {tabs.map(tab => (
-          <div 
+          <div
             key={tab.id}
-            className={`flex items-center px-4 py-2 border-r border-[#2b2b2b] cursor-pointer min-w-[120px] max-w-[200px] group ${activeTab === tab.id ? 'bg-[#1e1e1e] text-[#3794ff] border-t-2 border-t-[#3794ff]' : 'bg-[#2d2d2d] text-[#858585] border-t-2 border-t-transparent hover:bg-[#252526]'}`}
+            className={`flex items-center px-4 h-[38px] border-r border-[#2b2b2b] cursor-pointer min-w-[120px] max-w-[200px] group ${activeTab === tab.id ? 'bg-[#1e1e1e] text-[#3794ff] border-t-2 border-t-[#3794ff]' : 'bg-[#2d2d2d] text-[#858585] border-t-2 border-t-transparent hover:bg-[#252526]'}`}
             onClick={() => setActiveTab(tab.id)}
+            onContextMenu={(e) => handleTabContextMenu(e, tab.id)}
           >
             {tab.type === 'query' ? (
               <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#3794ff]' : 'text-[#858585]'}`} />
@@ -66,8 +154,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#3794ff]' : 'text-[#858585]'}`} />
             )}
             <span className="truncate flex-1 text-xs">{tab.title}</span>
-            <div 
-              className={`ml-2 p-0.5 rounded-sm hover:bg-[#3c3c3c] ${activeTab === tab.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+            <div
+              className="ml-2 p-0.5 rounded-sm hover:bg-[#3c3c3c] opacity-100"
               onClick={(e) => closeTab(e, tab.id)}
             >
               <X size={12} />
@@ -82,238 +170,228 @@ export const MainContent: React.FC<MainContentProps> = ({
             <ERDiagram />
           </div>
         ) : activeTabObj.type === 'table' ? (
-          <TableDataView 
-            tableName={activeTabObj.title} 
-            dbName={activeTabObj.db || 'demo'} 
-            showToast={showToast} 
+          <TableDataView
+            tableName={activeTabObj.title}
+            dbName={activeTabObj.db || 'demo'}
+            showToast={showToast}
           />
         ) : (
-          <>
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             {/* Toolbar */}
-            <div className="h-10 flex items-center justify-between px-4 border-b border-[#2b2b2b] bg-[#1e1e1e]">
-            <div className="flex items-center space-x-2">
-              <button 
-                className={`flex items-center px-3 py-1.5 rounded text-xs font-medium transition-colors ${isExecuting ? 'bg-[#2b2b2b] text-[#858585] cursor-not-allowed' : 'bg-[#3794ff] hover:bg-[#2b7cdb] text-white'}`}
-                onClick={handleExecute}
-                disabled={isExecuting}
-              >
-                {isExecuting ? <Square size={14} className="mr-1.5" /> : <Play size={14} className="mr-1.5" />}
-                {isExecuting ? '执行中...' : '执行'}
-              </button>
-              <div className="w-[1px] h-4 bg-[#3c3c3c] mx-1"></div>
-              <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Save" onClick={() => showToast('已保存 SQL 文件')}>
-                <Save size={16} />
-              </button>
-              <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Format SQL" onClick={handleFormat}>
-                <FileEdit size={16} />
-              </button>
-              <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Clear" onClick={handleClear}>
-                <X size={16} />
-              </button>
-              <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Settings" onClick={() => showToast('打开编辑器设置')}>
-                <Settings size={16} />
-              </button>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <div className="relative">
-                <div 
-                  className="flex items-center text-xs text-[#d4d4d4] cursor-pointer hover:bg-[#2b2b2b] px-2 py-1 rounded"
-                  onClick={(e) => { e.stopPropagation(); setIsDbMenuOpen(!isDbMenuOpen); setIsTableMenuOpen(false); }}
+            <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-[#2b2b2b] bg-[#141414]">
+              <div className="flex items-center space-x-2">
+                <button
+                  className={`flex items-center px-3 py-1.5 rounded text-xs font-medium transition-colors ${isExecuting ? 'bg-[#2b2b2b] text-[#858585] cursor-not-allowed' : 'bg-[#3794ff] hover:bg-[#2b7cdb] text-white'}`}
+                  onClick={handleExecute}
+                  disabled={isExecuting}
                 >
-                  <DatabaseZap size={14} className="mr-1.5 text-[#3794ff]" />
-                  <span>demo</span>
-                  <ChevronDown size={14} className="ml-1 text-[#858585]" />
-                </div>
-                {isDbMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg z-50 py-1">
-                    <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4] flex items-center" onClick={() => { setIsDbMenuOpen(false); showToast('已切换到数据库: demo'); }}><DatabaseZap size={14} className="mr-2 text-[#3794ff]"/> demo</div>
-                    <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4] flex items-center" onClick={() => { setIsDbMenuOpen(false); showToast('已切换到数据库: MySQL_demo'); }}><DatabaseZap size={14} className="mr-2 text-[#858585]"/> MySQL_demo</div>
-                    <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4] flex items-center" onClick={() => { setIsDbMenuOpen(false); showToast('已切换到数据库: SQLServer'); }}><DatabaseZap size={14} className="mr-2 text-[#858585]"/> SQLServer</div>
-                  </div>
-                )}
-              </div>
-              <div className="w-[1px] h-4 bg-[#3c3c3c]"></div>
-              <div className="relative">
-                <div 
-                  className="flex items-center text-xs text-[#d4d4d4] cursor-pointer hover:bg-[#2b2b2b] px-2 py-1 rounded"
-                  onClick={(e) => { e.stopPropagation(); setIsTableMenuOpen(!isTableMenuOpen); setIsDbMenuOpen(false); }}
+                  {isExecuting ? <Square size={14} className="mr-1.5" /> : <Play size={14} className="mr-1.5" />}
+                  {isExecuting ? '执行中...' : '执行 (F5)'}
+                </button>
+                <button
+                  className={`flex items-center px-2 py-1.5 rounded text-xs transition-colors ${isExplaining ? 'bg-[#2b2b2b] text-[#858585] cursor-not-allowed' : 'bg-[#2b2b2b] hover:bg-[#3a3a3a] text-gray-300'}`}
+                  onClick={handleExplain}
+                  disabled={isExplaining || !activeConnectionId}
                 >
-                  <Folder size={14} className="mr-1.5 text-[#dcdcaa]" />
-                  <span>birth_analysis</span>
-                  <ChevronDown size={14} className="ml-1 text-[#858585]" />
-                </div>
-                {isTableMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg z-50 py-1">
-                    <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4] flex items-center" onClick={() => { setIsTableMenuOpen(false); showToast('已切换到表: birth_analysis'); }}><Folder size={14} className="mr-2 text-[#dcdcaa]"/> birth_analysis</div>
-                    <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4] flex items-center" onClick={() => { setIsTableMenuOpen(false); showToast('已切换到表: ERP'); }}><Folder size={14} className="mr-2 text-[#858585]"/> ERP</div>
+                  {isExplaining ? '解释中...' : '💡 解释 SQL'}
+                </button>
+                <div className="w-[1px] h-4 bg-[#3c3c3c] mx-1"></div>
+                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Save" onClick={() => showToast('已保存 SQL 文件')}>
+                  <Save size={16} />
+                </button>
+                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Format SQL" onClick={handleFormat}>
+                  <FileEdit size={16} />
+                </button>
+                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Clear" onClick={handleClear}>
+                  <X size={16} />
+                </button>
+                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Settings" onClick={() => showToast('打开编辑器设置')}>
+                  <Settings size={16} />
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <div className="relative">
+                  <div
+                    className="flex items-center text-xs text-[#d4d4d4] cursor-pointer hover:bg-[#2b2b2b] px-2 py-1 rounded"
+                    onClick={(e) => { e.stopPropagation(); setIsDbMenuOpen(!isDbMenuOpen); setIsTableMenuOpen(false); }}
+                  >
+                    <DatabaseZap size={14} className="mr-1.5 text-[#3794ff]" />
+                    <span>{activeConnectionId ? `连接 #${activeConnectionId}` : '未选择连接'}</span>
+                    <ChevronDown size={14} className="ml-1 text-[#858585]" />
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Editor Content */}
-          <div className="flex-1 overflow-auto relative bg-[#1e1e1e]">
-            <Editor
-              value={sqlContent}
-              onValueChange={setSqlContent}
-              highlight={code => Prism.highlight(code, Prism.languages.sql, 'sql')}
-              padding={16}
-              style={{
-                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                fontSize: 13,
-                minHeight: '100%',
-                color: '#d4d4d4'
-              }}
-              className="editor-container"
-            />
-          </div>
-
-          {/* Results Resizer */}
-          <div 
-            className="h-1 cursor-row-resize hover:bg-[#3794ff] bg-[#2b2b2b] transition-colors z-10"
-            onMouseDown={handleResultsResize}
-          ></div>
-
-          {/* Results Area */}
-          <div className="flex flex-col bg-[#1e1e1e] flex-shrink-0" style={{ height: resultsHeight }}>
-            {/* Results Tabs */}
-            <div className="flex items-center bg-[#181818] border-b border-[#2b2b2b]">
-              <div 
-                className={`px-4 py-2 text-xs cursor-pointer border-t-2 ${resultsTab === 'overview' ? 'border-t-[#3794ff] text-[#d4d4d4] bg-[#1e1e1e]' : 'border-t-transparent text-[#858585] hover:text-[#d4d4d4]'}`}
-                onClick={() => setResultsTab('overview')}
-              >
-                执行概览
-              </div>
-              <div 
-                className={`px-4 py-2 text-xs cursor-pointer border-t-2 ${resultsTab === 'result1' ? 'border-t-[#3794ff] text-[#d4d4d4] bg-[#1e1e1e]' : 'border-t-transparent text-[#858585] hover:text-[#d4d4d4]'}`}
-                onClick={() => setResultsTab('result1')}
-              >
-                结果集 1
+                </div>
               </div>
             </div>
 
-            {resultsTab === 'result1' ? (
-              <>
-                {/* Results Toolbar */}
-                <div className="h-9 flex items-center justify-between px-3 border-b border-[#2b2b2b] bg-[#1e1e1e]">
-                  <div className="flex items-center space-x-2 text-xs text-[#858585]">
-                    <div className="flex items-center space-x-1">
-                      <button className="p-1 hover:bg-[#2b2b2b] hover:text-[#d4d4d4] rounded disabled:opacity-50" onClick={() => showToast('上一页')}>&lt;</button>
-                      <span className="px-2">1</span>
-                      <button className="p-1 hover:bg-[#2b2b2b] hover:text-[#d4d4d4] rounded" onClick={() => showToast('下一页')}>&gt;</button>
-                    </div>
-                    <div className="w-[1px] h-3 bg-[#3c3c3c] mx-1"></div>
-                    <div className="relative">
-                      <div 
-                        className="flex items-center cursor-pointer hover:bg-[#2b2b2b] px-2 py-1 rounded"
-                        onClick={(e) => { e.stopPropagation(); setIsPageSizeMenuOpen(!isPageSizeMenuOpen); }}
-                      >
-                        <span>200 条/页</span>
-                        <ChevronDown size={12} className="ml-1" />
-                      </div>
-                      {isPageSizeMenuOpen && (
-                        <div className="absolute left-0 top-full mt-1 w-24 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg z-50 py-1">
-                          {[50, 100, 200, 500].map(size => (
-                            <div 
-                              key={size} 
-                              className="px-3 py-1 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4]"
-                              onClick={() => { setIsPageSizeMenuOpen(false); showToast(`已切换为 ${size} 条/页`); }}
-                            >
-                              {size} 条/页
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2 text-[#858585]">
-                    <button className="p-1.5 hover:bg-[#2b2b2b] hover:text-[#d4d4d4] rounded transition-colors" title="Refresh" onClick={() => showToast('刷新结果集')}>
-                      <RefreshCw size={14} />
-                    </button>
-                    <div className="relative">
-                      <div 
-                        className="flex items-center cursor-pointer hover:bg-[#2b2b2b] hover:text-[#d4d4d4] px-2 py-1 rounded transition-colors"
-                        onClick={(e) => { e.stopPropagation(); setIsExportMenuOpen(!isExportMenuOpen); }}
-                      >
-                        <Download size={14} className="mr-1" />
-                        <span>导出</span>
-                        <ChevronDown size={12} className="ml-0.5" />
-                      </div>
-                      {isExportMenuOpen && (
-                        <div className="absolute right-0 top-full mt-1 w-32 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg z-50 py-1">
-                          <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4]" onClick={() => { setIsExportMenuOpen(false); showToast('已导出为 CSV'); }}>导出为 CSV</div>
-                          <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4]" onClick={() => { setIsExportMenuOpen(false); showToast('已导出为 Excel'); }}>导出为 Excel</div>
-                          <div className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4]" onClick={() => { setIsExportMenuOpen(false); showToast('已导出为 SQL Insert'); }}>导出为 SQL Insert</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+            {/* Editor Content */}
+            <div className="flex-1 relative bg-[#1e1e1e] min-h-0">
+              <MonacoEditor
+                height="100%"
+                language="sql"
+                theme="odb-dark"
+                beforeMount={handleEditorWillMount}
+                value={currentSql}
+                onChange={(val) => setSql(activeTab, val ?? '')}
+                options={{
+                  fontSize: 13,
+                  fontFamily: '"JetBrains Mono", "Fira Code", Consolas, monospace',
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                  lineNumbers: 'on',
+                  renderLineHighlight: 'line',
+                  smoothScrolling: true,
+                  cursorBlinking: 'smooth',
+                  formatOnPaste: true,
+                  tabSize: 2,
+                  padding: { top: 12, bottom: 12 },
+                  automaticLayout: true,
+                }}
+              />
+            </div>
 
-                {/* Results Table */}
+            {/* Results Resizer */}
+            <div
+              className="h-2 cursor-row-resize z-10 flex flex-col justify-center group"
+              onMouseDown={handleResultsResize}
+            >
+              <div className="h-px bg-[#2b2b2b] group-hover:bg-[#3794ff] transition-colors" />
+            </div>
+
+            {/* Results Area */}
+            <div className="flex flex-col bg-[#1e1e1e] flex-shrink-0" style={{ height: resultsHeight }}>
+              {/* Results Tabs */}
+              <div className="flex items-center bg-[#181818] border-b border-[#2b2b2b]">
+                <div
+                  className={`px-4 py-2 text-xs cursor-pointer border-t-2 ${resultsTab === 'result1' ? 'border-t-[#3794ff] text-[#d4d4d4] bg-[#1e1e1e]' : 'border-t-transparent text-[#858585] hover:text-[#d4d4d4]'}`}
+                  onClick={() => setResultsTab('result1')}
+                >
+                  结果集
+                </div>
+                <div
+                  className={`px-4 py-2 text-xs cursor-pointer border-t-2 ${resultsTab === 'overview' ? 'border-t-[#3794ff] text-[#d4d4d4] bg-[#1e1e1e]' : 'border-t-transparent text-[#858585] hover:text-[#d4d4d4]'}`}
+                  onClick={() => setResultsTab('overview')}
+                >
+                  执行概览
+                </div>
+              </div>
+
+              {resultsTab === 'result1' ? (
                 <div className="flex-1 overflow-auto">
-                  <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
-                    <thead className="sticky top-0 bg-[#1e1e1e] z-10">
-                      <tr>
-                        <th className="w-10 px-2 py-1.5 text-center border-b border-r border-[#2b2b2b] text-[#858585] font-normal bg-[#252526]">
-                          <Search size={12} className="mx-auto" />
-                        </th>
-                        {['analysis_date', 'time_period', 'birth_rate', 'growth_rate', 'gender_ratio'].map(h => (
-                          <th key={h} className="px-3 py-1.5 border-b border-r border-[#2b2b2b] text-[#d4d4d4] font-normal bg-[#252526]">
-                            <div className="flex items-center justify-between">
-                              <span>{h}</span>
-                              <div className="flex flex-col ml-2 text-[#858585]">
-                                <Filter size={10} />
-                              </div>
-                            </div>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tableData.map((row, i) => (
-                        <tr key={i} className="hover:bg-[#2a2d2e]">
-                          <td className="px-2 py-1.5 text-center border-b border-r border-[#2b2b2b] text-[#858585]">{i + 1}</td>
-                          {row.map((cell: any, j: number) => (
-                            <td key={j} className="px-3 py-1.5 border-b border-r border-[#2b2b2b] text-[#d4d4d4]">{cell}</td>
+                  {isExecuting ? (
+                    <div className="p-4 text-gray-400 text-sm">执行中...</div>
+                  ) : error ? (
+                    <div className="p-4 text-red-400 text-xs font-mono">{error}</div>
+                  ) : !currentResult ? (
+                    <div className="p-4 text-[#858585] text-sm">执行 SQL 后结果将显示在这里</div>
+                  ) : currentResult.columns.length === 0 ? (
+                    <div className="p-4 text-green-400 text-sm">✓ 执行成功，{currentResult.row_count} 行受影响（{currentResult.duration_ms}ms）</div>
+                  ) : (
+                    <>
+                      <div className="text-xs text-[#858585] px-3 py-1 border-b border-[#2b2b2b]">
+                        {currentResult.row_count} 行 · {currentResult.duration_ms}ms
+                      </div>
+                      <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                        <thead className="sticky top-0 bg-[#252526] z-10">
+                          <tr>
+                            {currentResult.columns.map((col) => (
+                              <th key={col} className="px-3 py-1.5 border-b border-r border-[#2b2b2b] text-[#d4d4d4] font-normal">
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {currentResult.rows.map((row, ri) => (
+                            <tr key={ri} className="hover:bg-[#2a2d2e] border-b border-[#2b2b2b]">
+                              {row.map((cell, ci) => (
+                                <td key={ci} className="px-3 py-1.5 text-[#d4d4d4] border-r border-[#2b2b2b] max-w-[300px] truncate">
+                                  {cell === null ? <span className="text-[#858585]">NULL</span> : String(cell)}
+                                </td>
+                              ))}
+                            </tr>
                           ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                        </tbody>
+                      </table>
+                    </>
+                  )}
                 </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-[#858585]">
+                  <p className="text-sm">执行概览信息</p>
+                </div>
+              )}
 
-                {/* Status Bar */}
-                <div className="h-7 flex items-center justify-between px-3 border-t border-[#2b2b2b] bg-[#181818] text-[#858585] text-xs">
-                  <div className="flex items-center space-x-4">
-                    <span>INIT</span>
-                    <span className="text-[#d4d4d4]">【结果】执行成功。</span>
-                    <span className="text-[#d4d4d4]">【耗时】{executionTime}ms.</span>
-                    <span className="text-[#d4d4d4]">【查询行数】12 行.</span>
+              {/* AI 解释面板 */}
+              {explanation && (
+                <div className="border-t border-[#2b2b2b] p-4 bg-[#181818]">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs text-gray-400 font-medium">AI 解释</span>
+                    <button onClick={() => setExplanation(null)} className="text-xs text-[#858585] hover:text-[#d4d4d4]">✕</button>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <span className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => showToast('导出 ERP_demo 成功')}>Export ERP_demo</span>
-                    <span className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => showToast('加载全部数据')}>显示全部</span>
-                  </div>
+                  <p className="text-sm text-[#d4d4d4] whitespace-pre-wrap">{explanation}</p>
                 </div>
-              </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-[#858585]">
-                <div className="text-center">
-                  <p>执行概览信息</p>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </>
         )
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-[#858585] bg-[#1e1e1e]">
           <DatabaseZap size={64} className="mb-4 opacity-20" />
           <p className="text-lg">No active editor</p>
           <p className="text-sm mt-2 opacity-60">Select a table or query to view</p>
+        </div>
+      )}
+
+      {/* Tab 右键菜单 */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
+            onClick={() => {
+              const e = { stopPropagation: () => {} } as React.MouseEvent;
+              closeTab(e, contextMenu.tabId);
+              setContextMenu(null);
+            }}
+          >
+            关闭
+          </button>
+          <div className="h-px bg-[#3c3c3c] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === 0}
+            onClick={() => {
+              closeTabsLeft(contextMenu.tabId);
+              setContextMenu(null);
+            }}
+          >
+            关闭左侧
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === tabs.length - 1}
+            onClick={() => {
+              closeTabsRight(contextMenu.tabId);
+              setContextMenu(null);
+            }}
+          >
+            关闭右侧
+          </button>
+          <div className="h-px bg-[#3c3c3c] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
+            onClick={() => {
+              closeAllTabs();
+              setContextMenu(null);
+            }}
+          >
+            关闭全部
+          </button>
         </div>
       )}
     </div>

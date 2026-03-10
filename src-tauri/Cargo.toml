@@ -60,9 +60,18 @@ rand = "0.8"
 # 时间
 chrono = { version = "0.4", features = ["serde"] }
 
+# SQL Server 驱动
+tiberius = { version = "0.12", features = ["tds73", "winauth"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
 # 其他
 once_cell = "1"
 uuid = { version = "1", features = ["v4"] }
 
+# Oracle 驱动（可选，需要 Oracle Instant Client）
+[target.'cfg(target_os = "windows")'.dependencies]
+oracle = { version = "0.6", optional = true }
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+oracle-driver = ["oracle"]

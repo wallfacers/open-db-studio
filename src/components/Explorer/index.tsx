@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree } from 'lucide-react';
+import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree, FilePlus2, FileEdit } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
+import { TableManageDialog } from '../TableManageDialog';
 import type { TableDetail } from '../../types';
 
 interface ExplorerProps {
@@ -43,6 +44,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
   const [tableDetails, setTableDetails] = useState<Record<string, TableDetail>>({});
+  const [tableContextMenu, setTableContextMenu] = useState<{ tableName: string; x: number; y: number } | null>(null);
+  const tableMenuRef = useRef<HTMLDivElement>(null);
+  const [tableManageDialog, setTableManageDialog] = useState<{ tableName?: string } | null>(null);
 
   useEffect(() => {
     loadConnections();
@@ -109,6 +113,16 @@ export const Explorer: React.FC<ExplorerProps> = ({
     const handler = (e: MouseEvent) => {
       if (connMenuRef.current && !connMenuRef.current.contains(e.target as Node)) {
         setConnContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (tableMenuRef.current && !tableMenuRef.current.contains(e.target as Node)) {
+        setTableContextMenu(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -186,6 +200,12 @@ export const Explorer: React.FC<ExplorerProps> = ({
                             const detail = tableDetails[tbl.name];
                             return (
                               <React.Fragment key={tbl.name}>
+                                <div
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setTableContextMenu({ tableName: tbl.name, x: e.clientX, y: e.clientY });
+                                  }}
+                                >
                                 <TreeItem
                                   label={tbl.name}
                                   icon={TableProperties}
@@ -196,6 +216,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                                   onClick={() => { setSelectedTable(tbl.name); toggleTableExpanded(tbl.name); }}
                                   onDoubleClick={() => { setSelectedTable(tbl.name); onTableClick(tbl.name, conn.name); }}
                                 />
+                                </div>
                                 {isExpanded && detail && (
                                   <>
                                     {/* Columns section */}
@@ -316,6 +337,17 @@ export const Explorer: React.FC<ExplorerProps> = ({
             新建查询
           </button>
           <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#c8daea] enabled:hover:bg-[#003d2f] enabled:hover:text-white"
+            disabled={activeConnectionId !== connContextMenu.connId}
+            onClick={() => {
+              setTableManageDialog({});
+              setConnContextMenu(null);
+            }}
+          >
+            <FilePlus2 size={13} />
+            {t('tableManage.createTable')}
+          </button>
+          <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
@@ -348,6 +380,49 @@ export const Explorer: React.FC<ExplorerProps> = ({
       )}
 
       {showModal && <ConnectionModal onClose={() => { setShowModal(false); loadConnections(); }} />}
+
+      {tableContextMenu && (
+        <div
+          ref={tableMenuRef}
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          style={{ left: tableContextMenu.x, top: tableContextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
+            onClick={() => {
+              setTableManageDialog({ tableName: tableContextMenu.tableName });
+              setTableContextMenu(null);
+            }}
+          >
+            <FileEdit size={13} />
+            {t('tableManage.editTable', { table: tableContextMenu.tableName })}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#003d2f] hover:text-red-300 flex items-center gap-2"
+            onClick={() => {
+              setTableManageDialog({ tableName: tableContextMenu.tableName });
+              setTableContextMenu(null);
+            }}
+          >
+            <Trash2 size={13} />
+            {t('tableManage.dropTable')}
+          </button>
+        </div>
+      )}
+
+      {tableManageDialog !== null && activeConnectionId && (
+        <TableManageDialog
+          connectionId={activeConnectionId}
+          tableName={tableManageDialog.tableName}
+          onClose={() => setTableManageDialog(null)}
+          onSuccess={() => {
+            if (activeConnectionId) loadTables(activeConnectionId);
+            setTableManageDialog(null);
+          }}
+          showToast={showToast}
+        />
+      )}
     </>
   );
 };

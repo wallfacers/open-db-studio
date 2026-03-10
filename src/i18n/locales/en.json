@@ -195,7 +195,18 @@
     "doubleClickToEdit": " (Double click to edit)"
   },
   "common": {
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "execute": "Execute",
+    "executing": "Executing..."
+  },
+  "tableManage": {
+    "createTable": "Create Table",
+    "editTable": "Edit Table {{table}}",
+    "dropTable": "Drop Table",
+    "confirmDrop": "Confirm drop table {{table}}? This operation is irreversible!",
+    "createSuccess": "Table created successfully",
+    "alterSuccess": "Table altered successfully",
+    "dropSuccess": "Table dropped successfully"
   },
   "export": {
     "title": "Export {{table}}",

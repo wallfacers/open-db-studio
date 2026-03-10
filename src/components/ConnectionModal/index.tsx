@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { CreateConnectionRequest } from '../../types';
+import { PasswordInput } from '../common/PasswordInput';
 
 const DRIVERS = [
   { value: 'mysql', label: 'MySQL', defaultPort: 3306 },
@@ -116,9 +117,12 @@ export function ConnectionModal({ onClose, connection }: Props) {
             </div>
             <div>
               <label className={labelClass}>{t('connectionModal.password')}</label>
-              <input className={inputClass} type="password" value={form.password ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder={isEdit ? t('connectionModal.passwordPlaceholder') : ''} />
+              <PasswordInput
+                className={inputClass}
+                value={form.password ?? ''}
+                onChange={(v) => setForm((f) => ({ ...f, password: v }))}
+                placeholder={isEdit ? t('connectionModal.passwordPlaceholder') : ''}
+              />
             </div>
           </div>
         </div>

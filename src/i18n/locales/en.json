@@ -30,7 +30,11 @@
     "inputPlaceholder": "Describe your query requirements... (Enter to send)",
     "aiGenerateSql": "AI Generate SQL",
     "generateSql": "Generate SQL",
-    "sendMessage": "Send Message"
+    "sendMessage": "Send Message",
+    "clearHistory": "Clear History",
+    "historyCleared": "Chat history cleared",
+    "insertToEditor": "Insert to Editor",
+    "sqlInserted": "SQL inserted into editor"
   },
   "connectionModal": {
     "editConnection": "Edit Connection",
@@ -97,6 +101,11 @@
     "rows": "Rows",
     "executionOverviewInfo": "Execution overview info",
     "aiExplanation": "AI Explanation",
+    "optimizeSql": "⚡ Optimize SQL",
+    "optimizing": "Optimizing...",
+    "aiOptimizeFailed": "AI optimize failed, please check LLM config",
+    "aiOptimization": "AI Optimization Suggestions",
+    "aiDiagnosis": "AI Diagnosis: ",
     "noActiveEditor": "No active editor",
     "selectItemToView": "Select a table or query to view",
     "close": "Close",

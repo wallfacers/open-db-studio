@@ -10,6 +10,7 @@ interface QueryState {
   isExecuting: boolean;
   queryHistory: QueryHistory[];
   error: string | null;
+  diagnosis: string | null;
 
   addTab: (tab: Tab) => void;
   closeTab: (id: string) => void;
@@ -30,6 +31,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   isExecuting: false,
   queryHistory: [],
   error: null,
+  diagnosis: null,
 
   addTab: (tab) =>
     set((s) => ({
@@ -62,7 +64,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
-    set({ isExecuting: true, error: null });
+    set({ isExecuting: true, error: null, diagnosis: null });
     const resultList: QueryResult[] = [];
     try {
       for (const stmt of statements) {
@@ -71,7 +73,13 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       }
       set(s => ({ results: { ...s.results, [tabId]: resultList }, isExecuting: false }));
     } catch (e) {
-      set({ error: String(e), isExecuting: false });
+      const errorMsg = String(e);
+      set({ error: errorMsg, isExecuting: false });
+      // 自动诊断（非阻塞，不影响主流程）
+      const sql = get().sqlContent[tabId] ?? '';
+      invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId })
+        .then(diagnosis => set({ diagnosis }))
+        .catch(() => {}); // 诊断失败静默处理
     }
   },
 

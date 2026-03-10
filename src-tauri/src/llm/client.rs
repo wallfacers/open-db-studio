@@ -2,6 +2,26 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use crate::AppResult;
 
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiType {
+    #[default]
+    Openai,
+    Anthropic,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AnthropicContentBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    text: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicContentBlock>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
@@ -36,20 +56,27 @@ pub struct LlmClient {
     api_key: String,
     base_url: String,
     model: String,
+    pub api_type: ApiType,
 }
 
 impl LlmClient {
-    pub fn new(api_key: String, base_url: Option<String>, model: Option<String>) -> Self {
+    pub fn new(
+        api_key: String,
+        base_url: Option<String>,
+        model: Option<String>,
+        api_type: Option<ApiType>,
+    ) -> Self {
         Self {
             client: Client::new(),
             api_key,
             base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
+            api_type: api_type.unwrap_or_default(),
         }
     }
 
-    /// 通用对话
-    pub async fn chat(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
+    /// 通用对话（OpenAI 协议）
+    async fn chat_openai(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
         let req = OpenAIRequest {
             model: self.model.clone(),
             messages,
@@ -79,6 +106,55 @@ impl LlmClient {
             .next()
             .map(|c| c.message.content)
             .ok_or_else(|| crate::AppError::Llm("Empty response from LLM".into()))
+    }
+
+    async fn chat_anthropic(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
+        #[derive(serde::Serialize)]
+        struct AnthropicRequest {
+            model: String,
+            messages: Vec<ChatMessage>,
+            max_tokens: u32,
+        }
+
+        let req = AnthropicRequest {
+            model: self.model.clone(),
+            messages,
+            max_tokens: 8192,
+        };
+
+        let base = self.base_url.trim_end_matches('/');
+        let http_resp = self
+            .client
+            .post(format!("{}/v1/messages", base))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&req)
+            .send()
+            .await?;
+
+        if !http_resp.status().is_success() {
+            let status = http_resp.status();
+            let body = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body)));
+        }
+
+        let resp: AnthropicResponse = http_resp
+            .json()
+            .await
+            .map_err(|e| crate::AppError::Llm(format!("Failed to parse Anthropic response: {}", e)))?;
+
+        resp.content
+            .into_iter()
+            .find(|b| b.block_type == "text")
+            .and_then(|b| b.text)
+            .ok_or_else(|| crate::AppError::Llm("Empty response from Anthropic LLM".into()))
+    }
+
+    pub async fn chat(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
+        match self.api_type {
+            ApiType::Openai => self.chat_openai(messages).await,
+            ApiType::Anthropic => self.chat_anthropic(messages).await,
+        }
     }
 
     /// 自然语言 → SQL

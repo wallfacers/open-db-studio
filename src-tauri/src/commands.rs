@@ -83,6 +83,13 @@ pub async fn get_schema(connection_id: i64) -> AppResult<SchemaInfo> {
 
 // ============ AI 代理 ============
 
+fn parse_api_type(s: &str) -> crate::llm::ApiType {
+    match s {
+        "anthropic" => crate::llm::ApiType::Anthropic,
+        _ => crate::llm::ApiType::Openai,
+    }
+}
+
 fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let api_key_enc = crate::db::get_setting("llm.api_key")?
         .ok_or_else(|| AppError::Llm("LLM API Key not configured. Please set it in Settings.".into()))?;
@@ -90,7 +97,7 @@ fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let base_url = crate::db::get_setting("llm.base_url")?;
     let model = crate::db::get_setting("llm.model")?;
     let api_type = crate::db::get_setting("llm.api_type")?
-        .and_then(|v| serde_json::from_str::<crate::llm::ApiType>(&format!("\"{}\"", v)).ok());
+        .map(|v| parse_api_type(&v));
     Ok(crate::llm::client::LlmClient::new(api_key, base_url, model, api_type))
 }
 
@@ -147,7 +154,7 @@ pub async fn get_llm_settings() -> AppResult<LlmSettings> {
         model: crate::db::get_setting("llm.model")?
             .unwrap_or_else(|| "gpt-4o-mini".to_string()),
         api_type: crate::db::get_setting("llm.api_type")?
-            .and_then(|v| serde_json::from_str::<crate::llm::ApiType>(&format!("\"{}\"", v)).ok())
+            .map(|v| parse_api_type(&v))
             .unwrap_or_default(),
     })
 }

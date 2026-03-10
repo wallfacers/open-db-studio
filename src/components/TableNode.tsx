@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Handle, Position, useNodeConnections, useReactFlow } from '@xyflow/react';
 import { Key, Diamond } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 export type ColumnData = {
   name: string;
@@ -15,7 +16,8 @@ export type TableNodeData = {
 };
 
 const commonSqlTypes = [
-  'INT', 'VARCHAR', 'TEXT', 'DATETIME', 'DATE', 'BOOLEAN', 'DECIMAL', 'FLOAT', 'DOUBLE', 'BIGINT', 'CHAR', 'TIMESTAMP'
+  'INT', 'VARCHAR', 'TEXT', 'DATETIME', 'DATE', 'BOOLEAN', 
+  'DECIMAL', 'FLOAT', 'DOUBLE', 'BIGINT', 'CHAR', 'TIMESTAMP'
 ];
 
 function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: string; onUpdateColumn: (oldName: string, newCol: ColumnData) => void; key?: string }) {
@@ -27,11 +29,17 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingType, setIsEditingType] = useState(false);
+  const [isEditingKey, setIsEditingKey] = useState(false);
+  
   const [editName, setEditName] = useState(col.name);
   const [editType, setEditType] = useState(col.type);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const typeSelectRef = useRef<HTMLSelectElement>(null);
+  const typeSpanRef = useRef<HTMLSpanElement>(null);
+  const keySpanRef = useRef<HTMLDivElement>(null);
+  
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+  const [keyDropdownPos, setKeyDropdownPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
@@ -39,11 +47,47 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
     }
   }, [isEditingName]);
 
-  useEffect(() => {
-    if (isEditingType && typeSelectRef.current) {
-      typeSelectRef.current.focus();
+  useLayoutEffect(() => {
+    if (isEditingType && typeSpanRef.current) {
+      const rect = typeSpanRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX
+      });
     }
   }, [isEditingType]);
+
+  useLayoutEffect(() => {
+    if (isEditingKey && keySpanRef.current) {
+      const rect = keySpanRef.current.getBoundingClientRect();
+      setKeyDropdownPos({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX
+      });
+    }
+  }, [isEditingKey]);
+
+  useEffect(() => {
+    if (isEditingType) {
+      const handleClickOutside = () => setIsEditingType(false);
+      const timer = setTimeout(() => document.addEventListener('pointerdown', handleClickOutside), 10);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener('pointerdown', handleClickOutside);
+      };
+    }
+  }, [isEditingType]);
+
+  useEffect(() => {
+    if (isEditingKey) {
+      const handleClickOutside = () => setIsEditingKey(false);
+      const timer = setTimeout(() => document.addEventListener('pointerdown', handleClickOutside), 10);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener('pointerdown', handleClickOutside);
+      };
+    }
+  }, [isEditingKey]);
 
   const handleNameSave = () => {
     setIsEditingName(false);
@@ -54,18 +98,9 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
     }
   };
 
-  const handleTypeSave = () => {
-    setIsEditingType(false);
-    if (editType && editType !== col.type) {
-      onUpdateColumn(col.name, { ...col, type: editType });
-    } else {
-      setEditType(col.type);
-    }
-  };
-
   return (
     <div
-      className={`flex items-center justify-between px-4 py-2 border-b border-[#333] last:border-b-0 relative group hover:bg-[#222] transition-colors h-[32px] ${isEditingType ? 'z-[99999]' : ''}`}
+      className={`flex items-center justify-between px-4 py-2 border-b border-[#333] last:border-b-0 relative group hover:bg-[#222] transition-colors h-[32px]`}
     >
       {/* Target Handle (Left) - For incoming connections */}
       <Handle
@@ -81,29 +116,61 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
       </Handle>
 
       <div className="flex items-center gap-3 z-0 w-[120px]">
-        {/* PK/FK Toggle Icon */}
-        <div 
-          className="w-4 h-4 flex items-center justify-center cursor-pointer opacity-50 hover:opacity-100 transition-opacity"
-          title={col.isPrimary ? "点击取消主键" : col.isForeign ? "点击取消外键" : "点击设置为主键 (再点设为外键)"}
-          onClick={() => {
-            if (col.isPrimary) {
-              onUpdateColumn(col.name, { ...col, isPrimary: false, isForeign: true });
-            } else if (col.isForeign) {
-              onUpdateColumn(col.name, { ...col, isPrimary: false, isForeign: false });
-            } else {
-              onUpdateColumn(col.name, { ...col, isPrimary: true, isForeign: false });
-            }
-          }}
-        >
-          {col.isPrimary ? (
-            <Key className="w-3.5 h-3.5 text-[#eab308] opacity-100" />
-          ) : col.isForeign ? (
-            <Key className="w-3.5 h-3.5 text-gray-400 opacity-100" />
-          ) : (
-            <Key className="w-3.5 h-3.5 text-gray-600 opacity-0 group-hover:opacity-100" /> 
+        {/* PK/FK Toggle Dropdown Area */}
+        <div className="relative flex items-center">
+          {isEditingKey && createPortal(
+            <div
+              className="fixed bg-[#252526] border border-[#3c3c3c] rounded shadow-2xl z-[999999] py-1 min-w-[120px] cursor-default"
+              style={{ top: keyDropdownPos.top + 4, left: keyDropdownPos.left }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              <div
+                className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors ${
+                  col.isPrimary ? 'bg-[#094771] text-white' : 'hover:bg-[#37373d] text-[#d4d4d4]'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdateColumn(col.name, { ...col, isPrimary: !col.isPrimary });
+                }}
+              >
+                <Key className="w-3 h-3 mr-1.5 text-[#eab308]" />
+                主键 (PK)
+              </div>
+              <div
+                className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors ${
+                  col.isForeign ? 'bg-[#094771] text-white' : 'hover:bg-[#37373d] text-[#d4d4d4]'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdateColumn(col.name, { ...col, isForeign: !col.isForeign });
+                }}
+              >
+                <Key className="w-3 h-3 mr-1.5 text-[#94a3b8]" />
+                外键 (FK)
+              </div>
+            </div>,
+            document.body
           )}
+
+          <div
+            ref={keySpanRef}
+            className="flex items-center gap-[2px] cursor-pointer p-1 -ml-1 rounded hover:bg-[#333] min-w-[20px] h-[24px] transition-colors"
+            title="设置主键/外键"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditingKey(!isEditingKey);
+            }}
+          >
+            {col.isPrimary && <Key className="w-3.5 h-3.5 text-[#eab308] shrink-0" title="主键" />}
+            {col.isForeign && <Key className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" title="外键" />}
+            {!col.isPrimary && !col.isForeign && (
+              <Key className="w-3.5 h-3.5 text-gray-500 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+            )}
+          </div>
         </div>
-        
+
         {/* Column Name */}
         {isEditingName ? (
           <input
@@ -116,9 +183,9 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
             style={{ width: `${Math.max(editName.length * 7, 50)}px` }}
           />
         ) : (
-          <span 
+          <span
             className="text-gray-300 text-xs font-medium cursor-text hover:bg-[#333] px-1 py-0.5 -mx-1 rounded truncate max-w-[90px]"
-            title={col.name}
+            title={`字段名：${col.name} (双击修改)`}
             onDoubleClick={() => setIsEditingName(true)}
           >
             {col.name}
@@ -128,12 +195,20 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
 
       {/* Column Type */}
       <div className="z-0 flex-1 flex justify-end items-center relative">
-        {isEditingType ? (
-          <div className="nodrag nowheel absolute right-0 top-0 mt-6 bg-[#252526] border border-[#3c3c3c] rounded shadow-2xl z-[99999] py-1 min-w-[120px] cursor-default">
+        {isEditingType && createPortal(
+          <div
+            className="fixed bg-[#252526] border border-[#3c3c3c] rounded shadow-2xl z-[999999] py-1 min-w-[120px] cursor-default"
+            style={{ top: dropdownPos.top + 4, left: dropdownPos.left - 40 }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+          >
             {commonSqlTypes.map(type => (
-              <div 
-                key={type} 
-                className="px-3 py-1.5 hover:bg-[#37373d] cursor-pointer text-[#d4d4d4] text-xs font-mono"
+              <div
+                key={type}
+                className={`px-3 py-1.5 cursor-pointer text-xs font-mono transition-colors ${
+                  type === col.type ? 'bg-[#094771] text-white' : 'hover:bg-[#37373d] text-[#d4d4d4]'
+                }`}
                 onClick={() => {
                   setEditType(type);
                   onUpdateColumn(col.name, { ...col, type });
@@ -143,23 +218,25 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
                 {type}
               </div>
             ))}
-          </div>
-        ) : null}
+          </div>,
+          document.body
+        )}
 
         {/* We keep the span always visible, but click triggers the menu */}
-        <span 
+        <span
+          ref={typeSpanRef}
           className={`text-gray-500 text-xs font-mono cursor-pointer hover:bg-[#333] px-1 py-0.5 -mx-1 rounded ${isEditingType ? 'bg-[#333] border border-[#3794ff]' : ''}`}
+          title={`类型：${col.type} (双击修改)`}
           onDoubleClick={() => setIsEditingType(true)}
-          onClick={() => { if(isEditingType) setIsEditingType(false); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if(isEditingType) setIsEditingType(false);
+          }}
         >
           {col.type}
         </span>
-
-        {/* Invisible overlay to close menu when clicking outside (Viewport level) */}
-        {isEditingType && (
-          <div className="fixed top-0 left-0 w-screen h-screen z-[99998] cursor-default" onClick={(e) => { e.stopPropagation(); setIsEditingType(false); }} />
-        )}
       </div>
+
       {/* Source Handle (Right) - For outgoing connections */}
       <Handle
         type="source"
@@ -219,7 +296,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
             if (c.name === oldName) {
               return newCol;
             }
-            // If the updated column is set as Primary Key, unset Primary Key for all other columns
+            // 限制主键只能有一个：如果当前修改的字段被设为主键，则取消其他字段的主键状态
             if (newCol.isPrimary && c.isPrimary) {
               return { ...c, isPrimary: false };
             }
@@ -252,15 +329,15 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
             onKeyDown={(e) => e.key === 'Enter' && handleTitleSave()}
           />
         ) : (
-          <h3 
+          <h3
             className="text-gray-200 text-sm font-medium text-center m-0 cursor-text hover:bg-[#333] px-2 py-0.5 rounded transition-colors"
+            title={`表名：${data.tableName} (双击修改)`}
             onDoubleClick={() => setIsEditingTitle(true)}
           >
             {data.tableName}
           </h3>
         )}
       </div>
-
       {/* Columns */}
       <div className="flex flex-col">
         {data.columns.map((col) => (

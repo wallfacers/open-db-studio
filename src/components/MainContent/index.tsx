@@ -96,10 +96,11 @@ export const MainContent: React.FC<MainContentProps> = ({
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
 }) => {
   const { t } = useTranslation();
-  const { sqlContent, setSql, executeQuery, isExecuting, results, error } = useQueryStore();
+  const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
-  const { explainSql, isExplaining } = useAiStore();
+  const { explainSql, isExplaining, optimizeSql, isOptimizing } = useAiStore();
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [optimization, setOptimization] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const schemaRef = useRef<FullSchemaInfo | null>(null);
@@ -204,6 +205,19 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
   };
 
+  const handleOptimize = async () => {
+    if (!currentSql.trim() || !activeConnectionId) {
+      showToast(t('mainContent.inputSqlAndSelectConnection'));
+      return;
+    }
+    try {
+      const result = await optimizeSql(currentSql, activeConnectionId);
+      setOptimization(result);
+    } catch {
+      showToast(t('mainContent.aiOptimizeFailed'));
+    }
+  };
+
   // 关闭右键菜单
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -292,6 +306,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                   disabled={isExplaining || !activeConnectionId}
                 >
                   {isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}
+                </button>
+                <button
+                  className={`flex items-center px-2 py-1.5 rounded text-xs transition-colors ${isOptimizing ? 'bg-[#1e2d42] text-[#7a9bb8] cursor-not-allowed' : 'bg-[#1e2d42] hover:bg-[#253347] text-gray-300'}`}
+                  onClick={handleOptimize}
+                  disabled={isOptimizing || !activeConnectionId}
+                >
+                  {isOptimizing ? t('mainContent.optimizing') : t('mainContent.optimizeSql')}
                 </button>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Save" onClick={() => showToast(t('mainContent.sqlSaved'))}>
@@ -399,7 +420,14 @@ export const MainContent: React.FC<MainContentProps> = ({
                     {isExecuting ? (
                       <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
                     ) : error ? (
-                      <div className="p-4 text-red-400 text-xs font-mono">{error}</div>
+                      <div className="p-3 text-red-400 text-xs font-mono">
+                        {error}
+                        {diagnosis && (
+                          <div className="mt-2 p-2 bg-[#2b2b2b] rounded text-[#d4d4d4] whitespace-pre-wrap font-sans">
+                            <span className="text-[#3794ff]">{t('mainContent.aiDiagnosis')}</span>{diagnosis}
+                          </div>
+                        )}
+                      </div>
                     ) : currentResults.length === 0 ? (
                       <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : currentResults[selectedResultIdx]?.columns.length === 0 ? (
@@ -449,6 +477,17 @@ export const MainContent: React.FC<MainContentProps> = ({
                     <button onClick={() => setExplanation(null)} className="text-xs text-[#7a9bb8] hover:text-[#c8daea]">✕</button>
                   </div>
                   <p className="text-sm text-[#c8daea] whitespace-pre-wrap">{explanation}</p>
+                </div>
+              )}
+
+              {/* AI 优化面板 */}
+              {optimization && (
+                <div className="border-t border-[#1e2d42] p-4 bg-[#0d1117]">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs text-gray-400 font-medium">{t('mainContent.aiOptimization')}</span>
+                    <button onClick={() => setOptimization(null)} className="text-xs text-[#7a9bb8] hover:text-[#c8daea]">✕</button>
+                  </div>
+                  <p className="text-sm text-[#c8daea] whitespace-pre-wrap">{optimization}</p>
                 </div>
               )}
             </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree, FilePlus2, FileEdit, Layers } from 'lucide-react';
+import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree, FilePlus2, FileEdit, Layers, Sparkles } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
@@ -8,6 +8,7 @@ import { ConnectionModal } from '../ConnectionModal';
 import { TableManageDialog } from '../TableManageDialog';
 import { IndexManager } from '../IndexManager';
 import { ObjectPanel } from '../ObjectPanel';
+import { AiCreateTableDialog } from '../AiCreateTableDialog';
 import type { TableDetail } from '../../types';
 
 interface ExplorerProps {
@@ -51,6 +52,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const [tableManageDialog, setTableManageDialog] = useState<{ tableName?: string } | null>(null);
   const [indexManagerTable, setIndexManagerTable] = useState<string | null>(null);
   const [explorerView, setExplorerView] = useState<'tables' | 'objects'>('tables');
+  const [showAiCreateTable, setShowAiCreateTable] = useState(false);
 
   useEffect(() => {
     loadConnections();
@@ -149,6 +151,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
               <span className="font-medium text-[#c8daea]">{t('explorer.database')}</span>
               <div className="flex items-center space-x-2 text-[#7a9bb8]">
                 <Plus size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => setShowModal(true)} />
+                <span title={t('aiCreateTable.title')} className="flex items-center cursor-pointer hover:text-[#c8daea]" onClick={() => setShowAiCreateTable(true)}><Sparkles size={16} /></span>
                 <RefreshCw size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={handleRefresh} />
               </div>
             </div>
@@ -465,6 +468,16 @@ export const Explorer: React.FC<ExplorerProps> = ({
           tableName={indexManagerTable}
           onClose={() => setIndexManagerTable(null)}
           showToast={showToast}
+        />
+      )}
+
+      {showAiCreateTable && (
+        <AiCreateTableDialog
+          onClose={() => setShowAiCreateTable(false)}
+          showToast={showToast}
+          onRefresh={() => {
+            if (activeConnectionId) loadTables(activeConnectionId);
+          }}
         />
       )}
     </>

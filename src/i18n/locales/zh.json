@@ -243,5 +243,15 @@
     "export": "导出",
     "success": "已导出到 {{path}}",
     "exportData": "导出数据"
+  },
+  "aiCreateTable": {
+    "title": "AI 建表",
+    "describeTable": "描述表结构",
+    "descriptionPlaceholder": "例如：创建一个用户表，包含 id、用户名、邮箱、创建时间，用户名唯一",
+    "generate": "AI 生成 DDL",
+    "generating": "生成中...",
+    "reviewDdl": "检查并编辑生成的 DDL",
+    "executeAndCreate": "执行并创建",
+    "success": "表创建成功"
   }
 }

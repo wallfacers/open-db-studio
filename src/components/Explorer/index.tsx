@@ -83,42 +83,42 @@ export const Explorer: React.FC<ExplorerProps> = ({
 
   return (
     <>
-      <div className="flex flex-col border-r border-[#2b2b2b] bg-[#181818] flex-shrink-0 relative" style={{ width: sidebarWidth }}>
+      <div className="flex flex-col border-r border-[#1e2d42] bg-[#0d1117] flex-shrink-0 relative" style={{ width: sidebarWidth }}>
         <div
-          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#3794ff] z-10 transition-colors"
+          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
           onMouseDown={handleSidebarResize}
         ></div>
 
         {activeActivity === 'database' ? (
           <>
-            <div className="h-10 flex items-center justify-between px-3 border-b border-[#2b2b2b]">
-              <span className="font-medium text-[#d4d4d4]">{t('explorer.database')}</span>
-              <div className="flex items-center space-x-2 text-[#858585]">
-                <Plus size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => setShowModal(true)} />
-                <RefreshCw size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={handleRefresh} />
+            <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42]">
+              <span className="font-medium text-[#c8daea]">{t('explorer.database')}</span>
+              <div className="flex items-center space-x-2 text-[#7a9bb8]">
+                <Plus size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => setShowModal(true)} />
+                <RefreshCw size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={handleRefresh} />
               </div>
             </div>
-            <div className="p-2 border-b border-[#2b2b2b]">
-              <div className="flex items-center bg-[#252526] border border-[#3c3c3c] rounded px-2 py-1 focus-within:border-[#007acc] transition-colors">
-                <Search size={14} className="text-[#858585] mr-1" />
+            <div className="p-2 border-b border-[#1e2d42]">
+              <div className="flex items-center bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-1 focus-within:border-[#00a98f] transition-colors">
+                <Search size={14} className="text-[#7a9bb8] mr-1" />
                 <input
                   type="text"
                   placeholder={t('explorer.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent border-none outline-none text-[#d4d4d4] w-full text-xs placeholder-[#858585]"
+                  className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"
                 />
                 {searchQuery && (
-                  <X size={14} className="text-[#858585] ml-1 cursor-pointer hover:text-[#d4d4d4]" onClick={() => setSearchQuery('')} />
+                  <X size={14} className="text-[#7a9bb8] ml-1 cursor-pointer hover:text-[#c8daea]" onClick={() => setSearchQuery('')} />
                 )}
               </div>
             </div>
             <div className="flex-1 overflow-y-auto py-2">
               {connections.length === 0 ? (
-                <div className="px-3 py-4 text-center text-xs text-[#858585]">
+                <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
                   <DatabaseZap size={24} className="mx-auto mb-2 opacity-30" />
                   <p>{t('explorer.noConnections')}</p>
-                  <p className="mt-1 text-[#3794ff] cursor-pointer hover:underline" onClick={() => setShowModal(true)}>{t('explorer.newConnection')}</p>
+                  <p className="mt-1 text-[#00c9a7] cursor-pointer hover:underline" onClick={() => setShowModal(true)}>{t('explorer.newConnection')}</p>
                 </div>
               ) : (
                 connections
@@ -143,7 +143,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                       />
                       {expandedFolders[`conn_${conn.id}`] && activeConnectionId === conn.id && (
                         tables.length === 0 ? (
-                          <div className="px-3 py-1 text-xs text-[#858585]" style={{ paddingLeft: '2rem' }}>{t('explorer.noTables')}</div>
+                          <div className="px-3 py-1 text-xs text-[#7a9bb8]" style={{ paddingLeft: '2rem' }}>{t('explorer.noTables')}</div>
                         ) : (
                           tables.map(t => (
                             <TreeItem
@@ -164,7 +164,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-[#858585]">
+          <div className="flex-1 flex items-center justify-center text-[#7a9bb8]">
             <div className="text-center">
               <LayoutDashboard size={48} className="mx-auto mb-4 opacity-20" />
               <p>{t('explorer.databaseOverview')}</p>
@@ -176,11 +176,11 @@ export const Explorer: React.FC<ExplorerProps> = ({
       {connContextMenu && (
         <div
           ref={connMenuRef}
-          className="fixed z-50 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg py-1 min-w-[140px]"
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[140px]"
           style={{ left: connContextMenu.x, top: connContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#d4d4d4] enabled:hover:bg-[#094771] enabled:hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#c8daea] enabled:hover:bg-[#003d2f] enabled:hover:text-white"
             disabled={activeConnectionId === connContextMenu.connId}
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
@@ -192,7 +192,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
             打开连接
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#d4d4d4] enabled:hover:bg-[#094771] enabled:hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#c8daea] enabled:hover:bg-[#003d2f] enabled:hover:text-white"
             disabled={activeConnectionId !== connContextMenu.connId}
             onClick={() => {
               disconnectConnection(connContextMenu.connId);
@@ -203,7 +203,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
             关闭连接
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
               if (conn) onNewQuery(conn.id, conn.name);
@@ -214,7 +214,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
             新建查询
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
               if (conn) setEditingConn(conn);
@@ -224,9 +224,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
             <Pencil size={13} />
             {t('explorer.edit')}
           </button>
-          <div className="h-px bg-[#3c3c3c] my-1" />
+          <div className="h-px bg-[#2a3f5a] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#094771] hover:text-red-300 flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#003d2f] hover:text-red-300 flex items-center gap-2"
             onClick={() => {
               handleDeleteConnection(connContextMenu.connId);
               setConnContextMenu(null);

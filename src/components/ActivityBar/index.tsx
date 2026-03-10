@@ -25,9 +25,9 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className={`flex flex-col py-2 border-r border-[#2b2b2b] bg-[#181818] justify-between flex-shrink-0 z-20 transition-all duration-300 ${isExpanded ? 'w-48' : 'w-14'}`}>
+    <div className={`flex flex-col py-2 border-r border-[#1e2d42] bg-[#0d1117] justify-between flex-shrink-0 z-20 transition-all duration-300 ${isExpanded ? 'w-48' : 'w-14'}`}>
       <div className="flex flex-col w-full">
-        <div className={`flex items-center justify-between transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} hover:bg-[#2b2b2b] border-l-[3px] border-transparent`}>
+        <div className={`flex items-center justify-between transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} hover:bg-[#1e2d42] border-l-[3px] border-transparent`}>
           {isExpanded ? (
             <>
               <div 
@@ -35,13 +35,13 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                 title={t('activity.userProfile')} 
                 onClick={() => showToast(t('activity.openUserProfile'))}
               >
-                <div className="w-6 h-6 rounded-full bg-[#3794ff] flex items-center justify-center text-white mr-3 flex-shrink-0">
+                <div className="w-6 h-6 rounded-full bg-[#00c9a7] flex items-center justify-center text-white mr-3 flex-shrink-0">
                   <User size={14} />
                 </div>
-                <span className="text-[#d4d4d4] text-[13px] truncate">{t('activity.userProfile')}</span>
+                <span className="text-[#c8daea] text-[13px] truncate">{t('activity.userProfile')}</span>
               </div>
               <div 
-                className="flex items-center justify-center cursor-pointer text-[#858585] hover:text-white"
+                className="flex items-center justify-center cursor-pointer text-[#7a9bb8] hover:text-white"
                 title={t('activity.collapse')}
                 onClick={() => setIsExpanded(false)}
               >
@@ -50,7 +50,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             </>
           ) : (
             <div 
-              className="w-12 h-12 flex items-center justify-center cursor-pointer text-[#858585] hover:text-white"
+              className="w-12 h-12 flex items-center justify-center cursor-pointer text-[#7a9bb8] hover:text-white"
               title={t('activity.expand')}
               onClick={() => setIsExpanded(true)}
             >
@@ -60,7 +60,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         </div>
         
         <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'database' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'database' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
           onClick={() => {
             setActiveActivity('database');
             setIsSidebarOpen(true);
@@ -72,7 +72,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         </div>
         
         <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'dashboard' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'dashboard' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
           onClick={() => {
             setActiveActivity('dashboard');
             setIsSidebarOpen(true);
@@ -84,7 +84,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         </div>
         
         <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'chat' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'chat' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
           onClick={() => {
             setActiveActivity('chat');
             setIsAssistantOpen(true);
@@ -96,7 +96,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         </div>
         
         <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'grid' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'grid' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
           onClick={() => setActiveActivity('grid')}
           title={t('activity.gridView')}
         >
@@ -107,7 +107,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       
       <div className="flex flex-col w-full">
         <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent`}
           onClick={() => {
             const el = document.getElementById('refresh-icon');
             if (el) {
@@ -122,19 +122,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         </div>
         
         <div 
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent`}
           title={t('activity.notifications')} 
           onClick={() => showToast(t('activity.openNotifications'))}
         >
           <div className="relative">
             <Bell size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            <span className={`absolute bg-[#3794ff] ${isExpanded ? 'top-0 right-3 w-2 h-2' : 'top-0 right-0 w-2 h-2'}`}></span>
+            <span className={`absolute bg-[#00c9a7] ${isExpanded ? 'top-0 right-3 w-2 h-2' : 'top-0 right-0 w-2 h-2'}`}></span>
           </div>
           {isExpanded && <span className="text-[13px] truncate">{t('activity.notifications')}</span>}
         </div>
         
         <div
-          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
+          className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
           title={t('activity.settings')}
           onClick={() => { setActiveActivity('settings'); setIsSidebarOpen(true); }}
         >

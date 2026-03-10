@@ -139,6 +139,9 @@
     "saved": "✓ Saved",
     "saving": "Saving...",
     "save": "Save",
+    "testConnection": "Test Connection",
+    "testing": "Testing...",
+    "testSuccess": "Connection successful",
     "supportInfo": "Supports OpenAI compatible interfaces (OpenAI, Azure OpenAI, local Ollama, third-party proxies, etc.). API Key is stored locally using AES-256-GCM encryption."
   },
   "app": {
@@ -156,7 +159,11 @@
     "shortcutsDesc": "Customize keyboard shortcuts, stay tuned.",
     "appName": "App Name:",
     "positioning": "Positioning:",
-    "techStack": "Tech Stack:"
+    "techStack": "Tech Stack:",
+    "language": "Language",
+    "languageDesc": "Switch display language. Takes effect immediately.",
+    "languageZh": "Chinese (中文)",
+    "languageEn": "English"
   },
   "erDiagram": {
     "addTable": "Add Table",

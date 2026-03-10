@@ -4,7 +4,7 @@ import { TableNodeData } from '../components/TableNode';
 const edgeOptions = {
   type: 'bezier',
   animated: false,
-  style: { stroke: '#a1a1aa', strokeWidth: 2 },
+  style: { stroke: '#2a3f5a', strokeWidth: 2 },
 };
 
 export const initialNodes: Node<TableNodeData>[] = [

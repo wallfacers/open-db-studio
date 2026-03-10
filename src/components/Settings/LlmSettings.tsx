@@ -53,13 +53,13 @@ export function LlmSettingsPanel() {
     }
   };
 
-  const inputClass = 'w-full bg-[#2a2a2a] border border-[#3a3a3a] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#0078d4]';
+  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
     <div className="w-full max-w-lg">
       <div className="p-8 space-y-4">
-        <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">{t('llmSettings.aiModelConfig')}</h3>
+        <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('llmSettings.aiModelConfig')}</h3>
 
         <div>
           <label className={labelClass}>{t('llmSettings.apiKey')}</label>
@@ -95,18 +95,18 @@ export function LlmSettingsPanel() {
           <button
             onClick={handleTest}
             disabled={testStatus === 'testing' || !form.api_key}
-            className="px-4 py-1.5 text-sm border border-[#3a3a3a] text-[#d4d4d4] hover:bg-[#2a2a2a] rounded disabled:opacity-50 flex items-center gap-1.5"
+            className="px-4 py-1.5 text-sm border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
           >
             {testStatus === 'testing' && <Loader2 size={13} className="animate-spin" />}
             {testStatus === 'success' && <CheckCircle size={13} className="text-green-400" />}
             {testStatus === 'fail' && <XCircle size={13} className="text-red-400" />}
-            {testStatus === 'testing' ? '测试中...' : '测试连接'}
+            {testStatus === 'testing' ? t('llmSettings.testing') : t('llmSettings.testConnection')}
           </button>
 
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-1.5 text-sm bg-[#0078d4] hover:bg-[#006bc2] text-white rounded disabled:opacity-50"
+            className="px-4 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
           >
             {saved ? t('llmSettings.saved') : saving ? t('llmSettings.saving') : t('llmSettings.save')}
           </button>
@@ -114,7 +114,7 @@ export function LlmSettingsPanel() {
 
         {testStatus === 'success' && (
           <p className="text-xs text-green-400 flex items-center gap-1">
-            <CheckCircle size={12} /> 连接成功
+            <CheckCircle size={12} /> {t('llmSettings.testSuccess')}
           </p>
         )}
         {testStatus === 'fail' && testError && (
@@ -123,7 +123,7 @@ export function LlmSettingsPanel() {
           </p>
         )}
 
-        <p className="text-xs text-[#858585] pt-2">
+        <p className="text-xs text-[#7a9bb8] pt-2">
           {t('llmSettings.supportInfo')}
         </p>
       </div>

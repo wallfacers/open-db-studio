@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bot, Keyboard, Palette, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import { LlmSettingsPanel } from './LlmSettings';
 
 export function SettingsPage() {
@@ -15,17 +16,17 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className="flex-1 flex min-w-0 bg-[#1e1e1e]">
+    <div className="flex-1 flex min-w-0 bg-[#111922]">
       {/* 左侧导航 */}
-      <div className="w-48 flex-shrink-0 bg-[#181818] border-r border-[#2b2b2b] pt-4">
-        <div className="px-4 pb-3 text-xs text-[#858585] font-medium uppercase tracking-wider">{t('settings.title')}</div>
+      <div className="w-48 flex-shrink-0 bg-[#0d1117] border-r border-[#1e2d42] pt-4">
+        <div className="px-4 pb-3 text-xs text-[#7a9bb8] font-medium uppercase tracking-wider">{t('settings.title')}</div>
         {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
             className={`w-full flex items-center px-4 py-2 text-sm text-left transition-colors ${
               activeSection === id
-                ? 'bg-[#094771] text-white border-l-2 border-[#3794ff]'
-                : 'text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2a2a2a] border-l-2 border-transparent'
+                ? 'bg-[#003d2f] text-white border-l-2 border-[#00c9a7]'
+                : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] border-l-2 border-transparent'
             }`}
             onClick={() => setActiveSection(id)}
           >
@@ -38,9 +39,7 @@ export function SettingsPage() {
       {/* 右侧内容 */}
       <div className="flex-1 overflow-y-auto flex flex-col items-center">
         {activeSection === 'ai' && <LlmSettingsPanel />}
-        {activeSection === 'appearance' && (
-          <PlaceholderSection title={t('settings.appearance')} description={t('settings.appearanceDesc')} />
-        )}
+        {activeSection === 'appearance' && <AppearanceSection t={t} />}
         {activeSection === 'shortcuts' && (
           <PlaceholderSection title={t('settings.shortcuts')} description={t('settings.shortcutsDesc')} />
         )}
@@ -50,10 +49,49 @@ export function SettingsPage() {
   );
 }
 
+function AppearanceSection({ t }: { t: any }) {
+  const [currentLang, setCurrentLang] = useState(i18n.language?.startsWith('zh') ? 'zh' : 'en');
+
+  const handleLanguageChange = (lang: string) => {
+    setCurrentLang(lang);
+    i18n.changeLanguage(lang);
+  };
+
+  return (
+    <div className="w-full max-w-lg p-8 space-y-6">
+      <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('settings.appearance')}</h3>
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.language')}</p>
+          <p className="text-xs text-[#7a9bb8] mb-3">{t('settings.languageDesc')}</p>
+          <div className="flex gap-2">
+            {[
+              { value: 'zh', label: t('settings.languageZh') },
+              { value: 'en', label: t('settings.languageEn') },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => handleLanguageChange(value)}
+                className={`px-4 py-1.5 text-xs rounded transition-colors ${
+                  currentLang === value
+                    ? 'bg-[#003d2f] text-white border border-[#00c9a7]'
+                    : 'text-[#7a9bb8] border border-[#2a3f5a] hover:text-[#c8daea] hover:border-[#2a3f5a]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlaceholderSection({ title, description }: { title: string; description: string }) {
   return (
-    <div className="w-full max-w-lg p-8 text-center text-[#858585]">
-      <p className="text-sm font-medium text-[#d4d4d4] mb-2">{title}</p>
+    <div className="w-full max-w-lg p-8 text-center text-[#7a9bb8]">
+      <p className="text-sm font-medium text-[#c8daea] mb-2">{title}</p>
       <p className="text-xs">{description}</p>
     </div>
   );
@@ -62,11 +100,11 @@ function PlaceholderSection({ title, description }: { title: string; description
 function AboutSection({ t }: { t: any }) {
   return (
     <div className="w-full max-w-lg p-8 space-y-3">
-      <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">{t('settings.about')}</h3>
-      <div className="space-y-2 text-xs text-[#858585]">
-        <p><span className="text-[#d4d4d4]">{t('settings.appName')}</span>open-db-studio</p>
-        <p><span className="text-[#d4d4d4]">{t('settings.positioning')}</span>AI-Native Database Client</p>
-        <p><span className="text-[#d4d4d4]">{t('settings.techStack')}</span>Tauri 2.x · React 18 · Rust</p>
+      <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('settings.about')}</h3>
+      <div className="space-y-2 text-xs text-[#7a9bb8]">
+        <p><span className="text-[#c8daea]">{t('settings.appName')}</span>open-db-studio</p>
+        <p><span className="text-[#c8daea]">{t('settings.positioning')}</span>AI-Native Database Client</p>
+        <p><span className="text-[#c8daea]">{t('settings.techStack')}</span>Tauri 2.x · React 18 · Rust</p>
       </div>
     </div>
   );

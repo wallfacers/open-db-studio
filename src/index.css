@@ -1,21 +1,72 @@
 @import "tailwindcss";
 
-.token.keyword { color: #569cd6; }
-.token.string { color: #ce9178; }
-.token.number { color: #b5cea8; }
-.token.function { color: #dcdcaa; }
-.token.operator { color: #d4d4d4; }
-.token.punctuation { color: #d4d4d4; }
-.token.comment { color: #6a9955; }
-.token.boolean { color: #569cd6; }
-.token.property { color: #9cdcfe; }
-.token.class-name { color: #4ec9b0; }
-.token.builtin { color: #4ec9b0; }
+/* 隐藏浏览器原生密码查看按钮（Edge/IE） */
+.no-password-reveal::-ms-reveal,
+.no-password-reveal::-ms-clear {
+  display: none;
+}
 
-/* Custom Scrollbar */
+/* ============================================================
+   ABYSS THEME — open-db-studio 暗黑主题色彩系统
+   设计语言：深海军蓝底色 + 电光青主题色
+   ============================================================ */
+
+:root {
+  /* --- 背景层级 (深度从深到浅) --- */
+  --bg-void:     #080d12;  /* 最深背景，app根节点 */
+  --bg-base:     #0d1117;  /* 面板/侧边栏 */
+  --bg-panel:    #111922;  /* 主内容区 */
+  --bg-elevated: #151d28;  /* 卡片/悬浮面板 */
+  --bg-hover:    #1a2639;  /* hover状态背景 */
+  --bg-active:   #003d2f;  /* 选中/激活背景 */
+
+  /* --- 边框 --- */
+  --border-subtle:  #161e2e;  /* 极细分隔线 */
+  --border-default: #1e2d42;  /* 默认边框 */
+  --border-strong:  #2a3f5a;  /* 强调边框 */
+  --border-focus:   #00a98f;  /* 焦点边框 */
+
+  /* --- 文字 --- */
+  --text-ghost:   #2a3e56;  /* 禁用/极暗 */
+  --text-muted:   #4a6480;  /* 占位符 */
+  --text-subtle:  #7a9bb8;  /* 次要信息 */
+  --text-default: #c8daea;  /* 正文 */
+  --text-bright:  #e8f4ff;  /* 标题/高亮文字 */
+
+  /* --- 主题色 Abyss Cyan --- */
+  --accent-deep:    #003d2f;  /* 激活背景 */
+  --accent-muted:   #00a98f;  /* 次要强调 */
+  --accent:         #00c9a7;  /* 主题色 */
+  --accent-bright:  #29edd0;  /* hover强调 */
+
+  /* --- 语义颜色 --- */
+  --color-success: #4ade80;
+  --color-warning: #f59e0b;
+  --color-error:   #f43f5e;
+  --color-info:    #5eb2f7;
+}
+
+/* ============================================================
+   SQL 语法高亮 — Abyss Prism Theme
+   ============================================================ */
+.token.keyword    { color: #5eb2f7; }   /* 关键字 — 冰蓝 */
+.token.string     { color: #e8a87c; }   /* 字符串 — 暖珊瑚 */
+.token.number     { color: #9de0b2; }   /* 数字 — 薄荷绿 */
+.token.function   { color: #e8d87a; }   /* 函数 — 琥珀金 */
+.token.operator   { color: #c8daea; }   /* 运算符 — 主文本 */
+.token.punctuation{ color: #c8daea; }   /* 标点 */
+.token.comment    { color: #4caf76; font-style: italic; }  /* 注释 — 翠绿 */
+.token.boolean    { color: #5eb2f7; }   /* 布尔 — 冰蓝 */
+.token.property   { color: #88d8ff; }   /* 属性 — 天蓝 */
+.token.class-name { color: #00c9a7; }   /* 类名 — 主题色 */
+.token.builtin    { color: #00c9a7; }   /* 内建 — 主题色 */
+
+/* ============================================================
+   滚动条样式 — Abyss Style
+   ============================================================ */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -23,23 +74,56 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #424242;
-  border-radius: 6px;
-  border: 3px solid transparent;
+  background-color: #1e2d42;
+  border-radius: 5px;
+  border: 2px solid transparent;
   background-clip: content-box;
+  transition: background-color 0.2s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #4f4f4f;
+  background-color: #2a3f5a;
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #424242 transparent;
+  scrollbar-color: #1e2d42 transparent;
 }
 
-/* Hide React Flow Attribution for open source project */
+/* ============================================================
+   Hide React Flow Attribution for open source project
+   ============================================================ */
 .react-flow__panel.react-flow__attribution {
   display: none !important;
+}
+
+/* ============================================================
+   全局微纹理 — 给深色背景增加深度感
+   ============================================================ */
+body {
+  background-color: #080d12;
+}
+
+/* 细微的扫描线纹理，仅在深色区域生效 */
+.abyss-texture {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 201, 167, 0.012) 2px,
+      rgba(0, 201, 167, 0.012) 4px
+    );
+}
+
+/* 主题色发光效果 */
+.accent-glow {
+  box-shadow: 0 0 12px rgba(0, 201, 167, 0.25), 0 0 4px rgba(0, 201, 167, 0.15);
+}
+
+/* 激活边框左侧指示线动画 */
+@keyframes accent-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }

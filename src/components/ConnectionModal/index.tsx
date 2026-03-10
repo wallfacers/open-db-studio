@@ -66,12 +66,12 @@ export function ConnectionModal({ onClose, connection }: Props) {
     }
   };
 
-  const inputClass = 'w-full bg-[#2a2a2a] border border-[#3a3a3a] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#0078d4]';
+  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#1e1e1e] border border-[#3a3a3a] rounded-lg w-[480px] p-6">
+      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[480px] p-6">
         <h2 className="text-white font-semibold mb-4">{isEdit ? t('connectionModal.editConnection') : t('connectionModal.newConnection')}</h2>
 
         <div className="space-y-3">
@@ -135,16 +135,16 @@ export function ConnectionModal({ onClose, connection }: Props) {
 
         <div className="flex justify-between mt-5">
           <button onClick={handleTest} disabled={testing}
-            className="px-3 py-1.5 text-sm bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white rounded disabled:opacity-50">
+            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded disabled:opacity-50">
             {testing ? t('connectionModal.testing') : t('connectionModal.testConnection')}
           </button>
           <div className="flex gap-2">
             <button onClick={onClose}
-              className="px-3 py-1.5 text-sm bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white rounded">
+              className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">
               {t('connectionModal.cancel')}
             </button>
             <button onClick={handleSave} disabled={saving || !form.name.trim()}
-              className="px-3 py-1.5 text-sm bg-[#0078d4] hover:bg-[#006bc2] text-white rounded disabled:opacity-50">
+              className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
               {saving ? t('connectionModal.saving') : isEdit ? t('connectionModal.saveChanges') : t('connectionModal.save')}
             </button>
           </div>

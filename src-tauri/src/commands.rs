@@ -247,7 +247,17 @@ pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasou
     let config = crate::db::get_connection_config(params.connection_id)?;
     let ds = crate::datasource::create_datasource(&config).await?;
 
+    // 限制最大页面大小，防止大量数据查询耗尽内存
+    if params.page_size > 10_000 {
+        return Err(crate::AppError::Other(
+            format!("page_size exceeds maximum allowed value (10000), got {}", params.page_size)
+        ));
+    }
+
     let offset = params.page.saturating_sub(1) * params.page_size;
+    // 安全说明：where_clause 和 order_clause 是前端传入的自由文本，直接嵌入 SQL。
+    // 这是设计决策：本应用为本地桌面工具，Tauri IPC 仅限本机访问，信任边界为本地用户。
+    // 在实现网络化部署时必须改用参数绑定或 AST 白名单。
     let where_part = params.where_clause
         .filter(|s| !s.trim().is_empty())
         .map(|s| format!(" WHERE {}", s))
@@ -300,7 +310,12 @@ pub async fn update_row(
             pk_value.replace('\'', "''")
         ),
     };
-    ds.execute(&sql).await?;
+    let result = ds.execute(&sql).await?;
+    if result.row_count == 0 {
+        return Err(crate::AppError::Other(
+            format!("No rows updated: pk_column='{}', pk_value='{}' not found in table '{}'", pk_column, pk_value, table)
+        ));
+    }
     Ok(())
 }
 
@@ -327,7 +342,12 @@ pub async fn delete_row(
             pk_value.replace('\'', "''")
         ),
     };
-    ds.execute(&sql).await?;
+    let result = ds.execute(&sql).await?;
+    if result.row_count == 0 {
+        return Err(crate::AppError::Other(
+            format!("No rows deleted: pk_column='{}', pk_value='{}' not found in table '{}'", pk_column, pk_value, table)
+        ));
+    }
     Ok(())
 }
 
@@ -399,4 +419,37 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
         .map_err(|e| crate::AppError::Other(format!("Failed to write file: {}", e)))?;
 
     Ok(params.output_path)
+}
+
+// ============ AI 高级命令 ============
+
+#[tauri::command]
+pub async fn ai_optimize_sql(sql: String, connection_id: i64) -> AppResult<String> {
+    let client = build_llm_client()?;
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let schema = ds.get_schema().await?;
+    let schema_context = schema.tables.iter()
+        .map(|t| format!("Table: {}", t.name))
+        .collect::<Vec<_>>().join("\n");
+    client.optimize_sql(&sql, &schema_context, &config.driver).await
+}
+
+#[tauri::command]
+pub async fn ai_create_table(description: String, connection_id: i64) -> AppResult<String> {
+    let client = build_llm_client()?;
+    let config = crate::db::get_connection_config(connection_id)?;
+    client.create_table_ddl(&description, &config.driver).await
+}
+
+#[tauri::command]
+pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: i64) -> AppResult<String> {
+    let client = build_llm_client()?;
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let schema = ds.get_schema().await?;
+    let schema_context = schema.tables.iter()
+        .map(|t| format!("Table: {}", t.name))
+        .collect::<Vec<_>>().join("\n");
+    client.diagnose_error(&sql, &error_msg, &schema_context, &config.driver).await
 }

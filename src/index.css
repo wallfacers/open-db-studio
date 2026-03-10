@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+.token.keyword { color: #569cd6; }
+.token.string { color: #ce9178; }
+.token.number { color: #b5cea8; }
+.token.function { color: #dcdcaa; }
+.token.operator { color: #d4d4d4; }
+.token.punctuation { color: #d4d4d4; }
+.token.comment { color: #6a9955; }
+.token.boolean { color: #569cd6; }
+.token.property { color: #9cdcfe; }
+.token.class-name { color: #4ec9b0; }
+.token.builtin { color: #4ec9b0; }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #424242;
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #4f4f4f;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #424242 transparent;
+}
+
+/* Hide React Flow Attribution for open source project */
+.react-flow__panel.react-flow__attribution {
+  display: none !important;
+}

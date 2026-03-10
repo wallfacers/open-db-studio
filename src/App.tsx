@@ -1,0 +1,345 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { ActivityBar } from './components/ActivityBar';
+import { Explorer } from './components/Explorer';
+import { MainContent } from './components/MainContent';
+import { Assistant } from './components/Assistant';
+import { Toast } from './components/Toast';
+
+export interface TabData {
+  id: string;
+  type: 'query' | 'table' | 'er_diagram';
+  title: string;
+  db?: string;
+}
+
+export default function App() {
+  const [activeActivity, setActiveActivity] = useState('database');
+  const [isAssistantOpen, setIsAssistantOpen] = useState(true);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
+    'demo': true,
+    'birth_analysis': true,
+    '表': true,
+  });
+  const [activeTab, setActiveTab] = useState('er_diagram');
+  const [tabs, setTabs] = useState<TabData[]>([
+    { id: 'birth_analysis', type: 'query', title: 'birth_analysis', db: 'demo' },
+    { id: 'er_diagram', type: 'er_diagram', title: 'ER Diagram', db: 'demo' }
+  ]);
+  const [resultsTab, setResultsTab] = useState('result1');
+  
+  const [sqlContent, setSqlContent] = useState(`SELECT analysis_date, time_period, birth_rate, growth_rate, gender_ratio,
+avg_birth_weight
+FROM birth_trend_analysis
+WHERE region_id = 1
+  AND YEAR(analysis_date) = 2023
+ORDER BY analysis_date, time_period;
+
+SELECT
+    r.name AS region_name, ba.analysis_date, ba.birth_rate, ba.growth_rate,
+    ba.gender_ratio, ba.avg_birth_weight, ba.analysis_result
+FROM
+    birth_trend_analysis ba
+JOIN
+    region r ON ba.region_id = r.id;`);
+
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isPageSizeMenuOpen, setIsPageSizeMenuOpen] = useState(false);
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
+  const [isTableMenuOpen, setIsTableMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [tableData, setTableData] = useState([
+    ['2023-01-01', '月度', '12.56', '0.78', '105.23'],
+    ['2023-02-01', '月度', '13.15', '0.78', '105.23'],
+    ['2023-03-01', '月度', '10.99', '1.23', '104.98'],
+    ['2023-04-01', '月度', '11.89', '-0.56', '106.12'],
+    ['2023-05-01', '月度', '13.21', '0.90', '105.56'],
+    ['2023-06-01', '月度', '11.30', '1.12', '104.78'],
+    ['2023-07-01', '月度', '13.45', '-0.67', '106.34'],
+  ]);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionTime, setExecutionTime] = useState(46);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Resizable panel states
+  const [sidebarWidth, setSidebarWidth] = useState(256);
+  const [resultsHeight, setResultsHeight] = useState(300);
+  const [assistantWidth, setAssistantWidth] = useState(320);
+
+  const [chatInput, setChatInput] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: 'user',
+      content: '帮我分析2023年上海市出生率变化'
+    },
+    {
+      role: 'ai',
+      content: (
+        <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
+          <p>基于用户输入，匹配到如下表</p>
+          
+          <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#ce9178] break-all">
+            ["birth_trend_analysis", "region"]
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">birth_trend_analysis</span>
+            <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">region</span>
+          </div>
+          
+          <p className="leading-relaxed">为了分析2023年上海市的出生率变化，我们需要从</p>
+        </div>
+      )
+    }
+  ]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const toggleFolder = (folder: string) => {
+    setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
+  };
+
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+    
+    setChatMessages(prev => [
+      ...prev,
+      { role: 'user', content: chatInput }
+    ]);
+    
+    const currentInput = chatInput;
+    setChatInput('');
+    
+    setTimeout(() => {
+      setChatMessages(prev => [
+        ...prev,
+        { 
+          role: 'ai', 
+          content: (
+            <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
+              <p>我已经接收到您的请求：“{currentInput}”。</p>
+              <p>正在为您生成相应的 SQL 查询...</p>
+              <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#569cd6] break-all">
+                SELECT * FROM birth_trend_analysis LIMIT 10;
+              </div>
+            </div>
+          )
+        }
+      ]);
+    }, 1000);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
+
+  const closeTab = (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation();
+    const newTabs = tabs.filter(t => t.id !== tabId);
+    setTabs(newTabs);
+    if (activeTab === tabId && newTabs.length > 0) {
+      setActiveTab(newTabs[newTabs.length - 1].id);
+    } else if (newTabs.length === 0) {
+      setActiveTab('');
+    }
+  };
+
+  const handleTableClick = (tableName: string, dbName: string = 'MySQL_demo') => {
+    const tabId = `table_${dbName}_${tableName}`;
+    setTabs(prev => {
+      if (!prev.find(t => t.id === tabId)) {
+        return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName }];
+      }
+      return prev;
+    });
+    setActiveTab(tabId);
+  };
+
+  const handleExecute = () => {
+    setIsExecuting(true);
+    setResultsTab('result1');
+    
+    // Simulate execution delay
+    setTimeout(() => {
+      setIsExecuting(false);
+      setExecutionTime(Math.floor(Math.random() * 100) + 20);
+      
+      // Shuffle data slightly to show it "updated"
+      setTableData(prev => {
+        const newData = [...prev];
+        const first = newData.shift();
+        if (first) newData.push(first);
+        return newData;
+      });
+    }, 800);
+  };
+
+  const handleFormat = () => {
+    // Simple mock formatting - just add some spaces
+    setSqlContent(prev => prev.replace(/SELECT/g, '\nSELECT').trim());
+  };
+
+  const handleClear = () => {
+    setSqlContent('');
+  };
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setIsExportMenuOpen(false);
+      setIsPageSizeMenuOpen(false);
+      setIsModelMenuOpen(false);
+      setIsDbMenuOpen(false);
+      setIsTableMenuOpen(false);
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  // Resize handlers
+  const handleSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(150, Math.min(600, startWidth + (moveEvent.clientX - startX)));
+      setSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleResultsResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = resultsHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const newHeight = Math.max(100, Math.min(window.innerHeight - 150, startHeight - (moveEvent.clientY - startY)));
+      setResultsHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleAssistantResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = assistantWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const newWidth = Math.max(200, Math.min(800, startWidth - (moveEvent.clientX - startX)));
+      setAssistantWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  return (
+    <div className="h-screen w-screen flex bg-[#141414] text-[#cccccc] overflow-hidden font-sans text-[13px] select-none">
+      <ActivityBar 
+        activeActivity={activeActivity}
+        setActiveActivity={setActiveActivity}
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
+        isAssistantOpen={isAssistantOpen}
+        setIsAssistantOpen={setIsAssistantOpen}
+        showToast={showToast}
+      />
+      
+      <Explorer 
+        isSidebarOpen={isSidebarOpen}
+        sidebarWidth={sidebarWidth}
+        handleSidebarResize={handleSidebarResize}
+        showToast={showToast}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        expandedFolders={expandedFolders}
+        toggleFolder={toggleFolder}
+        activeActivity={activeActivity}
+        onTableClick={handleTableClick}
+      />
+
+      <MainContent 
+        tabs={tabs}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        closeTab={closeTab}
+        sqlContent={sqlContent}
+        setSqlContent={setSqlContent}
+        handleExecute={handleExecute}
+        isExecuting={isExecuting}
+        handleFormat={handleFormat}
+        handleClear={handleClear}
+        showToast={showToast}
+        isDbMenuOpen={isDbMenuOpen}
+        setIsDbMenuOpen={setIsDbMenuOpen}
+        isTableMenuOpen={isTableMenuOpen}
+        setIsTableMenuOpen={setIsTableMenuOpen}
+        resultsHeight={resultsHeight}
+        handleResultsResize={handleResultsResize}
+        resultsTab={resultsTab}
+        setResultsTab={setResultsTab}
+        isPageSizeMenuOpen={isPageSizeMenuOpen}
+        setIsPageSizeMenuOpen={setIsPageSizeMenuOpen}
+        isExportMenuOpen={isExportMenuOpen}
+        setIsExportMenuOpen={setIsExportMenuOpen}
+        tableData={tableData}
+        executionTime={executionTime}
+      />
+
+      <Assistant 
+        isAssistantOpen={isAssistantOpen}
+        assistantWidth={assistantWidth}
+        handleAssistantResize={handleAssistantResize}
+        setIsAssistantOpen={setIsAssistantOpen}
+        showToast={showToast}
+        chatMessages={chatMessages}
+        setChatMessages={setChatMessages}
+        chatEndRef={chatEndRef}
+        chatInput={chatInput}
+        setChatInput={setChatInput}
+        handleKeyDown={handleKeyDown}
+        handleSendMessage={handleSendMessage}
+        isModelMenuOpen={isModelMenuOpen}
+        setIsModelMenuOpen={setIsModelMenuOpen}
+      />
+
+      <Toast message={toastMessage} />
+    </div>
+  );
+}

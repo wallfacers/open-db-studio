@@ -1,0 +1,5 @@
+{
+  "name": "Chat2DB Clone",
+  "description": "A clone of the Chat2DB database client interface.",
+  "requestFramePermissions": []
+}

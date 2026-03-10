@@ -237,7 +237,20 @@ export function LlmSettingsPanel() {
           </p>
         )}
 
-        <p className="text-xs text-[#7a9bb8] pt-2">{t('llmSettings.supportInfo')}</p>
+        {form.preset === 'alicloud' ? (
+          <div className="pt-2 space-y-2">
+            <p className="text-xs text-[#7a9bb8]">{t('llmSettings.supportInfoCodingPlan')}</p>
+            <div className="bg-[#0d1a26] border border-[#1e2d42] rounded px-3 py-2 font-mono text-xs text-[#7ecba1] space-y-0.5">
+              <div><span className="text-[#5b8ab0]">ANTHROPIC_AUTH_TOKEN</span>=<span className="text-[#c8daea]">{form.api_key || 'YOUR_API_KEY'}</span></div>
+              <div><span className="text-[#5b8ab0]">ANTHROPIC_BASE_URL</span>=<span className="text-[#c8daea]">{form.base_url}</span></div>
+              <div><span className="text-[#5b8ab0]">ANTHROPIC_MODEL</span>=<span className="text-[#c8daea]">{form.model}</span></div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-[#7a9bb8] pt-2">
+            {form.api_type === 'anthropic' ? t('llmSettings.supportInfoAnthropic') : t('llmSettings.supportInfo')}
+          </p>
+        )}
       </div>
     </div>
   );

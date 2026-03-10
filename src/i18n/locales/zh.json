@@ -151,7 +151,7 @@
     "supportInfo": "支持 OpenAI 兼容接口及 Anthropic 原生接口（阿里云百炼、Claude 代理等）。API Key 使用 AES-256-GCM 加密存储在本地。",
     "preset": "厂商预设",
     "custom": "自定义",
-    "alicloud": "阿里云百炼",
+    "alicloud": "Coding Plan",
     "apiType": "API 协议",
     "openaiCompat": "OpenAI 兼容",
     "anthropicCompat": "Anthropic 兼容"

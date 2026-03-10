@@ -205,3 +205,128 @@ pub async fn save_query(
 ) -> AppResult<SavedQuery> {
     Err(AppError::Other("Not implemented yet".into()))
 }
+
+// ============ DB 管理 ============
+
+#[tauri::command]
+pub async fn get_table_detail(connection_id: i64, table: String) -> AppResult<crate::datasource::TableDetail> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let columns = ds.get_columns(&table).await?;
+    let indexes = ds.get_indexes(&table).await?;
+    let foreign_keys = ds.get_foreign_keys(&table).await?;
+    Ok(crate::datasource::TableDetail { name: table, columns, indexes, foreign_keys })
+}
+
+#[tauri::command]
+pub async fn get_full_schema(connection_id: i64) -> AppResult<crate::datasource::FullSchemaInfo> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    ds.get_full_schema().await
+}
+
+#[tauri::command]
+pub async fn get_table_ddl(connection_id: i64, table: String) -> AppResult<String> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    ds.get_table_ddl(&table).await
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TableDataParams {
+    pub connection_id: i64,
+    pub table: String,
+    pub page: u32,
+    pub page_size: u32,
+    pub where_clause: Option<String>,
+    pub order_clause: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasource::QueryResult> {
+    let config = crate::db::get_connection_config(params.connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+
+    let offset = params.page.saturating_sub(1) * params.page_size;
+    let where_part = params.where_clause
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| format!(" WHERE {}", s))
+        .unwrap_or_default();
+    let order_part = params.order_clause
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| format!(" ORDER BY {}", s))
+        .unwrap_or_default();
+
+    let sql = match config.driver.as_str() {
+        "mysql" => format!(
+            "SELECT * FROM `{}`{}{} LIMIT {} OFFSET {}",
+            params.table.replace('`', "``"), where_part, order_part, params.page_size, offset
+        ),
+        _ => format!(
+            "SELECT * FROM \"{}\"{}{} LIMIT {} OFFSET {}",
+            params.table.replace('"', "\"\""), where_part, order_part, params.page_size, offset
+        ),
+    };
+
+    ds.execute(&sql).await
+}
+
+#[tauri::command]
+pub async fn update_row(
+    connection_id: i64,
+    table: String,
+    pk_column: String,
+    pk_value: String,
+    column: String,
+    new_value: String,
+) -> AppResult<()> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let sql = match config.driver.as_str() {
+        "mysql" => format!(
+            "UPDATE `{}` SET `{}` = '{}' WHERE `{}` = '{}'",
+            table.replace('`', "``"),
+            column.replace('`', "``"),
+            new_value.replace('\'', "\\'"),
+            pk_column.replace('`', "``"),
+            pk_value.replace('\'', "\\'")
+        ),
+        _ => format!(
+            "UPDATE \"{}\" SET \"{}\" = '{}' WHERE \"{}\" = '{}'",
+            table.replace('"', "\"\""),
+            column.replace('"', "\"\""),
+            new_value.replace('\'', "''"),
+            pk_column.replace('"', "\"\""),
+            pk_value.replace('\'', "''")
+        ),
+    };
+    ds.execute(&sql).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_row(
+    connection_id: i64,
+    table: String,
+    pk_column: String,
+    pk_value: String,
+) -> AppResult<()> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let sql = match config.driver.as_str() {
+        "mysql" => format!(
+            "DELETE FROM `{}` WHERE `{}` = '{}'",
+            table.replace('`', "``"),
+            pk_column.replace('`', "``"),
+            pk_value.replace('\'', "\\'")
+        ),
+        _ => format!(
+            "DELETE FROM \"{}\" WHERE \"{}\" = '{}'",
+            table.replace('"', "\"\""),
+            pk_column.replace('"', "\"\""),
+            pk_value.replace('\'', "''")
+        ),
+    };
+    ds.execute(&sql).await?;
+    Ok(())
+}

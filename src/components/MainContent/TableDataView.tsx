@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import {
-  ChevronLeft, ChevronRight, ChevronDown, RefreshCw, Plus, Minus,
-  Undo, Redo, Upload, BarChart2, Download, Search, Filter,
-  MoreVertical, Copy, Clipboard, Trash2, CopyPlus
-} from 'lucide-react';
+import { useConnectionStore } from '../../store';
+import type { QueryResult, ColumnMeta } from '../../types';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter } from 'lucide-react';
 
 interface TableDataViewProps {
   tableName: string;
@@ -12,167 +11,194 @@ interface TableDataViewProps {
   showToast: (msg: string) => void;
 }
 
-export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName, showToast }) => {
+export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToast }) => {
   const { t } = useTranslation();
-  const [contextMenu, setContextMenu] = useState<{x: number, y: number, rowIdx: number} | null>(null);
+  const { activeConnectionId } = useConnectionStore();
+  const [data, setData] = useState<QueryResult | null>(null);
+  // _columns is kept to derive pkColumn; not rendered directly
+  const [_columns, setColumns] = useState<ColumnMeta[]>([]);
+  const [pkColumn, setPkColumn] = useState<string>('id');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(100);
+  const [total, setTotal] = useState(0);
+  const [whereClause, setWhereClause] = useState('');
+  const [orderClause, setOrderClause] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [editingCell, setEditingCell] = useState<{row: number; col: string; value: string} | null>(null);
 
-  const mockData = Array.from({ length: 30 }).map((_, i) => ({
-    id: i + 1,
-    company: ['Tech Supplies', 'Furniture Co', 'Clothing Inc', 'Book Publisher', 'Toy Maker'][i % 5],
-    contactName: ['John Doe', 'Jane Smith', 'Bob Johnson', 'Alice Davis', 'Charlie Brown'][i % 5],
-    contactTitle: ['Sales Manager', 'Account Manager', 'Customer Service', 'Publisher', 'General Manager'][i % 5],
-    phone: `+1-555-${1000 + i}`
-  }));
+  const loadData = useCallback(async () => {
+    if (!activeConnectionId || !tableName) return;
+    setIsLoading(true);
+    try {
+      const result = await invoke<QueryResult>('get_table_data', {
+        params: {
+          connection_id: activeConnectionId,
+          table: tableName,
+          page,
+          page_size: pageSize,
+          where_clause: whereClause || null,
+          order_clause: orderClause || null,
+        }
+      });
+      setData(result);
+      setTotal(result.row_count);
+    } catch (e) {
+      showToast(String(e));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeConnectionId, tableName, page, pageSize, whereClause, orderClause, showToast]);
 
-  const handleContextMenu = (e: React.MouseEvent, rowIdx: number) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, rowIdx });
+  useEffect(() => {
+    if (!activeConnectionId || !tableName) return;
+    invoke<{ columns: ColumnMeta[] }>('get_table_detail', { connectionId: activeConnectionId, table: tableName })
+      .then(detail => {
+        setColumns(detail.columns);
+        const pk = detail.columns.find(c => c.is_primary_key);
+        if (pk) setPkColumn(pk.name);
+      })
+      .catch(() => {});
+  }, [activeConnectionId, tableName]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleCellDoubleClick = (rowIdx: number, colName: string, currentValue: string) => {
+    setEditingCell({ row: rowIdx, col: colName, value: currentValue });
   };
 
-  const closeContextMenu = () => setContextMenu(null);
+  const handleCellSave = async () => {
+    if (!editingCell || !activeConnectionId || !data) return;
+    const pkColIdx = data.columns.indexOf(pkColumn);
+    const pkValue = pkColIdx >= 0 ? String(data.rows[editingCell.row][pkColIdx] ?? '') : '';
+    try {
+      await invoke('update_row', {
+        connectionId: activeConnectionId,
+        table: tableName,
+        pkColumn,
+        pkValue,
+        column: editingCell.col,
+        newValue: editingCell.value,
+      });
+      showToast(t('tableDataView.updateSuccess'));
+      setEditingCell(null);
+      loadData();
+    } catch (e) {
+      showToast(String(e));
+    }
+  };
+
+  const handleDeleteRow = async (rowIdx: number) => {
+    if (!activeConnectionId || !data) return;
+    const pkColIdx = data.columns.indexOf(pkColumn);
+    const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
+    if (!window.confirm(t('tableDataView.confirmDelete'))) return;
+    try {
+      await invoke('delete_row', { connectionId: activeConnectionId, table: tableName, pkColumn, pkValue });
+      showToast(t('tableDataView.deleteSuccess'));
+      loadData();
+    } catch (e) {
+      showToast(String(e));
+    }
+  };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#080d12] h-full relative" onClick={closeContextMenu}>
+    <div className="flex-1 flex flex-col bg-[#1e1e1e] h-full">
       {/* Toolbar */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#080d12] text-[#b5cfe8] text-xs">
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1">
-            <button className="p-1 hover:bg-[#1e2d42] rounded text-[#7a9bb8] hover:text-[#c8daea]" onClick={() => showToast(t('tableDataView.firstPage'))}>|&lt;</button>
-            <button className="p-1 hover:bg-[#1e2d42] rounded text-[#7a9bb8] hover:text-[#c8daea]" onClick={() => showToast(t('tableDataView.prevPage'))}>&lt;</button>
-            <span className="px-2">1</span>
-            <button className="p-1 hover:bg-[#1e2d42] rounded text-[#7a9bb8] hover:text-[#c8daea]" onClick={() => showToast(t('tableDataView.nextPage'))}>&gt;</button>
-            <button className="p-1 hover:bg-[#1e2d42] rounded text-[#7a9bb8] hover:text-[#c8daea]" onClick={() => showToast(t('tableDataView.lastPage'))}>&gt;|</button>
-          </div>
-
-          <div className="flex items-center cursor-pointer hover:bg-[#1e2d42] px-2 py-1 rounded">
-            <span>1000</span>
-            <ChevronDown size={14} className="ml-1 text-[#7a9bb8]" />
-          </div>
-
-          <span className="text-[#7a9bb8]">{t('tableDataView.total')} 30</span>
-
-          <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
-
-          <div className="flex items-center space-x-1 text-[#7a9bb8]">
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.refreshData')} onClick={() => showToast(t('tableDataView.refreshData'))}><RefreshCw size={14} /></button>
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.addRow')} onClick={() => showToast(t('tableDataView.addRow'))}><Plus size={14} /></button>
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.deleteRow')} onClick={() => showToast(t('tableDataView.deleteRow'))}><Minus size={14} /></button>
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.undo')} onClick={() => showToast(t('tableDataView.undo'))}><Undo size={14} /></button>
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.redo')} onClick={() => showToast(t('tableDataView.redo'))}><Redo size={14} /></button>
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.upload')} onClick={() => showToast(t('tableDataView.upload'))}><Upload size={14} /></button>
-            <button className="p-1.5 hover:bg-[#1e2d42] hover:text-[#c8daea] rounded" title={t('tableDataView.chart')} onClick={() => showToast(t('tableDataView.chart'))}><BarChart2 size={14} /></button>
-          </div>
-        </div>
-
-        <div className="flex items-center">
-          <div className="flex items-center cursor-pointer hover:bg-[#1e2d42] px-2 py-1 rounded text-[#7a9bb8] hover:text-[#c8daea]">
-            <span>{t('tableDataView.export')}</span>
-            <ChevronDown size={14} className="ml-1" />
-          </div>
+      <div className="h-10 flex items-center justify-between px-3 border-b border-[#2b2b2b] bg-[#1e1e1e] text-xs">
+        <div className="flex items-center space-x-2 text-[#858585]">
+          <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30">|&lt;</button>
+          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
+          <span className="text-[#d4d4d4]">{page}</span>
+          <button onClick={() => setPage(p => p + 1)} className="p-1 hover:bg-[#2b2b2b] rounded"><ChevronRight size={14}/></button>
+          <span className="text-[#858585]">{t('tableDataView.total')} {total}</span>
+          <button onClick={loadData} className="p-1 hover:bg-[#2b2b2b] rounded" title={t('tableDataView.refreshData')}><RefreshCw size={14}/></button>
         </div>
       </div>
 
       {/* Filter Bar */}
-      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs">
-        <div className="flex items-center text-[#7a9bb8] flex-1">
-          <Filter size={14} className="mr-2" />
-          <span className="mr-2">WHERE</span>
-          <input type="text" className="bg-transparent border-none outline-none text-[#c8daea] flex-1" placeholder={t('tableDataView.enterCondition')} />
-        </div>
-        <div className="w-[1px] h-4 bg-[#2a3f5a] mx-3"></div>
-        <div className="flex items-center text-[#7a9bb8] flex-1">
-          <span className="mr-2">ORDER BY</span>
-          <input type="text" className="bg-transparent border-none outline-none text-[#c8daea] flex-1" placeholder={t('tableDataView.enterOrder')} />
-        </div>
+      <div className="h-8 flex items-center px-3 border-b border-[#2b2b2b] bg-[#1e1e1e] text-xs gap-3">
+        <Filter size={12} className="text-[#858585]"/>
+        <span className="text-[#858585]">WHERE</span>
+        <input
+          className="bg-transparent outline-none text-[#d4d4d4] flex-1"
+          placeholder={t('tableDataView.enterCondition')}
+          value={whereClause}
+          onChange={e => setWhereClause(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && loadData()}
+        />
+        <span className="text-[#858585]">ORDER BY</span>
+        <input
+          className="bg-transparent outline-none text-[#d4d4d4] flex-1"
+          placeholder={t('tableDataView.enterOrder')}
+          value={orderClause}
+          onChange={e => setOrderClause(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && loadData()}
+        />
       </div>
 
-      {/* Search Bar */}
-      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs">
-        <Search size={14} className="text-[#7a9bb8] mr-2" />
-        <input type="text" className="bg-transparent border-none outline-none text-[#c8daea] flex-1" placeholder={t('tableDataView.searchResultData')} />
-      </div>
-
-      {/* Data Table */}
-      <div className="flex-1 overflow-auto bg-[#080d12]">
-        <table className="w-full text-left border-collapse whitespace-nowrap text-[13px]">
-          <thead className="sticky top-0 bg-[#0d1117] z-10 shadow-sm">
-            <tr>
-              <th className="w-12 px-2 py-1.5 text-center border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
-                #
-              </th>
-              {['SupplierID', 'Company', 'ContactName', 'ContactTitle', 'Phone'].map(h => (
-                <th key={h} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal hover:bg-[#1a2639] cursor-pointer">
-                  <div className="flex items-center justify-between">
-                    <span>{h}</span>
-                    <Filter size={12} className="text-[#7a9bb8]" />
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {mockData.map((row, i) => (
-              <tr
-                key={i}
-                className="hover:bg-[#1a2639] border-b border-[#1e2d42]"
-                onContextMenu={(e) => handleContextMenu(e, i)}
-              >
-                <td className="px-2 py-1.5 text-center border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117]">{i + 1}</td>
-                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea]">{row.id}</td>
-                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea]">{row.company}</td>
-                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea]">{row.contactName}</td>
-                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea]">{row.contactTitle}</td>
-                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea]">{row.phone}</td>
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="p-4 text-[#858585] text-sm">{t('tableDataView.loading')}</div>
+        ) : !data ? (
+          <div className="p-4 text-[#858585] text-sm">{t('tableDataView.noData')}</div>
+        ) : (
+          <table className="w-full text-left border-collapse whitespace-nowrap text-[13px]">
+            <thead className="sticky top-0 bg-[#252526] z-10">
+              <tr>
+                <th className="w-10 px-2 py-1.5 border-b border-r border-[#2b2b2b] text-[#858585] font-normal">#</th>
+                {data.columns.map(col => (
+                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#2b2b2b] text-[#d4d4d4] font-normal">{col}</th>
+                ))}
+                <th className="w-16 px-2 py-1.5 border-b border-[#2b2b2b] text-[#858585] font-normal"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.rows.map((row, ri) => (
+                <tr key={ri} className="hover:bg-[#2a2d2e] border-b border-[#2b2b2b] group">
+                  <td className="px-2 py-1.5 border-r border-[#2b2b2b] text-[#858585] bg-[#252526] text-center text-xs">{(page - 1) * pageSize + ri + 1}</td>
+                  {row.map((cell, ci) => {
+                    const colName = data.columns[ci];
+                    const isEditing = editingCell?.row === ri && editingCell?.col === colName;
+                    return (
+                      <td
+                        key={ci}
+                        className="px-3 py-1.5 text-[#d4d4d4] border-r border-[#2b2b2b] max-w-[300px]"
+                        onDoubleClick={() => handleCellDoubleClick(ri, colName, cell === null ? '' : String(cell))}
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            className="bg-[#2b2b2b] text-[#d4d4d4] outline-none border border-[#3794ff] rounded px-1 w-full"
+                            value={editingCell.value}
+                            onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') handleCellSave(); if (e.key === 'Escape') setEditingCell(null); }}
+                            onBlur={handleCellSave}
+                          />
+                        ) : (
+                          <span className="truncate block">{cell === null ? <span className="text-[#858585] italic">NULL</span> : String(cell)}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-2 py-1.5 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleDeleteRow(ri)}
+                      className="text-red-400 hover:text-red-300 text-xs px-1"
+                      title={t('tableDataView.deleteRow')}
+                    >✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Status Bar */}
-      <div className="h-8 flex items-center px-3 border-t border-[#1e2d42] bg-[#0d1117] text-[#7a9bb8] text-xs flex-shrink-0">
-        <div className="flex items-center space-x-4">
-          <span>INIT</span>
-          <span className="text-[#c8daea]">{t('tableDataView.resultPrefix')}{t('tableDataView.executionSuccessful')}</span>
-          <span className="text-[#c8daea]">{t('tableDataView.timeConsumedPrefix')}37ms.</span>
-          <span className="text-[#c8daea]">{t('tableDataView.searchResultPrefix')}30 {t('tableDataView.row')}</span>
-        </div>
+      <div className="h-7 flex items-center px-3 border-t border-[#2b2b2b] bg-[#181818] text-[#858585] text-xs">
+        {data && <span>{data.row_count} {t('tableDataView.row')} · {data.duration_ms}ms</span>}
       </div>
-
-      {/* Context Menu */}
-      {contextMenu && (
-        <div
-          className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-xl z-50 py-1 text-[13px] text-[#c8daea] w-48"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center" onClick={() => { showToast(t('tableDataView.viewOrModifyData')); closeContextMenu(); }}>
-            <Search size={14} className="mr-2 text-[#7a9bb8]" /> {t('tableDataView.viewOrModifyData')}
-          </div>
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center" onClick={() => { showToast(t('tableDataView.copy')); closeContextMenu(); }}>
-            <Copy size={14} className="mr-2 text-[#7a9bb8]" /> {t('tableDataView.copy')}
-          </div>
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center" onClick={() => { showToast(t('tableDataView.paste')); closeContextMenu(); }}>
-            <Clipboard size={14} className="mr-2 text-[#7a9bb8]" /> {t('tableDataView.paste')}
-          </div>
-          <div className="my-1 border-t border-[#2a3f5a]"></div>
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center pl-9" onClick={() => { showToast(t('tableDataView.setAsNull')); closeContextMenu(); }}>
-            {t('tableDataView.setAsNull')}
-          </div>
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center pl-9" onClick={() => { showToast(t('tableDataView.cloneRow')); closeContextMenu(); }}>
-            {t('tableDataView.cloneRow')}
-          </div>
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center" onClick={() => { showToast(t('tableDataView.deleteRowMenuItem')); closeContextMenu(); }}>
-            <Trash2 size={14} className="mr-2 text-[#7a9bb8]" /> {t('tableDataView.deleteRowMenuItem')}
-          </div>
-          <div className="my-1 border-t border-[#2a3f5a]"></div>
-          <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center justify-between" onClick={() => { showToast(t('tableDataView.copyRowAction')); closeContextMenu(); }}>
-            <div className="flex items-center">
-              <CopyPlus size={14} className="mr-2 text-[#7a9bb8]" /> {t('tableDataView.copyRowAction')}
-            </div>
-            <ChevronRight size={14} className="text-[#7a9bb8]" />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -151,7 +151,7 @@
     "supportInfo": "Supports OpenAI-compatible and Anthropic native API (Alibaba Cloud Bailian, Claude proxies, etc.). API Key is encrypted with AES-256-GCM locally.",
     "preset": "Provider Preset",
     "custom": "Custom",
-    "alicloud": "Alibaba Cloud Bailian",
+    "alicloud": "Coding Plan",
     "apiType": "API Protocol",
     "openaiCompat": "OpenAI Compatible",
     "anthropicCompat": "Anthropic Compatible"

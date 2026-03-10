@@ -64,3 +64,48 @@ export interface Tab {
   title: string;
   connectionId?: number;
 }
+
+export interface ColumnMeta {
+  name: string;
+  data_type: string;
+  is_nullable: boolean;
+  column_default: string | null;
+  is_primary_key: boolean;
+  extra: string | null;
+}
+
+export interface IndexMeta {
+  index_name: string;
+  is_unique: boolean;
+  columns: string[];
+}
+
+export interface ForeignKeyMeta {
+  constraint_name: string;
+  column: string;
+  referenced_table: string;
+  referenced_column: string;
+}
+
+export interface TableDetail {
+  name: string;
+  columns: ColumnMeta[];
+  indexes: IndexMeta[];
+  foreign_keys: ForeignKeyMeta[];
+}
+
+export interface ViewMeta {
+  name: string;
+  definition: string | null;
+}
+
+export interface ProcedureMeta {
+  name: string;
+  routine_type: 'PROCEDURE' | 'FUNCTION' | 'Unknown';
+}
+
+export interface FullSchemaInfo {
+  tables: TableDetail[];
+  views: ViewMeta[];
+  procedures: ProcedureMeta[];
+}

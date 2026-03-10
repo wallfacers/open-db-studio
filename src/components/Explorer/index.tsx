@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree, FilePlus2, FileEdit } from 'lucide-react';
+import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree, FilePlus2, FileEdit, Layers } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
 import { TableManageDialog } from '../TableManageDialog';
 import { IndexManager } from '../IndexManager';
+import { ObjectPanel } from '../ObjectPanel';
 import type { TableDetail } from '../../types';
 
 interface ExplorerProps {
@@ -49,6 +50,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const tableMenuRef = useRef<HTMLDivElement>(null);
   const [tableManageDialog, setTableManageDialog] = useState<{ tableName?: string } | null>(null);
   const [indexManagerTable, setIndexManagerTable] = useState<string | null>(null);
+  const [explorerView, setExplorerView] = useState<'tables' | 'objects'>('tables');
 
   useEffect(() => {
     loadConnections();
@@ -165,6 +167,26 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 )}
               </div>
             </div>
+            {/* View switcher: Tables / Objects */}
+            <div className="flex border-b border-[#1e2d42] text-[11px]">
+              <button
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 transition-colors ${explorerView === 'tables' ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea]'}`}
+                onClick={() => setExplorerView('tables')}
+              >
+                <TableProperties size={12} />
+                {t('explorer.tables')}
+              </button>
+              <button
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 transition-colors ${explorerView === 'objects' ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea]'}`}
+                onClick={() => setExplorerView('objects')}
+              >
+                <Layers size={12} />
+                {t('explorer.objects')}
+              </button>
+            </div>
+            {explorerView === 'objects' ? (
+              <ObjectPanel showToast={showToast} />
+            ) : (
             <div className="flex-1 overflow-y-auto py-2">
               {connections.length === 0 ? (
                 <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
@@ -287,6 +309,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                   ))
               )}
             </div>
+            )}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[#7a9bb8]">

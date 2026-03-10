@@ -156,7 +156,8 @@
     "alicloud": "Coding Plan",
     "apiType": "API 协议",
     "openaiCompat": "OpenAI 兼容",
-    "anthropicCompat": "Anthropic 兼容"
+    "anthropicCompat": "Anthropic 兼容",
+    "lockedByPreset": "由预设决定"
   },
   "app": {
     "chatMsg1": "帮我分析2023年上海市出生率变化",
@@ -192,5 +193,17 @@
     "type": "类型：",
     "tableName": "表名：",
     "doubleClickToEdit": " (双击修改)"
+  },
+  "common": {
+    "cancel": "取消"
+  },
+  "export": {
+    "title": "导出 {{table}}",
+    "format": "格式",
+    "optional": "可选",
+    "exporting": "导出中...",
+    "export": "导出",
+    "success": "已导出到 {{path}}",
+    "exportData": "导出数据"
   }
 }

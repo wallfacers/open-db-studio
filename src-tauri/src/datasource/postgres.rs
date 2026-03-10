@@ -12,7 +12,7 @@ pub struct PostgresDataSource {
 impl PostgresDataSource {
     pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
         let url = format!(
-            "postgresql://{}:{}@{}:{}/{}",
+            "postgresql://{}:{}@{}:{}/{}?sslmode=disable",
             config.username, config.password, config.host, config.port, config.database
         );
         let pool = PgPool::connect(&url).await?;

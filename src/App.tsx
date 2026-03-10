@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { format as formatSql } from 'sql-formatter';
 import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
@@ -50,7 +50,6 @@ JOIN
 
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isPageSizeMenuOpen, setIsPageSizeMenuOpen] = useState(false);
-  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
   const [isTableMenuOpen, setIsTableMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,7 +71,6 @@ JOIN
   const [resultsHeight, setResultsHeight] = useState(300);
   const [assistantWidth, setAssistantWidth] = useState(320);
 
-  const [chatInput, setChatInput] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -80,42 +78,10 @@ JOIN
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const [chatMessages, setChatMessages] = useState([
-    {
-      role: 'user',
-      content: t('app.chatMsg1')
-    },
-    {
-      role: 'ai',
-      content: (
-        <div className="text-[#c8daea] text-[13px] space-y-3 w-full">
-          <p>{t('app.chatMsg2')}</p>
-          
-          <div className="bg-[#111922] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#e8a87c] break-all">
-            ["birth_trend_analysis", "region"]
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">birth_trend_analysis</span>
-            <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">region</span>
-          </div>
-          
-          <p className="leading-relaxed">{t('app.chatMsg3')}</p>
-        </div>
-      )
-    }
-  ]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const toggleFolder = (folder: string) => {
     setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
   };
-
-  useEffect(() => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [chatMessages]);
 
   const closeTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
@@ -215,7 +181,6 @@ JOIN
     const handleClickOutside = () => {
       setIsExportMenuOpen(false);
       setIsPageSizeMenuOpen(false);
-      setIsModelMenuOpen(false);
       setIsDbMenuOpen(false);
       setIsTableMenuOpen(false);
     };
@@ -281,38 +246,11 @@ JOIN
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  // Re-evaluate chatMessages when translation changes
-  useEffect(() => {
-    setChatMessages([
-      {
-        role: 'user',
-        content: t('app.chatMsg1')
-      },
-      {
-        role: 'ai',
-        content: (
-          <div className="text-[#c8daea] text-[13px] space-y-3 w-full">
-            <p>{t('app.chatMsg2')}</p>
-            
-            <div className="bg-[#111922] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#e8a87c] break-all">
-              ["birth_trend_analysis", "region"]
-            </div>
-            
-            <div className="flex flex-wrap gap-2">
-              <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">birth_trend_analysis</span>
-              <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">region</span>
-            </div>
-            
-            <p className="leading-relaxed">{t('app.chatMsg3')}</p>
-          </div>
-        )
-      }
-    ]);
-  }, [t]);
+  const isMac = navigator.userAgent.includes('Mac');
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#080d12] text-[#b5cfe8] overflow-hidden font-sans text-[13px]">
-      <TitleBar />
+      {!isMac && <TitleBar />}
       <div className="flex flex-1 overflow-hidden">
       <ActivityBar
         activeActivity={activeActivity}
@@ -382,13 +320,6 @@ JOIN
         handleAssistantResize={handleAssistantResize}
         setIsAssistantOpen={setIsAssistantOpen}
         showToast={showToast}
-        chatMessages={chatMessages}
-        setChatMessages={setChatMessages}
-        chatEndRef={chatEndRef}
-        chatInput={chatInput}
-        setChatInput={setChatInput}
-        isModelMenuOpen={isModelMenuOpen}
-        setIsModelMenuOpen={setIsModelMenuOpen}
       />
       )}
 

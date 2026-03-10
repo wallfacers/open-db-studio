@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -16,9 +16,12 @@ import { Plus, Download, LayoutTemplate } from 'lucide-react';
 import dagre from 'dagre';
 import { toPng } from 'html-to-image';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
 
 import TableNode from './TableNode';
 import { initialNodes, initialEdges } from '../data/initialElements';
+import { useConnectionStore } from '../store';
+import type { FullSchemaInfo } from '../types';
 
 const nodeTypes = {
   table: TableNode,
@@ -55,10 +58,63 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'LR') => {
 
 export default function ERDiagram() {
   const { t } = useTranslation();
+  const activeConnectionId = useConnectionStore((s) => s.activeConnectionId);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const rfInstance = useRef<any>(null);
+
+  useEffect(() => {
+    if (activeConnectionId == null) {
+      setNodes([...initialNodes]);
+      setEdges([...initialEdges]);
+      return;
+    }
+
+    invoke<FullSchemaInfo>('get_full_schema', { connectionId: activeConnectionId })
+      .then((schema) => {
+        const newNodes = schema.tables.map((t, i) => ({
+          id: t.name,
+          type: 'table' as const,
+          position: { x: (i % 4) * 300, y: Math.floor(i / 4) * 250 },
+          data: {
+            tableName: t.name,
+            columns: t.columns.map((c) => ({
+              name: c.name,
+              type: c.data_type,
+              isPrimary: c.is_primary_key,
+              isForeign: t.foreign_keys.some((fk) => fk.column === c.name),
+            })),
+          },
+        }));
+
+        const tableNames = new Set(schema.tables.map((t) => t.name));
+        const newEdges: Edge[] = [];
+        schema.tables.forEach((t) => {
+          t.foreign_keys.forEach((fk) => {
+            if (!tableNames.has(fk.referenced_table)) return;
+            newEdges.push({
+              id: fk.constraint_name,
+              source: fk.referenced_table,
+              sourceHandle: `${fk.referenced_column}-source`,
+              target: t.name,
+              targetHandle: `${fk.column}-target`,
+              type: 'smoothstep',
+              animated: false,
+              style: { stroke: '#3794ff', strokeWidth: 1.5 },
+              label: fk.constraint_name,
+            });
+          });
+        });
+
+        setNodes(newNodes);
+        setEdges(newEdges);
+      })
+      .catch(() => {
+        setNodes([...initialNodes]);
+        setEdges([...initialEdges]);
+      });
+  }, [activeConnectionId, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection | Edge) => setEdges((eds) => addEdge(params, eds)),

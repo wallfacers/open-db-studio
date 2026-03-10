@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, ViewMeta};
 use crate::AppResult;
+use sqlx::Row;
 
 pub struct PostgresDataSource {
     pool: PgPool,
@@ -28,7 +29,7 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
-        use sqlx::{Column, Row};
+        use sqlx::Column;
         let start = Instant::now();
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -80,7 +81,7 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn get_columns(&self, table: &str) -> AppResult<Vec<ColumnMeta>> {
-        let sql = format!(
+        let rows = sqlx::query(
             "SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
                     COALESCE(
                         (SELECT true FROM information_schema.table_constraints tc
@@ -88,18 +89,18 @@ impl DataSource for PostgresDataSource {
                              ON tc.constraint_name = kcu.constraint_name
                              AND tc.table_schema = kcu.table_schema
                          WHERE tc.constraint_type = 'PRIMARY KEY'
-                           AND tc.table_name = '{0}'
+                           AND tc.table_name = $1
                            AND kcu.column_name = c.column_name
                          LIMIT 1),
                         false
                     ) AS is_pk
              FROM information_schema.columns c
-             WHERE c.table_schema = 'public' AND c.table_name = '{0}'
-             ORDER BY c.ordinal_position",
-            table.replace('\'', "''")
-        );
-        use sqlx::Row;
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+             WHERE c.table_schema = 'public' AND c.table_name = $1
+             ORDER BY c.ordinal_position"
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows.iter().map(|r| ColumnMeta {
             name: r.try_get::<String, _>(0).unwrap_or_default(),
             data_type: r.try_get::<String, _>(1).unwrap_or_default(),
@@ -111,18 +112,19 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn get_indexes(&self, table: &str) -> AppResult<Vec<IndexMeta>> {
-        let sql = format!(
+        let rows = sqlx::query(
             "SELECT i.relname AS index_name, ix.indisunique, a.attname AS column_name
              FROM pg_class t
+             JOIN pg_namespace n ON n.oid = t.relnamespace
              JOIN pg_index ix ON t.oid = ix.indrelid
              JOIN pg_class i ON i.oid = ix.indexrelid
              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-             WHERE t.relname = '{}' AND t.relkind = 'r'
-             ORDER BY i.relname",
-            table.replace('\'', "''")
-        );
-        use sqlx::Row;
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+             WHERE t.relname = $1 AND t.relkind = 'r' AND n.nspname = 'public'
+             ORDER BY i.relname, a.attnum"
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
         let mut map: std::collections::BTreeMap<String, IndexMeta> = Default::default();
         for r in &rows {
             let idx_name: String = r.try_get(0).unwrap_or_default();
@@ -138,7 +140,7 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn get_foreign_keys(&self, table: &str) -> AppResult<Vec<ForeignKeyMeta>> {
-        let sql = format!(
+        let rows = sqlx::query(
             "SELECT tc.constraint_name, kcu.column_name,
                     ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
              FROM information_schema.table_constraints tc
@@ -146,11 +148,13 @@ impl DataSource for PostgresDataSource {
                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
              JOIN information_schema.constraint_column_usage ccu
                  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
-             WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = '{}'",
-            table.replace('\'', "''")
-        );
-        use sqlx::Row;
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+             WHERE tc.constraint_type = 'FOREIGN KEY'
+               AND tc.table_schema = 'public'
+               AND tc.table_name = $1"
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows.iter().map(|r| ForeignKeyMeta {
             constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
             column: r.try_get::<String, _>(1).unwrap_or_default(),
@@ -160,7 +164,6 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn get_views(&self) -> AppResult<Vec<ViewMeta>> {
-        use sqlx::Row;
         let rows = sqlx::query(
             "SELECT table_name, view_definition FROM information_schema.views WHERE table_schema = 'public'"
         ).fetch_all(&self.pool).await?;
@@ -171,7 +174,6 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn get_procedures(&self) -> AppResult<Vec<ProcedureMeta>> {
-        use sqlx::Row;
         let rows = sqlx::query(
             "SELECT routine_name, routine_type FROM information_schema.routines WHERE routine_schema = 'public'"
         ).fetch_all(&self.pool).await?;
@@ -199,7 +201,7 @@ impl DataSource for PostgresDataSource {
             let default = c.column_default.as_ref()
                 .map(|d| format!(" DEFAULT {}", d))
                 .unwrap_or_default();
-            format!("  {} {}{}{}{}", c.name, c.data_type, nullable, default, pk)
+            format!("  {} {}{}{}{}", c.name, c.data_type, default, nullable, pk)
         }).collect();
         Ok(format!("CREATE TABLE {} (\n{}\n);", table, col_defs.join(",\n")))
     }

@@ -379,15 +379,23 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
 
     let result = ds.execute(&sql).await?;
 
+    let quote_csv_field = |s: &str| -> String {
+        if s.contains('"') || s.contains(',') || s.contains('\n') || s.contains('\r') {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_string()
+        }
+    };
+
     let content = match params.format.as_str() {
         "json" => serde_json::to_string_pretty(&result.rows)
             .map_err(|e| crate::AppError::Other(e.to_string()))?,
         "csv" => {
-            let mut out = result.columns.join(",") + "\n";
+            let mut out = result.columns.iter().map(|c| quote_csv_field(c)).collect::<Vec<_>>().join(",") + "\n";
             for row in &result.rows {
                 let line: Vec<String> = row.iter().map(|v| match v {
                     serde_json::Value::Null => String::new(),
-                    serde_json::Value::String(s) => format!("\"{}\"", s.replace('"', "\"\"")),
+                    serde_json::Value::String(s) => quote_csv_field(s),
                     other => other.to_string(),
                 }).collect();
                 out += &(line.join(",") + "\n");
@@ -399,6 +407,12 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
                 "mysql" => format!("`{}`", params.table.replace('`', "``")),
                 _ => format!("\"{}\"", params.table.replace('"', "\"\"")),
             };
+            let col_list = result.columns.iter().map(|c| {
+                match config.driver.as_str() {
+                    "mysql" => format!("`{}`", c.replace('`', "``")),
+                    _ => format!("\"{}\"", c.replace('"', "\"\"")),
+                }
+            }).collect::<Vec<_>>().join(", ");
             let mut out = format!("-- Export: {}\n", params.table);
             for row in &result.rows {
                 let values: Vec<String> = row.iter().map(|v| match v {
@@ -408,14 +422,14 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
                     serde_json::Value::Bool(b) => if *b { "1".into() } else { "0".into() },
                     other => format!("'{}'", other.to_string().replace('\'', "''")),
                 }).collect();
-                out += &format!("INSERT INTO {} VALUES ({});\n", quoted_table, values.join(", "));
+                out += &format!("INSERT INTO {} ({}) VALUES ({});\n", quoted_table, col_list, values.join(", "));
             }
             out
         }
         _ => return Err(crate::AppError::Other(format!("Unsupported format: {}", params.format))),
     };
 
-    std::fs::write(&params.output_path, &content)
+    tokio::fs::write(&params.output_path, &content).await
         .map_err(|e| crate::AppError::Other(format!("Failed to write file: {}", e)))?;
 
     Ok(params.output_path)

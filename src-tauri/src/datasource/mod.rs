@@ -65,11 +65,22 @@ pub struct ViewMeta {
     pub definition: Option<String>,
 }
 
+/// 存储过程/函数类型
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum RoutineType {
+    #[serde(rename = "PROCEDURE")]
+    Procedure,
+    #[serde(rename = "FUNCTION")]
+    Function,
+    #[serde(other)]
+    Unknown,
+}
+
 /// 存储过程元数据
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProcedureMeta {
     pub name: String,
-    pub routine_type: String, // PROCEDURE / FUNCTION
+    pub routine_type: RoutineType,
 }
 
 /// 表详细信息（含列/索引/外键）
@@ -132,6 +143,9 @@ pub trait DataSource: Send + Sync {
         let tables_meta = self.get_tables().await?;
         let mut tables = vec![];
         for t in &tables_meta {
+            // 默认实现对每张表的 metadata 查询采用 unwrap_or_default：
+            // 这是为了让未实现扩展方法的驱动（Oracle/MSSQL stub）能静默返回空数据。
+            // 真实驱动实现（MySQL/PostgreSQL）应覆盖本方法并传播错误。
             let columns = self.get_columns(&t.name).await.unwrap_or_default();
             let indexes = self.get_indexes(&t.name).await.unwrap_or_default();
             let foreign_keys = self.get_foreign_keys(&t.name).await.unwrap_or_default();

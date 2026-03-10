@@ -94,7 +94,9 @@ export function LlmSettingsPanel() {
   };
 
   const handleFieldChange = <K extends keyof LlmSettings>(key: K, value: LlmSettings[K]) => {
-    setForm((f) => ({ ...f, [key]: value, preset: null }));
+    // 修改 base_url 或 api_type 才视为切换到自定义，修改 model/api_key 保留预设标记
+    const resetsPreset = key === 'base_url' || key === 'api_type';
+    setForm((f) => ({ ...f, [key]: value, ...(resetsPreset ? { preset: null } : {}) }));
   };
 
   const handleApiTypeChange = (type: ApiType) => {

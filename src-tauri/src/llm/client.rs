@@ -2,6 +2,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use crate::AppResult;
 
+const DEFAULT_ANTHROPIC_MAX_TOKENS: u32 = 8192;
+
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApiType {
@@ -32,6 +34,13 @@ pub struct ChatMessage {
 pub struct ChatContext {
     pub history: Vec<ChatMessage>,
     pub model: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AnthropicRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    max_tokens: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,12 +75,17 @@ impl LlmClient {
         model: Option<String>,
         api_type: Option<ApiType>,
     ) -> Self {
+        let resolved_type = api_type.unwrap_or_default();
+        let default_base = match resolved_type {
+            ApiType::Anthropic => "https://api.anthropic.com",
+            ApiType::Openai => "https://api.openai.com/v1",
+        };
         Self {
             client: Client::new(),
             api_key,
-            base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+            base_url: base_url.unwrap_or_else(|| default_base.to_string()),
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
-            api_type: api_type.unwrap_or_default(),
+            api_type: resolved_type,
         }
     }
 
@@ -109,17 +123,10 @@ impl LlmClient {
     }
 
     async fn chat_anthropic(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
-        #[derive(serde::Serialize)]
-        struct AnthropicRequest {
-            model: String,
-            messages: Vec<ChatMessage>,
-            max_tokens: u32,
-        }
-
         let req = AnthropicRequest {
             model: self.model.clone(),
             messages,
-            max_tokens: 8192,
+            max_tokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
         };
 
         let base = self.base_url.trim_end_matches('/');

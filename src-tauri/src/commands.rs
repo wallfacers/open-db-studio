@@ -89,7 +89,7 @@ fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let api_key = crate::crypto::decrypt(&api_key_enc)?;
     let base_url = crate::db::get_setting("llm.base_url")?;
     let model = crate::db::get_setting("llm.model")?;
-    Ok(crate::llm::client::LlmClient::new(api_key, base_url, model))
+    Ok(crate::llm::client::LlmClient::new(api_key, base_url, model, None))
 }
 
 #[tauri::command]
@@ -162,6 +162,7 @@ pub async fn test_llm_connection(settings: LlmSettings) -> AppResult<()> {
         settings.api_key,
         Some(settings.base_url),
         Some(settings.model),
+        None,
     );
     let messages = vec![crate::llm::ChatMessage {
         role: "user".into(),

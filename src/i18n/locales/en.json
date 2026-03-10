@@ -156,7 +156,8 @@
     "alicloud": "Coding Plan",
     "apiType": "API Protocol",
     "openaiCompat": "OpenAI Compatible",
-    "anthropicCompat": "Anthropic Compatible"
+    "anthropicCompat": "Anthropic Compatible",
+    "lockedByPreset": "determined by preset"
   },
   "app": {
     "chatMsg1": "Help me analyze the birth rate changes in Shanghai in 2023",
@@ -192,5 +193,17 @@
     "type": "Type:",
     "tableName": "Table Name:",
     "doubleClickToEdit": " (Double click to edit)"
+  },
+  "common": {
+    "cancel": "Cancel"
+  },
+  "export": {
+    "title": "Export {{table}}",
+    "format": "Format",
+    "optional": "optional",
+    "exporting": "Exporting...",
+    "export": "Export",
+    "success": "Exported to {{path}}",
+    "exportData": "Export Data"
   }
 }

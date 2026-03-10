@@ -153,16 +153,27 @@ export function LlmSettingsPanel() {
 
         {/* API 协议 */}
         <div>
-          <label className={labelClass}>{t('llmSettings.apiType')}</label>
+          <label className={labelClass}>
+            {t('llmSettings.apiType')}
+            {form.preset !== null && (
+              <span className="ml-2 text-[#5b8ab0]">({t('llmSettings.lockedByPreset')})</span>
+            )}
+          </label>
           <div className="flex gap-4">
             {(['openai', 'anthropic'] as ApiType[]).map((type) => (
-              <label key={type} className="flex items-center gap-1.5 cursor-pointer text-sm text-[#c8daea]">
+              <label
+                key={type}
+                className={`flex items-center gap-1.5 text-sm transition-opacity ${
+                  form.preset !== null ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-[#c8daea]'
+                }`}
+              >
                 <input
                   type="radio"
                   name="api_type"
                   value={type}
                   checked={form.api_type === type}
                   onChange={() => handleApiTypeChange(type)}
+                  disabled={form.preset !== null}
                   className="accent-[#009e84]"
                 />
                 {type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}

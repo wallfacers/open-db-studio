@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAiStore } from '../../store';
 import type { LlmSettings } from '../../types';
 
 export function LlmSettingsPanel() {
+  const { t } = useTranslation();
   const { settings, loadSettings, saveSettings } = useAiStore();
   const [form, setForm] = useState<LlmSettings>({
     api_key: '',
@@ -37,10 +39,10 @@ export function LlmSettingsPanel() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="p-4 space-y-4 max-w-lg">
-        <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">AI 模型配置</h3>
+        <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">{t('llmSettings.aiModelConfig')}</h3>
 
         <div>
-          <label className={labelClass}>API Key</label>
+          <label className={labelClass}>{t('llmSettings.apiKey')}</label>
           <input
             className={inputClass}
             type="password"
@@ -51,7 +53,7 @@ export function LlmSettingsPanel() {
         </div>
 
         <div>
-          <label className={labelClass}>Base URL（OpenAI 兼容接口）</label>
+          <label className={labelClass}>{t('llmSettings.baseUrl')}</label>
           <input
             className={inputClass}
             value={form.base_url}
@@ -61,7 +63,7 @@ export function LlmSettingsPanel() {
         </div>
 
         <div>
-          <label className={labelClass}>模型</label>
+          <label className={labelClass}>{t('llmSettings.model')}</label>
           <input
             className={inputClass}
             value={form.model}
@@ -75,12 +77,11 @@ export function LlmSettingsPanel() {
           disabled={saving}
           className="px-4 py-1.5 text-sm bg-[#0078d4] hover:bg-[#006bc2] text-white rounded disabled:opacity-50"
         >
-          {saved ? '✓ 已保存' : saving ? '保存中...' : '保存'}
+          {saved ? t('llmSettings.saved') : saving ? t('llmSettings.saving') : t('llmSettings.save')}
         </button>
 
         <p className="text-xs text-[#858585] pt-2">
-          支持 OpenAI 兼容接口（OpenAI、Azure OpenAI、本地 Ollama、第三方代理等）。
-          API Key 使用 AES-256-GCM 加密存储在本地。
+          {t('llmSettings.supportInfo')}
         </p>
       </div>
     </div>

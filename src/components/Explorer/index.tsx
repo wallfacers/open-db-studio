@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2 } from 'lucide-react';
+import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
+import type { TableDetail } from '../../types';
 
 interface ExplorerProps {
   isSidebarOpen: boolean;
@@ -39,10 +41,44 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const connMenuRef = useRef<HTMLDivElement>(null);
   const [editingConn, setEditingConn] = useState<import('../../types').Connection | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+  const [tableDetails, setTableDetails] = useState<Record<string, TableDetail>>({});
 
   useEffect(() => {
     loadConnections();
   }, []);
+
+  // 当连接切换时清空表详情缓存
+  useEffect(() => {
+    setTableDetails({});
+    setExpandedTables(new Set());
+  }, [activeConnectionId]);
+
+  const loadTableDetail = async (tableName: string) => {
+    if (!activeConnectionId || tableDetails[tableName]) return;
+    try {
+      const detail = await invoke<TableDetail>('get_table_detail', {
+        connectionId: activeConnectionId,
+        table: tableName,
+      });
+      setTableDetails(prev => ({ ...prev, [tableName]: detail }));
+    } catch (e) {
+      console.error('Failed to load table detail:', e);
+    }
+  };
+
+  const toggleTableExpanded = (tableName: string) => {
+    setExpandedTables(prev => {
+      const next = new Set(prev);
+      if (next.has(tableName)) {
+        next.delete(tableName);
+      } else {
+        next.add(tableName);
+        loadTableDetail(tableName);
+      }
+      return next;
+    });
+  };
 
   // 单击：仅选中（展开/折叠文件夹），不加载数据
   const handleConnectionSelect = (id: number) => {
@@ -145,17 +181,83 @@ export const Explorer: React.FC<ExplorerProps> = ({
                         tables.length === 0 ? (
                           <div className="px-3 py-1 text-xs text-[#7a9bb8]" style={{ paddingLeft: '2rem' }}>{t('explorer.noTables')}</div>
                         ) : (
-                          tables.map(t => (
-                            <TreeItem
-                              key={t.name}
-                              label={t.name}
-                              icon={TableProperties}
-                              indent={1}
-                              active={selectedTable === t.name}
-                              onClick={() => setSelectedTable(t.name)}
-                              onDoubleClick={() => { setSelectedTable(t.name); onTableClick(t.name, conn.name); }}
-                            />
-                          ))
+                          tables.map(tbl => {
+                            const isExpanded = expandedTables.has(tbl.name);
+                            const detail = tableDetails[tbl.name];
+                            return (
+                              <React.Fragment key={tbl.name}>
+                                <TreeItem
+                                  label={tbl.name}
+                                  icon={TableProperties}
+                                  indent={1}
+                                  hasChildren
+                                  isOpen={isExpanded}
+                                  active={selectedTable === tbl.name}
+                                  onClick={() => { setSelectedTable(tbl.name); toggleTableExpanded(tbl.name); }}
+                                  onDoubleClick={() => { setSelectedTable(tbl.name); onTableClick(tbl.name, conn.name); }}
+                                />
+                                {isExpanded && detail && (
+                                  <>
+                                    {/* Columns section */}
+                                    <div
+                                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-[#7a9bb8] uppercase tracking-wider select-none"
+                                      style={{ paddingLeft: '3.5rem' }}
+                                    >
+                                      <Columns3 size={11} />
+                                      Columns
+                                    </div>
+                                    {detail.columns.map(col => (
+                                      <div
+                                        key={col.name}
+                                        className="flex items-center gap-1 py-0.5 text-xs text-[#c8daea] select-none"
+                                        style={{ paddingLeft: '4rem' }}
+                                        title={`${col.name}: ${col.data_type}${col.is_nullable ? '' : ' NOT NULL'}${col.column_default ? ` DEFAULT ${col.column_default}` : ''}`}
+                                      >
+                                        <span className="text-[#7a9bb8] w-3 text-center flex-shrink-0">
+                                          {col.is_primary_key ? '🔑' : '·'}
+                                        </span>
+                                        <span className="truncate">{col.name}</span>
+                                        <span className="text-[#4a6a8a] ml-1 truncate">{col.data_type}</span>
+                                      </div>
+                                    ))}
+                                    {/* Indexes section */}
+                                    {detail.indexes.length > 0 && (
+                                      <>
+                                        <div
+                                          className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-[#7a9bb8] uppercase tracking-wider select-none mt-0.5"
+                                          style={{ paddingLeft: '3.5rem' }}
+                                        >
+                                          <ListTree size={11} />
+                                          Indexes
+                                        </div>
+                                        {detail.indexes.map(idx => (
+                                          <div
+                                            key={idx.index_name}
+                                            className="flex items-center gap-1 py-0.5 text-xs text-[#c8daea] select-none"
+                                            style={{ paddingLeft: '4rem' }}
+                                            title={`${idx.index_name}: ${idx.columns.join(', ')}${idx.is_unique ? ' (UNIQUE)' : ''}`}
+                                          >
+                                            <span className="text-[#7a9bb8] w-3 text-center flex-shrink-0">📑</span>
+                                            <span className="truncate">{idx.index_name}</span>
+                                            {idx.is_unique && <span className="text-[#00c9a7] text-[10px] flex-shrink-0">[U]</span>}
+                                            <span className="text-[#4a6a8a] ml-1 truncate">({idx.columns.join(', ')})</span>
+                                          </div>
+                                        ))}
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                                {isExpanded && !detail && (
+                                  <div
+                                    className="py-0.5 text-xs text-[#4a6a8a] select-none"
+                                    style={{ paddingLeft: '4rem' }}
+                                  >
+                                    Loading...
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
                         )
                       )}
                     </div>

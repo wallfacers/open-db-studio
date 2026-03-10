@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Handle, Position, useNodeConnections, useReactFlow } from '@xyflow/react';
 import { Key, Diamond } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 
 export type ColumnData = {
   name: string;
@@ -21,6 +22,7 @@ const commonSqlTypes = [
 ];
 
 function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: string; onUpdateColumn: (oldName: string, newCol: ColumnData) => void; key?: string }) {
+  const { t } = useTranslation();
   const sourceConnections = useNodeConnections({ handleType: 'source', handleId: `${col.name}-source` });
   const targetConnections = useNodeConnections({ handleType: 'target', handleId: `${col.name}-target` });
 
@@ -136,7 +138,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
                 }}
               >
                 <Key className="w-3 h-3 mr-1.5 text-[#eab308]" />
-                主键 (PK)
+                {t('tableNode.primaryKey')}
               </div>
               <div
                 className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors ${
@@ -148,7 +150,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
                 }}
               >
                 <Key className="w-3 h-3 mr-1.5 text-[#94a3b8]" />
-                外键 (FK)
+                {t('tableNode.foreignKey')}
               </div>
             </div>,
             document.body
@@ -157,7 +159,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
           <div
             ref={keySpanRef}
             className="flex items-center gap-[2px] cursor-pointer p-1 -ml-1 rounded hover:bg-[#333] min-w-[20px] h-[24px] transition-colors"
-            title="设置主键/外键"
+            title={t('tableNode.setKey')}
             onClick={(e) => {
               e.stopPropagation();
               setIsEditingKey(!isEditingKey);
@@ -185,7 +187,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
         ) : (
           <span
             className="text-gray-300 text-xs font-medium cursor-text hover:bg-[#333] px-1 py-0.5 -mx-1 rounded truncate max-w-[90px]"
-            title={`字段名：${col.name} (双击修改)`}
+            title={`${t('tableNode.columnName')}${col.name}${t('tableNode.doubleClickToEdit')}`}
             onDoubleClick={() => setIsEditingName(true)}
           >
             {col.name}
@@ -226,7 +228,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
         <span
           ref={typeSpanRef}
           className={`text-gray-500 text-xs font-mono cursor-pointer hover:bg-[#333] px-1 py-0.5 -mx-1 rounded ${isEditingType ? 'bg-[#333] border border-[#3794ff]' : ''}`}
-          title={`类型：${col.type} (双击修改)`}
+          title={`${t('tableNode.type')}${col.type}${t('tableNode.doubleClickToEdit')}`}
           onDoubleClick={() => setIsEditingType(true)}
           onClick={(e) => {
             e.stopPropagation();
@@ -254,6 +256,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
 }
 
 export default function TableNode({ id, data }: { id: string; data: TableNodeData }) {
+  const { t } = useTranslation();
   const { setNodes } = useReactFlow();
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -331,7 +334,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
         ) : (
           <h3
             className="text-gray-200 text-sm font-medium text-center m-0 cursor-text hover:bg-[#333] px-2 py-0.5 rounded transition-colors"
-            title={`表名：${data.tableName} (双击修改)`}
+            title={`${t('tableNode.tableName')}${data.tableName}${t('tableNode.doubleClickToEdit')}`}
             onDoubleClick={() => setIsEditingTitle(true)}
           >
             {data.tableName}

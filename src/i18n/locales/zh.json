@@ -4,7 +4,7 @@
     "openUserProfile": "打开用户个人中心",
     "collapse": "收起",
     "expand": "展开",
-    "databaseExplorer": "数据库浏览器",
+    "databaseExplorer": "数据库",
     "dashboard": "仪表盘",
     "aiAssistant": "AI助手",
     "gridView": "网格视图",
@@ -145,6 +145,18 @@
     "chatMsg1": "帮我分析2023年上海市出生率变化",
     "chatMsg2": "基于用户输入，匹配到如下表",
     "chatMsg3": "为了分析2023年上海市的出生率变化，我们需要从"
+  },
+  "settings": {
+    "title": "设置",
+    "aiModel": "AI 模型",
+    "appearance": "外观",
+    "shortcuts": "快捷键",
+    "about": "关于",
+    "appearanceDesc": "主题、字体等界面设置，敬请期待。",
+    "shortcutsDesc": "自定义键盘快捷键，敬请期待。",
+    "appName": "应用名称：",
+    "positioning": "定位：",
+    "techStack": "技术栈："
   },
   "erDiagram": {
     "addTable": "添加表",

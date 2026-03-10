@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::mysql::MySqlPool;
+use sqlx::Row;
 use std::time::Instant;
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, ViewMeta};
@@ -28,7 +29,7 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
-        use sqlx::{Column, Row};
+        use sqlx::Column;
         let start = Instant::now();
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -78,35 +79,35 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_columns(&self, table: &str) -> AppResult<Vec<ColumnMeta>> {
-        let sql = format!(
+        let rows = sqlx::query(
             "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA
              FROM information_schema.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'
-             ORDER BY ORDINAL_POSITION",
-            table.replace('\'', "''")
-        );
-        use sqlx::Row;
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+             ORDER BY ORDINAL_POSITION"
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows.iter().map(|r| ColumnMeta {
             name: r.try_get::<String, _>(0).unwrap_or_default(),
             data_type: r.try_get::<String, _>(1).unwrap_or_default(),
             is_nullable: r.try_get::<String, _>(2).unwrap_or_default() == "YES",
-            column_default: r.try_get::<Option<String>, _>(3).unwrap_or(None),
+            column_default: r.try_get::<Option<String>, _>(3).ok().flatten(),
             is_primary_key: r.try_get::<String, _>(4).unwrap_or_default() == "PRI",
             extra: r.try_get::<Option<String>, _>(5).ok().flatten().filter(|s| !s.is_empty()),
         }).collect())
     }
 
     async fn get_indexes(&self, table: &str) -> AppResult<Vec<IndexMeta>> {
-        let sql = format!(
+        let rows = sqlx::query(
             "SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME
              FROM information_schema.STATISTICS
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'
-             ORDER BY INDEX_NAME, SEQ_IN_INDEX",
-            table.replace('\'', "''")
-        );
-        use sqlx::Row;
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+             ORDER BY INDEX_NAME, SEQ_IN_INDEX"
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
         let mut map: std::collections::BTreeMap<String, IndexMeta> = Default::default();
         for r in &rows {
             let idx_name: String = r.try_get(0).unwrap_or_default();
@@ -122,14 +123,14 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_foreign_keys(&self, table: &str) -> AppResult<Vec<ForeignKeyMeta>> {
-        let sql = format!(
+        let rows = sqlx::query(
             "SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
              FROM information_schema.KEY_COLUMN_USAGE
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND REFERENCED_TABLE_NAME IS NOT NULL",
-            table.replace('\'', "''")
-        );
-        use sqlx::Row;
-        let rows = sqlx::query(&sql).fetch_all(&self.pool).await?;
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL"
+        )
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows.iter().map(|r| ForeignKeyMeta {
             constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
             column: r.try_get::<String, _>(1).unwrap_or_default(),
@@ -139,7 +140,6 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_views(&self) -> AppResult<Vec<ViewMeta>> {
-        use sqlx::Row;
         let rows = sqlx::query(
             "SELECT TABLE_NAME, VIEW_DEFINITION FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE()"
         ).fetch_all(&self.pool).await?;
@@ -150,14 +150,14 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_procedures(&self) -> AppResult<Vec<ProcedureMeta>> {
-        use sqlx::Row;
         let rows = sqlx::query(
             "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE()"
         ).fetch_all(&self.pool).await?;
         Ok(rows.iter().map(|r| {
+            let name: String = r.try_get::<String, _>(0).unwrap_or_default();
             let rt: String = r.try_get::<String, _>(1).unwrap_or_default();
             ProcedureMeta {
-                name: r.try_get::<String, _>(0).unwrap_or_default(),
+                name,
                 routine_type: match rt.as_str() {
                     "PROCEDURE" => RoutineType::Procedure,
                     "FUNCTION" => RoutineType::Function,
@@ -168,7 +168,6 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_table_ddl(&self, table: &str) -> AppResult<String> {
-        use sqlx::Row;
         let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
         let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
         Ok(row.try_get::<String, _>(1).unwrap_or_default())

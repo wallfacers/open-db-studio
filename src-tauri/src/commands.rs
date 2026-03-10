@@ -28,6 +28,11 @@ pub async fn delete_connection(id: i64) -> AppResult<()> {
     crate::db::delete_connection(id)
 }
 
+#[tauri::command]
+pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest) -> AppResult<crate::db::models::Connection> {
+    crate::db::update_connection(id, &req)
+}
+
 // ============ 查询执行 ============
 
 #[tauri::command]

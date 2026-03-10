@@ -11,17 +11,19 @@ const DRIVERS = [
 
 interface Props {
   onClose: () => void;
+  connection?: import('../../types').Connection;
 }
 
-export function ConnectionModal({ onClose }: Props) {
-  const { createConnection, testConnection } = useConnectionStore();
+export function ConnectionModal({ onClose, connection }: Props) {
+  const { createConnection, testConnection, updateConnection } = useConnectionStore();
+  const isEdit = !!connection;
   const [form, setForm] = useState<CreateConnectionRequest>({
-    name: '',
-    driver: 'mysql',
-    host: 'localhost',
-    port: 3306,
-    database_name: '',
-    username: '',
+    name: connection?.name ?? '',
+    driver: connection?.driver ?? 'mysql',
+    host: connection?.host ?? 'localhost',
+    port: connection?.port ?? 3306,
+    database_name: connection?.database_name ?? '',
+    username: connection?.username ?? '',
     password: '',
   });
   const [testing, setTesting] = useState(false);
@@ -50,7 +52,11 @@ export function ConnectionModal({ onClose }: Props) {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await createConnection(form);
+      if (isEdit && connection) {
+        await updateConnection(connection.id, form);
+      } else {
+        await createConnection(form);
+      }
       onClose();
     } finally {
       setSaving(false);
@@ -63,7 +69,7 @@ export function ConnectionModal({ onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[#1e1e1e] border border-[#3a3a3a] rounded-lg w-[480px] p-6">
-        <h2 className="text-white font-semibold mb-4">新建连接</h2>
+        <h2 className="text-white font-semibold mb-4">{isEdit ? '编辑连接' : '新建连接'}</h2>
 
         <div className="space-y-3">
           <div>
@@ -109,7 +115,8 @@ export function ConnectionModal({ onClose }: Props) {
             <div>
               <label className={labelClass}>密码</label>
               <input className={inputClass} type="password" value={form.password ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder={isEdit ? '留空则不修改密码' : ''} />
             </div>
           </div>
         </div>
@@ -132,7 +139,7 @@ export function ConnectionModal({ onClose }: Props) {
             </button>
             <button onClick={handleSave} disabled={saving || !form.name.trim()}
               className="px-3 py-1.5 text-sm bg-[#0078d4] hover:bg-[#006bc2] text-white rounded disabled:opacity-50">
-              {saving ? '保存中...' : '保存'}
+              {saving ? '保存中...' : isEdit ? '保存修改' : '保存'}
             </button>
           </div>
         </div>

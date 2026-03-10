@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard } from 'lucide-react';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
-import { LlmSettingsPanel } from '../Settings/LlmSettings';
 
 interface ExplorerProps {
   isSidebarOpen: boolean;
@@ -30,6 +30,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   activeActivity,
   onTableClick
 }) => {
+  const { t } = useTranslation();
   const { connections, activeConnectionId, tables, loadConnections, setActiveConnection, loadTables, deleteConnection } = useConnectionStore();
   const [showModal, setShowModal] = useState(false);
   const [connContextMenu, setConnContextMenu] = useState<{ connId: number; x: number; y: number } | null>(null);
@@ -49,13 +50,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const handleRefresh = async () => {
     await loadConnections();
     if (activeConnectionId) await loadTables(activeConnectionId);
-    showToast('已刷新连接列表');
+    showToast(t('explorer.connectionListRefreshed'));
   };
 
   const handleDeleteConnection = async (id: number) => {
-    if (!window.confirm('确定要删除这个连接吗？相关查询历史也将一并删除。')) return;
+    if (!window.confirm(t('explorer.confirmDeleteConnection'))) return;
     await deleteConnection(id);
-    showToast('已删除连接');
+    showToast(t('explorer.connectionDeleted'));
   };
 
   useEffect(() => {
@@ -81,7 +82,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
         {activeActivity === 'database' ? (
           <>
             <div className="h-10 flex items-center justify-between px-3 border-b border-[#2b2b2b]">
-              <span className="font-medium text-[#d4d4d4]">数据库</span>
+              <span className="font-medium text-[#d4d4d4]">{t('explorer.database')}</span>
               <div className="flex items-center space-x-2 text-[#858585]">
                 <Plus size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={() => setShowModal(true)} />
                 <RefreshCw size={16} className="cursor-pointer hover:text-[#d4d4d4]" onClick={handleRefresh} />
@@ -92,7 +93,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 <Search size={14} className="text-[#858585] mr-1" />
                 <input
                   type="text"
-                  placeholder="搜索"
+                  placeholder={t('explorer.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="bg-transparent border-none outline-none text-[#d4d4d4] w-full text-xs placeholder-[#858585]"
@@ -106,8 +107,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
               {connections.length === 0 ? (
                 <div className="px-3 py-4 text-center text-xs text-[#858585]">
                   <DatabaseZap size={24} className="mx-auto mb-2 opacity-30" />
-                  <p>暂无连接</p>
-                  <p className="mt-1 text-[#3794ff] cursor-pointer hover:underline" onClick={() => setShowModal(true)}>+ 新建连接</p>
+                  <p>{t('explorer.noConnections')}</p>
+                  <p className="mt-1 text-[#3794ff] cursor-pointer hover:underline" onClick={() => setShowModal(true)}>{t('explorer.newConnection')}</p>
                 </div>
               ) : (
                 connections
@@ -131,7 +132,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                       />
                       {expandedFolders[`conn_${conn.id}`] && activeConnectionId === conn.id && (
                         tables.length === 0 ? (
-                          <div className="px-3 py-1 text-xs text-[#858585]" style={{ paddingLeft: '2rem' }}>暂无表</div>
+                          <div className="px-3 py-1 text-xs text-[#858585]" style={{ paddingLeft: '2rem' }}>{t('explorer.noTables')}</div>
                         ) : (
                           tables.map(t => (
                             <TreeItem
@@ -149,18 +150,11 @@ export const Explorer: React.FC<ExplorerProps> = ({
               )}
             </div>
           </>
-        ) : activeActivity === 'settings' ? (
-          <>
-            <div className="h-10 flex items-center px-3 border-b border-[#2b2b2b]">
-              <span className="font-medium text-[#d4d4d4]">设置</span>
-            </div>
-            <LlmSettingsPanel />
-          </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[#858585]">
             <div className="text-center">
               <LayoutDashboard size={48} className="mx-auto mb-4 opacity-20" />
-              <p>数据库总览信息</p>
+              <p>{t('explorer.databaseOverview')}</p>
             </div>
           </div>
         )}
@@ -180,7 +174,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
               setConnContextMenu(null);
             }}
           >
-            连接
+            {t('explorer.connect')}
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
@@ -190,7 +184,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
               setConnContextMenu(null);
             }}
           >
-            编辑
+            {t('explorer.edit')}
           </button>
           <div className="h-px bg-[#3c3c3c] my-1" />
           <button
@@ -200,7 +194,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
               setConnContextMenu(null);
             }}
           >
-            删除
+            {t('explorer.delete')}
           </button>
         </div>
       )}

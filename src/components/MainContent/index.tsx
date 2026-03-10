@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import MonacoEditor, { type BeforeMount } from '@monaco-editor/react';
+import { useTranslation } from 'react-i18next';
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('odb-dark', {
@@ -69,6 +70,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   resultsHeight, handleResultsResize, resultsTab, setResultsTab,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
 }) => {
+  const { t } = useTranslation();
   const { sqlContent, setSql, executeQuery, isExecuting, results, error } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
   const { explainSql, isExplaining } = useAiStore();
@@ -82,7 +84,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   const handleExecute = () => {
     if (!activeConnectionId) {
-      showToast('请先在左侧选择一个数据库连接');
+      showToast(t('mainContent.selectConnectionFirst'));
       return;
     }
     executeQuery(activeConnectionId, activeTab);
@@ -95,14 +97,14 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   const handleExplain = async () => {
     if (!currentSql.trim() || !activeConnectionId) {
-      showToast('请先输入 SQL 并选择连接');
+      showToast(t('mainContent.inputSqlAndSelectConnection'));
       return;
     }
     try {
       const result = await explainSql(currentSql, activeConnectionId);
       setExplanation(result);
     } catch {
-      showToast('AI 解释失败，请检查 LLM 配置');
+      showToast(t('mainContent.aiExplainFailed'));
     }
   };
 
@@ -186,17 +188,17 @@ export const MainContent: React.FC<MainContentProps> = ({
                   disabled={isExecuting}
                 >
                   {isExecuting ? <Square size={14} className="mr-1.5" /> : <Play size={14} className="mr-1.5" />}
-                  {isExecuting ? '执行中...' : '执行 (F5)'}
+                  {isExecuting ? t('mainContent.executing') : t('mainContent.execute')}
                 </button>
                 <button
                   className={`flex items-center px-2 py-1.5 rounded text-xs transition-colors ${isExplaining ? 'bg-[#2b2b2b] text-[#858585] cursor-not-allowed' : 'bg-[#2b2b2b] hover:bg-[#3a3a3a] text-gray-300'}`}
                   onClick={handleExplain}
                   disabled={isExplaining || !activeConnectionId}
                 >
-                  {isExplaining ? '解释中...' : '💡 解释 SQL'}
+                  {isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}
                 </button>
                 <div className="w-[1px] h-4 bg-[#3c3c3c] mx-1"></div>
-                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Save" onClick={() => showToast('已保存 SQL 文件')}>
+                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Save" onClick={() => showToast(t('mainContent.sqlSaved'))}>
                   <Save size={16} />
                 </button>
                 <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Format SQL" onClick={handleFormat}>
@@ -205,7 +207,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Clear" onClick={handleClear}>
                   <X size={16} />
                 </button>
-                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Settings" onClick={() => showToast('打开编辑器设置')}>
+                <button className="p-1.5 text-[#858585] hover:text-[#d4d4d4] hover:bg-[#2b2b2b] rounded transition-colors" title="Settings" onClick={() => showToast(t('mainContent.openEditorSettings'))}>
                   <Settings size={16} />
                 </button>
               </div>
@@ -217,7 +219,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     onClick={(e) => { e.stopPropagation(); setIsDbMenuOpen(!isDbMenuOpen); setIsTableMenuOpen(false); }}
                   >
                     <DatabaseZap size={14} className="mr-1.5 text-[#3794ff]" />
-                    <span>{activeConnectionId ? `连接 #${activeConnectionId}` : '未选择连接'}</span>
+                    <span>{activeConnectionId ? `${t('mainContent.connection')}${activeConnectionId}` : t('mainContent.noConnectionSelected')}</span>
                     <ChevronDown size={14} className="ml-1 text-[#858585]" />
                   </div>
                 </div>
@@ -234,7 +236,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 value={currentSql}
                 onChange={(val) => setSql(activeTab, val ?? '')}
                 options={{
-                  fontSize: 13,
+                  fontSize: 16,
                   fontFamily: '"JetBrains Mono", "Fira Code", Consolas, monospace',
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
@@ -247,6 +249,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                   tabSize: 2,
                   padding: { top: 12, bottom: 12 },
                   automaticLayout: true,
+                  overviewRulerBorder: false,
+                  overviewRulerLanes: 0,
+                  hideCursorInOverviewRuler: true,
                 }}
               />
             </div>
@@ -267,30 +272,30 @@ export const MainContent: React.FC<MainContentProps> = ({
                   className={`px-4 py-2 text-xs cursor-pointer border-t-2 ${resultsTab === 'result1' ? 'border-t-[#3794ff] text-[#d4d4d4] bg-[#1e1e1e]' : 'border-t-transparent text-[#858585] hover:text-[#d4d4d4]'}`}
                   onClick={() => setResultsTab('result1')}
                 >
-                  结果集
+                  {t('mainContent.resultSet')}
                 </div>
                 <div
                   className={`px-4 py-2 text-xs cursor-pointer border-t-2 ${resultsTab === 'overview' ? 'border-t-[#3794ff] text-[#d4d4d4] bg-[#1e1e1e]' : 'border-t-transparent text-[#858585] hover:text-[#d4d4d4]'}`}
                   onClick={() => setResultsTab('overview')}
                 >
-                  执行概览
+                  {t('mainContent.executionOverview')}
                 </div>
               </div>
 
               {resultsTab === 'result1' ? (
                 <div className="flex-1 overflow-auto">
                   {isExecuting ? (
-                    <div className="p-4 text-gray-400 text-sm">执行中...</div>
+                    <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
                   ) : error ? (
                     <div className="p-4 text-red-400 text-xs font-mono">{error}</div>
                   ) : !currentResult ? (
-                    <div className="p-4 text-[#858585] text-sm">执行 SQL 后结果将显示在这里</div>
+                    <div className="p-4 text-[#858585] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                   ) : currentResult.columns.length === 0 ? (
-                    <div className="p-4 text-green-400 text-sm">✓ 执行成功，{currentResult.row_count} 行受影响（{currentResult.duration_ms}ms）</div>
+                    <div className="p-4 text-green-400 text-sm">{t('mainContent.executeSuccess')}{currentResult.row_count} {t('mainContent.rowsAffected')}（{currentResult.duration_ms}ms）</div>
                   ) : (
                     <>
                       <div className="text-xs text-[#858585] px-3 py-1 border-b border-[#2b2b2b]">
-                        {currentResult.row_count} 行 · {currentResult.duration_ms}ms
+                        {currentResult.row_count} {t('mainContent.rows')} · {currentResult.duration_ms}ms
                       </div>
                       <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
                         <thead className="sticky top-0 bg-[#252526] z-10">
@@ -319,7 +324,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-[#858585]">
-                  <p className="text-sm">执行概览信息</p>
+                  <p className="text-sm">{t('mainContent.executionOverviewInfo')}</p>
                 </div>
               )}
 
@@ -327,7 +332,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               {explanation && (
                 <div className="border-t border-[#2b2b2b] p-4 bg-[#181818]">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-gray-400 font-medium">AI 解释</span>
+                    <span className="text-xs text-gray-400 font-medium">{t('mainContent.aiExplanation')}</span>
                     <button onClick={() => setExplanation(null)} className="text-xs text-[#858585] hover:text-[#d4d4d4]">✕</button>
                   </div>
                   <p className="text-sm text-[#d4d4d4] whitespace-pre-wrap">{explanation}</p>
@@ -339,8 +344,8 @@ export const MainContent: React.FC<MainContentProps> = ({
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-[#858585] bg-[#1e1e1e]">
           <DatabaseZap size={64} className="mb-4 opacity-20" />
-          <p className="text-lg">No active editor</p>
-          <p className="text-sm mt-2 opacity-60">Select a table or query to view</p>
+          <p className="text-lg">{t('mainContent.noActiveEditor')}</p>
+          <p className="text-sm mt-2 opacity-60">{t('mainContent.selectItemToView')}</p>
         </div>
       )}
 
@@ -359,7 +364,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               setContextMenu(null);
             }}
           >
-            关闭
+            {t('mainContent.close')}
           </button>
           <div className="h-px bg-[#3c3c3c] my-1" />
           <button
@@ -370,7 +375,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               setContextMenu(null);
             }}
           >
-            关闭左侧
+            {t('mainContent.closeLeft')}
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -380,7 +385,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               setContextMenu(null);
             }}
           >
-            关闭右侧
+            {t('mainContent.closeRight')}
           </button>
           <div className="h-px bg-[#3c3c3c] my-1" />
           <button
@@ -390,7 +395,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               setContextMenu(null);
             }}
           >
-            关闭全部
+            {t('mainContent.closeAll')}
           </button>
         </div>
       )}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 
 interface ActivityBarProps {
@@ -20,6 +21,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   setIsAssistantOpen,
   showToast
 }) => {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -30,17 +32,17 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             <>
               <div 
                 className="flex items-center cursor-pointer overflow-hidden flex-1"
-                title="User Profile" 
-                onClick={() => showToast('打开用户个人中心')}
+                title={t('activity.userProfile')} 
+                onClick={() => showToast(t('activity.openUserProfile'))}
               >
                 <div className="w-6 h-6 rounded-full bg-[#3794ff] flex items-center justify-center text-white mr-3 flex-shrink-0">
                   <User size={14} />
                 </div>
-                <span className="text-[#d4d4d4] text-[13px] truncate">User Profile</span>
+                <span className="text-[#d4d4d4] text-[13px] truncate">{t('activity.userProfile')}</span>
               </div>
               <div 
                 className="flex items-center justify-center cursor-pointer text-[#858585] hover:text-white"
-                title="Collapse"
+                title={t('activity.collapse')}
                 onClick={() => setIsExpanded(false)}
               >
                 <ChevronLeft size={20} />
@@ -49,7 +51,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           ) : (
             <div 
               className="w-12 h-12 flex items-center justify-center cursor-pointer text-[#858585] hover:text-white"
-              title="Expand"
+              title={t('activity.expand')}
               onClick={() => setIsExpanded(true)}
             >
               <ChevronRight size={24} />
@@ -63,10 +65,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             setActiveActivity('database');
             setIsSidebarOpen(true);
           }}
-          title="Database Explorer"
+          title={t('activity.databaseExplorer')}
         >
           <Database size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-          {isExpanded && <span className="text-[13px] truncate">Database Explorer</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.databaseExplorer')}</span>}
         </div>
         
         <div 
@@ -75,10 +77,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             setActiveActivity('dashboard');
             setIsSidebarOpen(true);
           }}
-          title="Dashboard"
+          title={t('activity.dashboard')}
         >
           <LayoutDashboard size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-          {isExpanded && <span className="text-[13px] truncate">Dashboard</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.dashboard')}</span>}
         </div>
         
         <div 
@@ -87,19 +89,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             setActiveActivity('chat');
             setIsAssistantOpen(true);
           }}
-          title="AI Assistant"
+          title={t('activity.aiAssistant')}
         >
           <MessageSquare size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-          {isExpanded && <span className="text-[13px] truncate">AI Assistant</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.aiAssistant')}</span>}
         </div>
         
         <div 
           className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'grid' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
           onClick={() => setActiveActivity('grid')}
-          title="Grid View"
+          title={t('activity.gridView')}
         >
           <LayoutGrid size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-          {isExpanded && <span className="text-[13px] truncate">Grid View</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.gridView')}</span>}
         </div>
       </div>
       
@@ -113,31 +115,31 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               setTimeout(() => el.classList.remove('animate-spin'), 1000);
             }
           }}
-          title="Refresh"
+          title={t('activity.refresh')}
         >
           <RefreshCw id="refresh-icon" size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-          {isExpanded && <span className="text-[13px] truncate">Refresh</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.refresh')}</span>}
         </div>
         
         <div 
           className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent`}
-          title="Notifications" 
-          onClick={() => showToast('打开消息通知')}
+          title={t('activity.notifications')} 
+          onClick={() => showToast(t('activity.openNotifications'))}
         >
           <div className="relative">
             <Bell size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             <span className={`absolute bg-[#3794ff] ${isExpanded ? 'top-0 right-3 w-2 h-2' : 'top-0 right-0 w-2 h-2'}`}></span>
           </div>
-          {isExpanded && <span className="text-[13px] truncate">Notifications</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.notifications')}</span>}
         </div>
         
         <div
           className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-[#ffffff] border-l-[3px] border-[#3794ff]' : 'text-[#858585] hover:text-[#ffffff] hover:bg-[#2b2b2b] border-l-[3px] border-transparent'}`}
-          title="Settings"
+          title={t('activity.settings')}
           onClick={() => { setActiveActivity('settings'); setIsSidebarOpen(true); }}
         >
           <Settings size={24} className={`transition-transform duration-300 hover:rotate-90 ${isExpanded ? 'mr-3 flex-shrink-0' : ''}`} />
-          {isExpanded && <span className="text-[13px] truncate">Settings</span>}
+          {isExpanded && <span className="text-[13px] truncate">{t('activity.settings')}</span>}
         </div>
       </div>
     </div>

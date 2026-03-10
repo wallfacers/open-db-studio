@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
 import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
 import { Toast } from './components/Toast';
+import { SettingsPage } from './components/Settings/SettingsPage';
 
 export interface TabData {
   id: string;
@@ -13,6 +15,7 @@ export interface TabData {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [activeActivity, setActiveActivity] = useState('database');
   const [isAssistantOpen, setIsAssistantOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
@@ -77,13 +80,13 @@ JOIN
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'user',
-      content: '帮我分析2023年上海市出生率变化'
+      content: t('app.chatMsg1')
     },
     {
       role: 'ai',
       content: (
         <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
-          <p>基于用户输入，匹配到如下表</p>
+          <p>{t('app.chatMsg2')}</p>
           
           <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#ce9178] break-all">
             ["birth_trend_analysis", "region"]
@@ -94,7 +97,7 @@ JOIN
             <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">region</span>
           </div>
           
-          <p className="leading-relaxed">为了分析2023年上海市的出生率变化，我们需要从</p>
+          <p className="leading-relaxed">{t('app.chatMsg3')}</p>
         </div>
       )
     }
@@ -257,6 +260,35 @@ JOIN
     document.addEventListener('mouseup', onMouseUp);
   };
 
+  // Re-evaluate chatMessages when translation changes
+  useEffect(() => {
+    setChatMessages([
+      {
+        role: 'user',
+        content: t('app.chatMsg1')
+      },
+      {
+        role: 'ai',
+        content: (
+          <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
+            <p>{t('app.chatMsg2')}</p>
+            
+            <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#ce9178] break-all">
+              ["birth_trend_analysis", "region"]
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">birth_trend_analysis</span>
+              <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">region</span>
+            </div>
+            
+            <p className="leading-relaxed">{t('app.chatMsg3')}</p>
+          </div>
+        )
+      }
+    ]);
+  }, [t]);
+
   return (
     <div className="h-screen w-screen flex bg-[#141414] text-[#cccccc] overflow-hidden font-sans text-[13px] select-none">
       <ActivityBar 
@@ -269,19 +301,24 @@ JOIN
         showToast={showToast}
       />
       
-      <Explorer 
-        isSidebarOpen={isSidebarOpen}
-        sidebarWidth={sidebarWidth}
-        handleSidebarResize={handleSidebarResize}
-        showToast={showToast}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        expandedFolders={expandedFolders}
-        toggleFolder={toggleFolder}
-        activeActivity={activeActivity}
-        onTableClick={handleTableClick}
-      />
+      {activeActivity !== 'settings' && (
+        <Explorer
+          isSidebarOpen={isSidebarOpen}
+          sidebarWidth={sidebarWidth}
+          handleSidebarResize={handleSidebarResize}
+          showToast={showToast}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          expandedFolders={expandedFolders}
+          toggleFolder={toggleFolder}
+          activeActivity={activeActivity}
+          onTableClick={handleTableClick}
+        />
+      )}
 
+      {activeActivity === 'settings' ? (
+        <SettingsPage />
+      ) : (
       <MainContent
         tabs={tabs}
         activeTab={activeTab}
@@ -312,7 +349,9 @@ JOIN
         tableData={tableData}
         executionTime={executionTime}
       />
+      )}
 
+      {activeActivity !== 'settings' && (
       <Assistant
         isAssistantOpen={isAssistantOpen}
         assistantWidth={assistantWidth}
@@ -327,6 +366,7 @@ JOIN
         isModelMenuOpen={isModelMenuOpen}
         setIsModelMenuOpen={setIsModelMenuOpen}
       />
+      )}
 
       <Toast message={toastMessage} />
     </div>

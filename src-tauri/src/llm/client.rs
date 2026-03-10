@@ -39,6 +39,8 @@ pub struct ChatContext {
 #[derive(serde::Serialize)]
 struct AnthropicRequest {
     model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
     messages: Vec<ChatMessage>,
     max_tokens: u32,
 }
@@ -123,9 +125,19 @@ impl LlmClient {
     }
 
     async fn chat_anthropic(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
+        let mut user_messages: Vec<ChatMessage> = Vec::new();
+        let mut system_content: Option<String> = None;
+        for msg in messages {
+            if msg.role == "system" {
+                system_content = Some(msg.content);
+            } else {
+                user_messages.push(msg);
+            }
+        }
         let req = AnthropicRequest {
             model: self.model.clone(),
-            messages,
+            system: system_content,
+            messages: user_messages,
             max_tokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
         };
 

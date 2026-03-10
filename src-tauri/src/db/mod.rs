@@ -8,8 +8,6 @@ use rusqlite::OptionalExtension;
 use std::sync::Mutex;
 use crate::AppResult;
 
-pub use models::*;
-
 static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
 
 /// 初始化内置 SQLite 数据库

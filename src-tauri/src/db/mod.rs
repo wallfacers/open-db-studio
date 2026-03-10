@@ -208,12 +208,26 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         None => String::new(),
     };
 
+    let driver = row.0;
+    let default_port: i64 = match driver.as_str() {
+        "postgres" => 5432,
+        "sqlserver" => 1433,
+        "oracle" => 1521,
+        _ => 3306, // mysql
+    };
+    let username = row.4.unwrap_or_default();
+    // PostgreSQL 数据库名为空时默认使用用户名（pg 规范），避免连接到 pg_catalog
+    let database = match row.3 {
+        Some(db) if !db.is_empty() => db,
+        _ => if driver == "postgres" { username.clone() } else { String::new() },
+    };
+
     Ok(crate::datasource::ConnectionConfig {
-        driver: row.0,
+        driver,
         host: row.1.unwrap_or_default(),
-        port: row.2.unwrap_or(3306) as u16,
-        database: row.3.unwrap_or_default(),
-        username: row.4.unwrap_or_default(),
+        port: row.2.unwrap_or(default_port) as u16,
+        database,
+        username,
         password,
         extra_params: row.6,
     })

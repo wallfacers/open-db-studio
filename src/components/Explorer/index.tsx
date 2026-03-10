@@ -6,6 +6,7 @@ import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
 import { TableManageDialog } from '../TableManageDialog';
+import { IndexManager } from '../IndexManager';
 import type { TableDetail } from '../../types';
 
 interface ExplorerProps {
@@ -47,6 +48,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const [tableContextMenu, setTableContextMenu] = useState<{ tableName: string; x: number; y: number } | null>(null);
   const tableMenuRef = useRef<HTMLDivElement>(null);
   const [tableManageDialog, setTableManageDialog] = useState<{ tableName?: string } | null>(null);
+  const [indexManagerTable, setIndexManagerTable] = useState<string | null>(null);
 
   useEffect(() => {
     loadConnections();
@@ -397,6 +399,16 @@ export const Explorer: React.FC<ExplorerProps> = ({
             <FileEdit size={13} />
             {t('tableManage.editTable', { table: tableContextMenu.tableName })}
           </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
+            onClick={() => {
+              setIndexManagerTable(tableContextMenu.tableName);
+              setTableContextMenu(null);
+            }}
+          >
+            <ListTree size={13} />
+            {t('tableManage.manageIndexes')}
+          </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#003d2f] hover:text-red-300 flex items-center gap-2"
@@ -420,6 +432,15 @@ export const Explorer: React.FC<ExplorerProps> = ({
             if (activeConnectionId) loadTables(activeConnectionId);
             setTableManageDialog(null);
           }}
+          showToast={showToast}
+        />
+      )}
+
+      {indexManagerTable !== null && activeConnectionId && (
+        <IndexManager
+          connectionId={activeConnectionId}
+          tableName={indexManagerTable}
+          onClose={() => setIndexManagerTable(null)}
           showToast={showToast}
         />
       )}

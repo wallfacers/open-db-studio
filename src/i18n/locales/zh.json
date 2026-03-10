@@ -197,7 +197,9 @@
   "common": {
     "cancel": "取消",
     "execute": "执行",
-    "executing": "执行中..."
+    "executing": "执行中...",
+    "close": "关闭",
+    "create": "创建"
   },
   "tableManage": {
     "createTable": "新建表",
@@ -206,7 +208,22 @@
     "confirmDrop": "确认删除表 {{table}}？此操作不可恢复！",
     "createSuccess": "表创建成功",
     "alterSuccess": "表修改成功",
-    "dropSuccess": "表删除成功"
+    "dropSuccess": "表删除成功",
+    "manageIndexes": "管理索引"
+  },
+  "indexManager": {
+    "title": "索引管理",
+    "name": "索引名",
+    "columns": "列",
+    "unique": "唯一",
+    "addIndex": "添加索引",
+    "indexName": "索引名称",
+    "columnsHint": "列名（如 col1, col2）",
+    "uniqueIndex": "唯一索引",
+    "dropSuccess": "索引删除成功",
+    "createSuccess": "索引创建成功",
+    "confirmDrop": "确认删除索引",
+    "nameAndColumnsRequired": "请输入索引名和列名"
   },
   "export": {
     "title": "导出 {{table}}",

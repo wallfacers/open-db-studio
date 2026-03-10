@@ -12,11 +12,20 @@ interface AiState {
   saveSettings: (settings: LlmSettings) => Promise<void>;
   generateSql: (prompt: string, connectionId: number) => Promise<string>;
   explainSql: (sql: string, connectionId: number) => Promise<string>;
+  isOptimizing: boolean;
+  isDiagnosing: boolean;
+  isCreatingTable: boolean;
+  optimizeSql: (sql: string, connectionId: number) => Promise<string>;
+  createTable: (description: string, connectionId: number) => Promise<string>;
+  diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }
 
 export const useAiStore = create<AiState>((set) => ({
   isGenerating: false,
   isExplaining: false,
+  isOptimizing: false,
+  isDiagnosing: false,
+  isCreatingTable: false,
   settings: null,
   error: null,
 
@@ -57,6 +66,42 @@ export const useAiStore = create<AiState>((set) => ({
       throw e;
     } finally {
       set({ isExplaining: false });
+    }
+  },
+
+  optimizeSql: async (sql, connectionId) => {
+    set({ isOptimizing: true, error: null });
+    try {
+      return await invoke<string>('ai_optimize_sql', { sql, connectionId });
+    } catch (e) {
+      set({ error: String(e) });
+      throw e;
+    } finally {
+      set({ isOptimizing: false });
+    }
+  },
+
+  createTable: async (description, connectionId) => {
+    set({ isCreatingTable: true, error: null });
+    try {
+      return await invoke<string>('ai_create_table', { description, connectionId });
+    } catch (e) {
+      set({ error: String(e) });
+      throw e;
+    } finally {
+      set({ isCreatingTable: false });
+    }
+  },
+
+  diagnoseError: async (sql, errorMsg, connectionId) => {
+    set({ isDiagnosing: true, error: null });
+    try {
+      return await invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId });
+    } catch (e) {
+      set({ error: String(e) });
+      throw e;
+    } finally {
+      set({ isDiagnosing: false });
     }
   },
 }));

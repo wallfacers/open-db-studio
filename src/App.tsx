@@ -85,16 +85,16 @@ JOIN
     {
       role: 'ai',
       content: (
-        <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
+        <div className="text-[#c8daea] text-[13px] space-y-3 w-full">
           <p>{t('app.chatMsg2')}</p>
           
-          <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#ce9178] break-all">
+          <div className="bg-[#111922] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#e8a87c] break-all">
             ["birth_trend_analysis", "region"]
           </div>
           
           <div className="flex flex-wrap gap-2">
-            <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">birth_trend_analysis</span>
-            <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">region</span>
+            <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">birth_trend_analysis</span>
+            <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">region</span>
           </div>
           
           <p className="leading-relaxed">{t('app.chatMsg3')}</p>
@@ -277,16 +277,16 @@ JOIN
       {
         role: 'ai',
         content: (
-          <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
+          <div className="text-[#c8daea] text-[13px] space-y-3 w-full">
             <p>{t('app.chatMsg2')}</p>
             
-            <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#ce9178] break-all">
+            <div className="bg-[#111922] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#e8a87c] break-all">
               ["birth_trend_analysis", "region"]
             </div>
             
             <div className="flex flex-wrap gap-2">
-              <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">birth_trend_analysis</span>
-              <span className="px-2 py-1 bg-[#2b2b2b] rounded-full text-xs border border-[#3c3c3c] text-[#d4d4d4]">region</span>
+              <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">birth_trend_analysis</span>
+              <span className="px-2 py-1 bg-[#1e2d42] rounded-full text-xs border border-[#2a3f5a] text-[#c8daea]">region</span>
             </div>
             
             <p className="leading-relaxed">{t('app.chatMsg3')}</p>
@@ -297,7 +297,7 @@ JOIN
   }, [t]);
 
   return (
-    <div className="h-screen w-screen flex bg-[#141414] text-[#cccccc] overflow-hidden font-sans text-[13px]">
+    <div className="h-screen w-screen flex bg-[#080d12] text-[#b5cfe8] overflow-hidden font-sans text-[13px]">
       <ActivityBar 
         activeActivity={activeActivity}
         setActiveActivity={setActiveActivity}

@@ -139,6 +139,9 @@
     "saved": "✓ 已保存",
     "saving": "保存中...",
     "save": "保存",
+    "testConnection": "测试连接",
+    "testing": "测试中...",
+    "testSuccess": "连接成功",
     "supportInfo": "支持 OpenAI 兼容接口（OpenAI、Azure OpenAI、本地 Ollama、第三方代理等）。 API Key 使用 AES-256-GCM 加密存储在本地。"
   },
   "app": {
@@ -156,7 +159,11 @@
     "shortcutsDesc": "自定义键盘快捷键，敬请期待。",
     "appName": "应用名称：",
     "positioning": "定位：",
-    "techStack": "技术栈："
+    "techStack": "技术栈：",
+    "language": "语言",
+    "languageDesc": "切换界面显示语言，立即生效。",
+    "languageZh": "中文",
+    "languageEn": "英文 (English)"
   },
   "erDiagram": {
     "addTable": "添加表",

@@ -104,7 +104,7 @@ export default function ERDiagram() {
       if (!element) return;
       
       toPng(element, {
-        backgroundColor: '#0f0f11',
+        backgroundColor: '#080d12',
         filter: (node) => {
           if (
             node?.classList?.contains('react-flow__minimap') ||
@@ -125,7 +125,7 @@ export default function ERDiagram() {
   }, []);
 
   return (
-    <div className="w-full h-full bg-[#0f0f11]" ref={reactFlowWrapper}>
+    <div className="w-full h-full bg-[#080d12]" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -138,13 +138,13 @@ export default function ERDiagram() {
         fitViewOptions={{ maxZoom: 0.8, padding: 0.2 }}
         deleteKeyCode={['Backspace', 'Delete']}
         selectionKeyCode={['Shift', 'Meta', 'Control']}
-        defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: '#a1a1aa', strokeWidth: 2 }, interactionWidth: 20 }}
-        className="bg-[#0f0f11]"
+        defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: '#8bafc9', strokeWidth: 2 }, interactionWidth: 20 }}
+        className="bg-[#080d12]"
       >
-        <Background color="#333" gap={16} />
+        <Background color="#1e2d42" gap={20} size={1} />
         <Controls 
           showZoom={false} 
-          className="!bg-[#1e1e1e] border border-[#3c3c3c] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[#1e1e1e] [&_button]:!border-b [&_button]:!border-[#3c3c3c] [&_button:last-child]:!border-b-0 [&_button]:!fill-[#d4d4d4] hover:[&_button]:!bg-[#2b2b2b] hover:[&_button]:!fill-white hover:[&_button_svg]:text-white [&_button_svg]:text-[#d4d4d4]"
+          className="!bg-[#111922] border border-[#2a3f5a] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[#111922] [&_button]:!border-b [&_button]:!border-[#2a3f5a] [&_button:last-child]:!border-b-0 [&_button]:!fill-[#c8daea] hover:[&_button]:!bg-[#1e2d42] hover:[&_button]:!fill-white hover:[&_button_svg]:text-white [&_button_svg]:text-[#c8daea]"
         >
           <ControlButton onClick={onAddTable} title={t('erDiagram.addTable')}>
             <Plus size={16} strokeWidth={2.5} />

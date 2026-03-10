@@ -18,12 +18,12 @@ export function PasswordInput({ value, onChange, className = '', placeholder = '
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`${className} pr-8`}
+        className={`${className} pr-8 no-password-reveal`}
       />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#858585] hover:text-[#d4d4d4]"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] hover:text-[#c8daea]"
         tabIndex={-1}
       >
         {visible ? <EyeOff size={14} /> : <Eye size={14} />}

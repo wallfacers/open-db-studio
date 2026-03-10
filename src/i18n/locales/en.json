@@ -243,5 +243,15 @@
     "export": "Export",
     "success": "Exported to {{path}}",
     "exportData": "Export Data"
+  },
+  "aiCreateTable": {
+    "title": "AI Create Table",
+    "describeTable": "Describe Table Structure",
+    "descriptionPlaceholder": "e.g. Create a users table with id, username, email, created_at, username must be unique",
+    "generate": "AI Generate DDL",
+    "generating": "Generating...",
+    "reviewDdl": "Review and Edit Generated DDL",
+    "executeAndCreate": "Execute & Create",
+    "success": "Table created successfully"
   }
 }

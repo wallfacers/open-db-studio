@@ -46,10 +46,14 @@ export interface QueryHistory {
   error_msg: string | null;
 }
 
+export type ApiType = 'openai' | 'anthropic';
+
 export interface LlmSettings {
   api_key: string;
   base_url: string;
   model: string;
+  api_type: ApiType;
+  preset: string | null;
 }
 
 export type TabType = 'query' | 'table' | 'er_diagram';

@@ -197,7 +197,9 @@
   "common": {
     "cancel": "Cancel",
     "execute": "Execute",
-    "executing": "Executing..."
+    "executing": "Executing...",
+    "close": "Close",
+    "create": "Create"
   },
   "tableManage": {
     "createTable": "Create Table",
@@ -206,7 +208,22 @@
     "confirmDrop": "Confirm drop table {{table}}? This operation is irreversible!",
     "createSuccess": "Table created successfully",
     "alterSuccess": "Table altered successfully",
-    "dropSuccess": "Table dropped successfully"
+    "dropSuccess": "Table dropped successfully",
+    "manageIndexes": "Manage Indexes"
+  },
+  "indexManager": {
+    "title": "Index Manager",
+    "name": "Index Name",
+    "columns": "Columns",
+    "unique": "Unique",
+    "addIndex": "Add Index",
+    "indexName": "Index name",
+    "columnsHint": "Column names (e.g. col1, col2)",
+    "uniqueIndex": "Unique index",
+    "dropSuccess": "Index dropped successfully",
+    "createSuccess": "Index created successfully",
+    "confirmDrop": "Confirm drop index",
+    "nameAndColumnsRequired": "Please enter index name and column names"
   },
   "export": {
     "title": "Export {{table}}",

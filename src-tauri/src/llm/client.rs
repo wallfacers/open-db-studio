@@ -43,7 +43,7 @@ impl LlmClient {
         Self {
             client: Client::new(),
             api_key,
-            base_url: base_url.unwrap_or_else(|| "https://api.openai.com".to_string()),
+            base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
         }
     }
@@ -56,15 +56,23 @@ impl LlmClient {
             stream: false,
         };
 
-        let resp: OpenAIResponse = self
+        let base = self.base_url.trim_end_matches('/');
+        let http_resp = self
             .client
-            .post(format!("{}/v1/chat/completions", self.base_url))
+            .post(format!("{}/chat/completions", base))
             .bearer_auth(&self.api_key)
             .json(&req)
             .send()
-            .await?
-            .json()
             .await?;
+
+        if !http_resp.status().is_success() {
+            let status = http_resp.status();
+            let body = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body)));
+        }
+
+        let resp: OpenAIResponse = http_resp.json().await
+            .map_err(|e| crate::AppError::Llm(format!("Failed to parse response: {}", e)))?;
 
         resp.choices
             .into_iter()

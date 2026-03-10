@@ -133,10 +133,14 @@ pub struct LlmSettings {
 
 #[tauri::command]
 pub async fn get_llm_settings() -> AppResult<LlmSettings> {
+    let api_key = match crate::db::get_setting("llm.api_key")? {
+        Some(enc) if !enc.is_empty() => crate::crypto::decrypt(&enc)?,
+        _ => String::new(),
+    };
     Ok(LlmSettings {
-        api_key: crate::db::get_setting("llm.api_key")?.unwrap_or_default(),
+        api_key,
         base_url: crate::db::get_setting("llm.base_url")?
-            .unwrap_or_else(|| "https://api.openai.com".to_string()),
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
         model: crate::db::get_setting("llm.model")?
             .unwrap_or_else(|| "gpt-4o-mini".to_string()),
     })
@@ -149,6 +153,21 @@ pub async fn set_llm_settings(settings: LlmSettings) -> AppResult<()> {
     crate::db::set_setting("llm.api_key", &enc_key)?;
     crate::db::set_setting("llm.base_url", &settings.base_url)?;
     crate::db::set_setting("llm.model", &settings.model)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn test_llm_connection(settings: LlmSettings) -> AppResult<()> {
+    let client = crate::llm::client::LlmClient::new(
+        settings.api_key,
+        Some(settings.base_url),
+        Some(settings.model),
+    );
+    let messages = vec![crate::llm::ChatMessage {
+        role: "user".into(),
+        content: "hi".into(),
+    }];
+    client.chat(messages).await?;
     Ok(())
 }
 

@@ -1,11 +1,14 @@
 import React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
-export const TreeItem = ({ label, id, icon: Icon, isOpen = false, hasChildren = false, indent = 0, active = false, secondaryLabel = '', onClick }: any) => {
+export const TreeItem = ({ label, id, icon: Icon, isOpen = false, hasChildren = false, indent = 0, active = false, secondaryLabel = '', onClick, onDoubleClick }: any) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
       e.preventDefault();
       navigator.clipboard.writeText(label);
+    }
+    if (e.key === 'Enter' && onDoubleClick) {
+      onDoubleClick(id || label);
     }
   };
 
@@ -15,6 +18,7 @@ export const TreeItem = ({ label, id, icon: Icon, isOpen = false, hasChildren = 
       style={{ paddingLeft: `${indent * 12 + 8}px` }}
       tabIndex={0}
       onClick={() => onClick && onClick(id || label)}
+      onDoubleClick={() => onDoubleClick && onDoubleClick(id || label)}
       onKeyDown={handleKeyDown}
     >
       <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#858585]">

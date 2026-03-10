@@ -36,7 +36,7 @@ export function SettingsPage() {
       </div>
 
       {/* 右侧内容 */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto flex flex-col items-center">
         {activeSection === 'ai' && <LlmSettingsPanel />}
         {activeSection === 'appearance' && (
           <PlaceholderSection title={t('settings.appearance')} description={t('settings.appearanceDesc')} />
@@ -52,7 +52,7 @@ export function SettingsPage() {
 
 function PlaceholderSection({ title, description }: { title: string; description: string }) {
   return (
-    <div className="p-8 text-center text-[#858585]">
+    <div className="w-full max-w-lg p-8 text-center text-[#858585]">
       <p className="text-sm font-medium text-[#d4d4d4] mb-2">{title}</p>
       <p className="text-xs">{description}</p>
     </div>
@@ -61,7 +61,7 @@ function PlaceholderSection({ title, description }: { title: string; description
 
 function AboutSection({ t }: { t: any }) {
   return (
-    <div className="p-6 space-y-3 max-w-lg">
+    <div className="w-full max-w-lg p-8 space-y-3">
       <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">{t('settings.about')}</h3>
       <div className="space-y-2 text-xs text-[#858585]">
         <p><span className="text-[#d4d4d4]">{t('settings.appName')}</span>open-db-studio</p>

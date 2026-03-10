@@ -15,6 +15,7 @@ interface ConnectionState {
   updateConnection: (id: number, req: CreateConnectionRequest) => Promise<Connection>;
   testConnection: (req: CreateConnectionRequest) => Promise<boolean>;
   setActiveConnection: (id: number | null) => void;
+  disconnectConnection: (id: number) => void;
   loadTables: (connectionId: number) => Promise<void>;
 }
 
@@ -72,6 +73,11 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   setActiveConnection: (id) => set({ activeConnectionId: id }),
+
+  disconnectConnection: (id) => set((s) => ({
+    activeConnectionId: s.activeConnectionId === id ? null : s.activeConnectionId,
+    tables: s.activeConnectionId === id ? [] : s.tables,
+  })),
 
   loadTables: async (connectionId) => {
     try {

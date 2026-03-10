@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Pencil, Trash2 } from 'lucide-react';
+import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2 } from 'lucide-react';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
@@ -33,20 +33,28 @@ export const Explorer: React.FC<ExplorerProps> = ({
   onNewQuery
 }) => {
   const { t } = useTranslation();
-  const { connections, activeConnectionId, tables, loadConnections, setActiveConnection, loadTables, deleteConnection } = useConnectionStore();
+  const { connections, activeConnectionId, tables, loadConnections, setActiveConnection, loadTables, deleteConnection, disconnectConnection } = useConnectionStore();
   const [showModal, setShowModal] = useState(false);
   const [connContextMenu, setConnContextMenu] = useState<{ connId: number; x: number; y: number } | null>(null);
   const connMenuRef = useRef<HTMLDivElement>(null);
   const [editingConn, setEditingConn] = useState<import('../../types').Connection | null>(null);
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
 
   useEffect(() => {
     loadConnections();
   }, []);
 
-  const handleConnectionClick = (id: number) => {
+  // 单击：仅选中（展开/折叠文件夹），不加载数据
+  const handleConnectionSelect = (id: number) => {
+    setActiveConnection(id);
+    toggleFolder(`conn_${id}`);
+  };
+
+  // 双击：连接并加载表
+  const handleConnectionOpen = (id: number) => {
     setActiveConnection(id);
     loadTables(id);
-    toggleFolder(`conn_${id}`);
+    if (!expandedFolders[`conn_${id}`]) toggleFolder(`conn_${id}`);
   };
 
   const handleRefresh = async () => {
@@ -130,7 +138,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
                         hasChildren
                         isOpen={expandedFolders[`conn_${conn.id}`]}
                         active={activeConnectionId === conn.id}
-                        onClick={() => handleConnectionClick(conn.id)}
+                        onClick={() => handleConnectionSelect(conn.id)}
+                        onDoubleClick={() => handleConnectionOpen(conn.id)}
                       />
                       {expandedFolders[`conn_${conn.id}`] && activeConnectionId === conn.id && (
                         tables.length === 0 ? (
@@ -142,7 +151,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
                               label={t.name}
                               icon={TableProperties}
                               indent={1}
-                              onClick={() => onTableClick(t.name, conn.name)}
+                              active={selectedTable === t.name}
+                              onClick={() => setSelectedTable(t.name)}
+                              onDoubleClick={() => { setSelectedTable(t.name); onTableClick(t.name, conn.name); }}
                             />
                           ))
                         )
@@ -169,15 +180,27 @@ export const Explorer: React.FC<ExplorerProps> = ({
           style={{ left: connContextMenu.x, top: connContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#d4d4d4] enabled:hover:bg-[#094771] enabled:hover:text-white"
+            disabled={activeConnectionId === connContextMenu.connId}
             onClick={() => {
               const conn = connections.find(c => c.id === connContextMenu.connId);
-              if (conn) handleConnectionClick(conn.id);
+              if (conn) handleConnectionOpen(conn.id);
               setConnContextMenu(null);
             }}
           >
             <PlugZap size={13} />
-            {t('explorer.connect')}
+            打开连接
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#d4d4d4] enabled:hover:bg-[#094771] enabled:hover:text-white"
+            disabled={activeConnectionId !== connContextMenu.connId}
+            onClick={() => {
+              disconnectConnection(connContextMenu.connId);
+              setConnContextMenu(null);
+            }}
+          >
+            <Unplug size={13} />
+            关闭连接
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white flex items-center gap-2"

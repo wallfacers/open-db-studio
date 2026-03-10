@@ -1,18 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
+import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { PasswordInput } from '../common/PasswordInput';
 import { useAiStore } from '../../store';
 import type { LlmSettings } from '../../types';
+
+type TestStatus = 'idle' | 'testing' | 'success' | 'fail';
 
 export function LlmSettingsPanel() {
   const { t } = useTranslation();
   const { settings, loadSettings, saveSettings } = useAiStore();
   const [form, setForm] = useState<LlmSettings>({
     api_key: '',
-    base_url: 'https://api.openai.com',
+    base_url: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testStatus, setTestStatus] = useState<TestStatus>('idle');
+  const [testError, setTestError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -33,21 +40,33 @@ export function LlmSettingsPanel() {
     }
   };
 
+  const handleTest = async () => {
+    setTestStatus('testing');
+    setTestError(null);
+    try {
+      await invoke('test_llm_connection', { settings: form });
+      setTestStatus('success');
+      setTimeout(() => setTestStatus('idle'), 3000);
+    } catch (e) {
+      setTestStatus('fail');
+      setTestError(String(e));
+    }
+  };
+
   const inputClass = 'w-full bg-[#2a2a2a] border border-[#3a3a3a] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#0078d4]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="p-4 space-y-4 max-w-lg">
+    <div className="w-full max-w-lg">
+      <div className="p-8 space-y-4">
         <h3 className="text-white font-semibold text-sm border-b border-[#2b2b2b] pb-2">{t('llmSettings.aiModelConfig')}</h3>
 
         <div>
           <label className={labelClass}>{t('llmSettings.apiKey')}</label>
-          <input
+          <PasswordInput
             className={inputClass}
-            type="password"
             value={form.api_key}
-            onChange={(e) => setForm((f) => ({ ...f, api_key: e.target.value }))}
+            onChange={(v) => setForm((f) => ({ ...f, api_key: v }))}
             placeholder="sk-..."
           />
         </div>
@@ -58,7 +77,7 @@ export function LlmSettingsPanel() {
             className={inputClass}
             value={form.base_url}
             onChange={(e) => setForm((f) => ({ ...f, base_url: e.target.value }))}
-            placeholder="https://api.openai.com"
+            placeholder="https://api.openai.com/v1"
           />
         </div>
 
@@ -72,13 +91,37 @@ export function LlmSettingsPanel() {
           />
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-1.5 text-sm bg-[#0078d4] hover:bg-[#006bc2] text-white rounded disabled:opacity-50"
-        >
-          {saved ? t('llmSettings.saved') : saving ? t('llmSettings.saving') : t('llmSettings.save')}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleTest}
+            disabled={testStatus === 'testing' || !form.api_key}
+            className="px-4 py-1.5 text-sm border border-[#3a3a3a] text-[#d4d4d4] hover:bg-[#2a2a2a] rounded disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {testStatus === 'testing' && <Loader2 size={13} className="animate-spin" />}
+            {testStatus === 'success' && <CheckCircle size={13} className="text-green-400" />}
+            {testStatus === 'fail' && <XCircle size={13} className="text-red-400" />}
+            {testStatus === 'testing' ? '测试中...' : '测试连接'}
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm bg-[#0078d4] hover:bg-[#006bc2] text-white rounded disabled:opacity-50"
+          >
+            {saved ? t('llmSettings.saved') : saving ? t('llmSettings.saving') : t('llmSettings.save')}
+          </button>
+        </div>
+
+        {testStatus === 'success' && (
+          <p className="text-xs text-green-400 flex items-center gap-1">
+            <CheckCircle size={12} /> 连接成功
+          </p>
+        )}
+        {testStatus === 'fail' && testError && (
+          <p className="text-xs text-red-400 flex items-center gap-1 break-all">
+            <XCircle size={12} className="flex-shrink-0" /> {testError}
+          </p>
+        )}
 
         <p className="text-xs text-[#858585] pt-2">
           {t('llmSettings.supportInfo')}

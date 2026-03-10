@@ -6,6 +6,7 @@ import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
 import { Toast } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
+import { TitleBar } from './components/TitleBar';
 
 export interface TabData {
   id: string;
@@ -297,8 +298,10 @@ JOIN
   }, [t]);
 
   return (
-    <div className="h-screen w-screen flex bg-[#080d12] text-[#b5cfe8] overflow-hidden font-sans text-[13px]">
-      <ActivityBar 
+    <div className="h-screen w-screen flex flex-col bg-[#080d12] text-[#b5cfe8] overflow-hidden font-sans text-[13px]">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+      <ActivityBar
         activeActivity={activeActivity}
         setActiveActivity={setActiveActivity}
         isSidebarOpen={isSidebarOpen}
@@ -377,6 +380,7 @@ JOIN
       )}
 
       <Toast message={toastMessage} />
+      </div>
     </div>
   );
 }

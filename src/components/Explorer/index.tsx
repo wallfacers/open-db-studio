@@ -3,6 +3,7 @@ import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableP
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
 import { ConnectionModal } from '../ConnectionModal';
+import { LlmSettingsPanel } from '../Settings/LlmSettings';
 
 interface ExplorerProps {
   isSidebarOpen: boolean;
@@ -122,6 +123,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
                   ))
               )}
             </div>
+          </>
+        ) : activeActivity === 'settings' ? (
+          <>
+            <div className="h-10 flex items-center px-3 border-b border-[#2b2b2b]">
+              <span className="font-medium text-[#d4d4d4]">设置</span>
+            </div>
+            <LlmSettingsPanel />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[#858585]">

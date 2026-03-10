@@ -105,43 +105,6 @@ JOIN
     setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
   };
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-    
-    setChatMessages(prev => [
-      ...prev,
-      { role: 'user', content: chatInput }
-    ]);
-    
-    const currentInput = chatInput;
-    setChatInput('');
-    
-    setTimeout(() => {
-      setChatMessages(prev => [
-        ...prev,
-        { 
-          role: 'ai', 
-          content: (
-            <div className="text-[#d4d4d4] text-[13px] space-y-3 w-full">
-              <p>我已经接收到您的请求：“{currentInput}”。</p>
-              <p>正在为您生成相应的 SQL 查询...</p>
-              <div className="bg-[#1e1e1e] border border-[#2b2b2b] rounded p-2 font-mono text-xs text-[#569cd6] break-all">
-                SELECT * FROM birth_trend_analysis LIMIT 10;
-              </div>
-            </div>
-          )
-        }
-      ]);
-    }, 1000);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
   useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -350,7 +313,7 @@ JOIN
         executionTime={executionTime}
       />
 
-      <Assistant 
+      <Assistant
         isAssistantOpen={isAssistantOpen}
         assistantWidth={assistantWidth}
         handleAssistantResize={handleAssistantResize}
@@ -361,8 +324,6 @@ JOIN
         chatEndRef={chatEndRef}
         chatInput={chatInput}
         setChatInput={setChatInput}
-        handleKeyDown={handleKeyDown}
-        handleSendMessage={handleSendMessage}
         isModelMenuOpen={isModelMenuOpen}
         setIsModelMenuOpen={setIsModelMenuOpen}
       />

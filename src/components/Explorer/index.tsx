@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard } from 'lucide-react';
 import { TreeItem } from './TreeItem';
 import { useConnectionStore } from '../../store';
@@ -32,6 +32,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
 }) => {
   const { connections, activeConnectionId, tables, loadConnections, setActiveConnection, loadTables, deleteConnection } = useConnectionStore();
   const [showModal, setShowModal] = useState(false);
+  const [connContextMenu, setConnContextMenu] = useState<{ connId: number; x: number; y: number } | null>(null);
+  const connMenuRef = useRef<HTMLDivElement>(null);
+  const [editingConn, setEditingConn] = useState<import('../../types').Connection | null>(null);
 
   useEffect(() => {
     loadConnections();
@@ -48,6 +51,22 @@ export const Explorer: React.FC<ExplorerProps> = ({
     if (activeConnectionId) await loadTables(activeConnectionId);
     showToast('已刷新连接列表');
   };
+
+  const handleDeleteConnection = async (id: number) => {
+    if (!window.confirm('确定要删除这个连接吗？相关查询历史也将一并删除。')) return;
+    await deleteConnection(id);
+    showToast('已删除连接');
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (connMenuRef.current && !connMenuRef.current.contains(e.target as Node)) {
+        setConnContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   if (!isSidebarOpen) return null;
 
@@ -94,7 +113,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 connections
                   .filter(c => !searchQuery || c.name.toLowerCase().includes(searchQuery.toLowerCase()))
                   .map(conn => (
-                    <div key={conn.id}>
+                    <div
+                      key={conn.id}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setConnContextMenu({ connId: conn.id, x: e.clientX, y: e.clientY });
+                      }}
+                    >
                       <TreeItem
                         label={conn.name}
                         id={`conn_${conn.id}`}
@@ -140,6 +165,52 @@ export const Explorer: React.FC<ExplorerProps> = ({
           </div>
         )}
       </div>
+
+      {connContextMenu && (
+        <div
+          ref={connMenuRef}
+          className="fixed z-50 bg-[#252526] border border-[#3c3c3c] rounded shadow-lg py-1 min-w-[140px]"
+          style={{ left: connContextMenu.x, top: connContextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
+            onClick={() => {
+              const conn = connections.find(c => c.id === connContextMenu.connId);
+              if (conn) handleConnectionClick(conn.id);
+              setConnContextMenu(null);
+            }}
+          >
+            连接
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#d4d4d4] hover:bg-[#094771] hover:text-white"
+            onClick={() => {
+              const conn = connections.find(c => c.id === connContextMenu.connId);
+              if (conn) setEditingConn(conn);
+              setConnContextMenu(null);
+            }}
+          >
+            编辑
+          </button>
+          <div className="h-px bg-[#3c3c3c] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#094771] hover:text-red-300"
+            onClick={() => {
+              handleDeleteConnection(connContextMenu.connId);
+              setConnContextMenu(null);
+            }}
+          >
+            删除
+          </button>
+        </div>
+      )}
+
+      {editingConn && (
+        <ConnectionModal
+          connection={editingConn}
+          onClose={() => { setEditingConn(null); loadConnections(); }}
+        />
+      )}
 
       {showModal && <ConnectionModal onClose={() => { setShowModal(false); loadConnections(); }} />}
     </>

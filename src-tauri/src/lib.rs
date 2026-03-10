@@ -27,6 +27,7 @@ pub fn run() {
             commands::create_connection,
             commands::test_connection,
             commands::delete_connection,
+            commands::update_connection,
             commands::execute_query,
             commands::get_tables,
             commands::get_schema,

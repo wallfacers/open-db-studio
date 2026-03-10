@@ -65,6 +65,19 @@ pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     Ok(results)
 }
 
+/// 更新连接请求（password 为 None 时保留原加密密码）
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateConnectionRequest {
+    pub name: String,
+    pub driver: String,
+    pub host: Option<String>,
+    pub port: Option<i64>,
+    pub database_name: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub extra_params: Option<String>,
+}
+
 /// 创建连接，密码加密存储
 pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<models::Connection> {
     let conn = get().lock().unwrap();
@@ -115,6 +128,60 @@ pub fn delete_connection(id: i64) -> AppResult<()> {
         return Err(crate::AppError::Other(format!("Connection {} not found", id)));
     }
     Ok(())
+}
+
+/// 更新连接，password 为 None 时保留原值
+pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<models::Connection> {
+    let conn = get().lock().unwrap();
+    let now = Utc::now().to_rfc3339();
+
+    match &req.password {
+        Some(pwd) if !pwd.is_empty() => {
+            let password_enc = crate::crypto::encrypt(pwd)?;
+            conn.execute(
+                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
+                 database_name=?5, username=?6, password_enc=?7,
+                 extra_params=?8, updated_at=?9 WHERE id=?10",
+                rusqlite::params![
+                    req.name, req.driver, req.host, req.port,
+                    req.database_name, req.username, password_enc,
+                    req.extra_params, now, id
+                ],
+            )?;
+        }
+        _ => {
+            conn.execute(
+                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
+                 database_name=?5, username=?6,
+                 extra_params=?7, updated_at=?8 WHERE id=?9",
+                rusqlite::params![
+                    req.name, req.driver, req.host, req.port,
+                    req.database_name, req.username,
+                    req.extra_params, now, id
+                ],
+            )?;
+        }
+    }
+
+    let result = conn.query_row(
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, created_at, updated_at
+         FROM connections WHERE id = ?1",
+        [id],
+        |row| Ok(models::Connection {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            group_id: row.get(2)?,
+            driver: row.get(3)?,
+            host: row.get(4)?,
+            port: row.get(5)?,
+            database_name: row.get(6)?,
+            username: row.get(7)?,
+            extra_params: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        }),
+    )?;
+    Ok(result)
 }
 
 /// 通过 ID 获取连接配置（含解密密码）

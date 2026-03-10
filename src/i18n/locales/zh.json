@@ -195,7 +195,18 @@
     "doubleClickToEdit": " (双击修改)"
   },
   "common": {
-    "cancel": "取消"
+    "cancel": "取消",
+    "execute": "执行",
+    "executing": "执行中..."
+  },
+  "tableManage": {
+    "createTable": "新建表",
+    "editTable": "编辑表 {{table}}",
+    "dropTable": "删除表",
+    "confirmDrop": "确认删除表 {{table}}？此操作不可恢复！",
+    "createSuccess": "表创建成功",
+    "alterSuccess": "表修改成功",
+    "dropSuccess": "表删除成功"
   },
   "export": {
     "title": "导出 {{table}}",

@@ -330,3 +330,69 @@ pub async fn delete_row(
     ds.execute(&sql).await?;
     Ok(())
 }
+
+// ============ 数据导出 ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExportParams {
+    pub connection_id: i64,
+    pub table: String,
+    pub format: String, // "csv" | "json" | "sql"
+    pub where_clause: Option<String>,
+    pub output_path: String,
+}
+
+#[tauri::command]
+pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
+    let config = crate::db::get_connection_config(params.connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+
+    let where_part = params.where_clause
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| format!(" WHERE {}", s))
+        .unwrap_or_default();
+
+    let sql = match config.driver.as_str() {
+        "mysql" => format!("SELECT * FROM `{}`{}", params.table.replace('`', "``"), where_part),
+        _ => format!("SELECT * FROM \"{}\"{}", params.table.replace('"', "\"\""), where_part),
+    };
+
+    let result = ds.execute(&sql).await?;
+
+    let content = match params.format.as_str() {
+        "json" => serde_json::to_string_pretty(&result.rows)
+            .map_err(|e| crate::AppError::Other(e.to_string()))?,
+        "csv" => {
+            let mut out = result.columns.join(",") + "\n";
+            for row in &result.rows {
+                let line: Vec<String> = row.iter().map(|v| match v {
+                    serde_json::Value::Null => String::new(),
+                    serde_json::Value::String(s) => format!("\"{}\"", s.replace('"', "\"\"")),
+                    other => other.to_string(),
+                }).collect();
+                out += &(line.join(",") + "\n");
+            }
+            out
+        }
+        "sql" => {
+            let mut out = format!("-- Export: {}\n", params.table);
+            for row in &result.rows {
+                let values: Vec<String> = row.iter().map(|v| match v {
+                    serde_json::Value::Null => "NULL".into(),
+                    serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => if *b { "1".into() } else { "0".into() },
+                    other => format!("'{}'", other.to_string().replace('\'', "''")),
+                }).collect();
+                out += &format!("INSERT INTO {} VALUES ({});\n", params.table, values.join(", "));
+            }
+            out
+        }
+        _ => return Err(crate::AppError::Other(format!("Unsupported format: {}", params.format))),
+    };
+
+    std::fs::write(&params.output_path, &content)
+        .map_err(|e| crate::AppError::Other(format!("Failed to write file: {}", e)))?;
+
+    Ok(params.output_path)
+}

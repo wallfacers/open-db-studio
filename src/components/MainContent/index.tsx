@@ -163,7 +163,20 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
-  const currentResult = results[activeTab];
+  const currentResults = results[activeTab] ?? [];
+  const [selectedResultIdx, setSelectedResultIdx] = useState(0);
+
+  // Reset selected result index when active editor tab changes
+  useEffect(() => {
+    setSelectedResultIdx(0);
+  }, [activeTab]);
+
+  // Reset to first result tab after a new execution completes
+  useEffect(() => {
+    if (!isExecuting) {
+      setSelectedResultIdx(0);
+    }
+  }, [isExecuting]);
 
   const handleExecute = () => {
     if (!activeConnectionId) {
@@ -367,44 +380,60 @@ export const MainContent: React.FC<MainContentProps> = ({
               </div>
 
               {resultsTab === 'result1' ? (
-                <div className="flex-1 overflow-auto">
-                  {isExecuting ? (
-                    <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
-                  ) : error ? (
-                    <div className="p-4 text-red-400 text-xs font-mono">{error}</div>
-                  ) : !currentResult ? (
-                    <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
-                  ) : currentResult.columns.length === 0 ? (
-                    <div className="p-4 text-green-400 text-sm">{t('mainContent.executeSuccess')}{currentResult.row_count} {t('mainContent.rowsAffected')}（{currentResult.duration_ms}ms）</div>
-                  ) : (
-                    <>
-                      <div className="text-xs text-[#7a9bb8] px-3 py-1 border-b border-[#1e2d42]">
-                        {currentResult.row_count} {t('mainContent.rows')} · {currentResult.duration_ms}ms
-                      </div>
-                      <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
-                        <thead className="sticky top-0 bg-[#0d1117] z-10">
-                          <tr>
-                            {currentResult.columns.map((col) => (
-                              <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
-                                {col}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {currentResult.rows.map((row, ri) => (
-                            <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
-                              {row.map((cell, ci) => (
-                                <td key={ci} className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px] truncate">
-                                  {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
-                                </td>
+                <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                  {/* Multi-result sub-tabs (only shown when there are multiple result sets) */}
+                  {currentResults.length > 1 && (
+                    <div className="flex items-center bg-[#111922] border-b border-[#1e2d42] flex-shrink-0">
+                      {currentResults.map((_, idx) => (
+                        <div
+                          key={idx}
+                          className={`px-4 h-[32px] flex items-center text-xs cursor-pointer border-b-2 border-r border-r-[#1e2d42] ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-b-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-b-transparent hover:bg-[#151d28]'}`}
+                          onClick={() => setSelectedResultIdx(idx)}
+                        >
+                          {t('mainContent.resultSet')} {idx + 1}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex-1 overflow-auto">
+                    {isExecuting ? (
+                      <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
+                    ) : error ? (
+                      <div className="p-4 text-red-400 text-xs font-mono">{error}</div>
+                    ) : currentResults.length === 0 ? (
+                      <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
+                    ) : currentResults[selectedResultIdx]?.columns.length === 0 ? (
+                      <div className="p-4 text-green-400 text-sm">{t('mainContent.executeSuccess')}{currentResults[selectedResultIdx].row_count} {t('mainContent.rowsAffected')}（{currentResults[selectedResultIdx].duration_ms}ms）</div>
+                    ) : (
+                      <>
+                        <div className="text-xs text-[#7a9bb8] px-3 py-1 border-b border-[#1e2d42]">
+                          {currentResults[selectedResultIdx]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultIdx]?.duration_ms}ms
+                        </div>
+                        <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                          <thead className="sticky top-0 bg-[#0d1117] z-10">
+                            <tr>
+                              {currentResults[selectedResultIdx]?.columns.map((col) => (
+                                <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
+                                  {col}
+                                </th>
                               ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </>
-                  )}
+                          </thead>
+                          <tbody>
+                            {currentResults[selectedResultIdx]?.rows.map((row, ri) => (
+                              <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
+                                {row.map((cell, ci) => (
+                                  <td key={ci} className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px] truncate">
+                                    {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-[#7a9bb8]">

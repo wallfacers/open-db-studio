@@ -6,7 +6,7 @@ interface QueryState {
   tabs: Tab[];
   activeTabId: string;
   sqlContent: Record<string, string>;  // tabId → sql
-  results: Record<string, QueryResult | null>;
+  results: Record<string, QueryResult[]>;
   isExecuting: boolean;
   queryHistory: QueryHistory[];
   error: string | null;
@@ -56,10 +56,20 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const sql = get().sqlContent[tabId] ?? '';
     if (!sql.trim()) return;
 
+    // Split by semicolon and filter out empty statements
+    const statements = sql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
     set({ isExecuting: true, error: null });
+    const resultList: QueryResult[] = [];
     try {
-      const result = await invoke<QueryResult>('execute_query', { connectionId, sql });
-      set((s) => ({ results: { ...s.results, [tabId]: result }, isExecuting: false }));
+      for (const stmt of statements) {
+        const result = await invoke<QueryResult>('execute_query', { connectionId, sql: stmt });
+        resultList.push(result);
+      }
+      set(s => ({ results: { ...s.results, [tabId]: resultList }, isExecuting: false }));
     } catch (e) {
       set({ error: String(e), isExecuting: false });
     }

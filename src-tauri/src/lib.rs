@@ -45,6 +45,7 @@ pub fn run() {
             commands::get_table_data,
             commands::update_row,
             commands::delete_row,
+            commands::export_table_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

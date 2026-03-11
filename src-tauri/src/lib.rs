@@ -34,6 +34,7 @@ pub fn run() {
             commands::get_tables,
             commands::get_schema,
             commands::ai_chat,
+            commands::ai_chat_stream,
             commands::ai_generate_sql,
             commands::ai_explain_sql,
             commands::get_query_history,

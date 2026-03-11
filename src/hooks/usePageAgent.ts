@@ -62,9 +62,9 @@ export function usePageAgent() {
         ].join('\n'),
       },
 
-      // Fix 3: 移除 .filter(fn => fn() !== null)——该过滤器在初始化时执行工厂函数，
-      // 若元素当时不在 DOM 中则会错误地剔除该工厂，破坏动态查询目的。
-      // 安全边界：排除密码和 API Key 相关输入（使用工厂函数匹配当前 DOM 元素）
+      // 安全边界：排除密码和 API Key 相关输入（工厂函数在每次使用时动态查询 DOM）
+      // querySelector 返回 Element | null；as Element 是 DOM API 的标准惯用法，
+      // PageAgent 在元素不存在（null）时会跳过该黑名单项。
       interactiveBlacklist: [
         () => document.querySelector('[type="password"]') as Element,
         () => document.querySelector('.api-key-field') as Element,
@@ -83,9 +83,9 @@ export function usePageAgent() {
         }),
 
         propose_sql_diff: tool({
-          description: '提出 SQL 修改方案。展示 diff 对比（原始 vs 修改后），等待用户点击"应用"确认。original 必须与 get_current_sql 返回的某条 statements 文本完全一致。',
+          description: '提出 SQL 修改方案。展示 diff 对比（原始 vs 修改后），等待用户点击"应用"确认。original 必须是 get_current_sql 返回的 statements 数组中某条语句的完整文本——即使用户只选中了部分文本，也要找到包含该选中内容的完整语句作为 original，而不是直接使用 selected_text。',
           inputSchema: z.object({
-            original: z.string().describe('要修改的原始 SQL 语句（必须与 statements 中的文本完全一致）'),
+            original: z.string().describe('要修改的原始完整 SQL 语句（必须来自 statements 数组，不得使用 selected_text 的部分文本）'),
             modified: z.string().describe('修改后的 SQL 语句'),
             reason:   z.string().describe('修改原因的简短说明（中文，一句话）'),
           }),
@@ -117,9 +117,9 @@ export function usePageAgent() {
 
     agentRef.current = agent;
 
-    // Fix 4: 清理函数——销毁 PageAgent 实例并重置 ref，防止内存泄漏
+    // 清理函数——调用 dispose() 释放 PageAgent 内部资源（pageController、Panel 等），防止内存泄漏
     return () => {
-      (agentRef.current as PageAgent & { destroy?: () => void })?.destroy?.();
+      agentRef.current?.dispose();
       agentRef.current = null;
     };
   }, [configs, activeConfigId]);

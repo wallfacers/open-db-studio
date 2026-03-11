@@ -107,7 +107,8 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   const resultContextMenuRef = useRef<HTMLDivElement>(null);
-  // 上下文选择器动态 schema 缓存：key = "connId/database"
+  // 上下文选择器动态缓存：数据库列表 key = connId，schema 列表 key = "connId/database"
+  const [contextDatabases, setContextDatabases] = useState<Record<number, string[]>>({});
   const [contextSchemas, setContextSchemas] = useState<Record<string, string[]>>({});
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const schemaRef = useRef<FullSchemaInfo | null>(null);
@@ -187,6 +188,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       setSelectedResultIdx(0);
     }
   }, [isExecuting]);
+
+  // Toast on execution error so user gets immediate feedback
+  useEffect(() => {
+    if (error) showToast(error);
+  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExecute = useCallback(() => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
@@ -277,16 +283,39 @@ export const MainContent: React.FC<MainContentProps> = ({
   const contextSchemaKey = queryCtx?.connectionId != null && queryCtx?.database
     ? `${queryCtx.connectionId}/${queryCtx.database}`
     : null;
-  // 优先使用动态加载的 schema 列表，回退到 treeStore 缓存
+
+  // 切换 tab 时，若 tab 已绑定连接但数据库列表还未缓存，自动加载
+  useEffect(() => {
+    const connId = queryCtx?.connectionId;
+    if (connId && !contextDatabases[connId]) {
+      invoke<string[]>('list_databases', { connectionId: connId })
+        .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
+        .catch((err) => console.warn('[list_databases]', err));
+    }
+  }, [queryCtx?.connectionId]);
+
+  // 切换 tab 时，若已有数据库但 schema 列表未缓存，自动加载
+  useEffect(() => {
+    const connId = queryCtx?.connectionId;
+    const db = queryCtx?.database;
+    if (connId && db && !contextSchemas[`${connId}/${db}`]) {
+      invoke<string[]>('list_schemas', { connectionId: connId, database: db })
+        .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
+        .catch((err) => console.warn('[list_schemas]', err));
+    }
+  }, [queryCtx?.connectionId, queryCtx?.database]);
+
+  // 数据库下拉：优先动态缓存，回退到 treeStore 节点
+  const availableDatabases: string[] = queryCtx?.connectionId && contextDatabases[queryCtx.connectionId]
+    ? contextDatabases[queryCtx.connectionId]
+    : Array.from(nodes.values())
+        .filter(n => n.nodeType === 'database' && n.meta.connectionId === queryCtx?.connectionId)
+        .map(n => n.meta.database ?? n.label)
+        .filter(Boolean) as string[];
+
   const availableSchemas: string[] = contextSchemaKey && contextSchemas[contextSchemaKey]
     ? contextSchemas[contextSchemaKey]
-    : (needsSchema && queryCtx?.database
-        ? Array.from(nodes.values())
-            .filter(n => n.nodeType === 'schema'
-              && n.meta.connectionId === queryCtx!.connectionId
-              && n.meta.database === queryCtx!.database)
-            .map(n => n.meta.schema ?? n.label)
-        : []);
+    : [];
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
@@ -327,6 +356,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             tableName={activeTabObj.title}
             dbName={activeTabObj.db || ''}
             connectionId={activeTabObj.connectionId}
+            schema={activeTabObj.schema}
             showToast={showToast}
           />
         ) : (
@@ -381,6 +411,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                   onChange={(e) => {
                     const connId = e.target.value ? Number(e.target.value) : null;
                     updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
+                    if (connId && !contextDatabases[connId]) {
+                      invoke<string[]>('list_databases', { connectionId: connId })
+                        .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
+                        .catch((err) => console.warn('[list_databases]', err));
+                    }
                   }}
                 >
                   <option value="">{t('mainContent.selectConnection')}</option>
@@ -410,14 +445,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                   }}
                 >
                   <option value="">{t('mainContent.selectDatabase')}</option>
-                  {activeTabObj?.queryContext?.connectionId && Array.from(nodes.values())
-                    .filter(n => n.nodeType === 'database' && n.meta.connectionId === activeTabObj.queryContext?.connectionId)
-                    .map(n => (
-                      <option key={n.meta.database} value={n.meta.database ?? ''}>
-                        {n.label}
-                      </option>
-                    ))
-                  }
+                  {availableDatabases.map(db => (
+                    <option key={db} value={db}>{db}</option>
+                  ))}
                 </select>
                 {needsSchema && availableSchemas.length > 0 && (
                   <>

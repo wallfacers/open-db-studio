@@ -369,7 +369,8 @@
     "executeCreate": "创建表",
     "noChanges": "-- 无变更",
     "orderNotSupported": "-- PostgreSQL 不支持调整列顺序，已忽略排序变更",
-    "loadFailed": "加载表结构失败"
+    "loadFailed": "加载表结构失败",
+    "columnNameRequired": "列名不能为空"
   },
   "ddlViewer": {
     "title": "查看 DDL",

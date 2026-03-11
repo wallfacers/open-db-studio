@@ -369,7 +369,8 @@
     "executeCreate": "Create Table",
     "noChanges": "-- No changes",
     "orderNotSupported": "-- PostgreSQL does not support column reordering, order changes ignored",
-    "loadFailed": "Failed to load table structure"
+    "loadFailed": "Failed to load table structure",
+    "columnNameRequired": "Column name cannot be empty"
   },
   "ddlViewer": {
     "title": "View DDL",

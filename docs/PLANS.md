@@ -1,6 +1,8 @@
 # PLANS.md — 开发计划与路线图
 
 > 详细设计见 [docs/plans/2026-03-10-feature-roadmap-design.md](./plans/2026-03-10-feature-roadmap-design.md)
+>
+> 📋 **实现状态总览**: [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) — 已实现/进行中/待实现功能清单
 
 ---
 
@@ -13,32 +15,36 @@
 - [x] MySQL + PostgreSQL DataSource 实现（骨架）
 - [x] LLM 代理模块（OpenAI 兼容）
 - [x] CLAUDE.md + docs/ 文档记录系统
+- [x] 连接管理 UI（新建/编辑/删除/测试连接）
+- [x] `execute_query` 命令完整实现（SELECT + DDL/DML）
+- [x] 密码加密存储（AES-256-GCM）
+- [x] SQL 编辑器与 Rust 后端联调（Monaco Editor + F5 执行）
+- [x] Schema 树面板（数据库 → 表 → 列）
+- [x] 查询结果表格展示（分页 + 列排序）
+- [x] 查询历史（最近 500 条，可搜索重用）
+- [x] 基础 AI 生成 SQL（注入 Schema 上下文）
+- [x] AI SQL 解释（选中 SQL → 中文解释）
 
 ### 进行中
-- [ ] 连接管理 UI（新建/编辑/删除/测试连接）
-- [ ] `execute_query` 命令完整实现（SELECT + DDL/DML）
-- [ ] 密码加密存储（AES-256-GCM）
+- [ ] TableDataView 行操作增强（内联编辑、批量提交）- 见 `docs/plans/2026-03-11-table-data-view-row-operations-impl.md`
+- [ ] 表右键菜单扩展（查看 DDL、截断表、可视化编辑器）- 见 `docs/plans/2026-03-11-table-context-menu-and-visual-editor.md`
 
 ### 待开始
-- [ ] SQL 编辑器与 Rust 后端联调（Monaco Editor + F5 执行）
-- [ ] Schema 树面板（数据库 → 表 → 列）
-- [ ] 查询结果表格展示（分页 + 列排序）
-- [ ] 查询历史（最近 500 条，可搜索重用）
-- [ ] 基础 AI 生成 SQL（注入 Schema 上下文）
-- [ ] AI SQL 解释（选中 SQL → 中文解释）
 - [ ] Oracle 驱动实现（oracle crate）
 - [ ] SQL Server 驱动实现（tiberius）
+- [ ] 数据导入（CSV/JSON/Excel 字段映射）
 
 ---
 
-## V1 阶段（Q3 2026）—— 好用 — 已完成 ✅ (2026-03-11)
+## V1 阶段（Q3 2026）—— 好用 — 进行中 🔄
 
 ### 完整 DB 管理
 - [x] 表管理 GUI（建表/改表/删表 + DDL 预览）
 - [x] 数据浏览器（分页查看 + 行内编辑 + 条件过滤）
 - [x] 索引管理（创建/删除，唯一索引、复合索引）
-- [x] 视图 / 存储过程 / 函数管理
+- [x] 视图 / 存储过程 / 函数管理（基础面板）
 - [x] ERD 可视化（外键自动生成 ER 图，接入真实 Schema + FK 连线）
+- [ ] 表右键菜单扩展（查看 DDL、截断表）- 进行中
 
 ### SQL 编辑器增强
 - [x] Schema-aware 自动补全（表名 → 字段提示，Monaco 集成）
@@ -48,7 +54,7 @@
 
 ### 数据导入导出
 - [x] 导出：CSV / JSON / SQL Dump（含导出 UI）
-- [x] 导入：CSV / JSON / Excel 字段映射写入
+- [ ] 导入：CSV / JSON / Excel 字段映射写入 - 待实现
 - [x] 带 WHERE 条件的部分数据导出
 
 ### AI 能力增强

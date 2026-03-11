@@ -8,6 +8,7 @@ export interface Connection {
   database_name: string | null;
   username: string | null;
   extra_params: string | null;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +22,7 @@ export interface CreateConnectionRequest {
   username?: string;
   password?: string;
   extra_params?: string;
+  group_id?: number | null;
 }
 
 export interface QueryResult {
@@ -28,6 +30,10 @@ export interface QueryResult {
   rows: (string | number | boolean | null)[][];
   row_count: number;
   duration_ms: number;
+  /** 前端附加：select=查询结果, dml-report=DML聚合报告 */
+  kind?: 'select' | 'dml-report';
+  /** 前端附加：产生该结果的原始 SQL */
+  sql?: string;
 }
 
 export interface TableMeta {
@@ -175,6 +181,8 @@ export interface NodeMeta {
   database?: string;
   schema?: string;
   objectName?: string;
+  color?: string | null;
+  sortOrder?: number;
 }
 
 export interface TreeNode {
@@ -193,4 +201,10 @@ export interface ConnectionGroup {
   color: string | null;
   sort_order: number;
   created_at: string;
+}
+
+export interface QueryContext {
+  connectionId: number | null;
+  database: string | null;
+  schema: string | null;
 }

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { X, AlertTriangle } from 'lucide-react';
 import { useEscClose } from '../../hooks/useEscClose';
+import { useConnectionStore } from '../../store/connectionStore';
 import type { ToastLevel } from '../Toast';
 
 interface Props {
@@ -21,14 +22,20 @@ export const TruncateConfirmDialog: React.FC<Props> = ({
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
 
+  const { connections } = useConnectionStore();
+  const driver = connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
+  const isPostgres = driver === 'postgres' || driver === 'postgresql';
+
   useEscClose(onClose);
 
   const handleTruncate = async () => {
     setIsLoading(true);
     try {
-      // 根据是否有 schema 决定 SQL 方言
-      const sql = schema
-        ? `TRUNCATE TABLE "${schema}"."${tableName}"`
+      // 根据 driver 决定 SQL 方言
+      const sql = isPostgres
+        ? schema
+          ? `TRUNCATE TABLE "${schema}"."${tableName}"`
+          : `TRUNCATE TABLE "${tableName}"`
         : `TRUNCATE TABLE \`${tableName}\``;
       await invoke('execute_query', {
         connectionId,

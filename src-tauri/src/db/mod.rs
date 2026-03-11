@@ -523,13 +523,11 @@ pub fn set_default_llm_config(id: i64) -> AppResult<()> {
 pub fn update_llm_config_test_status(id: i64, status: &str, error: Option<&str>) -> AppResult<()> {
     let conn = get().lock().unwrap();
     let now = Utc::now().to_rfc3339();
-    let affected = conn.execute(
+    // 0 rows affected = config was deleted concurrently; silently ignore
+    conn.execute(
         "UPDATE llm_configs SET test_status=?1, test_error=?2, tested_at=?3 WHERE id=?4",
         rusqlite::params![status, error, now, id],
     )?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("LlmConfig {} not found", id)));
-    }
     Ok(())
 }
 

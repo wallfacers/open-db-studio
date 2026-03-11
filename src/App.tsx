@@ -17,6 +17,7 @@ export interface TabData {
   title: string;
   db?: string;
   connectionId?: number;
+  schema?: string;
   queryContext?: QueryContext;
 }
 
@@ -73,16 +74,17 @@ JOIN
   const [resultsHeight, setResultsHeight] = useState(0);
   const [assistantWidth, setAssistantWidth] = useState(320);
 
-  // Auto-expand results panel when results appear; collapse when cleared
-  const { results } = useQueryStore();
+  // Auto-expand results panel when results appear or an error occurs; collapse when cleared
+  const { results, error: queryError } = useQueryStore();
   useEffect(() => {
     const len = (results[activeTab] ?? []).length;
-    if (len > 0 && resultsHeight === 0) {
+    const hasError = !!queryError;
+    if ((len > 0 || hasError) && resultsHeight === 0) {
       setResultsHeight(250);
-    } else if (len === 0 && resultsHeight > 0) {
+    } else if (len === 0 && !hasError && resultsHeight > 0) {
       setResultsHeight(0);
     }
-  }, [results, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [results, activeTab, queryError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -132,12 +134,12 @@ JOIN
     }
   };
 
-  const handleOpenTableData = (tableName: string, connectionId: number, database?: string) => {
+  const handleOpenTableData = (tableName: string, connectionId: number, database?: string, schema?: string) => {
     const dbName = database ?? `conn_${connectionId}`;
-    const tabId = `table_${connectionId}_${dbName}_${tableName}`;
+    const tabId = `table_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
     setTabs(prev => {
       if (!prev.find(t => t.id === tabId)) {
-        return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName, connectionId }];
+        return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName, connectionId, schema }];
       }
       return prev;
     });

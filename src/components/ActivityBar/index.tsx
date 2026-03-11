@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import type { ToastLevel } from '../Toast';
 
 interface ActivityBarProps {
   activeActivity: string;
@@ -9,7 +10,7 @@ interface ActivityBarProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
   isAssistantOpen: boolean;
   setIsAssistantOpen: (isOpen: boolean) => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const ActivityBar: React.FC<ActivityBarProps> = ({
@@ -33,7 +34,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               <div 
                 className="flex items-center cursor-pointer overflow-hidden flex-1"
                 title={t('activity.userProfile')} 
-                onClick={() => showToast(t('activity.openUserProfile'))}
+                onClick={() => showToast(t('activity.openUserProfile'), 'info')}
               >
                 <div className="w-6 h-6 rounded-full bg-[#00c9a7] flex items-center justify-center text-white mr-3 flex-shrink-0">
                   <User size={14} />
@@ -124,7 +125,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         <div 
           className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent`}
           title={t('activity.notifications')} 
-          onClick={() => showToast(t('activity.openNotifications'))}
+          onClick={() => showToast(t('activity.openNotifications'), 'info')}
         >
           <div className="relative">
             <Bell size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />

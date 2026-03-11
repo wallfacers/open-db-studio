@@ -3,10 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { X, Sparkles } from 'lucide-react';
 import { useConnectionStore, useAiStore } from '../../store';
+import { useEscClose } from '../../hooks/useEscClose';
+import type { ToastLevel } from '../Toast';
 
 interface Props {
   onClose: () => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
   onRefresh: () => void;
 }
 
@@ -18,13 +20,15 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
   const [generatedDdl, setGeneratedDdl] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
 
+  useEscClose(onClose);
+
   const handleGenerate = async () => {
     if (!activeConnectionId || !description.trim()) return;
     try {
       const ddl = await createTable(description, activeConnectionId);
       setGeneratedDdl(ddl);
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     }
   };
 
@@ -33,11 +37,11 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
     setIsExecuting(true);
     try {
       await invoke('execute_query', { connectionId: activeConnectionId, sql: generatedDdl });
-      showToast(t('aiCreateTable.success'));
+      showToast(t('aiCreateTable.success'), 'success');
       onRefresh();
       onClose();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     } finally {
       setIsExecuting(false);
     }

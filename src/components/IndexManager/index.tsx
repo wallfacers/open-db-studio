@@ -3,12 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Trash2, Plus, X } from 'lucide-react';
 import type { IndexMeta, TableDetail } from '../../types';
+import { useEscClose } from '../../hooks/useEscClose';
+import type { ToastLevel } from '../Toast';
 
 interface Props {
   connectionId: number;
   tableName: string;
   onClose: () => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose, showToast }) => {
@@ -17,10 +19,12 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
   const [isAdding, setIsAdding] = useState(false);
   const [newIndex, setNewIndex] = useState({ name: '', columns: '', unique: false });
 
+  useEscClose(onClose);
+
   const loadIndexes = () => {
     invoke<TableDetail>('get_table_detail', { connectionId, table: tableName })
       .then(d => setIndexes(d.indexes))
-      .catch(e => showToast(String(e)));
+      .catch(e => showToast(String(e), 'error'));
   };
 
   useEffect(() => { loadIndexes(); }, [connectionId, tableName]);
@@ -32,28 +36,28 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
         connectionId,
         sql: `DROP INDEX \`${indexName}\` ON \`${tableName}\``,
       });
-      showToast(t('indexManager.dropSuccess'));
+      showToast(t('indexManager.dropSuccess'), 'success');
       loadIndexes();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     }
   };
 
   const handleCreate = async () => {
     if (!newIndex.name.trim() || !newIndex.columns.trim()) {
-      showToast(t('indexManager.nameAndColumnsRequired'));
+      showToast(t('indexManager.nameAndColumnsRequired'), 'warning');
       return;
     }
     const unique = newIndex.unique ? 'UNIQUE ' : '';
     const sql = `CREATE ${unique}INDEX \`${newIndex.name}\` ON \`${tableName}\` (${newIndex.columns})`;
     try {
       await invoke('execute_query', { connectionId, sql });
-      showToast(t('indexManager.createSuccess'));
+      showToast(t('indexManager.createSuccess'), 'success');
       setIsAdding(false);
       setNewIndex({ name: '', columns: '', unique: false });
       loadIndexes();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     }
   };
 

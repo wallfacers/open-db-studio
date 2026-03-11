@@ -39,18 +39,26 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
       'list.activeSelectionBackground':    '#003d2f',
       'scrollbarSlider.background':        '#1e2d4260',
       'scrollbarSlider.hoverBackground':   '#2a3f5a80',
+      'menu.background':                   '#151d28',
+      'menu.foreground':                   '#c8daea',
+      'menu.selectionBackground':          '#1a2639',
+      'menu.selectionForeground':          '#ffffff',
+      'menu.separatorBackground':          '#2a3f5a',
+      'menu.border':                       '#2a3f5a',
     },
   });
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap
+  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot
 } from 'lucide-react';
+import { DropdownSelect } from '../common/DropdownSelect';
 import { TabData } from '../../App';
 import { TableDataView } from './TableDataView';
 import ERDiagram from '../ERDiagram';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
+import type { ToastLevel } from '../Toast';
 
 interface MainContentProps {
   tabs: TabData[];
@@ -66,7 +74,7 @@ interface MainContentProps {
   isExecuting: boolean;
   handleFormat: () => void;
   handleClear: () => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
   isDbMenuOpen: boolean;
   setIsDbMenuOpen: (isOpen: boolean) => void;
   isTableMenuOpen: boolean;
@@ -80,6 +88,7 @@ interface MainContentProps {
   tableData: any[];
   executionTime: number;
   updateTabContext: (tabId: string, context: Partial<QueryContext>) => void;
+  onOpenAssistant: () => void;
 }
 
 interface ContextMenu {
@@ -94,7 +103,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
-  updateTabContext,
+  updateTabContext, onOpenAssistant,
 }) => {
   const { t } = useTranslation();
   const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis,
@@ -106,7 +115,9 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [optimization, setOptimization] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number } | null>(null);
   const resultContextMenuRef = useRef<HTMLDivElement>(null);
+  const editorContextMenuRef = useRef<HTMLDivElement>(null);
   // 上下文选择器动态缓存：数据库列表 key = connId，schema 列表 key = "connId/database"
   const [contextDatabases, setContextDatabases] = useState<Record<number, string[]>>({});
   const [contextSchemas, setContextSchemas] = useState<Record<string, string[]>>({});
@@ -132,6 +143,11 @@ export const MainContent: React.FC<MainContentProps> = ({
     editorRef.current = editor;
     if (completionProviderRegistered.current) return;
     completionProviderRegistered.current = true;
+
+    editor.onContextMenu((e) => {
+      e.event.preventDefault();
+      setEditorContextMenu({ x: e.event.posx, y: e.event.posy });
+    });
 
     monaco.languages.registerCompletionItemProvider('sql', {
       provideCompletionItems: (
@@ -191,14 +207,14 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   // Toast on execution error so user gets immediate feedback
   useEffect(() => {
-    if (error) showToast(error);
+    if (error) showToast(error, 'error');
   }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExecute = useCallback(() => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     const database = activeTabObj?.queryContext?.database ?? null;
     if (!connId || !database) {
-      showToast(t('mainContent.selectConnectionAndDatabase'));
+      showToast(t('mainContent.selectConnectionAndDatabase'), 'warning');
       return;
     }
     // Execute selected text if any, otherwise execute all
@@ -218,28 +234,28 @@ export const MainContent: React.FC<MainContentProps> = ({
   const handleExplain = async () => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     if (!currentSql.trim() || !connId) {
-      showToast(t('mainContent.inputSqlAndSelectConnection'));
+      showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
       return;
     }
     try {
       const result = await explainSql(currentSql, connId);
       setExplanation(result);
     } catch {
-      showToast(t('mainContent.aiExplainFailed'));
+      showToast(t('mainContent.aiExplainFailed'), 'error');
     }
   };
 
   const handleOptimize = async () => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     if (!currentSql.trim() || !connId) {
-      showToast(t('mainContent.inputSqlAndSelectConnection'));
+      showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
       return;
     }
     try {
       const result = await optimizeSql(currentSql, connId);
       setOptimization(result);
     } catch {
-      showToast(t('mainContent.aiOptimizeFailed'));
+      showToast(t('mainContent.aiOptimizeFailed'), 'error');
     }
   };
 
@@ -251,6 +267,9 @@ export const MainContent: React.FC<MainContentProps> = ({
       }
       if (resultContextMenuRef.current && !resultContextMenuRef.current.contains(e.target as Node)) {
         setResultContextMenu(null);
+      }
+      if (editorContextMenuRef.current && !editorContextMenuRef.current.contains(e.target as Node)) {
+        setEditorContextMenu(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -390,27 +409,38 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <Zap size={16} />
                 </button>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
-                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Save" onClick={() => showToast(t('mainContent.sqlSaved'))}>
+                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Save" onClick={() => showToast(t('mainContent.sqlSaved'), 'info')}>
                   <Save size={16} />
                 </button>
                 <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Format SQL" onClick={handleFormat}>
                   <FileEdit size={16} />
                 </button>
-                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Clear" onClick={handleClear}>
-                  <X size={16} />
-                </button>
-                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Settings" onClick={() => showToast(t('mainContent.openEditorSettings'))}>
+                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Settings" onClick={() => showToast(t('mainContent.openEditorSettings'), 'info')}>
                   <Settings size={16} />
                 </button>
               </div>
 
+              {/* AI 助手入口 */}
+              <button
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors bg-[#00c9a7]/10 text-[#00c9a7] hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 hover:border-[#00c9a7]/60"
+                title={t('mainContent.openAiAssistant')}
+                onClick={onOpenAssistant}
+              >
+                <Bot size={14} />
+                <span>AI</span>
+              </button>
+
               {/* 上下文选择器（右侧） */}
-              <div className="flex items-center gap-1.5 text-xs">
-                <select
-                  className="bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-0.5 text-[#c8daea] text-xs outline-none cursor-pointer"
-                  value={activeTabObj?.queryContext?.connectionId ?? ''}
-                  onChange={(e) => {
-                    const connId = e.target.value ? Number(e.target.value) : null;
+              <div className="flex items-center gap-1.5">
+                <DropdownSelect
+                  value={String(activeTabObj?.queryContext?.connectionId ?? '')}
+                  placeholder={t('mainContent.selectConnection')}
+                  className="w-32"
+                  options={Array.from(nodes.values())
+                    .filter(n => n.nodeType === 'connection')
+                    .map(n => ({ value: String(n.meta.connectionId ?? ''), label: n.label }))}
+                  onChange={(val) => {
+                    const connId = val ? Number(val) : null;
                     updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
                     if (connId && !contextDatabases[connId]) {
                       invoke<string[]>('list_databases', { connectionId: connId })
@@ -418,25 +448,16 @@ export const MainContent: React.FC<MainContentProps> = ({
                         .catch((err) => console.warn('[list_databases]', err));
                     }
                   }}
-                >
-                  <option value="">{t('mainContent.selectConnection')}</option>
-                  {Array.from(nodes.values())
-                    .filter(n => n.nodeType === 'connection')
-                    .map(n => (
-                      <option key={n.meta.connectionId} value={n.meta.connectionId ?? ''}>
-                        {n.label}
-                      </option>
-                    ))
-                  }
-                </select>
-                <span className="text-[#7a9bb8]">›</span>
-                <select
-                  className="bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-0.5 text-[#c8daea] text-xs outline-none cursor-pointer"
+                />
+                <span className="text-[#7a9bb8] text-xs">›</span>
+                <DropdownSelect
                   value={activeTabObj?.queryContext?.database ?? ''}
-                  onChange={(e) => {
-                    const db = e.target.value || null;
+                  placeholder={t('mainContent.selectDatabase')}
+                  className="w-28"
+                  options={availableDatabases.map(db => ({ value: db, label: db }))}
+                  onChange={(val) => {
+                    const db = val || null;
                     updateTabContext(activeTab, { database: db, schema: null });
-                    // 选择数据库时始终尝试加载 schema 列表（不依赖 needsSchema，避免时序问题）
                     const connId = activeTabObj?.queryContext?.connectionId;
                     if (db && connId) {
                       invoke<string[]>('list_schemas', { connectionId: connId, database: db })
@@ -444,27 +465,17 @@ export const MainContent: React.FC<MainContentProps> = ({
                         .catch((err) => console.warn('[list_schemas]', err));
                     }
                   }}
-                >
-                  <option value="">{t('mainContent.selectDatabase')}</option>
-                  {availableDatabases.map(db => (
-                    <option key={db} value={db}>{db}</option>
-                  ))}
-                </select>
+                />
                 {needsSchema && availableSchemas.length > 0 && (
                   <>
-                    <span className="text-[#7a9bb8]">›</span>
-                    <select
-                      className="bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-0.5 text-[#c8daea] text-xs outline-none cursor-pointer"
+                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <DropdownSelect
                       value={queryCtx?.schema ?? ''}
-                      onChange={(e) => {
-                        updateTabContext(activeTab, { schema: e.target.value || null });
-                      }}
-                    >
-                      <option value="">{t('mainContent.selectSchema')}</option>
-                      {availableSchemas.map(s => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                      placeholder={t('mainContent.selectSchema')}
+                      className="w-24"
+                      options={availableSchemas.map(s => ({ value: s, label: s }))}
+                      onChange={(val) => updateTabContext(activeTab, { schema: val || null })}
+                    />
                   </>
                 )}
               </div>
@@ -497,6 +508,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   overviewRulerBorder: false,
                   overviewRulerLanes: 0,
                   hideCursorInOverviewRuler: true,
+                  contextmenu: false,
                 }}
               />
             </div>
@@ -626,7 +638,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
               const e = { stopPropagation: () => {} } as React.MouseEvent;
               closeTab(e, contextMenu.tabId);
@@ -637,7 +649,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === 0}
             onClick={() => {
               closeTabsLeft(contextMenu.tabId);
@@ -647,7 +659,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === tabs.length - 1}
             onClick={() => {
               closeTabsRight(contextMenu.tabId);
@@ -658,7 +670,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
               closeAllTabs();
               setContextMenu(null);
@@ -677,7 +689,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           style={{ left: resultContextMenu.x, top: resultContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
               removeResult(activeTab, resultContextMenu.idx);
               if (selectedResultIdx >= resultContextMenu.idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
@@ -688,7 +700,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={resultContextMenu.idx === 0}
             onClick={() => {
               removeResultsLeft(activeTab, resultContextMenu.idx);
@@ -699,7 +711,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={resultContextMenu.idx === currentResults.length - 1}
             onClick={() => {
               removeResultsRight(activeTab, resultContextMenu.idx);
@@ -711,7 +723,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
               clearResults(activeTab);
               setSelectedResultIdx(0);
@@ -719,6 +731,63 @@ export const MainContent: React.FC<MainContentProps> = ({
             }}
           >
             {t('mainContent.closeAll')}
+          </button>
+        </div>
+      )}
+
+      {/* 编辑器区域自定义右键菜单 */}
+      {editorContextMenu && (
+        <div
+          ref={editorContextMenuRef}
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          style={{ left: editorContextMenu.x, top: editorContextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => {
+              editorRef.current?.trigger('menu', 'editor.action.clipboardCutAction', null);
+              setEditorContextMenu(null);
+            }}
+          >
+            {t('editorContextMenu.cut')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => {
+              editorRef.current?.trigger('menu', 'editor.action.clipboardCopyAction', null);
+              setEditorContextMenu(null);
+            }}
+          >
+            {t('editorContextMenu.copy')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => {
+              editorRef.current?.trigger('menu', 'editor.action.clipboardPasteAction', null);
+              setEditorContextMenu(null);
+            }}
+          >
+            {t('editorContextMenu.paste')}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => {
+              editorRef.current?.trigger('menu', 'editor.action.selectAll', null);
+              setEditorContextMenu(null);
+            }}
+          >
+            {t('editorContextMenu.selectAll')}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => {
+              handleFormat();
+              setEditorContextMenu(null);
+            }}
+          >
+            {t('editorContextMenu.format')}
           </button>
         </div>
       )}

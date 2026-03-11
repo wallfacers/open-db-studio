@@ -20,6 +20,7 @@ interface AiState {
   chatHistory: ChatMessage[];
   isChatting: boolean;
   sendChat: (message: string, connectionId: number | null) => Promise<string>;
+  sendChatStream: (message: string, connectionId: number | null) => Promise<void>;
   clearHistory: () => void;
 
   // AI 功能
@@ -93,15 +94,16 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   clearHistory: () => set({ chatHistory: [] }),
 
-  sendChat: async (message, connectionId) => {
+  sendChat: async (message, _connectionId) => {
+    const historyBeforeMessage = get().chatHistory;
     set((s) => ({
       isChatting: true,
       chatHistory: [...s.chatHistory, { role: 'user', content: message }],
     }));
     try {
-      const reply = await invoke<string>('ai_generate_sql', {
-        prompt: message,
-        connectionId: connectionId,
+      const reply = await invoke<string>('ai_chat', {
+        message,
+        context: { history: historyBeforeMessage, model: null },
       });
       set((s) => ({
         chatHistory: [...s.chatHistory, { role: 'assistant', content: reply }],
@@ -114,6 +116,83 @@ export const useAiStore = create<AiState>((set, get) => ({
         isChatting: false,
       }));
       throw e;
+    }
+  },
+
+  sendChatStream: async (message, _connectionId) => {
+    const historyBeforeMessage = get().chatHistory;
+    set((s) => ({
+      isChatting: true,
+      chatHistory: [...s.chatHistory, { role: 'user', content: message }],
+    }));
+    set((s) => ({
+      chatHistory: [
+        ...s.chatHistory,
+        { role: 'assistant', content: '', thinkingContent: '', isStreaming: true },
+      ],
+    }));
+
+    try {
+      const { Channel } = await import('@tauri-apps/api/core');
+      const channel = new Channel<{
+        type: 'ThinkingChunk' | 'ContentChunk' | 'Done' | 'Error';
+        data?: { delta?: string; message?: string };
+      }>();
+
+      channel.onmessage = (event) => {
+        if (event.type === 'ThinkingChunk' && event.data?.delta) {
+          set((s) => {
+            const history = [...s.chatHistory];
+            const last = { ...history[history.length - 1] };
+            last.thinkingContent = (last.thinkingContent ?? '') + event.data!.delta!;
+            history[history.length - 1] = last;
+            return { chatHistory: history };
+          });
+        } else if (event.type === 'ContentChunk' && event.data?.delta) {
+          set((s) => {
+            const history = [...s.chatHistory];
+            const last = { ...history[history.length - 1] };
+            last.content = (last.content ?? '') + event.data!.delta!;
+            history[history.length - 1] = last;
+            return { chatHistory: history };
+          });
+        } else if (event.type === 'Done') {
+          set((s) => {
+            const history = [...s.chatHistory];
+            const last = { ...history[history.length - 1], isStreaming: false };
+            history[history.length - 1] = last;
+            return { chatHistory: history, isChatting: false };
+          });
+        } else if (event.type === 'Error') {
+          set((s) => {
+            const history = [...s.chatHistory];
+            const last = {
+              ...history[history.length - 1],
+              content: `Error: ${event.data?.message ?? 'Unknown error'}`,
+              isStreaming: false,
+            };
+            history[history.length - 1] = last;
+            return { chatHistory: history, isChatting: false };
+          });
+        }
+      };
+
+      await invoke('ai_chat_stream', {
+        message,
+        context: { history: historyBeforeMessage, model: null },
+        channel,
+      });
+    } catch (e) {
+      set((s) => {
+        const history = [...s.chatHistory];
+        const last = {
+          ...history[history.length - 1],
+          content: `Error: ${String(e)}`,
+          isStreaming: false,
+        };
+        history[history.length - 1] = last;
+        return { chatHistory: history, isChatting: false };
+      });
     }
   },
 

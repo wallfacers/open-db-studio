@@ -227,6 +227,29 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
+
+    // 同步光标/选区信息到 queryStore，供 Tool Bridge 消歧
+    const syncEditorInfo = () => {
+      const model = editor.getModel();
+      if (!model) return;
+      const selection = editor.getSelection();
+      const cursorPos = editor.getPosition();
+      const cursorOffset = cursorPos
+        ? model.getOffsetAt(cursorPos)
+        : 0;
+      const selectedText =
+        selection && !selection.isEmpty()
+          ? model.getValueInRange(selection)
+          : null;
+      useQueryStore.getState().setEditorInfo(
+        useQueryStore.getState().activeTabId,
+        { cursorOffset, selectedText },
+      );
+    };
+    editor.onDidChangeCursorPosition(syncEditorInfo);
+    editor.onDidChangeCursorSelection(syncEditorInfo);
+    syncEditorInfo(); // 初始化一次
+
     if (completionProviderRegistered.current) return;
     completionProviderRegistered.current = true;
 

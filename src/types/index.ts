@@ -152,8 +152,10 @@ export interface FullSchemaInfo {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
+  thinkingContent?: string;   // 思考模型的推理过程
+  isStreaming?: boolean;      // 是否正在流式输出
 }
 
 // ============ 导航树类型 ============

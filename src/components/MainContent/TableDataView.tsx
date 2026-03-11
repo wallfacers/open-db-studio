@@ -102,42 +102,42 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#1e1e1e] h-full">
+    <div className="flex-1 flex flex-col bg-[#080d12] h-full">
       {/* Toolbar */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-[#2b2b2b] bg-[#1e1e1e] text-xs">
-        <div className="flex items-center space-x-2 text-[#858585]">
-          <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30">|&lt;</button>
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
-          <span className="text-[#d4d4d4]">{page}</span>
+      <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs">
+        <div className="flex items-center space-x-2 text-[#7a9bb8]">
+          <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30">|&lt;</button>
+          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
+          <span className="text-[#c8daea]">{page}</span>
           <button
             disabled={!data || data.rows.length < pageSize}
             onClick={() => setPage(p => p + 1)}
-            className="p-1 hover:bg-[#2b2b2b] rounded disabled:opacity-30"
+            className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
           ><ChevronRight size={14}/></button>
-          <span className="text-[#858585]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
-          <button onClick={loadData} className="p-1 hover:bg-[#2b2b2b] rounded" title={t('tableDataView.refreshData')}><RefreshCw size={14}/></button>
+          <span className="text-[#7a9bb8]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
+          <button onClick={loadData} className="p-1 hover:bg-[#1a2639] rounded" title={t('tableDataView.refreshData')}><RefreshCw size={14}/></button>
         </div>
-        <div className="flex items-center text-[#858585]">
-          <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#2b2b2b] rounded" title={t('export.exportData')}>
+        <div className="flex items-center text-[#7a9bb8]">
+          <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#1a2639] rounded" title={t('export.exportData')}>
             <Download size={14}/>
           </button>
         </div>
       </div>
 
       {/* Filter Bar */}
-      <div className="h-8 flex items-center px-3 border-b border-[#2b2b2b] bg-[#1e1e1e] text-xs gap-3">
-        <Filter size={12} className="text-[#858585]"/>
-        <span className="text-[#858585]">WHERE</span>
+      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs gap-3">
+        <Filter size={12} className="text-[#7a9bb8]"/>
+        <span className="text-[#7a9bb8]">WHERE</span>
         <input
-          className="bg-transparent outline-none text-[#d4d4d4] flex-1"
+          className="bg-transparent outline-none text-[#c8daea] flex-1"
           placeholder={t('tableDataView.enterCondition')}
           value={whereClause}
           onChange={e => setWhereClause(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') { if (page !== 1) setPage(1); else loadData(); } }}
         />
-        <span className="text-[#858585]">ORDER BY</span>
+        <span className="text-[#7a9bb8]">ORDER BY</span>
         <input
-          className="bg-transparent outline-none text-[#d4d4d4] flex-1"
+          className="bg-transparent outline-none text-[#c8daea] flex-1"
           placeholder={t('tableDataView.enterOrder')}
           value={orderClause}
           onChange={e => setOrderClause(e.target.value)}
@@ -148,44 +148,44 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
-          <div className="p-4 text-[#858585] text-sm">{t('tableDataView.loading')}</div>
+          <div className="p-4 text-[#7a9bb8] text-sm">{t('tableDataView.loading')}</div>
         ) : !data ? (
-          <div className="p-4 text-[#858585] text-sm">{t('tableDataView.noData')}</div>
+          <div className="p-4 text-[#7a9bb8] text-sm">{t('tableDataView.noData')}</div>
         ) : (
           <table className="w-full text-left border-collapse whitespace-nowrap text-[13px]">
-            <thead className="sticky top-0 bg-[#252526] z-10">
+            <thead className="sticky top-0 bg-[#0d1117] z-10">
               <tr>
-                <th className="w-10 px-2 py-1.5 border-b border-r border-[#2b2b2b] text-[#858585] font-normal">#</th>
+                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">#</th>
                 {data.columns.map(col => (
-                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#2b2b2b] text-[#d4d4d4] font-normal">{col}</th>
+                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
                 ))}
-                <th className="w-16 px-2 py-1.5 border-b border-[#2b2b2b] text-[#858585] font-normal"></th>
+                <th className="w-16 px-2 py-1.5 border-b border-[#1e2d42] text-[#7a9bb8] font-normal"></th>
               </tr>
             </thead>
             <tbody>
               {data.rows.map((row, ri) => (
-                <tr key={ri} className="hover:bg-[#2a2d2e] border-b border-[#2b2b2b] group">
-                  <td className="px-2 py-1.5 border-r border-[#2b2b2b] text-[#858585] bg-[#252526] text-center text-xs">{(page - 1) * pageSize + ri + 1}</td>
+                <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
+                  <td className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs">{(page - 1) * pageSize + ri + 1}</td>
                   {row.map((cell, ci) => {
                     const colName = data.columns[ci];
                     const isEditing = editingCell?.row === ri && editingCell?.col === colName;
                     return (
                       <td
                         key={ci}
-                        className="px-3 py-1.5 text-[#d4d4d4] border-r border-[#2b2b2b] max-w-[300px]"
+                        className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px]"
                         onDoubleClick={() => handleCellDoubleClick(ri, colName, cell === null ? '' : String(cell))}
                       >
                         {isEditing ? (
                           <input
                             autoFocus
-                            className="bg-[#2b2b2b] text-[#d4d4d4] outline-none border border-[#3794ff] rounded px-1 w-full"
+                            className="bg-[#1a2639] text-[#c8daea] outline-none border border-[#3794ff] rounded px-1 w-full"
                             value={editingCell.value}
                             onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
                             onKeyDown={e => { if (e.key === 'Enter') handleCellSave(); if (e.key === 'Escape') setEditingCell(null); }}
                             onBlur={() => setEditingCell(null)}
                           />
                         ) : (
-                          <span className="truncate block">{cell === null ? <span className="text-[#858585] italic">NULL</span> : String(cell)}</span>
+                          <span className="truncate block">{cell === null ? <span className="text-[#7a9bb8] italic">NULL</span> : String(cell)}</span>
                         )}
                       </td>
                     );
@@ -205,7 +205,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToa
       </div>
 
       {/* Status Bar */}
-      <div className="h-7 flex items-center px-3 border-t border-[#2b2b2b] bg-[#181818] text-[#858585] text-xs">
+      <div className="h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
         {data && <span>{data.row_count} {t('tableDataView.row')} · {data.duration_ms}ms</span>}
       </div>
 

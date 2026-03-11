@@ -5,6 +5,7 @@ import { X, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { useEscClose } from '../../hooks/useEscClose';
 import { useConnectionStore } from '../../store/connectionStore';
 import type { ToastLevel } from '../Toast';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface EditableColumn {
   id: string;
@@ -21,6 +22,14 @@ interface EditableColumn {
 }
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
+
+const getTypeOptions = (dataType: string) => {
+  const opts = COMMON_TYPES.map(tp => ({ value: tp, label: tp }));
+  if (dataType && !COMMON_TYPES.includes(dataType)) {
+    opts.push({ value: dataType, label: dataType });
+  }
+  return opts;
+};
 
 function generateSql(
   tableName: string,
@@ -268,14 +277,12 @@ export const TableManageDialog: React.FC<Props> = ({
                       />
                     </td>
                     <td className="py-1 px-2">
-                      <select
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                      <DropdownSelect
                         value={col.dataType}
-                        onChange={e => updateColumn(col.id, { dataType: e.target.value })}
-                      >
-                        {COMMON_TYPES.map(tp => <option key={tp} value={tp}>{tp}</option>)}
-                        {!COMMON_TYPES.includes(col.dataType) && <option value={col.dataType}>{col.dataType}</option>}
-                      </select>
+                        options={getTypeOptions(col.dataType)}
+                        onChange={v => updateColumn(col.id, { dataType: v })}
+                        className="w-full"
+                      />
                     </td>
                     <td className="py-1 px-2">
                       <input

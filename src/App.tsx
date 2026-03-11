@@ -9,12 +9,15 @@ import { Toast } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
+import { QueryContext } from './types';
 
 export interface TabData {
   id: string;
   type: 'query' | 'table' | 'er_diagram';
   title: string;
   db?: string;
+  connectionId?: number;
+  queryContext?: QueryContext;
 }
 
 export default function App() {
@@ -119,22 +122,37 @@ JOIN
     }
   };
 
-  const handleTableClick = (tableName: string, dbName: string = 'MySQL_demo') => {
-    const tabId = `table_${dbName}_${tableName}`;
+  const handleOpenTableData = (tableName: string, connectionId: number, database?: string) => {
+    const dbName = database ?? `conn_${connectionId}`;
+    const tabId = `table_${connectionId}_${dbName}_${tableName}`;
     setTabs(prev => {
       if (!prev.find(t => t.id === tabId)) {
-        return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName }];
+        return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName, connectionId }];
       }
       return prev;
     });
     setActiveTab(tabId);
   };
 
-  const handleNewQuery = (connId: number, connName: string) => {
+  const handleNewQuery = (connId: number, connName: string, database?: string, schema?: string) => {
     const tabId = `query_${connId}_${Date.now()}`;
     const queryCount = tabs.filter(t => t.type === 'query').length + 1;
-    setTabs(prev => [...prev, { id: tabId, type: 'query', title: `查询${queryCount}`, db: connName }]);
+    setTabs(prev => [...prev, {
+      id: tabId,
+      type: 'query',
+      title: `查询${queryCount}`,
+      db: connName,
+      queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
+    }]);
     setActiveTab(tabId);
+  };
+
+  const updateTabContext = (tabId: string, context: Partial<QueryContext>) => {
+    setTabs(prev => prev.map(t => {
+      if (t.id !== tabId) return t;
+      const existing = t.queryContext ?? { connectionId: null, database: null, schema: null };
+      return { ...t, queryContext: { ...existing, ...context } };
+    }));
   };
 
   const handleExecute = () => {
@@ -270,11 +288,9 @@ JOIN
           showToast={showToast}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
-          expandedFolders={expandedFolders}
-          toggleFolder={toggleFolder}
           activeActivity={activeActivity}
-          onTableClick={handleTableClick}
           onNewQuery={handleNewQuery}
+          onOpenTableData={handleOpenTableData}
         />
       )}
 
@@ -310,6 +326,7 @@ JOIN
         setIsExportMenuOpen={setIsExportMenuOpen}
         tableData={tableData}
         executionTime={executionTime}
+        updateTabContext={updateTabContext}
       />
       )}
 

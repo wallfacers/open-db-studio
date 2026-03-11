@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@monaco-editor/react';
 import type { languages as MonacoLanguages } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { FullSchemaInfo } from '../../types';
+import { FullSchemaInfo, QueryContext } from '../../types';
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('odb-dark', {
@@ -44,12 +44,13 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus
+  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap
 } from 'lucide-react';
 import { TabData } from '../../App';
 import { TableDataView } from './TableDataView';
 import ERDiagram from '../ERDiagram';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
+import { useTreeStore } from '../../store/treeStore';
 
 interface MainContentProps {
   tabs: TabData[];
@@ -80,6 +81,7 @@ interface MainContentProps {
   setIsExportMenuOpen: (isOpen: boolean) => void;
   tableData: any[];
   executionTime: number;
+  updateTabContext: (tabId: string, context: Partial<QueryContext>) => void;
 }
 
 interface ContextMenu {
@@ -94,14 +96,18 @@ export const MainContent: React.FC<MainContentProps> = ({
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize, resultsTab, setResultsTab,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
+  updateTabContext,
 }) => {
   const { t } = useTranslation();
   const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
+  const { nodes } = useTreeStore();
   const { explainSql, isExplaining, optimizeSql, isOptimizing } = useAiStore();
   const [explanation, setExplanation] = useState<string | null>(null);
   const [optimization, setOptimization] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  // 上下文选择器动态 schema 缓存：key = "connId/database"
+  const [contextSchemas, setContextSchemas] = useState<Record<string, string[]>>({});
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const schemaRef = useRef<FullSchemaInfo | null>(null);
 
@@ -179,26 +185,29 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
   }, [isExecuting]);
 
-  const handleExecute = () => {
-    if (!activeConnectionId) {
-      showToast(t('mainContent.selectConnectionFirst'));
+  const handleExecute = useCallback(() => {
+    const connId = activeTabObj?.queryContext?.connectionId ?? null;
+    const database = activeTabObj?.queryContext?.database ?? null;
+    if (!connId || !database) {
+      showToast(t('mainContent.selectConnectionAndDatabase'));
       return;
     }
-    executeQuery(activeConnectionId, activeTab);
+    executeQuery(connId, activeTab);
     setResultsTab('result1');
-  };
+  }, [activeTabObj, activeTab, showToast, executeQuery, t, setResultsTab]);
 
   const handleClear = () => {
     setSql(activeTab, '');
   };
 
   const handleExplain = async () => {
-    if (!currentSql.trim() || !activeConnectionId) {
+    const connId = activeTabObj?.queryContext?.connectionId ?? null;
+    if (!currentSql.trim() || !connId) {
       showToast(t('mainContent.inputSqlAndSelectConnection'));
       return;
     }
     try {
-      const result = await explainSql(currentSql, activeConnectionId);
+      const result = await explainSql(currentSql, connId);
       setExplanation(result);
     } catch {
       showToast(t('mainContent.aiExplainFailed'));
@@ -206,12 +215,13 @@ export const MainContent: React.FC<MainContentProps> = ({
   };
 
   const handleOptimize = async () => {
-    if (!currentSql.trim() || !activeConnectionId) {
+    const connId = activeTabObj?.queryContext?.connectionId ?? null;
+    if (!currentSql.trim() || !connId) {
       showToast(t('mainContent.inputSqlAndSelectConnection'));
       return;
     }
     try {
-      const result = await optimizeSql(currentSql, activeConnectionId);
+      const result = await optimizeSql(currentSql, connId);
       setOptimization(result);
     } catch {
       showToast(t('mainContent.aiOptimizeFailed'));
@@ -245,7 +255,27 @@ export const MainContent: React.FC<MainContentProps> = ({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeConnectionId, activeTab]);
+  }, [handleExecute]);
+
+  // Schema 选择器辅助变量
+  const queryCtx = activeTabObj?.type === 'query' ? activeTabObj.queryContext : undefined;
+  const selectedConnNode = queryCtx?.connectionId != null
+    ? Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === queryCtx.connectionId)
+    : undefined;
+  const needsSchema = selectedConnNode?.meta.driver === 'postgres' || selectedConnNode?.meta.driver === 'oracle';
+  const contextSchemaKey = queryCtx?.connectionId != null && queryCtx?.database
+    ? `${queryCtx.connectionId}/${queryCtx.database}`
+    : null;
+  // 优先使用动态加载的 schema 列表，回退到 treeStore 缓存
+  const availableSchemas: string[] = contextSchemaKey && contextSchemas[contextSchemaKey]
+    ? contextSchemas[contextSchemaKey]
+    : (needsSchema && queryCtx?.database
+        ? Array.from(nodes.values())
+            .filter(n => n.nodeType === 'schema'
+              && n.meta.connectionId === queryCtx!.connectionId
+              && n.meta.database === queryCtx!.database)
+            .map(n => n.meta.schema ?? n.label)
+        : []);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
@@ -284,7 +314,8 @@ export const MainContent: React.FC<MainContentProps> = ({
         ) : activeTabObj.type === 'table' ? (
           <TableDataView
             tableName={activeTabObj.title}
-            dbName={activeTabObj.db || 'demo'}
+            dbName={activeTabObj.db || ''}
+            connectionId={activeTabObj.connectionId}
             showToast={showToast}
           />
         ) : (
@@ -293,26 +324,28 @@ export const MainContent: React.FC<MainContentProps> = ({
             <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-[#1e2d42] bg-[#080d12]">
               <div className="flex items-center space-x-2">
                 <button
-                  className={`flex items-center px-3 py-1.5 rounded text-xs font-medium transition-colors ${isExecuting ? 'bg-[#1e2d42] text-[#7a9bb8] cursor-not-allowed' : 'bg-[#00c9a7] hover:bg-[#00a98f] text-white'}`}
+                  className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[#1e2d42]' : 'text-[#00c9a7] hover:text-[#00a98f] hover:bg-[#1e2d42]'}`}
+                  title={isExecuting ? t('mainContent.executing') : t('mainContent.execute')}
                   onClick={handleExecute}
                   disabled={isExecuting}
                 >
-                  {isExecuting ? <Square size={14} className="mr-1.5" /> : <Play size={14} className="mr-1.5" />}
-                  {isExecuting ? t('mainContent.executing') : t('mainContent.execute')}
+                  {isExecuting ? <Square size={16} /> : <Play size={16} />}
                 </button>
                 <button
-                  className={`flex items-center px-2 py-1.5 rounded text-xs transition-colors ${isExplaining ? 'bg-[#1e2d42] text-[#7a9bb8] cursor-not-allowed' : 'bg-[#1e2d42] hover:bg-[#253347] text-gray-300'}`}
+                  className={`p-1.5 rounded transition-colors ${isExplaining ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                  title={isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}
                   onClick={handleExplain}
-                  disabled={isExplaining || !activeConnectionId}
+                  disabled={isExplaining || !activeTabObj?.queryContext?.connectionId}
                 >
-                  {isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}
+                  <Lightbulb size={16} />
                 </button>
                 <button
-                  className={`flex items-center px-2 py-1.5 rounded text-xs transition-colors ${isOptimizing ? 'bg-[#1e2d42] text-[#7a9bb8] cursor-not-allowed' : 'bg-[#1e2d42] hover:bg-[#253347] text-gray-300'}`}
+                  className={`p-1.5 rounded transition-colors ${isOptimizing ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                  title={isOptimizing ? t('mainContent.optimizing') : t('mainContent.optimizeSql')}
                   onClick={handleOptimize}
-                  disabled={isOptimizing || !activeConnectionId}
+                  disabled={isOptimizing || !activeTabObj?.queryContext?.connectionId}
                 >
-                  {isOptimizing ? t('mainContent.optimizing') : t('mainContent.optimizeSql')}
+                  <Zap size={16} />
                 </button>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Save" onClick={() => showToast(t('mainContent.sqlSaved'))}>
@@ -329,17 +362,69 @@ export const MainContent: React.FC<MainContentProps> = ({
                 </button>
               </div>
 
-              <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <div
-                    className="flex items-center text-xs text-[#c8daea] cursor-pointer hover:bg-[#1e2d42] px-2 py-1 rounded"
-                    onClick={(e) => { e.stopPropagation(); setIsDbMenuOpen(!isDbMenuOpen); setIsTableMenuOpen(false); }}
-                  >
-                    <DatabaseZap size={14} className="mr-1.5 text-[#00c9a7]" />
-                    <span>{activeConnectionId ? `${t('mainContent.connection')}${activeConnectionId}` : t('mainContent.noConnectionSelected')}</span>
-                    <ChevronDown size={14} className="ml-1 text-[#7a9bb8]" />
-                  </div>
-                </div>
+              {/* 上下文选择器（右侧） */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <select
+                  className="bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-0.5 text-[#c8daea] text-xs outline-none cursor-pointer"
+                  value={activeTabObj?.queryContext?.connectionId ?? ''}
+                  onChange={(e) => {
+                    const connId = e.target.value ? Number(e.target.value) : null;
+                    updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
+                  }}
+                >
+                  <option value="">{t('mainContent.selectConnection')}</option>
+                  {Array.from(nodes.values())
+                    .filter(n => n.nodeType === 'connection')
+                    .map(n => (
+                      <option key={n.meta.connectionId} value={n.meta.connectionId ?? ''}>
+                        {n.label}
+                      </option>
+                    ))
+                  }
+                </select>
+                <span className="text-[#7a9bb8]">›</span>
+                <select
+                  className="bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-0.5 text-[#c8daea] text-xs outline-none cursor-pointer"
+                  value={activeTabObj?.queryContext?.database ?? ''}
+                  onChange={(e) => {
+                    const db = e.target.value || null;
+                    updateTabContext(activeTab, { database: db, schema: null });
+                    // 选择数据库时始终尝试加载 schema 列表（不依赖 needsSchema，避免时序问题）
+                    const connId = activeTabObj?.queryContext?.connectionId;
+                    if (db && connId) {
+                      invoke<string[]>('list_schemas', { connectionId: connId, database: db })
+                        .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
+                        .catch((err) => console.warn('[list_schemas]', err));
+                    }
+                  }}
+                >
+                  <option value="">{t('mainContent.selectDatabase')}</option>
+                  {activeTabObj?.queryContext?.connectionId && Array.from(nodes.values())
+                    .filter(n => n.nodeType === 'database' && n.meta.connectionId === activeTabObj.queryContext?.connectionId)
+                    .map(n => (
+                      <option key={n.meta.database} value={n.meta.database ?? ''}>
+                        {n.label}
+                      </option>
+                    ))
+                  }
+                </select>
+                {needsSchema && availableSchemas.length > 0 && (
+                  <>
+                    <span className="text-[#7a9bb8]">›</span>
+                    <select
+                      className="bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-0.5 text-[#c8daea] text-xs outline-none cursor-pointer"
+                      value={queryCtx?.schema ?? ''}
+                      onChange={(e) => {
+                        updateTabContext(activeTab, { schema: e.target.value || null });
+                      }}
+                    >
+                      <option value="">{t('mainContent.selectSchema')}</option>
+                      {availableSchemas.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             </div>
 

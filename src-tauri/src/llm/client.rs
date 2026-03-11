@@ -274,4 +274,110 @@ impl LlmClient {
         ];
         self.chat(messages).await
     }
+
+    pub async fn chat_stream_openai(
+        &self,
+        messages: Vec<ChatMessage>,
+        channel: &Channel<StreamEvent>,
+    ) -> AppResult<()> {
+        #[derive(serde::Serialize)]
+        struct StreamReq {
+            model: String,
+            messages: Vec<ChatMessage>,
+            stream: bool,
+        }
+        #[derive(serde::Deserialize, Default)]
+        struct Delta {
+            content: Option<String>,
+            reasoning_content: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Choice { delta: Delta }
+        #[derive(serde::Deserialize)]
+        struct Chunk { choices: Vec<Choice> }
+
+        let req = StreamReq { model: self.model.clone(), messages, stream: true };
+        let base = self.base_url.trim_end_matches('/');
+        let resp = self.client
+            .post(format!("{}/chat/completions", base))
+            .bearer_auth(&self.api_key)
+            .json(&req)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            let _ = channel.send(StreamEvent::Error { message: format!("HTTP {}: {}", status, body) });
+            return Ok(());
+        }
+
+        let mut in_thinking = false;
+        let mut stream = resp.bytes_stream();
+
+        while let Some(item) = stream.next().await {
+            let bytes = match item {
+                Ok(b) => b,
+                Err(e) => {
+                    let _ = channel.send(StreamEvent::Error { message: e.to_string() });
+                    return Ok(());
+                }
+            };
+
+            let text = String::from_utf8_lossy(&bytes);
+            for line in text.lines() {
+                let line = line.trim();
+                if !line.starts_with("data:") { continue; }
+                let json_str = line["data:".len()..].trim();
+                if json_str == "[DONE]" {
+                    let _ = channel.send(StreamEvent::Done);
+                    return Ok(());
+                }
+                let chunk: Chunk = match serde_json::from_str(json_str) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                for choice in chunk.choices {
+                    if let Some(rc) = choice.delta.reasoning_content {
+                        if !rc.is_empty() {
+                            let _ = channel.send(StreamEvent::ThinkingChunk { delta: rc });
+                        }
+                    }
+                    if let Some(content) = choice.delta.content {
+                        if content.is_empty() { continue; }
+                        let mut remaining = content.as_str();
+                        loop {
+                            if in_thinking {
+                                if let Some(pos) = remaining.find("</think>") {
+                                    let thinking_part = &remaining[..pos];
+                                    if !thinking_part.is_empty() {
+                                        let _ = channel.send(StreamEvent::ThinkingChunk { delta: thinking_part.to_string() });
+                                    }
+                                    in_thinking = false;
+                                    remaining = &remaining[pos + "</think>".len()..];
+                                } else {
+                                    let _ = channel.send(StreamEvent::ThinkingChunk { delta: remaining.to_string() });
+                                    break;
+                                }
+                            } else {
+                                if let Some(pos) = remaining.find("<think>") {
+                                    let normal_part = &remaining[..pos];
+                                    if !normal_part.is_empty() {
+                                        let _ = channel.send(StreamEvent::ContentChunk { delta: normal_part.to_string() });
+                                    }
+                                    in_thinking = true;
+                                    remaining = &remaining[pos + "<think>".len()..];
+                                } else {
+                                    let _ = channel.send(StreamEvent::ContentChunk { delta: remaining.to_string() });
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let _ = channel.send(StreamEvent::Done);
+        Ok(())
+    }
 }

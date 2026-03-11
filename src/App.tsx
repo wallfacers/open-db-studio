@@ -319,7 +319,7 @@ JOIN
         setIsAssistantOpen={setIsAssistantOpen}
         showToast={showToast}
       />
-      
+
       {activeActivity !== 'settings' && (
         <Explorer
           isSidebarOpen={isSidebarOpen}

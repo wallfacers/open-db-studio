@@ -57,7 +57,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-[#0d1117] border border-[#1e2d42] rounded-lg shadow-2xl w-[600px] flex flex-col"
+        className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[600px] flex flex-col"
         style={{ maxHeight: '70vh' }}
         onClick={e => e.stopPropagation()}
       >
@@ -83,8 +83,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className={`flex-1 min-h-[220px] p-3 bg-[#080d12] text-[#c8daea] text-xs font-mono outline-none resize-y ${readOnly ? 'cursor-default select-all' : ''}`}
-          style={{ border: 'none' }}
+          className={`flex-1 min-h-[220px] m-4 bg-[#0d1520] border border-[#1e2d42] rounded p-3 text-[#c8daea] text-xs font-mono outline-none resize-y ${readOnly ? 'cursor-default select-all' : ''}`}
           value={draft}
           readOnly={readOnly}
           onChange={readOnly ? undefined : e => {

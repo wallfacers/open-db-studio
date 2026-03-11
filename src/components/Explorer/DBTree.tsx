@@ -207,8 +207,6 @@ export const DBTree: React.FC<DBTreeProps> = ({
           onDoubleClick={
             node.nodeType === 'connection'
               ? () => onOpenConnection(getConnectionId(node))
-              : (node.nodeType === 'table' || node.nodeType === 'view')
-              ? () => onOpenTableData(node.label, getConnectionId(node), node.meta.database, node.meta.schema)
               : undefined
           }
           onContextMenu={(e) => handleContextMenu(e, node)}

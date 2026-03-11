@@ -32,16 +32,18 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingType, setIsEditingType] = useState(false);
   const [isEditingKey, setIsEditingKey] = useState(false);
-  
+
   const [editName, setEditName] = useState(col.name);
   const [editType, setEditType] = useState(col.type);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
   const typeSpanRef = useRef<HTMLSpanElement>(null);
   const keySpanRef = useRef<HTMLDivElement>(null);
-  
-  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
-  const [keyDropdownPos, setKeyDropdownPos] = useState({ top: 0, left: 0 });
+  const typeDropdownRef = useRef<HTMLDivElement>(null);
+  const keyDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, openUpward: false });
+  const [keyDropdownPos, setKeyDropdownPos] = useState({ top: 0, left: 0, openUpward: false });
 
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
@@ -52,9 +54,12 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
   useLayoutEffect(() => {
     if (isEditingType && typeSpanRef.current) {
       const rect = typeSpanRef.current.getBoundingClientRect();
+      const dropdownHeight = commonSqlTypes.length * 24 + 8; // 估算下拉框高度
+      const openUpward = rect.bottom + dropdownHeight > window.innerHeight;
       setDropdownPos({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX
+        top: openUpward ? rect.top + window.scrollY : rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX - 40,
+        openUpward
       });
     }
   }, [isEditingType]);
@@ -62,9 +67,12 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
   useLayoutEffect(() => {
     if (isEditingKey && keySpanRef.current) {
       const rect = keySpanRef.current.getBoundingClientRect();
+      const dropdownHeight = 80; // 估算键类型下拉框高度
+      const openUpward = rect.bottom + dropdownHeight > window.innerHeight;
       setKeyDropdownPos({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX
+        top: openUpward ? rect.top + window.scrollY : rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        openUpward
       });
     }
   }, [isEditingKey]);
@@ -122,8 +130,13 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
         <div className="relative flex items-center">
           {isEditingKey && createPortal(
             <div
+              ref={keyDropdownRef}
               className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-2xl z-[999999] py-1 min-w-[120px] cursor-default"
-              style={{ top: keyDropdownPos.top + 4, left: keyDropdownPos.left }}
+              style={{
+                top: keyDropdownPos.openUpward ? keyDropdownPos.top - 4 : keyDropdownPos.top + 4,
+                left: keyDropdownPos.left,
+                transform: keyDropdownPos.openUpward ? 'translateY(-100%)' : 'none'
+              }}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onWheel={(e) => e.stopPropagation()}
@@ -199,8 +212,13 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
       <div className="z-0 flex-1 flex justify-end items-center relative">
         {isEditingType && createPortal(
           <div
+            ref={typeDropdownRef}
             className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-2xl z-[999999] py-1 min-w-[120px] cursor-default"
-            style={{ top: dropdownPos.top + 4, left: dropdownPos.left - 40 }}
+            style={{
+              top: dropdownPos.openUpward ? dropdownPos.top - 4 : dropdownPos.top + 4,
+              left: dropdownPos.left,
+              transform: dropdownPos.openUpward ? 'translateY(-100%)' : 'none'
+            }}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}

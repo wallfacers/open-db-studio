@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
@@ -46,13 +46,21 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   // 已应用的条件（只有点击搜索时才更新）
   const [appliedWhere, setAppliedWhere] = useState('');
   const [appliedOrder, setAppliedOrder] = useState('');
+  // 用于强制刷新的 key（解决条件不变时多次点击无反应的问题）
+  const [refreshKey, setRefreshKey] = useState(0);
+  // 使用 ref 存储最新条件值，解决 setState 异步导致 loadData 使用旧值的问题
+  const appliedWhereRef = useRef('');
+  const appliedOrderRef = useRef('');
+  // 追踪输入框最新值（onChange 立即同步，绕过 React state 异步问题）
+  const latestWhereRef = useRef('');
+  const latestOrderRef = useRef('');
   const [isLoading, setIsLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const [cellEditor, setCellEditor] = useState<{ rowIdx: number; colIdx: number; value: string | null; columnName: string } | null>(null);
 
-  const { pending, editCell, cloneRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
+  const { pending, editCell, cloneRow, addEmptyRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
 
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
@@ -69,8 +77,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           schema: schema || null,
           page,
           page_size: pageSize,
-          where_clause: appliedWhere || null,
-          order_clause: appliedOrder || null,
+          where_clause: appliedWhereRef.current || null,
+          order_clause: appliedOrderRef.current || null,
         }
       });
       setData(result);
@@ -79,7 +87,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [activeConnectionId, tableName, page, pageSize, appliedWhere, appliedOrder]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
@@ -95,6 +103,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   }, [activeConnectionId, tableName]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSearch = () => {
+    appliedWhereRef.current = latestWhereRef.current;
+    appliedOrderRef.current = latestOrderRef.current;
+    setAppliedWhere(latestWhereRef.current);
+    setAppliedOrder(latestOrderRef.current);
+    setPage(1);
+    setRefreshKey(k => k + 1);
+  };
 
   const handleCommit = async () => {
     if (!activeConnectionId || !data) return;
@@ -206,7 +223,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           </Tooltip>
           <span className="text-[#7a9bb8]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
           <Tooltip content={t('tableDataView.refreshData')}>
-            <button onClick={loadData} className="p-1 hover:bg-[#1a2639] rounded"><RefreshCw size={14}/></button>
+            <button onClick={handleSearch} className="p-1 hover:bg-[#1a2639] rounded">
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''}/>
+            </button>
           </Tooltip>
         </div>
 
@@ -217,7 +236,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
                 <button
                   onClick={handleCommit}
                   disabled={isCommitting}
-                  className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50 text-xs"
+                  className="flex items-center gap-1 px-2 py-1 bg-[#00a98f] hover:bg-[#00c9a7] text-white rounded disabled:opacity-50 text-xs"
                 >
                   <Check size={12}/>
                   {t('tableDataView.commitWithCount', { count: totalCount })}
@@ -234,6 +253,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               </Tooltip>
             </>
           )}
+          <Tooltip content={t('tableDataView.addRow')}>
+            <button
+              onClick={() => data && addEmptyRow(data.columns.length)}
+              disabled={!data}
+              className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+            >
+              <Plus size={14}/>
+            </button>
+          </Tooltip>
           <Tooltip content={t('export.exportData')}>
             <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#1a2639] rounded">
               <Download size={14}/>
@@ -248,36 +276,32 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         <span className="text-[#7a9bb8]">WHERE</span>
         <AutoCompleteInput
           value={whereClause}
-          onChange={setWhereClause}
-          onSearch={() => {
-            setAppliedWhere(whereClause);
-            setAppliedOrder(orderClause);
-            setPage(1);
-          }}
+          onChange={(v) => { latestWhereRef.current = v; setWhereClause(v); }}
+          onSearch={handleSearch}
           placeholder={t('tableDataView.enterCondition')}
           columns={columns.map(c => c.name)}
         />
         <span className="text-[#7a9bb8]">ORDER BY</span>
         <AutoCompleteInput
           value={orderClause}
-          onChange={setOrderClause}
-          onSearch={() => {
-            setAppliedWhere(whereClause);
-            setAppliedOrder(orderClause);
-            setPage(1);
-          }}
+          onChange={(v) => { latestOrderRef.current = v; setOrderClause(v); }}
+          onSearch={handleSearch}
           placeholder={t('tableDataView.enterOrder')}
           columns={columns.map(c => c.name)}
         />
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="p-4 text-[#7a9bb8] text-sm">{t('tableDataView.loading')}</div>
-        ) : !data ? (
-          <div className="p-4 text-[#7a9bb8] text-sm">{t('tableDataView.noData')}</div>
-        ) : (
+      <div className="flex-1 overflow-auto relative">
+        {isLoading && !data && (
+          <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">{t('tableDataView.loading')}</div>
+        )}
+        {!isLoading && (!data || data.rows.length === 0) && (
+          <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">{t('tableDataView.noData')}</div>
+        )}
+        {data && data.rows.length > 0 && (
+          <>
+          {isLoading && <div className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none" />}
           <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
             <thead className="sticky top-0 bg-[#0d1117] z-10">
               <tr>
@@ -320,10 +344,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
                   <td className="px-2 py-1.5 border-r border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs select-none">
                     <button
                       onClick={() => removeClonedRow(ci)}
-                      className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 leading-none"
+                      className="text-red-400 hover:text-red-300 leading-none"
                       title={t('tableDataView.deleteRowMenuItem')}
                     >×</button>
-                    <span className="group-hover:hidden">+</span>
                   </td>
                   {row.map((cell, ji) => (
                     <td key={ji} className="px-3 py-1.5 text-green-400 border-r border-[#1e2d42] max-w-[300px] truncate">
@@ -334,6 +357,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
 

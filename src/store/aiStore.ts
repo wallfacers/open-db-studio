@@ -101,7 +101,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     try {
       const reply = await invoke<string>('ai_generate_sql', {
         prompt: message,
-        connectionId: connectionId ?? 0,
+        connectionId: connectionId,
       });
       set((s) => ({
         chatHistory: [...s.chatHistory, { role: 'assistant', content: reply }],

@@ -122,25 +122,40 @@ pub async fn ai_chat(message: String, context: ChatContext) -> AppResult<String>
 }
 
 #[tauri::command]
-pub async fn ai_generate_sql(prompt: String, connection_id: i64) -> AppResult<String> {
+pub async fn ai_generate_sql(prompt: String, connection_id: Option<i64>) -> AppResult<String> {
     let client = build_llm_client()?;
-    let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
-    let schema = ds.get_schema().await?;
 
-    let schema_context = schema.tables.iter()
-        .map(|t| format!("Table: {}", t.name))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let (schema_context, driver) = match connection_id {
+        Some(id) if id > 0 => {
+            let config = crate::db::get_connection_config(id)?;
+            let ds = crate::datasource::create_datasource(&config).await?;
+            let schema = ds.get_schema().await?;
+            let ctx = schema.tables.iter()
+                .map(|t| format!("Table: {}", t.name))
+                .collect::<Vec<_>>()
+                .join("\n");
+            (ctx, config.driver)
+        }
+        _ => {
+            // 无连接时，使用空 schema 上下文和默认 driver
+            ("".to_string(), "mysql".to_string())
+        }
+    };
 
-    client.generate_sql(&prompt, &schema_context, &config.driver).await
+    client.generate_sql(&prompt, &schema_context, &driver).await
 }
 
 #[tauri::command]
-pub async fn ai_explain_sql(sql: String, connection_id: i64) -> AppResult<String> {
+pub async fn ai_explain_sql(sql: String, connection_id: Option<i64>) -> AppResult<String> {
     let client = build_llm_client()?;
-    let config = crate::db::get_connection_config(connection_id)?;
-    client.explain_sql(&sql, &config.driver).await
+    let driver = match connection_id {
+        Some(id) if id > 0 => {
+            let config = crate::db::get_connection_config(id)?;
+            config.driver
+        }
+        _ => "mysql".to_string(), // 默认使用 mysql 方言
+    };
+    client.explain_sql(&sql, &driver).await
 }
 
 // ============ LLM 配置管理 ============
@@ -602,34 +617,56 @@ pub async fn reorder_groups(items: Vec<crate::db::models::ReorderItem>) -> AppRe
 // ============ AI 高级命令 ============
 
 #[tauri::command]
-pub async fn ai_optimize_sql(sql: String, connection_id: i64) -> AppResult<String> {
+pub async fn ai_optimize_sql(sql: String, connection_id: Option<i64>) -> AppResult<String> {
     let client = build_llm_client()?;
-    let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
-    let schema = ds.get_schema().await?;
-    let schema_context = schema.tables.iter()
-        .map(|t| format!("Table: {}", t.name))
-        .collect::<Vec<_>>().join("\n");
-    client.optimize_sql(&sql, &schema_context, &config.driver).await
+
+    let (schema_context, driver) = match connection_id {
+        Some(id) if id > 0 => {
+            let config = crate::db::get_connection_config(id)?;
+            let ds = crate::datasource::create_datasource(&config).await?;
+            let schema = ds.get_schema().await?;
+            let ctx = schema.tables.iter()
+                .map(|t| format!("Table: {}", t.name))
+                .collect::<Vec<_>>().join("\n");
+            (ctx, config.driver)
+        }
+        _ => ("".to_string(), "mysql".to_string()),
+    };
+
+    client.optimize_sql(&sql, &schema_context, &driver).await
 }
 
 #[tauri::command]
-pub async fn ai_create_table(description: String, connection_id: i64) -> AppResult<String> {
+pub async fn ai_create_table(description: String, connection_id: Option<i64>) -> AppResult<String> {
     let client = build_llm_client()?;
-    let config = crate::db::get_connection_config(connection_id)?;
-    client.create_table_ddl(&description, &config.driver).await
+    let driver = match connection_id {
+        Some(id) if id > 0 => {
+            let config = crate::db::get_connection_config(id)?;
+            config.driver
+        }
+        _ => "mysql".to_string(),
+    };
+    client.create_table_ddl(&description, &driver).await
 }
 
 #[tauri::command]
-pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: i64) -> AppResult<String> {
+pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Option<i64>) -> AppResult<String> {
     let client = build_llm_client()?;
-    let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
-    let schema = ds.get_schema().await?;
-    let schema_context = schema.tables.iter()
-        .map(|t| format!("Table: {}", t.name))
-        .collect::<Vec<_>>().join("\n");
-    client.diagnose_error(&sql, &error_msg, &schema_context, &config.driver).await
+
+    let (schema_context, driver) = match connection_id {
+        Some(id) if id > 0 => {
+            let config = crate::db::get_connection_config(id)?;
+            let ds = crate::datasource::create_datasource(&config).await?;
+            let schema = ds.get_schema().await?;
+            let ctx = schema.tables.iter()
+                .map(|t| format!("Table: {}", t.name))
+                .collect::<Vec<_>>().join("\n");
+            (ctx, config.driver)
+        }
+        _ => ("".to_string(), "mysql".to_string()),
+    };
+
+    client.diagnose_error(&sql, &error_msg, &schema_context, &driver).await
 }
 
 // ============ 导航树查询命令 ============

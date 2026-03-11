@@ -1,6 +1,17 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use crate::AppResult;
+use futures_util::StreamExt;
+use tauri::ipc::Channel;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type", content = "data")]
+pub enum StreamEvent {
+    ThinkingChunk { delta: String },
+    ContentChunk   { delta: String },
+    Done,
+    Error { message: String },
+}
 
 const DEFAULT_ANTHROPIC_MAX_TOKENS: u32 = 8192;
 

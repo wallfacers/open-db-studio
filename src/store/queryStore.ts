@@ -17,7 +17,7 @@ interface QueryState {
   setActiveTab: (id: string) => void;
   setSql: (tabId: string, sql: string) => void;
 
-  executeQuery: (connectionId: number, tabId: string, sqlOverride?: string) => Promise<void>;
+  executeQuery: (connectionId: number, tabId: string, sqlOverride?: string, database?: string | null, schema?: string | null) => Promise<void>;
   loadHistory: (connectionId: number) => Promise<void>;
   removeResult: (tabId: string, idx: number) => void;
   removeResultsLeft: (tabId: string, idx: number) => void;
@@ -58,7 +58,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   setSql: (tabId, sql) =>
     set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } })),
 
-  executeQuery: async (connectionId, tabId, sqlOverride) => {
+  executeQuery: async (connectionId, tabId, sqlOverride, database, schema) => {
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';
     if (!sql.trim()) return;
 
@@ -72,7 +72,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const resultList: QueryResult[] = [];
     try {
       for (const stmt of statements) {
-        const result = await invoke<QueryResult>('execute_query', { connectionId, sql: stmt });
+        const result = await invoke<QueryResult>('execute_query', {
+          connectionId,
+          sql: stmt,
+          database: database ?? null,
+          schema: schema ?? null,
+        });
         resultList.push(result);
       }
       set(s => ({ results: { ...s.results, [tabId]: resultList }, isExecuting: false }));

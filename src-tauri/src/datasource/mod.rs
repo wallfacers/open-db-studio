@@ -121,13 +121,13 @@ pub trait DataSource: Send + Sync {
     async fn get_schema(&self) -> AppResult<SchemaInfo>;
 
     // V1 新增：带默认空实现（Oracle/MSSQL 不强制实现）
-    async fn get_columns(&self, _table: &str) -> AppResult<Vec<ColumnMeta>> {
+    async fn get_columns(&self, _table: &str, _schema: Option<&str>) -> AppResult<Vec<ColumnMeta>> {
         Ok(vec![])
     }
-    async fn get_indexes(&self, _table: &str) -> AppResult<Vec<IndexMeta>> {
+    async fn get_indexes(&self, _table: &str, _schema: Option<&str>) -> AppResult<Vec<IndexMeta>> {
         Ok(vec![])
     }
-    async fn get_foreign_keys(&self, _table: &str) -> AppResult<Vec<ForeignKeyMeta>> {
+    async fn get_foreign_keys(&self, _table: &str, _schema: Option<&str>) -> AppResult<Vec<ForeignKeyMeta>> {
         Ok(vec![])
     }
     async fn get_views(&self) -> AppResult<Vec<ViewMeta>> {
@@ -139,6 +139,24 @@ pub trait DataSource: Send + Sync {
     async fn get_table_ddl(&self, _table: &str) -> AppResult<String> {
         Ok(String::new())
     }
+
+    /// 列出所有数据库（MySQL: SHOW DATABASES / PG: pg_database）
+    async fn list_databases(&self) -> AppResult<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// 列出指定数据库中的 Schema（PostgreSQL/Oracle 专用）。
+    /// **重要：** 调用方应先使用 `create_datasource_with_db(config, database)` 创建连接到目标数据库的数据源，
+    /// `_database` 参数仅为接口一致性保留，具体实现通常忽略它（连接池已绑定到目标数据库）。
+    async fn list_schemas(&self, _database: &str) -> AppResult<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// 列出指定 category 的对象（tables/views/functions/procedures/triggers/events/sequences）
+    async fn list_objects(&self, _database: &str, _schema: Option<&str>, _category: &str) -> AppResult<Vec<String>> {
+        Ok(vec![])
+    }
+
     async fn get_full_schema(&self) -> AppResult<FullSchemaInfo> {
         let tables_meta = self.get_tables().await?;
         let mut tables = vec![];
@@ -146,9 +164,10 @@ pub trait DataSource: Send + Sync {
             // 默认实现对每张表的 metadata 查询采用 unwrap_or_default：
             // 这是为了让未实现扩展方法的驱动（Oracle/MSSQL stub）能静默返回空数据。
             // 真实驱动实现（MySQL/PostgreSQL）应覆盖本方法并传播错误。
-            let columns = self.get_columns(&t.name).await.unwrap_or_default();
-            let indexes = self.get_indexes(&t.name).await.unwrap_or_default();
-            let foreign_keys = self.get_foreign_keys(&t.name).await.unwrap_or_default();
+            let schema = t.schema.as_deref();
+            let columns = self.get_columns(&t.name, schema).await.unwrap_or_default();
+            let indexes = self.get_indexes(&t.name, schema).await.unwrap_or_default();
+            let foreign_keys = self.get_foreign_keys(&t.name, schema).await.unwrap_or_default();
             tables.push(TableDetail { name: t.name.clone(), columns, indexes, foreign_keys });
         }
         let views = self.get_views().await.unwrap_or_default();
@@ -166,6 +185,37 @@ pub async fn create_datasource(
         "postgres" => Ok(Box::new(postgres::PostgresDataSource::new(config).await?)),
         "oracle" => Ok(Box::new(oracle::OracleDataSource::new(config).await?)),
         "sqlserver" => Ok(Box::new(sqlserver::SqlServerDataSource::new(config).await?)),
+        d => Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
+    }
+}
+
+/// 用覆盖的 database 创建数据源（用于跨库查询）
+pub async fn create_datasource_with_db(
+    config: &ConnectionConfig,
+    database: &str,
+) -> AppResult<Box<dyn DataSource>> {
+    let mut cfg = config.clone();
+    cfg.database = database.to_string();
+    create_datasource(&cfg).await
+}
+
+/// 用覆盖的 database + schema 创建数据源（用于 SQL 编辑器上下文执行）
+pub async fn create_datasource_with_context(
+    config: &ConnectionConfig,
+    database: Option<&str>,
+    schema: Option<&str>,
+) -> AppResult<Box<dyn DataSource>> {
+    let mut cfg = config.clone();
+    if let Some(db) = database {
+        if !db.is_empty() {
+            cfg.database = db.to_string();
+        }
+    }
+    match cfg.driver.as_str() {
+        "mysql" => Ok(Box::new(mysql::MySqlDataSource::new(&cfg).await?)),
+        "postgres" => Ok(Box::new(postgres::PostgresDataSource::new_with_schema(&cfg, schema).await?)),
+        "oracle" => Ok(Box::new(oracle::OracleDataSource::new(&cfg).await?)),
+        "sqlserver" => Ok(Box::new(sqlserver::SqlServerDataSource::new(&cfg).await?)),
         d => Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     }
 }

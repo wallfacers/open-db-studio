@@ -91,14 +91,17 @@ fn parse_api_type(s: &str) -> crate::llm::ApiType {
 }
 
 fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
-    let api_key_enc = crate::db::get_setting("llm.api_key")?
-        .ok_or_else(|| AppError::Llm("LLM API Key not configured. Please set it in Settings.".into()))?;
-    let api_key = crate::crypto::decrypt(&api_key_enc)?;
-    let base_url = crate::db::get_setting("llm.base_url")?;
-    let model = crate::db::get_setting("llm.model")?;
-    let api_type = crate::db::get_setting("llm.api_type")?
-        .map(|v| parse_api_type(&v));
-    Ok(crate::llm::client::LlmClient::new(api_key, base_url, model, api_type))
+    let config = crate::db::get_default_llm_config()?
+        .ok_or_else(|| crate::AppError::Other(
+            "No AI model configured. Please add one in Settings → AI Model.".into()
+        ))?;
+    let api_type = parse_api_type(&config.api_type);
+    Ok(crate::llm::client::LlmClient::new(
+        config.api_key,
+        Some(config.base_url),
+        Some(config.model),
+        Some(api_type),
+    ))
 }
 
 #[tauri::command]

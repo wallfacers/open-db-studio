@@ -47,7 +47,7 @@
     "dbType": "数据库类型",
     "host": "主机",
     "port": "端口",
-    "dbName": "数据库名",
+    "dbName": "数据库名（可选）",
     "username": "用户名",
     "password": "密码",
     "passwordPlaceholder": "留空则不修改密码",
@@ -57,7 +57,9 @@
     "cancel": "取消",
     "saving": "保存中...",
     "saveChanges": "保存修改",
-    "save": "保存"
+    "save": "保存",
+    "group": "所属分组",
+    "noGroup": "无分组"
   },
   "explorer": {
     "connectionListRefreshed": "已刷新连接列表",
@@ -74,7 +76,62 @@
     "edit": "编辑",
     "delete": "删除",
     "tables": "表",
-    "objects": "对象"
+    "objects": "对象",
+    "selectActivityBar": "选择左侧活动栏",
+    "refresh": "刷新连接列表",
+    "clearSearch": "清空搜索"
+  },
+  "titleBar": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
+  "category": {
+    "tables": "表",
+    "views": "视图",
+    "functions": "函数",
+    "procedures": "存储过程",
+    "triggers": "触发器",
+    "events": "事件",
+    "sequences": "序列"
+  },
+  "dbTree": {
+    "noConnections": "暂无连接",
+    "noSearchResults": "未找到匹配项",
+    "confirmDeleteConnection": "确定要删除此连接？",
+    "connectionDeleted": "连接已删除",
+    "operationSuccess": "操作成功",
+    "nameCopied": "已复制",
+    "groupCreateComingSoon": "新建分组功能开发中",
+    "groupRenameComingSoon": "重命名分组功能开发中",
+    "confirmDeleteGroup": "确定要删除此分组？连接将移至未分组。",
+    "groupDeleted": "分组已删除",
+    "connectionFailed": "连接失败，请检查连接配置",
+    "doubleClickToOpen": "双击打开连接"
+  },
+  "contextMenu": {
+    "newConnection": "新建连接",
+    "createConnectionInGroup": "在此分组下新建连接",
+    "renameGroup": "重命名分组",
+    "deleteGroup": "删除分组",
+    "openConnection": "打开连接",
+    "closeConnection": "关闭连接",
+    "newQuery": "新建查询",
+    "refresh": "刷新",
+    "editConnection": "编辑连接",
+    "deleteConnection": "删除连接",
+    "createTable": "新建表",
+    "aiCreateTable": "AI 建表",
+    "openTableData": "打开表数据",
+    "editTableStructure": "编辑表结构",
+    "manageIndexes": "管理索引",
+    "dropTable": "删除表",
+    "openViewData": "打开视图数据",
+    "dropView": "删除视图",
+    "copyColumnName": "复制列名",
+    "moveToGroup": "移动到分组",
+    "noGroup": "无分组（取消分组）"
   },
   "objectPanel": {
     "views": "视图",
@@ -83,6 +140,13 @@
     "noProcedures": "暂无存储过程",
     "noDefinition": "暂无定义",
     "selectConnection": "请先选择连接"
+  },
+  "editorContextMenu": {
+    "cut": "剪切",
+    "copy": "复制",
+    "paste": "粘贴",
+    "selectAll": "全选",
+    "format": "格式化文档"
   },
   "mainContent": {
     "selectConnectionFirst": "请先在左侧选择一个数据库连接",
@@ -114,7 +178,19 @@
     "close": "关闭",
     "closeLeft": "关闭左侧",
     "closeRight": "关闭右侧",
-    "closeAll": "关闭全部"
+    "closeAll": "关闭全部",
+    "contextLabel": "上下文：",
+    "selectConnection": "选择连接...",
+    "selectDatabase": "选择数据库...",
+    "selectSchema": "选择 Schema...",
+    "selectConnectionAndDatabase": "请先选择连接和数据库",
+    "openAiAssistant": "打开 AI 助手",
+    "formatSql": "格式化 SQL",
+    "saveSql": "保存",
+    "closeTab": "关闭标签页",
+    "closeResult": "关闭结果",
+    "dmlReport": "执行报告",
+    "dmlReportCount": "条"
   },
   "tableDataView": {
     "firstPage": "第一页",
@@ -246,7 +322,16 @@
     "execute": "执行",
     "executing": "执行中...",
     "close": "关闭",
-    "create": "创建"
+    "create": "创建",
+    "save": "保存"
+  },
+  "groupModal": {
+    "createTitle": "新建分组",
+    "editTitle": "编辑分组",
+    "name": "分组名称",
+    "namePlaceholder": "输入分组名称",
+    "nameRequired": "名称不能为空",
+    "saving": "保存中..."
   },
   "tableManage": {
     "createTable": "新建表",

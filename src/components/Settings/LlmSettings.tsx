@@ -78,10 +78,23 @@ const EMPTY_FORM: CreateLlmConfigInput = {
   preset: null,
 };
 
+type EffectiveTestStatus = 'success' | 'untested' | null;
+
+// 连通性相关字段，用于判断测试后配置是否变更
+type ConnSnapshot = { api_key: string; base_url: string; model: string; api_type: ApiType };
+
+function snapshotFrom(form: CreateLlmConfigInput): ConnSnapshot {
+  return { api_key: form.api_key, base_url: form.base_url, model: form.model, api_type: form.api_type };
+}
+
+function snapshotEqual(a: ConnSnapshot, b: ConnSnapshot): boolean {
+  return a.api_key === b.api_key && a.base_url === b.base_url && a.model === b.model && a.api_type === b.api_type;
+}
+
 interface ConfigFormDialogProps {
   title: string;
   initial: CreateLlmConfigInput;
-  onSave: (input: CreateLlmConfigInput) => Promise<void>;
+  onSave: (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -91,6 +104,14 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg?: string } | null>(null);
+  // 测试通过时记录的字段快照，用于判断保存时配置是否仍与测试时一致
+  const [successSnapshot, setSuccessSnapshot] = useState<ConnSnapshot | null>(null);
+
+  // 计算有效测试状态：通过且字段未变 → success；通过但字段已变 → untested；未测试 → null
+  const effectiveTestStatus: EffectiveTestStatus = (() => {
+    if (!successSnapshot) return null;
+    return snapshotEqual(snapshotFrom(form), successSnapshot) ? 'success' : 'untested';
+  })();
 
   const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
@@ -112,6 +133,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
+    setSuccessSnapshot(null);
     const tempInput: CreateLlmConfigInput = {
       ...form,
       name: form.name || `${form.model} · ${form.api_type}`,
@@ -121,6 +143,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
       try {
         await invoke('test_llm_config', { id: created.id });
         setTestResult({ ok: true });
+        setSuccessSnapshot(snapshotFrom(form));  // 记录测试通过时的字段快照
       } catch (e) {
         setTestResult({ ok: false, msg: String(e) });
       } finally {
@@ -136,7 +159,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave(form, effectiveTestStatus);
     } finally {
       setSaving(false);
     }
@@ -252,9 +275,18 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
         {/* 测试结果 */}
         {testResult && (
-          <p className={`text-xs flex items-center gap-1 ${testResult.ok ? 'text-green-400' : 'text-red-400'}`}>
-            {testResult.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
-            {testResult.ok ? t('llmSettings.testPassed') : testResult.msg}
+          <p className={`text-xs flex items-center gap-1 ${
+            effectiveTestStatus === 'success' ? 'text-green-400' :
+            effectiveTestStatus === 'untested' ? 'text-yellow-400' : 'text-red-400'
+          }`}>
+            {effectiveTestStatus === 'success' && <CheckCircle size={12} />}
+            {effectiveTestStatus === 'untested' && <XCircle size={12} />}
+            {!testResult.ok && <XCircle size={12} />}
+            {effectiveTestStatus === 'success'
+              ? t('llmSettings.testPassed')
+              : effectiveTestStatus === 'untested'
+              ? t('llmSettings.configChangedRetest')
+              : testResult.msg}
           </p>
         )}
 
@@ -299,14 +331,22 @@ export function LlmSettingsPanel() {
 
   useEffect(() => { loadConfigs(); }, []);
 
-  const handleCreate = async (input: CreateLlmConfigInput) => {
-    await createConfig(input);
+  const handleCreate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => {
+    const created = await invoke<LlmConfig>('create_llm_config', { input });
+    if (effectiveTestStatus === 'success') {
+      await invoke('set_llm_config_test_status', { id: created.id, status: 'success', error: null });
+    }
+    await loadConfigs();
     setShowCreate(false);
   };
 
-  const handleUpdate = async (input: CreateLlmConfigInput) => {
+  const handleUpdate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => {
     if (!editTarget) return;
-    await updateConfig(editTarget.id, input);
+    await invoke('update_llm_config', { id: editTarget.id, input });
+    if (effectiveTestStatus !== null) {
+      await invoke('set_llm_config_test_status', { id: editTarget.id, status: effectiveTestStatus, error: null });
+    }
+    await loadConfigs();
     setEditTarget(null);
   };
 

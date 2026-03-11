@@ -167,6 +167,11 @@ pub async fn get_default_llm_config() -> AppResult<Option<crate::db::models::Llm
 }
 
 #[tauri::command]
+pub async fn set_llm_config_test_status(id: i64, status: String, error: Option<String>) -> AppResult<()> {
+    crate::db::update_llm_config_test_status(id, &status, error.as_deref())
+}
+
+#[tauri::command]
 pub async fn test_llm_config(id: i64) -> AppResult<()> {
     crate::db::update_llm_config_test_status(id, "testing", None)?;
     let config = crate::db::get_llm_config_by_id(id)?

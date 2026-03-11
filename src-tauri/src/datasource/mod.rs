@@ -139,6 +139,10 @@ pub trait DataSource: Send + Sync {
     async fn get_table_ddl(&self, _table: &str) -> AppResult<String> {
         Ok(String::new())
     }
+    async fn get_table_ddl_with_schema(&self, table: &str, schema: Option<&str>) -> AppResult<String> {
+        let _ = schema;
+        self.get_table_ddl(table).await
+    }
 
     /// 列出所有数据库（MySQL: SHOW DATABASES / PG: pg_database）
     async fn list_databases(&self) -> AppResult<Vec<String>> {

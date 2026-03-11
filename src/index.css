@@ -127,3 +127,12 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+
+/* Tooltip 淡入动画（光标下方，从上方轻微滑入） */
+@keyframes tooltip-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.tooltip-fade-in {
+  animation: tooltip-fade-in 0.12s ease-out forwards;
+}

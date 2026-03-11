@@ -87,7 +87,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
   } | null>(null);
   const groupPickerRef = useRef<HTMLDivElement>(null);
 
-  const [tableManageDialog, setTableManageDialog] = useState<{ connectionId: number; tableName?: string } | null>(null);
+  const [tableManageDialog, setTableManageDialog] = useState<{ connectionId: number; tableName?: string; database?: string; schema?: string } | null>(null);
   const [indexManagerState, setIndexManagerState] = useState<{ connectionId: number; tableName: string } | null>(null);
   const [showAiCreateTable, setShowAiCreateTable] = useState(false);
   const [editingConnId, setEditingConnId] = useState<number | null>(null);
@@ -240,7 +240,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
             useTreeStore.getState().init();
             showToast(t('dbTree.connectionDeleted'), 'success');
           }}
-          onCreateTable={() => setTableManageDialog({ connectionId: getConnectionId(contextMenu.node) })}
+          onCreateTable={() => setTableManageDialog({ connectionId: getConnectionId(contextMenu.node), database: contextMenu.node.meta.database, schema: contextMenu.node.meta.schema })}
           onAiCreateTable={() => setShowAiCreateTable(true)}
           onOpenTableData={() => {
             const n = contextMenu.node;
@@ -248,7 +248,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onEditTable={() => {
             const n = contextMenu.node;
-            setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label });
+            setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
           }}
           onManageIndexes={() => {
             const n = contextMenu.node;
@@ -256,7 +256,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onDropTable={() => {
             const n = contextMenu.node;
-            setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label });
+            setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
           }}
           onCopyName={() => {
             navigator.clipboard.writeText(contextMenu.node.label);
@@ -334,6 +334,8 @@ export const DBTree: React.FC<DBTreeProps> = ({
         <TableManageDialog
           connectionId={tableManageDialog.connectionId}
           tableName={tableManageDialog.tableName}
+          database={tableManageDialog.database}
+          schema={tableManageDialog.schema}
           onClose={() => setTableManageDialog(null)}
           onSuccess={() => {
             setTableManageDialog(null);

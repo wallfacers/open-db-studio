@@ -60,6 +60,8 @@ pub fn run() {
             commands::update_group,
             commands::delete_group,
             commands::move_connection_to_group,
+            commands::reorder_connections,
+            commands::reorder_groups,
             commands::list_databases,
             commands::list_schemas,
             commands::list_objects,

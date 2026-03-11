@@ -64,7 +64,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     try {
       const [groups, connections] = await Promise.all([
         invoke<{ id: number; name: string; color: string | null; sort_order: number; created_at: string }[]>('list_groups'),
-        invoke<{ id: number; name: string; group_id: number | null; driver: string }[]>('list_connections'),
+        invoke<{ id: number; name: string; group_id: number | null; driver: string; sort_order: number }[]>('list_connections'),
       ]);
 
       const newNodes = new Map<string, TreeNode>();
@@ -77,7 +77,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           parentId: null,
           hasChildren: true,
           loaded: false,
-          meta: {},
+          meta: { sortOrder: g.sort_order },
         };
         newNodes.set(node.id, node);
       }
@@ -91,7 +91,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           parentId,
           hasChildren: true,
           loaded: false,
-          meta: { connectionId: c.id, driver: c.driver },
+          meta: { connectionId: c.id, driver: c.driver, sortOrder: c.sort_order },
         };
         newNodes.set(node.id, node);
       }
@@ -152,13 +152,15 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               label: schema,
               parentId: nodeId,
               hasChildren: true,
-              loaded: true,
+              loaded: false,
               meta: { ...node.meta, schema },
             };
             children.push(schemaNode);
-            children.push(...makeCategoryNodes(schemaId, driver, { ...node.meta, schema }));
           }
         }
+      } else if (node.nodeType === 'schema') {
+        const driver = node.meta.driver ?? 'postgres';
+        children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
       } else if (node.nodeType === 'category') {
         const category = node.meta.objectName ?? 'tables';
         const objects = await invoke<string[]>('list_objects', {
@@ -184,7 +186,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       } else if (node.nodeType === 'table' || node.nodeType === 'view') {
         const detail = await invoke<{ columns: { name: string; data_type: string; is_primary_key: boolean }[] }>(
           'get_table_detail',
-          { connectionId: node.meta.connectionId, database: node.meta.database ?? null, table: node.meta.objectName }
+          { connectionId: node.meta.connectionId, database: node.meta.database ?? null, schema: node.meta.schema ?? null, table: node.meta.objectName }
         );
         for (const col of detail.columns) {
           children.push({

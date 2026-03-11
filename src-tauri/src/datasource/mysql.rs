@@ -78,7 +78,7 @@ impl DataSource for MySqlDataSource {
         Ok(SchemaInfo { tables })
     }
 
-    async fn get_columns(&self, table: &str) -> AppResult<Vec<ColumnMeta>> {
+    async fn get_columns(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<ColumnMeta>> {
         let rows = sqlx::query(
             "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA
              FROM information_schema.COLUMNS
@@ -98,7 +98,7 @@ impl DataSource for MySqlDataSource {
         }).collect())
     }
 
-    async fn get_indexes(&self, table: &str) -> AppResult<Vec<IndexMeta>> {
+    async fn get_indexes(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<IndexMeta>> {
         let rows = sqlx::query(
             "SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME
              FROM information_schema.STATISTICS
@@ -122,7 +122,7 @@ impl DataSource for MySqlDataSource {
         Ok(map.into_values().collect())
     }
 
-    async fn get_foreign_keys(&self, table: &str) -> AppResult<Vec<ForeignKeyMeta>> {
+    async fn get_foreign_keys(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<ForeignKeyMeta>> {
         let rows = sqlx::query(
             "SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
              FROM information_schema.KEY_COLUMN_USAGE
@@ -171,5 +171,55 @@ impl DataSource for MySqlDataSource {
         let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
         let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
         Ok(row.try_get::<String, _>(1).unwrap_or_default())
+    }
+
+    async fn list_databases(&self) -> AppResult<Vec<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as("SHOW DATABASES")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|(name,)| name).collect())
+    }
+
+    async fn list_objects(&self, database: &str, _schema: Option<&str>, category: &str) -> AppResult<Vec<String>> {
+        let names: Vec<String> = match category {
+            "tables" => {
+                let rows: Vec<(String,)> = sqlx::query_as(
+                    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.into_iter().map(|(n,)| n).collect()
+            }
+            "views" => {
+                let rows: Vec<(String,)> = sqlx::query_as(
+                    "SELECT TABLE_NAME FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.into_iter().map(|(n,)| n).collect()
+            }
+            "functions" => {
+                let rows: Vec<(String,)> = sqlx::query_as(
+                    "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION' ORDER BY ROUTINE_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.into_iter().map(|(n,)| n).collect()
+            }
+            "procedures" => {
+                let rows: Vec<(String,)> = sqlx::query_as(
+                    "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.into_iter().map(|(n,)| n).collect()
+            }
+            "triggers" => {
+                let rows: Vec<(String,)> = sqlx::query_as(
+                    "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.into_iter().map(|(n,)| n).collect()
+            }
+            "events" => {
+                let rows: Vec<(String,)> = sqlx::query_as(
+                    "SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.into_iter().map(|(n,)| n).collect()
+            }
+            _ => vec![],
+        };
+        Ok(names)
     }
 }

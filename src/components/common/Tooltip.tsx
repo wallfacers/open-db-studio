@@ -6,6 +6,8 @@ interface TooltipProps {
   children: React.ReactNode;
   /** 延迟显示时间（ms），默认 700 */
   delay?: number;
+  /** wrapper div 的额外 className，默认为空（块级元素） */
+  className?: string;
 }
 
 /**
@@ -16,6 +18,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   content,
   children,
   delay = 700,
+  className = '',
 }) => {
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,7 +43,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
   return (
     <div
-      className="w-full"
+      className={className}
       onMouseEnter={handleMouseEnter}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -53,7 +56,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
                        border border-[#2a3f5a] rounded shadow-lg whitespace-nowrap
                        pointer-events-none tooltip-fade-in"
             style={{
-              left: mousePos.x,
+              left: mousePos.x + 8,
               top: mousePos.y + 24,
               transform: 'translateX(-50%)',
             }}

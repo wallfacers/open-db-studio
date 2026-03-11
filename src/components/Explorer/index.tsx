@@ -5,6 +5,7 @@ import { useTreeStore } from '../../store/treeStore';
 import { DBTree } from './DBTree';
 import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
+import { Tooltip } from '../common/Tooltip';
 import i18n from '../../i18n';
 import type { ToastLevel } from '../Toast';
 
@@ -104,25 +105,27 @@ export const Explorer: React.FC<ExplorerProps> = ({
             <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42]">
               <span className="font-medium text-[#c8daea]">{t('explorer.database')}</span>
               <div className="flex items-center space-x-2 text-[#7a9bb8]">
-                <span title={t('groupModal.createTitle')}>
+                <Tooltip content={t('groupModal.createTitle')}>
                   <FolderPlus
                     size={16}
                     className="cursor-pointer hover:text-[#c8daea]"
                     onClick={() => setShowGroupModal(true)}
                   />
-                </span>
-                <span title={t('connectionModal.newConnection')}>
+                </Tooltip>
+                <Tooltip content={t('connectionModal.newConnection')}>
                   <Plus
                     size={16}
                     className="cursor-pointer hover:text-[#c8daea]"
                     onClick={() => setShowModal(true)}
                   />
-                </span>
-                <RefreshCw
-                  size={16}
-                  className="cursor-pointer hover:text-[#c8daea]"
-                  onClick={() => init()}
-                />
+                </Tooltip>
+                <Tooltip content={t('explorer.refresh')}>
+                  <RefreshCw
+                    size={16}
+                    className="cursor-pointer hover:text-[#c8daea]"
+                    onClick={() => init()}
+                  />
+                </Tooltip>
               </div>
             </div>
 
@@ -137,11 +140,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
                   className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"
                 />
                 {searchQuery && (
-                  <X
-                    size={14}
-                    className="text-[#7a9bb8] ml-1 cursor-pointer hover:text-[#c8daea]"
-                    onClick={() => setSearchQuery('')}
-                  />
+                  <Tooltip content={t('explorer.clearSearch')}>
+                    <X
+                      size={14}
+                      className="text-[#7a9bb8] ml-1 cursor-pointer hover:text-[#c8daea]"
+                      onClick={() => setSearchQuery('')}
+                    />
+                  </Tooltip>
                 )}
               </div>
             </div>

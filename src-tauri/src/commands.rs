@@ -249,10 +249,14 @@ pub async fn get_full_schema(connection_id: i64) -> AppResult<crate::datasource:
 }
 
 #[tauri::command]
-pub async fn get_table_ddl(connection_id: i64, table: String) -> AppResult<String> {
+pub async fn get_table_ddl(connection_id: i64, table: String, database: Option<String>, schema: Option<String>) -> AppResult<String> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
-    ds.get_table_ddl(&table).await
+    let ds = match database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+    let schema_ref = schema.as_deref().filter(|s| !s.is_empty());
+    ds.get_table_ddl_with_schema(&table, schema_ref).await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -527,6 +531,16 @@ pub async fn delete_group(id: i64) -> AppResult<()> {
 #[tauri::command]
 pub async fn move_connection_to_group(connection_id: i64, group_id: Option<i64>) -> AppResult<()> {
     crate::db::move_connection_to_group(connection_id, group_id)
+}
+
+#[tauri::command]
+pub async fn reorder_connections(items: Vec<crate::db::models::ReorderItem>) -> AppResult<()> {
+    crate::db::reorder_connections(&items)
+}
+
+#[tauri::command]
+pub async fn reorder_groups(items: Vec<crate::db::models::ReorderItem>) -> AppResult<()> {
+    crate::db::reorder_groups(&items)
 }
 
 // ============ AI 高级命令 ============

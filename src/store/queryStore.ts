@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { QueryResult, QueryHistory, Tab } from '../types';
+import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo } from '../types';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -57,6 +57,16 @@ interface QueryState {
   removeResultsRight: (tabId: string, idx: number) => void;
   removeOtherResults: (tabId: string, idx: number) => void;
   clearResults: (tabId: string) => void;
+
+  // SQL diff 提案（等待用户确认）
+  pendingDiff: SqlDiffProposal | null;
+  proposeSqlDiff: (proposal: SqlDiffProposal) => void;
+  applyDiff: () => void;
+  cancelDiff: () => void;
+
+  // Monaco 编辑器光标/选区（由 MainContent 实时写入）
+  editorInfo: Record<string, EditorInfo>;
+  setEditorInfo: (tabId: string, info: EditorInfo) => void;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -70,6 +80,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   queryHistory: [],
   error: null,
   diagnosis: null,
+  pendingDiff: null,
+  editorInfo: {},
 
   addTab: (tab) =>
     set((s) => ({
@@ -186,6 +198,25 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   clearResults: (tabId) =>
     set(s => ({ results: { ...s.results, [tabId]: [] } })),
+
+  proposeSqlDiff: (proposal) => set({ pendingDiff: proposal }),
+
+  applyDiff: () => {
+    const { pendingDiff } = get();
+    if (!pendingDiff) return;
+    const full = get().sqlContent[pendingDiff.tabId] ?? '';
+    const newSql =
+      full.slice(0, pendingDiff.startOffset) +
+      pendingDiff.modified +
+      full.slice(pendingDiff.endOffset);
+    get().setSql(pendingDiff.tabId, newSql);
+    set({ pendingDiff: null });
+  },
+
+  cancelDiff: () => set({ pendingDiff: null }),
+
+  setEditorInfo: (tabId, info) =>
+    set((s) => ({ editorInfo: { ...s.editorInfo, [tabId]: info } })),
 
   loadHistory: async (connectionId) => {
     try {

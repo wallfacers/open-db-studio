@@ -32,7 +32,7 @@ export const TitleBar: React.FC = () => {
       <div className="flex items-center h-full">
         <Tooltip content={t('titleBar.minimize')}>
           <button
-            className="w-10 h-full flex items-center justify-center text-[#4a6480] hover:text-[#c8daea] hover:bg-[#1a2639] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[#4a6480] hover:text-[#c8daea] hover:bg-[#1a2639] transition-colors"
             onClick={() => appWindow.minimize()}
           >
             <Minus size={12} />
@@ -40,7 +40,7 @@ export const TitleBar: React.FC = () => {
         </Tooltip>
         <Tooltip content={isMaximized ? t('titleBar.restore') : t('titleBar.maximize')}>
           <button
-            className="w-10 h-full flex items-center justify-center text-[#4a6480] hover:text-[#c8daea] hover:bg-[#1a2639] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[#4a6480] hover:text-[#c8daea] hover:bg-[#1a2639] transition-colors"
             onClick={() => appWindow.toggleMaximize()}
           >
             {isMaximized ? <Square size={11} /> : <Maximize2 size={11} />}
@@ -48,7 +48,7 @@ export const TitleBar: React.FC = () => {
         </Tooltip>
         <Tooltip content={t('titleBar.close')}>
           <button
-            className="w-10 h-full flex items-center justify-center text-[#4a6480] hover:text-white hover:bg-[#c0392b] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[#4a6480] hover:text-white hover:bg-[#c0392b] transition-colors"
             onClick={() => appWindow.close()}
           >
             <X size={13} />

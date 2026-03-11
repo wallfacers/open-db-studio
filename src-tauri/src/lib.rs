@@ -51,6 +51,7 @@ pub fn run() {
             commands::get_table_data,
             commands::update_row,
             commands::delete_row,
+            commands::insert_row,
             commands::export_table_data,
             commands::ai_optimize_sql,
             commands::ai_create_table,

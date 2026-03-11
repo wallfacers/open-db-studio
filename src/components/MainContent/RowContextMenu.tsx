@@ -75,13 +75,13 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
     const sets = columns
       .map((c, i) => `\`${c}\` = ${rowData[i] === null ? 'NULL' : `'${String(rowData[i]).replace(/'/g, "\\'")}'`}`)
       .join(', ');
-    return `UPDATE \`${tableName}\` SET ${sets} WHERE \`${pkColumn}\` = '${pkVal}';`;
+    return `UPDATE \`${tableName}\` SET ${sets} WHERE \`${pkColumn}\` = '${String(pkVal ?? '').replace(/'/g, "\\'")}';`;
   };
 
   const buildDeleteSql = () => {
     const pkIdx = columns.indexOf(pkColumn);
     const pkVal = pkIdx >= 0 ? rowData[pkIdx] : null;
-    return `DELETE FROM \`${tableName}\` WHERE \`${pkColumn}\` = '${pkVal}';`;
+    return `DELETE FROM \`${tableName}\` WHERE \`${pkColumn}\` = '${String(pkVal ?? '').replace(/'/g, "\\'")}';`;
   };
 
   const itemClass = 'px-4 py-1.5 hover:bg-[#1a2639] cursor-pointer text-[#c8daea] flex items-center justify-between';
@@ -124,8 +124,7 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
 
       <div
         className={`${itemClass} relative`}
-        onMouseEnter={() => setSqlSubmenuOpen(true)}
-        onMouseLeave={() => setSqlSubmenuOpen(false)}
+        onClick={e => { e.stopPropagation(); setSqlSubmenuOpen(v => !v); }}
       >
         <span>{t('tableDataView.copyAsSql')}</span>
         <ChevronRight size={12} className="text-[#7a9bb8]" />

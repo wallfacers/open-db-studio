@@ -209,8 +209,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       full.slice(0, pendingDiff.startOffset) +
       pendingDiff.modified +
       full.slice(pendingDiff.endOffset);
-    get().setSql(pendingDiff.tabId, newSql);
-    set({ pendingDiff: null });
+    set((s) => ({
+      sqlContent: { ...s.sqlContent, [pendingDiff.tabId]: newSql },
+      pendingDiff: null,
+    }));
   },
 
   cancelDiff: () => set({ pendingDiff: null }),

@@ -9,12 +9,14 @@ import { ExportDialog } from '../ExportDialog';
 interface TableDataViewProps {
   tableName: string;
   dbName: string;
+  connectionId?: number;
   showToast: (msg: string) => void;
 }
 
-export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, showToast }) => {
+export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connectionId: propConnectionId, showToast }) => {
   const { t } = useTranslation();
-  const { activeConnectionId } = useConnectionStore();
+  const { activeConnectionId: storeConnectionId } = useConnectionStore();
+  const activeConnectionId = propConnectionId ?? storeConnectionId;
   const [data, setData] = useState<QueryResult | null>(null);
   // _columns is kept to derive pkColumn; not rendered directly
   const [_columns, setColumns] = useState<ColumnMeta[]>([]);

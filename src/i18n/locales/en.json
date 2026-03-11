@@ -180,6 +180,7 @@
     "close": "Close",
     "closeLeft": "Close left",
     "closeRight": "Close right",
+    "closeOther": "Close others",
     "closeAll": "Close all",
     "contextLabel": "Context:",
     "selectConnection": "Select connection...",
@@ -215,6 +216,7 @@
     "timeConsumed": "Time Consumed:",
     "searchResult": "Search Result:",
     "row": "row(s)",
+    "serialNo": "No.",
     "viewOrModifyData": "View/Modify Data",
     "copy": "Copy",
     "paste": "Paste",
@@ -242,7 +244,13 @@
     "copyAsSql": "Copy as SQL",
     "sqlCopied": "Copied to clipboard",
     "commitSuccess": "Committed successfully",
-    "commitFailed": "Commit failed"
+    "commitFailed": "Commit failed",
+    "copyFailed": "Copy failed",
+    "openInEditor": "Open in Editor",
+    "viewFullContent": "View Full Content",
+    "formatJson": "Format JSON",
+    "applyFilter": "Apply Filter",
+    "search": "Search"
   },
   "queryHistory": {
     "selectConnectionFirst": "Please select a connection first",
@@ -333,6 +341,7 @@
   },
   "common": {
     "cancel": "Cancel",
+    "confirm": "Confirm",
     "execute": "Execute",
     "executing": "Executing...",
     "close": "Close",
@@ -357,6 +366,9 @@
     "dropSuccess": "Table dropped successfully",
     "manageIndexes": "Manage Indexes",
     "addColumn": "Add Column",
+    "actions": "Actions",
+    "extra": "Extra",
+    "comment": "Comment",
     "columnName": "Column Name",
     "dataType": "Type",
     "length": "Length",

@@ -19,6 +19,7 @@ interface ExplorerProps {
   activeActivity: string;
   onNewQuery: (connectionId: number, connName: string, database?: string, schema?: string) => void;
   onOpenTableData: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
+  onOpenTableStructure: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
 }
 
 export const Explorer: React.FC<ExplorerProps> = ({
@@ -31,6 +32,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   activeActivity,
   onNewQuery,
   onOpenTableData,
+  onOpenTableStructure,
 }) => {
   const { t } = useTranslation();
   const { init, nodes } = useTreeStore();
@@ -168,6 +170,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 showToast={showToast}
                 onNewQuery={onNewQuery}
                 onOpenTableData={onOpenTableData}
+                onOpenTableStructure={onOpenTableStructure}
                 activeConnectionIds={activeConnectionIds}
                 onOpenConnection={handleOpenConnection}
                 onCloseConnection={handleCloseConnection}

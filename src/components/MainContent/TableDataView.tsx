@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
@@ -10,6 +10,8 @@ import { Tooltip } from '../common/Tooltip';
 import { EditableCell } from './EditableCell';
 import { RowContextMenu, type ClickTarget } from './RowContextMenu';
 import { usePendingChanges, type RowData } from './usePendingChanges';
+import { CellEditorModal } from './CellEditorModal';
+import { AutoCompleteInput } from './AutoCompleteInput';
 
 interface TableDataViewProps {
   tableName: string;
@@ -35,18 +37,25 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const activeConnectionId = propConnectionId ?? storeConnectionId;
 
   const [data, setData] = useState<QueryResult | null>(null);
-  const [_columns, setColumns] = useState<ColumnMeta[]>([]);
+  const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [pkColumn, setPkColumn] = useState<string>('id');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100);
   const [whereClause, setWhereClause] = useState('');
   const [orderClause, setOrderClause] = useState('');
+  // 已应用的条件（只有点击搜索时才更新）
+  const [appliedWhere, setAppliedWhere] = useState('');
+  const [appliedOrder, setAppliedOrder] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [cellEditor, setCellEditor] = useState<{ rowIdx: number; colIdx: number; value: string | null; columnName: string } | null>(null);
 
-  const { pending, editCell, cloneRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
+  const { pending, editCell, cloneRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
+
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
@@ -60,17 +69,17 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           schema: schema || null,
           page,
           page_size: pageSize,
-          where_clause: whereClause || null,
-          order_clause: orderClause || null,
+          where_clause: appliedWhere || null,
+          order_clause: appliedOrder || null,
         }
       });
       setData(result);
     } catch (e) {
-      showToast(String(e), 'error');
+      showToastRef.current(String(e), 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [activeConnectionId, tableName, page, pageSize, whereClause, orderClause, showToast]);
+  }, [activeConnectionId, tableName, page, pageSize, appliedWhere, appliedOrder]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
@@ -79,7 +88,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     })
       .then(detail => {
         setColumns(detail.columns);
-        const pk = detail.columns.find(c => c.is_primary_key);
+        const pk = detail.columns.find((c: ColumnMeta) => c.is_primary_key);
         if (pk) setPkColumn(pk.name);
       })
       .catch(() => {});
@@ -139,10 +148,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         });
       }
       discard();
-      showToast(t('tableDataView.commitSuccess'), 'success');
+      showToastRef.current(t('tableDataView.commitSuccess'), 'success');
       loadData();
     } catch (e) {
-      showToast(`${t('tableDataView.commitFailed')}: ${String(e)}`, 'error');
+      showToastRef.current(`${t('tableDataView.commitFailed')}: ${String(e)}`, 'error');
     } finally {
       setIsCommitting(false);
     }
@@ -160,6 +169,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setContextMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx, target });
   };
 
+  const openCellEditor = (rowIdx: number, colIdx: number) => {
+    if (!data) return;
+    const currentVal = getPendingValue(rowIdx, colIdx);
+    const rawVal = data.rows[rowIdx][colIdx];
+    const value = currentVal !== undefined ? currentVal : (rawVal === null ? null : String(rawVal));
+    const columnName = data.columns[colIdx] ?? '';
+    setCellEditor({ rowIdx, colIdx, value, columnName });
+  };
+
   const rowBgClass = (rowIdx: number) => {
     if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
     const hasEdits = pending.edits.some(e => e.rowIdx === rowIdx);
@@ -168,7 +186,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#080d12] h-full">
+    <div className="flex-1 flex flex-col bg-[#080d12] overflow-hidden min-h-0">
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs">
         <div className="flex items-center space-x-2 text-[#7a9bb8]">
@@ -228,20 +246,28 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs gap-3">
         <Filter size={12} className="text-[#7a9bb8]"/>
         <span className="text-[#7a9bb8]">WHERE</span>
-        <input
-          className="bg-transparent outline-none text-[#c8daea] flex-1"
-          placeholder={t('tableDataView.enterCondition')}
+        <AutoCompleteInput
           value={whereClause}
-          onChange={e => setWhereClause(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { if (page !== 1) setPage(1); else loadData(); } }}
+          onChange={setWhereClause}
+          onSearch={() => {
+            setAppliedWhere(whereClause);
+            setAppliedOrder(orderClause);
+            setPage(1);
+          }}
+          placeholder={t('tableDataView.enterCondition')}
+          columns={columns.map(c => c.name)}
         />
         <span className="text-[#7a9bb8]">ORDER BY</span>
-        <input
-          className="bg-transparent outline-none text-[#c8daea] flex-1"
-          placeholder={t('tableDataView.enterOrder')}
+        <AutoCompleteInput
           value={orderClause}
-          onChange={e => setOrderClause(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { if (page !== 1) setPage(1); else loadData(); } }}
+          onChange={setOrderClause}
+          onSearch={() => {
+            setAppliedWhere(whereClause);
+            setAppliedOrder(orderClause);
+            setPage(1);
+          }}
+          placeholder={t('tableDataView.enterOrder')}
+          columns={columns.map(c => c.name)}
         />
       </div>
 
@@ -255,7 +281,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
             <thead className="sticky top-0 bg-[#0d1117] z-10">
               <tr>
-                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">#</th>
+                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
                 {data.columns.map(col => (
                   <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
                 ))}
@@ -283,17 +309,25 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
                       isDeleted={isRowDeleted(ri)}
                       onCommit={newVal => editCell(ri, ci, newVal)}
                       onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
+                      onOpenEditor={() => openCellEditor(ri, ci)}
                     />
                   ))}
                 </tr>
               ))}
               {/* 克隆的新行（绿色） */}
               {pending.clonedRows.map((row, ci) => (
-                <tr key={`cloned-${ci}`} className="border-b border-[#1e2d42] bg-green-900/20">
-                  <td className="px-2 py-1.5 border-r border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs">+</td>
+                <tr key={`cloned-${ci}`} className="border-b border-[#1e2d42] bg-green-900/20 group">
+                  <td className="px-2 py-1.5 border-r border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs select-none">
+                    <button
+                      onClick={() => removeClonedRow(ci)}
+                      className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 leading-none"
+                      title={t('tableDataView.deleteRowMenuItem')}
+                    >×</button>
+                    <span className="group-hover:hidden">+</span>
+                  </td>
                   {row.map((cell, ji) => (
                     <td key={ji} className="px-3 py-1.5 text-green-400 border-r border-[#1e2d42] max-w-[300px] truncate">
-                      {cell === null ? <span className="italic text-green-400/60">NULL</span> : String(cell)}
+                      {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
                     </td>
                   ))}
                 </tr>
@@ -304,7 +338,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       </div>
 
       {/* Status Bar */}
-      <div className="h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
+      <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
         {data && <span>{data.row_count} {t('tableDataView.row')} · {data.duration_ms}ms</span>}
       </div>
 
@@ -329,8 +363,17 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               markDelete(contextMenu.rowIdx);
             }
           }}
-          onPaste={text => { if (contextMenu.colIdx >= 0) editCell(contextMenu.rowIdx, contextMenu.colIdx, text); }}
+          onOpenEditor={contextMenu.colIdx >= 0 ? () => openCellEditor(contextMenu.rowIdx, contextMenu.colIdx) : undefined}
           showToast={showToast}
+        />
+      )}
+
+      {cellEditor && (
+        <CellEditorModal
+          value={cellEditor.value}
+          columnName={cellEditor.columnName}
+          onConfirm={newVal => editCell(cellEditor.rowIdx, cellEditor.colIdx, newVal)}
+          onClose={() => setCellEditor(null)}
         />
       )}
 

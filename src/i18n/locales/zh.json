@@ -126,6 +126,8 @@
     "openTableData": "打开表数据",
     "editTableStructure": "编辑表结构",
     "manageIndexes": "管理索引",
+    "viewDdl": "查看 DDL",
+    "truncateTable": "截断表",
     "dropTable": "删除表",
     "openViewData": "打开视图数据",
     "dropView": "删除视图",
@@ -228,7 +230,19 @@
     "confirmDelete": "确认删除该行？",
     "updateSuccess": "更新成功",
     "deleteSuccess": "删除成功",
-    "rowsPerPage": "行 / 页"
+    "rowsPerPage": "行 / 页",
+    "commit": "提交",
+    "commitWithCount": "提交({{count}})",
+    "discardChanges": "撤销改动",
+    "copyCellValue": "复制单元格",
+    "copyRow": "复制行",
+    "copyAsInsertSql": "INSERT SQL",
+    "copyAsUpdateSql": "UPDATE SQL",
+    "copyAsDeleteSql": "DELETE SQL",
+    "copyAsSql": "复制为 SQL",
+    "sqlCopied": "已复制到剪贴板",
+    "commitSuccess": "提交成功",
+    "commitFailed": "提交失败"
   },
   "queryHistory": {
     "selectConnectionFirst": "请先选择一个连接",
@@ -341,7 +355,33 @@
     "createSuccess": "表创建成功",
     "alterSuccess": "表修改成功",
     "dropSuccess": "表删除成功",
-    "manageIndexes": "管理索引"
+    "manageIndexes": "管理索引",
+    "addColumn": "添加列",
+    "columnName": "列名",
+    "dataType": "类型",
+    "length": "长度",
+    "nullable": "可空",
+    "defaultValue": "默认值",
+    "primaryKey": "主键",
+    "alterPreview": "ALTER SQL 预览",
+    "executeAlter": "执行 ALTER",
+    "createPreview": "CREATE SQL 预览",
+    "executeCreate": "创建表",
+    "noChanges": "-- 无变更",
+    "orderNotSupported": "-- PostgreSQL 不支持调整列顺序，已忽略排序变更",
+    "loadFailed": "加载表结构失败"
+  },
+  "ddlViewer": {
+    "title": "查看 DDL",
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "truncateConfirm": {
+    "title": "截断表",
+    "warning": "此操作将删除表 {{table}} 中的所有数据，且无法恢复。",
+    "confirm": "确认截断",
+    "success": "截断成功",
+    "error": "截断失败"
   },
   "indexManager": {
     "title": "索引管理",

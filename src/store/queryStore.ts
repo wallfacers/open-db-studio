@@ -33,6 +33,8 @@ function truncateSql(sql: string, max = 40): string {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
+interface StmtResult { stmt: string; result: QueryResult }
+
 interface QueryState {
   tabs: Tab[];
   activeTabId: string;
@@ -93,6 +95,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';
     if (!sql.trim()) return;
 
+    // NOTE: 简单按 ; 分割，不支持字符串字面量或注释中的分号，是已知限制
     const statements = sql
       .split(';')
       .map(s => s.trim())
@@ -100,7 +103,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
     set({ isExecuting: true, error: null, diagnosis: null });
 
-    interface StmtResult { stmt: string; result: QueryResult }
     const selectResults: StmtResult[] = [];
     const dmlResults: StmtResult[] = [];
 
@@ -112,12 +114,16 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           database: database ?? null,
           schema: schema ?? null,
         });
-        result.sql = stmt;
-        if (isSelectLike(stmt) || result.columns.length > 0) {
-          result.kind = 'select';
-          selectResults.push({ stmt, result });
+        const isSelect = isSelectLike(stmt) || result.columns.length > 0;
+        const enriched: QueryResult = {
+          ...result,
+          sql: stmt,
+          kind: isSelect ? 'select' : undefined,
+        };
+        if (isSelect) {
+          selectResults.push({ stmt, result: enriched });
         } else {
-          dmlResults.push({ stmt, result });
+          dmlResults.push({ stmt, result: enriched });
         }
       }
 
@@ -135,10 +141,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             String(item.result.duration_ms),
             '✓ 成功',
           ]),
-          row_count: dmlResults.length,
+          row_count: dmlResults.reduce((sum, r) => sum + r.result.row_count, 0),
           duration_ms: totalDuration,
           kind: 'dml-report',
-          sql: '',
+          sql: `-- DML batch (${dmlResults.length} statements)`,
         };
         finalList.push(dmlReport);
       }
@@ -147,7 +153,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     } catch (e) {
       const errorMsg = String(e);
       set({ error: errorMsg, isExecuting: false });
-      const sql = get().sqlContent[tabId] ?? '';
       invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId })
         .then(diagnosis => set({ diagnosis }))
         .catch(() => {});

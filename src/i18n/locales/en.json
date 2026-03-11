@@ -362,7 +362,7 @@
     "length": "Length",
     "nullable": "Nullable",
     "defaultValue": "Default",
-    "primaryKey": "PK",
+    "primaryKey": "Primary Key",
     "alterPreview": "ALTER SQL Preview",
     "executeAlter": "Execute ALTER",
     "createPreview": "CREATE SQL Preview",

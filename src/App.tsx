@@ -5,7 +5,7 @@ import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
 import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
-import { Toast } from './components/Toast';
+import { Toast, type ToastLevel } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
@@ -86,11 +86,11 @@ JOIN
     }
   }, [results, activeTab, queryError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; level: ToastLevel } | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  const showToast = (msg: string, level: ToastLevel = 'default') => {
+    setToast({ message: msg, level });
+    setTimeout(() => setToast(null), 3000);
   };
 
 
@@ -196,7 +196,7 @@ JOIN
       });
       setSql(activeTabId, formatted);
     } catch {
-      showToast('SQL 格式化失败');
+      showToast('SQL 格式化失败', 'error');
     }
   };
 
@@ -335,6 +335,7 @@ JOIN
         tableData={tableData}
         executionTime={executionTime}
         updateTabContext={updateTabContext}
+        onOpenAssistant={() => setIsAssistantOpen(true)}
       />
       )}
 
@@ -348,7 +349,7 @@ JOIN
       />
       )}
 
-      <Toast message={toastMessage} />
+      <Toast message={toast?.message ?? null} level={toast?.level} />
       </div>
     </div>
   );

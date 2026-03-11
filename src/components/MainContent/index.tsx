@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@monaco-editor/react';
-import type { languages as MonacoLanguages } from 'monaco-editor';
+import type { editor as MonacoEditorType, languages as MonacoLanguages } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { FullSchemaInfo, QueryContext } from '../../types';
@@ -125,8 +125,10 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   // Register Monaco completion provider once (module-level guard)
   const completionProviderRegistered = useRef(false);
+  const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
 
-  const handleEditorDidMount: OnMount = (_editor, monaco: Monaco) => {
+  const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
+    editorRef.current = editor;
     if (completionProviderRegistered.current) return;
     completionProviderRegistered.current = true;
 
@@ -193,7 +195,13 @@ export const MainContent: React.FC<MainContentProps> = ({
       showToast(t('mainContent.selectConnectionAndDatabase'));
       return;
     }
-    executeQuery(connId, activeTab);
+    // Execute selected text if any, otherwise execute all
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    const selectedSql = (selection && !selection.isEmpty())
+      ? editor?.getModel()?.getValueInRange(selection)?.trim()
+      : undefined;
+    executeQuery(connId, activeTab, selectedSql || undefined);
   }, [activeTabObj, activeTab, showToast, executeQuery, t]);
 
   const handleClear = () => {

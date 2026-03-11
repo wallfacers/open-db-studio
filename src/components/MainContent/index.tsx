@@ -552,7 +552,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     >
                       <span>
                         {result.kind === 'dml-report'
-                          ? `执行报告（${result.rows.length}条）`
+                          ? `${t('mainContent.dmlReport')}（${result.rows.length}${t('mainContent.dmlReportCount')}）`
                           : `${t('mainContent.resultSet')} ${idx + 1}`}
                       </span>
                       <Tooltip content={t('mainContent.closeResult')}>
@@ -605,8 +605,12 @@ export const MainContent: React.FC<MainContentProps> = ({
                         {currentResults[selectedResultIdx]?.rows.map((row, ri) => (
                           <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
                             {row.map((cell, ci) => (
-                              <td key={ci} className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px] truncate">
-                                {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
+                              <td key={ci} className="px-3 py-1.5 border-r border-[#1e2d42] max-w-[300px] truncate">
+                                {cell === null
+                                  ? <span className="text-[#7a9bb8]">NULL</span>
+                                  : typeof cell === 'string' && cell.startsWith('✓')
+                                    ? <span className="text-green-400">{cell}</span>
+                                    : <span className="text-[#c8daea]">{String(cell)}</span>}
                               </td>
                             ))}
                           </tr>

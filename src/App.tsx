@@ -90,7 +90,6 @@ JOIN
 
   const showToast = (msg: string, level: ToastLevel = 'default') => {
     setToast({ message: msg, level });
-    setTimeout(() => setToast(null), 3000);
   };
 
 
@@ -349,7 +348,7 @@ JOIN
       />
       )}
 
-      <Toast message={toast?.message ?? null} level={toast?.level} />
+      <Toast message={toast?.message ?? null} level={toast?.level} onClose={() => setToast(null)} />
       </div>
     </div>
   );

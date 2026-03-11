@@ -209,7 +209,7 @@ export const TableManageDialog: React.FC<Props> = ({
   const handleExecute = async () => {
     if (previewSql.startsWith('-- ')) return;
     if (visibleColumns.some(c => !c.name.trim())) {
-      showToast('列名不能为空', 'error');
+      showToast(t('tableManage.columnNameRequired'), 'error');
       return;
     }
     setIsLoading(true);

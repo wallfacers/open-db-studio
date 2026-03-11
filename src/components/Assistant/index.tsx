@@ -9,6 +9,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { DiffPanel } from './DiffPanel';
 import { useAiStore, useConnectionStore } from '../../store';
 import { useQueryStore } from '../../store/queryStore';
+import { usePageAgent } from '../../hooks/usePageAgent';
 import type { ToastLevel } from '../Toast';
 
 const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, code }) => {
@@ -78,6 +79,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const { chatHistory, isChatting, sendChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
   const { activeConnectionId } = useConnectionStore();
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
+  usePageAgent();
   // TODO: 未来支持 AI 直接写入编辑器时，在此处补充解构 setSql / activeTabId
 
   const [chatInput, setChatInput] = useState('');

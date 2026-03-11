@@ -47,13 +47,39 @@ export interface QueryHistory {
 }
 
 export type ApiType = 'openai' | 'anthropic';
+export type TestStatus = 'untested' | 'testing' | 'success' | 'fail';
 
-export interface LlmSettings {
+export interface LlmConfig {
+  id: number;
+  name: string;
   api_key: string;
   base_url: string;
   model: string;
   api_type: ApiType;
   preset: string | null;
+  is_default: boolean;
+  test_status: TestStatus;
+  test_error: string | null;
+  tested_at: string | null;
+  created_at: string;
+}
+
+export interface CreateLlmConfigInput {
+  name?: string;
+  api_key: string;
+  base_url: string;
+  model: string;
+  api_type: ApiType;
+  preset?: string | null;
+}
+
+export interface UpdateLlmConfigInput {
+  name?: string;
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+  api_type?: ApiType;
+  preset?: string | null;
 }
 
 export type TabType = 'query' | 'table' | 'er_diagram';
@@ -122,4 +148,49 @@ export interface FullSchemaInfo {
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+// ============ 导航树类型 ============
+
+export type NodeType =
+  | 'group'
+  | 'connection'
+  | 'database'
+  | 'schema'
+  | 'category'
+  | 'table'
+  | 'view'
+  | 'function'
+  | 'procedure'
+  | 'trigger'
+  | 'event'
+  | 'sequence'
+  | 'column';
+
+export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences';
+
+export interface NodeMeta {
+  connectionId?: number;
+  driver?: string;
+  database?: string;
+  schema?: string;
+  objectName?: string;
+}
+
+export interface TreeNode {
+  id: string;           // 路径式唯一 ID: "conn_1/db_mydb/schema_public/cat_tables/table_users"
+  nodeType: NodeType;
+  label: string;
+  parentId: string | null;
+  hasChildren: boolean;
+  loaded: boolean;      // 子节点是否已从后端加载
+  meta: NodeMeta;
+}
+
+export interface ConnectionGroup {
+  id: number;
+  name: string;
+  color: string | null;
+  sort_order: number;
+  created_at: string;
 }

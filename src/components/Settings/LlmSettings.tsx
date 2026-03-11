@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { CheckCircle, XCircle, Loader2, Star, Plus, Pencil, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Star, Plus, Pencil, Trash2, X } from 'lucide-react';
 import { PasswordInput } from '../common/PasswordInput';
 import { useAiStore } from '../../store';
 import type { LlmConfig, CreateLlmConfigInput, ApiType } from '../../types';
+import { useEscClose } from '../../hooks/useEscClose';
 
 // -------- 厂商预设 --------
 interface ProviderPreset {
@@ -107,6 +108,8 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   // 测试通过时记录的字段快照，用于判断保存时配置是否仍与测试时一致
   const [successSnapshot, setSuccessSnapshot] = useState<ConnSnapshot | null>(null);
 
+  useEscClose(onCancel);
+
   // 计算有效测试状态：通过且字段未变 → success；通过但字段已变 → untested；未测试 → null
   const effectiveTestStatus: EffectiveTestStatus = (() => {
     if (!successSnapshot) return null;
@@ -168,7 +171,10 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4">
-        <h3 className="text-white font-semibold text-sm">{title}</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-white font-semibold text-sm">{title}</h3>
+          <button onClick={onCancel} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+        </div>
 
         {/* 厂商预设 */}
         <div>
@@ -331,6 +337,9 @@ export function LlmSettingsPanel() {
 
   useEffect(() => { loadConfigs(); }, []);
 
+  // ESC 关闭删除确认弹窗（ConfigFormDialog 内部自己处理 ESC）
+  useEscClose(() => setDeleteConfirm(null), !!deleteConfirm && !showCreate && !editTarget);
+
   const handleCreate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => {
     const created = await invoke<LlmConfig>('create_llm_config', { input });
     if (effectiveTestStatus === 'success') {
@@ -469,7 +478,10 @@ export function LlmSettingsPanel() {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-white font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-white font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
+              <button onClick={() => setDeleteConfirm(null)} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+            </div>
             <p className="text-xs text-[#c8daea]">
               {t('llmSettings.confirmDeleteMsg', { name: deleteConfirm.name })}
               {deleteConfirm.is_default && (

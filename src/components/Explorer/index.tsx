@@ -1,28 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Plus, RefreshCw, Search, X, DatabaseZap, FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Plus, MoreHorizontal, RefreshCw, Search, X, Filter, DatabaseZap, TableProperties, LayoutDashboard, FilePlus, PlugZap, Unplug, Pencil, Trash2, Columns3, ListTree, FilePlus2, FileEdit, Layers, Sparkles } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
-import { TreeItem } from './TreeItem';
-import { useConnectionStore } from '../../store';
+import { useTreeStore } from '../../store/treeStore';
+import { DBTree } from './DBTree';
 import { ConnectionModal } from '../ConnectionModal';
-import { TableManageDialog } from '../TableManageDialog';
-import { IndexManager } from '../IndexManager';
-import { ObjectPanel } from '../ObjectPanel';
-import { AiCreateTableDialog } from '../AiCreateTableDialog';
-import type { TableDetail } from '../../types';
+import { GroupModal } from '../GroupModal';
+import i18n from '../../i18n';
+import type { ToastLevel } from '../Toast';
 
 interface ExplorerProps {
   isSidebarOpen: boolean;
   sidebarWidth: number;
   handleSidebarResize: (e: React.MouseEvent) => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  expandedFolders: Record<string, boolean>;
-  toggleFolder: (folder: string) => void;
   activeActivity: string;
-  onTableClick: (tableName: string, dbName?: string) => void;
-  onNewQuery: (connId: number, connName: string) => void;
+  onNewQuery: (connectionId: number, connName: string, database?: string, schema?: string) => void;
+  onOpenTableData: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
 }
 
 export const Explorer: React.FC<ExplorerProps> = ({
@@ -32,129 +27,105 @@ export const Explorer: React.FC<ExplorerProps> = ({
   showToast,
   searchQuery,
   setSearchQuery,
-  expandedFolders,
-  toggleFolder,
   activeActivity,
-  onTableClick,
-  onNewQuery
+  onNewQuery,
+  onOpenTableData,
 }) => {
   const { t } = useTranslation();
-  const { connections, activeConnectionId, tables, loadConnections, setActiveConnection, loadTables, deleteConnection, disconnectConnection } = useConnectionStore();
+  const { init, nodes } = useTreeStore();
   const [showModal, setShowModal] = useState(false);
-  const [connContextMenu, setConnContextMenu] = useState<{ connId: number; x: number; y: number } | null>(null);
-  const connMenuRef = useRef<HTMLDivElement>(null);
-  const [editingConn, setEditingConn] = useState<import('../../types').Connection | null>(null);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
-  const [tableDetails, setTableDetails] = useState<Record<string, TableDetail>>({});
-  const [tableContextMenu, setTableContextMenu] = useState<{ tableName: string; x: number; y: number } | null>(null);
-  const tableMenuRef = useRef<HTMLDivElement>(null);
-  const [tableManageDialog, setTableManageDialog] = useState<{ tableName?: string } | null>(null);
-  const [indexManagerTable, setIndexManagerTable] = useState<string | null>(null);
-  const [explorerView, setExplorerView] = useState<'tables' | 'objects'>('tables');
-  const [showAiCreateTable, setShowAiCreateTable] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [activeConnectionIds, setActiveConnectionIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    loadConnections();
+    init();
   }, []);
 
-  // 当连接切换时清空表详情缓存
-  useEffect(() => {
-    setTableDetails({});
-    setExpandedTables(new Set());
-  }, [activeConnectionId]);
+  const handleOpenConnection = async (connectionId: number) => {
+    const nodeId = `conn_${connectionId}`;
+    const store = useTreeStore.getState();
 
-  const loadTableDetail = async (tableName: string) => {
-    if (!activeConnectionId || tableDetails[tableName]) return;
-    try {
-      const detail = await invoke<TableDetail>('get_table_detail', {
-        connectionId: activeConnectionId,
-        table: tableName,
-      });
-      setTableDetails(prev => ({ ...prev, [tableName]: detail }));
-    } catch (e) {
-      console.error('Failed to load table detail:', e);
+    // 若子节点未加载，先加载以验证连接是否可用
+    if (!store.nodes.get(nodeId)?.loaded) {
+      await store.loadChildren(nodeId);
+      const after = useTreeStore.getState();
+      if (!after.nodes.get(nodeId)?.loaded) {
+        // 加载失败：读取错误信息并提示，不标记为已连接
+        const errMsg = after.error ?? i18n.t('dbTree.connectionFailed');
+        showToast(errMsg, 'error');
+        return;
+      }
     }
+
+    // 连接成功：标记为已连接并展开
+    setActiveConnectionIds(prev => new Set([...prev, connectionId]));
+    const { expandedIds, toggleExpand } = useTreeStore.getState();
+    if (!expandedIds.has(nodeId)) toggleExpand(nodeId);
   };
 
-  const toggleTableExpanded = (tableName: string) => {
-    setExpandedTables(prev => {
+  const handleCloseConnection = (connectionId: number) => {
+    setActiveConnectionIds(prev => {
       const next = new Set(prev);
-      if (next.has(tableName)) {
-        next.delete(tableName);
-      } else {
-        next.add(tableName);
-        loadTableDetail(tableName);
-      }
+      next.delete(connectionId);
       return next;
     });
+
+    const nodeId = `conn_${connectionId}`;
+    const store = useTreeStore.getState();
+
+    // 折叠树节点
+    if (store.expandedIds.has(nodeId)) store.toggleExpand(nodeId);
+
+    // 清空该连接下所有子节点缓存，并重置 loaded，下次打开时重新拉取
+    store._removeSubtree(nodeId);
+    useTreeStore.setState(s => {
+      const nodes = new Map(s.nodes);
+      const conn = nodes.get(nodeId);
+      if (conn) nodes.set(nodeId, { ...conn, loaded: false });
+      return { nodes };
+    });
   };
-
-  // 单击：仅选中（展开/折叠文件夹），不加载数据
-  const handleConnectionSelect = (id: number) => {
-    setActiveConnection(id);
-    toggleFolder(`conn_${id}`);
-  };
-
-  // 双击：连接并加载表
-  const handleConnectionOpen = (id: number) => {
-    setActiveConnection(id);
-    loadTables(id);
-    if (!expandedFolders[`conn_${id}`]) toggleFolder(`conn_${id}`);
-  };
-
-  const handleRefresh = async () => {
-    await loadConnections();
-    if (activeConnectionId) await loadTables(activeConnectionId);
-    showToast(t('explorer.connectionListRefreshed'));
-  };
-
-  const handleDeleteConnection = async (id: number) => {
-    if (!window.confirm(t('explorer.confirmDeleteConnection'))) return;
-    await deleteConnection(id);
-    showToast(t('explorer.connectionDeleted'));
-  };
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (connMenuRef.current && !connMenuRef.current.contains(e.target as Node)) {
-        setConnContextMenu(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (tableMenuRef.current && !tableMenuRef.current.contains(e.target as Node)) {
-        setTableContextMenu(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   if (!isSidebarOpen) return null;
 
   return (
     <>
-      <div className="flex flex-col border-r border-[#1e2d42] bg-[#0d1117] flex-shrink-0 relative" style={{ width: sidebarWidth }}>
+      <div
+        className="flex flex-col border-r border-[#1e2d42] bg-[#0d1117] flex-shrink-0 relative"
+        style={{ width: sidebarWidth }}
+      >
         <div
           className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
           onMouseDown={handleSidebarResize}
-        ></div>
+        />
 
         {activeActivity === 'database' ? (
           <>
             <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42]">
               <span className="font-medium text-[#c8daea]">{t('explorer.database')}</span>
               <div className="flex items-center space-x-2 text-[#7a9bb8]">
-                <Plus size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => setShowModal(true)} />
-                <span title={t('aiCreateTable.title')} className="flex items-center cursor-pointer hover:text-[#c8daea]" onClick={() => setShowAiCreateTable(true)}><Sparkles size={16} /></span>
-                <RefreshCw size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={handleRefresh} />
+                <span title={t('groupModal.createTitle')}>
+                  <FolderPlus
+                    size={16}
+                    className="cursor-pointer hover:text-[#c8daea]"
+                    onClick={() => setShowGroupModal(true)}
+                  />
+                </span>
+                <span title={t('connectionModal.newConnection')}>
+                  <Plus
+                    size={16}
+                    className="cursor-pointer hover:text-[#c8daea]"
+                    onClick={() => setShowModal(true)}
+                  />
+                </span>
+                <RefreshCw
+                  size={16}
+                  className="cursor-pointer hover:text-[#c8daea]"
+                  onClick={() => init()}
+                />
               </div>
             </div>
+
             <div className="p-2 border-b border-[#1e2d42]">
               <div className="flex items-center bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-1 focus-within:border-[#00a98f] transition-colors">
                 <Search size={14} className="text-[#7a9bb8] mr-1" />
@@ -166,318 +137,55 @@ export const Explorer: React.FC<ExplorerProps> = ({
                   className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"
                 />
                 {searchQuery && (
-                  <X size={14} className="text-[#7a9bb8] ml-1 cursor-pointer hover:text-[#c8daea]" onClick={() => setSearchQuery('')} />
+                  <X
+                    size={14}
+                    className="text-[#7a9bb8] ml-1 cursor-pointer hover:text-[#c8daea]"
+                    onClick={() => setSearchQuery('')}
+                  />
                 )}
               </div>
             </div>
-            {/* View switcher: Tables / Objects */}
-            <div className="flex border-b border-[#1e2d42] text-[11px]">
-              <button
-                className={`flex-1 flex items-center justify-center gap-1 py-1.5 transition-colors ${explorerView === 'tables' ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea]'}`}
-                onClick={() => setExplorerView('tables')}
-              >
-                <TableProperties size={12} />
-                {t('explorer.tables')}
-              </button>
-              <button
-                className={`flex-1 flex items-center justify-center gap-1 py-1.5 transition-colors ${explorerView === 'objects' ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea]'}`}
-                onClick={() => setExplorerView('objects')}
-              >
-                <Layers size={12} />
-                {t('explorer.objects')}
-              </button>
-            </div>
-            {explorerView === 'objects' ? (
-              <ObjectPanel showToast={showToast} />
+
+            {nodes.size === 0 ? (
+              <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
+                <DatabaseZap size={24} className="mx-auto mb-2 opacity-30" />
+                <p>{t('explorer.noConnections')}</p>
+                <p
+                  className="mt-1 text-[#00c9a7] cursor-pointer hover:underline"
+                  onClick={() => setShowModal(true)}
+                >
+                  {t('explorer.newConnection')}
+                </p>
+              </div>
             ) : (
-            <div className="flex-1 overflow-y-auto py-2">
-              {connections.length === 0 ? (
-                <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
-                  <DatabaseZap size={24} className="mx-auto mb-2 opacity-30" />
-                  <p>{t('explorer.noConnections')}</p>
-                  <p className="mt-1 text-[#00c9a7] cursor-pointer hover:underline" onClick={() => setShowModal(true)}>{t('explorer.newConnection')}</p>
-                </div>
-              ) : (
-                connections
-                  .filter(c => !searchQuery || c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map(conn => (
-                    <div
-                      key={conn.id}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setConnContextMenu({ connId: conn.id, x: e.clientX, y: e.clientY });
-                      }}
-                    >
-                      <TreeItem
-                        label={conn.name}
-                        id={`conn_${conn.id}`}
-                        icon={DatabaseZap}
-                        hasChildren
-                        isOpen={expandedFolders[`conn_${conn.id}`]}
-                        active={activeConnectionId === conn.id}
-                        onClick={() => handleConnectionSelect(conn.id)}
-                        onDoubleClick={() => handleConnectionOpen(conn.id)}
-                      />
-                      {expandedFolders[`conn_${conn.id}`] && activeConnectionId === conn.id && (
-                        tables.length === 0 ? (
-                          <div className="px-3 py-1 text-xs text-[#7a9bb8]" style={{ paddingLeft: '2rem' }}>{t('explorer.noTables')}</div>
-                        ) : (
-                          tables.map(tbl => {
-                            const isExpanded = expandedTables.has(tbl.name);
-                            const detail = tableDetails[tbl.name];
-                            return (
-                              <React.Fragment key={tbl.name}>
-                                <div
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setTableContextMenu({ tableName: tbl.name, x: e.clientX, y: e.clientY });
-                                  }}
-                                >
-                                <TreeItem
-                                  label={tbl.name}
-                                  icon={TableProperties}
-                                  indent={1}
-                                  hasChildren
-                                  isOpen={isExpanded}
-                                  active={selectedTable === tbl.name}
-                                  onClick={() => { setSelectedTable(tbl.name); toggleTableExpanded(tbl.name); }}
-                                  onDoubleClick={() => { setSelectedTable(tbl.name); onTableClick(tbl.name, conn.name); }}
-                                />
-                                </div>
-                                {isExpanded && detail && (
-                                  <>
-                                    {/* Columns section */}
-                                    <div
-                                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-[#7a9bb8] uppercase tracking-wider select-none"
-                                      style={{ paddingLeft: '3.5rem' }}
-                                    >
-                                      <Columns3 size={11} />
-                                      Columns
-                                    </div>
-                                    {detail.columns.map(col => (
-                                      <div
-                                        key={col.name}
-                                        className="flex items-center gap-1 py-0.5 text-xs text-[#c8daea] select-none"
-                                        style={{ paddingLeft: '4rem' }}
-                                        title={`${col.name}: ${col.data_type}${col.is_nullable ? '' : ' NOT NULL'}${col.column_default ? ` DEFAULT ${col.column_default}` : ''}`}
-                                      >
-                                        <span className="text-[#7a9bb8] w-3 text-center flex-shrink-0">
-                                          {col.is_primary_key ? '🔑' : '·'}
-                                        </span>
-                                        <span className="truncate">{col.name}</span>
-                                        <span className="text-[#4a6a8a] ml-1 truncate">{col.data_type}</span>
-                                      </div>
-                                    ))}
-                                    {/* Indexes section */}
-                                    {detail.indexes.length > 0 && (
-                                      <>
-                                        <div
-                                          className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-[#7a9bb8] uppercase tracking-wider select-none mt-0.5"
-                                          style={{ paddingLeft: '3.5rem' }}
-                                        >
-                                          <ListTree size={11} />
-                                          Indexes
-                                        </div>
-                                        {detail.indexes.map(idx => (
-                                          <div
-                                            key={idx.index_name}
-                                            className="flex items-center gap-1 py-0.5 text-xs text-[#c8daea] select-none"
-                                            style={{ paddingLeft: '4rem' }}
-                                            title={`${idx.index_name}: ${idx.columns.join(', ')}${idx.is_unique ? ' (UNIQUE)' : ''}`}
-                                          >
-                                            <span className="text-[#7a9bb8] w-3 text-center flex-shrink-0">📑</span>
-                                            <span className="truncate">{idx.index_name}</span>
-                                            {idx.is_unique && <span className="text-[#00c9a7] text-[10px] flex-shrink-0">[U]</span>}
-                                            <span className="text-[#4a6a8a] ml-1 truncate">({idx.columns.join(', ')})</span>
-                                          </div>
-                                        ))}
-                                      </>
-                                    )}
-                                  </>
-                                )}
-                                {isExpanded && !detail && (
-                                  <div
-                                    className="py-0.5 text-xs text-[#4a6a8a] select-none"
-                                    style={{ paddingLeft: '4rem' }}
-                                  >
-                                    Loading...
-                                  </div>
-                                )}
-                              </React.Fragment>
-                            );
-                          })
-                        )
-                      )}
-                    </div>
-                  ))
-              )}
-            </div>
+              <DBTree
+                searchQuery={searchQuery}
+                showToast={showToast}
+                onNewQuery={onNewQuery}
+                onOpenTableData={onOpenTableData}
+                activeConnectionIds={activeConnectionIds}
+                onOpenConnection={handleOpenConnection}
+                onCloseConnection={handleCloseConnection}
+              />
             )}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-[#7a9bb8]">
-            <div className="text-center">
-              <LayoutDashboard size={48} className="mx-auto mb-4 opacity-20" />
-              <p>{t('explorer.databaseOverview')}</p>
-            </div>
+            <p className="text-sm">{t('explorer.selectActivityBar')}</p>
           </div>
         )}
       </div>
 
-      {connContextMenu && (
-        <div
-          ref={connMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[140px]"
-          style={{ left: connContextMenu.x, top: connContextMenu.y }}
-        >
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#c8daea] enabled:hover:bg-[#003d2f] enabled:hover:text-white"
-            disabled={activeConnectionId === connContextMenu.connId}
-            onClick={() => {
-              const conn = connections.find(c => c.id === connContextMenu.connId);
-              if (conn) handleConnectionOpen(conn.id);
-              setConnContextMenu(null);
-            }}
-          >
-            <PlugZap size={13} />
-            打开连接
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#c8daea] enabled:hover:bg-[#003d2f] enabled:hover:text-white"
-            disabled={activeConnectionId !== connContextMenu.connId}
-            onClick={() => {
-              disconnectConnection(connContextMenu.connId);
-              setConnContextMenu(null);
-            }}
-          >
-            <Unplug size={13} />
-            关闭连接
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
-            onClick={() => {
-              const conn = connections.find(c => c.id === connContextMenu.connId);
-              if (conn) onNewQuery(conn.id, conn.name);
-              setConnContextMenu(null);
-            }}
-          >
-            <FilePlus size={13} />
-            新建查询
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed enabled:text-[#c8daea] enabled:hover:bg-[#003d2f] enabled:hover:text-white"
-            disabled={activeConnectionId !== connContextMenu.connId}
-            onClick={() => {
-              setTableManageDialog({});
-              setConnContextMenu(null);
-            }}
-          >
-            <FilePlus2 size={13} />
-            {t('tableManage.createTable')}
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
-            onClick={() => {
-              const conn = connections.find(c => c.id === connContextMenu.connId);
-              if (conn) setEditingConn(conn);
-              setConnContextMenu(null);
-            }}
-          >
-            <Pencil size={13} />
-            {t('explorer.edit')}
-          </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#003d2f] hover:text-red-300 flex items-center gap-2"
-            onClick={() => {
-              handleDeleteConnection(connContextMenu.connId);
-              setConnContextMenu(null);
-            }}
-          >
-            <Trash2 size={13} />
-            {t('explorer.delete')}
-          </button>
-        </div>
-      )}
-
-      {editingConn && (
+      {showModal && (
         <ConnectionModal
-          connection={editingConn}
-          onClose={() => { setEditingConn(null); loadConnections(); }}
+          onClose={() => { setShowModal(false); init(); }}
         />
       )}
 
-      {showModal && <ConnectionModal onClose={() => { setShowModal(false); loadConnections(); }} />}
-
-      {tableContextMenu && (
-        <div
-          ref={tableMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
-          style={{ left: tableContextMenu.x, top: tableContextMenu.y }}
-        >
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
-            onClick={() => {
-              setTableManageDialog({ tableName: tableContextMenu.tableName });
-              setTableContextMenu(null);
-            }}
-          >
-            <FileEdit size={13} />
-            {t('tableManage.editTable', { table: tableContextMenu.tableName })}
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white flex items-center gap-2"
-            onClick={() => {
-              setIndexManagerTable(tableContextMenu.tableName);
-              setTableContextMenu(null);
-            }}
-          >
-            <ListTree size={13} />
-            {t('tableManage.manageIndexes')}
-          </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[#003d2f] hover:text-red-300 flex items-center gap-2"
-            onClick={() => {
-              setTableManageDialog({ tableName: tableContextMenu.tableName });
-              setTableContextMenu(null);
-            }}
-          >
-            <Trash2 size={13} />
-            {t('tableManage.dropTable')}
-          </button>
-        </div>
-      )}
-
-      {tableManageDialog !== null && activeConnectionId && (
-        <TableManageDialog
-          connectionId={activeConnectionId}
-          tableName={tableManageDialog.tableName}
-          onClose={() => setTableManageDialog(null)}
-          onSuccess={() => {
-            if (activeConnectionId) loadTables(activeConnectionId);
-            setTableManageDialog(null);
-          }}
-          showToast={showToast}
-        />
-      )}
-
-      {indexManagerTable !== null && activeConnectionId && (
-        <IndexManager
-          connectionId={activeConnectionId}
-          tableName={indexManagerTable}
-          onClose={() => setIndexManagerTable(null)}
-          showToast={showToast}
-        />
-      )}
-
-      {showAiCreateTable && (
-        <AiCreateTableDialog
-          onClose={() => setShowAiCreateTable(false)}
-          showToast={showToast}
-          onRefresh={() => {
-            if (activeConnectionId) loadTables(activeConnectionId);
-          }}
+      {showGroupModal && (
+        <GroupModal
+          onClose={() => setShowGroupModal(false)}
+          onSuccess={() => { setShowGroupModal(false); init(); }}
         />
       )}
     </>

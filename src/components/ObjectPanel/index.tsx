@@ -3,9 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { ViewMeta, ProcedureMeta, FullSchemaInfo } from '../../types';
+import type { ToastLevel } from '../Toast';
 
 interface Props {
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
@@ -25,7 +26,7 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
         setViews(schema.views);
         setProcedures(schema.procedures);
       })
-      .catch(e => showToast(String(e)));
+      .catch(e => showToast(String(e), 'error'));
   }, [activeConnectionId]);
 
   if (!activeConnectionId) {

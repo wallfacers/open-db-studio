@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { X } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useConnectionStore } from '../../store';
 import type { CreateConnectionRequest } from '../../types';
 import { PasswordInput } from '../common/PasswordInput';
+import { DropdownSelect } from '../common/DropdownSelect';
+import { useEscClose } from '../../hooks/useEscClose';
 
 const DRIVERS = [
   { value: 'mysql', label: 'MySQL', defaultPort: 3306 },
@@ -14,12 +18,16 @@ const DRIVERS = [
 interface Props {
   onClose: () => void;
   connection?: import('../../types').Connection;
+  defaultGroupId?: number | null;
 }
 
-export function ConnectionModal({ onClose, connection }: Props) {
+export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) {
   const { t } = useTranslation();
   const { createConnection, testConnection, updateConnection } = useConnectionStore();
   const isEdit = !!connection;
+
+  useEscClose(onClose);
+  const [groups, setGroups] = useState<{ id: number; name: string }[]>([]);
   const [form, setForm] = useState<CreateConnectionRequest>({
     name: connection?.name ?? '',
     driver: connection?.driver ?? 'mysql',
@@ -28,7 +36,12 @@ export function ConnectionModal({ onClose, connection }: Props) {
     database_name: connection?.database_name ?? '',
     username: connection?.username ?? '',
     password: '',
+    group_id: connection?.group_id ?? defaultGroupId ?? null,
   });
+
+  useEffect(() => {
+    invoke<{ id: number; name: string }[]>('list_groups').then(setGroups).catch(() => {});
+  }, []);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -72,7 +85,10 @@ export function ConnectionModal({ onClose, connection }: Props) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-[480px] p-6">
-        <h2 className="text-white font-semibold mb-4">{isEdit ? t('connectionModal.editConnection') : t('connectionModal.newConnection')}</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-white font-semibold">{isEdit ? t('connectionModal.editConnection') : t('connectionModal.newConnection')}</h2>
+          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+        </div>
 
         <div className="space-y-3">
           <div>
@@ -84,11 +100,28 @@ export function ConnectionModal({ onClose, connection }: Props) {
 
           <div>
             <label className={labelClass}>{t('connectionModal.dbType')}</label>
-            <select className={inputClass} value={form.driver}
-              onChange={(e) => handleDriverChange(e.target.value)}>
-              {DRIVERS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-            </select>
+            <DropdownSelect
+              value={form.driver}
+              options={DRIVERS.map(d => ({ value: d.value, label: d.label }))}
+              onChange={handleDriverChange}
+              className="w-full"
+            />
           </div>
+
+          {groups.length > 0 && (
+            <div>
+              <label className={labelClass}>{t('connectionModal.group')}</label>
+              <DropdownSelect
+                value={form.group_id != null ? String(form.group_id) : ''}
+                options={[
+                  { value: '', label: t('connectionModal.noGroup') },
+                  ...groups.map(g => ({ value: String(g.id), label: g.name })),
+                ]}
+                onChange={(v) => setForm(f => ({ ...f, group_id: v ? Number(v) : null }))}
+                className="w-full"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">

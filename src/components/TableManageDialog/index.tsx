@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
+import { useEscClose } from '../../hooks/useEscClose';
+import type { ToastLevel } from '../Toast';
 
 interface Props {
   connectionId: number;
   tableName?: string; // undefined = 新建模式
   onClose: () => void;
   onSuccess: () => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const TableManageDialog: React.FC<Props> = ({
@@ -18,11 +20,13 @@ export const TableManageDialog: React.FC<Props> = ({
   const [ddl, setDdl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  useEscClose(onClose);
+
   useEffect(() => {
     if (tableName) {
       invoke<string>('get_table_ddl', { connectionId, table: tableName })
         .then(setDdl)
-        .catch(e => showToast(String(e)));
+        .catch(e => showToast(String(e), 'error'));
     } else {
       setDdl('CREATE TABLE new_table (\n  id INT PRIMARY KEY AUTO_INCREMENT,\n  name VARCHAR(255) NOT NULL\n);');
     }
@@ -33,11 +37,11 @@ export const TableManageDialog: React.FC<Props> = ({
     setIsLoading(true);
     try {
       await invoke('execute_query', { connectionId, sql: ddl });
-      showToast(tableName ? t('tableManage.alterSuccess') : t('tableManage.createSuccess'));
+      showToast(tableName ? t('tableManage.alterSuccess') : t('tableManage.createSuccess'), 'success');
       onSuccess();
       onClose();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -48,11 +52,11 @@ export const TableManageDialog: React.FC<Props> = ({
     setIsLoading(true);
     try {
       await invoke('execute_query', { connectionId, sql: `DROP TABLE \`${tableName}\`` });
-      showToast(t('tableManage.dropSuccess'));
+      showToast(t('tableManage.dropSuccess'), 'success');
       onSuccess();
       onClose();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     } finally {
       setIsLoading(false);
     }

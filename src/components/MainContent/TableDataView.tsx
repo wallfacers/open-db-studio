@@ -5,15 +5,17 @@ import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
+import type { ToastLevel } from '../Toast';
 
 interface TableDataViewProps {
   tableName: string;
   dbName: string;
   connectionId?: number;
-  showToast: (msg: string) => void;
+  schema?: string;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
-export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connectionId: propConnectionId, showToast }) => {
+export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName, connectionId: propConnectionId, schema, showToast }) => {
   const { t } = useTranslation();
   const { activeConnectionId: storeConnectionId } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
@@ -36,7 +38,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connect
       const result = await invoke<QueryResult>('get_table_data', {
         params: {
           connection_id: activeConnectionId,
+          database: dbName || null,
           table: tableName,
+          schema: schema || null,
           page,
           page_size: pageSize,
           where_clause: whereClause || null,
@@ -45,7 +49,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connect
       });
       setData(result);
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -53,7 +57,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connect
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
-    invoke<{ columns: ColumnMeta[] }>('get_table_detail', { connectionId: activeConnectionId, table: tableName })
+    invoke<{ columns: ColumnMeta[] }>('get_table_detail', { connectionId: activeConnectionId, database: dbName || null, table: tableName })
       .then(detail => {
         setColumns(detail.columns);
         const pk = detail.columns.find(c => c.is_primary_key);
@@ -75,17 +79,19 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connect
     try {
       await invoke('update_row', {
         connectionId: activeConnectionId,
+        database: dbName || null,
         table: tableName,
+        schema: schema || null,
         pkColumn,
         pkValue,
         column: editingCell.col,
         newValue: editingCell.value,
       });
-      showToast(t('tableDataView.updateSuccess'));
+      showToast(t('tableDataView.updateSuccess'), 'success');
       setEditingCell(null);
       loadData();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     }
   };
 
@@ -95,11 +101,11 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connect
     const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
     if (!window.confirm(t('tableDataView.confirmDelete'))) return;
     try {
-      await invoke('delete_row', { connectionId: activeConnectionId, table: tableName, pkColumn, pkValue });
-      showToast(t('tableDataView.deleteSuccess'));
+      await invoke('delete_row', { connectionId: activeConnectionId, database: dbName || null, table: tableName, schema: schema || null, pkColumn, pkValue });
+      showToast(t('tableDataView.deleteSuccess'), 'success');
       loadData();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     }
   };
 
@@ -214,7 +220,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, connect
       {showExport && activeConnectionId && (
         <ExportDialog
           connectionId={activeConnectionId}
+          database={dbName || undefined}
           tableName={tableName}
+          schema={schema}
           onClose={() => setShowExport(false)}
           showToast={showToast}
         />

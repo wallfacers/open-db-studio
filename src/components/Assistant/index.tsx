@@ -2,13 +2,14 @@ import React, { useRef, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2 } from 'lucide-react';
 import { useAiStore, useConnectionStore, useQueryStore } from '../../store';
+import type { ToastLevel } from '../Toast';
 
 interface AssistantProps {
   isAssistantOpen: boolean;
   assistantWidth: number;
   handleAssistantResize: (e: React.MouseEvent) => void;
   setIsAssistantOpen: (isOpen: boolean) => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 function extractSqlFromReply(reply: string): string | null {
@@ -68,12 +69,12 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117]">
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
         <div className="flex items-center space-x-3 text-[#7a9bb8]">
-          <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(); showToast(t('assistant.historyCleared')); }}>
+          <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(); showToast(t('assistant.historyCleared'), 'info'); }}>
             <Trash2 size={16} />
           </span>
-          <Plus size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { clearHistory(); showToast(t('assistant.newChatOpened')); }} />
-          <History size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => showToast(t('assistant.openHistory'))} />
-          <X size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed')); }} />
+          <Plus size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { clearHistory(); showToast(t('assistant.newChatOpened'), 'info'); }} />
+          <History size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => showToast(t('assistant.openHistory'), 'info')} />
+          <X size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }} />
         </div>
       </div>
 
@@ -108,7 +109,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                     </div>
                     <button
                       className="text-xs px-2 py-1 bg-[#1e2d42] hover:bg-[#2a3f5a] rounded border border-[#2a3f5a] text-[#00c9a7] transition-colors"
-                      onClick={() => { setSql(activeTabId, extractedSql); showToast(t('assistant.sqlInserted')); }}
+                      onClick={() => { setSql(activeTabId, extractedSql); showToast(t('assistant.sqlInserted'), 'success'); }}
                     >
                       {t('assistant.insertToEditor')}
                     </button>
@@ -131,7 +132,7 @@ export const Assistant: React.FC<AssistantProps> = ({
       {/* Input Area */}
       <div className="p-3 border-t border-[#1e2d42]">
         <div className="bg-[#111922] border border-[#2a3f5a] rounded-lg p-2 flex flex-col focus-within:border-[#00c9a7] transition-colors">
-          <div className="flex items-center text-xs text-[#7a9bb8] mb-2 cursor-pointer hover:text-[#c8daea] w-fit" onClick={() => showToast(t('assistant.selectContext'))}>
+          <div className="flex items-center text-xs text-[#7a9bb8] mb-2 cursor-pointer hover:text-[#c8daea] w-fit" onClick={() => showToast(t('assistant.selectContext'), 'info')}>
             <DatabaseZap size={12} className="mr-1 text-[#00c9a7]" />
             <span>{activeConnectionId ? `${t('assistant.connection')}${activeConnectionId}` : t('assistant.noConnectionSelected')}</span>
             <ChevronDown size={12} className="ml-1" />

@@ -3,15 +3,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
+import type { ToastLevel } from '../Toast';
 
 interface Props {
   connectionId: number;
+  database?: string;
   tableName: string;
+  schema?: string;
   onClose: () => void;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, level?: ToastLevel) => void;
 }
 
-export const ExportDialog: React.FC<Props> = ({ connectionId, tableName, onClose, showToast }) => {
+export const ExportDialog: React.FC<Props> = ({ connectionId, database, tableName, schema, onClose, showToast }) => {
   const { t } = useTranslation();
   const [format, setFormat] = useState<'csv' | 'json' | 'sql'>('csv');
   const [whereClause, setWhereClause] = useState('');
@@ -29,16 +32,18 @@ export const ExportDialog: React.FC<Props> = ({ connectionId, tableName, onClose
       await invoke('export_table_data', {
         params: {
           connection_id: connectionId,
+          database: database || null,
           table: tableName,
+          schema: schema || null,
           format,
           where_clause: whereClause || null,
           output_path: path,
         }
       });
-      showToast(t('export.success', { path }));
+      showToast(t('export.success', { path }), 'success');
       onClose();
     } catch (e) {
-      showToast(String(e));
+      showToast(String(e), 'error');
     } finally {
       setIsExporting(false);
     }

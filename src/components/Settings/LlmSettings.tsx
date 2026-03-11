@@ -1,16 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Star, Plus, Pencil, Trash2 } from 'lucide-react';
 import { PasswordInput } from '../common/PasswordInput';
 import { useAiStore } from '../../store';
-import type { LlmSettings, ApiType } from '../../types';
+import type { LlmConfig, CreateLlmConfigInput, ApiType } from '../../types';
 
-type TestStatus = 'idle' | 'testing' | 'success' | 'fail';
-
+// -------- 厂商预设 --------
 interface ProviderPreset {
   id: string;
-  labelKey: string;
+  label: string;
   base_url: string;
   api_type: ApiType;
   default_model: string;
@@ -19,68 +17,82 @@ interface ProviderPreset {
 const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'alicloud',
-    labelKey: 'llmSettings.alicloud',
+    label: '阿里云百炼',
     base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
     api_type: 'anthropic',
     default_model: 'qwen3.5-plus',
   },
 ];
 
-export function LlmSettingsPanel() {
-  const { t } = useTranslation();
-  const { settings, loadSettings, saveSettings } = useAiStore();
-  const [form, setForm] = useState<LlmSettings>({
-    api_key: '',
-    base_url: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    api_type: 'openai',
-    preset: null,
-  });
+// -------- 连通性状态指示 --------
+function getRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}小时前`;
+  return `${Math.floor(hours / 24)}天前`;
+}
+
+function TestStatusBadge({ status, error, testedAt }: {
+  status: string;
+  error: string | null;
+  testedAt: string | null;
+}) {
+  if (status === 'untested') {
+    return <span className="text-xs text-gray-500">○ 未测试</span>;
+  }
+  if (status === 'testing') {
+    return (
+      <span className="text-xs text-yellow-400 flex items-center gap-1">
+        <Loader2 size={11} className="animate-spin" />测试中…
+      </span>
+    );
+  }
+  if (status === 'success') {
+    const ago = testedAt ? getRelativeTime(testedAt) : '';
+    return (
+      <span className="text-xs text-green-400 flex items-center gap-1">
+        <CheckCircle size={11} />连通 {ago}
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-red-400 flex items-center gap-1" title={error ?? ''}>
+      <XCircle size={11} />失败
+    </span>
+  );
+}
+
+// -------- 编辑/新建 模态对话框 --------
+const EMPTY_FORM: CreateLlmConfigInput = {
+  name: '',
+  api_key: '',
+  base_url: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+  api_type: 'openai',
+  preset: null,
+};
+
+interface ConfigFormDialogProps {
+  title: string;
+  initial: CreateLlmConfigInput;
+  onSave: (input: CreateLlmConfigInput) => Promise<void>;
+  onCancel: () => void;
+}
+
+function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialogProps) {
+  const [form, setForm] = useState<CreateLlmConfigInput>(initial);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle');
-  const [testError, setTestError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg?: string } | null>(null);
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const labelClass = 'block text-xs text-gray-400 mb-1';
 
-  useEffect(() => {
-    if (settings) {
-      setForm({
-        ...settings,
-        api_type: settings.api_type ?? 'openai',
-        preset: settings.preset ?? null,
-      });
-    }
-  }, [settings]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await saveSettings(form);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleTest = async () => {
-    setTestStatus('testing');
-    setTestError(null);
-    try {
-      await invoke('test_llm_connection', { settings: form });
-      setTestStatus('success');
-      setTimeout(() => setTestStatus('idle'), 3000);
-    } catch (e) {
-      setTestStatus('fail');
-      setTestError(String(e));
-    }
-  };
-
-  const handlePresetSelect = (preset: ProviderPreset | null) => {
-    if (preset === null) {
+  const handlePreset = (preset: ProviderPreset | null) => {
+    if (!preset) {
       setForm((f) => ({ ...f, preset: null }));
     } else {
       setForm((f) => ({
@@ -93,90 +105,109 @@ export function LlmSettingsPanel() {
     }
   };
 
-  const handleFieldChange = <K extends keyof LlmSettings>(key: K, value: LlmSettings[K]) => {
-    // 修改 base_url 或 api_type 才视为切换到自定义，修改 model/api_key 保留预设标记
-    const resetsPreset = key === 'base_url' || key === 'api_type';
-    setForm((f) => ({ ...f, [key]: value, ...(resetsPreset ? { preset: null } : {}) }));
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    const tempInput: CreateLlmConfigInput = {
+      ...form,
+      name: form.name || `${form.model} · ${form.api_type}`,
+    };
+    try {
+      const created = await invoke<LlmConfig>('create_llm_config', { input: tempInput });
+      try {
+        await invoke('test_llm_config', { id: created.id });
+        setTestResult({ ok: true });
+      } catch (e) {
+        setTestResult({ ok: false, msg: String(e) });
+      } finally {
+        await invoke('delete_llm_config', { id: created.id });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: String(e) });
+    } finally {
+      setTesting(false);
+    }
   };
 
-  const handleApiTypeChange = (type: ApiType) => {
-    setForm((f) => {
-      const defaultBaseUrls: Record<ApiType, string> = {
-        openai: 'https://api.openai.com/v1',
-        anthropic: 'https://api.anthropic.com',
-      };
-      // 只有在使用预设时才同步重置 base_url，手动配置时保留用户值
-      const base_url = f.preset !== null ? defaultBaseUrls[type] : f.base_url;
-      return { ...f, api_type: type, base_url, preset: null };
-    });
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
   };
-
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
-  const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
-    <div className="w-full max-w-lg">
-      <div className="p-8 space-y-4">
-        <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">
-          {t('llmSettings.aiModelConfig')}
-        </h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4">
+        <h3 className="text-white font-semibold text-sm">{title}</h3>
 
         {/* 厂商预设 */}
         <div>
-          <label className={labelClass}>{t('llmSettings.preset')}</label>
+          <label className={labelClass}>厂商预设</label>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => handlePresetSelect(null)}
+              onClick={() => handlePreset(null)}
               className={`px-3 py-1 text-xs rounded border transition-colors ${
-                form.preset === null
+                !form.preset
                   ? 'bg-[#009e84] border-[#009e84] text-white'
                   : 'border-[#253347] text-[#c8daea] hover:bg-[#1a2639]'
               }`}
             >
-              {t('llmSettings.custom')}
+              自定义
             </button>
             {PROVIDER_PRESETS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => handlePresetSelect(p)}
+                onClick={() => handlePreset(p)}
                 className={`px-3 py-1 text-xs rounded border transition-colors ${
                   form.preset === p.id
                     ? 'bg-[#009e84] border-[#009e84] text-white'
                     : 'border-[#253347] text-[#c8daea] hover:bg-[#1a2639]'
                 }`}
               >
-                {t(p.labelKey)}
+                {p.label}
               </button>
             ))}
           </div>
         </div>
 
+        {/* 名称 */}
+        <div>
+          <label className={labelClass}>名称（可选，留空自动生成）</label>
+          <input
+            className={inputClass}
+            value={form.name ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder={`${form.model} · ${form.api_type}`}
+          />
+        </div>
+
         {/* API 协议 */}
         <div>
           <label className={labelClass}>
-            {t('llmSettings.apiType')}
-            {form.preset !== null && (
-              <span className="ml-2 text-[#5b8ab0]">({t('llmSettings.lockedByPreset')})</span>
-            )}
+            API 协议
+            {form.preset && <span className="ml-2 text-[#5b8ab0]">(预设锁定)</span>}
           </label>
           <div className="flex gap-4">
-            {(['openai', 'anthropic'] as ApiType[]).map((type) => (
+            {(['openai', 'anthropic'] as ApiType[]).map((t) => (
               <label
-                key={type}
-                className={`flex items-center gap-1.5 text-sm transition-opacity ${
-                  form.preset !== null ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-[#c8daea]'
+                key={t}
+                className={`flex items-center gap-1.5 text-sm ${
+                  form.preset ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-[#c8daea]'
                 }`}
               >
                 <input
                   type="radio"
                   name="api_type"
-                  value={type}
-                  checked={form.api_type === type}
-                  onChange={() => handleApiTypeChange(type)}
-                  disabled={form.preset !== null}
+                  value={t}
+                  checked={form.api_type === t}
+                  onChange={() => setForm((f) => ({ ...f, api_type: t, preset: null }))}
+                  disabled={!!form.preset}
                   className="accent-[#009e84]"
                 />
-                {type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}
+                {t === 'openai' ? 'OpenAI 兼容' : 'Anthropic 兼容'}
               </label>
             ))}
           </div>
@@ -184,85 +215,240 @@ export function LlmSettingsPanel() {
 
         {/* API Key */}
         <div>
-          <label className={labelClass}>{t('llmSettings.apiKey')}</label>
+          <label className={labelClass}>API Key</label>
           <PasswordInput
             className={inputClass}
             value={form.api_key}
-            onChange={(v) => handleFieldChange('api_key', v)}
+            onChange={(v) => setForm((f) => ({ ...f, api_key: v }))}
             placeholder="sk-..."
           />
         </div>
 
         {/* Base URL */}
         <div>
-          <label className={labelClass}>{t('llmSettings.baseUrl')}</label>
+          <label className={labelClass}>Base URL</label>
           <input
             className={inputClass}
             value={form.base_url}
-            onChange={(e) => handleFieldChange('base_url', e.target.value)}
+            onChange={(e) => setForm((f) => ({ ...f, base_url: e.target.value, preset: null }))}
             placeholder="https://api.openai.com/v1"
           />
         </div>
 
         {/* 模型 */}
         <div>
-          <label className={labelClass}>{t('llmSettings.model')}</label>
+          <label className={labelClass}>模型</label>
           <input
             className={inputClass}
             value={form.model}
-            onChange={(e) => handleFieldChange('model', e.target.value)}
+            onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
             placeholder="gpt-4o-mini"
           />
         </div>
 
+        {/* 测试结果 */}
+        {testResult && (
+          <p className={`text-xs flex items-center gap-1 ${testResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {testResult.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
+            {testResult.ok ? '连通性测试通过' : testResult.msg}
+          </p>
+        )}
+
         {/* 操作按钮 */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between pt-2">
           <button
             onClick={handleTest}
-            disabled={testStatus === 'testing' || !form.api_key}
-            className="px-4 py-1.5 text-sm border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
+            disabled={testing || !form.api_key}
+            className="px-3 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
           >
-            {testStatus === 'testing' && <Loader2 size={13} className="animate-spin" />}
-            {testStatus === 'success' && <CheckCircle size={13} className="text-green-400" />}
-            {testStatus === 'fail' && <XCircle size={13} className="text-red-400" />}
-            {testStatus === 'testing' ? t('llmSettings.testing') : t('llmSettings.testConnection')}
+            {testing && <Loader2 size={12} className="animate-spin" />}
+            {testing ? '测试中…' : '测试连通性'}
           </button>
-
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
-          >
-            {saved ? t('llmSettings.saved') : saving ? t('llmSettings.saving') : t('llmSettings.save')}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onCancel}
+              className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
+            >
+              {saving ? '保存中…' : '保存'}
+            </button>
+          </div>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {testStatus === 'success' && (
-          <p className="text-xs text-green-400 flex items-center gap-1">
-            <CheckCircle size={12} /> {t('llmSettings.testSuccess')}
-          </p>
-        )}
-        {testStatus === 'fail' && testError && (
-          <p className="text-xs text-red-400 flex items-center gap-1 break-all">
-            <XCircle size={12} className="flex-shrink-0" /> {testError}
-          </p>
-        )}
+// -------- 主组件 --------
+export function LlmSettingsPanel() {
+  const { configs, loadConfigs, createConfig, updateConfig, deleteConfig, setDefaultConfig, testConfig } = useAiStore();
+  const [showCreate, setShowCreate] = useState(false);
+  const [editTarget, setEditTarget] = useState<LlmConfig | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<LlmConfig | null>(null);
 
-        {form.preset === 'alicloud' ? (
-          <div className="pt-2 space-y-2">
-            <p className="text-xs text-[#7a9bb8]">{t('llmSettings.supportInfoCodingPlan')}</p>
-            <div className="bg-[#0d1a26] border border-[#1e2d42] rounded px-3 py-2 font-mono text-xs text-[#7ecba1] space-y-0.5">
-              <div><span className="text-[#5b8ab0]">ANTHROPIC_AUTH_TOKEN</span>=<span className="text-[#c8daea]">YOUR_API_KEY</span></div>
-              <div><span className="text-[#5b8ab0]">ANTHROPIC_BASE_URL</span>=<span className="text-[#c8daea]">https://coding.dashscope.aliyuncs.com/apps/anthropic</span></div>
-              <div><span className="text-[#5b8ab0]">ANTHROPIC_MODEL</span>=<span className="text-[#c8daea]">qwen3.5-plus</span></div>
+  useEffect(() => { loadConfigs(); }, []);
+
+  const handleCreate = async (input: CreateLlmConfigInput) => {
+    await createConfig(input);
+    setShowCreate(false);
+  };
+
+  const handleUpdate = async (input: CreateLlmConfigInput) => {
+    if (!editTarget) return;
+    await updateConfig(editTarget.id, input);
+    setEditTarget(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    await deleteConfig(deleteConfirm.id);
+    setDeleteConfirm(null);
+  };
+
+  return (
+    <div className="w-full max-w-2xl p-8">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-white font-semibold text-sm">AI 模型配置</h3>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
+        >
+          <Plus size={13} />新增配置
+        </button>
+      </div>
+
+      {/* 卡片网格 */}
+      {configs.length === 0 ? (
+        <div className="text-center py-16 text-[#7a9bb8]">
+          <p className="text-sm">暂无模型配置</p>
+          <p className="text-xs mt-1 opacity-60">点击右上角"新增配置"开始添加</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          {configs.map((config) => (
+            <div
+              key={config.id}
+              className={`bg-[#0d1a26] border rounded-lg p-4 flex flex-col gap-2 ${
+                config.is_default ? 'border-[#009e84]' : 'border-[#1e2d42]'
+              }`}
+            >
+              {/* 标题行 */}
+              <div className="flex items-center gap-1.5">
+                {config.is_default && (
+                  <Star size={13} className="text-[#009e84] fill-[#009e84] flex-shrink-0" />
+                )}
+                <span className="text-sm text-white font-medium truncate">{config.name}</span>
+              </div>
+              {/* 配置信息 */}
+              <div className="text-xs text-[#7a9bb8] space-y-0.5">
+                <div className="truncate">{config.model}</div>
+                <div>{config.api_type === 'openai' ? 'OpenAI 兼容' : 'Anthropic 兼容'}</div>
+              </div>
+              {/* 连通性状态 */}
+              <TestStatusBadge
+                status={config.test_status}
+                error={config.test_error}
+                testedAt={config.tested_at}
+              />
+              {/* 操作按钮 */}
+              <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-[#1e2d42] flex-wrap">
+                {!config.is_default && (
+                  <button
+                    onClick={() => setDefaultConfig(config.id)}
+                    className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
+                  >
+                    设为默认
+                  </button>
+                )}
+                <button
+                  onClick={() => testConfig(config.id)}
+                  disabled={config.test_status === 'testing'}
+                  className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
+                >
+                  {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
+                  测试
+                </button>
+                <button
+                  onClick={() => setEditTarget(config)}
+                  className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1"
+                >
+                  <Pencil size={11} />编辑
+                </button>
+                <button
+                  onClick={() => setDeleteConfirm(config)}
+                  className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1"
+                >
+                  <Trash2 size={11} />删除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 新建对话框 */}
+      {showCreate && (
+        <ConfigFormDialog
+          title="新增 AI 模型配置"
+          initial={EMPTY_FORM}
+          onSave={handleCreate}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
+      {/* 编辑对话框 */}
+      {editTarget && (
+        <ConfigFormDialog
+          title="编辑 AI 模型配置"
+          initial={{
+            name: editTarget.name,
+            api_key: editTarget.api_key,
+            base_url: editTarget.base_url,
+            model: editTarget.model,
+            api_type: editTarget.api_type,
+            preset: editTarget.preset,
+          }}
+          onSave={handleUpdate}
+          onCancel={() => setEditTarget(null)}
+        />
+      )}
+
+      {/* 删除确认 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-white font-semibold text-sm">确认删除</h3>
+            <p className="text-xs text-[#c8daea]">
+              确定要删除「{deleteConfirm.name}」吗？
+              {deleteConfirm.is_default && (
+                <span className="text-yellow-400 block mt-1">
+                  这是默认配置，删除后将自动选择最早创建的配置作为默认。
+                </span>
+              )}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-800 text-white rounded"
+              >
+                删除
+              </button>
             </div>
           </div>
-        ) : (
-          <p className="text-xs text-[#7a9bb8] pt-2">
-            {form.api_type === 'anthropic' ? t('llmSettings.supportInfoAnthropic') : t('llmSettings.supportInfo')}
-          </p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-is-maximized",
     "shell:allow-open",
-    "dialog:default"
+    "dialog:default",
+    "clipboard-manager:default"
   ]
 }

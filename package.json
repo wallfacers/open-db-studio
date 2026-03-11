@@ -26,6 +26,7 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "page-agent": "^1.5.6",
     "prismjs": "^1.30.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -36,6 +37,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1",
     "sql-formatter": "^15.7.2",
+    "zod": "^4.3.6",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

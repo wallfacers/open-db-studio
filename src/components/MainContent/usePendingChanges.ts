@@ -44,7 +44,7 @@ export function usePendingChanges() {
     }));
   }, []);
 
-  const discard = useCallback(() => setPending(EMPTY), []);
+  const discard = useCallback(() => setPending({ edits: [], clonedRows: [], deletedRowIdxs: [] }), []);
 
   const totalCount =
     pending.edits.length + pending.clonedRows.length + pending.deletedRowIdxs.length;

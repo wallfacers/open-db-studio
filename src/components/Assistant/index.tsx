@@ -78,7 +78,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const { chatHistory, isChatting, sendChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
   const { activeConnectionId } = useConnectionStore();
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
-  // TODO: 后续支持模型直接操作 SQL 编辑器，届时引入 useQueryStore 获取 setSql/activeTabId
+  // TODO: 未来支持 AI 直接写入编辑器时，在此处补充解构 setSql / activeTabId
 
   const [chatInput, setChatInput] = useState('');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);

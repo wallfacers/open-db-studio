@@ -10,6 +10,8 @@ import { IndexManager } from '../IndexManager';
 import { AiCreateTableDialog } from '../AiCreateTableDialog';
 import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
+import { DdlViewerDialog } from '../DdlViewerDialog';
+import { TruncateConfirmDialog } from '../TruncateConfirmDialog';
 import { useConnectionStore } from '../../store/connectionStore';
 import { Folder, FolderX } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
@@ -89,6 +91,8 @@ export const DBTree: React.FC<DBTreeProps> = ({
 
   const [tableManageDialog, setTableManageDialog] = useState<{ connectionId: number; tableName?: string; database?: string; schema?: string } | null>(null);
   const [indexManagerState, setIndexManagerState] = useState<{ connectionId: number; tableName: string } | null>(null);
+  const [ddlViewer, setDdlViewer] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string } | null>(null);
+  const [truncateConfirm, setTruncateConfirm] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string } | null>(null);
   const [showAiCreateTable, setShowAiCreateTable] = useState(false);
   const [editingConnId, setEditingConnId] = useState<number | null>(null);
   const [editingGroup, setEditingGroup] = useState<{ id: number; name: string; color: string | null } | null>(null);
@@ -256,12 +260,13 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onViewDdl={() => {
             const n = contextMenu.node;
-            showToast(`DDL: ${n.label}`, 'info');
+            setContextMenu(null);
+            setDdlViewer({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
           }}
           onTruncateTable={() => {
             const n = contextMenu.node;
-            if (!window.confirm(t('dbTree.confirmTruncateTable', { table: n.label }))) return;
-            showToast(`TRUNCATE TABLE ${n.label}`, 'info');
+            setContextMenu(null);
+            setTruncateConfirm({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
           }}
           onDropTable={() => {
             const n = contextMenu.node;
@@ -399,6 +404,32 @@ export const DBTree: React.FC<DBTreeProps> = ({
             setEditingGroup(null);
             useTreeStore.getState().init();
           }}
+        />
+      )}
+
+      {ddlViewer && (
+        <DdlViewerDialog
+          connectionId={ddlViewer.connectionId}
+          tableName={ddlViewer.tableName}
+          database={ddlViewer.database}
+          schema={ddlViewer.schema}
+          onClose={() => setDdlViewer(null)}
+        />
+      )}
+
+      {truncateConfirm && (
+        <TruncateConfirmDialog
+          connectionId={truncateConfirm.connectionId}
+          tableName={truncateConfirm.tableName}
+          database={truncateConfirm.database}
+          schema={truncateConfirm.schema}
+          onClose={() => setTruncateConfirm(null)}
+          onSuccess={() => {
+            const parentId = Array.from(useTreeStore.getState().nodes.values())
+              .find(n => n.label === truncateConfirm.tableName && n.nodeType === 'table')?.parentId ?? '';
+            if (parentId) refreshNode(parentId);
+          }}
+          showToast={showToast}
         />
       )}
     </div>

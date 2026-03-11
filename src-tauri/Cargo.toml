@@ -41,6 +41,7 @@ sqlx = { version = "0.8", features = [
 
 # HTTP 客户端（LLM 代理）
 reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
 
 # 错误处理
 thiserror = "1"

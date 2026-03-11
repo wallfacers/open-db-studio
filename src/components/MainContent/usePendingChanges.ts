@@ -30,6 +30,11 @@ export function usePendingChanges() {
     setPending(prev => ({ ...prev, clonedRows: [...prev.clonedRows, [...rowData]] }));
   }, []);
 
+  const addEmptyRow = useCallback((columnCount: number) => {
+    const emptyRow: RowData = new Array(columnCount).fill(null);
+    setPending(prev => ({ ...prev, clonedRows: [...prev.clonedRows, emptyRow] }));
+  }, []);
+
   const markDelete = useCallback((rowIdx: number) => {
     setPending(prev => {
       if (prev.deletedRowIdxs.includes(rowIdx)) return prev;
@@ -58,5 +63,5 @@ export function usePendingChanges() {
 
   const hasPending = totalCount > 0;
 
-  return { pending, editCell, cloneRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount };
+  return { pending, editCell, cloneRow, addEmptyRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount };
 }

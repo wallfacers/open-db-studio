@@ -5,6 +5,7 @@ import type { Connection, CreateConnectionRequest, TableMeta } from '../types';
 interface ConnectionState {
   connections: Connection[];
   activeConnectionId: number | null;
+  activeConnectionIds: Set<number>; // 所有已打开的连接 ID
   tables: TableMeta[];
   isLoading: boolean;
   error: string | null;
@@ -17,11 +18,15 @@ interface ConnectionState {
   setActiveConnection: (id: number | null) => void;
   disconnectConnection: (id: number) => void;
   loadTables: (connectionId: number) => Promise<void>;
+  // 管理已打开的连接
+  openConnection: (id: number) => void;
+  closeConnection: (id: number) => void;
 }
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
   connections: [],
   activeConnectionId: null,
+  activeConnectionIds: new Set<number>(),
   tables: [],
   isLoading: false,
   error: null,
@@ -87,4 +92,16 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       set({ error: String(e) });
     }
   },
+
+  openConnection: (id) => set((s) => {
+    const newIds = new Set(s.activeConnectionIds);
+    newIds.add(id);
+    return { activeConnectionIds: newIds };
+  }),
+
+  closeConnection: (id) => set((s) => {
+    const newIds = new Set(s.activeConnectionIds);
+    newIds.delete(id);
+    return { activeConnectionIds: newIds };
+  }),
 }));

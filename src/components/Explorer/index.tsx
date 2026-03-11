@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, RefreshCw, Search, X, DatabaseZap, FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTreeStore } from '../../store/treeStore';
+import { useConnectionStore } from '../../store/connectionStore';
 import { DBTree } from './DBTree';
 import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
@@ -36,12 +37,16 @@ export const Explorer: React.FC<ExplorerProps> = ({
 }) => {
   const { t } = useTranslation();
   const { init, nodes } = useTreeStore();
+  const { activeConnectionIds, openConnection, closeConnection } = useConnectionStore();
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
-  const [activeConnectionIds, setActiveConnectionIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    init();
+    // 仅首次挂载时初始化；若 store 已有数据（从设置页切回）则跳过，
+    // 避免 init() 内的 expandedIds: new Set() 清空已展开节点状态
+    if (useTreeStore.getState().nodes.size === 0) {
+      init();
+    }
   }, []);
 
   const handleOpenConnection = async (connectionId: number) => {
@@ -61,17 +66,13 @@ export const Explorer: React.FC<ExplorerProps> = ({
     }
 
     // 连接成功：标记为已连接并展开
-    setActiveConnectionIds(prev => new Set([...prev, connectionId]));
+    openConnection(connectionId);
     const { expandedIds, toggleExpand } = useTreeStore.getState();
     if (!expandedIds.has(nodeId)) toggleExpand(nodeId);
   };
 
   const handleCloseConnection = (connectionId: number) => {
-    setActiveConnectionIds(prev => {
-      const next = new Set(prev);
-      next.delete(connectionId);
-      return next;
-    });
+    closeConnection(connectionId);
 
     const nodeId = `conn_${connectionId}`;
     const store = useTreeStore.getState();

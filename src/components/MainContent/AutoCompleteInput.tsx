@@ -103,10 +103,7 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
   };
 
   const handleBlur = () => {
-    // 延迟触发 onChange，让用户有机会点击建议项
-    setTimeout(() => {
-      onChange(inputValue);
-    }, 200);
+    onChange(inputValue);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -238,6 +235,7 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
                   ? 'bg-[#1a2639] text-[#00c9a7]'
                   : 'text-[#c8daea] hover:bg-[#1a2639]'
               }`}
+              onMouseDown={e => e.preventDefault()}
               onClick={() => applySuggestion(col)}
               onMouseEnter={() => setHighlightIndex(idx)}
             >

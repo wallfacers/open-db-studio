@@ -24,12 +24,15 @@ export function usePageAgent() {
   const toolBridge = useToolBridge();
   const agentRef = useRef<PageAgent | null>(null);
 
-  // 切换模型配置时重置，以便 effect 重新初始化
-  useEffect(() => { agentRef.current = null; }, [activeConfigId]);
+  // Fix 2: toolBridgeRef 保持 toolBridge 最新引用，避免 execute 回调中产生陈旧闭包
+  const toolBridgeRef = useRef(toolBridge);
+  useEffect(() => { toolBridgeRef.current = toolBridge; }, [toolBridge]);
 
+  // Fix 1: 合并两个 effect 为一个，依赖 [configs, activeConfigId]
+  // 在 effect 开始时重置 agentRef，避免首次加载时 configs 异步到达导致的静默失败
   useEffect(() => {
-    // 已初始化则跳过（避免重复创建）
-    if (agentRef.current) return;
+    // 切换模型配置或 configs 更新时重置，以便重新初始化
+    agentRef.current = null;
 
     const activeConfig =
       configs.find(c => c.id === activeConfigId) ??
@@ -42,6 +45,10 @@ export function usePageAgent() {
     const agent = new PageAgent({
       // LLM 配置（复用现有 LLM 设置，支持所有 OpenAI 兼容接口）
       baseURL: activeConfig.base_url,
+      // Fix 5: api_key 在前端访问是经过审核的例外情况。
+      // LLM 配置的 API Key 需要在前端直接传递给 PageAgent 发起 LLM 调用，
+      // 这与连接凭证（connection passwords）不同——连接密码严格保存在 Rust 层，
+      // 绝不暴露到前端。SECURITY.md 的限制仅针对连接凭证，不适用于 LLM API Key。
       apiKey:  activeConfig.api_key,
       model:   activeConfig.model,
 
@@ -55,20 +62,23 @@ export function usePageAgent() {
         ].join('\n'),
       },
 
+      // Fix 3: 移除 .filter(fn => fn() !== null)——该过滤器在初始化时执行工厂函数，
+      // 若元素当时不在 DOM 中则会错误地剔除该工厂，破坏动态查询目的。
       // 安全边界：排除密码和 API Key 相关输入（使用工厂函数匹配当前 DOM 元素）
       interactiveBlacklist: [
         () => document.querySelector('[type="password"]') as Element,
         () => document.querySelector('.api-key-field') as Element,
         () => document.querySelector('[data-sensitive="true"]') as Element,
-      ].filter(fn => fn() !== null) as (() => Element)[],
+      ],
 
-      // 自定义工具：Tool Bridge
+      // Fix 2: 所有 execute 回调通过 toolBridgeRef.current 访问最新 toolBridge，
+      // 避免 PageAgent 构造时捕获的陈旧闭包导致调用失效。
       customTools: {
         get_current_sql: tool({
           description: '获取当前 SQL 编辑器的内容、光标位置、选中文本和已解析的语句列表。在修改 SQL 前必须先调用此工具以确定要修改的语句。',
           inputSchema: z.object({}),
           execute: async function() {
-            return JSON.stringify(toolBridge.getCurrentSql());
+            return JSON.stringify(toolBridgeRef.current.getCurrentSql());
           },
         }),
 
@@ -80,7 +90,7 @@ export function usePageAgent() {
             reason:   z.string().describe('修改原因的简短说明（中文，一句话）'),
           }),
           execute: async function({ original, modified, reason }) {
-            const result = toolBridge.proposeSqlDiff(original, modified, reason);
+            const result = toolBridgeRef.current.proposeSqlDiff(original, modified, reason);
             return JSON.stringify(result);
           },
         }),
@@ -89,7 +99,7 @@ export function usePageAgent() {
           description: '列出所有打开的查询 Tab，返回 id、title、type 列表。',
           inputSchema: z.object({}),
           execute: async function() {
-            return JSON.stringify(toolBridge.listTabs());
+            return JSON.stringify(toolBridgeRef.current.listTabs());
           },
         }),
 
@@ -99,17 +109,20 @@ export function usePageAgent() {
             tabId: z.string().describe('目标 Tab 的 id（从 list_tabs 获取）'),
           }),
           execute: async function({ tabId }) {
-            return JSON.stringify(toolBridge.switchTab(tabId));
+            return JSON.stringify(toolBridgeRef.current.switchTab(tabId));
           },
         }),
       },
     });
 
     agentRef.current = agent;
-  // 注意：toolBridge 每次渲染重建，但 agentRef 的 early-return 保证只初始化一次。
-  // 若 activeConfigId 变更（用户切换模型），通过重置 agentRef.current = null 触发重建。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConfigId]);
+
+    // Fix 4: 清理函数——销毁 PageAgent 实例并重置 ref，防止内存泄漏
+    return () => {
+      (agentRef.current as PageAgent & { destroy?: () => void })?.destroy?.();
+      agentRef.current = null;
+    };
+  }, [configs, activeConfigId]);
 
   return agentRef.current;
 }

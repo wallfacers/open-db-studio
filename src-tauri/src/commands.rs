@@ -116,9 +116,25 @@ fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
 #[tauri::command]
 pub async fn ai_chat(message: String, context: ChatContext) -> AppResult<String> {
     let client = build_llm_client()?;
-    let mut messages = context.history.clone();
+    let system_prompt = include_str!("../../prompts/chat_assistant.txt");
+    let mut messages = vec![ChatMessage { role: "system".into(), content: system_prompt.to_string() }];
+    messages.extend(context.history.clone());
     messages.push(ChatMessage { role: "user".into(), content: message });
     client.chat(messages).await
+}
+
+#[tauri::command]
+pub async fn ai_chat_stream(
+    message: String,
+    context: ChatContext,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+) -> AppResult<()> {
+    let client = build_llm_client()?;
+    let system_prompt = include_str!("../../prompts/chat_assistant.txt");
+    let mut messages = vec![ChatMessage { role: "system".into(), content: system_prompt.to_string() }];
+    messages.extend(context.history.clone());
+    messages.push(ChatMessage { role: "user".into(), content: message });
+    client.chat_stream(messages, &channel).await
 }
 
 #[tauri::command]

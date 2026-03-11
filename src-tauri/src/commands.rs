@@ -416,6 +416,14 @@ pub async fn insert_row(
     columns: Vec<String>,
     values: Vec<Option<String>>,
 ) -> AppResult<()> {
+    if columns.is_empty() {
+        return Err(crate::AppError::Other("columns must not be empty".to_string()));
+    }
+    if columns.len() != values.len() {
+        return Err(crate::AppError::Other(
+            format!("columns({}) and values({}) length mismatch", columns.len(), values.len())
+        ));
+    }
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = match database.as_deref().filter(|s| !s.is_empty()) {
         Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
@@ -446,7 +454,12 @@ pub async fn insert_row(
         col_list.join(", "),
         val_list.join(", ")
     );
-    ds.execute(&sql).await?;
+    let result = ds.execute(&sql).await?;
+    if result.row_count == 0 {
+        return Err(crate::AppError::Other(
+            format!("Insert into table '{}' affected 0 rows", table)
+        ));
+    }
     Ok(())
 }
 

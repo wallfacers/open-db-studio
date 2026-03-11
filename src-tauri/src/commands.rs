@@ -36,9 +36,18 @@ pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest)
 // ============ 查询执行 ============
 
 #[tauri::command]
-pub async fn execute_query(connection_id: i64, sql: String) -> AppResult<QueryResult> {
+pub async fn execute_query(
+    connection_id: i64,
+    sql: String,
+    database: Option<String>,
+    schema: Option<String>,
+) -> AppResult<QueryResult> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = crate::datasource::create_datasource_with_context(
+        &config,
+        database.as_deref(),
+        schema.as_deref(),
+    ).await?;
 
     let result = ds.execute(&sql).await;
 
@@ -219,12 +228,16 @@ pub async fn save_query(
 // ============ DB 管理 ============
 
 #[tauri::command]
-pub async fn get_table_detail(connection_id: i64, table: String) -> AppResult<crate::datasource::TableDetail> {
+pub async fn get_table_detail(connection_id: i64, database: Option<String>, schema: Option<String>, table: String) -> AppResult<crate::datasource::TableDetail> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
-    let columns = ds.get_columns(&table).await?;
-    let indexes = ds.get_indexes(&table).await?;
-    let foreign_keys = ds.get_foreign_keys(&table).await?;
+    let ds = match database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+    let schema_ref = schema.as_deref().filter(|s| !s.is_empty());
+    let columns = ds.get_columns(&table, schema_ref).await?;
+    let indexes = ds.get_indexes(&table, schema_ref).await?;
+    let foreign_keys = ds.get_foreign_keys(&table, schema_ref).await?;
     Ok(crate::datasource::TableDetail { name: table, columns, indexes, foreign_keys })
 }
 
@@ -245,17 +258,42 @@ pub async fn get_table_ddl(connection_id: i64, table: String) -> AppResult<Strin
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableDataParams {
     pub connection_id: i64,
+    pub database: Option<String>,
     pub table: String,
+    pub schema: Option<String>,
     pub page: u32,
     pub page_size: u32,
     pub where_clause: Option<String>,
     pub order_clause: Option<String>,
 }
 
+/// 构建带 schema 前缀的表名（PG/Oracle 用）
+fn qualified_table_pg(schema: Option<&str>, table: &str) -> String {
+    match schema.filter(|s| !s.is_empty()) {
+        Some(s) => format!("\"{}\".\"{}\"", s.replace('"', "\"\""), table.replace('"', "\"\"")),
+        None => format!("\"{}\"", table.replace('"', "\"\"")),
+    }
+}
+
+fn qualified_table_mysql(table: &str) -> String {
+    format!("`{}`", table.replace('`', "``"))
+}
+
+fn qualified_table(driver: &str, schema: Option<&str>, table: &str) -> String {
+    if driver == "mysql" {
+        qualified_table_mysql(table)
+    } else {
+        qualified_table_pg(schema, table)
+    }
+}
+
 #[tauri::command]
 pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasource::QueryResult> {
     let config = crate::db::get_connection_config(params.connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = match params.database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
 
     // 限制最大页面大小，防止大量数据查询耗尽内存
     if params.page_size > 10_000 {
@@ -277,16 +315,8 @@ pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasou
         .map(|s| format!(" ORDER BY {}", s))
         .unwrap_or_default();
 
-    let sql = match config.driver.as_str() {
-        "mysql" => format!(
-            "SELECT * FROM `{}`{}{} LIMIT {} OFFSET {}",
-            params.table.replace('`', "``"), where_part, order_part, params.page_size, offset
-        ),
-        _ => format!(
-            "SELECT * FROM \"{}\"{}{} LIMIT {} OFFSET {}",
-            params.table.replace('"', "\"\""), where_part, order_part, params.page_size, offset
-        ),
-    };
+    let tbl = qualified_table(&config.driver, params.schema.as_deref(), &params.table);
+    let sql = format!("SELECT * FROM {}{}{} LIMIT {} OFFSET {}", tbl, where_part, order_part, params.page_size, offset);
 
     ds.execute(&sql).await
 }
@@ -294,26 +324,32 @@ pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasou
 #[tauri::command]
 pub async fn update_row(
     connection_id: i64,
+    database: Option<String>,
     table: String,
+    schema: Option<String>,
     pk_column: String,
     pk_value: String,
     column: String,
     new_value: String,
 ) -> AppResult<()> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = match database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+    let tbl = qualified_table(&config.driver, schema.as_deref(), &table);
     let sql = match config.driver.as_str() {
         "mysql" => format!(
-            "UPDATE `{}` SET `{}` = '{}' WHERE `{}` = '{}'",
-            table.replace('`', "``"),
+            "UPDATE {} SET `{}` = '{}' WHERE `{}` = '{}'",
+            tbl,
             column.replace('`', "``"),
             new_value.replace('\'', "\\'"),
             pk_column.replace('`', "``"),
             pk_value.replace('\'', "\\'")
         ),
         _ => format!(
-            "UPDATE \"{}\" SET \"{}\" = '{}' WHERE \"{}\" = '{}'",
-            table.replace('"', "\"\""),
+            "UPDATE {} SET \"{}\" = '{}' WHERE \"{}\" = '{}'",
+            tbl,
             column.replace('"', "\"\""),
             new_value.replace('\'', "''"),
             pk_column.replace('"', "\"\""),
@@ -332,22 +368,28 @@ pub async fn update_row(
 #[tauri::command]
 pub async fn delete_row(
     connection_id: i64,
+    database: Option<String>,
     table: String,
+    schema: Option<String>,
     pk_column: String,
     pk_value: String,
 ) -> AppResult<()> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = match database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+    let tbl = qualified_table(&config.driver, schema.as_deref(), &table);
     let sql = match config.driver.as_str() {
         "mysql" => format!(
-            "DELETE FROM `{}` WHERE `{}` = '{}'",
-            table.replace('`', "``"),
+            "DELETE FROM {} WHERE `{}` = '{}'",
+            tbl,
             pk_column.replace('`', "``"),
             pk_value.replace('\'', "\\'")
         ),
         _ => format!(
-            "DELETE FROM \"{}\" WHERE \"{}\" = '{}'",
-            table.replace('"', "\"\""),
+            "DELETE FROM {} WHERE \"{}\" = '{}'",
+            tbl,
             pk_column.replace('"', "\"\""),
             pk_value.replace('\'', "''")
         ),
@@ -366,7 +408,9 @@ pub async fn delete_row(
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportParams {
     pub connection_id: i64,
+    pub database: Option<String>,
     pub table: String,
+    pub schema: Option<String>,
     pub format: String, // "csv" | "json" | "sql"
     pub where_clause: Option<String>,
     pub output_path: String,
@@ -375,17 +419,18 @@ pub struct ExportParams {
 #[tauri::command]
 pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
     let config = crate::db::get_connection_config(params.connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = match params.database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
 
     let where_part = params.where_clause
         .filter(|s| !s.trim().is_empty())
         .map(|s| format!(" WHERE {}", s))
         .unwrap_or_default();
 
-    let sql = match config.driver.as_str() {
-        "mysql" => format!("SELECT * FROM `{}`{}", params.table.replace('`', "``"), where_part),
-        _ => format!("SELECT * FROM \"{}\"{}", params.table.replace('"', "\"\""), where_part),
-    };
+    let tbl = qualified_table(&config.driver, params.schema.as_deref(), &params.table);
+    let sql = format!("SELECT * FROM {}{}", tbl, where_part);
 
     let result = ds.execute(&sql).await?;
 

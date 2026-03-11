@@ -207,7 +207,8 @@ export const MainContent: React.FC<MainContentProps> = ({
     const selectedSql = (selection && !selection.isEmpty())
       ? editor?.getModel()?.getValueInRange(selection)?.trim()
       : undefined;
-    executeQuery(connId, activeTab, selectedSql || undefined);
+    const schema = activeTabObj?.queryContext?.schema ?? null;
+    executeQuery(connId, activeTab, selectedSql || undefined, database, schema);
   }, [activeTabObj, activeTab, showToast, executeQuery, t]);
 
   const handleClear = () => {

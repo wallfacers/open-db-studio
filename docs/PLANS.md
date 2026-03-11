@@ -24,10 +24,11 @@
 - [x] 查询历史（最近 500 条，可搜索重用）
 - [x] 基础 AI 生成 SQL（注入 Schema 上下文）
 - [x] AI SQL 解释（选中 SQL → 中文解释）
+- [x] TableDataView 行操作增强（内联编辑、批量提交）
+- [x] 表右键菜单扩展（查看 DDL、截断表、可视化编辑器）
 
 ### 进行中
-- [ ] TableDataView 行操作增强（内联编辑、批量提交）- 见 `docs/plans/2026-03-11-table-data-view-row-operations-impl.md`
-- [ ] 表右键菜单扩展（查看 DDL、截断表、可视化编辑器）- 见 `docs/plans/2026-03-11-table-context-menu-and-visual-editor.md`
+- (无)
 
 ### 待开始
 - [ ] Oracle 驱动实现（oracle crate）
@@ -44,7 +45,7 @@
 - [x] 索引管理（创建/删除，唯一索引、复合索引）
 - [x] 视图 / 存储过程 / 函数管理（基础面板）
 - [x] ERD 可视化（外键自动生成 ER 图，接入真实 Schema + FK 连线）
-- [ ] 表右键菜单扩展（查看 DDL、截断表）- 进行中
+- [x] 表右键菜单扩展（查看 DDL、截断表）
 
 ### SQL 编辑器增强
 - [x] Schema-aware 自动补全（表名 → 字段提示，Monaco 集成）

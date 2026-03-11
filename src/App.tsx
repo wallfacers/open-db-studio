@@ -34,7 +34,6 @@ export default function App() {
     { id: 'birth_analysis', type: 'query', title: 'birth_analysis', db: 'demo' },
     { id: 'er_diagram', type: 'er_diagram', title: 'ER Diagram', db: 'demo' }
   ]);
-  const [resultsTab, setResultsTab] = useState('result1');
   
   const [sqlContent, setSqlContent] = useState(`SELECT analysis_date, time_period, birth_rate, growth_rate, gender_ratio,
 avg_birth_weight
@@ -157,8 +156,6 @@ JOIN
 
   const handleExecute = () => {
     setIsExecuting(true);
-    setResultsTab('result1');
-    
     // Simulate execution delay
     setTimeout(() => {
       setIsExecuting(false);
@@ -318,8 +315,6 @@ JOIN
         setIsTableMenuOpen={setIsTableMenuOpen}
         resultsHeight={resultsHeight}
         handleResultsResize={handleResultsResize}
-        resultsTab={resultsTab}
-        setResultsTab={setResultsTab}
         isPageSizeMenuOpen={isPageSizeMenuOpen}
         setIsPageSizeMenuOpen={setIsPageSizeMenuOpen}
         isExportMenuOpen={isExportMenuOpen}

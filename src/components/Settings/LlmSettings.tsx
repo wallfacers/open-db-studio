@@ -427,7 +427,8 @@ export function LlmSettingsPanel() {
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(config)}
-                  className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1"
+                  disabled={config.test_status === 'testing'}
+                  className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Trash2 size={11} />{t('llmSettings.delete')}
                 </button>

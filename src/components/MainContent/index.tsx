@@ -97,13 +97,16 @@ export const MainContent: React.FC<MainContentProps> = ({
   updateTabContext,
 }) => {
   const { t } = useTranslation();
-  const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis } = useQueryStore();
+  const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis,
+          removeResult, removeResultsLeft, removeResultsRight, clearResults } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
   const { nodes } = useTreeStore();
   const { explainSql, isExplaining, optimizeSql, isOptimizing } = useAiStore();
   const [explanation, setExplanation] = useState<string | null>(null);
   const [optimization, setOptimization] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const resultContextMenuRef = useRef<HTMLDivElement>(null);
   // 上下文选择器动态 schema 缓存：key = "connId/database"
   const [contextSchemas, setContextSchemas] = useState<Record<string, string[]>>({});
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -230,6 +233,9 @@ export const MainContent: React.FC<MainContentProps> = ({
     const handler = (e: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu(null);
+      }
+      if (resultContextMenuRef.current && !resultContextMenuRef.current.contains(e.target as Node)) {
+        setResultContextMenu(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -467,7 +473,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {/* Results Area */}
             <div className="flex flex-col bg-[#080d12] flex-shrink-0" style={{ height: resultsHeight }}>
               {/* Result tabs — one per result set, numbered from 1 */}
-              <div className="flex items-center bg-[#0d1117] border-b border-[#1e2d42]">
+              <div className="flex items-center bg-[#0d1117] border-b border-[#1e2d42] overflow-x-auto">
                 {currentResults.length === 0 ? (
                   <div className="px-4 h-[38px] flex items-center text-xs text-[#00c9a7] border-t-2 border-t-[#00c9a7] border-r border-r-[#1e2d42] bg-[#080d12]">
                     {t('mainContent.resultSet')}
@@ -476,10 +482,19 @@ export const MainContent: React.FC<MainContentProps> = ({
                   currentResults.map((_, idx) => (
                     <div
                       key={idx}
-                      className={`px-4 h-[38px] flex items-center text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                      className={`group px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
                       onClick={() => setSelectedResultIdx(idx)}
+                      onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                     >
-                      {t('mainContent.resultSet')} {idx + 1}
+                      <span>{t('mainContent.resultSet')} {idx + 1}</span>
+                      <span
+                        className="opacity-0 group-hover:opacity-100 hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeResult(activeTab, idx);
+                          if (selectedResultIdx >= idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
+                        }}
+                      >✕</span>
                     </div>
                   ))
                 )}
@@ -608,6 +623,60 @@ export const MainContent: React.FC<MainContentProps> = ({
             onClick={() => {
               closeAllTabs();
               setContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeAll')}
+          </button>
+        </div>
+      )}
+
+      {/* 结果集 Tab 右键菜单 */}
+      {resultContextMenu && (
+        <div
+          ref={resultContextMenuRef}
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          style={{ left: resultContextMenu.x, top: resultContextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white"
+            onClick={() => {
+              removeResult(activeTab, resultContextMenu.idx);
+              if (selectedResultIdx >= resultContextMenu.idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
+              setResultContextMenu(null);
+            }}
+          >
+            {t('mainContent.close')}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={resultContextMenu.idx === 0}
+            onClick={() => {
+              removeResultsLeft(activeTab, resultContextMenu.idx);
+              setSelectedResultIdx(0);
+              setResultContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeLeft')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={resultContextMenu.idx === currentResults.length - 1}
+            onClick={() => {
+              removeResultsRight(activeTab, resultContextMenu.idx);
+              if (selectedResultIdx > resultContextMenu.idx) setSelectedResultIdx(resultContextMenu.idx);
+              setResultContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeRight')}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#003d2f] hover:text-white"
+            onClick={() => {
+              clearResults(activeTab);
+              setSelectedResultIdx(0);
+              setResultContextMenu(null);
             }}
           >
             {t('mainContent.closeAll')}

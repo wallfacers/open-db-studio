@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2 } from 'lucide-react';
+import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -8,6 +8,50 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ThinkingBlock } from './ThinkingBlock';
 import { useAiStore, useConnectionStore } from '../../store';
 import type { ToastLevel } from '../Toast';
+
+const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, code }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [code]);
+
+  return (
+    // TODO: 后续支持模型直接操作 SQL 编辑器
+    <div className="my-2 rounded overflow-hidden border border-[#1e2d42]">
+      {/* 顶部栏 */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
+        <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+        >
+          {copied ? (
+            <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
+          ) : (
+            <><Copy size={12} /><span>复制</span></>
+          )}
+        </button>
+      </div>
+      {/* 代码内容 */}
+      <SyntaxHighlighter
+        style={oneDark}
+        language={language || 'plaintext'}
+        PreTag="div"
+        customStyle={{
+          margin: 0,
+          borderRadius: 0,
+          fontSize: '12px',
+          background: '#0d1117',
+        }}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  );
+};
 
 interface AssistantProps {
   isAssistantOpen: boolean;
@@ -117,20 +161,10 @@ export const Assistant: React.FC<AssistantProps> = ({
                       const isBlock = Boolean(match);
                       if (isBlock) {
                         return (
-                          // TODO: 后续支持模型直接操作 SQL 编辑器
-                          <SyntaxHighlighter
-                            style={oneDark}
+                          <CodeBlock
                             language={language}
-                            PreTag="div"
-                            customStyle={{
-                              margin: '8px 0',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              border: '1px solid #1e2d42',
-                            }}
-                          >
-                            {String(children).replace(/\n$/, '')}
-                          </SyntaxHighlighter>
+                            code={String(children).replace(/\n$/, '')}
+                          />
                         );
                       }
                       return (

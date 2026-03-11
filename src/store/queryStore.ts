@@ -2,6 +2,37 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult, QueryHistory, Tab } from '../types';
 
+/** 判断是否为返回结果集的查询语句 */
+function isSelectLike(sql: string): boolean {
+  const s = sql.trim().toUpperCase();
+  return (
+    s.startsWith('SELECT') ||
+    s.startsWith('SHOW') ||
+    s.startsWith('EXPLAIN') ||
+    s.startsWith('WITH') ||
+    s.startsWith('DESC ') ||
+    s.startsWith('DESCRIBE ') ||
+    s.startsWith('CALL')
+  );
+}
+
+/** 从 SQL 提取操作类型关键字 */
+function getSqlType(sql: string): string {
+  const kw = sql.trim().toUpperCase().split(/\s+/)[0] ?? '';
+  const labels: Record<string, string> = {
+    INSERT: 'INSERT', UPDATE: 'UPDATE', DELETE: 'DELETE',
+    CREATE: 'CREATE', ALTER: 'ALTER', DROP: 'DROP',
+    TRUNCATE: 'TRUNCATE', RENAME: 'RENAME',
+  };
+  return labels[kw] ?? kw;
+}
+
+/** 截断 SQL 用于显示摘要 */
+function truncateSql(sql: string, max = 40): string {
+  const s = sql.replace(/\s+/g, ' ').trim();
+  return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
 interface QueryState {
   tabs: Tab[];
   activeTabId: string;
@@ -62,14 +93,17 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';
     if (!sql.trim()) return;
 
-    // Split by semicolon and filter out empty statements
     const statements = sql
       .split(';')
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
     set({ isExecuting: true, error: null, diagnosis: null });
-    const resultList: QueryResult[] = [];
+
+    interface StmtResult { stmt: string; result: QueryResult }
+    const selectResults: StmtResult[] = [];
+    const dmlResults: StmtResult[] = [];
+
     try {
       for (const stmt of statements) {
         const result = await invoke<QueryResult>('execute_query', {
@@ -78,17 +112,45 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           database: database ?? null,
           schema: schema ?? null,
         });
-        resultList.push(result);
+        result.sql = stmt;
+        if (isSelectLike(stmt) || result.columns.length > 0) {
+          result.kind = 'select';
+          selectResults.push({ stmt, result });
+        } else {
+          dmlResults.push({ stmt, result });
+        }
       }
-      set(s => ({ results: { ...s.results, [tabId]: resultList }, isExecuting: false }));
+
+      const finalList: QueryResult[] = selectResults.map(r => r.result);
+
+      if (dmlResults.length > 0) {
+        const totalDuration = dmlResults.reduce((sum, r) => sum + r.result.duration_ms, 0);
+        const dmlReport: QueryResult = {
+          columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
+          rows: dmlResults.map((item, i) => [
+            String(i + 1),
+            getSqlType(item.stmt),
+            truncateSql(item.stmt),
+            String(item.result.row_count),
+            String(item.result.duration_ms),
+            '✓ 成功',
+          ]),
+          row_count: dmlResults.length,
+          duration_ms: totalDuration,
+          kind: 'dml-report',
+          sql: '',
+        };
+        finalList.push(dmlReport);
+      }
+
+      set(s => ({ results: { ...s.results, [tabId]: finalList }, isExecuting: false }));
     } catch (e) {
       const errorMsg = String(e);
       set({ error: errorMsg, isExecuting: false });
-      // 自动诊断（非阻塞，不影响主流程）
       const sql = get().sqlContent[tabId] ?? '';
       invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId })
         .then(diagnosis => set({ diagnosis }))
-        .catch(() => {}); // 诊断失败静默处理
+        .catch(() => {});
     }
   },
 

@@ -45,11 +45,22 @@ impl DataSource for MySqlDataSource {
             .map(|row| {
                 (0..columns.len())
                     .map(|i| {
-                        row.try_get::<Option<String>, _>(i)
-                            .ok()
-                            .flatten()
-                            .map(serde_json::Value::String)
-                            .unwrap_or(serde_json::Value::Null)
+                        // Try multiple types in order of preference
+                        if let Ok(val) = row.try_get::<Option<String>, _>(i) {
+                            val.map(serde_json::Value::String)
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<i64>, _>(i) {
+                            val.map(|v| serde_json::json!(v))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<f64>, _>(i) {
+                            val.map(|v| serde_json::json!(v))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<bool>, _>(i) {
+                            val.map(|v| serde_json::json!(v))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else {
+                            serde_json::Value::Null
+                        }
                     })
                     .collect()
             })

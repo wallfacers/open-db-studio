@@ -66,10 +66,21 @@ impl DataSource for SqlServerDataSource {
 
         let result_rows: Vec<Vec<serde_json::Value>> = first_set.iter().map(|row| {
             (0..columns.len()).map(|i| {
-                let val: Option<&str> = row.try_get(i).ok().flatten();
-                match val {
-                    Some(s) => serde_json::Value::String(s.to_string()),
-                    None => serde_json::Value::Null,
+                // tiberius try_get returns Result<Option<R>> where R is the target type
+                if let Ok(Some(val)) = row.try_get::<&str, _>(i) {
+                    serde_json::Value::String(val.to_string())
+                } else if let Ok(Some(val)) = row.try_get::<i64, _>(i) {
+                    serde_json::json!(val)
+                } else if let Ok(Some(val)) = row.try_get::<i32, _>(i) {
+                    serde_json::json!(val)
+                } else if let Ok(Some(val)) = row.try_get::<f64, _>(i) {
+                    serde_json::json!(val)
+                } else if let Ok(Some(val)) = row.try_get::<f32, _>(i) {
+                    serde_json::json!(val)
+                } else if let Ok(Some(val)) = row.try_get::<bool, _>(i) {
+                    serde_json::json!(val)
+                } else {
+                    serde_json::Value::Null
                 }
             }).collect()
         }).collect();

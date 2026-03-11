@@ -111,6 +111,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         editsByRow.get(edit.rowIdx)!.push(edit);
       }
       for (const [rowIdx, edits] of editsByRow.entries()) {
+        if (pending.deletedRowIdxs.includes(rowIdx)) continue;
         const pkColIdx = data.columns.indexOf(pkColumn);
         const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
         for (const edit of edits) {
@@ -328,7 +329,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               markDelete(contextMenu.rowIdx);
             }
           }}
-          onPaste={text => editCell(contextMenu.rowIdx, contextMenu.colIdx, text)}
+          onPaste={text => { if (contextMenu.colIdx >= 0) editCell(contextMenu.rowIdx, contextMenu.colIdx, text); }}
           showToast={showToast}
         />
       )}

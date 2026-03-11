@@ -6,7 +6,9 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ThinkingBlock } from './ThinkingBlock';
+import { DiffPanel } from './DiffPanel';
 import { useAiStore, useConnectionStore } from '../../store';
+import { useQueryStore } from '../../store/queryStore';
 import type { ToastLevel } from '../Toast';
 
 const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, code }) => {
@@ -75,6 +77,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const { t } = useTranslation();
   const { chatHistory, isChatting, sendChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
   const { activeConnectionId } = useConnectionStore();
+  const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   // TODO: 后续支持模型直接操作 SQL 编辑器，届时引入 useQueryStore 获取 setSql/activeTabId
 
   const [chatInput, setChatInput] = useState('');
@@ -234,6 +237,15 @@ export const Assistant: React.FC<AssistantProps> = ({
         })}
         <div ref={chatEndRef} />
       </div>
+
+      {/* SQL Diff 确认面板 */}
+      {pendingDiff && (
+        <DiffPanel
+          proposal={pendingDiff}
+          onApply={applyDiff}
+          onCancel={cancelDiff}
+        />
+      )}
 
       {/* Input Area */}
       <div className="p-3 border-t border-[#1e2d42]">

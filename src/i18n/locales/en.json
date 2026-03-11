@@ -126,6 +126,8 @@
     "openTableData": "Open Table Data",
     "editTableStructure": "Edit Table Structure",
     "manageIndexes": "Manage Indexes",
+    "viewDdl": "View DDL",
+    "truncateTable": "Truncate Table",
     "dropTable": "Drop Table",
     "openViewData": "Open View Data",
     "dropView": "Drop View",
@@ -228,7 +230,19 @@
     "confirmDelete": "Delete this row?",
     "updateSuccess": "Updated successfully",
     "deleteSuccess": "Deleted successfully",
-    "rowsPerPage": "rows / page"
+    "rowsPerPage": "rows / page",
+    "commit": "Commit",
+    "commitWithCount": "Commit({{count}})",
+    "discardChanges": "Discard Changes",
+    "copyCellValue": "Copy Cell",
+    "copyRow": "Copy Row",
+    "copyAsInsertSql": "INSERT SQL",
+    "copyAsUpdateSql": "UPDATE SQL",
+    "copyAsDeleteSql": "DELETE SQL",
+    "copyAsSql": "Copy as SQL",
+    "sqlCopied": "Copied to clipboard",
+    "commitSuccess": "Committed successfully",
+    "commitFailed": "Commit failed"
   },
   "queryHistory": {
     "selectConnectionFirst": "Please select a connection first",
@@ -341,7 +355,33 @@
     "createSuccess": "Table created successfully",
     "alterSuccess": "Table altered successfully",
     "dropSuccess": "Table dropped successfully",
-    "manageIndexes": "Manage Indexes"
+    "manageIndexes": "Manage Indexes",
+    "addColumn": "Add Column",
+    "columnName": "Column Name",
+    "dataType": "Type",
+    "length": "Length",
+    "nullable": "Nullable",
+    "defaultValue": "Default",
+    "primaryKey": "PK",
+    "alterPreview": "ALTER SQL Preview",
+    "executeAlter": "Execute ALTER",
+    "createPreview": "CREATE SQL Preview",
+    "executeCreate": "Create Table",
+    "noChanges": "-- No changes",
+    "orderNotSupported": "-- PostgreSQL does not support column reordering, order changes ignored",
+    "loadFailed": "Failed to load table structure"
+  },
+  "ddlViewer": {
+    "title": "View DDL",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "truncateConfirm": {
+    "title": "Truncate Table",
+    "warning": "This operation will delete all data in table {{table}} and cannot be undone.",
+    "confirm": "Confirm Truncate",
+    "success": "Truncated successfully",
+    "error": "Truncate failed"
   },
   "indexManager": {
     "title": "Index Manager",

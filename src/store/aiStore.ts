@@ -1,48 +1,100 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmSettings, ChatMessage } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage } from '../types';
 
 interface AiState {
-  isGenerating: boolean;
-  isExplaining: boolean;
-  settings: LlmSettings | null;
-  error: string | null;
+  // 配置列表
+  configs: LlmConfig[];
+  loadConfigs: () => Promise<void>;
+  createConfig: (input: CreateLlmConfigInput) => Promise<void>;
+  updateConfig: (id: number, input: UpdateLlmConfigInput) => Promise<void>;
+  deleteConfig: (id: number) => Promise<void>;
+  setDefaultConfig: (id: number) => Promise<void>;
+  testConfig: (id: number) => Promise<void>;
 
-  // Multi-turn chat
+  // AI 面板当前选中的配置（null = 使用 default）
+  activeConfigId: number | null;
+  setActiveConfigId: (id: number | null) => void;
+
+  // 多轮对话
   chatHistory: ChatMessage[];
   isChatting: boolean;
   sendChat: (message: string, connectionId: number | null) => Promise<string>;
   clearHistory: () => void;
 
-  loadSettings: () => Promise<void>;
-  saveSettings: (settings: LlmSettings) => Promise<void>;
-  generateSql: (prompt: string, connectionId: number) => Promise<string>;
-  explainSql: (sql: string, connectionId: number) => Promise<string>;
+  // AI 功能
+  isGenerating: boolean;
+  isExplaining: boolean;
   isOptimizing: boolean;
   isDiagnosing: boolean;
   isCreatingTable: boolean;
+  error: string | null;
+  generateSql: (prompt: string, connectionId: number) => Promise<string>;
+  explainSql: (sql: string, connectionId: number) => Promise<string>;
   optimizeSql: (sql: string, connectionId: number) => Promise<string>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }
 
-export const useAiStore = create<AiState>((set) => ({
+export const useAiStore = create<AiState>((set, get) => ({
+  configs: [],
+  activeConfigId: null,
+  chatHistory: [],
+  isChatting: false,
   isGenerating: false,
   isExplaining: false,
   isOptimizing: false,
   isDiagnosing: false,
   isCreatingTable: false,
-  settings: null,
   error: null,
 
-  // Multi-turn chat
-  chatHistory: [],
-  isChatting: false,
+  setActiveConfigId: (id) => set({ activeConfigId: id }),
+
+  loadConfigs: async () => {
+    const configs = await invoke<LlmConfig[]>('list_llm_configs');
+    set({ configs });
+  },
+
+  createConfig: async (input) => {
+    await invoke('create_llm_config', { input });
+    await get().loadConfigs();
+  },
+
+  updateConfig: async (id, input) => {
+    await invoke('update_llm_config', { id, input });
+    await get().loadConfigs();
+  },
+
+  deleteConfig: async (id) => {
+    await invoke('delete_llm_config', { id });
+    set((s) => ({
+      activeConfigId: s.activeConfigId === id ? null : s.activeConfigId,
+    }));
+    await get().loadConfigs();
+  },
+
+  setDefaultConfig: async (id) => {
+    await invoke('set_default_llm_config', { id });
+    await get().loadConfigs();
+  },
+
+  testConfig: async (id) => {
+    set((s) => ({
+      configs: s.configs.map((c) =>
+        c.id === id ? { ...c, test_status: 'testing' as const } : c
+      ),
+    }));
+    try {
+      await invoke('test_llm_config', { id });
+    } finally {
+      await get().loadConfigs();
+    }
+  },
 
   clearHistory: () => set({ chatHistory: [] }),
 
   sendChat: async (message, connectionId) => {
-    set(s => ({
+    set((s) => ({
       isChatting: true,
       chatHistory: [...s.chatHistory, { role: 'user', content: message }],
     }));
@@ -51,13 +103,13 @@ export const useAiStore = create<AiState>((set) => ({
         prompt: message,
         connectionId: connectionId ?? 0,
       });
-      set(s => ({
+      set((s) => ({
         chatHistory: [...s.chatHistory, { role: 'assistant', content: reply }],
         isChatting: false,
       }));
       return reply;
     } catch (e) {
-      set(s => ({
+      set((s) => ({
         chatHistory: [...s.chatHistory, { role: 'assistant', content: `Error: ${String(e)}` }],
         isChatting: false,
       }));
@@ -65,25 +117,10 @@ export const useAiStore = create<AiState>((set) => ({
     }
   },
 
-  loadSettings: async () => {
-    try {
-      const settings = await invoke<LlmSettings>('get_llm_settings');
-      set({ settings });
-    } catch (e) {
-      set({ error: String(e) });
-    }
-  },
-
-  saveSettings: async (settings) => {
-    await invoke('set_llm_settings', { settings });
-    set({ settings });
-  },
-
   generateSql: async (prompt, connectionId) => {
     set({ isGenerating: true, error: null });
     try {
-      const sql = await invoke<string>('ai_generate_sql', { prompt, connectionId });
-      return sql;
+      return await invoke<string>('ai_generate_sql', { prompt, connectionId });
     } catch (e) {
       set({ error: String(e) });
       throw e;
@@ -95,8 +132,7 @@ export const useAiStore = create<AiState>((set) => ({
   explainSql: async (sql, connectionId) => {
     set({ isExplaining: true, error: null });
     try {
-      const explanation = await invoke<string>('ai_explain_sql', { sql, connectionId });
-      return explanation;
+      return await invoke<string>('ai_explain_sql', { sql, connectionId });
     } catch (e) {
       set({ error: String(e) });
       throw e;

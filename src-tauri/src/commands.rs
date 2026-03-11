@@ -131,62 +131,64 @@ pub async fn ai_explain_sql(sql: String, connection_id: i64) -> AppResult<String
     client.explain_sql(&sql, &config.driver).await
 }
 
-// ============ LLM 设置 ============
+// ============ LLM 配置管理 ============
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LlmSettings {
-    pub api_key: String,
-    pub base_url: String,
-    pub model: String,
-    pub api_type: crate::llm::ApiType,
+#[tauri::command]
+pub async fn list_llm_configs() -> AppResult<Vec<crate::db::models::LlmConfig>> {
+    crate::db::list_llm_configs()
 }
 
 #[tauri::command]
-pub async fn get_llm_settings() -> AppResult<LlmSettings> {
-    let api_key = match crate::db::get_setting("llm.api_key")? {
-        Some(enc) if !enc.is_empty() => crate::crypto::decrypt(&enc)?,
-        _ => String::new(),
-    };
-    Ok(LlmSettings {
-        api_key,
-        base_url: crate::db::get_setting("llm.base_url")?
-            .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
-        model: crate::db::get_setting("llm.model")?
-            .unwrap_or_else(|| "gpt-4o-mini".to_string()),
-        api_type: crate::db::get_setting("llm.api_type")?
-            .map(|v| parse_api_type(&v))
-            .unwrap_or_default(),
-    })
+pub async fn create_llm_config(input: crate::db::models::CreateLlmConfigInput) -> AppResult<crate::db::models::LlmConfig> {
+    crate::db::create_llm_config(&input)
 }
 
 #[tauri::command]
-pub async fn set_llm_settings(settings: LlmSettings) -> AppResult<()> {
-    // API Key 加密存储
-    let enc_key = crate::crypto::encrypt(&settings.api_key)?;
-    crate::db::set_setting("llm.api_key", &enc_key)?;
-    crate::db::set_setting("llm.base_url", &settings.base_url)?;
-    crate::db::set_setting("llm.model", &settings.model)?;
-    let api_type_str = match settings.api_type {
-        crate::llm::ApiType::Openai => "openai",
-        crate::llm::ApiType::Anthropic => "anthropic",
-    };
-    crate::db::set_setting("llm.api_type", api_type_str)?;
-    Ok(())
+pub async fn update_llm_config(id: i64, input: crate::db::models::UpdateLlmConfigInput) -> AppResult<crate::db::models::LlmConfig> {
+    crate::db::update_llm_config(id, &input)
 }
 
 #[tauri::command]
-pub async fn test_llm_connection(settings: LlmSettings) -> AppResult<()> {
+pub async fn delete_llm_config(id: i64) -> AppResult<()> {
+    crate::db::delete_llm_config(id)
+}
+
+#[tauri::command]
+pub async fn set_default_llm_config(id: i64) -> AppResult<()> {
+    crate::db::set_default_llm_config(id)
+}
+
+#[tauri::command]
+pub async fn get_default_llm_config() -> AppResult<Option<crate::db::models::LlmConfig>> {
+    crate::db::get_default_llm_config()
+}
+
+#[tauri::command]
+pub async fn test_llm_config(id: i64) -> AppResult<()> {
+    crate::db::update_llm_config_test_status(id, "testing", None)?;
+    let config = crate::db::get_llm_config_by_id(id)?
+        .ok_or_else(|| crate::AppError::Other(format!("LlmConfig {} not found", id)))?;
+    let api_type = parse_api_type(&config.api_type);
     let client = crate::llm::client::LlmClient::new(
-        settings.api_key,
-        Some(settings.base_url),
-        Some(settings.model),
-        Some(settings.api_type),
+        config.api_key,
+        Some(config.base_url),
+        Some(config.model),
+        Some(api_type),
     );
     let messages = vec![crate::llm::ChatMessage {
         role: "user".into(),
         content: "hi".into(),
     }];
-    client.chat(messages).await?;
+    match client.chat(messages).await {
+        Ok(_) => {
+            crate::db::update_llm_config_test_status(id, "success", None)?;
+        }
+        Err(e) => {
+            let err_msg = e.to_string();
+            crate::db::update_llm_config_test_status(id, "fail", Some(&err_msg))?;
+            return Err(e);
+        }
+    }
     Ok(())
 }
 
@@ -435,6 +437,45 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
     Ok(params.output_path)
 }
 
+// ============ 连接分组管理 ============
+
+#[tauri::command]
+pub async fn list_groups() -> AppResult<Vec<crate::db::models::ConnectionGroup>> {
+    crate::db::list_groups()
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct CreateGroupRequest {
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[tauri::command]
+pub async fn create_group(req: CreateGroupRequest) -> AppResult<crate::db::models::ConnectionGroup> {
+    crate::db::create_group(&req.name, req.color.as_deref())
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct UpdateGroupRequest {
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[tauri::command]
+pub async fn update_group(id: i64, req: UpdateGroupRequest) -> AppResult<crate::db::models::ConnectionGroup> {
+    crate::db::update_group(id, &req.name, req.color.as_deref())
+}
+
+#[tauri::command]
+pub async fn delete_group(id: i64) -> AppResult<()> {
+    crate::db::delete_group(id)
+}
+
+#[tauri::command]
+pub async fn move_connection_to_group(connection_id: i64, group_id: Option<i64>) -> AppResult<()> {
+    crate::db::move_connection_to_group(connection_id, group_id)
+}
+
 // ============ AI 高级命令 ============
 
 #[tauri::command]
@@ -466,4 +507,32 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: i6
         .map(|t| format!("Table: {}", t.name))
         .collect::<Vec<_>>().join("\n");
     client.diagnose_error(&sql, &error_msg, &schema_context, &config.driver).await
+}
+
+// ============ 导航树查询命令 ============
+
+#[tauri::command]
+pub async fn list_databases(connection_id: i64) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    ds.list_databases().await
+}
+
+#[tauri::command]
+pub async fn list_schemas(connection_id: i64, database: String) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    ds.list_schemas(&database).await
+}
+
+#[tauri::command]
+pub async fn list_objects(
+    connection_id: i64,
+    database: String,
+    schema: Option<String>,
+    category: String,
+) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    ds.list_objects(&database, schema.as_deref(), &category).await
 }

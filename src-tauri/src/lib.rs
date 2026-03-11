@@ -20,6 +20,7 @@ pub fn run() {
                 .to_string_lossy()
                 .to_string();
             crate::db::init(&app_data_dir)?;
+            crate::db::migrate_legacy_llm_settings()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -36,9 +37,13 @@ pub fn run() {
             commands::ai_explain_sql,
             commands::get_query_history,
             commands::save_query,
-            commands::get_llm_settings,
-            commands::set_llm_settings,
-            commands::test_llm_connection,
+            commands::list_llm_configs,
+            commands::create_llm_config,
+            commands::update_llm_config,
+            commands::delete_llm_config,
+            commands::set_default_llm_config,
+            commands::get_default_llm_config,
+            commands::test_llm_config,
             commands::get_table_detail,
             commands::get_full_schema,
             commands::get_table_ddl,
@@ -49,6 +54,14 @@ pub fn run() {
             commands::ai_optimize_sql,
             commands::ai_create_table,
             commands::ai_diagnose_error,
+            commands::list_groups,
+            commands::create_group,
+            commands::update_group,
+            commands::delete_group,
+            commands::move_connection_to_group,
+            commands::list_databases,
+            commands::list_schemas,
+            commands::list_objects,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

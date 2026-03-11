@@ -24,7 +24,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   showToast,
 }) => {
   const { t } = useTranslation();
-  const { chatHistory, isChatting, sendChat, clearHistory } = useAiStore();
+  const { chatHistory, isChatting, sendChat, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
   const { activeConnectionId } = useConnectionStore();
   const { setSql, activeTabId } = useQueryStore();
 
@@ -37,6 +37,10 @@ export const Assistant: React.FC<AssistantProps> = ({
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatHistory]);
+
+  useEffect(() => {
+    loadConfigs();
+  }, []);
 
   const handleSendMessage = async () => {
     if (!chatInput.trim() || isChatting) return;
@@ -141,19 +145,61 @@ export const Assistant: React.FC<AssistantProps> = ({
             disabled={isChatting}
           />
           <div className="flex items-center justify-between mt-2 relative">
-            <div
-              className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]"
-              onClick={(e) => { e.stopPropagation(); setIsModelMenuOpen(!isModelMenuOpen); }}
-            >
+            {/* AI 生成 SQL 标签 */}
+            <div className="flex items-center text-xs text-[#7a9bb8] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]">
               <span>{t('assistant.aiGenerateSql')}</span>
-              <ChevronDown size={12} className="ml-1" />
             </div>
 
-            {isModelMenuOpen && (
-              <div className="absolute left-0 bottom-full mb-1 w-48 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
-                <div className="px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer text-[#c8daea]" onClick={() => setIsModelMenuOpen(false)}>{t('assistant.generateSql')}</div>
+            {/* 模型选择器 */}
+            <div className="relative ml-1">
+              <div
+                className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]"
+                onClick={(e) => { e.stopPropagation(); setIsModelMenuOpen(!isModelMenuOpen); }}
+              >
+                <span className="max-w-[96px] truncate">
+                  {configs.length === 0
+                    ? '未配置'
+                    : (() => {
+                        const active = configs.find((c) => c.id === activeConfigId)
+                          ?? configs.find((c) => c.is_default)
+                          ?? configs[0];
+                        return active?.name ?? '选择模型';
+                      })()
+                  }
+                </span>
+                <ChevronDown size={12} className="ml-1 flex-shrink-0" />
               </div>
-            )}
+
+              {isModelMenuOpen && (
+                <div className="absolute left-0 bottom-full mb-1 w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
+                  {configs.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-[#7a9bb8]">
+                      暂无配置，请前往设置添加
+                    </div>
+                  ) : (
+                    configs.map((c) => (
+                      <div
+                        key={c.id}
+                        className={`px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center justify-between ${
+                          (activeConfigId === c.id || (!activeConfigId && c.is_default))
+                            ? 'text-[#009e84]'
+                            : 'text-[#c8daea]'
+                        }`}
+                        onClick={() => { setActiveConfigId(c.id); setIsModelMenuOpen(false); }}
+                      >
+                        <span className="text-xs truncate flex-1">
+                          {c.is_default ? `★ ${c.name}` : c.name}
+                        </span>
+                        <span className={`ml-2 w-2 h-2 rounded-full flex-shrink-0 ${
+                          c.test_status === 'success' ? 'bg-green-400' :
+                          c.test_status === 'fail' ? 'bg-red-400' : 'bg-gray-600'
+                        }`} />
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
 
             <button
               className={`p-1.5 rounded transition-colors ${chatInput.trim() && !isChatting ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}

@@ -433,14 +433,15 @@ export const MainContent: React.FC<MainContentProps> = ({
               </div>
 
               {/* AI 助手入口 */}
-              <button
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors bg-[#00c9a7]/10 text-[#00c9a7] hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 hover:border-[#00c9a7]/60"
-                title={t('mainContent.openAiAssistant')}
-                onClick={onOpenAssistant}
-              >
-                <Bot size={14} />
-                <span>AI</span>
-              </button>
+              <Tooltip content={t('mainContent.openAiAssistant')}>
+                <button
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors bg-[#00c9a7]/10 text-[#00c9a7] hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 hover:border-[#00c9a7]/60"
+                  onClick={onOpenAssistant}
+                >
+                  <Bot size={14} />
+                  <span>AI</span>
+                </button>
+              </Tooltip>
 
               {/* 上下文选择器（右侧） */}
               <div className="flex items-center gap-1.5">
@@ -542,14 +543,18 @@ export const MainContent: React.FC<MainContentProps> = ({
                     {t('mainContent.resultSet')}
                   </div>
                 ) : (
-                  currentResults.map((_, idx) => (
+                  currentResults.map((result, idx) => (
                     <div
                       key={idx}
                       className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
                       onClick={() => setSelectedResultIdx(idx)}
                       onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                     >
-                      <span>{t('mainContent.resultSet')} {idx + 1}</span>
+                      <span>
+                        {result.kind === 'dml-report'
+                          ? `执行报告（${result.rows.length}条）`
+                          : `${t('mainContent.resultSet')} ${idx + 1}`}
+                      </span>
                       <Tooltip content={t('mainContent.closeResult')}>
                         <span
                           className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
@@ -579,8 +584,8 @@ export const MainContent: React.FC<MainContentProps> = ({
                   </div>
                 ) : currentResults.length === 0 ? (
                   <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
-                ) : currentResults[selectedResultIdx]?.columns.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-green-400 text-sm">{t('mainContent.executeSuccess')}{currentResults[selectedResultIdx].row_count} {t('mainContent.rowsAffected')}（{currentResults[selectedResultIdx].duration_ms}ms）</div>
+                ) : currentResults[selectedResultIdx]?.kind === 'select' && currentResults[selectedResultIdx]?.columns.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
                 ) : (
                   <>
                     <div className="text-xs text-[#7a9bb8] px-3 py-1 border-b border-[#1e2d42]">

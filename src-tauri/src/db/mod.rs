@@ -537,18 +537,23 @@ pub fn set_default_llm_config(id: i64) -> AppResult<()> {
     if exists == 0 {
         return Err(crate::AppError::Other(format!("LlmConfig {} not found", id)));
     }
+    conn.execute_batch("BEGIN;")?;
     conn.execute("UPDATE llm_configs SET is_default = 0", [])?;
     conn.execute("UPDATE llm_configs SET is_default = 1 WHERE id = ?1", [id])?;
+    conn.execute_batch("COMMIT;")?;
     Ok(())
 }
 
 pub fn update_llm_config_test_status(id: i64, status: &str, error: Option<&str>) -> AppResult<()> {
     let conn = get().lock().unwrap();
     let now = Utc::now().to_rfc3339();
-    conn.execute(
+    let affected = conn.execute(
         "UPDATE llm_configs SET test_status=?1, test_error=?2, tested_at=?3 WHERE id=?4",
         rusqlite::params![status, error, now, id],
     )?;
+    if affected == 0 {
+        return Err(crate::AppError::Other(format!("LlmConfig {} not found", id)));
+    }
     Ok(())
 }
 

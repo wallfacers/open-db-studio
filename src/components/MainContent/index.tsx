@@ -59,6 +59,7 @@ import ERDiagram from '../ERDiagram';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
 import type { ToastLevel } from '../Toast';
+import { Tooltip } from '../common/Tooltip';
 
 interface MainContentProps {
   tabs: TabData[];
@@ -356,12 +357,14 @@ export const MainContent: React.FC<MainContentProps> = ({
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
             <span className="truncate flex-1 text-xs">{tab.title}</span>
-            <div
-              className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
-              onClick={(e) => closeTab(e, tab.id)}
-            >
-              <X size={12} />
-            </div>
+            <Tooltip content={t('mainContent.closeTab')}>
+              <div
+                className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
+                onClick={(e) => closeTab(e, tab.id)}
+              >
+                <X size={12} />
+              </div>
+            </Tooltip>
           </div>
         ))}
       </div>
@@ -384,40 +387,49 @@ export const MainContent: React.FC<MainContentProps> = ({
             {/* Toolbar */}
             <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-[#1e2d42] bg-[#080d12]">
               <div className="flex items-center space-x-2">
-                <button
-                  className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[#1e2d42]' : 'text-[#00c9a7] hover:text-[#00a98f] hover:bg-[#1e2d42]'}`}
-                  title={isExecuting ? t('mainContent.executing') : t('mainContent.execute')}
-                  onClick={handleExecute}
-                  disabled={isExecuting}
-                >
-                  {isExecuting ? <Square size={16} /> : <Play size={16} />}
-                </button>
-                <button
-                  className={`p-1.5 rounded transition-colors ${isExplaining ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                  title={isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}
-                  onClick={handleExplain}
-                  disabled={isExplaining || !activeTabObj?.queryContext?.connectionId}
-                >
-                  <Lightbulb size={16} />
-                </button>
-                <button
-                  className={`p-1.5 rounded transition-colors ${isOptimizing ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                  title={isOptimizing ? t('mainContent.optimizing') : t('mainContent.optimizeSql')}
-                  onClick={handleOptimize}
-                  disabled={isOptimizing || !activeTabObj?.queryContext?.connectionId}
-                >
-                  <Zap size={16} />
-                </button>
+                <Tooltip content={isExecuting ? t('mainContent.executing') : t('mainContent.execute')}>
+                  <button
+                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[#1e2d42]' : 'text-[#00c9a7] hover:text-[#00a98f] hover:bg-[#1e2d42]'}`}
+                    onClick={handleExecute}
+                    disabled={isExecuting}
+                  >
+                    {isExecuting ? <Square size={16} /> : <Play size={16} />}
+                  </button>
+                </Tooltip>
+                <Tooltip content={isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}>
+                  <button
+                    className={`p-1.5 rounded transition-colors ${isExplaining ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                    onClick={handleExplain}
+                    disabled={isExplaining || !activeTabObj?.queryContext?.connectionId}
+                  >
+                    <Lightbulb size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip content={isOptimizing ? t('mainContent.optimizing') : t('mainContent.optimizeSql')}>
+                  <button
+                    className={`p-1.5 rounded transition-colors ${isOptimizing ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                    onClick={handleOptimize}
+                    disabled={isOptimizing || !activeTabObj?.queryContext?.connectionId}
+                  >
+                    <Zap size={16} />
+                  </button>
+                </Tooltip>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
-                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Save" onClick={() => showToast(t('mainContent.sqlSaved'), 'info')}>
-                  <Save size={16} />
-                </button>
-                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Format SQL" onClick={handleFormat}>
-                  <FileEdit size={16} />
-                </button>
-                <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" title="Settings" onClick={() => showToast(t('mainContent.openEditorSettings'), 'info')}>
-                  <Settings size={16} />
-                </button>
+                <Tooltip content={t('mainContent.saveSql')}>
+                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={() => showToast(t('mainContent.sqlSaved'), 'info')}>
+                    <Save size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip content={t('mainContent.formatSql')}>
+                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
+                    <FileEdit size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip content={t('mainContent.openEditorSettings')}>
+                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={() => showToast(t('mainContent.openEditorSettings'), 'info')}>
+                    <Settings size={16} />
+                  </button>
+                </Tooltip>
               </div>
 
               {/* AI 助手入口 */}
@@ -538,14 +550,16 @@ export const MainContent: React.FC<MainContentProps> = ({
                       onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                     >
                       <span>{t('mainContent.resultSet')} {idx + 1}</span>
-                      <span
-                        className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeResult(activeTab, idx);
-                          if (selectedResultIdx >= idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
-                        }}
-                      >✕</span>
+                      <Tooltip content={t('mainContent.closeResult')}>
+                        <span
+                          className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeResult(activeTab, idx);
+                            if (selectedResultIdx >= idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
+                          }}
+                        >✕</span>
+                      </Tooltip>
                     </div>
                   ))
                 )}
@@ -566,7 +580,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 ) : currentResults.length === 0 ? (
                   <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                 ) : currentResults[selectedResultIdx]?.columns.length === 0 ? (
-                  <div className="p-4 text-green-400 text-sm">{t('mainContent.executeSuccess')}{currentResults[selectedResultIdx].row_count} {t('mainContent.rowsAffected')}（{currentResults[selectedResultIdx].duration_ms}ms）</div>
+                  <div className="flex items-center justify-center h-full text-green-400 text-sm">{t('mainContent.executeSuccess')}{currentResults[selectedResultIdx].row_count} {t('mainContent.rowsAffected')}（{currentResults[selectedResultIdx].duration_ms}ms）</div>
                 ) : (
                   <>
                     <div className="text-xs text-[#7a9bb8] px-3 py-1 border-b border-[#1e2d42]">

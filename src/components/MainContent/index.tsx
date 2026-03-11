@@ -482,13 +482,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                   currentResults.map((_, idx) => (
                     <div
                       key={idx}
-                      className={`group px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                      className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
                       onClick={() => setSelectedResultIdx(idx)}
                       onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                     >
                       <span>{t('mainContent.resultSet')} {idx + 1}</span>
                       <span
-                        className="opacity-0 group-hover:opacity-100 hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                        className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
                         onClick={(e) => {
                           e.stopPropagation();
                           removeResult(activeTab, idx);

@@ -210,3 +210,26 @@ export interface QueryContext {
   database: string | null;
   schema: string | null;
 }
+
+/** SQL 语句解析结果（含偏移量，用于消歧） */
+export interface SqlStatementInfo {
+  text: string;
+  startOffset: number;  // 在完整编辑器内容中的起始字符偏移
+  endOffset: number;    // 结束字符偏移（不含末尾分号）
+}
+
+/** AI 提出的 SQL 修改提案（等待用户确认） */
+export interface SqlDiffProposal {
+  original: string;     // 原始 SQL（单条语句）
+  modified: string;     // 修改后的 SQL
+  reason: string;       // 修改原因（AI 说明）
+  tabId: string;        // 目标 Tab
+  startOffset: number;  // 原始语句在编辑器中的起始位置
+  endOffset: number;    // 原始语句在编辑器中的结束位置
+}
+
+/** Monaco 编辑器光标/选区信息（由 MainContent 实时写入） */
+export interface EditorInfo {
+  cursorOffset: number;       // 光标在全文中的字符偏移
+  selectedText: string | null; // 当前选中的文本，无选区为 null
+}

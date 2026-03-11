@@ -277,30 +277,6 @@ pub fn list_query_history(connection_id: i64) -> AppResult<Vec<models::QueryHist
     Ok(results)
 }
 
-/// 读取配置项
-pub fn get_setting(key: &str) -> AppResult<Option<String>> {
-    let conn = get().lock().unwrap();
-    let result: Option<String> = conn
-        .query_row(
-            "SELECT value FROM app_settings WHERE key = ?1",
-            [key],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(result)
-}
-
-/// 写入配置项（upsert）
-pub fn set_setting(key: &str, value: &str) -> AppResult<()> {
-    let conn = get().lock().unwrap();
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        rusqlite::params![key, value, now],
-    )?;
-    Ok(())
-}
 
 /// 列出所有连接分组
 pub fn list_groups() -> AppResult<Vec<models::ConnectionGroup>> {

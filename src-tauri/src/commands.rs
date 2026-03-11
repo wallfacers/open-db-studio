@@ -407,6 +407,49 @@ pub async fn delete_row(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn insert_row(
+    connection_id: i64,
+    database: Option<String>,
+    table: String,
+    schema: Option<String>,
+    columns: Vec<String>,
+    values: Vec<Option<String>>,
+) -> AppResult<()> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = match database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+    let tbl = qualified_table(&config.driver, schema.as_deref(), &table);
+    let (col_list, val_list): (Vec<String>, Vec<String>) = columns
+        .iter()
+        .zip(values.iter())
+        .map(|(col, val)| {
+            let quoted_col = match config.driver.as_str() {
+                "mysql" => format!("`{}`", col.replace('`', "``")),
+                _ => format!("\"{}\"", col.replace('"', "\"\"")),
+            };
+            let quoted_val = match val {
+                None => "NULL".to_string(),
+                Some(v) => match config.driver.as_str() {
+                    "mysql" => format!("'{}'", v.replace('\'', "\\'")),
+                    _ => format!("'{}'", v.replace('\'', "''")),
+                },
+            };
+            (quoted_col, quoted_val)
+        })
+        .unzip();
+    let sql = format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        tbl,
+        col_list.join(", "),
+        val_list.join(", ")
+    );
+    ds.execute(&sql).await?;
+    Ok(())
+}
+
 // ============ 数据导出 ============
 
 #[derive(Debug, Serialize, Deserialize)]

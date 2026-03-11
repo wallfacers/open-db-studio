@@ -6,6 +6,7 @@ interface EditableCellProps {
   isDeleted?: boolean;
   isCloned?: boolean;
   onCommit: (newValue: string | null) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export const EditableCell: React.FC<EditableCellProps> = ({
@@ -14,6 +15,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   isDeleted,
   isCloned,
   onCommit,
+  onContextMenu,
 }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -51,7 +53,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
 
   if (editing) {
     return (
-      <td className={cellClass}>
+      <td className={cellClass} onContextMenu={onContextMenu}>
         <input
           ref={inputRef}
           value={draft}
@@ -68,7 +70,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   }
 
   return (
-    <td className={cellClass} onDoubleClick={startEdit}>
+    <td className={cellClass} onDoubleClick={startEdit} onContextMenu={onContextMenu}>
       {displayValue === null
         ? <span className="text-[#7a9bb8] italic">NULL</span>
         : String(displayValue)}

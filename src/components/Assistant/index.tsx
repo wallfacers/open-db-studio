@@ -145,13 +145,8 @@ export const Assistant: React.FC<AssistantProps> = ({
             disabled={isChatting}
           />
           <div className="flex items-center justify-between mt-2 relative">
-            {/* AI 生成 SQL 标签 */}
-            <div className="flex items-center text-xs text-[#7a9bb8] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]">
-              <span>{t('assistant.aiGenerateSql')}</span>
-            </div>
-
             {/* 模型选择器 */}
-            <div className="relative ml-1">
+            <div className="relative">
               <div
                 className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]"
                 onClick={(e) => { e.stopPropagation(); setIsModelMenuOpen(!isModelMenuOpen); }}

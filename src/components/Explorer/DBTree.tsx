@@ -254,6 +254,15 @@ export const DBTree: React.FC<DBTreeProps> = ({
             const n = contextMenu.node;
             setIndexManagerState({ connectionId: getConnectionId(n), tableName: n.label });
           }}
+          onViewDdl={() => {
+            const n = contextMenu.node;
+            showToast(`DDL: ${n.label}`, 'info');
+          }}
+          onTruncateTable={() => {
+            const n = contextMenu.node;
+            if (!window.confirm(t('dbTree.confirmTruncateTable', { table: n.label }))) return;
+            showToast(`TRUNCATE TABLE ${n.label}`, 'info');
+          }}
           onDropTable={() => {
             const n = contextMenu.node;
             setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import {
   PlugZap, Unplug, FilePlus, FilePlus2, Pencil, Trash2,
-  RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput
+  RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput,
+  Code2, Eraser
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TreeNode } from '../../types';
@@ -32,6 +33,8 @@ interface ContextMenuProps {
   onOpenTableData: () => void;
   onEditTable: () => void;
   onManageIndexes: () => void;
+  onViewDdl: () => void;
+  onTruncateTable: () => void;
   onDropTable: () => void;
   onCopyName: () => void;
   onMoveToGroup: () => void;
@@ -45,7 +48,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   node, x, y, isConnected, onClose,
   onOpenConnection, onCloseConnection, onNewQuery, onRefresh,
   onEditConnection, onDeleteConnection, onCreateTable, onAiCreateTable,
-  onOpenTableData, onEditTable, onManageIndexes, onDropTable, onCopyName,
+  onOpenTableData, onEditTable, onManageIndexes, onViewDdl, onTruncateTable, onDropTable, onCopyName,
   onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onCreateConnectionInGroup,
 }) => {
   const { t } = useTranslation();
@@ -100,9 +103,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         return [
           { label: t('contextMenu.openTableData'), icon: Eye, onClick: onOpenTableData },
           { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
+          { label: t('contextMenu.viewDdl'), icon: Code2, onClick: onViewDdl },
           { label: t('contextMenu.editTableStructure'), icon: FileEdit, onClick: onEditTable, dividerBefore: true },
           { label: t('contextMenu.manageIndexes'), icon: ListTree, onClick: onManageIndexes },
-          { label: t('contextMenu.dropTable'), icon: Trash2, onClick: onDropTable, danger: true, dividerBefore: true },
+          { label: t('contextMenu.truncateTable'), icon: Eraser, onClick: onTruncateTable, danger: true, dividerBefore: true },
+          { label: t('contextMenu.dropTable'), icon: Trash2, onClick: onDropTable, danger: true },
         ];
       case 'view':
         return [

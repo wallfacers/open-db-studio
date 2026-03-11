@@ -3,10 +3,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
+import { EditableCell } from './EditableCell';
+import { RowContextMenu, type ClickTarget } from './RowContextMenu';
+import { usePendingChanges, type RowData } from './usePendingChanges';
 
 interface TableDataViewProps {
   tableName: string;
@@ -16,12 +19,22 @@ interface TableDataViewProps {
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
-export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName, connectionId: propConnectionId, schema, showToast }) => {
+interface ContextMenuState {
+  x: number;
+  y: number;
+  rowIdx: number;
+  colIdx: number;
+  target: ClickTarget;
+}
+
+export const TableDataView: React.FC<TableDataViewProps> = ({
+  tableName, dbName, connectionId: propConnectionId, schema, showToast
+}) => {
   const { t } = useTranslation();
   const { activeConnectionId: storeConnectionId } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
+
   const [data, setData] = useState<QueryResult | null>(null);
-  // _columns is kept to derive pkColumn; not rendered directly
   const [_columns, setColumns] = useState<ColumnMeta[]>([]);
   const [pkColumn, setPkColumn] = useState<string>('id');
   const [page, setPage] = useState(1);
@@ -30,6 +43,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
   const [orderClause, setOrderClause] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [isCommitting, setIsCommitting] = useState(false);
+
+  const { pending, editCell, cloneRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
@@ -57,7 +74,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
-    invoke<{ columns: ColumnMeta[] }>('get_table_detail', { connectionId: activeConnectionId, database: dbName || null, table: tableName })
+    invoke<{ columns: ColumnMeta[] }>('get_table_detail', {
+      connectionId: activeConnectionId, database: dbName || null, table: tableName
+    })
       .then(detail => {
         setColumns(detail.columns);
         const pk = detail.columns.find(c => c.is_primary_key);
@@ -68,18 +87,83 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleDeleteRow = async (rowIdx: number) => {
+  const handleCommit = async () => {
     if (!activeConnectionId || !data) return;
-    const pkColIdx = data.columns.indexOf(pkColumn);
-    const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
-    if (!window.confirm(t('tableDataView.confirmDelete'))) return;
+    setIsCommitting(true);
     try {
-      await invoke('delete_row', { connectionId: activeConnectionId, database: dbName || null, table: tableName, schema: schema || null, pkColumn, pkValue });
-      showToast(t('tableDataView.deleteSuccess'), 'success');
+      // 1. DELETE
+      for (const rowIdx of pending.deletedRowIdxs) {
+        const pkColIdx = data.columns.indexOf(pkColumn);
+        const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
+        await invoke('delete_row', {
+          connectionId: activeConnectionId,
+          database: dbName || null,
+          table: tableName,
+          schema: schema || null,
+          pkColumn,
+          pkValue,
+        });
+      }
+      // 2. UPDATE（按行分组，逐列调用 update_row）
+      const editsByRow = new Map<number, typeof pending.edits>();
+      for (const edit of pending.edits) {
+        if (!editsByRow.has(edit.rowIdx)) editsByRow.set(edit.rowIdx, []);
+        editsByRow.get(edit.rowIdx)!.push(edit);
+      }
+      for (const [rowIdx, edits] of editsByRow.entries()) {
+        const pkColIdx = data.columns.indexOf(pkColumn);
+        const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
+        for (const edit of edits) {
+          await invoke('update_row', {
+            connectionId: activeConnectionId,
+            database: dbName || null,
+            table: tableName,
+            schema: schema || null,
+            pkColumn,
+            pkValue,
+            column: data.columns[edit.colIdx],
+            newValue: edit.newValue ?? '',
+          });
+        }
+      }
+      // 3. INSERT（克隆行）
+      for (const rowData of pending.clonedRows) {
+        await invoke('insert_row', {
+          connectionId: activeConnectionId,
+          database: dbName || null,
+          table: tableName,
+          schema: schema || null,
+          columns: data.columns,
+          values: rowData.map(v => v === null ? null : String(v)),
+        });
+      }
+      discard();
+      showToast(t('tableDataView.commitSuccess'), 'success');
       loadData();
     } catch (e) {
-      showToast(String(e), 'error');
+      showToast(`${t('tableDataView.commitFailed')}: ${String(e)}`, 'error');
+    } finally {
+      setIsCommitting(false);
     }
+  };
+
+  const getPendingValue = (rowIdx: number, colIdx: number) => {
+    const edit = pending.edits.find(e => e.rowIdx === rowIdx && e.colIdx === colIdx);
+    return edit ? edit.newValue : undefined;
+  };
+
+  const isRowDeleted = (rowIdx: number) => pending.deletedRowIdxs.includes(rowIdx);
+
+  const handleContextMenu = (e: React.MouseEvent, rowIdx: number, colIdx: number, target: ClickTarget) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx, target });
+  };
+
+  const rowBgClass = (rowIdx: number) => {
+    if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
+    const hasEdits = pending.edits.some(e => e.rowIdx === rowIdx);
+    if (hasEdits) return 'bg-yellow-900/20';
+    return '';
   };
 
   return (
@@ -106,7 +190,31 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
             <button onClick={loadData} className="p-1 hover:bg-[#1a2639] rounded"><RefreshCw size={14}/></button>
           </Tooltip>
         </div>
-        <div className="flex items-center text-[#7a9bb8]">
+
+        <div className="flex items-center gap-2 text-[#7a9bb8]">
+          {hasPending && (
+            <>
+              <Tooltip content={t('tableDataView.commit')}>
+                <button
+                  onClick={handleCommit}
+                  disabled={isCommitting}
+                  className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50 text-xs"
+                >
+                  <Check size={12}/>
+                  {t('tableDataView.commitWithCount', { count: totalCount })}
+                </button>
+              </Tooltip>
+              <Tooltip content={t('tableDataView.discardChanges')}>
+                <button
+                  onClick={discard}
+                  className="flex items-center gap-1 px-2 py-1 hover:bg-[#1a2639] rounded text-xs"
+                >
+                  <RotateCcw size={12}/>
+                  {t('tableDataView.discardChanges')}
+                </button>
+              </Tooltip>
+            </>
+          )}
           <Tooltip content={t('export.exportData')}>
             <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#1a2639] rounded">
               <Download size={14}/>
@@ -150,31 +258,43 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
                 {data.columns.map(col => (
                   <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
                 ))}
-                <th className="w-16 px-2 py-1.5 border-b border-[#1e2d42] text-[#7a9bb8] font-normal"></th>
               </tr>
             </thead>
             <tbody>
               {data.rows.map((row, ri) => (
-                <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
-                  <td className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs">{(page - 1) * pageSize + ri + 1}</td>
-                  {row.map((cell, ci) => {
-                    return (
-                      <td
-                        key={ci}
-                        className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px] truncate"
-                      >
-                        {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
-                      </td>
-                    );
-                  })}
-                  <td className="px-2 py-1.5 text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Tooltip content={t('tableDataView.deleteRow')}>
-                      <button
-                        onClick={() => handleDeleteRow(ri)}
-                        className="text-red-400 hover:text-red-300 text-xs px-1"
-                      >✕</button>
-                    </Tooltip>
+                <tr
+                  key={ri}
+                  className={`hover:bg-[#1a2639] border-b border-[#1e2d42] group ${rowBgClass(ri)}`}
+                >
+                  {/* 行号列 */}
+                  <td
+                    className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none"
+                    onContextMenu={e => handleContextMenu(e, ri, -1, 'row')}
+                  >
+                    {(page - 1) * pageSize + ri + 1}
                   </td>
+                  {/* 数据单元格 */}
+                  {row.map((cell, ci) => (
+                    <EditableCell
+                      key={ci}
+                      value={cell}
+                      pendingValue={getPendingValue(ri, ci)}
+                      isDeleted={isRowDeleted(ri)}
+                      onCommit={newVal => editCell(ri, ci, newVal)}
+                      onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
+                    />
+                  ))}
+                </tr>
+              ))}
+              {/* 克隆的新行（绿色） */}
+              {pending.clonedRows.map((row, ci) => (
+                <tr key={`cloned-${ci}`} className="border-b border-[#1e2d42] bg-green-900/20">
+                  <td className="px-2 py-1.5 border-r border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs">+</td>
+                  {row.map((cell, ji) => (
+                    <td key={ji} className="px-3 py-1.5 text-green-400 border-r border-[#1e2d42] max-w-[300px] truncate">
+                      {cell === null ? <span className="italic text-green-400/60">NULL</span> : String(cell)}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -186,6 +306,32 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
       <div className="h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
         {data && <span>{data.row_count} {t('tableDataView.row')} · {data.duration_ms}ms</span>}
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && data && (
+        <RowContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          target={contextMenu.target}
+          rowData={data.rows[contextMenu.rowIdx] as RowData}
+          columns={data.columns}
+          colIdx={contextMenu.colIdx}
+          pkColumn={pkColumn}
+          tableName={tableName}
+          onClose={() => setContextMenu(null)}
+          onSetNull={() => editCell(contextMenu.rowIdx, contextMenu.colIdx, null)}
+          onCloneRow={() => cloneRow(data.rows[contextMenu.rowIdx] as RowData)}
+          onDeleteRow={() => {
+            if (isRowDeleted(contextMenu.rowIdx)) {
+              unmarkDelete(contextMenu.rowIdx);
+            } else {
+              markDelete(contextMenu.rowIdx);
+            }
+          }}
+          onPaste={text => editCell(contextMenu.rowIdx, contextMenu.colIdx, text)}
+          showToast={showToast}
+        />
+      )}
 
       {showExport && activeConnectionId && (
         <ExportDialog

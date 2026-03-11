@@ -158,12 +158,12 @@ export const Assistant: React.FC<AssistantProps> = ({
               >
                 <span className="max-w-[96px] truncate">
                   {configs.length === 0
-                    ? '未配置'
+                    ? t('assistant.noModelConfigured')
                     : (() => {
                         const active = configs.find((c) => c.id === activeConfigId)
                           ?? configs.find((c) => c.is_default)
                           ?? configs[0];
-                        return active?.name ?? '选择模型';
+                        return active?.name ?? t('assistant.selectModel');
                       })()
                   }
                 </span>
@@ -174,7 +174,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                 <div className="absolute left-0 bottom-full mb-1 w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
                   {configs.length === 0 ? (
                     <div className="px-3 py-2 text-xs text-[#7a9bb8]">
-                      暂无配置，请前往设置添加
+                      {t('assistant.noModelHint')}
                     </div>
                   ) : (
                     configs.map((c) => (

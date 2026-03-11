@@ -50,12 +50,13 @@ function generateSql(
 
   const tbl = q(tableName);
   const statements: string[] = [];
-  const orderChanged = !isPostgres && edited
-    .filter(c => !c._isNew && !c._isDeleted)
-    .some((c, i) => {
-      const origIdx = original.findIndex(o => o.name === (c._originalName ?? c.name));
-      return origIdx !== i;
-    });
+  const existingEdited = edited.filter(c => !c._isNew && !c._isDeleted);
+  const orderChanged = !isPostgres && existingEdited.some((c, i) => {
+    if (i === 0) return false;
+    const prevOrigIdx = original.findIndex(o => o.name === (existingEdited[i - 1]._originalName ?? existingEdited[i - 1].name));
+    const currOrigIdx = original.findIndex(o => o.name === (c._originalName ?? c.name));
+    return prevOrigIdx > currOrigIdx; // 前一列在原始顺序中比当前列靠后，说明发生了重排
+  });
 
   for (const col of edited) {
     if (col._isDeleted && !col._isNew) {
@@ -176,7 +177,7 @@ export const TableManageDialog: React.FC<Props> = ({
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
     }).finally(() => setIsLoadingData(false));
-  }, [tableName, connectionId]);
+  }, [tableName, connectionId, database, schema]);
 
   const updateColumn = useCallback((id: string, patch: Partial<EditableColumn>) => {
     setColumns(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
@@ -207,6 +208,10 @@ export const TableManageDialog: React.FC<Props> = ({
 
   const handleExecute = async () => {
     if (previewSql.startsWith('-- ')) return;
+    if (visibleColumns.some(c => !c.name.trim())) {
+      showToast('列名不能为空', 'error');
+      return;
+    }
     setIsLoading(true);
     try {
       await invoke('execute_query', {
@@ -237,7 +242,7 @@ export const TableManageDialog: React.FC<Props> = ({
 
         <div className="overflow-auto flex-1 p-4">
           {isLoadingData ? (
-            <div className="text-center text-xs text-[#7a9bb8] py-8">Loading...</div>
+            <div className="text-center text-xs text-[#7a9bb8] py-8">{t('tableDataView.loading')}</div>
           ) : (
             <table className="w-full text-xs text-[#c8daea] border-collapse">
               <thead>

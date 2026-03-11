@@ -39,12 +39,14 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
       <SyntaxHighlighter
         style={oneDark}
         language={language || 'plaintext'}
+        useInlineStyles={false}
         PreTag="div"
         customStyle={{
           margin: 0,
           borderRadius: 0,
           fontSize: '12px',
           background: '#0d1117',
+          padding: '12px',
         }}
       >
         {code}

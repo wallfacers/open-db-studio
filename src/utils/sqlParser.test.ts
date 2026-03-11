@@ -36,6 +36,13 @@ describe('parseStatements', () => {
     const result = parseStatements(sql);
     expect(result).toHaveLength(1);
   });
+
+  it('SQL标准双引号转义（双单引号）内的分号不分割', () => {
+    const sql = "SELECT 'it''s a test; here' FROM t";
+    const result = parseStatements(sql);
+    expect(result).toHaveLength(1);
+    expect(result[0].text).toBe("SELECT 'it''s a test; here' FROM t");
+  });
 });
 
 describe('findStatementAtOffset', () => {
@@ -60,5 +67,16 @@ describe('findStatementAtOffset', () => {
   it('只有一条语句时始终返回该语句', () => {
     const stmts = parseStatements('SELECT 1');
     expect(findStatementAtOffset(stmts, 99)?.text).toBe('SELECT 1');
+  });
+
+  it('空语句数组返回 null', () => {
+    expect(findStatementAtOffset([], 0)).toBeNull();
+  });
+
+  it('光标恰好在第二条语句起始位置', () => {
+    const sql = 'SELECT 1;\nSELECT 2';
+    const stmts = parseStatements(sql);
+    // offset 10 = start of 'SELECT 2'
+    expect(findStatementAtOffset(stmts, 10)?.text).toBe('SELECT 2');
   });
 });

@@ -3,10 +3,10 @@ import type { SqlStatementInfo } from '../types';
 /**
  * 解析 SQL 字符串为多条语句，带起止偏移量。
  * 处理单引号和双引号内的分号（不作为分隔符）。
+ * 支持 SQL 标准双引号转义（'' 或 ""）及反斜杠转义（\'）。
  *
  * 已知限制：
  * - 行注释（--）和块注释（/* *\/）内的分号仍会分割（与现有 queryStore 一致）
- * - SQL 标准双引号转义（''）不处理，反斜杠转义（\'）同样简单处理
  */
 export function parseStatements(sql: string): SqlStatementInfo[] {
   const results: SqlStatementInfo[] = [];
@@ -18,10 +18,19 @@ export function parseStatements(sql: string): SqlStatementInfo[] {
     const ch = sql[i];
     const prev = sql[i - 1] ?? '';
 
-    if (ch === "'" && !inDoubleQuote && prev !== '\\') {
-      inSingleQuote = !inSingleQuote;
-    } else if (ch === '"' && !inSingleQuote && prev !== '\\') {
-      inDoubleQuote = !inDoubleQuote;
+    if (ch === "'" && !inDoubleQuote) {
+      // Check for SQL standard doubled-quote escape: '' inside a string
+      if (inSingleQuote && sql[i + 1] === "'") {
+        i++; // skip the escaped quote pair
+      } else if (prev !== '\\') {
+        inSingleQuote = !inSingleQuote;
+      }
+    } else if (ch === '"' && !inSingleQuote) {
+      if (inDoubleQuote && sql[i + 1] === '"') {
+        i++; // skip the escaped quote pair
+      } else if (prev !== '\\') {
+        inDoubleQuote = !inDoubleQuote;
+      }
     } else if (ch === ';' && !inSingleQuote && !inDoubleQuote) {
       pushStatement(sql, start, i, results);
       start = i + 1;
@@ -51,6 +60,7 @@ function pushStatement(
 /**
  * 找到光标位置所在的语句。
  * 光标在分号上时，返回分号前的语句。
+ * 光标在语句间空白或末尾时，返回最近的语句。
  * 如果 offset 超出所有语句范围，返回最后一条。
  */
 export function findStatementAtOffset(

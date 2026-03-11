@@ -44,6 +44,13 @@ export function usePendingChanges() {
     }));
   }, []);
 
+  const removeClonedRow = useCallback((cloneIdx: number) => {
+    setPending(prev => ({
+      ...prev,
+      clonedRows: prev.clonedRows.filter((_, i) => i !== cloneIdx),
+    }));
+  }, []);
+
   const discard = useCallback(() => setPending({ edits: [], clonedRows: [], deletedRowIdxs: [] }), []);
 
   const totalCount =
@@ -51,5 +58,5 @@ export function usePendingChanges() {
 
   const hasPending = totalCount > 0;
 
-  return { pending, editCell, cloneRow, markDelete, unmarkDelete, discard, hasPending, totalCount };
+  return { pending, editCell, cloneRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount };
 }

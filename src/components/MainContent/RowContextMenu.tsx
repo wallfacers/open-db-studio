@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
-import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 
 export type ClickTarget = 'row' | 'cell';
 
@@ -18,17 +18,32 @@ interface RowContextMenuProps {
   onSetNull: () => void;
   onCloneRow: () => void;
   onDeleteRow: () => void;
-  onPaste: (text: string) => void;
+  onOpenEditor?: () => void;
   showToast: (msg: string, level?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
 export const RowContextMenu: React.FC<RowContextMenuProps> = ({
   x, y, target, rowData, columns, colIdx, pkColumn, tableName,
-  onClose, onSetNull, onCloneRow, onDeleteRow, onPaste, showToast,
+  onClose, onSetNull, onCloneRow, onDeleteRow, onOpenEditor, showToast,
 }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
+  const sqlSubmenuItemRef = useRef<HTMLDivElement>(null);
   const [sqlSubmenuOpen, setSqlSubmenuOpen] = useState(false);
+  const [sqlSubmenuToLeft, setSqlSubmenuToLeft] = useState(false);
+  const [sqlSubmenuToTop, setSqlSubmenuToTop] = useState(false);
+  const [pos, setPos] = useState({ x, y });
+
+  // 渲染后检测溢出并调整位置
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const { width, height } = menuRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const nx = x + width > vw ? Math.max(4, vw - width - 4) : x;
+    const ny = y + height > vh ? Math.max(4, vh - height - 4) : y;
+    if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
+  }, [x, y]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -41,8 +56,12 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
   }, [onClose]);
 
   const copyToClipboard = async (text: string) => {
-    await writeText(text);
-    showToast(t('tableDataView.sqlCopied'), 'success');
+    try {
+      await writeText(text);
+      showToast(t('tableDataView.sqlCopied'), 'success');
+    } catch (e) {
+      showToast(`${t('tableDataView.copyFailed')}: ${String(e)}`, 'error');
+    }
     onClose();
   };
 
@@ -53,14 +72,6 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
 
   const handleCopyRow = () => {
     copyToClipboard(rowData.map(v => v === null ? 'NULL' : String(v)).join('\t'));
-  };
-
-  const handlePaste = async () => {
-    try {
-      const text = await readText();
-      if (text) onPaste(text);
-    } catch {}
-    onClose();
   };
 
   const buildInsertSql = () => {
@@ -90,7 +101,7 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      style={{ position: 'fixed', top: y, left: x, zIndex: 9999 }}
+      style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
       className="bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[160px] py-1"
       onContextMenu={e => e.preventDefault()}
     >
@@ -99,11 +110,13 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
           {t('tableDataView.copyCellValue')}
         </div>
       )}
+      {target === 'cell' && onOpenEditor && (
+        <div className={itemClass} onClick={() => { onOpenEditor(); onClose(); }}>
+          {t('tableDataView.openInEditor')}
+        </div>
+      )}
       <div className={itemClass} onClick={handleCopyRow}>
         {t('tableDataView.copyRow')}
-      </div>
-      <div className={itemClass} onClick={handlePaste}>
-        {t('tableDataView.paste')}
       </div>
 
       <div className={dividerClass} />
@@ -123,13 +136,23 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
       <div className={dividerClass} />
 
       <div
+        ref={sqlSubmenuItemRef}
         className={`${itemClass} relative`}
-        onClick={e => { e.stopPropagation(); setSqlSubmenuOpen(v => !v); }}
+        onClick={e => {
+          e.stopPropagation();
+          if (!sqlSubmenuOpen && sqlSubmenuItemRef.current) {
+            const rect = sqlSubmenuItemRef.current.getBoundingClientRect();
+            setSqlSubmenuToLeft(rect.right + 160 > window.innerWidth);
+            // 3 items × ~28px + 8px padding ≈ 92px
+            setSqlSubmenuToTop(rect.bottom + 92 > window.innerHeight);
+          }
+          setSqlSubmenuOpen(v => !v);
+        }}
       >
         <span>{t('tableDataView.copyAsSql')}</span>
         <ChevronRight size={12} className="text-[#7a9bb8]" />
         {sqlSubmenuOpen && (
-          <div className="absolute left-full top-0 bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[140px] py-1">
+          <div className={`absolute ${sqlSubmenuToLeft ? 'right-full' : 'left-full'} ${sqlSubmenuToTop ? 'bottom-0' : 'top-0'} bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[140px] py-1`}>
             <div className={itemClass} onClick={() => copyToClipboard(buildInsertSql())}>
               {t('tableDataView.copyAsInsertSql')}
             </div>

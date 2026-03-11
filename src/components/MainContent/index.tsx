@@ -3,6 +3,7 @@ import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@mona
 import type { editor as MonacoEditorType, languages as MonacoLanguages } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { FullSchemaInfo, QueryContext } from '../../types';
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
@@ -50,11 +51,13 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot
+  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TabData } from '../../App';
 import { TableDataView } from './TableDataView';
+import { TableStructureView } from './TableStructureView';
+import { CellEditorModal } from './CellEditorModal';
 import ERDiagram from '../ERDiagram';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
@@ -69,6 +72,7 @@ interface MainContentProps {
   closeAllTabs: () => void;
   closeTabsLeft: (tabId: string) => void;
   closeTabsRight: (tabId: string) => void;
+  closeOtherTabs: (tabId: string) => void;
   sqlContent: string;
   setSqlContent: (content: string) => void;
   handleExecute: () => void;
@@ -98,8 +102,86 @@ interface ContextMenu {
   y: number;
 }
 
+interface ResultCellContextMenuProps {
+  x: number; y: number; colIdx: number;
+  columns: string[];
+  row: (string | number | boolean | null)[];
+  onClose: () => void;
+  onCopyCell: () => void;
+  onCopyRow: () => void;
+  onCopyInsert: () => void;
+  onCopyUpdate: () => void;
+  onCopyDelete: () => void;
+  onViewCell?: () => void;
+}
+
+const ResultCellContextMenu = React.forwardRef<HTMLDivElement, ResultCellContextMenuProps>(
+  ({ x, y, colIdx, onClose, onCopyCell, onCopyRow, onCopyInsert, onCopyUpdate, onCopyDelete, onViewCell }, ref) => {
+    const { t } = useTranslation();
+    const [pos, setPos] = React.useState({ x, y });
+    const [sqlOpen, setSqlOpen] = React.useState(false);
+    const sqlItemRef = React.useRef<HTMLDivElement>(null);
+    const [sqlToLeft, setSqlToLeft] = React.useState(false);
+    const [sqlToTop, setSqlToTop] = React.useState(false);
+
+    React.useLayoutEffect(() => {
+      const el = (ref as React.RefObject<HTMLDivElement>)?.current;
+      if (!el) return;
+      const { width, height } = el.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const nx = x + width > vw ? Math.max(4, vw - width - 4) : x;
+      const ny = y + height > vh ? Math.max(4, vh - height - 4) : y;
+      if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
+    }, [x, y]);
+
+    const item = 'px-4 py-1.5 hover:bg-[#1a2639] cursor-pointer text-[#c8daea] flex items-center justify-between text-xs';
+    const divider = 'border-t border-[#1e2d42] my-1';
+
+    return (
+      <div
+        ref={ref}
+        style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
+        className="bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[160px] py-1"
+        onContextMenu={e => e.preventDefault()}
+      >
+        {colIdx >= 0 && (
+          <div className={item} onClick={onCopyCell}>{t('tableDataView.copyCellValue')}</div>
+        )}
+        {colIdx >= 0 && onViewCell && (
+          <div className={item} onClick={onViewCell}>{t('tableDataView.viewFullContent')}</div>
+        )}
+        <div className={item} onClick={onCopyRow}>{t('tableDataView.copyRow')}</div>
+        <div className={divider} />
+        <div
+          ref={sqlItemRef}
+          className={`${item} relative`}
+          onClick={e => {
+            e.stopPropagation();
+            if (!sqlOpen && sqlItemRef.current) {
+              const r = sqlItemRef.current.getBoundingClientRect();
+              setSqlToLeft(r.right + 160 > window.innerWidth);
+              setSqlToTop(r.bottom + 92 > window.innerHeight);
+            }
+            setSqlOpen(v => !v);
+          }}
+        >
+          <span>{t('tableDataView.copyAsSql')}</span>
+          <ChevronDown size={12} className={`text-[#7a9bb8] transition-transform ${sqlOpen ? '' : '-rotate-90'}`} />
+          {sqlOpen && (
+            <div className={`absolute ${sqlToLeft ? 'right-full' : 'left-full'} ${sqlToTop ? 'bottom-0' : 'top-0'} bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[140px] py-1`}>
+              <div className={item} onClick={onCopyInsert}>{t('tableDataView.copyAsInsertSql')}</div>
+              <div className={item} onClick={onCopyUpdate}>{t('tableDataView.copyAsUpdateSql')}</div>
+              <div className={item} onClick={onCopyDelete}>{t('tableDataView.copyAsDeleteSql')}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+);
+
 export const MainContent: React.FC<MainContentProps> = ({
-  tabs, activeTab, setActiveTab, closeTab, closeAllTabs, closeTabsLeft, closeTabsRight,
+  tabs, activeTab, setActiveTab, closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
   handleFormat, showToast,
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize,
@@ -108,7 +190,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 }) => {
   const { t } = useTranslation();
   const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis,
-          removeResult, removeResultsLeft, removeResultsRight, clearResults } = useQueryStore();
+          removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
   const { nodes } = useTreeStore();
   const { explainSql, isExplaining, optimizeSql, isOptimizing } = useAiStore();
@@ -116,6 +198,9 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [optimization, setOptimization] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const [resultCellViewer, setResultCellViewer] = useState<{ value: string | null; columnName: string } | null>(null);
+  const [resultCellMenu, setResultCellMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null);
+  const resultCellMenuRef = useRef<HTMLDivElement>(null);
   const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number } | null>(null);
   const resultContextMenuRef = useRef<HTMLDivElement>(null);
   const editorContextMenuRef = useRef<HTMLDivElement>(null);
@@ -211,6 +296,41 @@ export const MainContent: React.FC<MainContentProps> = ({
     if (error) showToast(error, 'error');
   }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 结果集右键菜单：SQL 构建与复制
+  const resultCopyToClipboard = async (text: string) => {
+    try {
+      await writeText(text);
+      showToast(t('tableDataView.sqlCopied'), 'success');
+    } catch (e) {
+      showToast(`${t('tableDataView.copyFailed')}: ${String(e)}`, 'error');
+    }
+    setResultCellMenu(null);
+  };
+
+  const getResultRow = (rowIdx: number) => currentResults[selectedResultIdx]?.rows[rowIdx] ?? [];
+  const getResultCols = () => currentResults[selectedResultIdx]?.columns ?? [];
+
+  const buildResultInsertSql = (rowIdx: number) => {
+    const cols = getResultCols().map(c => `\`${c}\``).join(', ');
+    const vals = getResultRow(rowIdx).map(v => v === null ? 'NULL' : `'${String(v).replace(/'/g, "\\'")}'`).join(', ');
+    return `INSERT INTO \`<table_name>\` (${cols}) VALUES (${vals});`;
+  };
+
+  const buildResultUpdateSql = (rowIdx: number) => {
+    const cols = getResultCols();
+    const row = getResultRow(rowIdx);
+    const sets = cols.map((c, i) => `\`${c}\` = ${row[i] === null ? 'NULL' : `'${String(row[i]).replace(/'/g, "\\'")}'`}`).join(', ');
+    return `UPDATE \`<table_name>\` SET ${sets} WHERE \`<pk_column>\` = '<pk_value>';`;
+  };
+
+  const buildResultDeleteSql = (rowIdx: number) => {
+    const cols = getResultCols();
+    const row = getResultRow(rowIdx);
+    const firstCol = cols[0] ?? '<pk_column>';
+    const firstVal = row[0] === null ? 'NULL' : `'${String(row[0]).replace(/'/g, "\\'")}'`;
+    return `DELETE FROM \`<table_name>\` WHERE \`${firstCol}\` = ${firstVal};`;
+  };
+
   const handleExecute = useCallback(() => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     const database = activeTabObj?.queryContext?.database ?? null;
@@ -271,6 +391,9 @@ export const MainContent: React.FC<MainContentProps> = ({
       }
       if (editorContextMenuRef.current && !editorContextMenuRef.current.contains(e.target as Node)) {
         setEditorContextMenu(null);
+      }
+      if (resultCellMenuRef.current && !resultCellMenuRef.current.contains(e.target as Node)) {
+        setResultCellMenu(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -353,6 +476,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'er_diagram' ? (
               <DatabaseZap size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'table_structure' ? (
+              <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
@@ -375,13 +500,26 @@ export const MainContent: React.FC<MainContentProps> = ({
             <ERDiagram />
           </div>
         ) : activeTabObj.type === 'table' ? (
-          <TableDataView
-            tableName={activeTabObj.title}
-            dbName={activeTabObj.db || ''}
-            connectionId={activeTabObj.connectionId}
-            schema={activeTabObj.schema}
-            showToast={showToast}
-          />
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <TableDataView
+              tableName={activeTabObj.title}
+              dbName={activeTabObj.db || ''}
+              connectionId={activeTabObj.connectionId}
+              schema={activeTabObj.schema}
+              showToast={showToast}
+            />
+          </div>
+        ) : activeTabObj.type === 'table_structure' ? (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <TableStructureView
+              connectionId={activeTabObj.connectionId!}
+              tableName={activeTabObj.isNewTable ? undefined : activeTabObj.title}
+              database={activeTabObj.db}
+              schema={activeTabObj.schema}
+              onSuccess={() => showToast('操作成功', 'success')}
+              showToast={showToast}
+            />
+          </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             {/* Toolbar */}
@@ -588,12 +726,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
                 ) : (
                   <>
-                    <div className="text-xs text-[#7a9bb8] px-3 py-1 border-b border-[#1e2d42]">
-                      {currentResults[selectedResultIdx]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultIdx]?.duration_ms}ms
-                    </div>
                     <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
                       <thead className="sticky top-0 bg-[#0d1117] z-10">
                         <tr>
+                          <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
                           {currentResults[selectedResultIdx]?.columns.map((col) => (
                             <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
                               {col}
@@ -604,15 +740,40 @@ export const MainContent: React.FC<MainContentProps> = ({
                       <tbody>
                         {currentResults[selectedResultIdx]?.rows.map((row, ri) => (
                           <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
-                            {row.map((cell, ci) => (
-                              <td key={ci} className="px-3 py-1.5 border-r border-[#1e2d42] max-w-[300px] truncate">
-                                {cell === null
-                                  ? <span className="text-[#7a9bb8]">NULL</span>
-                                  : typeof cell === 'string' && cell.startsWith('✓')
-                                    ? <span className="text-green-400">{cell}</span>
-                                    : <span className="text-[#c8daea]">{String(cell)}</span>}
-                              </td>
-                            ))}
+                            <td
+                              className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs select-none cursor-default"
+                              onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
+                            >{ri + 1}</td>
+                            {row.map((cell, ci) => {
+                              const colName = currentResults[selectedResultIdx]?.columns[ci] ?? '';
+                              const cellStr = cell === null ? null : String(cell);
+                              return (
+                                <td
+                                  key={ci}
+                                  className="px-3 py-1.5 border-r border-[#1e2d42] relative group"
+                                  onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
+                                >
+                                  <div
+                                    className="max-w-[300px] truncate"
+                                    title={cellStr ?? undefined}
+                                  >
+                                    {cell === null
+                                      ? <span className="text-[#7a9bb8]">NULL</span>
+                                      : typeof cell === 'string' && cell.startsWith('✓')
+                                        ? <span className="text-green-400">{cell}</span>
+                                        : <span className="text-[#c8daea]">{cellStr}</span>}
+                                  </div>
+                                  {cellStr !== null && (
+                                    <button
+                                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                      onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
+                                    >
+                                      <Maximize2 size={10} />
+                                    </button>
+                                  )}
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
                       </tbody>
@@ -620,6 +781,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                   </>
                 )}
               </div>
+
+              {/* Status Bar */}
+              {!isExecuting && !error && currentResults[selectedResultIdx]?.kind === 'select' && currentResults[selectedResultIdx]?.columns.length > 0 && (
+                <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
+                  <span>{currentResults[selectedResultIdx]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultIdx]?.duration_ms}ms</span>
+                </div>
+              )}
 
               {/* AI 解释面板 */}
               {explanation && (
@@ -691,6 +859,16 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeRight')}
           </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={tabs.length <= 1}
+            onClick={() => {
+              closeOtherTabs(contextMenu.tabId);
+              setContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeOther')}
+          </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
@@ -743,6 +921,17 @@ export const MainContent: React.FC<MainContentProps> = ({
             }}
           >
             {t('mainContent.closeRight')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={currentResults.length <= 1}
+            onClick={() => {
+              removeOtherResults(activeTab, resultContextMenu.idx);
+              setSelectedResultIdx(0);
+              setResultContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeOther')}
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
           <button
@@ -813,6 +1002,45 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('editorContextMenu.format')}
           </button>
         </div>
+      )}
+
+      {resultCellMenu && (
+        <ResultCellContextMenu
+          ref={resultCellMenuRef}
+          x={resultCellMenu.x}
+          y={resultCellMenu.y}
+          colIdx={resultCellMenu.colIdx}
+          columns={getResultCols()}
+          row={getResultRow(resultCellMenu.rowIdx)}
+          onClose={() => setResultCellMenu(null)}
+          onCopyCell={() => {
+            const val = getResultRow(resultCellMenu.rowIdx)[resultCellMenu.colIdx];
+            resultCopyToClipboard(val === null ? 'NULL' : String(val));
+          }}
+          onCopyRow={() => {
+            const row = getResultRow(resultCellMenu.rowIdx);
+            resultCopyToClipboard(row.map(v => v === null ? 'NULL' : String(v)).join('\t'));
+          }}
+          onCopyInsert={() => resultCopyToClipboard(buildResultInsertSql(resultCellMenu.rowIdx))}
+          onCopyUpdate={() => resultCopyToClipboard(buildResultUpdateSql(resultCellMenu.rowIdx))}
+          onCopyDelete={() => resultCopyToClipboard(buildResultDeleteSql(resultCellMenu.rowIdx))}
+          onViewCell={resultCellMenu.colIdx >= 0 ? () => {
+            const val = getResultRow(resultCellMenu.rowIdx)[resultCellMenu.colIdx];
+            const colName = getResultCols()[resultCellMenu.colIdx] ?? '';
+            setResultCellViewer({ value: val === null ? null : String(val), columnName: colName });
+            setResultCellMenu(null);
+          } : undefined}
+        />
+      )}
+
+      {resultCellViewer && (
+        <CellEditorModal
+          value={resultCellViewer.value}
+          columnName={resultCellViewer.columnName}
+          readOnly
+          onConfirm={() => {}}
+          onClose={() => setResultCellViewer(null)}
+        />
       )}
     </div>
   );

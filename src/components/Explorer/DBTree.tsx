@@ -21,6 +21,7 @@ interface DBTreeProps {
   showToast: (msg: string, level?: ToastLevel) => void;
   onNewQuery: (connectionId: number, connName: string, database?: string, schema?: string) => void;
   onOpenTableData: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
+  onOpenTableStructure: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
   activeConnectionIds: Set<number>;
   onOpenConnection: (connectionId: number) => void;
   onCloseConnection: (connectionId: number) => void;
@@ -73,6 +74,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
   showToast,
   onNewQuery,
   onOpenTableData,
+  onOpenTableStructure,
   activeConnectionIds,
   onOpenConnection,
   onCloseConnection,
@@ -244,7 +246,11 @@ export const DBTree: React.FC<DBTreeProps> = ({
             useTreeStore.getState().init();
             showToast(t('dbTree.connectionDeleted'), 'success');
           }}
-          onCreateTable={() => setTableManageDialog({ connectionId: getConnectionId(contextMenu.node), database: contextMenu.node.meta.database, schema: contextMenu.node.meta.schema })}
+          onCreateTable={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            onOpenTableStructure(getConnectionId(n), n.meta.database, n.meta.schema, undefined);
+          }}
           onAiCreateTable={() => setShowAiCreateTable(true)}
           onOpenTableData={() => {
             const n = contextMenu.node;
@@ -252,7 +258,8 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onEditTable={() => {
             const n = contextMenu.node;
-            setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
+            setContextMenu(null);
+            onOpenTableStructure(getConnectionId(n), n.meta.database, n.meta.schema, n.label);
           }}
           onManageIndexes={() => {
             const n = contextMenu.node;

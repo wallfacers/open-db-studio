@@ -180,6 +180,7 @@
     "close": "关闭",
     "closeLeft": "关闭左侧",
     "closeRight": "关闭右侧",
+    "closeOther": "关闭其他",
     "closeAll": "关闭全部",
     "contextLabel": "上下文：",
     "selectConnection": "选择连接...",
@@ -215,6 +216,7 @@
     "timeConsumed": "耗时:",
     "searchResult": "搜索结果:",
     "row": "行",
+    "serialNo": "序号",
     "viewOrModifyData": "查看/修改数据",
     "copy": "复制",
     "paste": "粘贴",
@@ -242,7 +244,13 @@
     "copyAsSql": "复制为 SQL",
     "sqlCopied": "已复制到剪贴板",
     "commitSuccess": "提交成功",
-    "commitFailed": "提交失败"
+    "commitFailed": "提交失败",
+    "copyFailed": "复制失败",
+    "openInEditor": "在编辑器中打开",
+    "viewFullContent": "查看完整内容",
+    "formatJson": "格式化 JSON",
+    "applyFilter": "应用过滤条件",
+    "search": "查询"
   },
   "queryHistory": {
     "selectConnectionFirst": "请先选择一个连接",
@@ -333,6 +341,7 @@
   },
   "common": {
     "cancel": "取消",
+    "confirm": "确认",
     "execute": "执行",
     "executing": "执行中...",
     "close": "关闭",
@@ -357,6 +366,9 @@
     "dropSuccess": "表删除成功",
     "manageIndexes": "管理索引",
     "addColumn": "添加列",
+    "actions": "操作",
+    "extra": "附加属性",
+    "comment": "描述",
     "columnName": "列名",
     "dataType": "类型",
     "length": "长度",

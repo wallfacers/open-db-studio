@@ -55,6 +55,7 @@ interface QueryState {
   removeResult: (tabId: string, idx: number) => void;
   removeResultsLeft: (tabId: string, idx: number) => void;
   removeResultsRight: (tabId: string, idx: number) => void;
+  removeOtherResults: (tabId: string, idx: number) => void;
   clearResults: (tabId: string) => void;
 }
 
@@ -174,6 +175,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   removeResultsRight: (tabId, idx) =>
     set(s => {
       const list = (s.results[tabId] ?? []).slice(0, idx + 1);
+      return { results: { ...s.results, [tabId]: list } };
+    }),
+
+  removeOtherResults: (tabId, idx) =>
+    set(s => {
+      const list = (s.results[tabId] ?? []).filter((_, i) => i === idx);
       return { results: { ...s.results, [tabId]: list } };
     }),
 

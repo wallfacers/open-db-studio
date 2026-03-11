@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Bell, CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Bell, CheckCircle, AlertTriangle, XCircle, Info, Copy, Check } from 'lucide-react';
 
 export type ToastLevel = 'success' | 'warning' | 'error' | 'info' | 'default';
 
@@ -55,6 +55,7 @@ export const Toast: React.FC<ToastProps> = ({
   onClose,
 }) => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const startTimer = () => {
     if (!onClose) return;
@@ -74,12 +75,23 @@ export const Toast: React.FC<ToastProps> = ({
     return clearTimer;
   }, [message]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleCopy = async () => {
+    if (!message) return;
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore copy failure
+    }
+  };
+
   if (!message) return null;
 
   const { bg, border, color, Icon } = LEVEL_CONFIG[level];
   return (
     <div
-      className="fixed top-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded shadow-lg z-50 flex items-center space-x-2 text-[13px] select-none"
+      className="fixed top-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded shadow-lg z-50 flex items-center space-x-2 text-[13px]"
       style={{
         background: bg,
         borderTop: `1px solid ${border}55`,
@@ -92,7 +104,14 @@ export const Toast: React.FC<ToastProps> = ({
       onMouseLeave={startTimer}
     >
       <Icon size={15} />
-      <span>{message}</span>
+      <span className="cursor-text select-text">{message}</span>
+      <button
+        onClick={handleCopy}
+        className="ml-1 p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-white/10 transition-all"
+        title={copied ? '已复制' : '复制'}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
     </div>
   );
 };

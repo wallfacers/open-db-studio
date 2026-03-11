@@ -13,12 +13,13 @@ import { QueryContext } from './types';
 
 export interface TabData {
   id: string;
-  type: 'query' | 'table' | 'er_diagram';
+  type: 'query' | 'table' | 'er_diagram' | 'table_structure';
   title: string;
   db?: string;
   connectionId?: number;
   schema?: string;
   queryContext?: QueryContext;
+  isNewTable?: boolean;
 }
 
 export default function App() {
@@ -72,7 +73,7 @@ JOIN
   // Resizable panel states
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [resultsHeight, setResultsHeight] = useState(0);
-  const [assistantWidth, setAssistantWidth] = useState(320);
+  const [assistantWidth, setAssistantWidth] = useState(380);
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
   const { results, error: queryError } = useQueryStore();
@@ -133,12 +134,42 @@ JOIN
     }
   };
 
+  const closeOtherTabs = (tabId: string) => {
+    const targetTab = tabs.find(t => t.id === tabId);
+    if (!targetTab) return;
+    setTabs([targetTab]);
+    setActiveTab(tabId);
+  };
+
   const handleOpenTableData = (tableName: string, connectionId: number, database?: string, schema?: string) => {
     const dbName = database ?? `conn_${connectionId}`;
     const tabId = `table_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
     setTabs(prev => {
       if (!prev.find(t => t.id === tabId)) {
         return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName, connectionId, schema }];
+      }
+      return prev;
+    });
+    setActiveTab(tabId);
+  };
+
+  const handleOpenTableStructure = (connectionId: number, database?: string, schema?: string, tableName?: string) => {
+    const dbName = database ?? `conn_${connectionId}`;
+    const isNew = !tableName;
+    const tabId = isNew
+      ? `table_structure_new_${connectionId}_${dbName}_${schema ?? ''}_${Date.now()}`
+      : `table_structure_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+    setTabs(prev => {
+      if (!prev.find(t => t.id === tabId)) {
+        return [...prev, {
+          id: tabId,
+          type: 'table_structure' as const,
+          title: tableName ?? '新建表',
+          db: dbName,
+          connectionId,
+          schema,
+          isNewTable: isNew,
+        }];
       }
       return prev;
     });
@@ -300,6 +331,7 @@ JOIN
           activeActivity={activeActivity}
           onNewQuery={handleNewQuery}
           onOpenTableData={handleOpenTableData}
+          onOpenTableStructure={handleOpenTableStructure}
         />
       )}
 
@@ -314,6 +346,7 @@ JOIN
         closeAllTabs={closeAllTabs}
         closeTabsLeft={closeTabsLeft}
         closeTabsRight={closeTabsRight}
+        closeOtherTabs={closeOtherTabs}
         sqlContent={sqlContent}
         setSqlContent={setSqlContent}
         handleExecute={handleExecute}

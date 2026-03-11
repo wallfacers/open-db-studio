@@ -56,9 +56,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
                        border border-[#2a3f5a] rounded shadow-lg whitespace-nowrap
                        pointer-events-none tooltip-fade-in"
             style={{
-              left: mousePos.x + 8,
-              top: mousePos.y + 24,
-              transform: 'translateX(-50%)',
+              left: Math.min(mousePos.x + 12, window.innerWidth - 8),
+              top: mousePos.y + 24 + 32 > window.innerHeight
+                ? mousePos.y - 32
+                : mousePos.y + 24,
             }}
           >
             {content}

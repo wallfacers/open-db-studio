@@ -220,19 +220,18 @@ export const Assistant: React.FC<AssistantProps> = ({
                 >
                   {msg.content}
                 </ReactMarkdown>
-                {/* 流式光标 */}
-                {msg.isStreaming && msg.content && (
-                  <span className="inline-block w-0.5 h-3.5 bg-[#00c9a7] animate-pulse ml-0.5 align-middle" />
+                {/* 等待首词动画：有 isStreaming 但还没有任何内容 */}
+                {msg.isStreaming && !msg.content && !msg.thinkingContent && (
+                  <div className="flex items-center gap-1 py-1">
+                    <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />
+                    <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />
+                    <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />
+                  </div>
                 )}
               </div>
             </div>
           );
         })}
-        {isChatting && (
-          <div className="flex flex-col items-start">
-            <div className="text-[#7a9bb8] text-[13px] animate-pulse">{t('assistant.generatingSql')}</div>
-          </div>
-        )}
         <div ref={chatEndRef} />
       </div>
 

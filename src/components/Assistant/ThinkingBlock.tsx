@@ -16,7 +16,8 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
     }
   }, [isStreaming]);
 
-  if (!content) return null;
+  // 非流式且无内容时不显示
+  if (!content && !isStreaming) return null;
 
   return (
     <div className="mb-2 border border-[#2a3f5a] rounded bg-[#0d1520]">

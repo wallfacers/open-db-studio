@@ -44,6 +44,7 @@ pub fn run() {
             commands::set_default_llm_config,
             commands::get_default_llm_config,
             commands::test_llm_config,
+            commands::set_llm_config_test_status,
             commands::get_table_detail,
             commands::get_full_schema,
             commands::get_table_ddl,

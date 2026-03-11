@@ -193,6 +193,7 @@
     "delete": "Delete",
     "testConnectivity": "Test Connectivity",
     "testPassed": "Connectivity test passed",
+    "configChangedRetest": "Config changed — status will reset to untested on save",
     "cancel": "Cancel",
     "confirmDelete": "Confirm Delete",
     "confirmDeleteMsg": "Are you sure you want to delete \"{{name}}\"?",

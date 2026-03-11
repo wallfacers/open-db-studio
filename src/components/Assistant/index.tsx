@@ -1,7 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2 } from 'lucide-react';
-import { useAiStore, useConnectionStore, useQueryStore } from '../../store';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { ThinkingBlock } from './ThinkingBlock';
+import { useAiStore, useConnectionStore } from '../../store';
 import type { ToastLevel } from '../Toast';
 
 interface AssistantProps {
@@ -12,10 +17,6 @@ interface AssistantProps {
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
-function extractSqlFromReply(reply: string): string | null {
-  const match = reply.match(/```(?:sql)?\s*([\s\S]*?)```/i);
-  return match ? match[1].trim() : null;
-}
 
 export const Assistant: React.FC<AssistantProps> = ({
   isAssistantOpen,
@@ -25,9 +26,9 @@ export const Assistant: React.FC<AssistantProps> = ({
   showToast,
 }) => {
   const { t } = useTranslation();
-  const { chatHistory, isChatting, sendChat, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
+  const { chatHistory, isChatting, sendChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
   const { activeConnectionId } = useConnectionStore();
-  const { setSql, activeTabId } = useQueryStore();
+  // TODO: 后续支持模型直接操作 SQL 编辑器，届时引入 useQueryStore 获取 setSql/activeTabId
 
   const [chatInput, setChatInput] = useState('');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
@@ -47,7 +48,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     if (!chatInput.trim() || isChatting) return;
     const prompt = chatInput.trim();
     setChatInput('');
-    await sendChat(prompt, activeConnectionId);
+    await sendChatStream(prompt, activeConnectionId);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -98,24 +99,93 @@ export const Assistant: React.FC<AssistantProps> = ({
             );
           }
           // assistant message
-          const extractedSql = extractSqlFromReply(msg.content);
           return (
             <div key={idx} className="flex flex-col items-start">
-              <div className="text-[#c8daea] text-[13px] space-y-2 w-full">
-                {extractedSql ? (
-                  <>
-                    <div className="bg-[#111922] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#569cd6] break-all whitespace-pre-wrap">
-                      {extractedSql}
-                    </div>
-                    <button
-                      className="text-xs px-2 py-1 bg-[#1e2d42] hover:bg-[#2a3f5a] rounded border border-[#2a3f5a] text-[#00c9a7] transition-colors"
-                      onClick={() => { setSql(activeTabId, extractedSql); showToast(t('assistant.sqlInserted'), 'success'); }}
-                    >
-                      {t('assistant.insertToEditor')}
-                    </button>
-                  </>
-                ) : (
-                  <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+              <div className="text-[#c8daea] text-[13px] w-full">
+                {/* 思考块 */}
+                <ThinkingBlock
+                  content={msg.thinkingContent ?? ''}
+                  isStreaming={msg.isStreaming ?? false}
+                />
+                {/* 正文 */}
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code({ className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className ?? '');
+                      const language = match ? match[1] : '';
+                      const isBlock = Boolean(match);
+                      if (isBlock) {
+                        return (
+                          // TODO: 后续支持模型直接操作 SQL 编辑器
+                          <SyntaxHighlighter
+                            style={oneDark}
+                            language={language}
+                            PreTag="div"
+                            customStyle={{
+                              margin: '8px 0',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              border: '1px solid #1e2d42',
+                            }}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        );
+                      }
+                      return (
+                        <code className="bg-[#111922] text-[#569cd6] px-1 py-0.5 rounded text-xs font-mono" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    p({ children }) {
+                      return <p className="leading-relaxed mb-2 last:mb-0">{children}</p>;
+                    },
+                    ul({ children }) {
+                      return <ul className="list-disc list-inside space-y-1 mb-2 pl-2">{children}</ul>;
+                    },
+                    ol({ children }) {
+                      return <ol className="list-decimal list-inside space-y-1 mb-2 pl-2">{children}</ol>;
+                    },
+                    li({ children }) {
+                      return <li className="text-[#c8daea]">{children}</li>;
+                    },
+                    h1({ children }) {
+                      return <h1 className="text-base font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h1>;
+                    },
+                    h2({ children }) {
+                      return <h2 className="text-sm font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h2>;
+                    },
+                    h3({ children }) {
+                      return <h3 className="text-sm font-medium text-[#e8f4fd] mb-1 mt-2 first:mt-0">{children}</h3>;
+                    },
+                    strong({ children }) {
+                      return <strong className="font-semibold text-[#e8f4fd]">{children}</strong>;
+                    },
+                    blockquote({ children }) {
+                      return <blockquote className="border-l-2 border-[#2a3f5a] pl-3 text-[#7a9bb8] italic my-2">{children}</blockquote>;
+                    },
+                    table({ children }) {
+                      return (
+                        <div className="overflow-x-auto my-2">
+                          <table className="text-xs border-collapse w-full">{children}</table>
+                        </div>
+                      );
+                    },
+                    th({ children }) {
+                      return <th className="border border-[#1e2d42] bg-[#111922] px-2 py-1 text-left font-medium text-[#c8daea]">{children}</th>;
+                    },
+                    td({ children }) {
+                      return <td className="border border-[#1e2d42] px-2 py-1 text-[#c8daea]">{children}</td>;
+                    },
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+                {/* 流式光标 */}
+                {msg.isStreaming && msg.content && (
+                  <span className="inline-block w-0.5 h-3.5 bg-[#00c9a7] animate-pulse ml-0.5 align-middle" />
                 )}
               </div>
             </div>

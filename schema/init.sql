@@ -52,16 +52,16 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 CREATE TABLE IF NOT EXISTS llm_configs (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  name        TEXT NOT NULL,
-  api_key     TEXT NOT NULL DEFAULT '',
-  base_url    TEXT NOT NULL DEFAULT 'https://api.openai.com/v1',
-  model       TEXT NOT NULL DEFAULT 'gpt-4o-mini',
-  api_type    TEXT NOT NULL DEFAULT 'openai',
-  preset      TEXT,
-  is_default  INTEGER NOT NULL DEFAULT 0,
-  test_status TEXT NOT NULL DEFAULT 'untested',
-  test_error  TEXT,
-  tested_at   TEXT,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    api_key_enc TEXT NOT NULL DEFAULT '',               -- AES-256 encrypted
+    base_url    TEXT NOT NULL DEFAULT 'https://api.openai.com/v1',
+    model       TEXT NOT NULL DEFAULT 'gpt-4o-mini',
+    api_type    TEXT NOT NULL DEFAULT 'openai',
+    preset      TEXT,
+    is_default  INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+    test_status TEXT NOT NULL DEFAULT 'untested' CHECK(test_status IN ('untested','testing','success','fail')),
+    test_error  TEXT,
+    tested_at   TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

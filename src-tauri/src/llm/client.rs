@@ -380,4 +380,122 @@ impl LlmClient {
         let _ = channel.send(StreamEvent::Done);
         Ok(())
     }
+
+    pub async fn chat_stream_anthropic(
+        &self,
+        messages: Vec<ChatMessage>,
+        channel: &Channel<StreamEvent>,
+    ) -> AppResult<()> {
+        let mut user_messages: Vec<ChatMessage> = Vec::new();
+        let mut system_content: Option<String> = None;
+        for msg in messages {
+            if msg.role == "system" { system_content = Some(msg.content); }
+            else { user_messages.push(msg); }
+        }
+
+        #[derive(serde::Serialize)]
+        struct Req {
+            model: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            system: Option<String>,
+            messages: Vec<ChatMessage>,
+            max_tokens: u32,
+            stream: bool,
+        }
+
+        let req = Req {
+            model: self.model.clone(),
+            system: system_content,
+            messages: user_messages,
+            max_tokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
+            stream: true,
+        };
+
+        let base = self.base_url.trim_end_matches('/');
+        let resp = self.client
+            .post(format!("{}/v1/messages", base))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("user-agent", "open-db-studio/1.0")
+            .json(&req)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            let _ = channel.send(StreamEvent::Error { message: format!("HTTP {}: {}", status, body) });
+            return Ok(());
+        }
+
+        let mut current_block_type = String::new();
+        let mut stream = resp.bytes_stream();
+
+        while let Some(item) = stream.next().await {
+            let bytes = match item {
+                Ok(b) => b,
+                Err(e) => {
+                    let _ = channel.send(StreamEvent::Error { message: e.to_string() });
+                    return Ok(());
+                }
+            };
+
+            let text = String::from_utf8_lossy(&bytes);
+            let mut event_type = String::new();
+
+            for line in text.lines() {
+                let line = line.trim();
+                if line.starts_with("event:") {
+                    event_type = line["event:".len()..].trim().to_string();
+                } else if line.starts_with("data:") {
+                    let json_str = line["data:".len()..].trim();
+                    let v: serde_json::Value = match serde_json::from_str(json_str) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+
+                    match event_type.as_str() {
+                        "content_block_start" => {
+                            current_block_type = v["content_block"]["type"]
+                                .as_str().unwrap_or("").to_string();
+                        }
+                        "content_block_delta" => {
+                            let delta_type = v["delta"]["type"].as_str().unwrap_or("");
+                            let text_val = match delta_type {
+                                "thinking_delta" => v["delta"]["thinking"].as_str().unwrap_or(""),
+                                "text_delta"     => v["delta"]["text"].as_str().unwrap_or(""),
+                                _ => "",
+                            };
+                            if !text_val.is_empty() {
+                                let evt = if current_block_type == "thinking" {
+                                    StreamEvent::ThinkingChunk { delta: text_val.to_string() }
+                                } else {
+                                    StreamEvent::ContentChunk { delta: text_val.to_string() }
+                                };
+                                let _ = channel.send(evt);
+                            }
+                        }
+                        "message_stop" => {
+                            let _ = channel.send(StreamEvent::Done);
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        let _ = channel.send(StreamEvent::Done);
+        Ok(())
+    }
+
+    pub async fn chat_stream(
+        &self,
+        messages: Vec<ChatMessage>,
+        channel: &Channel<StreamEvent>,
+    ) -> AppResult<()> {
+        match self.api_type {
+            ApiType::Openai    => self.chat_stream_openai(messages, channel).await,
+            ApiType::Anthropic => self.chat_stream_anthropic(messages, channel).await,
+        }
+    }
 }

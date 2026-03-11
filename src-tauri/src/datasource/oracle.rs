@@ -86,10 +86,21 @@ impl DataSource for OracleDataSource {
                     let row = row_result.map_err(|e| AppError::Datasource(e.to_string()))?;
                     let values: Vec<serde_json::Value> = (0..columns.len())
                         .map(|i| {
-                            let val: Option<String> = row.get(i).ok().flatten();
-                            match val {
-                                Some(s) => serde_json::Value::String(s),
-                                None => serde_json::Value::Null,
+                            // Try multiple types in order of preference
+                            if let Ok(val) = row.get::<Option<String>>(i) {
+                                val.map(serde_json::Value::String)
+                                    .unwrap_or(serde_json::Value::Null)
+                            } else if let Ok(val) = row.get::<Option<i64>>(i) {
+                                val.map(|v| serde_json::json!(v))
+                                    .unwrap_or(serde_json::Value::Null)
+                            } else if let Ok(val) = row.get::<Option<f64>>(i) {
+                                val.map(|v| serde_json::json!(v))
+                                    .unwrap_or(serde_json::Value::Null)
+                            } else if let Ok(val) = row.get::<Option<bool>>(i) {
+                                val.map(|v| serde_json::json!(v))
+                                    .unwrap_or(serde_json::Value::Null)
+                            } else {
+                                serde_json::Value::Null
                             }
                         })
                         .collect();

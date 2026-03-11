@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { CheckCircle, XCircle, Loader2, Star, Plus, Pencil, Trash2 } from 'lucide-react';
 import { PasswordInput } from '../common/PasswordInput';
@@ -8,7 +9,7 @@ import type { LlmConfig, CreateLlmConfigInput, ApiType } from '../../types';
 // -------- 厂商预设 --------
 interface ProviderPreset {
   id: string;
-  label: string;
+  labelKey: string;
   base_url: string;
   api_type: ApiType;
   default_model: string;
@@ -17,7 +18,7 @@ interface ProviderPreset {
 const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'alicloud',
-    label: '阿里云百炼',
+    labelKey: 'llmSettings.alicloud',
     base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
     api_type: 'anthropic',
     default_model: 'qwen3.5-plus',
@@ -25,42 +26,44 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
 ];
 
 // -------- 连通性状态指示 --------
-function getRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins}分钟前`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}小时前`;
-  return `${Math.floor(hours / 24)}天前`;
-}
-
 function TestStatusBadge({ status, error, testedAt }: {
   status: string;
   error: string | null;
   testedAt: string | null;
 }) {
+  const { t } = useTranslation();
+
+  const ago = (() => {
+    if (!testedAt) return '';
+    const diff = Date.now() - new Date(testedAt).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('llmSettings.justNow');
+    if (mins < 60) return t('llmSettings.minutesAgo', { n: mins });
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return t('llmSettings.hoursAgo', { n: hours });
+    return t('llmSettings.daysAgo', { n: Math.floor(hours / 24) });
+  })();
+
   if (status === 'untested') {
-    return <span className="text-xs text-gray-500">○ 未测试</span>;
+    return <span className="text-xs text-gray-500">○ {t('llmSettings.untested')}</span>;
   }
   if (status === 'testing') {
     return (
       <span className="text-xs text-yellow-400 flex items-center gap-1">
-        <Loader2 size={11} className="animate-spin" />测试中…
+        <Loader2 size={11} className="animate-spin" />{t('llmSettings.testing')}
       </span>
     );
   }
   if (status === 'success') {
-    const ago = testedAt ? getRelativeTime(testedAt) : '';
     return (
       <span className="text-xs text-green-400 flex items-center gap-1">
-        <CheckCircle size={11} />连通 {ago}
+        <CheckCircle size={11} />{t('llmSettings.connected')} {ago}
       </span>
     );
   }
   return (
     <span className="text-xs text-red-400 flex items-center gap-1" title={error ?? ''}>
-      <XCircle size={11} />失败
+      <XCircle size={11} />{t('llmSettings.failed')}
     </span>
   );
 }
@@ -83,6 +86,7 @@ interface ConfigFormDialogProps {
 }
 
 function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialogProps) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<CreateLlmConfigInput>(initial);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -145,7 +149,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
         {/* 厂商预设 */}
         <div>
-          <label className={labelClass}>厂商预设</label>
+          <label className={labelClass}>{t('llmSettings.preset')}</label>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => handlePreset(null)}
@@ -155,7 +159,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
                   : 'border-[#253347] text-[#c8daea] hover:bg-[#1a2639]'
               }`}
             >
-              自定义
+              {t('llmSettings.custom')}
             </button>
             {PROVIDER_PRESETS.map((p) => (
               <button
@@ -167,7 +171,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
                     : 'border-[#253347] text-[#c8daea] hover:bg-[#1a2639]'
                 }`}
               >
-                {p.label}
+                {t(p.labelKey)}
               </button>
             ))}
           </div>
@@ -175,7 +179,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
         {/* 名称 */}
         <div>
-          <label className={labelClass}>名称（可选，留空自动生成）</label>
+          <label className={labelClass}>{t('llmSettings.name')}（{t('llmSettings.namePlaceholder')}）</label>
           <input
             className={inputClass}
             value={form.name ?? ''}
@@ -187,13 +191,13 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
         {/* API 协议 */}
         <div>
           <label className={labelClass}>
-            API 协议
-            {form.preset && <span className="ml-2 text-[#5b8ab0]">(预设锁定)</span>}
+            {t('llmSettings.apiType')}
+            {form.preset && <span className="ml-2 text-[#5b8ab0]">({t('llmSettings.lockedByPreset')})</span>}
           </label>
           <div className="flex gap-4">
-            {(['openai', 'anthropic'] as ApiType[]).map((t) => (
+            {(['openai', 'anthropic'] as ApiType[]).map((type) => (
               <label
-                key={t}
+                key={type}
                 className={`flex items-center gap-1.5 text-sm ${
                   form.preset ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-[#c8daea]'
                 }`}
@@ -201,13 +205,13 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
                 <input
                   type="radio"
                   name="api_type"
-                  value={t}
-                  checked={form.api_type === t}
-                  onChange={() => setForm((f) => ({ ...f, api_type: t, preset: null }))}
+                  value={type}
+                  checked={form.api_type === type}
+                  onChange={() => setForm((f) => ({ ...f, api_type: type, preset: null }))}
                   disabled={!!form.preset}
                   className="accent-[#009e84]"
                 />
-                {t === 'openai' ? 'OpenAI 兼容' : 'Anthropic 兼容'}
+                {type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}
               </label>
             ))}
           </div>
@@ -215,7 +219,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
         {/* API Key */}
         <div>
-          <label className={labelClass}>API Key</label>
+          <label className={labelClass}>{t('llmSettings.apiKey')}</label>
           <PasswordInput
             className={inputClass}
             value={form.api_key}
@@ -226,7 +230,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
         {/* Base URL */}
         <div>
-          <label className={labelClass}>Base URL</label>
+          <label className={labelClass}>{t('llmSettings.baseUrl')}</label>
           <input
             className={inputClass}
             value={form.base_url}
@@ -237,7 +241,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
         {/* 模型 */}
         <div>
-          <label className={labelClass}>模型</label>
+          <label className={labelClass}>{t('llmSettings.model')}</label>
           <input
             className={inputClass}
             value={form.model}
@@ -250,7 +254,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
         {testResult && (
           <p className={`text-xs flex items-center gap-1 ${testResult.ok ? 'text-green-400' : 'text-red-400'}`}>
             {testResult.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
-            {testResult.ok ? '连通性测试通过' : testResult.msg}
+            {testResult.ok ? t('llmSettings.testPassed') : testResult.msg}
           </p>
         )}
 
@@ -262,21 +266,21 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
             className="px-3 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
           >
             {testing && <Loader2 size={12} className="animate-spin" />}
-            {testing ? '测试中…' : '测试连通性'}
+            {testing ? t('llmSettings.testing') : t('llmSettings.testConnectivity')}
           </button>
           <div className="flex gap-2">
             <button
               onClick={onCancel}
               className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
             >
-              取消
+              {t('llmSettings.cancel')}
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
               className="px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
             >
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('llmSettings.saving') : t('llmSettings.save')}
             </button>
           </div>
         </div>
@@ -287,6 +291,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
 
 // -------- 主组件 --------
 export function LlmSettingsPanel() {
+  const { t } = useTranslation();
   const { configs, loadConfigs, createConfig, updateConfig, deleteConfig, setDefaultConfig, testConfig } = useAiStore();
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<LlmConfig | null>(null);
@@ -314,20 +319,20 @@ export function LlmSettingsPanel() {
   return (
     <div className="w-full max-w-2xl p-8">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-white font-semibold text-sm">AI 模型配置</h3>
+        <h3 className="text-white font-semibold text-sm">{t('llmSettings.aiModelConfig')}</h3>
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
         >
-          <Plus size={13} />新增配置
+          <Plus size={13} />{t('llmSettings.addConfig')}
         </button>
       </div>
 
       {/* 卡片网格 */}
       {configs.length === 0 ? (
         <div className="text-center py-16 text-[#7a9bb8]">
-          <p className="text-sm">暂无模型配置</p>
-          <p className="text-xs mt-1 opacity-60">点击右上角"新增配置"开始添加</p>
+          <p className="text-sm">{t('llmSettings.noConfigs')}</p>
+          <p className="text-xs mt-1 opacity-60">{t('llmSettings.noConfigsHint')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4">
@@ -348,7 +353,7 @@ export function LlmSettingsPanel() {
               {/* 配置信息 */}
               <div className="text-xs text-[#7a9bb8] space-y-0.5">
                 <div className="truncate">{config.model}</div>
-                <div>{config.api_type === 'openai' ? 'OpenAI 兼容' : 'Anthropic 兼容'}</div>
+                <div>{config.api_type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}</div>
               </div>
               {/* 连通性状态 */}
               <TestStatusBadge
@@ -363,7 +368,7 @@ export function LlmSettingsPanel() {
                     onClick={() => setDefaultConfig(config.id)}
                     className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
                   >
-                    设为默认
+                    {t('llmSettings.setDefault')}
                   </button>
                 )}
                 <button
@@ -372,19 +377,19 @@ export function LlmSettingsPanel() {
                   className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
                 >
                   {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
-                  测试
+                  {t('llmSettings.test')}
                 </button>
                 <button
                   onClick={() => setEditTarget(config)}
                   className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1"
                 >
-                  <Pencil size={11} />编辑
+                  <Pencil size={11} />{t('llmSettings.edit')}
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(config)}
                   className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1"
                 >
-                  <Trash2 size={11} />删除
+                  <Trash2 size={11} />{t('llmSettings.delete')}
                 </button>
               </div>
             </div>
@@ -395,7 +400,7 @@ export function LlmSettingsPanel() {
       {/* 新建对话框 */}
       {showCreate && (
         <ConfigFormDialog
-          title="新增 AI 模型配置"
+          title={t('llmSettings.addConfigTitle')}
           initial={EMPTY_FORM}
           onSave={handleCreate}
           onCancel={() => setShowCreate(false)}
@@ -405,7 +410,7 @@ export function LlmSettingsPanel() {
       {/* 编辑对话框 */}
       {editTarget && (
         <ConfigFormDialog
-          title="编辑 AI 模型配置"
+          title={t('llmSettings.editConfigTitle')}
           initial={{
             name: editTarget.name,
             api_key: editTarget.api_key,
@@ -423,12 +428,12 @@ export function LlmSettingsPanel() {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-white font-semibold text-sm">确认删除</h3>
+            <h3 className="text-white font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
             <p className="text-xs text-[#c8daea]">
-              确定要删除「{deleteConfirm.name}」吗？
+              {t('llmSettings.confirmDeleteMsg', { name: deleteConfirm.name })}
               {deleteConfirm.is_default && (
                 <span className="text-yellow-400 block mt-1">
-                  这是默认配置，删除后将自动选择最早创建的配置作为默认。
+                  {t('llmSettings.defaultDeleteWarning')}
                 </span>
               )}
             </p>
@@ -437,13 +442,13 @@ export function LlmSettingsPanel() {
                 onClick={() => setDeleteConfirm(null)}
                 className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
               >
-                取消
+                {t('llmSettings.cancel')}
               </button>
               <button
                 onClick={handleDelete}
                 className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-800 text-white rounded"
               >
-                删除
+                {t('llmSettings.delete')}
               </button>
             </div>
           </div>

@@ -8,13 +8,15 @@ import type { ToastLevel } from '../Toast';
 interface Props {
   connectionId: number;
   tableName?: string; // undefined = 新建模式
+  database?: string;
+  schema?: string;
   onClose: () => void;
   onSuccess: () => void;
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const TableManageDialog: React.FC<Props> = ({
-  connectionId, tableName, onClose, onSuccess, showToast
+  connectionId, tableName, database, schema, onClose, onSuccess, showToast
 }) => {
   const { t } = useTranslation();
   const [ddl, setDdl] = useState('');
@@ -24,7 +26,7 @@ export const TableManageDialog: React.FC<Props> = ({
 
   useEffect(() => {
     if (tableName) {
-      invoke<string>('get_table_ddl', { connectionId, table: tableName })
+      invoke<string>('get_table_ddl', { connectionId, table: tableName, database: database ?? null, schema: schema ?? null })
         .then(setDdl)
         .catch(e => showToast(String(e), 'error'));
     } else {
@@ -36,7 +38,7 @@ export const TableManageDialog: React.FC<Props> = ({
     if (!ddl.trim()) return;
     setIsLoading(true);
     try {
-      await invoke('execute_query', { connectionId, sql: ddl });
+      await invoke('execute_query', { connectionId, sql: ddl, database: database ?? null, schema: schema ?? null });
       showToast(tableName ? t('tableManage.alterSuccess') : t('tableManage.createSuccess'), 'success');
       onSuccess();
       onClose();
@@ -51,7 +53,8 @@ export const TableManageDialog: React.FC<Props> = ({
     if (!tableName || !window.confirm(t('tableManage.confirmDrop', { table: tableName }))) return;
     setIsLoading(true);
     try {
-      await invoke('execute_query', { connectionId, sql: `DROP TABLE \`${tableName}\`` });
+      const dropSql = schema ? `DROP TABLE "${schema}"."${tableName}"` : `DROP TABLE \`${tableName}\``;
+      await invoke('execute_query', { connectionId, sql: dropSql, database: database ?? null, schema: schema ?? null });
       showToast(t('tableManage.dropSuccess'), 'success');
       onSuccess();
       onClose();

@@ -210,6 +210,26 @@ impl DataSource for PostgresDataSource {
         }).collect())
     }
 
+    async fn get_table_ddl_with_schema(&self, table: &str, schema: Option<&str>) -> AppResult<String> {
+        let columns = self.get_columns(table, schema).await?;
+        if columns.is_empty() {
+            return Ok(format!("-- Table '{}' not found", table));
+        }
+        let col_defs: Vec<String> = columns.iter().map(|c| {
+            let nullable = if c.is_nullable { "" } else { " NOT NULL" };
+            let pk = if c.is_primary_key { " PRIMARY KEY" } else { "" };
+            let default = c.column_default.as_ref()
+                .map(|d| format!(" DEFAULT {}", d))
+                .unwrap_or_default();
+            format!("  {} {}{}{}{}", c.name, c.data_type, default, nullable, pk)
+        }).collect();
+        let qualified = match schema {
+            Some(s) => format!("{}.{}", s, table),
+            None => table.to_string(),
+        };
+        Ok(format!("CREATE TABLE {} (\n{}\n);", qualified, col_defs.join(",\n")))
+    }
+
     async fn get_table_ddl(&self, table: &str) -> AppResult<String> {
         let columns = self.get_columns(table, None).await?;
         if columns.is_empty() {

@@ -11,8 +11,15 @@ pub struct Connection {
     pub database_name: Option<String>,
     pub username: Option<String>,
     pub extra_params: Option<String>,
+    pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ReorderItem {
+    pub id: i64,
+    pub sort_order: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

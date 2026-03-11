@@ -6,6 +6,7 @@ import type { QueryResult, ColumnMeta } from '../../types';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
 import type { ToastLevel } from '../Toast';
+import { Tooltip } from '../common/Tooltip';
 
 interface TableDataViewProps {
   tableName: string;
@@ -28,7 +29,6 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
   const [whereClause, setWhereClause] = useState('');
   const [orderClause, setOrderClause] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [editingCell, setEditingCell] = useState<{row: number; col: string; value: string} | null>(null);
   const [showExport, setShowExport] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -68,33 +68,6 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleCellDoubleClick = (rowIdx: number, colName: string, currentValue: string) => {
-    setEditingCell({ row: rowIdx, col: colName, value: currentValue });
-  };
-
-  const handleCellSave = async () => {
-    if (!editingCell || !activeConnectionId || !data) return;
-    const pkColIdx = data.columns.indexOf(pkColumn);
-    const pkValue = pkColIdx >= 0 ? String(data.rows[editingCell.row][pkColIdx] ?? '') : '';
-    try {
-      await invoke('update_row', {
-        connectionId: activeConnectionId,
-        database: dbName || null,
-        table: tableName,
-        schema: schema || null,
-        pkColumn,
-        pkValue,
-        column: editingCell.col,
-        newValue: editingCell.value,
-      });
-      showToast(t('tableDataView.updateSuccess'), 'success');
-      setEditingCell(null);
-      loadData();
-    } catch (e) {
-      showToast(String(e), 'error');
-    }
-  };
-
   const handleDeleteRow = async (rowIdx: number) => {
     if (!activeConnectionId || !data) return;
     const pkColIdx = data.columns.indexOf(pkColumn);
@@ -114,21 +87,31 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
       {/* Toolbar */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs">
         <div className="flex items-center space-x-2 text-[#7a9bb8]">
-          <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30">|&lt;</button>
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
+          <Tooltip content={t('tableDataView.firstPage')}>
+            <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30">|&lt;</button>
+          </Tooltip>
+          <Tooltip content={t('tableDataView.prevPage')}>
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
+          </Tooltip>
           <span className="text-[#c8daea]">{page}</span>
-          <button
-            disabled={!data || data.rows.length < pageSize}
-            onClick={() => setPage(p => p + 1)}
-            className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
-          ><ChevronRight size={14}/></button>
+          <Tooltip content={t('tableDataView.nextPage')}>
+            <button
+              disabled={!data || data.rows.length < pageSize}
+              onClick={() => setPage(p => p + 1)}
+              className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+            ><ChevronRight size={14}/></button>
+          </Tooltip>
           <span className="text-[#7a9bb8]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
-          <button onClick={loadData} className="p-1 hover:bg-[#1a2639] rounded" title={t('tableDataView.refreshData')}><RefreshCw size={14}/></button>
+          <Tooltip content={t('tableDataView.refreshData')}>
+            <button onClick={loadData} className="p-1 hover:bg-[#1a2639] rounded"><RefreshCw size={14}/></button>
+          </Tooltip>
         </div>
         <div className="flex items-center text-[#7a9bb8]">
-          <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#1a2639] rounded" title={t('export.exportData')}>
-            <Download size={14}/>
-          </button>
+          <Tooltip content={t('export.exportData')}>
+            <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[#1a2639] rounded">
+              <Download size={14}/>
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -160,7 +143,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
         ) : !data ? (
           <div className="p-4 text-[#7a9bb8] text-sm">{t('tableDataView.noData')}</div>
         ) : (
-          <table className="w-full text-left border-collapse whitespace-nowrap text-[13px]">
+          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
             <thead className="sticky top-0 bg-[#0d1117] z-10">
               <tr>
                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">#</th>
@@ -175,35 +158,22 @@ export const TableDataView: React.FC<TableDataViewProps> = ({ tableName, dbName,
                 <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
                   <td className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs">{(page - 1) * pageSize + ri + 1}</td>
                   {row.map((cell, ci) => {
-                    const colName = data.columns[ci];
-                    const isEditing = editingCell?.row === ri && editingCell?.col === colName;
                     return (
                       <td
                         key={ci}
-                        className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px]"
-                        onDoubleClick={() => handleCellDoubleClick(ri, colName, cell === null ? '' : String(cell))}
+                        className="px-3 py-1.5 text-[#c8daea] border-r border-[#1e2d42] max-w-[300px] truncate"
                       >
-                        {isEditing ? (
-                          <input
-                            autoFocus
-                            className="bg-[#1a2639] text-[#c8daea] outline-none border border-[#3794ff] rounded px-1 w-full"
-                            value={editingCell.value}
-                            onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
-                            onKeyDown={e => { if (e.key === 'Enter') handleCellSave(); if (e.key === 'Escape') setEditingCell(null); }}
-                            onBlur={() => setEditingCell(null)}
-                          />
-                        ) : (
-                          <span className="truncate block">{cell === null ? <span className="text-[#7a9bb8] italic">NULL</span> : String(cell)}</span>
-                        )}
+                        {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
                       </td>
                     );
                   })}
                   <td className="px-2 py-1.5 text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleDeleteRow(ri)}
-                      className="text-red-400 hover:text-red-300 text-xs px-1"
-                      title={t('tableDataView.deleteRow')}
-                    >✕</button>
+                    <Tooltip content={t('tableDataView.deleteRow')}>
+                      <button
+                        onClick={() => handleDeleteRow(ri)}
+                        className="text-red-400 hover:text-red-300 text-xs px-1"
+                      >✕</button>
+                    </Tooltip>
                   </td>
                 </tr>
               ))}

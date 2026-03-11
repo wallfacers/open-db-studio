@@ -39,7 +39,7 @@ pub fn get() -> &'static Mutex<Connection> {
 pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     let conn = get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
          FROM connections ORDER BY sort_order, name"
     )?;
     let rows = stmt.query_map([], |row| {
@@ -53,8 +53,9 @@ pub fn list_connections() -> AppResult<Vec<models::Connection>> {
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
+            sort_order: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
         })
     })?;
 
@@ -76,6 +77,7 @@ pub struct UpdateConnectionRequest {
     pub username: Option<String>,
     pub password: Option<String>,
     pub extra_params: Option<String>,
+    pub group_id: Option<i64>,
 }
 
 /// 创建连接，密码加密存储
@@ -100,7 +102,7 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
 
     let id = conn.last_insert_rowid();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok(models::Connection {
@@ -113,8 +115,9 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
+            sort_order: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
         }),
     )?;
     Ok(result)
@@ -141,11 +144,11 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
             conn.execute(
                 "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
                  database_name=?5, username=?6, password_enc=?7,
-                 extra_params=?8, updated_at=?9 WHERE id=?10",
+                 extra_params=?8, group_id=?9, updated_at=?10 WHERE id=?11",
                 rusqlite::params![
                     req.name, req.driver, req.host, req.port,
                     req.database_name, req.username, password_enc,
-                    req.extra_params, now, id
+                    req.extra_params, req.group_id, now, id
                 ],
             )?;
         }
@@ -153,18 +156,18 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
             conn.execute(
                 "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
                  database_name=?5, username=?6,
-                 extra_params=?7, updated_at=?8 WHERE id=?9",
+                 extra_params=?7, group_id=?8, updated_at=?9 WHERE id=?10",
                 rusqlite::params![
                     req.name, req.driver, req.host, req.port,
                     req.database_name, req.username,
-                    req.extra_params, now, id
+                    req.extra_params, req.group_id, now, id
                 ],
             )?;
         }
     }
 
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok(models::Connection {
@@ -177,8 +180,9 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
+            sort_order: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
         }),
     )?;
     Ok(result)
@@ -364,6 +368,30 @@ pub fn move_connection_to_group(connection_id: i64, group_id: Option<i64>) -> Ap
     )?;
     if affected == 0 {
         return Err(crate::AppError::Other(format!("Connection {} not found", connection_id)));
+    }
+    Ok(())
+}
+
+/// 批量更新连接 sort_order
+pub fn reorder_connections(items: &[models::ReorderItem]) -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    for item in items {
+        conn.execute(
+            "UPDATE connections SET sort_order = ?1 WHERE id = ?2",
+            rusqlite::params![item.sort_order, item.id],
+        )?;
+    }
+    Ok(())
+}
+
+/// 批量更新分组 sort_order
+pub fn reorder_groups(items: &[models::ReorderItem]) -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    for item in items {
+        conn.execute(
+            "UPDATE connection_groups SET sort_order = ?1 WHERE id = ?2",
+            rusqlite::params![item.sort_order, item.id],
+        )?;
     }
     Ok(())
 }

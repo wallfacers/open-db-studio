@@ -48,6 +48,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
           background: '#0d1117',
           padding: '12px',
         }}
+        codeTagProps={{ style: { background: 'transparent' } }}
       >
         {code}
       </SyntaxHighlighter>

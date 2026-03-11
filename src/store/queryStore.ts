@@ -19,6 +19,10 @@ interface QueryState {
 
   executeQuery: (connectionId: number, tabId: string) => Promise<void>;
   loadHistory: (connectionId: number) => Promise<void>;
+  removeResult: (tabId: string, idx: number) => void;
+  removeResultsLeft: (tabId: string, idx: number) => void;
+  removeResultsRight: (tabId: string, idx: number) => void;
+  clearResults: (tabId: string) => void;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -82,6 +86,27 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         .catch(() => {}); // 诊断失败静默处理
     }
   },
+
+  removeResult: (tabId, idx) =>
+    set(s => {
+      const list = (s.results[tabId] ?? []).filter((_, i) => i !== idx);
+      return { results: { ...s.results, [tabId]: list } };
+    }),
+
+  removeResultsLeft: (tabId, idx) =>
+    set(s => {
+      const list = (s.results[tabId] ?? []).slice(idx);
+      return { results: { ...s.results, [tabId]: list } };
+    }),
+
+  removeResultsRight: (tabId, idx) =>
+    set(s => {
+      const list = (s.results[tabId] ?? []).slice(0, idx + 1);
+      return { results: { ...s.results, [tabId]: list } };
+    }),
+
+  clearResults: (tabId) =>
+    set(s => ({ results: { ...s.results, [tabId]: [] } })),
 
   loadHistory: async (connectionId) => {
     try {

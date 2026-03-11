@@ -70,8 +70,19 @@ JOIN
 
   // Resizable panel states
   const [sidebarWidth, setSidebarWidth] = useState(256);
-  const [resultsHeight, setResultsHeight] = useState(300);
+  const [resultsHeight, setResultsHeight] = useState(0);
   const [assistantWidth, setAssistantWidth] = useState(320);
+
+  // Auto-expand results panel when results appear; collapse when cleared
+  const { results } = useQueryStore();
+  useEffect(() => {
+    const len = (results[activeTab] ?? []).length;
+    if (len > 0 && resultsHeight === 0) {
+      setResultsHeight(250);
+    } else if (len === 0 && resultsHeight > 0) {
+      setResultsHeight(0);
+    }
+  }, [results, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 
 interface ThinkingBlockProps {
   content: string;
@@ -8,35 +8,61 @@ interface ThinkingBlockProps {
 
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreaming }) => {
   const [expanded, setExpanded] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [doneDuration, setDoneDuration] = useState<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 流式结束后自动折叠
+  // 首次有内容时启动计时
   useEffect(() => {
-    if (!isStreaming) {
+    if (content && !startTimeRef.current) {
+      startTimeRef.current = Date.now();
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current!) / 1000));
+      }, 1000);
+    }
+  }, [content]);
+
+  // 流式结束：记录总时长、停止计时、自动折叠
+  useEffect(() => {
+    if (!isStreaming && startTimeRef.current && timerRef.current) {
+      setDoneDuration(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      clearInterval(timerRef.current);
+      timerRef.current = null;
       setExpanded(false);
     }
   }, [isStreaming]);
 
-  // 非流式且无内容时不显示
-  if (!content && !isStreaming) return null;
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  // 无内容时不显示
+  if (!content) return null;
 
   return (
-    <div className="mb-2 border border-[#2a3f5a] rounded bg-[#0d1520]">
+    <div className="mb-3">
+      {/* 标题行：仿 DeepSeek 最小化样式 */}
       <button
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
         onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-[#5a7a96] hover:text-[#c8daea] transition-colors mb-1.5 select-none"
       >
-        <Brain size={12} className="text-[#00c9a7] flex-shrink-0" />
-        <span className="flex-1 text-left">
-          {isStreaming ? (
-            <span className="animate-pulse">思考中...</span>
-          ) : (
-            '思考过程'
-          )}
+        <Sparkles
+          size={11}
+          className={isStreaming ? 'text-[#00c9a7] animate-pulse' : 'text-[#00c9a7] opacity-70'}
+        />
+        <span>
+          {isStreaming
+            ? `思考中${elapsedSeconds > 0 ? `（${elapsedSeconds}s）` : '...'}`
+            : `已深度思考${doneDuration !== null && doneDuration > 0 ? `（${doneDuration}s）` : ''}`
+          }
         </span>
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
       </button>
+
+      {/* 内容区：左侧竖线引用风格 */}
       {expanded && (
-        <div className="px-3 pb-2 text-xs text-[#5a7a96] font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto border-t border-[#1e2d42]">
+        <div className="pl-3 border-l-2 border-[#2a3f5a] text-[11px] text-[#4a6480] leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
           {content}
         </div>
       )}

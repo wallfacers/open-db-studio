@@ -2940,6 +2940,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "env_logger",
+ "futures-util",
  "log",
  "once_cell",
  "oracle",

@@ -18,4 +18,7 @@ export default defineConfig({
     },
   },
   base: process.env.TAURI_ENV_DEBUG ? '/' : './',
+  test: {
+    environment: 'node',
+  },
 });

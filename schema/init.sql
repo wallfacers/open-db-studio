@@ -6,14 +6,15 @@
 CREATE TABLE IF NOT EXISTS connection_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    parent_id INTEGER REFERENCES connection_groups(id),
+    color TEXT,
+    sort_order INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS connections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    group_id INTEGER REFERENCES connection_groups(id),
+    group_id INTEGER REFERENCES connection_groups(id) ON DELETE SET NULL,
     driver TEXT NOT NULL CHECK(driver IN ('mysql','postgres','oracle','sqlserver','sqlite')),
     host TEXT,
     port INTEGER,
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS connections (
     username TEXT,
     password_enc TEXT,
     extra_params TEXT,
+    sort_order INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -47,4 +49,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS llm_configs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  api_key     TEXT NOT NULL DEFAULT '',
+  base_url    TEXT NOT NULL DEFAULT 'https://api.openai.com/v1',
+  model       TEXT NOT NULL DEFAULT 'gpt-4o-mini',
+  api_type    TEXT NOT NULL DEFAULT 'openai',
+  preset      TEXT,
+  is_default  INTEGER NOT NULL DEFAULT 0,
+  test_status TEXT NOT NULL DEFAULT 'untested',
+  test_error  TEXT,
+  tested_at   TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

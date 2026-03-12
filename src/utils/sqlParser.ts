@@ -43,6 +43,14 @@ export function parseStatements(sql: string): SqlStatementInfo[] {
   return results;
 }
 
+function countNewlines(sql: string, from: number, to: number): number {
+  let count = 0;
+  for (let i = from; i < to; i++) {
+    if (sql[i] === '\n') count++;
+  }
+  return count;
+}
+
 function pushStatement(
   sql: string,
   rawStart: number,
@@ -53,7 +61,9 @@ function pushStatement(
   const trimmedStart = rawStart + (slice.length - slice.trimStart().length);
   const text = slice.trim();
   if (text.length > 0) {
-    results.push({ text, startOffset: trimmedStart, endOffset: trimmedStart + text.length });
+    const startLine = countNewlines(sql, 0, trimmedStart);
+    const endLine = countNewlines(sql, 0, trimmedStart + text.length);
+    results.push({ text, startOffset: trimmedStart, endOffset: trimmedStart + text.length, startLine, endLine });
   }
 }
 

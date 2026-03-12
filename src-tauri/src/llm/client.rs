@@ -614,11 +614,13 @@ impl LlmClient {
                 if json_str == "[DONE]" {
                     // Send accumulated tool calls then Done
                     for (id, name, args) in &tool_calls_acc {
-                        let _ = channel.send(StreamEvent::ToolCallRequest {
-                            call_id: id.clone(),
-                            name: name.clone(),
-                            arguments: args.clone(),
-                        });
+                        if !name.is_empty() {
+                            let _ = channel.send(StreamEvent::ToolCallRequest {
+                                call_id: id.clone(),
+                                name: name.clone(),
+                                arguments: args.clone(),
+                            });
+                        }
                     }
                     let _ = channel.send(StreamEvent::Done);
                     return Ok(());

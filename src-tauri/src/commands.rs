@@ -178,7 +178,9 @@ pub async fn ai_explain_sql(sql: String, connection_id: Option<i64>) -> AppResul
 
 #[tauri::command]
 pub async fn list_llm_configs() -> AppResult<Vec<crate::db::models::LlmConfig>> {
-    crate::db::list_llm_configs()
+    let configs = crate::db::list_llm_configs()?;
+    // api_key 仅在 Rust 内部使用，永不暴露到前端
+    Ok(configs.into_iter().map(|mut c| { c.api_key = String::new(); c }).collect())
 }
 
 #[tauri::command]

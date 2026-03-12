@@ -10,6 +10,8 @@ pub enum StreamEvent {
     ThinkingChunk { delta: String },
     ContentChunk   { delta: String },
     ToolCallRequest { call_id: String, name: String, arguments: String },
+    /// Session 建立阶段的进度提示，前端用于替换加载动画中的文字
+    StatusUpdate { message: String },
     Done,
     Error { message: String },
 }

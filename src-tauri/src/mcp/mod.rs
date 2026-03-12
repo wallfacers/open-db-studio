@@ -1,10 +1,13 @@
-use axum::{routing::post, Router, Json};
+use axum::{routing::{get, post}, Router, Json};
+use axum::response::sse::{Event, KeepAlive, Sse};
+use futures_util::stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::TcpListener;
 
 #[derive(Deserialize)]
 pub struct JsonRpcRequest {
+    #[serde(rename = "jsonrpc")]
     pub _jsonrpc: String,
     pub id: Option<Value>,
     pub method: String,
@@ -195,9 +198,27 @@ async fn call_tool(name: &str, args: Value) -> crate::AppResult<String> {
     }
 }
 
+/// GET /mcp — SSE endpoint for Streamable HTTP transport.
+///
+/// The MCP Streamable HTTP spec (2025-03-26) allows clients to open a GET SSE
+/// connection to receive server-initiated events. This server never pushes events,
+/// but we must respond to GET immediately (with a keep-alive SSE stream) so that
+/// opencode-cli does not wait for a timeout before falling back to POST-only mode.
+async fn handle_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    Sse::new(stream::pending()).keep_alive(KeepAlive::default())
+}
+
 async fn handle_mcp(Json(req): Json<JsonRpcRequest>) -> Json<JsonRpcResponse> {
     let id = req.id.clone();
     match req.method.as_str() {
+        // MCP 握手：必须在 tools/list 之前完成，否则客户端会重试/超时
+        "initialize" => Json(JsonRpcResponse::ok(id, json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": { "tools": {} },
+            "serverInfo": { "name": "open-db-studio", "version": "0.1.0" }
+        }))),
+        // 通知类型（无 id），客户端不等响应，返回空 result 即可
+        "notifications/initialized" => Json(JsonRpcResponse::ok(id, json!(null))),
         "tools/list" => Json(JsonRpcResponse::ok(id, tool_definitions())),
         "tools/call" => {
             let params = req.params.unwrap_or(Value::Null);
@@ -215,13 +236,19 @@ async fn handle_mcp(Json(req): Json<JsonRpcRequest>) -> Json<JsonRpcResponse> {
 }
 
 pub async fn start_mcp_server() -> crate::AppResult<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0")
+    // 优先使用固定端口便于调试；若已被占用则退回随机端口
+    let listener = TcpListener::bind("127.0.0.1:19876")
+        .or_else(|_| TcpListener::bind("127.0.0.1:0"))
         .map_err(|e| crate::AppError::Other(format!("MCP server bind failed: {}", e)))?;
     let port = listener.local_addr()
         .map_err(|e| crate::AppError::Other(e.to_string()))?.port();
 
-    let app = Router::new().route("/mcp", post(handle_mcp));
+    let app = Router::new()
+        .route("/mcp", get(handle_mcp_sse))
+        .route("/mcp", post(handle_mcp));
 
+    listener.set_nonblocking(true)
+        .map_err(|e| crate::AppError::Other(format!("MCP set_nonblocking failed: {}", e)))?;
     tokio::spawn(async move {
         let listener = tokio::net::TcpListener::from_std(listener).expect("listener convert");
         axum::serve(listener, app).await.expect("MCP server failed");

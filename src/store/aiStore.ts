@@ -16,14 +16,19 @@ interface AiState {
   activeConfigId: number | null;
   setActiveConfigId: (id: number | null) => void;
 
-  // 多轮对话
+  // 多轮对话：只存已完成的消息，流式中不写入
   chatHistory: ChatMessage[];
+  // 当前流式消息内容（独立于 chatHistory，避免历史消息重渲染）
+  streamingContent: string;
+  streamingThinkingContent: string;
   isChatting: boolean;
   clearHistory: () => void;
 
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
   // 当前工具调用状态
   activeToolName: string | null;
+  // session 建立阶段的进度文字（仅在冷启动时短暂出现）
+  sessionStatus: string | null;
 
   // AI 功能
   isExplaining: boolean;
@@ -37,38 +42,15 @@ interface AiState {
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }
 
-// Mutate the last entry in chatHistory with partial updates.
-const updateLastMsg = (
-  set: (fn: (s: AiState) => Partial<AiState>) => void,
-  updates: Partial<ChatMessage>,
-  extra: Partial<AiState> = {}
-) =>
-  set((s) => {
-    const h = [...s.chatHistory];
-    h[h.length - 1] = { ...h[h.length - 1], ...updates };
-    return { chatHistory: h, ...extra };
-  });
-
-// Append a delta string to a field on the last chatHistory entry.
-const appendToLastMsg = (
-  set: (fn: (s: AiState) => Partial<AiState>) => void,
-  field: 'content' | 'thinkingContent',
-  delta: string
-) =>
-  set((s) => {
-    const h = [...s.chatHistory];
-    const last = { ...h[h.length - 1] };
-    last[field] = ((last[field] as string) ?? '') + delta;
-    h[h.length - 1] = last;
-    return { chatHistory: h };
-  });
-
 export const useAiStore = create<AiState>((set, get) => ({
   configs: [],
   activeConfigId: null,
   chatHistory: [],
+  streamingContent: '',
+  streamingThinkingContent: '',
   isChatting: false,
   activeToolName: null,
+  sessionStatus: null,
   isExplaining: false,
   isOptimizing: false,
   isDiagnosing: false,
@@ -118,7 +100,11 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
-  clearHistory: () => set({ chatHistory: [] }),
+  clearHistory: () => set({
+    chatHistory: [],
+    streamingContent: '',
+    streamingThinkingContent: '',
+  }),
 
   sendAgentChatStream: async (message, connectionId) => {
     // 获取当前 tab SQL（用于注入上下文）
@@ -129,48 +115,99 @@ export const useAiStore = create<AiState>((set, get) => ({
       ? queryStore.sqlContent[activeTabId] ?? null
       : null;
 
-    // 展示用户消息 + 占位 assistant 消息
+    // 只追加用户消息到 chatHistory；流式 assistant 内容存入独立状态
     set((s) => ({
       isChatting: true,
-      chatHistory: [
-        ...s.chatHistory,
-        { role: 'user' as const, content: message },
-        { role: 'assistant' as const, content: '', thinkingContent: '', isStreaming: true },
-      ],
+      streamingContent: '',
+      streamingThinkingContent: '',
+      chatHistory: [...s.chatHistory, { role: 'user' as const, content: message }],
     }));
+
+    // 将最终流式内容 commit 到 chatHistory
+    const commitAssistant = (content: string, thinking: string) => {
+      set((s) => ({
+        chatHistory: [
+          ...s.chatHistory,
+          { role: 'assistant' as const, content, thinkingContent: thinking },
+        ],
+        streamingContent: '',
+        streamingThinkingContent: '',
+        isChatting: false,
+        activeToolName: null,
+        sessionStatus: null,
+      }));
+    };
 
     try {
       const { Channel } = await import('@tauri-apps/api/core');
       const channel = new Channel<{
-        type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'Done' | 'Error';
+        type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
         data?: { delta?: string; message?: string; call_id?: string; name?: string; arguments?: string };
       }>();
 
-      channel.onmessage = (event) => {
-        if (event.type === 'ThinkingChunk' && event.data?.delta) {
-          appendToLastMsg(set, 'thinkingContent', event.data.delta);
-        } else if (event.type === 'ContentChunk' && event.data?.delta) {
-          appendToLastMsg(set, 'content', event.data.delta);
-        } else if (event.type === 'ToolCallRequest' && event.data?.name) {
-          set(() => ({ activeToolName: event.data!.name! }));
-        } else if (event.type === 'Done') {
-          updateLastMsg(set, { isStreaming: false }, { isChatting: false, activeToolName: null });
-        } else if (event.type === 'Error') {
-          updateLastMsg(
-            set,
-            { content: `Error: ${event.data?.message ?? 'Unknown error'}`, isStreaming: false },
-            { isChatting: false, activeToolName: null }
-          );
+      // RAF 节流：高频 delta 合并成每帧一次 state 更新
+      // 只更新 streamingContent/streamingThinkingContent（不触碰 chatHistory）
+      let contentBuf = '';
+      let thinkingBuf = '';
+      let rafId: number | null = null;
+
+      const flushBuffers = () => {
+        rafId = null;
+        if (contentBuf) {
+          const delta = contentBuf; contentBuf = '';
+          set((s) => ({ streamingContent: s.streamingContent + delta }));
+        }
+        if (thinkingBuf) {
+          const delta = thinkingBuf; thinkingBuf = '';
+          set((s) => ({ streamingThinkingContent: s.streamingThinkingContent + delta }));
         }
       };
+
+      const scheduleFlush = () => {
+        if (!rafId) rafId = requestAnimationFrame(flushBuffers);
+      };
+
+      const flushNow = () => {
+        if (rafId) { cancelAnimationFrame(rafId); flushBuffers(); }
+      };
+
+      channel.onmessage = (event) => {
+        if (event.type === 'StatusUpdate' && event.data?.message) {
+          set(() => ({ sessionStatus: event.data!.message! }));
+        } else if (event.type === 'ThinkingChunk' && event.data?.delta) {
+          set(() => ({ sessionStatus: null }));
+          thinkingBuf += event.data.delta;
+          scheduleFlush();
+        } else if (event.type === 'ContentChunk' && event.data?.delta) {
+          set(() => ({ sessionStatus: null }));
+          contentBuf += event.data.delta;
+          scheduleFlush();
+        } else if (event.type === 'ToolCallRequest' && event.data?.name) {
+          flushNow();
+          set(() => ({ activeToolName: event.data!.name!, sessionStatus: null }));
+        } else if (event.type === 'Done') {
+          flushNow();
+          const { streamingContent, streamingThinkingContent } = get();
+          commitAssistant(streamingContent, streamingThinkingContent);
+        } else if (event.type === 'Error') {
+          flushNow();
+          const errorContent = `Error: ${event.data?.message ?? 'Unknown error'}`;
+          commitAssistant(errorContent, '');
+        }
+      };
+
+      // 读取当前选中的配置 ID（null 表示使用默认）
+      const configId = get().activeConfigId;
 
       await invoke('ai_chat_acp', {
         prompt: message,
         tabSql,
+        connectionId,  // Rust 侧接收为 Option<i64>，null 序列化为 None
+        configId,
         channel,
       });
     } catch (e) {
-      updateLastMsg(set, { content: `Error: ${String(e)}`, isStreaming: false }, { isChatting: false, activeToolName: null });
+      commitAssistant(`Error: ${String(e)}`, '');
     }
   },
 

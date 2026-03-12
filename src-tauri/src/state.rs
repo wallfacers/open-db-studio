@@ -1,7 +1,29 @@
+use tokio::sync::mpsc::UnboundedSender;
+use crate::llm::StreamEvent;
+
+/// 一条 ACP prompt 请求，通过 channel 发往 session 线程
+pub struct AcpRequest {
+    /// 已构建好的完整 prompt 文本（含 SQL 上下文）
+    pub prompt_text: String,
+    /// 流式事件回传通道（ContentChunk / ThinkingChunk / ToolCallRequest）
+    pub event_tx: UnboundedSender<StreamEvent>,
+    /// 请求完成信号（Ok = 成功，Err = 失败消息）
+    pub done_tx: tokio::sync::oneshot::Sender<crate::error::AppResult<()>>,
+}
+
+/// 持久化 ACP session 句柄，存于 AppState
+pub struct PersistentAcpSession {
+    /// 创建此 session 时使用的 LLM 配置 ID（用于检测配置变更）
+    pub config_id: i64,
+    /// 向 session 线程发送 prompt 请求
+    pub request_tx: UnboundedSender<AcpRequest>,
+}
+
 /// 全局应用状态（注入 Tauri manage）
 pub struct AppState {
-    /// MCP HTTP Server 监听的端口
+    /// MCP HTTP Server 监听端口
     pub mcp_port: u16,
-    /// 当前活跃的 opencode ACP 进程 PID（None = 无活跃会话）
-    pub active_acp_pid: std::sync::Arc<std::sync::Mutex<Option<u32>>>,
+    /// 当前持久化 ACP session（None = 尚未建立）
+    /// 使用 tokio::sync::Mutex 以便在 async 函数中跨 await 持锁
+    pub acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
 }

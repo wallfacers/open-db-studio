@@ -14,9 +14,14 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::llm::StreamEvent;
 
 /// ACP client handler — receives session notifications from opencode and
-/// forwards them as `StreamEvent` messages to the frontend channel.
+/// forwards them as `StreamEvent` messages to the current request's event channel.
+///
+/// `tx` 是共享的可替换 sender：
+/// - session 线程在每次 prompt 前将其设为当前请求的 event_tx
+/// - session 线程在 prompt 完成后将其清为 None
+/// - 使用 std::sync::Mutex（不跨 await 持锁，性能足够）
 pub struct AcpClientHandler {
-    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>,
+    pub(crate) tx: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<StreamEvent>>>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -28,15 +33,21 @@ impl Client for AcpClientHandler {
         match notif.update {
             SessionUpdate::AgentMessageChunk(chunk) => {
                 if let ContentBlock::Text(t) = chunk.content {
-                    if self.tx.send(StreamEvent::ContentChunk { delta: t.text }).is_err() {
-                        log::debug!("[acp] tx send failed, receiver dropped");
+                    let tx_opt = { self.tx.lock().unwrap().clone() };
+                    if let Some(ref tx) = tx_opt {
+                        if tx.send(StreamEvent::ContentChunk { delta: t.text }).is_err() {
+                            log::debug!("[acp] tx send failed, receiver dropped");
+                        }
                     }
                 }
             }
             SessionUpdate::AgentThoughtChunk(chunk) => {
                 if let ContentBlock::Text(t) = chunk.content {
-                    if self.tx.send(StreamEvent::ThinkingChunk { delta: t.text }).is_err() {
-                        log::debug!("[acp] tx send failed, receiver dropped");
+                    let tx_opt = { self.tx.lock().unwrap().clone() };
+                    if let Some(ref tx) = tx_opt {
+                        if tx.send(StreamEvent::ThinkingChunk { delta: t.text }).is_err() {
+                            log::debug!("[acp] tx send failed, receiver dropped");
+                        }
                     }
                 }
             }
@@ -50,8 +61,11 @@ impl Client for AcpClientHandler {
                         .map(|v| v.to_string())
                         .unwrap_or_default(),
                 };
-                if self.tx.send(ev).is_err() {
-                    log::debug!("[acp] tx send failed, receiver dropped");
+                let tx_opt = { self.tx.lock().unwrap().clone() };
+                if let Some(ref tx) = tx_opt {
+                    if tx.send(ev).is_err() {
+                        log::debug!("[acp] tx send failed, receiver dropped");
+                    }
                 }
             }
             _ => {}
@@ -139,13 +153,23 @@ fn spawn_local_thread() -> tokio::sync::mpsc::UnboundedSender<SendableLocalFutur
 pub async fn start_acp_session(
     mcp_port: u16,
     cwd: &std::path::Path,
-    tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>,
+    shared_event_tx: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<StreamEvent>>>>,
+    status_tx: Option<&tokio::sync::mpsc::UnboundedSender<StreamEvent>>,
 ) -> crate::AppResult<(
     Arc<tokio::sync::Mutex<ClientSideConnection>>,
     String,
     tokio::process::Child,
 )> {
     let config_path = cwd.join("opencode.json");
+
+    let send_status = |msg: &str| {
+        if let Some(tx) = status_tx {
+            let _ = tx.send(StreamEvent::StatusUpdate { message: msg.to_string() });
+        }
+    };
+
+    send_status("正在启动 AI 引擎...");
+    let t0 = std::time::Instant::now();
 
     let mut child = Command::new("opencode-cli")
         .arg("acp")
@@ -156,6 +180,7 @@ pub async fn start_acp_session(
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| crate::AppError::Other(format!("Failed to spawn opencode-cli: {}", e)))?;
+    log::info!("[acp] opencode-cli spawned ({:.1}s)", t0.elapsed().as_secs_f32());
 
     let stdin = child
         .stdin
@@ -176,7 +201,7 @@ pub async fn start_acp_session(
     let local_tx = spawn_local_thread();
     let local_tx_for_spawn = local_tx.clone();
 
-    let handler = AcpClientHandler { tx };
+    let handler = AcpClientHandler { tx: shared_event_tx };
 
     // The spawn callback is called synchronously inside ClientSideConnection::new
     // (via handle_incoming) to schedule the internal message-dispatch loop.
@@ -223,6 +248,8 @@ pub async fn start_acp_session(
     }
 
     // ── ACP handshake: initialize ──────────────────────────────────────────────
+    send_status("正在握手...");
+    let t_init = std::time::Instant::now();
     {
         let conn = connection.lock().await;
         let _: InitializeResponse = handshake!(
@@ -230,8 +257,13 @@ pub async fn start_acp_session(
             "ACP initialize failed"
         );
     }
+    log::info!("[acp] initialize done ({:.1}s)", t_init.elapsed().as_secs_f32());
 
     // ── ACP handshake: new_session (injects MCP server) ───────────────────────
+    // NOTE: new_session triggers listTools() on the MCP server, which may take
+    // several seconds on first call (transport negotiation + tool discovery).
+    send_status("正在加载数据库工具...");
+    let t_sess = std::time::Instant::now();
     let mcp_url = format!("http://127.0.0.1:{}/mcp", mcp_port);
     let session_resp: NewSessionResponse = {
         let conn = connection.lock().await;
@@ -245,6 +277,8 @@ pub async fn start_acp_session(
             "ACP new_session failed"
         )
     };
+    log::info!("[acp] new_session done ({:.1}s, total from spawn: {:.1}s)",
+        t_sess.elapsed().as_secs_f32(), t0.elapsed().as_secs_f32());
 
     let session_id = session_resp.session_id.to_string();
     Ok((connection, session_id, child))

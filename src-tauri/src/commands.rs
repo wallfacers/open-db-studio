@@ -1,6 +1,6 @@
 use crate::datasource::{ConnectionConfig, QueryResult, SchemaInfo, TableMeta};
 use crate::db::models::{Connection, CreateConnectionRequest, QueryHistory, SavedQuery};
-use crate::llm::{ChatContext, ChatMessage};
+use crate::llm::{ChatContext, ChatMessage, AgentMessage, ToolDefinition};
 use crate::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 
@@ -732,4 +732,34 @@ pub async fn list_objects(
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
     ds.list_objects(&database, schema.as_deref(), &category).await
+}
+
+#[tauri::command]
+pub async fn ai_chat_stream_with_tools(
+    messages: Vec<AgentMessage>,
+    tools: Vec<ToolDefinition>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+) -> AppResult<()> {
+    let client = build_llm_client()?;
+    let system_msg = AgentMessage {
+        role: "system".into(),
+        content: Some(include_str!("../../prompts/chat_assistant.txt").to_string()),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+    };
+    let mut all_messages = vec![system_msg];
+    all_messages.extend(messages);
+    client.chat_stream_with_tools(all_messages, tools, &channel).await
+}
+
+#[tauri::command]
+pub async fn ai_chat_continue(
+    messages: Vec<AgentMessage>,
+    tools: Vec<ToolDefinition>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+) -> AppResult<()> {
+    let client = build_llm_client()?;
+    // ai_chat_continue: messages already include system prompt from the loop
+    client.chat_stream_with_tools(messages, tools, &channel).await
 }

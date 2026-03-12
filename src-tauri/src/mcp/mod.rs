@@ -5,7 +5,7 @@ use std::net::TcpListener;
 
 #[derive(Deserialize)]
 pub struct JsonRpcRequest {
-    pub jsonrpc: String,
+    pub _jsonrpc: String,
     pub id: Option<Value>,
     pub method: String,
     pub params: Option<Value>,

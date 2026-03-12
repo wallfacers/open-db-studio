@@ -31,7 +31,6 @@ pub fn run() {
             ).expect("Failed to start MCP server");
             app.manage(crate::state::AppState {
                 mcp_port,
-                acp_session: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
                 active_acp_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
             });
             Ok(())
@@ -51,7 +50,6 @@ pub fn run() {
             commands::ai_generate_sql,
             commands::ai_explain_sql,
             commands::get_query_history,
-            commands::save_query,
             commands::list_llm_configs,
             commands::get_llm_config_key,
             commands::create_llm_config,

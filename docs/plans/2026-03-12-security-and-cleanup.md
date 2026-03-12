@@ -210,7 +210,7 @@ git commit -m "feat(security): add get_connection_password command for edit-mode
 
 ---
 
-## Task 5: 前端 — LlmSettings 编辑弹窗改造
+## Task 5: ~~前端 — LlmSettings 编辑弹窗改造~~ [DONE]
 
 **Files:**
 - Modify: `src/components/Settings/LlmSettings.tsx`
@@ -406,7 +406,7 @@ git commit -m "feat(security): LlmSettings edit — isDirty + reveal key, api_ke
 
 ---
 
-## Task 6: 前端 — ConnectionModal 编辑模式添加查看密码按钮
+## Task 6: ~~前端 — ConnectionModal 编辑模式添加查看密码按钮~~ [DONE]
 
 **Files:**
 - Modify: `src/components/ConnectionModal/index.tsx`
@@ -470,7 +470,7 @@ git commit -m "feat(security): ConnectionModal edit — add reveal password butt
 
 ---
 
-## Task 7: 文档同步
+## Task 7: ~~文档同步~~ [DONE]
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-03-12-ai-agent-sql-chat.md`

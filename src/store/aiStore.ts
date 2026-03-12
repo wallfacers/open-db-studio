@@ -24,6 +24,7 @@ interface AiState {
   isChatting: boolean;
   clearHistory: () => void;
 
+  cancelChat: () => Promise<void>;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
   // 当前工具调用状态
   activeToolName: string | null;
@@ -100,11 +101,34 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
-  clearHistory: () => set({
-    chatHistory: [],
-    streamingContent: '',
-    streamingThinkingContent: '',
-  }),
+  clearHistory: () => {
+    set({
+      chatHistory: [],
+      streamingContent: '',
+      streamingThinkingContent: '',
+    });
+    // 同时销毁后端 session，确保下次对话从全新上下文开始
+    invoke('cancel_acp_session').catch(() => {});
+  },
+
+  cancelChat: async () => {
+    const { streamingContent, streamingThinkingContent } = get();
+    set((s) => ({
+      chatHistory: streamingContent
+        ? [...s.chatHistory, { role: 'assistant' as const, content: streamingContent, thinkingContent: streamingThinkingContent || undefined }]
+        : s.chatHistory,
+      streamingContent: '',
+      streamingThinkingContent: '',
+      isChatting: false,
+      activeToolName: null,
+      sessionStatus: null,
+    }));
+    try {
+      await invoke('cancel_acp_session');
+    } catch (_) {
+      // session 可能已经不存在，忽略
+    }
+  },
 
   sendAgentChatStream: async (message, connectionId) => {
     // 获取当前 tab SQL（用于注入上下文）
@@ -187,10 +211,12 @@ export const useAiStore = create<AiState>((set, get) => ({
           set(() => ({ activeToolName: event.data!.name!, sessionStatus: null }));
         } else if (event.type === 'Done') {
           flushNow();
+          if (!get().isChatting) return; // 已被 cancelChat 处理
           const { streamingContent, streamingThinkingContent } = get();
           commitAssistant(streamingContent, streamingThinkingContent);
         } else if (event.type === 'Error') {
           flushNow();
+          if (!get().isChatting) return; // 已被 cancelChat 处理
           const errorContent = `Error: ${event.data?.message ?? 'Unknown error'}`;
           commitAssistant(errorContent, '');
         }

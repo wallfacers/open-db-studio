@@ -38,7 +38,8 @@
     "noModelConfigured": "Not configured",
     "selectModel": "Select model",
     "noModelHint": "No configs found, go to Settings to add one",
-    "callingTool": "⚙ Calling tool: {{name}}..."
+    "callingTool": "⚙ Calling tool: {{name}}...",
+    "stopGeneration": "Stop Generation"
   },
   "connectionModal": {
     "editConnection": "Edit Connection",

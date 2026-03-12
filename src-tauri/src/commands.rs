@@ -892,6 +892,7 @@ async fn ai_chat_acp_inner(
     }
 
     let mcp_port = state.mcp_port;
+    let active_acp_pid = std::sync::Arc::clone(&state.active_acp_pid);
 
     // 使用同步 channel 把 !Send 的 ACP 调用结果传回 Send 上下文
     let (result_tx, result_rx) = std::sync::mpsc::channel::<AppResult<()>>();
@@ -912,6 +913,13 @@ async fn ai_chat_acp_inner(
             let (connection, session_id, mut child) =
                 crate::acp::client::start_acp_session(mcp_port, &cwd, tx).await?;
 
+            // 存储 PID 到 AppState，以便 cancel_acp_session 可以 kill 进程
+            {
+                let pid = child.id();
+                let mut guard = active_acp_pid.lock().unwrap();
+                *guard = pid;
+            }
+
             // 发送 prompt
             let content_blocks = vec![
                 ContentBlock::Text(TextContent::new(prompt_text))
@@ -922,8 +930,22 @@ async fn ai_chat_acp_inner(
                 .await;
             drop(conn);
 
-            // 问题2修复：无论 prompt 成功还是失败，都 kill 子进程
+            // 无论 prompt 成功还是失败，都 kill 子进程
             let _ = child.kill().await;
+
+            // 清除 PID
+            {
+                let mut guard = active_acp_pid.lock().unwrap();
+                *guard = None;
+            }
+
+            // 清理 opencode.json（含明文 API key）
+            let config_path = cwd.join("opencode.json");
+            if let Err(e) = std::fs::remove_file(&config_path) {
+                log::warn!("[acp] Failed to delete opencode.json: {}", e);
+            } else {
+                log::info!("[acp] Cleaned up opencode.json");
+            }
 
             match prompt_result {
                 Ok(resp) => {
@@ -948,9 +970,23 @@ async fn ai_chat_acp_inner(
 pub async fn cancel_acp_session(
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
-    let mut session_guard = state.acp_session.lock().await;
-    if let Some(mut sess) = session_guard.take() {
-        let _ = sess.child_handle.kill().await;
+    let pid_opt = {
+        let guard = state.active_acp_pid.lock().unwrap();
+        *guard
+    };
+    if let Some(pid) = pid_opt {
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status();
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .status();
+        }
     }
     Ok(())
 }

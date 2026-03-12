@@ -72,6 +72,8 @@ pub fn run() {
             commands::list_objects,
             commands::ai_chat_stream_with_tools,
             commands::ai_chat_continue,
+            commands::agent_get_table_sample,
+            commands::agent_execute_sql,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

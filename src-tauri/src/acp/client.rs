@@ -101,11 +101,14 @@ unsafe impl Send for SendableLocalFuture {}
 /// `ClientSideConnection` uses `Rc` / `LocalBoxFuture` internally, so neither the
 /// io_future nor the internal spawn callbacks are `Send`.  Tauri uses a multi-thread
 /// tokio runtime that has no ambient `LocalSet`, so calling `spawn_local` there would
-/// panic.  Instead we funnel every `LocalBoxFuture` through a `std::sync::mpsc`
+/// panic.  Instead we funnel every `LocalBoxFuture` through a `tokio::sync::mpsc`
 /// channel to a dedicated thread that owns a single-threaded runtime + `LocalSet`.
-fn spawn_local_thread() -> std::sync::mpsc::SyncSender<SendableLocalFuture> {
-    // Bounded channel: capacity 64 is plenty for the small number of tasks ACP spawns.
-    let (tx, rx) = std::sync::mpsc::sync_channel::<SendableLocalFuture>(64);
+///
+/// IMPORTANT: must use async `rx.recv().await` (not blocking `rx.recv()`) so the
+/// LocalSet executor can poll already-spawned futures (e.g. io_future) while waiting
+/// for the next task.  Using a synchronous blocking recv would deadlock the executor.
+fn spawn_local_thread() -> tokio::sync::mpsc::UnboundedSender<SendableLocalFuture> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<SendableLocalFuture>();
 
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -114,15 +117,10 @@ fn spawn_local_thread() -> std::sync::mpsc::SyncSender<SendableLocalFuture> {
             .expect("acp local runtime");
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async move {
-            // Drain the channel, spawning each future onto the LocalSet.
-            // We keep looping until the sender side is dropped (session ends).
-            loop {
-                match rx.recv() {
-                    Ok(wrapped) => {
-                        tokio::task::spawn_local(wrapped.0);
-                    }
-                    Err(_) => break, // all senders dropped; exit
-                }
+            // Drain the channel asynchronously, yielding between receives so that
+            // already-spawned local futures (io_future, dispatch loop) can be polled.
+            while let Some(wrapped) = rx.recv().await {
+                tokio::task::spawn_local(wrapped.0);
             }
         });
     });
@@ -147,14 +145,17 @@ pub async fn start_acp_session(
     String,
     tokio::process::Child,
 )> {
-    let mut child = Command::new("opencode")
+    let config_path = cwd.join("opencode.json");
+
+    let mut child = Command::new("opencode-cli")
         .arg("acp")
         .current_dir(cwd)
+        .env("OPENCODE_CONFIG", &config_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| crate::AppError::Other(format!("Failed to spawn opencode: {}", e)))?;
+        .map_err(|e| crate::AppError::Other(format!("Failed to spawn opencode-cli: {}", e)))?;
 
     let stdin = child
         .stdin

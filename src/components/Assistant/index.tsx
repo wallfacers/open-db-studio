@@ -237,7 +237,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         })}
         {isChatting && activeToolName && (
           <div className="text-xs text-[#5b8ab0] px-3 py-1 italic">
-            ⚙ 调用工具：{activeToolName}...
+            {t('assistant.callingTool', { name: activeToolName })}
           </div>
         )}
         <div ref={chatEndRef} />

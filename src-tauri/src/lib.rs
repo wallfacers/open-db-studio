@@ -29,7 +29,7 @@ pub fn run() {
             crate::db::init(&app_data_dir)?;
             crate::db::migrate_legacy_llm_settings()?;
             let mcp_port = tauri::async_runtime::block_on(
-                crate::mcp::start_mcp_server()
+                crate::mcp::start_mcp_server(app.handle().clone())
             ).expect("Failed to start MCP server");
             app.manage(crate::state::AppState {
                 mcp_port,

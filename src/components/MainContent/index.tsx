@@ -771,7 +771,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         {currentResults[selectedResultIdx]?.rows.map((row, ri) => (
                           <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
                             <td
-                              className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs select-none cursor-default"
+                              className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-left text-xs select-none cursor-default"
                               onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
                             >{ri + 1}</td>
                             {row.map((cell, ci) => {
@@ -780,7 +780,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                               return (
                                 <td
                                   key={ci}
-                                  className="px-3 py-1.5 border-r border-[#1e2d42] relative group"
+                                  className="px-3 py-1.5 border-r border-[#1e2d42] relative group text-left"
                                   onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                 >
                                   <div

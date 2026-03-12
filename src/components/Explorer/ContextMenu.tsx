@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  PlugZap, Unplug, FilePlus, FilePlus2, Pencil, Trash2,
+  FilePlus, FilePlus2, Pencil, Trash2,
   RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput,
   Code2, Eraser
 } from 'lucide-react';
@@ -74,10 +74,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         ];
       case 'connection':
         return [
-          ...(!isConnected
-            ? [{ label: t('contextMenu.openConnection'), icon: PlugZap, onClick: onOpenConnection }]
-            : [{ label: t('contextMenu.closeConnection'), icon: Unplug, onClick: onCloseConnection }]
-          ),
           { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery, disabled: !isConnected },
           { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh, dividerBefore: true },
           { label: t('contextMenu.moveToGroup'), icon: FolderInput, onClick: onMoveToGroup, dividerBefore: true },

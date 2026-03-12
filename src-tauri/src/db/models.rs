@@ -55,16 +55,6 @@ pub struct QueryHistory {
     pub error_msg: Option<String>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SavedQuery {
-    pub id: i64,
-    pub name: String,
-    pub connection_id: Option<i64>,
-    pub sql: String,
-    pub created_at: String,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LlmConfig {
     pub id: i64,

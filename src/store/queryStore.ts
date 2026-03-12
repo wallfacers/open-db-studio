@@ -45,9 +45,6 @@ interface QueryState {
   error: string | null;
   diagnosis: string | null;
 
-  addTab: (tab: Tab) => void;
-  closeTab: (id: string) => void;
-  setActiveTab: (id: string) => void;
   setSql: (tabId: string, sql: string) => void;
 
   executeQuery: (connectionId: number, tabId: string, sqlOverride?: string, database?: string | null, schema?: string | null) => Promise<void>;
@@ -82,24 +79,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   diagnosis: null,
   pendingDiff: null,
   editorInfo: {},
-
-  addTab: (tab) =>
-    set((s) => ({
-      tabs: [...s.tabs, tab],
-      activeTabId: tab.id,
-      sqlContent: { ...s.sqlContent, [tab.id]: '' },
-    })),
-
-  closeTab: (id) =>
-    set((s) => {
-      const tabs = s.tabs.filter((t) => t.id !== id);
-      return {
-        tabs,
-        activeTabId: s.activeTabId === id ? (tabs[tabs.length - 1]?.id ?? '') : s.activeTabId,
-      };
-    }),
-
-  setActiveTab: (id) => set({ activeTabId: id }),
 
   setSql: (tabId, sql) =>
     set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } })),

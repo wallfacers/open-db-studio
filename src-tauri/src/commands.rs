@@ -1,5 +1,5 @@
 use crate::datasource::{ConnectionConfig, QueryResult, SchemaInfo, TableMeta};
-use crate::db::models::{Connection, CreateConnectionRequest, QueryHistory, SavedQuery};
+use crate::db::models::{Connection, CreateConnectionRequest, QueryHistory};
 use crate::llm::{ChatContext, ChatMessage, AgentMessage, ToolDefinition};
 use crate::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
@@ -266,15 +266,6 @@ pub async fn test_llm_config(id: i64) -> AppResult<()> {
 #[tauri::command]
 pub async fn get_query_history(connection_id: i64) -> AppResult<Vec<QueryHistory>> {
     crate::db::list_query_history(connection_id)
-}
-
-#[tauri::command]
-pub async fn save_query(
-    _name: String,
-    _connection_id: i64,
-    _sql: String,
-) -> AppResult<SavedQuery> {
-    Err(AppError::Other("Not implemented yet".into()))
 }
 
 // ============ DB 管理 ============
@@ -816,7 +807,6 @@ pub async fn agent_execute_sql(
 #[tauri::command]
 pub async fn ai_chat_acp(
     prompt: String,
-    _connection_id: Option<i64>,
     tab_sql: Option<String>,
     channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
     state: tauri::State<'_, crate::AppState>,
@@ -864,14 +854,6 @@ async fn ai_chat_acp_inner(
         &config.api_type,
         &cwd,
     )?;
-
-    // 清除旧 session（kill 旧进程），每次对话都用干净的 session 避免跨运行时问题
-    {
-        let mut guard = state.acp_session.lock().await;
-        if let Some(mut old_sess) = guard.take() {
-            let _ = old_sess.child_handle.kill().await;
-        }
-    }
 
     // 创建流事件 channel（转发 ACP 通知 → Tauri Channel）
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::llm::StreamEvent>();

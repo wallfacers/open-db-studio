@@ -19,8 +19,6 @@ interface AiState {
   // 多轮对话
   chatHistory: ChatMessage[];
   isChatting: boolean;
-  sendChat: (message: string, connectionId: number | null) => Promise<string>;
-  sendChatStream: (message: string, connectionId: number | null) => Promise<void>;
   clearHistory: () => void;
 
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
@@ -28,18 +26,42 @@ interface AiState {
   activeToolName: string | null;
 
   // AI 功能
-  isGenerating: boolean;
   isExplaining: boolean;
   isOptimizing: boolean;
   isDiagnosing: boolean;
   isCreatingTable: boolean;
   error: string | null;
-  generateSql: (prompt: string, connectionId: number) => Promise<string>;
   explainSql: (sql: string, connectionId: number) => Promise<string>;
   optimizeSql: (sql: string, connectionId: number) => Promise<string>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }
+
+// Mutate the last entry in chatHistory with partial updates.
+const updateLastMsg = (
+  set: (fn: (s: AiState) => Partial<AiState>) => void,
+  updates: Partial<ChatMessage>,
+  extra: Partial<AiState> = {}
+) =>
+  set((s) => {
+    const h = [...s.chatHistory];
+    h[h.length - 1] = { ...h[h.length - 1], ...updates };
+    return { chatHistory: h, ...extra };
+  });
+
+// Append a delta string to a field on the last chatHistory entry.
+const appendToLastMsg = (
+  set: (fn: (s: AiState) => Partial<AiState>) => void,
+  field: 'content' | 'thinkingContent',
+  delta: string
+) =>
+  set((s) => {
+    const h = [...s.chatHistory];
+    const last = { ...h[h.length - 1] };
+    last[field] = ((last[field] as string) ?? '') + delta;
+    h[h.length - 1] = last;
+    return { chatHistory: h };
+  });
 
 export const useAiStore = create<AiState>((set, get) => ({
   configs: [],
@@ -47,7 +69,6 @@ export const useAiStore = create<AiState>((set, get) => ({
   chatHistory: [],
   isChatting: false,
   activeToolName: null,
-  isGenerating: false,
   isExplaining: false,
   isOptimizing: false,
   isDiagnosing: false,
@@ -127,172 +148,29 @@ export const useAiStore = create<AiState>((set, get) => ({
 
       channel.onmessage = (event) => {
         if (event.type === 'ThinkingChunk' && event.data?.delta) {
-          set((s) => {
-            const h = [...s.chatHistory];
-            const last = { ...h[h.length - 1] };
-            last.thinkingContent = (last.thinkingContent ?? '') + event.data!.delta!;
-            h[h.length - 1] = last;
-            return { chatHistory: h };
-          });
+          appendToLastMsg(set, 'thinkingContent', event.data.delta);
         } else if (event.type === 'ContentChunk' && event.data?.delta) {
-          set((s) => {
-            const h = [...s.chatHistory];
-            const last = { ...h[h.length - 1] };
-            last.content = (last.content ?? '') + event.data!.delta!;
-            h[h.length - 1] = last;
-            return { chatHistory: h };
-          });
+          appendToLastMsg(set, 'content', event.data.delta);
         } else if (event.type === 'ToolCallRequest' && event.data?.name) {
-          set({ activeToolName: event.data.name });
+          set(() => ({ activeToolName: event.data!.name! }));
         } else if (event.type === 'Done') {
-          set((s) => {
-            const h = [...s.chatHistory];
-            h[h.length - 1] = { ...h[h.length - 1], isStreaming: false };
-            return { chatHistory: h, isChatting: false, activeToolName: null };
-          });
+          updateLastMsg(set, { isStreaming: false }, { isChatting: false, activeToolName: null });
         } else if (event.type === 'Error') {
-          set((s) => {
-            const h = [...s.chatHistory];
-            h[h.length - 1] = {
-              ...h[h.length - 1],
-              content: `Error: ${event.data?.message ?? 'Unknown error'}`,
-              isStreaming: false,
-            };
-            return { chatHistory: h, isChatting: false, activeToolName: null };
-          });
+          updateLastMsg(
+            set,
+            { content: `Error: ${event.data?.message ?? 'Unknown error'}`, isStreaming: false },
+            { isChatting: false, activeToolName: null }
+          );
         }
       };
 
       await invoke('ai_chat_acp', {
         prompt: message,
-        connectionId,
         tabSql,
         channel,
       });
     } catch (e) {
-      set((s) => {
-        const h = [...s.chatHistory];
-        h[h.length - 1] = {
-          ...h[h.length - 1],
-          content: `Error: ${String(e)}`,
-          isStreaming: false,
-        };
-        return { chatHistory: h, isChatting: false, activeToolName: null };
-      });
-    }
-  },
-
-  sendChat: async (message, _connectionId) => {
-    const historyBeforeMessage = get().chatHistory;
-    set((s) => ({
-      isChatting: true,
-      chatHistory: [...s.chatHistory, { role: 'user', content: message }],
-    }));
-    try {
-      const reply = await invoke<string>('ai_chat', {
-        message,
-        context: { history: historyBeforeMessage, model: null },
-      });
-      set((s) => ({
-        chatHistory: [...s.chatHistory, { role: 'assistant', content: reply }],
-        isChatting: false,
-      }));
-      return reply;
-    } catch (e) {
-      set((s) => ({
-        chatHistory: [...s.chatHistory, { role: 'assistant', content: `Error: ${String(e)}` }],
-        isChatting: false,
-      }));
-      throw e;
-    }
-  },
-
-  sendChatStream: async (message, _connectionId) => {
-    const historyBeforeMessage = get().chatHistory;
-    set((s) => ({
-      isChatting: true,
-      chatHistory: [...s.chatHistory, { role: 'user', content: message }],
-    }));
-    set((s) => ({
-      chatHistory: [
-        ...s.chatHistory,
-        { role: 'assistant', content: '', thinkingContent: '', isStreaming: true },
-      ],
-    }));
-
-    try {
-      const { Channel } = await import('@tauri-apps/api/core');
-      const channel = new Channel<{
-        type: 'ThinkingChunk' | 'ContentChunk' | 'Done' | 'Error';
-        data?: { delta?: string; message?: string };
-      }>();
-
-      channel.onmessage = (event) => {
-        if (event.type === 'ThinkingChunk' && event.data?.delta) {
-          set((s) => {
-            const history = [...s.chatHistory];
-            const last = { ...history[history.length - 1] };
-            last.thinkingContent = (last.thinkingContent ?? '') + event.data!.delta!;
-            history[history.length - 1] = last;
-            return { chatHistory: history };
-          });
-        } else if (event.type === 'ContentChunk' && event.data?.delta) {
-          set((s) => {
-            const history = [...s.chatHistory];
-            const last = { ...history[history.length - 1] };
-            last.content = (last.content ?? '') + event.data!.delta!;
-            history[history.length - 1] = last;
-            return { chatHistory: history };
-          });
-        } else if (event.type === 'Done') {
-          set((s) => {
-            const history = [...s.chatHistory];
-            const last = { ...history[history.length - 1], isStreaming: false };
-            history[history.length - 1] = last;
-            return { chatHistory: history, isChatting: false };
-          });
-        } else if (event.type === 'Error') {
-          set((s) => {
-            const history = [...s.chatHistory];
-            const last = {
-              ...history[history.length - 1],
-              content: `Error: ${event.data?.message ?? 'Unknown error'}`,
-              isStreaming: false,
-            };
-            history[history.length - 1] = last;
-            return { chatHistory: history, isChatting: false };
-          });
-        }
-      };
-
-      await invoke('ai_chat_stream', {
-        message,
-        context: { history: historyBeforeMessage, model: null },
-        channel,
-      });
-    } catch (e) {
-      set((s) => {
-        const history = [...s.chatHistory];
-        const last = {
-          ...history[history.length - 1],
-          content: `Error: ${String(e)}`,
-          isStreaming: false,
-        };
-        history[history.length - 1] = last;
-        return { chatHistory: history, isChatting: false };
-      });
-    }
-  },
-
-  generateSql: async (prompt, connectionId) => {
-    set({ isGenerating: true, error: null });
-    try {
-      return await invoke<string>('ai_generate_sql', { prompt, connectionId });
-    } catch (e) {
-      set({ error: String(e) });
-      throw e;
-    } finally {
-      set({ isGenerating: false });
+      updateLastMsg(set, { content: `Error: ${String(e)}`, isStreaming: false }, { isChatting: false, activeToolName: null });
     }
   },
 

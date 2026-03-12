@@ -240,32 +240,3 @@ export interface EditorInfo {
   selectionEndLine: number;   // 选区结束行（0-based）
 }
 
-// ---- Agent / Tool Loop 类型 ----
-
-export interface AgentMessage {
-  role: 'user' | 'assistant' | 'tool' | 'system';
-  content?: string;
-  tool_calls?: AgentToolCall[];
-  tool_call_id?: string;
-  name?: string;
-}
-
-export interface AgentToolCall {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-}
-
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: {
-    type: 'object';
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
-    required?: string[];
-  };
-}
-
-export interface ToolContext {
-  connectionId: number | null;
-}

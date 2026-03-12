@@ -1,11 +1,15 @@
+mod acp;
 mod commands;
 mod crypto;
 mod datasource;
 mod db;
 mod error;
 mod llm;
+mod mcp;
+mod state;
 
 pub use error::{AppError, AppResult};
+pub use state::AppState;
 
 pub fn run() {
     env_logger::init();

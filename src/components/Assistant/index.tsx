@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check } from 'lucide-react';
+import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -139,22 +139,12 @@ const StreamingMessage: React.FC = () => {
         {thinking && <ThinkingBlock content={thinking} isStreaming={true} />}
         {content ? (
           <MarkdownContent content={content} />
-        ) : (
+        ) : sessionStatus ? (
           <div className="flex items-center gap-2 py-1">
-            {sessionStatus ? (
-              <>
-                <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-                <span className="text-xs text-[#5b8ab0] animate-pulse">{sessionStatus}</span>
-              </>
-            ) : (
-              <>
-                <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />
-                <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />
-                <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />
-              </>
-            )}
+            <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+            <span className="text-xs text-[#5b8ab0] animate-pulse">{sessionStatus}</span>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -183,7 +173,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const chatHistory = useAiStore((s) => s.chatHistory);
   const isChatting = useAiStore((s) => s.isChatting);
   const activeToolName = useAiStore((s) => s.activeToolName);
-  const { sendAgentChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
+  const { sendAgentChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs, cancelChat } = useAiStore();
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   const { connections } = useConnectionStore();
   const activeConnectionName = activeConnectionId
@@ -269,13 +259,6 @@ export const Assistant: React.FC<AssistantProps> = ({
         {/* 当前流式消息（仅 isChatting 时显示，独立订阅不污染历史消息） */}
         {isChatting && <StreamingMessage />}
 
-        {/* 工具调用状态提示 */}
-        {isChatting && activeToolName && (
-          <div className="text-xs text-[#5b8ab0] px-3 py-1 italic">
-            {t('assistant.callingTool', { name: activeToolName })}
-          </div>
-        )}
-
         <div ref={chatEndRef} />
       </div>
 
@@ -345,14 +328,24 @@ export const Assistant: React.FC<AssistantProps> = ({
               )}
             </div>
 
-            <button
-              className={`p-1.5 rounded transition-colors ${chatInput.trim() && !isChatting ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
-              onClick={handleSendMessage}
-              disabled={!chatInput.trim() || isChatting}
-              title={t('assistant.sendMessage')}
-            >
-              <Send size={14} />
-            </button>
+            {isChatting ? (
+              <button
+                className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                onClick={cancelChat}
+                title={t('assistant.stopGeneration')}
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
+                onClick={handleSendMessage}
+                disabled={!chatInput.trim()}
+                title={t('assistant.sendMessage')}
+              >
+                <Send size={14} />
+              </button>
+            )}
           </div>
         </div>
       </div>

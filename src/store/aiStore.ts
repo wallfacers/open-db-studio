@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage } from '../types';
+import type { AgentMessage, ToolDefinition } from '../types';
+import { runAgentLoop } from '../agent/agentLoop';
+import { getToolDefinitions } from '../agent/toolCatalog';
 
 interface AiState {
   // 配置列表
@@ -23,6 +26,12 @@ interface AiState {
   sendChatStream: (message: string, connectionId: number | null) => Promise<void>;
   clearHistory: () => void;
 
+  // Agent 模式扩展历史（AgentMessage 格式）
+  agentHistory: AgentMessage[];
+  sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
+  // 当前工具调用状态
+  activeToolName: string | null;
+
   // AI 功能
   isGenerating: boolean;
   isExplaining: boolean;
@@ -42,6 +51,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   activeConfigId: null,
   chatHistory: [],
   isChatting: false,
+  agentHistory: [],
+  activeToolName: null,
   isGenerating: false,
   isExplaining: false,
   isOptimizing: false,
@@ -92,7 +103,88 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
-  clearHistory: () => set({ chatHistory: [] }),
+  clearHistory: () => set({ chatHistory: [], agentHistory: [] }),
+
+  sendAgentChatStream: async (message, connectionId) => {
+    const tools: ToolDefinition[] = getToolDefinitions();
+
+    // Show user message in chatHistory
+    set((s) => ({
+      isChatting: true,
+      chatHistory: [...s.chatHistory, { role: 'user', content: message }],
+    }));
+    // Pre-insert streaming assistant message placeholder
+    set((s) => ({
+      chatHistory: [
+        ...s.chatHistory,
+        { role: 'assistant', content: '', thinkingContent: '', isStreaming: true },
+      ],
+    }));
+
+    const history = get().agentHistory;
+
+    try {
+      const finalMessages = await runAgentLoop(
+        message,
+        history,
+        tools,
+        { connectionId },
+        {
+          onThinkingChunk: (delta) => {
+            set((s) => {
+              const h = [...s.chatHistory];
+              const last = { ...h[h.length - 1] };
+              last.thinkingContent = (last.thinkingContent ?? '') + delta;
+              h[h.length - 1] = last;
+              return { chatHistory: h };
+            });
+          },
+          onContentChunk: (delta) => {
+            set((s) => {
+              const h = [...s.chatHistory];
+              const last = { ...h[h.length - 1] };
+              last.content = (last.content ?? '') + delta;
+              h[h.length - 1] = last;
+              return { chatHistory: h };
+            });
+          },
+          onToolCall: (toolName) => {
+            set({ activeToolName: toolName });
+          },
+          onDone: () => {
+            set((s) => {
+              const h = [...s.chatHistory];
+              h[h.length - 1] = { ...h[h.length - 1], isStreaming: false };
+              return { chatHistory: h, isChatting: false, activeToolName: null };
+            });
+          },
+          onError: (msg) => {
+            set((s) => {
+              const h = [...s.chatHistory];
+              h[h.length - 1] = {
+                ...h[h.length - 1],
+                content: `Error: ${msg}`,
+                isStreaming: false,
+              };
+              return { chatHistory: h, isChatting: false, activeToolName: null };
+            });
+          },
+        }
+      );
+      // Save complete Agent history (including tool_calls / tool results)
+      set({ agentHistory: finalMessages });
+    } catch (e) {
+      set((s) => {
+        const h = [...s.chatHistory];
+        h[h.length - 1] = {
+          ...h[h.length - 1],
+          content: `Error: ${String(e)}`,
+          isStreaming: false,
+        };
+        return { chatHistory: h, isChatting: false, activeToolName: null };
+      });
+    }
+  },
 
   sendChat: async (message, _connectionId) => {
     const historyBeforeMessage = get().chatHistory;

@@ -1,5 +1,11 @@
 # Agent Phase 2 — Tool Loop 实现计划
 
+> ⚠️ **部分废弃（2026-03-13）：**
+> - Tasks 1-5（Rust 侧）已实现，见相关提交历史
+> - Tasks 6-10（前端 TypeScript Agent Loop / toolCatalog.ts / agentLoop.ts）**不执行**
+> - 原因：ACP/opencode 架构已接管 Agent Loop 编排，前端无需自建工具循环
+> - `propose_sql_diff` 写回功能由独立计划实现：`docs/superpowers/plans/2026-03-13-propose-sql-diff-mcp.md`
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 实现工具驱动 Agent Loop：Rust 侧支持 OpenAI function calling，前端 TypeScript 编排 Agent Loop，工具目录覆盖 A/B/C/D 四类（编辑器/数据库结构/数据查询/写回），AI 助手默认走 Agent 路径。

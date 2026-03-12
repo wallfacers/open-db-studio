@@ -216,6 +216,8 @@ export interface SqlStatementInfo {
   text: string;
   startOffset: number;  // 在完整编辑器内容中的起始字符偏移
   endOffset: number;    // 结束字符偏移（不含末尾分号）
+  startLine: number;    // 0-based 行号（语句起始）
+  endLine: number;      // 0-based 行号（语句结束）
 }
 
 /** AI 提出的 SQL 修改提案（等待用户确认） */

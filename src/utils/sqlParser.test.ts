@@ -43,6 +43,31 @@ describe('parseStatements', () => {
     expect(result).toHaveLength(1);
     expect(result[0].text).toBe("SELECT 'it''s a test; here' FROM t");
   });
+
+  it('单行语句 startLine 和 endLine 均为 0', () => {
+    const result = parseStatements('SELECT 1');
+    expect(result).toHaveLength(1);
+    expect(result[0].startLine).toBe(0);
+    expect(result[0].endLine).toBe(0);
+  });
+
+  it('两条语句换行分隔时各自的 startLine 和 endLine 正确', () => {
+    const sql = 'SELECT 1;\nSELECT 2';
+    const result = parseStatements(sql);
+    expect(result).toHaveLength(2);
+    expect(result[0].startLine).toBe(0);
+    expect(result[0].endLine).toBe(0);
+    expect(result[1].startLine).toBe(1);
+    expect(result[1].endLine).toBe(1);
+  });
+
+  it('多行语句的 startLine 为 0、endLine 为尾行号', () => {
+    const sql = 'SELECT\n  1\nFROM t';
+    const result = parseStatements(sql);
+    expect(result).toHaveLength(1);
+    expect(result[0].startLine).toBe(0);
+    expect(result[0].endLine).toBe(2);
+  });
 });
 
 describe('findStatementAtOffset', () => {

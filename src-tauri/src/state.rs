@@ -13,8 +13,10 @@ pub struct AcpRequest {
 
 /// 持久化 ACP session 句柄，存于 AppState
 pub struct PersistentAcpSession {
-    /// 创建此 session 时使用的 LLM 配置 ID（用于检测配置变更）
+    /// 创建此 session 时使用的 LLM 配置 ID
     pub config_id: i64,
+    /// 创建此 session 时的配置内容指纹（检测同 ID 配置被修改的情况）
+    pub config_fingerprint: String,
     /// 向 session 线程发送 prompt 请求
     pub request_tx: UnboundedSender<AcpRequest>,
 }

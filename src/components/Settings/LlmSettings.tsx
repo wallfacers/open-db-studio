@@ -95,11 +95,12 @@ function snapshotEqual(a: ConnSnapshot, b: ConnSnapshot): boolean {
 interface ConfigFormDialogProps {
   title: string;
   initial: CreateLlmConfigInput;
-  onSave: (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => Promise<void>;
+  editId?: number;   // 编辑模式时传入，用于 get_llm_config_key
+  onSave: (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus, apiKeyDirty: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
-function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialogProps) {
+function ConfigFormDialog({ title, initial, editId, onSave, onCancel }: ConfigFormDialogProps) {
   const { t } = useTranslation();
   const [form, setForm] = useState<CreateLlmConfigInput>(initial);
   const [saving, setSaving] = useState(false);
@@ -107,6 +108,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   const [testResult, setTestResult] = useState<{ ok: boolean; msg?: string } | null>(null);
   // 测试通过时记录的字段快照，用于判断保存时配置是否仍与测试时一致
   const [successSnapshot, setSuccessSnapshot] = useState<ConnSnapshot | null>(null);
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
 
   useEscClose(onCancel);
 
@@ -137,8 +139,18 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
     setTesting(true);
     setTestResult(null);
     setSuccessSnapshot(null);
+
+    // 编辑模式且未修改 api_key 时，临时获取真实 key 用于测试（不写入 form state）
+    let effectiveApiKey = form.api_key;
+    if (editId && !apiKeyDirty) {
+      try {
+        effectiveApiKey = await invoke<string>('get_llm_config_key', { id: editId });
+      } catch {}
+    }
+
     const tempInput: CreateLlmConfigInput = {
       ...form,
+      api_key: effectiveApiKey,
       name: form.name || `${form.model} · ${form.api_type}`,
     };
     try {
@@ -162,11 +174,14 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(form, effectiveTestStatus);
+      await onSave(form, effectiveTestStatus, apiKeyDirty);
     } finally {
       setSaving(false);
     }
   };
+
+  // 测试按钮禁用逻辑：编辑模式下未修改 api_key 也允许测试（会自动获取真实 key）
+  const testDisabled = testing || (!editId && !form.api_key);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -249,12 +264,34 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
         {/* API Key */}
         <div>
           <label className={labelClass}>{t('llmSettings.apiKey')}</label>
-          <PasswordInput
-            className={inputClass}
-            value={form.api_key}
-            onChange={(v) => setForm((f) => ({ ...f, api_key: v }))}
-            placeholder="sk-..."
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <PasswordInput
+                className={inputClass}
+                value={form.api_key}
+                onChange={(v) => {
+                  setForm((f) => ({ ...f, api_key: v }));
+                  setApiKeyDirty(true);
+                }}
+                placeholder={editId ? '未修改则保留原密钥' : 'sk-...'}
+              />
+            </div>
+            {editId && !apiKeyDirty && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const key = await invoke<string>('get_llm_config_key', { id: editId });
+                    setForm((f) => ({ ...f, api_key: key }));
+                    setApiKeyDirty(true);
+                  } catch {}
+                }}
+                className="text-xs px-2 py-1.5 border border-[#253347] text-[#7a9bb8] hover:text-[#c8daea] rounded whitespace-nowrap flex-shrink-0"
+              >
+                查看密钥
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Base URL */}
@@ -300,7 +337,7 @@ function ConfigFormDialog({ title, initial, onSave, onCancel }: ConfigFormDialog
         <div className="flex items-center justify-between pt-2">
           <button
             onClick={handleTest}
-            disabled={testing || !form.api_key}
+            disabled={testDisabled}
             className="px-3 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
           >
             {testing && <Loader2 size={12} className="animate-spin" />}
@@ -340,7 +377,8 @@ export function LlmSettingsPanel() {
   // ESC 关闭删除确认弹窗（ConfigFormDialog 内部自己处理 ESC）
   useEscClose(() => setDeleteConfirm(null), !!deleteConfirm && !showCreate && !editTarget);
 
-  const handleCreate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => {
+  const handleCreate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus, _apiKeyDirty: boolean) => {
+    // 新建模式直接用 input.api_key，apiKeyDirty 不影响创建
     const created = await invoke<LlmConfig>('create_llm_config', { input });
     if (effectiveTestStatus === 'success') {
       await invoke('set_llm_config_test_status', { id: created.id, status: 'success', error: null });
@@ -349,9 +387,17 @@ export function LlmSettingsPanel() {
     setShowCreate(false);
   };
 
-  const handleUpdate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus) => {
+  const handleUpdate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus, apiKeyDirty: boolean) => {
     if (!editTarget) return;
-    await invoke('update_llm_config', { id: editTarget.id, input });
+    const updateInput = {
+      name: input.name,
+      api_key: apiKeyDirty ? input.api_key : undefined,
+      base_url: input.base_url,
+      model: input.model,
+      api_type: input.api_type,
+      preset: input.preset,
+    };
+    await invoke('update_llm_config', { id: editTarget.id, input: updateInput });
     if (effectiveTestStatus !== null) {
       await invoke('set_llm_config_test_status', { id: editTarget.id, status: effectiveTestStatus, error: null });
     }
@@ -463,12 +509,13 @@ export function LlmSettingsPanel() {
           title={t('llmSettings.editConfigTitle')}
           initial={{
             name: editTarget.name,
-            api_key: editTarget.api_key,
+            api_key: '',            // 永远以空串打开（store 中也是空串）
             base_url: editTarget.base_url,
             model: editTarget.model,
             api_type: editTarget.api_type,
             preset: editTarget.preset,
           }}
+          editId={editTarget.id}
           onSave={handleUpdate}
           onCancel={() => setEditTarget(null)}
         />

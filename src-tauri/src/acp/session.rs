@@ -65,7 +65,7 @@ pub async fn spawn_acp_session_thread(
         .await
         .map_err(|_| AppError::Other("ACP session thread died before setup completed".into()))??;
 
-    Ok(PersistentAcpSession { config_id, request_tx })
+    Ok(PersistentAcpSession { config_id, config_fingerprint: String::new(), request_tx })
 }
 
 /// 向前端发送 StatusUpdate 事件（status_tx 为 None 时静默跳过）

@@ -918,6 +918,18 @@ async fn ai_chat_acp_inner(
         .map_err(|_| AppError::Other("ACP session thread dropped before responding".into()))?
 }
 
+/// 计算配置内容指纹，用于检测同 ID 配置被修改的情况
+fn config_fingerprint(config: &crate::db::models::LlmConfig) -> String {
+    format!(
+        "{}|{}|{}|{}|{}",
+        config.api_key,
+        config.base_url,
+        config.model,
+        config.api_type,
+        config.preset.as_deref().unwrap_or("")
+    )
+}
+
 /// 获取当前 session（配置未变）或创建新 session（首次 / 配置变更 / session 已关闭）
 async fn get_or_create_session(
     config: &crate::db::models::LlmConfig,
@@ -927,10 +939,14 @@ async fn get_or_create_session(
     event_tx: &tokio::sync::mpsc::UnboundedSender<crate::llm::StreamEvent>,
 ) -> AppResult<tokio::sync::mpsc::UnboundedSender<crate::state::AcpRequest>> {
     let mut session_guard = state.acp_session.lock().await;
+    let fingerprint = config_fingerprint(config);
 
-    // 检查现有 session 是否可复用
+    // 检查现有 session 是否可复用（config_id 相同且内容未变且连接未断）
     if let Some(ref session) = *session_guard {
-        if session.config_id == config.id && !session.request_tx.is_closed() {
+        if session.config_id == config.id
+            && session.config_fingerprint == fingerprint
+            && !session.request_tx.is_closed()
+        {
             log::debug!("[acp] Reusing existing session (config_id={})", config.id);
             return Ok(session.request_tx.clone());
         }
@@ -957,7 +973,11 @@ async fn get_or_create_session(
     .await?;
 
     let tx = new_session.request_tx.clone();
-    *session_guard = Some(new_session);
+    *session_guard = Some(crate::state::PersistentAcpSession {
+        config_id: new_session.config_id,
+        config_fingerprint: fingerprint,
+        request_tx: new_session.request_tx,
+    });
     Ok(tx)
 }
 

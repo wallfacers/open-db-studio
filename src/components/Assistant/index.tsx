@@ -158,6 +158,7 @@ interface AssistantProps {
   setIsAssistantOpen: (isOpen: boolean) => void;
   showToast: (msg: string, level?: ToastLevel) => void;
   activeConnectionId: number | null;
+  onOpenSettings: () => void;
 }
 
 export const Assistant: React.FC<AssistantProps> = ({
@@ -167,6 +168,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   setIsAssistantOpen,
   showToast,
   activeConnectionId,
+  onOpenSettings,
 }) => {
   const { t } = useTranslation();
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
@@ -174,6 +176,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const isChatting = useAiStore((s) => s.isChatting);
   const activeToolName = useAiStore((s) => s.activeToolName);
   const { sendAgentChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs, cancelChat } = useAiStore();
+  const connectedConfigs = configs.filter((c) => c.test_status === 'success');
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   const { connections } = useConnectionStore();
   const activeConnectionName = activeConnectionId
@@ -234,8 +237,23 @@ export const Assistant: React.FC<AssistantProps> = ({
         {chatHistory.length === 0 && !isChatting && (
           <div className="flex flex-col items-center justify-center h-full text-[#7a9bb8] text-center pt-8">
             <DatabaseZap size={32} className="mb-3 opacity-30" />
-            <p className="text-sm">{t('assistant.inputDescription')}</p>
-            <p className="text-xs mt-1 opacity-60">{t('assistant.aiWillGenerateSql')}</p>
+            {connectedConfigs.length === 0 ? (
+              <>
+                <p className="text-sm">{t('assistant.noConnectedModel')}</p>
+                <p className="text-xs mt-1 opacity-60 mb-4">{t('assistant.noConnectedModelHint')}</p>
+                <button
+                  onClick={onOpenSettings}
+                  className="px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
+                >
+                  {t('assistant.goToSettings')}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm">{t('assistant.inputDescription')}</p>
+                <p className="text-xs mt-1 opacity-60">{t('assistant.aiWillGenerateSql')}</p>
+              </>
+            )}
           </div>
         )}
 
@@ -308,21 +326,32 @@ export const Assistant: React.FC<AssistantProps> = ({
                   {configs.length === 0 ? (
                     <div className="px-3 py-2 text-xs text-[#7a9bb8]">{t('assistant.noModelHint')}</div>
                   ) : (
-                    configs.map((c) => (
-                      <div
-                        key={c.id}
-                        className={`px-3 py-1.5 hover:bg-[#1e2d42] cursor-pointer flex items-center justify-between ${
-                          (activeConfigId === c.id || (!activeConfigId && c.is_default)) ? 'text-[#009e84]' : 'text-[#c8daea]'
-                        }`}
-                        onClick={() => { setActiveConfigId(c.id); setIsModelMenuOpen(false); }}
-                      >
-                        <span className="text-xs truncate flex-1">{c.is_default ? `★ ${c.name}` : c.name}</span>
-                        <span className={`ml-2 w-2 h-2 rounded-full flex-shrink-0 ${
-                          c.test_status === 'success' ? 'bg-green-400' :
-                          c.test_status === 'fail' ? 'bg-red-400' : 'bg-gray-600'
-                        }`} />
-                      </div>
-                    ))
+                    configs.map((c) => {
+                      const isConnected = c.test_status === 'success';
+                      const isActive = activeConfigId === c.id || (!activeConfigId && c.is_default);
+                      return (
+                        <div
+                          key={c.id}
+                          className={`px-3 py-1.5 flex items-center justify-between ${
+                            isConnected
+                              ? `cursor-pointer hover:bg-[#1e2d42] ${isActive ? 'text-[#009e84]' : 'text-[#c8daea]'}`
+                              : 'cursor-not-allowed opacity-40 text-[#7a9bb8]'
+                          }`}
+                          onClick={() => {
+                            if (!isConnected) return;
+                            setActiveConfigId(c.id);
+                            setIsModelMenuOpen(false);
+                          }}
+                          title={!isConnected ? t('assistant.modelNotConnected') : undefined}
+                        >
+                          <span className="text-xs truncate flex-1">{c.is_default ? `★ ${c.name}` : c.name}</span>
+                          <span className={`ml-2 w-2 h-2 rounded-full flex-shrink-0 ${
+                            c.test_status === 'success' ? 'bg-green-400' :
+                            c.test_status === 'fail' ? 'bg-red-400' : 'bg-gray-600'
+                          }`} />
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}

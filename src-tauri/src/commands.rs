@@ -763,3 +763,49 @@ pub async fn ai_chat_continue(
     // ai_chat_continue: messages already include system prompt from the loop
     client.chat_stream_with_tools(messages, tools, &channel).await
 }
+
+// ============ Agent 工具命令 ============
+
+/// Agent 工具：获取表样本数据（最多 20 行）
+#[tauri::command]
+pub async fn agent_get_table_sample(
+    connection_id: i64,
+    table: String,
+    schema: Option<String>,
+    limit: Option<usize>,
+) -> AppResult<QueryResult> {
+    let safe_limit = limit.unwrap_or(5).min(20);
+    let sql = match schema {
+        Some(ref s) if !s.is_empty() => format!("SELECT * FROM \"{}\".\"{}\" LIMIT {}", s, table, safe_limit),
+        _ => format!("SELECT * FROM \"{}\" LIMIT {}", table, safe_limit),
+    };
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    ds.execute(&sql).await
+}
+
+/// Agent 工具：执行只读 SQL（仅 SELECT/WITH/SHOW，最多 100 行）
+#[tauri::command]
+pub async fn agent_execute_sql(
+    connection_id: i64,
+    sql: String,
+    database: Option<String>,
+    schema: Option<String>,
+) -> AppResult<QueryResult> {
+    let trimmed = sql.trim().to_uppercase();
+    if !trimmed.starts_with("SELECT") && !trimmed.starts_with("WITH") && !trimmed.starts_with("SHOW") {
+        return Err(crate::AppError::Other("agent_execute_sql only allows SELECT/WITH/SHOW queries".into()));
+    }
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_context(
+        &config,
+        database.as_deref(),
+        schema.as_deref(),
+    ).await?;
+    let mut result = ds.execute(&sql).await?;
+    if result.rows.len() > 100 {
+        result.rows.truncate(100);
+        result.row_count = 100;
+    }
+    Ok(result)
+}

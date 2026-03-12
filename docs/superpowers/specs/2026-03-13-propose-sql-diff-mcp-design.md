@@ -98,30 +98,61 @@ interface DiffProposalPayload {
 
 ### Rust 侧（MCP → emit）
 
-1. `start_mcp_server(app_handle: AppHandle)` 接收 AppHandle
-2. 通过 axum `State<AppHandle>` 注入路由处理器
-3. `call_tool("propose_sql_diff", args)` 解析 `original / modified / reason`
-4. `app_handle.emit("sql-diff-proposal", DiffProposalPayload { ... })` 广播事件
+**新签名：**
+```rust
+pub async fn start_mcp_server(app_handle: tauri::AppHandle) -> crate::AppResult<u16>
+```
+
+1. `start_mcp_server` 接收 `AppHandle`，包装为 `Arc<tauri::AppHandle>` 传入 axum router state
+2. 通过 `.with_state(Arc::new(app_handle))` 注入到 axum Router；`handle_mcp` 函数签名更新为：
+   ```rust
+   async fn handle_mcp(
+       State(handle): State<Arc<tauri::AppHandle>>,
+       Json(req): Json<JsonRpcRequest>,
+   ) -> Json<JsonRpcResponse>
+   ```
+3. `handle_mcp` 将 `Arc<AppHandle>` 透传给 `call_tool(Arc::clone(&handle), name, args)`（call_tool 签名：`async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> AppResult<String>`）
+4. `call_tool` 的 `propose_sql_diff` 分支：
+   ```rust
+   use tauri::Emitter;
+   handle.emit("sql-diff-proposal", DiffProposalPayload { original, modified, reason })
+         .map_err(|e| AppError::Other(e.to_string()))?;
+   Ok("diff proposed".to_string())
+   ```
 5. 返回 MCP 成功响应（`{ content: [{ type: "text", text: "diff proposed" }] }`）
 
+> **注1：** `tauri::AppHandle::emit` 在 `tauri = { version = "2", features = [] }` 下即可用，通过 `use tauri::Emitter` 引入 trait，无需额外 feature flag。
+> **注2：** `tauri::Error` 无 `From` 转换到 `AppError`，需显式 `.map_err(|e| AppError::Other(e.to_string()))`。
+> **注3：** `propose_sql_diff` 工具 JSON Schema 需添加到 `tool_definitions()` 函数的 `"tools"` 数组中。
+
 ### 前端侧（listen → proposeSqlDiff）
+
+**前置说明：**
+- `queryStore.activeTabId` 当前为静态初始值（`'query-1'`），不随用户切 Tab 更新——这是已知的 pre-existing 状态
+- Monaco `onChange` 写的是 `queryStore.setSql(activeTab, val)`，所以 `queryStore.sqlContent` 中各 tabId 的 SQL 是准确的
+- `aiStore.sendAgentChatStream` 注入的 `tabSql` 同样读自 `queryStore.sqlContent[queryStore.activeTabId]`，两侧行为一致
+
+由于 `activeTabId` 不可靠，`useToolBridge` 采用**全量扫描**策略：遍历所有 `sqlContent` 条目，找到第一个包含 `original` 文本的 tab。
 
 1. `useToolBridge()` 在 `useEffect` 中调用 `listen("sql-diff-proposal", handler)`
 2. handler 执行：
    ```
-   activeTabId ← queryStore.getState().activeTabId
-   full        ← queryStore.getState().sqlContent[activeTabId] ?? ''
-   stmts       ← parseStatements(full)
-   match       ← stmts.find(s => s.text.trim() === original.trim())
-   if !match   → console.warn("propose_sql_diff: original not found"), return
-   queryStore.getState().proposeSqlDiff({
-     original, modified, reason,
-     tabId: activeTabId,
-     startOffset: match.startOffset,
-     endOffset: match.endOffset,
-   })
+   sqlContent ← queryStore.getState().sqlContent   // Record<tabId, string>
+   for each [tabId, full] in Object.entries(sqlContent):
+     stmts ← parseStatements(full)
+     match ← stmts.find(s => s.text.trim() === original.trim())
+     if match:
+       queryStore.getState().proposeSqlDiff({
+         original, modified, reason,
+         tabId,
+         startOffset: match.startOffset,
+         endOffset: match.endOffset,
+       })
+       return
+   // 所有 tab 均未找到
+   console.warn("propose_sql_diff: original not found in any tab")
    ```
-3. cleanup：`useEffect` 返回 `unlisten` 函数，React 严格模式安全
+3. cleanup：`useEffect` 返回 `() => unlisten()` 函数，React 严格模式安全
 
 ---
 
@@ -129,12 +160,12 @@ interface DiffProposalPayload {
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `src-tauri/src/mcp/mod.rs` | 修改 | 接收 AppHandle；新增工具定义；新增 call_tool 分支 |
+| `src-tauri/src/mcp/mod.rs` | 修改 | 接收 `Arc<AppHandle>`；工具列表新增 `propose_sql_diff`；`call_tool` 新增分支 |
 | `src-tauri/src/lib.rs` | 修改 | 传 `app.handle().clone()` 给 `start_mcp_server` |
 | `src/hooks/useToolBridge.ts` | 修改（当前为空） | 实现 Tauri 事件监听 + offset 解析 |
 | `src/App.tsx` | 修改 | 调用 `useToolBridge()` |
 
-**不变：** `queryStore.ts`、`DiffPanel.tsx`、`aiStore.ts`、`AppState`
+**不变：** `queryStore.ts`、`DiffPanel.tsx`、`aiStore.ts`、`AppState`、`error.rs`
 
 ---
 
@@ -142,7 +173,7 @@ interface DiffProposalPayload {
 
 | 场景 | 处理 |
 |------|------|
-| `original` 在编辑器中找不到 | `console.warn` + 提前返回；MCP 仍返回成功（opencode 不感知失败） |
+| `original` 在任何 tab 中均找不到 | `console.warn` + 提前返回；MCP 仍返回成功（opencode 不感知）；用户看不到 DiffPanel 出现但对话继续——已接受的 UX 权衡 |
 | 多条相同语句 | 取 `parseStatements` 结果中的第一条匹配 |
 | 监听器重复挂载（React 严格模式） | `useEffect` 返回 `() => unlisten()` cleanup |
 | 已有未确认的 diff 时新 diff 到达 | `proposeSqlDiff` 直接覆盖 `pendingDiff`（现有行为） |

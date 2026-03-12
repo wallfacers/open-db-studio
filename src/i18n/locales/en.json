@@ -37,7 +37,8 @@
     "sqlInserted": "SQL inserted into editor",
     "noModelConfigured": "Not configured",
     "selectModel": "Select model",
-    "noModelHint": "No configs found, go to Settings to add one"
+    "noModelHint": "No configs found, go to Settings to add one",
+    "callingTool": "⚙ Calling tool: {{name}}..."
   },
   "connectionModal": {
     "editConnection": "Edit Connection",

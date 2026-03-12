@@ -37,7 +37,8 @@
     "sqlInserted": "SQL 已插入编辑器",
     "noModelConfigured": "未配置",
     "selectModel": "选择模型",
-    "noModelHint": "暂无配置，请前往设置添加"
+    "noModelHint": "暂无配置，请前往设置添加",
+    "callingTool": "⚙ 调用工具：{{name}}..."
   },
   "connectionModal": {
     "editConnection": "编辑连接",

@@ -243,7 +243,14 @@ export const MainContent: React.FC<MainContentProps> = ({
           : null;
       useQueryStore.getState().setEditorInfo(
         useQueryStore.getState().activeTabId,
-        { cursorOffset, selectedText },
+        {
+          cursorOffset,
+          selectedText,
+          cursorLine: cursorPos ? cursorPos.lineNumber - 1 : 0,
+          cursorColumn: cursorPos ? cursorPos.column - 1 : 0,
+          selectionStartLine: selection ? selection.startLineNumber - 1 : 0,
+          selectionEndLine: selection ? selection.endLineNumber - 1 : 0,
+        },
       );
     };
     editor.onDidChangeCursorPosition(syncEditorInfo);

@@ -234,4 +234,38 @@ export interface SqlDiffProposal {
 export interface EditorInfo {
   cursorOffset: number;       // 光标在全文中的字符偏移
   selectedText: string | null; // 当前选中的文本，无选区为 null
+  cursorLine: number;         // 光标所在行（0-based）
+  cursorColumn: number;       // 光标所在列（0-based）
+  selectionStartLine: number; // 选区起始行（0-based）
+  selectionEndLine: number;   // 选区结束行（0-based）
+}
+
+// ---- Agent / Tool Loop 类型 ----
+
+export interface AgentMessage {
+  role: 'user' | 'assistant' | 'tool' | 'system';
+  content?: string;
+  tool_calls?: AgentToolCall[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+export interface AgentToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: 'object';
+    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    required?: string[];
+  };
+}
+
+export interface ToolContext {
+  connectionId: number | null;
 }

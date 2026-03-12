@@ -26,6 +26,7 @@ pub struct ToolDefinition {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentMessage {
     pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<AgentToolCall>>,

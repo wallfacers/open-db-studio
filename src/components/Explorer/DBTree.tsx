@@ -132,10 +132,10 @@ export const DBTree: React.FC<DBTreeProps> = ({
     if (!node.hasChildren) return;
 
     if (node.nodeType === 'connection') {
-      // 未加载过（首次）：单击只选中，不展开；需通过双击或右键"打开连接"来加载
-      // 已加载过：单击切换收起/展开，图标颜色不变（颜色由 activeConnectionIds 控制）
       if (nodes.get(node.id)?.loaded) {
         toggleExpand(node.id);
+      } else {
+        onOpenConnection(getConnectionId(node));
       }
     } else {
       toggleExpand(node.id);
@@ -204,11 +204,6 @@ export const DBTree: React.FC<DBTreeProps> = ({
             ? activeConnectionIds.has(getConnectionId(node))
             : undefined}
           onClick={() => handleNodeClick(node)}
-          onDoubleClick={
-            node.nodeType === 'connection'
-              ? () => onOpenConnection(getConnectionId(node))
-              : undefined
-          }
           onContextMenu={(e) => handleContextMenu(e, node)}
         />
       ))}

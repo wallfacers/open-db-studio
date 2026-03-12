@@ -26,6 +26,13 @@ pub fn run() {
                 .to_string();
             crate::db::init(&app_data_dir)?;
             crate::db::migrate_legacy_llm_settings()?;
+            let mcp_port = tauri::async_runtime::block_on(
+                crate::mcp::start_mcp_server()
+            ).expect("Failed to start MCP server");
+            app.manage(crate::state::AppState {
+                mcp_port,
+                acp_session: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -78,6 +85,8 @@ pub fn run() {
             commands::ai_chat_continue,
             commands::agent_get_table_sample,
             commands::agent_execute_sql,
+            commands::ai_chat_acp,
+            commands::cancel_acp_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

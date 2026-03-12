@@ -7,6 +7,8 @@ pub struct AppState {
     pub mcp_port: u16,
     /// 当前活跃的 ACP 会话
     pub acp_session: Arc<Mutex<Option<AcpSession>>>,
+    /// 当前活跃的 opencode ACP 进程 PID（None = 无活跃会话）
+    pub active_acp_pid: Arc<std::sync::Mutex<Option<u32>>>,
 }
 
 /// ACP 会话上下文

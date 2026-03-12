@@ -32,6 +32,7 @@ pub fn run() {
             app.manage(crate::state::AppState {
                 mcp_port,
                 acp_session: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+                active_acp_pid: std::sync::Arc::new(std::sync::Mutex::new(None)),
             });
             Ok(())
         })

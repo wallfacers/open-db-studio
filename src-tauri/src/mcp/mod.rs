@@ -129,6 +129,10 @@ async fn call_tool(name: &str, args: Value) -> crate::AppResult<String> {
                 .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
             let table = args["table"].as_str()
                 .ok_or_else(|| crate::AppError::Other("missing table".into()))?;
+            // 验证表名只含合法字符（防止 SQL 注入）
+            if !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Err(crate::AppError::Other("Invalid table name".into()));
+            }
             let database = args["database"].as_str();
             let config = crate::db::get_connection_config(conn_id)?;
             let ds = match database.filter(|s| !s.is_empty()) {
@@ -151,6 +155,10 @@ async fn call_tool(name: &str, args: Value) -> crate::AppResult<String> {
                 .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
             let table = args["table"].as_str()
                 .ok_or_else(|| crate::AppError::Other("missing table".into()))?;
+            // 验证表名只含合法字符（防止 SQL 注入）
+            if !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Err(crate::AppError::Other("Invalid table name".into()));
+            }
             let database = args["database"].as_str();
             let limit = args["limit"].as_u64().unwrap_or(5).min(20);
             let config = crate::db::get_connection_config(conn_id)?;

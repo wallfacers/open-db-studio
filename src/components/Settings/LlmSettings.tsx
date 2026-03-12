@@ -20,7 +20,7 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'alicloud',
     labelKey: 'llmSettings.alicloud',
-    base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
+    base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic/v1',
     api_type: 'anthropic',
     default_model: 'qwen3.5-plus',
   },

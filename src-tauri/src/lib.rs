@@ -12,7 +12,9 @@ pub use error::{AppError, AppResult};
 pub use state::AppState;
 
 pub fn run() {
-    env_logger::init();
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())

@@ -33,6 +33,12 @@ pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest)
     crate::db::update_connection(id, &req)
 }
 
+/// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
+#[tauri::command]
+pub async fn get_connection_password(id: i64) -> AppResult<String> {
+    crate::db::get_connection_password(id)
+}
+
 // ============ 查询执行 ============
 
 #[tauri::command]
@@ -181,6 +187,16 @@ pub async fn list_llm_configs() -> AppResult<Vec<crate::db::models::LlmConfig>> 
     let configs = crate::db::list_llm_configs()?;
     // api_key 仅在 Rust 内部使用，永不暴露到前端
     Ok(configs.into_iter().map(|mut c| { c.api_key = String::new(); c }).collect())
+}
+
+/// 返回指定 LLM 配置的明文 API Key（仅供编辑弹窗"小眼睛"功能使用）
+#[tauri::command]
+pub async fn get_llm_config_key(id: i64) -> AppResult<String> {
+    let configs = crate::db::list_llm_configs()?;
+    configs.into_iter()
+        .find(|c| c.id == id)
+        .map(|c| c.api_key)
+        .ok_or_else(|| crate::AppError::Other(format!("LlmConfig {} not found", id)))
 }
 
 #[tauri::command]

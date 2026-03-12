@@ -45,6 +45,7 @@ export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [passwordRevealed, setPasswordRevealed] = useState(false);
 
   const handleDriverChange = (driver: string) => {
     const d = DRIVERS.find((x) => x.value === driver);
@@ -150,12 +151,31 @@ export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) 
             </div>
             <div>
               <label className={labelClass}>{t('connectionModal.password')}</label>
-              <PasswordInput
-                className={inputClass}
-                value={form.password ?? ''}
-                onChange={(v) => setForm((f) => ({ ...f, password: v }))}
-                placeholder={isEdit ? t('connectionModal.passwordPlaceholder') : ''}
-              />
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <PasswordInput
+                    className={inputClass}
+                    value={form.password ?? ''}
+                    onChange={(v) => setForm((f) => ({ ...f, password: v }))}
+                    placeholder={isEdit ? t('connectionModal.passwordPlaceholder') : ''}
+                  />
+                </div>
+                {isEdit && connection && !passwordRevealed && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const pwd = await invoke<string>('get_connection_password', { id: connection.id });
+                        setForm((f) => ({ ...f, password: pwd }));
+                        setPasswordRevealed(true);
+                      } catch {}
+                    }}
+                    className="text-xs px-2 py-1.5 border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] rounded whitespace-nowrap flex-shrink-0"
+                  >
+                    查看密码
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -192,9 +192,7 @@ pub async fn list_llm_configs() -> AppResult<Vec<crate::db::models::LlmConfig>> 
 /// 返回指定 LLM 配置的明文 API Key（仅供编辑弹窗"小眼睛"功能使用）
 #[tauri::command]
 pub async fn get_llm_config_key(id: i64) -> AppResult<String> {
-    let configs = crate::db::list_llm_configs()?;
-    configs.into_iter()
-        .find(|c| c.id == id)
+    crate::db::get_llm_config_by_id(id)?
         .map(|c| c.api_key)
         .ok_or_else(|| crate::AppError::Other(format!("LlmConfig {} not found", id)))
 }

@@ -85,6 +85,7 @@ function getDbStructureTools(): ToolDefinition[] {
           connection_id: { type: 'number', description: 'Connection id' },
           table: { type: 'string', description: 'Table name' },
           schema: { type: 'string', description: 'Schema name (optional)' },
+          database: { type: 'string', description: 'Database name (optional, used for multi-database connections)' },
         },
         required: ['connection_id', 'table'],
       },
@@ -285,6 +286,7 @@ export async function executeTool(
           connectionId: args.connection_id,
           table: args.table,
           schema: args.schema ?? null,
+          database: args.database ?? null,
         });
         return JSON.stringify(result);
       }

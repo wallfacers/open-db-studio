@@ -185,12 +185,16 @@ pub async fn list_llm_configs() -> AppResult<Vec<crate::db::models::LlmConfig>> 
 
 #[tauri::command]
 pub async fn create_llm_config(input: crate::db::models::CreateLlmConfigInput) -> AppResult<crate::db::models::LlmConfig> {
-    crate::db::create_llm_config(&input)
+    let mut config = crate::db::create_llm_config(&input)?;
+    config.api_key = String::new();
+    Ok(config)
 }
 
 #[tauri::command]
 pub async fn update_llm_config(id: i64, input: crate::db::models::UpdateLlmConfigInput) -> AppResult<crate::db::models::LlmConfig> {
-    crate::db::update_llm_config(id, &input)
+    let mut config = crate::db::update_llm_config(id, &input)?;
+    config.api_key = String::new();
+    Ok(config)
 }
 
 #[tauri::command]
@@ -205,7 +209,8 @@ pub async fn set_default_llm_config(id: i64) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn get_default_llm_config() -> AppResult<Option<crate::db::models::LlmConfig>> {
-    crate::db::get_default_llm_config()
+    let config = crate::db::get_default_llm_config()?;
+    Ok(config.map(|mut c| { c.api_key = String::new(); c }))
 }
 
 #[tauri::command]

@@ -1,9 +1,10 @@
-use axum::{routing::{get, post}, Router, Json};
+use axum::{routing::{get, post}, Router, Json, extract::State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_util::stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::TcpListener;
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct JsonRpcRequest {
@@ -35,6 +36,13 @@ impl JsonRpcResponse {
             error: Some(json!({ "code": code, "message": msg })),
         }
     }
+}
+
+#[derive(Serialize, Clone)]
+struct DiffProposalPayload {
+    original: String,
+    modified: String,
+    reason: String,
 }
 
 fn tool_definitions() -> Value {
@@ -102,12 +110,34 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["connection_id", "sql"]
                 }
+            },
+            {
+                "name": "propose_sql_diff",
+                "description": "Propose a SQL modification to the active editor tab. Shows a diff preview that the user must confirm before it takes effect. Always call this after reading the current SQL to ensure 'original' matches exactly.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "original": {
+                            "type": "string",
+                            "description": "The exact original SQL statement text as it appears in the editor (must match precisely)"
+                        },
+                        "modified": {
+                            "type": "string",
+                            "description": "The new SQL statement text after modification"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Brief explanation of why this change is being proposed (shown to user)"
+                        }
+                    },
+                    "required": ["original", "modified", "reason"]
+                }
             }
         ]
     })
 }
 
-async fn call_tool(name: &str, args: Value) -> crate::AppResult<String> {
+async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> crate::AppResult<String> {
     match name {
         "list_databases" => {
             let conn_id = args["connection_id"].as_i64()
@@ -194,6 +224,21 @@ async fn call_tool(name: &str, args: Value) -> crate::AppResult<String> {
             result.rows.truncate(100);
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
+        "propose_sql_diff" => {
+            use tauri::Emitter;
+            let original = args["original"].as_str()
+                .ok_or_else(|| crate::AppError::Other("missing original".into()))?
+                .to_string();
+            let modified = args["modified"].as_str()
+                .ok_or_else(|| crate::AppError::Other("missing modified".into()))?
+                .to_string();
+            let reason = args["reason"].as_str()
+                .unwrap_or("")
+                .to_string();
+            handle.emit("sql-diff-proposal", DiffProposalPayload { original, modified, reason })
+                .map_err(|e| crate::AppError::Other(e.to_string()))?;
+            Ok("diff proposed, waiting for user confirmation".to_string())
+        }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }
 }
@@ -208,7 +253,10 @@ async fn handle_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, 
     Sse::new(stream::pending()).keep_alive(KeepAlive::default())
 }
 
-async fn handle_mcp(Json(req): Json<JsonRpcRequest>) -> Json<JsonRpcResponse> {
+async fn handle_mcp(
+    State(handle): State<Arc<tauri::AppHandle>>,
+    Json(req): Json<JsonRpcRequest>,
+) -> Json<JsonRpcResponse> {
     let id = req.id.clone();
     match req.method.as_str() {
         // MCP 握手：必须在 tools/list 之前完成，否则客户端会重试/超时
@@ -224,7 +272,7 @@ async fn handle_mcp(Json(req): Json<JsonRpcRequest>) -> Json<JsonRpcResponse> {
             let params = req.params.unwrap_or(Value::Null);
             let name = params["name"].as_str().unwrap_or("").to_string();
             let args = params["arguments"].clone();
-            match call_tool(&name, args).await {
+            match call_tool(Arc::clone(&handle), &name, args).await {
                 Ok(text) => Json(JsonRpcResponse::ok(id, json!({
                     "content": [{ "type": "text", "text": text }]
                 }))),
@@ -235,7 +283,7 @@ async fn handle_mcp(Json(req): Json<JsonRpcRequest>) -> Json<JsonRpcResponse> {
     }
 }
 
-pub async fn start_mcp_server() -> crate::AppResult<u16> {
+pub async fn start_mcp_server(app_handle: tauri::AppHandle) -> crate::AppResult<u16> {
     // 优先使用固定端口便于调试；若已被占用则退回随机端口
     let listener = TcpListener::bind("127.0.0.1:19876")
         .or_else(|_| TcpListener::bind("127.0.0.1:0"))
@@ -245,7 +293,8 @@ pub async fn start_mcp_server() -> crate::AppResult<u16> {
 
     let app = Router::new()
         .route("/mcp", get(handle_mcp_sse))
-        .route("/mcp", post(handle_mcp));
+        .route("/mcp", post(handle_mcp))
+        .with_state(Arc::new(app_handle));
 
     listener.set_nonblocking(true)
         .map_err(|e| crate::AppError::Other(format!("MCP set_nonblocking failed: {}", e)))?;

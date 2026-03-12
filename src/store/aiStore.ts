@@ -1,9 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage } from '../types';
-import type { AgentMessage, ToolDefinition } from '../types';
-import { runAgentLoop } from '../agent/agentLoop';
-import { getToolDefinitions } from '../agent/toolCatalog';
 
 interface AiState {
   // 配置列表
@@ -26,8 +23,6 @@ interface AiState {
   sendChatStream: (message: string, connectionId: number | null) => Promise<void>;
   clearHistory: () => void;
 
-  // Agent 模式扩展历史（AgentMessage 格式）
-  agentHistory: AgentMessage[];
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
   // 当前工具调用状态
   activeToolName: string | null;
@@ -51,7 +46,6 @@ export const useAiStore = create<AiState>((set, get) => ({
   activeConfigId: null,
   chatHistory: [],
   isChatting: false,
-  agentHistory: [],
   activeToolName: null,
   isGenerating: false,
   isExplaining: false,
@@ -103,76 +97,78 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
-  clearHistory: () => set({ chatHistory: [], agentHistory: [] }),
+  clearHistory: () => set({ chatHistory: [] }),
 
   sendAgentChatStream: async (message, connectionId) => {
-    const tools: ToolDefinition[] = getToolDefinitions();
+    // 获取当前 tab SQL（用于注入上下文）
+    const { useQueryStore } = await import('./queryStore');
+    const queryStore = useQueryStore.getState();
+    const activeTabId = queryStore.activeTabId;
+    const tabSql: string | null = activeTabId
+      ? queryStore.sqlContent[activeTabId] ?? null
+      : null;
 
-    // Show user message in chatHistory
+    // 展示用户消息 + 占位 assistant 消息
     set((s) => ({
       isChatting: true,
-      chatHistory: [...s.chatHistory, { role: 'user', content: message }],
-    }));
-    // Pre-insert streaming assistant message placeholder
-    set((s) => ({
       chatHistory: [
         ...s.chatHistory,
-        { role: 'assistant', content: '', thinkingContent: '', isStreaming: true },
+        { role: 'user' as const, content: message },
+        { role: 'assistant' as const, content: '', thinkingContent: '', isStreaming: true },
       ],
     }));
 
-    const history = get().agentHistory;
-
     try {
-      const finalMessages = await runAgentLoop(
-        message,
-        history,
-        tools,
-        { connectionId },
-        {
-          onThinkingChunk: (delta) => {
-            set((s) => {
-              const h = [...s.chatHistory];
-              const last = { ...h[h.length - 1] };
-              last.thinkingContent = (last.thinkingContent ?? '') + delta;
-              h[h.length - 1] = last;
-              return { chatHistory: h };
-            });
-          },
-          onContentChunk: (delta) => {
-            set((s) => {
-              const h = [...s.chatHistory];
-              const last = { ...h[h.length - 1] };
-              last.content = (last.content ?? '') + delta;
-              h[h.length - 1] = last;
-              return { chatHistory: h };
-            });
-          },
-          onToolCall: (toolName) => {
-            set({ activeToolName: toolName });
-          },
-          onDone: () => {
-            set((s) => {
-              const h = [...s.chatHistory];
-              h[h.length - 1] = { ...h[h.length - 1], isStreaming: false };
-              return { chatHistory: h, isChatting: false, activeToolName: null };
-            });
-          },
-          onError: (msg) => {
-            set((s) => {
-              const h = [...s.chatHistory];
-              h[h.length - 1] = {
-                ...h[h.length - 1],
-                content: `Error: ${msg}`,
-                isStreaming: false,
-              };
-              return { chatHistory: h, isChatting: false, activeToolName: null };
-            });
-          },
+      const { Channel } = await import('@tauri-apps/api/core');
+      const channel = new Channel<{
+        type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'Done' | 'Error';
+        data?: { delta?: string; message?: string; call_id?: string; name?: string; arguments?: string };
+      }>();
+
+      channel.onmessage = (event) => {
+        if (event.type === 'ThinkingChunk' && event.data?.delta) {
+          set((s) => {
+            const h = [...s.chatHistory];
+            const last = { ...h[h.length - 1] };
+            last.thinkingContent = (last.thinkingContent ?? '') + event.data!.delta!;
+            h[h.length - 1] = last;
+            return { chatHistory: h };
+          });
+        } else if (event.type === 'ContentChunk' && event.data?.delta) {
+          set((s) => {
+            const h = [...s.chatHistory];
+            const last = { ...h[h.length - 1] };
+            last.content = (last.content ?? '') + event.data!.delta!;
+            h[h.length - 1] = last;
+            return { chatHistory: h };
+          });
+        } else if (event.type === 'ToolCallRequest' && event.data?.name) {
+          set({ activeToolName: event.data.name });
+        } else if (event.type === 'Done') {
+          set((s) => {
+            const h = [...s.chatHistory];
+            h[h.length - 1] = { ...h[h.length - 1], isStreaming: false };
+            return { chatHistory: h, isChatting: false, activeToolName: null };
+          });
+        } else if (event.type === 'Error') {
+          set((s) => {
+            const h = [...s.chatHistory];
+            h[h.length - 1] = {
+              ...h[h.length - 1],
+              content: `Error: ${event.data?.message ?? 'Unknown error'}`,
+              isStreaming: false,
+            };
+            return { chatHistory: h, isChatting: false, activeToolName: null };
+          });
         }
-      );
-      // Save complete Agent history (including tool_calls / tool results)
-      set({ agentHistory: finalMessages });
+      };
+
+      await invoke('ai_chat_acp', {
+        prompt: message,
+        connectionId,
+        tabSql,
+        channel,
+      });
     } catch (e) {
       set((s) => {
         const h = [...s.chatHistory];

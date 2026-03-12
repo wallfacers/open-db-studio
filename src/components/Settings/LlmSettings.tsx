@@ -273,7 +273,7 @@ function ConfigFormDialog({ title, initial, editId, onSave, onCancel }: ConfigFo
                   setForm((f) => ({ ...f, api_key: v }));
                   setApiKeyDirty(true);
                 }}
-                placeholder={editId ? '未修改则保留原密钥' : 'sk-...'}
+                placeholder={editId ? t('llmSettings.apiKeyPlaceholder') : 'sk-...'}
               />
             </div>
             {editId && !apiKeyDirty && (
@@ -288,7 +288,7 @@ function ConfigFormDialog({ title, initial, editId, onSave, onCancel }: ConfigFo
                 }}
                 className="text-xs px-2 py-1.5 border border-[#253347] text-[#7a9bb8] hover:text-[#c8daea] rounded whitespace-nowrap flex-shrink-0"
               >
-                查看密钥
+                {t('llmSettings.revealKey')}
               </button>
             )}
           </div>

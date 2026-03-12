@@ -51,6 +51,7 @@
     "username": "Username",
     "password": "Password",
     "passwordPlaceholder": "Leave empty to keep current password",
+    "revealPassword": "Reveal Password",
     "testSuccess": "✓ Connection successful",
     "testing": "Testing...",
     "testConnection": "Test Connection",
@@ -302,7 +303,9 @@
     "justNow": "just now",
     "minutesAgo": "{{n}} minutes ago",
     "hoursAgo": "{{n}} hours ago",
-    "daysAgo": "{{n}} days ago"
+    "daysAgo": "{{n}} days ago",
+    "apiKeyPlaceholder": "Leave blank to keep existing key",
+    "revealKey": "Reveal Key"
   },
   "app": {
     "chatMsg1": "Help me analyze the birth rate changes in Shanghai in 2023",

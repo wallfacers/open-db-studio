@@ -775,7 +775,13 @@ git commit -m "feat(assistant): integrate DiffPanel for pending SQL diff display
 
 ---
 
-## Chunk 3: Page Agent 真实集成
+## ~~Chunk 3: Page Agent 真实集成~~ ⚠️ 已废弃
+
+> **废弃原因（2026-03-12）：**
+> - `page-agent` 自带独立 UI 面板，与 Assistant 聊天框完全脱节
+> - 前端直连 LLM 需要持有 API Key，违反 SECURITY.md
+> - 已改为工具驱动架构，见 `docs/plans/2026-03-12-agent-tool-catalog-design.md`
+> - Task 8-10 **不执行**，替代方案见 Phase 2 计划
 
 ### 文件结构
 

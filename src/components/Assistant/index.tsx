@@ -75,7 +75,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   showToast,
 }) => {
   const { t } = useTranslation();
-  const { chatHistory, isChatting, sendChatStream, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
+  const { chatHistory, isChatting, sendAgentChatStream, activeToolName, clearHistory, configs, activeConfigId, setActiveConfigId, loadConfigs } = useAiStore();
   const { activeConnectionId } = useConnectionStore();
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   // TODO: 未来支持 AI 直接写入编辑器时，在此处补充解构 setSql / activeTabId
@@ -98,7 +98,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     if (!chatInput.trim() || isChatting) return;
     const prompt = chatInput.trim();
     setChatInput('');
-    await sendChatStream(prompt, activeConnectionId);
+    await sendAgentChatStream(prompt, activeConnectionId);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -235,6 +235,11 @@ export const Assistant: React.FC<AssistantProps> = ({
             </div>
           );
         })}
+        {isChatting && activeToolName && (
+          <div className="text-xs text-[#5b8ab0] px-3 py-1 italic">
+            ⚙ 调用工具：{activeToolName}...
+          </div>
+        )}
         <div ref={chatEndRef} />
       </div>
 

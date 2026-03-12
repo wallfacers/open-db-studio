@@ -39,7 +39,11 @@
     "selectModel": "Select model",
     "noModelHint": "No configs found, go to Settings to add one",
     "callingTool": "⚙ Calling tool: {{name}}...",
-    "stopGeneration": "Stop Generation"
+    "stopGeneration": "Stop Generation",
+    "noConnectedModel": "No available model",
+    "noConnectedModelHint": "Please configure and test an AI model in Settings first",
+    "goToSettings": "Go to Settings",
+    "modelNotConnected": "This model has not passed connectivity test"
   },
   "connectionModal": {
     "editConnection": "Edit Connection",

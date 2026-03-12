@@ -382,6 +382,7 @@ JOIN
         setIsAssistantOpen={setIsAssistantOpen}
         showToast={showToast}
         activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
+        onOpenSettings={() => setActiveActivity('settings')}
       />
       )}
 

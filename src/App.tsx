@@ -378,6 +378,7 @@ JOIN
         handleAssistantResize={handleAssistantResize}
         setIsAssistantOpen={setIsAssistantOpen}
         showToast={showToast}
+        activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
       />
       )}
 

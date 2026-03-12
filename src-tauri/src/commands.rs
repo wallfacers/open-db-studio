@@ -809,3 +809,137 @@ pub async fn agent_execute_sql(
     }
     Ok(result)
 }
+
+// ============ ACP Agent 模式 ============
+
+#[tauri::command]
+pub async fn ai_chat_acp(
+    prompt: String,
+    _connection_id: Option<i64>,
+    tab_sql: Option<String>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    // 获取活跃 LLM 配置
+    let config = crate::db::get_default_llm_config()?
+        .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
+    let api_key = config.api_key.clone();
+
+    // 工作目录：app data dir（通过 APPDATA 环境变量）
+    let cwd = std::path::PathBuf::from(
+        std::env::var("APPDATA").unwrap_or_else(|_| ".".into())
+    ).join("open-db-studio");
+    std::fs::create_dir_all(&cwd).ok();
+
+    // 写 opencode.json
+    crate::acp::config::write_opencode_config(
+        &api_key,
+        Some(&config.base_url),
+        &config.model,
+        &config.api_type,
+        &cwd,
+    )?;
+
+    // 创建流事件 channel（转发 ACP 通知 → Tauri Channel）
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::llm::StreamEvent>();
+
+    let channel_clone = channel.clone();
+    tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            let _ = channel_clone.send(event);
+        }
+    });
+
+    // 构建 prompt 文本
+    let mut prompt_text = prompt.clone();
+    if let Some(sql) = tab_sql {
+        if !sql.trim().is_empty() {
+            prompt_text = format!("当前编辑器 SQL：\n```sql\n{}\n```\n\n{}", sql, prompt_text);
+        }
+    }
+
+    // 从 AppState 读取当前 session（若有）
+    let mcp_port = state.mcp_port;
+    let existing_session = {
+        let guard = state.acp_session.lock().await;
+        guard.as_ref().map(|s| (s.connection.clone(), s.session_id.clone()))
+    };
+
+    // 使用 oneshot channel 把 !Send 的 ACP 调用结果传回 Send 上下文
+    let (result_tx, result_rx) = std::sync::mpsc::channel::<AppResult<(String, Option<crate::state::AcpSession>)>>();
+
+    let cwd_clone = cwd.clone();
+    let tx_clone = tx.clone();
+
+    // 所有 !Send 的 ACP 调用都在独立的 current-thread 运行时上执行
+    std::thread::spawn(move || {
+        use agent_client_protocol::{Agent, PromptRequest, ContentBlock, TextContent};
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("acp command local runtime");
+        let local = tokio::task::LocalSet::new();
+
+        let outcome = local.block_on(&rt, async move {
+            // 获取或创建 ACP session（完全在 local 上下文中）
+            let (connection, session_id, new_sess) = if let Some((conn, sid)) = existing_session {
+                (conn, sid, None)
+            } else {
+                match crate::acp::client::start_acp_session(mcp_port, &cwd_clone, tx_clone).await {
+                    Ok((conn, sid, child)) => {
+                        let new_sess = crate::state::AcpSession {
+                            session_id: sid.clone(),
+                            connection: conn.clone(),
+                            child_handle: child,
+                        };
+                        (conn, sid, Some(new_sess))
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
+
+            // 发送 prompt
+            let content_blocks = vec![
+                ContentBlock::Text(TextContent::new(prompt_text))
+            ];
+            let conn = connection.lock().await;
+            let resp = conn.prompt(PromptRequest::new(session_id.clone(), content_blocks)).await
+                .map_err(|e| AppError::Other(format!("ACP prompt failed: {}", e)))?;
+            drop(conn);
+
+            log::info!("ACP prompt done, stop_reason: {:?}", resp.stop_reason);
+            Ok((session_id, new_sess))
+        });
+
+        let _ = result_tx.send(outcome);
+    });
+
+    // 等待本地线程结果（tokio blocking 友好方式）
+    let outcome = tokio::task::spawn_blocking(move || result_rx.recv())
+        .await
+        .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
+        .map_err(|e| AppError::Other(format!("Channel recv error: {}", e)))??;
+
+    let (_session_id, new_sess) = outcome;
+
+    // 如果是新建 session，写回 AppState
+    if let Some(sess) = new_sess {
+        let mut guard = state.acp_session.lock().await;
+        *guard = Some(sess);
+    }
+
+    let _ = channel.send(crate::llm::StreamEvent::Done);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_acp_session(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let mut session_guard = state.acp_session.lock().await;
+    if let Some(mut sess) = session_guard.take() {
+        let _ = sess.child_handle.kill().await;
+    }
+    Ok(())
+}

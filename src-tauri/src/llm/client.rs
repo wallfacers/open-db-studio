@@ -9,8 +9,44 @@ use tauri::ipc::Channel;
 pub enum StreamEvent {
     ThinkingChunk { delta: String },
     ContentChunk   { delta: String },
+    ToolCallRequest { call_id: String, name: String, arguments: String },
     Done,
     Error { message: String },
+}
+
+/// OpenAI tool definition（从前端传入）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+}
+
+/// Agent 对话消息（支持 tool_calls / tool result）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentMessage {
+    pub role: String,
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<AgentToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentToolCall {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub call_type: String,
+    pub function: AgentToolCallFunction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentToolCallFunction {
+    pub name: String,
+    pub arguments: String,
 }
 
 const DEFAULT_ANTHROPIC_MAX_TOKENS: u32 = 8192;

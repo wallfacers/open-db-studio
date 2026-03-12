@@ -812,6 +812,7 @@ pub async fn agent_execute_sql(
 
 // ============ ACP Agent 模式 ============
 
+/// 外层 wrapper：保证无论 inner 成功还是失败，都向前端发送 Done 事件。
 #[tauri::command]
 pub async fn ai_chat_acp(
     prompt: String,
@@ -819,6 +820,30 @@ pub async fn ai_chat_acp(
     tab_sql: Option<String>,
     channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
     state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let result = ai_chat_acp_inner(prompt, tab_sql, &channel, &state).await;
+    if let Err(ref e) = result {
+        let _ = channel.send(crate::llm::StreamEvent::Error {
+            message: e.to_string(),
+        });
+    }
+    // Done 事件总是发送，无论成功或失败
+    let _ = channel.send(crate::llm::StreamEvent::Done);
+    result
+}
+
+/// 内层实现：可以自由使用 `?`，错误由外层 wrapper 统一处理。
+///
+/// 修复内容：
+/// - 问题1：Done 事件由 wrapper 统一发送，覆盖所有错误路径
+/// - 问题2：prompt 失败时 kill 子进程，避免孤儿进程泄漏
+/// - 问题3：放弃 session 复用，每次新建独立 session + local 运行时，
+///           避免跨运行时调用 !Send 类型导致的 panic
+async fn ai_chat_acp_inner(
+    prompt: String,
+    tab_sql: Option<String>,
+    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: &tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
     // 获取活跃 LLM 配置
     let config = crate::db::get_default_llm_config()?
@@ -840,6 +865,14 @@ pub async fn ai_chat_acp(
         &cwd,
     )?;
 
+    // 清除旧 session（kill 旧进程），每次对话都用干净的 session 避免跨运行时问题
+    {
+        let mut guard = state.acp_session.lock().await;
+        if let Some(mut old_sess) = guard.take() {
+            let _ = old_sess.child_handle.kill().await;
+        }
+    }
+
     // 创建流事件 channel（转发 ACP 通知 → Tauri Channel）
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::llm::StreamEvent>();
 
@@ -851,27 +884,20 @@ pub async fn ai_chat_acp(
     });
 
     // 构建 prompt 文本
-    let mut prompt_text = prompt.clone();
+    let mut prompt_text = prompt;
     if let Some(sql) = tab_sql {
         if !sql.trim().is_empty() {
             prompt_text = format!("当前编辑器 SQL：\n```sql\n{}\n```\n\n{}", sql, prompt_text);
         }
     }
 
-    // 从 AppState 读取当前 session（若有）
     let mcp_port = state.mcp_port;
-    let existing_session = {
-        let guard = state.acp_session.lock().await;
-        guard.as_ref().map(|s| (s.connection.clone(), s.session_id.clone()))
-    };
 
-    // 使用 oneshot channel 把 !Send 的 ACP 调用结果传回 Send 上下文
-    let (result_tx, result_rx) = std::sync::mpsc::channel::<AppResult<(String, Option<crate::state::AcpSession>)>>();
+    // 使用同步 channel 把 !Send 的 ACP 调用结果传回 Send 上下文
+    let (result_tx, result_rx) = std::sync::mpsc::channel::<AppResult<()>>();
 
-    let cwd_clone = cwd.clone();
-    let tx_clone = tx.clone();
-
-    // 所有 !Send 的 ACP 调用都在独立的 current-thread 运行时上执行
+    // 所有 !Send 的 ACP 调用都在独立的 current-thread 运行时上执行，
+    // 与 start_acp_session 内部的 I/O loop 处于同一 LocalSet，避免跨运行时问题
     std::thread::spawn(move || {
         use agent_client_protocol::{Agent, PromptRequest, ContentBlock, TextContent};
 
@@ -882,55 +908,40 @@ pub async fn ai_chat_acp(
         let local = tokio::task::LocalSet::new();
 
         let outcome = local.block_on(&rt, async move {
-            // 获取或创建 ACP session（完全在 local 上下文中）
-            let (connection, session_id, new_sess) = if let Some((conn, sid)) = existing_session {
-                (conn, sid, None)
-            } else {
-                match crate::acp::client::start_acp_session(mcp_port, &cwd_clone, tx_clone).await {
-                    Ok((conn, sid, child)) => {
-                        let new_sess = crate::state::AcpSession {
-                            session_id: sid.clone(),
-                            connection: conn.clone(),
-                            child_handle: child,
-                        };
-                        (conn, sid, Some(new_sess))
-                    }
-                    Err(e) => return Err(e),
-                }
-            };
+            // 新建 ACP session（进程 + 握手）
+            let (connection, session_id, mut child) =
+                crate::acp::client::start_acp_session(mcp_port, &cwd, tx).await?;
 
             // 发送 prompt
             let content_blocks = vec![
                 ContentBlock::Text(TextContent::new(prompt_text))
             ];
             let conn = connection.lock().await;
-            let resp = conn.prompt(PromptRequest::new(session_id.clone(), content_blocks)).await
-                .map_err(|e| AppError::Other(format!("ACP prompt failed: {}", e)))?;
+            let prompt_result = conn
+                .prompt(PromptRequest::new(session_id.clone(), content_blocks))
+                .await;
             drop(conn);
 
-            log::info!("ACP prompt done, stop_reason: {:?}", resp.stop_reason);
-            Ok((session_id, new_sess))
+            // 问题2修复：无论 prompt 成功还是失败，都 kill 子进程
+            let _ = child.kill().await;
+
+            match prompt_result {
+                Ok(resp) => {
+                    log::info!("ACP prompt done, stop_reason: {:?}", resp.stop_reason);
+                    Ok(())
+                }
+                Err(e) => Err(AppError::Other(format!("ACP prompt failed: {}", e))),
+            }
         });
 
         let _ = result_tx.send(outcome);
     });
 
-    // 等待本地线程结果（tokio blocking 友好方式）
-    let outcome = tokio::task::spawn_blocking(move || result_rx.recv())
+    // 等待本地线程结果（以 tokio blocking 友好方式）
+    tokio::task::spawn_blocking(move || result_rx.recv())
         .await
         .map_err(|e| AppError::Other(format!("Join error: {}", e)))?
-        .map_err(|e| AppError::Other(format!("Channel recv error: {}", e)))??;
-
-    let (_session_id, new_sess) = outcome;
-
-    // 如果是新建 session，写回 AppState
-    if let Some(sess) = new_sess {
-        let mut guard = state.acp_session.lock().await;
-        *guard = Some(sess);
-    }
-
-    let _ = channel.send(crate::llm::StreamEvent::Done);
-    Ok(())
+        .map_err(|e| AppError::Other(format!("Channel recv error: {}", e)))?
 }
 
 #[tauri::command]

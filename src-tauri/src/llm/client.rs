@@ -535,4 +535,156 @@ impl LlmClient {
             ApiType::Anthropic => self.chat_stream_anthropic(messages, channel).await,
         }
     }
+
+    pub async fn chat_stream_with_tools_openai(
+        &self,
+        messages: Vec<AgentMessage>,
+        tools: Vec<ToolDefinition>,
+        channel: &Channel<StreamEvent>,
+    ) -> AppResult<()> {
+        #[derive(serde::Serialize)]
+        struct FunctionDef<'a> {
+            name: &'a str,
+            description: &'a str,
+            parameters: &'a serde_json::Value,
+        }
+        #[derive(serde::Serialize)]
+        struct OpenAITool<'a> {
+            #[serde(rename = "type")]
+            tool_type: &'static str,
+            function: FunctionDef<'a>,
+        }
+        #[derive(serde::Serialize)]
+        struct StreamReq<'a> {
+            model: String,
+            messages: &'a Vec<AgentMessage>,
+            tools: Vec<OpenAITool<'a>>,
+            stream: bool,
+        }
+
+        let openai_tools: Vec<OpenAITool> = tools.iter().map(|t| OpenAITool {
+            tool_type: "function",
+            function: FunctionDef {
+                name: &t.name,
+                description: &t.description,
+                parameters: &t.parameters,
+            },
+        }).collect();
+
+        let req = StreamReq {
+            model: self.model.clone(),
+            messages: &messages,
+            tools: openai_tools,
+            stream: true,
+        };
+
+        let base = self.base_url.trim_end_matches('/');
+        let resp = self.client
+            .post(format!("{}/chat/completions", base))
+            .bearer_auth(&self.api_key)
+            .json(&req)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            let _ = channel.send(StreamEvent::Error { message: format!("HTTP {}: {}", status, body) });
+            return Ok(());
+        }
+
+        // Accumulate tool_calls (may span multiple chunks)
+        let mut tool_calls_acc: Vec<(String, String, String)> = Vec::new(); // (id, name, arguments)
+        let mut stream = resp.bytes_stream();
+
+        while let Some(item) = stream.next().await {
+            let bytes = match item {
+                Ok(b) => b,
+                Err(e) => {
+                    let _ = channel.send(StreamEvent::Error { message: e.to_string() });
+                    return Ok(());
+                }
+            };
+
+            let text = String::from_utf8_lossy(&bytes);
+            for line in text.lines() {
+                let line = line.trim();
+                if !line.starts_with("data:") { continue; }
+                let json_str = line["data:".len()..].trim();
+                if json_str == "[DONE]" {
+                    // Send accumulated tool calls then Done
+                    for (id, name, args) in &tool_calls_acc {
+                        let _ = channel.send(StreamEvent::ToolCallRequest {
+                            call_id: id.clone(),
+                            name: name.clone(),
+                            arguments: args.clone(),
+                        });
+                    }
+                    let _ = channel.send(StreamEvent::Done);
+                    return Ok(());
+                }
+                let v: serde_json::Value = match serde_json::from_str(json_str) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+
+                // Accumulate tool_calls delta
+                if let Some(tool_calls) = v["choices"][0]["delta"]["tool_calls"].as_array() {
+                    for tc in tool_calls {
+                        let idx = tc["index"].as_u64().unwrap_or(0) as usize;
+                        while tool_calls_acc.len() <= idx {
+                            tool_calls_acc.push((String::new(), String::new(), String::new()));
+                        }
+                        if let Some(id) = tc["id"].as_str() {
+                            tool_calls_acc[idx].0 = id.to_string();
+                        }
+                        if let Some(name) = tc["function"]["name"].as_str() {
+                            tool_calls_acc[idx].1 = name.to_string();
+                        }
+                        if let Some(args) = tc["function"]["arguments"].as_str() {
+                            tool_calls_acc[idx].2.push_str(args);
+                        }
+                    }
+                }
+
+                // Handle normal content delta (text response, no tool calls)
+                if let Some(content) = v["choices"][0]["delta"]["content"].as_str() {
+                    if !content.is_empty() {
+                        let _ = channel.send(StreamEvent::ContentChunk { delta: content.to_string() });
+                    }
+                }
+            }
+        }
+
+        // Stream ended without [DONE], send any accumulated tool calls
+        for (id, name, args) in &tool_calls_acc {
+            if !name.is_empty() {
+                let _ = channel.send(StreamEvent::ToolCallRequest {
+                    call_id: id.clone(),
+                    name: name.clone(),
+                    arguments: args.clone(),
+                });
+            }
+        }
+        let _ = channel.send(StreamEvent::Done);
+        Ok(())
+    }
+
+    pub async fn chat_stream_with_tools(
+        &self,
+        messages: Vec<AgentMessage>,
+        tools: Vec<ToolDefinition>,
+        channel: &Channel<StreamEvent>,
+    ) -> AppResult<()> {
+        match self.api_type {
+            ApiType::Openai => self.chat_stream_with_tools_openai(messages, tools, channel).await,
+            // Anthropic doesn't support tool calling in this version — fall back to regular streaming
+            ApiType::Anthropic => {
+                let msgs: Vec<ChatMessage> = messages.into_iter().filter_map(|m| {
+                    m.content.map(|c| ChatMessage { role: m.role, content: c })
+                }).collect();
+                self.chat_stream_anthropic(msgs, channel).await
+            }
+        }
+    }
 }

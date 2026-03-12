@@ -10,6 +10,7 @@ import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
 import { QueryContext } from './types';
+import { useToolBridge } from './hooks/useToolBridge';
 
 export interface TabData {
   id: string;
@@ -77,6 +78,8 @@ JOIN
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
   const { results, error: queryError } = useQueryStore();
+  // 全局挂载 MCP propose_sql_diff 事件监听器
+  useToolBridge();
   useEffect(() => {
     const len = (results[activeTab] ?? []).length;
     const hasError = !!queryError;

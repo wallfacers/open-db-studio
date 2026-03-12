@@ -64,6 +64,9 @@
 - [x] AI 错误诊断（报错 → 原因解释 + 修复方案，自动诊断）
 - [x] 多轮对话式 SQL（AI 面板保留上下文，持久化历史）
 - [x] AI 模型配置多配置列表（CRUD + 默认标记 + 持久化测试状态 + AI 面板选择器）
+- [x] 安全修复：api_key 不暴露前端（list_llm_configs 遮蔽，get_llm_config_key 按需获取）
+- [x] 安全修复：DB 密码按需获取（get_connection_password），编辑弹窗 isDirty 机制防覆盖
+- [x] 移除 page-agent，改为工具驱动 Agent 架构（见 docs/plans/2026-03-12-agent-tool-catalog-design.md）
 
 ---
 

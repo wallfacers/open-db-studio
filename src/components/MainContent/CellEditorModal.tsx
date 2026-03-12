@@ -83,7 +83,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className={`flex-1 min-h-[220px] m-4 bg-[#0d1520] border border-[#1e2d42] rounded p-3 text-[#c8daea] text-xs font-mono outline-none resize-y ${readOnly ? 'cursor-default select-all' : ''}`}
+          className={`flex-1 min-h-[220px] m-4 bg-[#111922] border border-[#1e2d42] rounded p-3 text-[#c8daea] text-xs font-mono outline-none resize-y focus:border-[#00c9a7] transition-colors ${readOnly ? 'cursor-default select-all' : ''}`}
           value={draft}
           readOnly={readOnly}
           onChange={readOnly ? undefined : e => {

@@ -51,6 +51,7 @@
     "username": "用户名",
     "password": "密码",
     "passwordPlaceholder": "留空则不修改密码",
+    "revealPassword": "查看密码",
     "testSuccess": "✓ 连接成功",
     "testing": "测试中...",
     "testConnection": "测试连接",
@@ -302,7 +303,9 @@
     "justNow": "刚刚",
     "minutesAgo": "{{n}}分钟前",
     "hoursAgo": "{{n}}小时前",
-    "daysAgo": "{{n}}天前"
+    "daysAgo": "{{n}}天前",
+    "apiKeyPlaceholder": "未修改则保留原密钥",
+    "revealKey": "查看密钥"
   },
   "app": {
     "chatMsg1": "帮我分析2023年上海市出生率变化",

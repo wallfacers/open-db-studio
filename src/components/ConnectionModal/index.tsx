@@ -172,7 +172,7 @@ export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) 
                     }}
                     className="text-xs px-2 py-1.5 border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] rounded whitespace-nowrap flex-shrink-0"
                   >
-                    查看密码
+                    {t('connectionModal.revealPassword')}
                   </button>
                 )}
               </div>

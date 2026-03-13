@@ -1891,6 +1891,28 @@ pub async fn backup_database(params: BackupParams) -> Result<(), String> {
     Ok(())
 }
 
+/// 获取数据库版本字符串（供前端缓存，失败时返回空字符串）
+#[tauri::command]
+pub async fn get_db_version(connection_id: i64) -> AppResult<String> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await
+        .map_err(|_| crate::AppError::Other("connect failed".into()))?;
+    let result = ds.execute("SELECT VERSION()").await
+        .unwrap_or_else(|_| crate::datasource::QueryResult {
+            columns: vec![],
+            rows: vec![],
+            row_count: 0,
+            duration_ms: 0,
+        });
+    let version = result.rows
+        .first()
+        .and_then(|row| row.first())
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(version)
+}
+
 /// 在系统文件管理器中打开指定路径（文件或目录）
 #[tauri::command]
 pub async fn show_in_folder(path: String) -> AppResult<()> {

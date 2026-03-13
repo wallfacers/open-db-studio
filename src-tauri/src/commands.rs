@@ -1069,8 +1069,8 @@ pub async fn create_database(
     name: String,
     options: CreateDatabaseOptions,
 ) -> AppResult<()> {
-    // 验证名称安全（只允许字母、数字、下划线）
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    // 验证名称安全（只允许 ASCII 字母、数字、下划线）
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(crate::AppError::Other(
             format!("Invalid database name '{}': only alphanumeric and underscore allowed", name)
         ));
@@ -1083,6 +1083,14 @@ pub async fn create_database(
         "mysql" => {
             let charset = options.charset.as_deref().unwrap_or("utf8mb4");
             let collation = options.collation.as_deref().unwrap_or("utf8mb4_general_ci");
+            // 白名单验证：charset 和 collation 只允许 ASCII 字母数字和下划线
+            let valid_charset = charset.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            let valid_collation = collation.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if !valid_charset || !valid_collation {
+                return Err(crate::AppError::Other(
+                    "Invalid charset or collation: only alphanumeric and underscore allowed".to_string()
+                ));
+            }
             format!(
                 "CREATE DATABASE `{}` CHARACTER SET {} COLLATE {}",
                 name, charset, collation
@@ -1101,8 +1109,8 @@ pub async fn drop_database(
     connection_id: i64,
     name: String,
 ) -> AppResult<()> {
-    // 验证名称安全
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+    // 验证名称安全（只允许 ASCII 字母、数字、下划线）
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(crate::AppError::Other(
             format!("Invalid database name '{}': only alphanumeric and underscore allowed", name)
         ));

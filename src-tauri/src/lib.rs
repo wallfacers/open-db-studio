@@ -99,6 +99,7 @@ pub fn run() {
             commands::list_databases,
             commands::list_schemas,
             commands::list_objects,
+            commands::list_tables_with_stats,
             commands::ai_chat_stream_with_tools,
             commands::ai_chat_continue,
             commands::agent_get_table_sample,

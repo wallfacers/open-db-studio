@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgSslMode};
 use std::time::Instant;
 
-use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, ViewMeta};
+use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, TableStatInfo, ViewMeta};
 use crate::AppResult;
 use sqlx::Row;
 
@@ -334,6 +334,37 @@ impl DataSource for PostgresDataSource {
             _ => vec![],
         };
         Ok(names)
+    }
+
+    async fn list_tables_with_stats(&self, _database: &str, schema: Option<&str>) -> AppResult<Vec<TableStatInfo>> {
+        let schema = schema.unwrap_or("public");
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+            "SELECT s.relname, \
+                    COALESCE(st.n_live_tup, 0)::bigint, \
+                    pg_total_relation_size(s.oid)::bigint \
+             FROM pg_class s \
+             JOIN pg_namespace n ON s.relnamespace = n.oid \
+             LEFT JOIN pg_stat_user_tables st ON st.relname = s.relname AND st.schemaname = n.nspname \
+             WHERE n.nspname = $1 AND s.relkind = 'r' \
+             ORDER BY s.relname"
+        ).bind(schema).fetch_all(&self.pool).await?;
+
+        Ok(rows.into_iter().map(|(name, row_count, bytes)| {
+            let size = Some(format_pg_size(bytes));
+            TableStatInfo { name, row_count: Some(row_count), size }
+        }).collect())
+    }
+}
+
+fn format_pg_size(bytes: i64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

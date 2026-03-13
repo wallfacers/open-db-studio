@@ -781,6 +781,17 @@ pub async fn list_objects(
 }
 
 #[tauri::command]
+pub async fn list_tables_with_stats(
+    connection_id: i64,
+    database: String,
+    schema: Option<String>,
+) -> AppResult<Vec<crate::datasource::TableStatInfo>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    ds.list_tables_with_stats(&database, schema.as_deref()).await
+}
+
+#[tauri::command]
 pub async fn ai_chat_stream_with_tools(
     messages: Vec<AgentMessage>,
     tools: Vec<ToolDefinition>,
@@ -1200,7 +1211,6 @@ pub async fn export_tables(
     params: MultiExportParams,
     app_handle: tauri::AppHandle,
 ) -> AppResult<String> {
-    use std::path::Path;
     use tauri::Emitter;
 
     // Early return if no tables specified

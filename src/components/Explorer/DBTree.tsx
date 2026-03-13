@@ -490,8 +490,9 @@ export const DBTree: React.FC<DBTreeProps> = ({
           driver={createDb.driver}
           onClose={() => setCreateDb(null)}
           onSuccess={(dbName, switchTo) => {
+            const connId = createDb.connectionId;
             setCreateDb(null);
-            refreshNode(`conn_${createDb.connectionId}`);
+            refreshNode(`conn_${connId}`);
             if (switchTo) {
               showToast(`已创建数据库 ${dbName}`, 'success');
             }

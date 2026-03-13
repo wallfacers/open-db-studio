@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { useAppStore } from '../../store/appStore';
+import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, ListTodo, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -9,8 +10,6 @@ interface ActivityBarProps {
   setActiveActivity: (activity: string) => void;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (isOpen: boolean) => void;
-  isAssistantOpen: boolean;
-  setIsAssistantOpen: (isOpen: boolean) => void;
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
@@ -19,11 +18,10 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   setActiveActivity,
   isSidebarOpen,
   setIsSidebarOpen,
-  isAssistantOpen,
-  setIsAssistantOpen,
   showToast
 }) => {
   const { t } = useTranslation();
+  const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -108,6 +106,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           >
             <LayoutGrid size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             {isExpanded && <span className="text-[13px] truncate">{t('activity.gridView')}</span>}
+          </div>
+        </Tooltip>
+
+        <Tooltip content={!isExpanded ? t('activity.myTasks') : undefined}>
+          <div
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'tasks' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('tasks');
+              setIsSidebarOpen(true);
+            }}
+          >
+            <ListTodo size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">{t('activity.myTasks')}</span>}
           </div>
         </Tooltip>
       </div>

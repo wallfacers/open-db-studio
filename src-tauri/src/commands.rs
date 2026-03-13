@@ -543,7 +543,13 @@ pub struct ExportParams {
     pub format: String, // "csv" | "json" | "sql"
     pub where_clause: Option<String>,
     pub output_path: String,
+    #[serde(default = "default_true")]
+    pub include_header: bool,
+    #[serde(default)]
+    pub include_ddl: bool,
 }
+
+fn default_true() -> bool { true }
 
 #[tauri::command]
 pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
@@ -575,7 +581,10 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
         "json" => serde_json::to_string_pretty(&result.rows)
             .map_err(|e| crate::AppError::Other(e.to_string()))?,
         "csv" => {
-            let mut out = result.columns.iter().map(|c| quote_csv_field(c)).collect::<Vec<_>>().join(",") + "\n";
+            let mut out = String::new();
+            if params.include_header {
+                out += &(result.columns.iter().map(|c| quote_csv_field(c)).collect::<Vec<_>>().join(",") + "\n");
+            }
             for row in &result.rows {
                 let line: Vec<String> = row.iter().map(|v| match v {
                     serde_json::Value::Null => String::new(),
@@ -597,7 +606,27 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
                     _ => format!("\"{}\"", c.replace('"', "\"\"")),
                 }
             }).collect::<Vec<_>>().join(", ");
-            let mut out = format!("-- Export: {}\n", params.table);
+
+            let mut out = String::new();
+
+            // 包含 DDL：先写建表语句
+            if params.include_ddl {
+                match ds.get_table_ddl(&params.table).await {
+                    Ok(ddl) => {
+                        out += &format!("-- Table structure for `{}`\n", params.table);
+                        out += "DROP TABLE IF EXISTS ";
+                        out += &quoted_table;
+                        out += ";\n";
+                        out += &ddl;
+                        out += ";\n\n";
+                    }
+                    Err(e) => {
+                        out += &format!("-- Could not retrieve DDL: {}\n\n", e);
+                    }
+                }
+            }
+
+            out += &format!("-- Data for `{}`\n", params.table);
             for row in &result.rows {
                 let values: Vec<String> = row.iter().map(|v| match v {
                     serde_json::Value::Null => "NULL".into(),
@@ -1130,7 +1159,7 @@ pub async fn drop_database(
 
 // ============ 多表导出（流式进度） ============
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiExportOptions {
     pub include_header: bool,
     pub include_ddl: bool,
@@ -1139,7 +1168,7 @@ pub struct MultiExportOptions {
     pub delimiter: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiExportParams {
     pub connection_id: i64,
     pub database: Option<String>,
@@ -1148,6 +1177,10 @@ pub struct MultiExportParams {
     pub format: String,
     pub output_dir: String,
     pub options: MultiExportOptions,
+    #[serde(default)]
+    pub file_name: String,    // 输出文件名（不含后缀），Rust 侧拼接后缀
+    #[serde(default)]
+    pub export_all: bool,     // true 时忽略 tables，自动查全量表
 }
 
 #[derive(Clone, Serialize)]
@@ -1171,15 +1204,88 @@ pub async fn export_tables(
     use tauri::Emitter;
 
     // Early return if no tables specified
-    if params.tables.is_empty() {
+    if !params.export_all && params.tables.is_empty() {
         return Err(crate::AppError::Other("No tables specified for export".to_string()));
     }
 
-    // 1. 创建任务记录
-    let title = if params.tables.len() == 1 {
-        format!("导出 {} 表", params.tables[0])
+    // 解析最终要导出的表名列表
+    let tables_to_export: Vec<String> = if params.export_all {
+        // 查询数据库全量表名
+        let config = crate::db::get_connection_config(params.connection_id)?;
+        let db_name = params.database.as_deref().unwrap_or("");
+        let ds = match params.database.as_deref().filter(|s| !s.is_empty()) {
+            Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+            None => crate::datasource::create_datasource(&config).await?,
+        };
+        ds.list_objects(db_name, params.schema.as_deref(), "tables").await
+            .map_err(|e| crate::AppError::Other(format!("Failed to list tables: {}", e)))?
     } else {
-        format!("导出 {} 个表", params.tables.len())
+        params.tables.clone()
+    };
+
+    // 1. 创建任务记录
+    let title = if tables_to_export.len() == 1 {
+        format!("导出 {} 表", tables_to_export[0])
+    } else {
+        format!("导出 {} 个表", tables_to_export.len())
+    };
+
+    // 生成 Markdown 描述（供 LLM/MCP 读取）
+    let description = {
+        let conn_info = crate::db::get_connection_by_id(params.connection_id)
+            .ok()
+            .flatten();
+        let conn_line = if let Some(ref c) = conn_info {
+            let host_part = match (&c.host, &c.port) {
+                (Some(h), Some(p)) => format!(" · {}:{}", h, p),
+                (Some(h), None) => format!(" · {}", h),
+                _ => String::new(),
+            };
+            format!("**连接**: {} (ID: {} · {}{})", c.name, c.id, c.driver.to_uppercase(), host_part)
+        } else {
+            format!("**连接 ID**: {}", params.connection_id)
+        };
+
+        let db_line = params.database.as_deref()
+            .map(|db| {
+                let schema_part = params.schema.as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!(".{}", s))
+                    .unwrap_or_default();
+                format!("\n**数据库**: `{}{}`", db, schema_part)
+            })
+            .unwrap_or_default();
+
+        let format_detail = {
+            let mut parts = vec![params.format.to_uppercase()];
+            if params.format == "csv" {
+                parts.push(params.options.encoding.clone());
+                parts.push(format!("分隔符 `{}`", params.options.delimiter));
+                if params.options.include_header { parts.push("含表头".into()); }
+            }
+            if params.format == "sql" && params.options.include_ddl {
+                parts.push("含 DDL".into());
+            }
+            parts.join(" · ")
+        };
+
+        let where_line = params.options.where_clause.as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|w| format!("\n**筛选条件**: `{}`", w))
+            .unwrap_or_default();
+
+        let table_list = tables_to_export.iter()
+            .map(|t| format!("- `{}`", t))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!(
+            "## 导出任务\n\n{}{}\n**格式**: {}{}\n**输出目录**: `{}`\n\n### 导出表（{} 个）\n{}",
+            conn_line, db_line,
+            format_detail, where_line,
+            params.output_dir,
+            tables_to_export.len(), table_list
+        )
     };
 
     let task = crate::db::create_task(&crate::db::models::CreateTaskInput {
@@ -1190,49 +1296,156 @@ pub async fn export_tables(
         progress: Some(0),
         processed_rows: Some(0),
         total_rows: None,
-        current_target: Some(params.tables.first().cloned().unwrap_or_default()),
+        current_target: Some(tables_to_export.first().cloned().unwrap_or_default()),
         error: None,
         error_details: None,
         output_path: Some(params.output_dir.clone()),
+        description: Some(description),
     })?;
 
     let task_id = task.id.clone();
-    let total = params.tables.len() as u64;
+
+    let is_zip = tables_to_export.len() > 1 || params.export_all;
+    let file_name = if params.file_name.is_empty() {
+        tables_to_export.first().cloned().unwrap_or_else(|| "export".to_string())
+    } else {
+        params.file_name.clone()
+    };
+
+    let total = tables_to_export.len() as u64;
+
+    // 克隆供 async move 使用
+    let tables_for_task = tables_to_export.clone();
+    let params_clone = params.clone();
 
     // 2. 后台执行（不阻塞前端）
     let task_id_clone = task_id.clone();
     tokio::spawn(async move {
-        let mut processed = 0u64;
+        use std::path::Path;
+        use std::fs::File;
+        use std::io::Write;
 
-        for (i, table_name) in params.tables.iter().enumerate() {
-            // 发送进度事件
+        if is_zip {
+            // ---- ZIP 分支 ----
+            let zip_path = Path::new(&params_clone.output_dir)
+                .join(format!("{}.zip", file_name));
+
+            let zip_file = match File::create(&zip_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+                        status: Some("failed".to_string()),
+                        error: Some(e.to_string()),
+                        completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
+                    });
+                    return;
+                }
+            };
+            let mut zip = zip::ZipWriter::new(zip_file);
+            let zip_options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+
+            let mut processed = 0u64;
+            for (i, table_name) in tables_for_task.iter().enumerate() {
+                let _ = app_handle.emit("task-progress", TaskProgressPayload {
+                    task_id: task_id_clone.clone(),
+                    status: "running".to_string(),
+                    progress: ((i as f64 / total as f64) * 100.0) as u8,
+                    processed_rows: processed,
+                    total_rows: Some(total),
+                    current_target: table_name.clone(),
+                    error: None,
+                    output_path: Some(zip_path.to_string_lossy().to_string()),
+                });
+
+                // 导出单表到临时文件
+                let tmp_path = Path::new(&params_clone.output_dir)
+                    .join(format!("_tmp_{}.{}", table_name, &params_clone.format));
+                let single_params = ExportParams {
+                    connection_id: params_clone.connection_id,
+                    database: params_clone.database.clone(),
+                    table: table_name.clone(),
+                    schema: params_clone.schema.clone(),
+                    format: params_clone.format.clone(),
+                    where_clause: None,
+                    output_path: tmp_path.to_string_lossy().to_string(),
+                    include_header: params_clone.options.include_header,
+                    include_ddl: params_clone.options.include_ddl,
+                };
+
+                if let Err(e) = export_table_data(single_params).await {
+                    let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+                        status: Some("failed".to_string()),
+                        error: Some(e.to_string()),
+                        completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
+                    });
+                    let _ = app_handle.emit("task-progress", TaskProgressPayload {
+                        task_id: task_id_clone.clone(),
+                        status: "failed".to_string(),
+                        progress: 0,
+                        processed_rows: processed,
+                        total_rows: Some(total),
+                        current_target: table_name.clone(),
+                        error: Some(e.to_string()),
+                        output_path: None,
+                    });
+                    // 清理临时文件
+                    let _ = std::fs::remove_file(&tmp_path);
+                    return;
+                }
+
+                // 将临时文件内容写入 ZIP
+                let entry_name = format!("{}.{}", table_name, &params_clone.format);
+                if zip.start_file(&entry_name, zip_options).is_ok() {
+                    if let Ok(content) = std::fs::read(&tmp_path) {
+                        let _ = zip.write_all(&content);
+                    }
+                }
+                let _ = std::fs::remove_file(&tmp_path);
+                processed += 1;
+            }
+
+            let _ = zip.finish();
+
+            let out_path_str = zip_path.to_string_lossy().to_string();
+            let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+                status: Some("completed".to_string()),
+                progress: Some(100),
+                processed_rows: Some(processed as i64),
+                total_rows: Some(total as i64),
+                output_path: Some(out_path_str.clone()),
+                completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                ..Default::default()
+            });
             let _ = app_handle.emit("task-progress", TaskProgressPayload {
-                task_id: task_id_clone.clone(),
-                status: "running".to_string(),
-                progress: ((i as f64 / total as f64) * 100.0) as u8,
+                task_id: task_id_clone,
+                status: "completed".to_string(),
+                progress: 100,
                 processed_rows: processed,
                 total_rows: Some(total),
-                current_target: table_name.clone(),
+                current_target: String::new(),
                 error: None,
-                output_path: Some(params.output_dir.clone()),
+                output_path: Some(out_path_str),
             });
 
-            // 构建单表导出参数
-            let output_file = Path::new(&params.output_dir)
-                .join(format!("{}.{}", table_name, &params.format));
+        } else {
+            // ---- 单文件分支（保持原逻辑，但使用 file_name） ----
+            let table_name = tables_for_task.first().cloned().unwrap_or_default();
+            let output_file = Path::new(&params_clone.output_dir)
+                .join(format!("{}.{}", file_name, &params_clone.format));
 
             let single_params = ExportParams {
-                connection_id: params.connection_id,
-                database: params.database.clone(),
+                connection_id: params_clone.connection_id,
+                database: params_clone.database.clone(),
                 table: table_name.clone(),
-                schema: params.schema.clone(),
-                format: params.format.clone(),
-                where_clause: if params.tables.len() == 1 {
-                    params.options.where_clause.clone()
-                } else {
-                    None
-                },
+                schema: params_clone.schema.clone(),
+                format: params_clone.format.clone(),
+                where_clause: params_clone.options.where_clause.clone(),
                 output_path: output_file.to_string_lossy().to_string(),
+                include_header: params_clone.options.include_header,
+                include_ddl: params_clone.options.include_ddl,
             };
 
             if let Err(e) = export_table_data(single_params).await {
@@ -1243,39 +1456,39 @@ pub async fn export_tables(
                     ..Default::default()
                 });
                 let _ = app_handle.emit("task-progress", TaskProgressPayload {
-                    task_id: task_id_clone.clone(),
+                    task_id: task_id_clone,
                     status: "failed".to_string(),
-                    progress: ((i as f64 / total as f64) * 100.0) as u8,
-                    processed_rows: processed,
-                    total_rows: Some(total),
-                    current_target: table_name.clone(),
+                    progress: 0,
+                    processed_rows: 0,
+                    total_rows: Some(1),
+                    current_target: table_name,
                     error: Some(e.to_string()),
                     output_path: None,
                 });
                 return;
             }
-            processed += 1;
-        }
 
-        let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
-            status: Some("completed".to_string()),
-            progress: Some(100),
-            processed_rows: Some(processed as i64),
-            total_rows: Some(total as i64),
-            output_path: Some(params.output_dir.clone()),
-            completed_at: Some(chrono::Utc::now().to_rfc3339()),
-            ..Default::default()
-        });
-        let _ = app_handle.emit("task-progress", TaskProgressPayload {
-            task_id: task_id_clone.clone(),
-            status: "completed".to_string(),
-            progress: 100,
-            processed_rows: processed,
-            total_rows: Some(total),
-            current_target: String::new(),
-            error: None,
-            output_path: Some(params.output_dir),
-        });
+            let out_path_str = output_file.to_string_lossy().to_string();
+            let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+                status: Some("completed".to_string()),
+                progress: Some(100),
+                processed_rows: Some(1),
+                total_rows: Some(1),
+                output_path: Some(out_path_str.clone()),
+                completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                ..Default::default()
+            });
+            let _ = app_handle.emit("task-progress", TaskProgressPayload {
+                task_id: task_id_clone,
+                status: "completed".to_string(),
+                progress: 100,
+                processed_rows: 1,
+                total_rows: Some(1),
+                current_target: String::new(),
+                error: None,
+                output_path: Some(out_path_str),
+            });
+        }
     });
 
     Ok(task_id)
@@ -1383,6 +1596,49 @@ pub async fn import_to_table(
 ) -> AppResult<String> {
     use tauri::Emitter;
     let title = format!("导入到 {} 表", params.table);
+
+    // 生成 Markdown 描述（供 LLM/MCP 读取）
+    let description = {
+        let conn_info = crate::db::get_connection_by_id(params.connection_id)
+            .ok()
+            .flatten();
+        let conn_line = if let Some(ref c) = conn_info {
+            let host_part = match (&c.host, &c.port) {
+                (Some(h), Some(p)) => format!(" · {}:{}", h, p),
+                (Some(h), None) => format!(" · {}", h),
+                _ => String::new(),
+            };
+            format!("**连接**: {} (ID: {} · {}{})", c.name, c.id, c.driver.to_uppercase(), host_part)
+        } else {
+            format!("**连接 ID**: {}", params.connection_id)
+        };
+
+        let db_line = params.database.as_deref()
+            .map(|db| {
+                let schema_part = params.schema.as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!(".{}", s))
+                    .unwrap_or_default();
+                format!("\n**数据库**: `{}{}`", db, schema_part)
+            })
+            .unwrap_or_default();
+
+        let mapping_lines = params.field_mapping.iter()
+            .map(|(src, dst)| format!("- `{}` → `{}`", src, dst))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!(
+            "## 导入任务\n\n{}{}\n**目标表**: `{}`\n**文件**: `{}`\n**格式**: {}\n**错误策略**: {}\n\n### 字段映射\n{}",
+            conn_line, db_line,
+            params.table,
+            params.file_path,
+            params.file_type.to_uppercase(),
+            if params.error_strategy == "StopOnError" { "遇错停止" } else { "跳过错误行继续" },
+            if mapping_lines.is_empty() { "（自动匹配）".to_string() } else { mapping_lines }
+        )
+    };
+
     let task = crate::db::create_task(&crate::db::models::CreateTaskInput {
         type_: "import".to_string(),
         status: "running".to_string(),
@@ -1395,6 +1651,7 @@ pub async fn import_to_table(
         error: None,
         error_details: None,
         output_path: Some(params.file_path.clone()),
+        description: Some(description),
     })?;
     let task_id = task.id.clone();
     let task_id_clone = task_id.clone();
@@ -1559,4 +1816,55 @@ async fn run_import(
     }
 
     Ok(success_count)
+}
+
+/// 在系统文件管理器中打开指定路径（文件或目录）
+#[tauri::command]
+pub async fn show_in_folder(path: String) -> AppResult<()> {
+    let p = std::path::Path::new(&path);
+    let is_dir = p.is_dir();
+
+    #[cfg(target_os = "windows")]
+    {
+        if is_dir {
+            std::process::Command::new("explorer")
+                .arg(&path)
+                .spawn()
+                .map_err(|e| crate::AppError::Other(format!("Failed to open folder: {}", e)))?;
+        } else {
+            std::process::Command::new("explorer")
+                .arg(format!("/select,{}", path))
+                .spawn()
+                .map_err(|e| crate::AppError::Other(format!("Failed to open folder: {}", e)))?;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if is_dir {
+            std::process::Command::new("open")
+                .arg(&path)
+                .spawn()
+                .map_err(|e| crate::AppError::Other(format!("Failed to open folder: {}", e)))?;
+        } else {
+            std::process::Command::new("open")
+                .args(["-R", &path])
+                .spawn()
+                .map_err(|e| crate::AppError::Other(format!("Failed to open folder: {}", e)))?;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let open_path = if is_dir {
+            path.clone()
+        } else {
+            p.parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or(path.clone())
+        };
+        std::process::Command::new("xdg-open")
+            .arg(&open_path)
+            .spawn()
+            .map_err(|e| crate::AppError::Other(format!("Failed to open folder: {}", e)))?;
+    }
+    Ok(())
 }

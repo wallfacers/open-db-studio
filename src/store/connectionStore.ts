@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Connection, CreateConnectionRequest, TableMeta } from '../types';
 
+export interface ConnectionMeta {
+  dbVersion: string;
+  driver: string;
+  host: string;
+  port?: number;
+  name: string;
+}
+
 interface ConnectionState {
   connections: Connection[];
   activeConnectionId: number | null;
@@ -9,6 +17,8 @@ interface ConnectionState {
   tables: TableMeta[];
   isLoading: boolean;
   error: string | null;
+  metaCache: Record<number, ConnectionMeta>;
+  setMeta: (connectionId: number, meta: ConnectionMeta) => void;
 
   loadConnections: () => Promise<void>;
   createConnection: (req: CreateConnectionRequest) => Promise<Connection>;
@@ -30,6 +40,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   tables: [],
   isLoading: false,
   error: null,
+  metaCache: {},
 
   loadConnections: async () => {
     set({ isLoading: true, error: null });
@@ -104,4 +115,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     newIds.delete(id);
     return { activeConnectionIds: newIds };
   }),
+
+  setMeta: (connectionId, meta) =>
+    set((s) => ({ metaCache: { ...s.metaCache, [connectionId]: meta } })),
 }));

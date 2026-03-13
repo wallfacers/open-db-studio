@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage } from '../types';
+import { useAppStore } from './appStore';
 
 interface AiState {
   // 配置列表
@@ -244,9 +245,20 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   explainSql: async (sql, connectionId) => {
     set({ isExplaining: true, error: null });
+    useAppStore.getState().setLastOperationContext({
+      type: 'ai_request',
+      connectionId,
+      aiRequestType: 'explain',
+      prompt: sql,
+    });
     try {
       return await invoke<string>('ai_explain_sql', { sql, connectionId });
     } catch (e) {
+      const status = (e as any)?.status ?? (e as any)?.response?.status;
+      if (status) {
+        const ctx = useAppStore.getState().lastOperationContext;
+        if (ctx) useAppStore.getState().setLastOperationContext({ ...ctx, httpStatus: status });
+      }
       set({ error: String(e) });
       throw e;
     } finally {
@@ -256,9 +268,20 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   optimizeSql: async (sql, connectionId) => {
     set({ isOptimizing: true, error: null });
+    useAppStore.getState().setLastOperationContext({
+      type: 'ai_request',
+      connectionId,
+      aiRequestType: 'optimize',
+      prompt: sql,
+    });
     try {
       return await invoke<string>('ai_optimize_sql', { sql, connectionId });
     } catch (e) {
+      const status = (e as any)?.status ?? (e as any)?.response?.status;
+      if (status) {
+        const ctx = useAppStore.getState().lastOperationContext;
+        if (ctx) useAppStore.getState().setLastOperationContext({ ...ctx, httpStatus: status });
+      }
       set({ error: String(e) });
       throw e;
     } finally {
@@ -268,9 +291,20 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   createTable: async (description, connectionId) => {
     set({ isCreatingTable: true, error: null });
+    useAppStore.getState().setLastOperationContext({
+      type: 'ai_request',
+      connectionId,
+      aiRequestType: 'create_table',
+      prompt: description,
+    });
     try {
       return await invoke<string>('ai_create_table', { description, connectionId });
     } catch (e) {
+      const status = (e as any)?.status ?? (e as any)?.response?.status;
+      if (status) {
+        const ctx = useAppStore.getState().lastOperationContext;
+        if (ctx) useAppStore.getState().setLastOperationContext({ ...ctx, httpStatus: status });
+      }
       set({ error: String(e) });
       throw e;
     } finally {

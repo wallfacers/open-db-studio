@@ -7,6 +7,7 @@ import { DBTree } from './DBTree';
 import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
 import { Tooltip } from '../common/Tooltip';
+import { invoke } from '@tauri-apps/api/core';
 import i18n from '../../i18n';
 import type { ToastLevel } from '../Toast';
 
@@ -67,6 +68,25 @@ export const Explorer: React.FC<ExplorerProps> = ({
 
     // 连接成功：标记为已连接并展开
     openConnection(connectionId);
+
+    // 连接成功后异步缓存 DB 版本（失败静默，不影响主流程）
+    const conn = useConnectionStore.getState().connections.find((c) => c.id === connectionId);
+    if (conn) {
+      invoke<string>('get_db_version', { connectionId })
+        .then((version) => {
+          if (version) {
+            useConnectionStore.getState().setMeta(connectionId, {
+              dbVersion: version,
+              driver: conn.driver,
+              host: conn.host ?? '',
+              port: conn.port ?? undefined,
+              name: conn.name,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
     const { expandedIds, toggleExpand } = useTreeStore.getState();
     if (!expandedIds.has(nodeId)) toggleExpand(nodeId);
   };

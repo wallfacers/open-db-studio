@@ -1052,3 +1052,70 @@ pub async fn retry_task(task_id: String) -> AppResult<()> {
         ..Default::default()
     })
 }
+
+// ============ 数据库管理 ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateDatabaseOptions {
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub default_schema: Option<String>,
+    pub tablespace: Option<String>,
+}
+
+#[tauri::command]
+pub async fn create_database(
+    connection_id: i64,
+    name: String,
+    options: CreateDatabaseOptions,
+) -> AppResult<()> {
+    // 验证名称安全（只允许字母、数字、下划线）
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(crate::AppError::Other(
+            format!("Invalid database name '{}': only alphanumeric and underscore allowed", name)
+        ));
+    }
+
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+
+    let sql = match config.driver.as_str() {
+        "mysql" => {
+            let charset = options.charset.as_deref().unwrap_or("utf8mb4");
+            let collation = options.collation.as_deref().unwrap_or("utf8mb4_general_ci");
+            format!(
+                "CREATE DATABASE `{}` CHARACTER SET {} COLLATE {}",
+                name, charset, collation
+            )
+        }
+        "postgres" => format!("CREATE DATABASE \"{}\"", name),
+        _ => format!("CREATE DATABASE \"{}\"", name),
+    };
+
+    ds.execute(&sql).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn drop_database(
+    connection_id: i64,
+    name: String,
+) -> AppResult<()> {
+    // 验证名称安全
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(crate::AppError::Other(
+            format!("Invalid database name '{}': only alphanumeric and underscore allowed", name)
+        ));
+    }
+
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+
+    let sql = match config.driver.as_str() {
+        "mysql" => format!("DROP DATABASE `{}`", name),
+        _ => format!("DROP DATABASE \"{}\"", name),
+    };
+
+    ds.execute(&sql).await?;
+    Ok(())
+}

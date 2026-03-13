@@ -8,6 +8,7 @@ import { useTaskStore } from '../../store';
 import { useEscClose } from '../../hooks/useEscClose';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../store/appStore';
 
 export type ExportScope = 'current_table' | 'multi_table' | 'database';
 export type ExportFormat = 'csv' | 'json' | 'sql';
@@ -173,6 +174,13 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
           ? [defaultTable]
           : selectedTables;
 
+      // 写入操作上下文快照
+      useAppStore.getState().setLastOperationContext({
+        type: 'export',
+        connectionId: step1.connectionId,
+        database: step1.database || undefined,
+        schema: step1.schema || undefined,
+      });
       await invoke('export_tables', {
         params: {
           connection_id: step1.connectionId,

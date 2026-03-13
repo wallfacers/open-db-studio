@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo } from '../types';
+import { useAppStore } from './appStore';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -94,6 +95,15 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       .split(';')
       .map(s => s.trim())
       .filter(s => s.length > 0);
+
+    // 写入操作上下文快照（供错误诊断使用）
+    useAppStore.getState().setLastOperationContext({
+      type: 'sql_execute',
+      connectionId,
+      database: database ?? undefined,
+      schema: schema ?? undefined,
+      sql,
+    });
 
     set({ isExecuting: true, error: null, diagnosis: null });
 

@@ -1280,3 +1280,281 @@ pub async fn export_tables(
 
     Ok(task_id)
 }
+
+// ============ 数据导入 ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImportParams {
+    pub connection_id: i64,
+    pub database: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+    pub file_path: String,
+    pub file_type: String,   // csv/json/excel/sql
+    pub field_mapping: std::collections::HashMap<String, String>,
+    pub error_strategy: String,  // "StopOnError" | "SkipAndContinue"
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ColumnInfoForImport {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub is_pk: bool,
+    pub nullable: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TableColumnsResponse {
+    pub columns: Vec<ColumnInfoForImport>,
+}
+
+/// 获取表列信息用于导入字段映射
+#[tauri::command]
+pub async fn get_table_columns_for_import(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+    table: String,
+) -> AppResult<TableColumnsResponse> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = match database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+    let schema_ref = schema.as_deref().filter(|s| !s.is_empty());
+    let cols = ds.get_columns(&table, schema_ref).await?;
+    let columns = cols.into_iter().map(|c| ColumnInfoForImport {
+        type_: c.data_type.clone(),
+        is_pk: c.is_primary_key,
+        nullable: c.is_nullable,
+        name: c.name,
+    }).collect();
+    Ok(TableColumnsResponse { columns })
+}
+
+/// 预览导入文件（返回前5行的文本预览 + 列名）
+#[tauri::command]
+pub async fn preview_import_file(
+    file_path: String,
+    file_type: String,
+) -> AppResult<serde_json::Value> {
+    let content = tokio::fs::read_to_string(&file_path).await
+        .map_err(|e| crate::AppError::Other(format!("Failed to read file: {}", e)))?;
+
+    match file_type.as_str() {
+        "csv" => {
+            let lines: Vec<&str> = content.lines().take(6).collect();
+            let columns = lines.first()
+                .map(|h| h.split(',').map(|s| s.trim().trim_matches('"').to_string()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            let preview_rows: Vec<String> = lines.iter().take(6).map(|s| s.to_string()).collect();
+            Ok(serde_json::json!({ "columns": columns, "preview_rows": preview_rows }))
+        }
+        "json" => {
+            let parsed: serde_json::Value = serde_json::from_str(&content)
+                .map_err(|e| crate::AppError::Other(format!("Invalid JSON: {}", e)))?;
+            let (columns, preview_rows) = if let Some(arr) = parsed.as_array() {
+                let cols = arr.first()
+                    .and_then(|v| v.as_object())
+                    .map(|o| o.keys().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                let rows = arr.iter().take(5)
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>();
+                (cols, rows)
+            } else {
+                (vec![], vec![parsed.to_string()])
+            };
+            Ok(serde_json::json!({ "columns": columns, "preview_rows": preview_rows }))
+        }
+        _ => Ok(serde_json::json!({
+            "columns": [],
+            "preview_rows": [format!("预览不支持 {} 格式，请直接导入", file_type)]
+        })),
+    }
+}
+
+/// 导入文件到表（异步后台执行，通过 task-progress 事件推进度）
+#[tauri::command]
+pub async fn import_to_table(
+    params: ImportParams,
+    app_handle: tauri::AppHandle,
+) -> AppResult<String> {
+    use tauri::Emitter;
+    let title = format!("导入到 {} 表", params.table);
+    let task = crate::db::create_task(&crate::db::models::CreateTaskInput {
+        type_: "import".to_string(),
+        status: "running".to_string(),
+        title,
+        params: Some(serde_json::to_string(&params).unwrap_or_default()),
+        progress: Some(0),
+        processed_rows: Some(0),
+        total_rows: None,
+        current_target: Some(params.table.clone()),
+        error: None,
+        error_details: None,
+        output_path: Some(params.file_path.clone()),
+    })?;
+    let task_id = task.id.clone();
+    let task_id_clone = task_id.clone();
+
+    tokio::spawn(async move {
+        let result = run_import(&params, &task_id_clone, &app_handle).await;
+        match result {
+            Ok(count) => {
+                let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+                    status: Some("completed".to_string()),
+                    progress: Some(100),
+                    processed_rows: Some(count as i64),
+                    completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                    ..Default::default()
+                });
+                let _ = app_handle.emit("task-progress", TaskProgressPayload {
+                    task_id: task_id_clone,
+                    status: "completed".to_string(),
+                    progress: 100,
+                    processed_rows: count,
+                    total_rows: None,
+                    current_target: String::new(),
+                    error: None,
+                    output_path: None,
+                });
+            }
+            Err(e) => {
+                let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+                    status: Some("failed".to_string()),
+                    error: Some(e.to_string()),
+                    completed_at: Some(chrono::Utc::now().to_rfc3339()),
+                    ..Default::default()
+                });
+                let _ = app_handle.emit("task-progress", TaskProgressPayload {
+                    task_id: task_id_clone,
+                    status: "failed".to_string(),
+                    progress: 0,
+                    processed_rows: 0,
+                    total_rows: None,
+                    current_target: String::new(),
+                    error: Some(e.to_string()),
+                    output_path: None,
+                });
+            }
+        }
+    });
+
+    Ok(task_id)
+}
+
+async fn run_import(
+    params: &ImportParams,
+    task_id: &str,
+    app_handle: &tauri::AppHandle,
+) -> AppResult<u64> {
+    use tauri::Emitter;
+    let config = crate::db::get_connection_config(params.connection_id)?;
+    let ds = match params.database.as_deref().filter(|s| !s.is_empty()) {
+        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
+        None => crate::datasource::create_datasource(&config).await?,
+    };
+
+    let content = tokio::fs::read_to_string(&params.file_path).await
+        .map_err(|e| crate::AppError::Other(format!("Failed to read file: {}", e)))?;
+
+    let rows: Vec<std::collections::HashMap<String, serde_json::Value>> = match params.file_type.as_str() {
+        "csv" => {
+            let mut lines = content.lines();
+            let headers: Vec<String> = lines.next()
+                .ok_or_else(|| crate::AppError::Other("Empty CSV file".into()))?
+                .split(',')
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .collect();
+            lines.map(|line| {
+                let vals: Vec<&str> = line.split(',').collect();
+                headers.iter().enumerate().map(|(i, h)| {
+                    let v = vals.get(i).copied().unwrap_or("").trim().trim_matches('"');
+                    (h.clone(), serde_json::Value::String(v.to_string()))
+                }).collect()
+            }).collect()
+        }
+        "json" => {
+            let parsed: serde_json::Value = serde_json::from_str(&content)
+                .map_err(|e| crate::AppError::Other(format!("Invalid JSON: {}", e)))?;
+            parsed.as_array()
+                .ok_or_else(|| crate::AppError::Other("JSON must be an array".into()))?
+                .iter()
+                .filter_map(|v| v.as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect()))
+                .collect()
+        }
+        _ => return Err(crate::AppError::Other(format!("Import format '{}' not yet supported", params.file_type))),
+    };
+
+    let total = rows.len() as u64;
+    let batch_size = 100;
+    let tbl = qualified_table(&config.driver, params.schema.as_deref(), &params.table);
+    let mut success_count = 0u64;
+    let stop_on_error = params.error_strategy == "StopOnError";
+
+    for (batch_idx, chunk) in rows.chunks(batch_size).enumerate() {
+        let progress = if total > 0 { ((batch_idx * batch_size) as f64 / total as f64 * 100.0) as u8 } else { 0 };
+        let _ = app_handle.emit("task-progress", TaskProgressPayload {
+            task_id: task_id.to_string(),
+            status: "running".to_string(),
+            progress,
+            processed_rows: success_count,
+            total_rows: Some(total),
+            current_target: params.table.clone(),
+            error: None,
+            output_path: None,
+        });
+
+        for row in chunk {
+            let mapped: Vec<(String, Option<String>)> = params.field_mapping.iter()
+                .filter_map(|(src, dst)| {
+                    row.get(src).map(|v| {
+                        let val = match v {
+                            serde_json::Value::Null => None,
+                            serde_json::Value::String(s) => Some(s.clone()),
+                            other => Some(other.to_string()),
+                        };
+                        (dst.clone(), val)
+                    })
+                })
+                .collect();
+
+            if mapped.is_empty() { continue; }
+
+            let (col_list, val_list): (Vec<String>, Vec<String>) = mapped.iter()
+                .map(|(col, val)| {
+                    let qcol = match config.driver.as_str() {
+                        "mysql" => format!("`{}`", col.replace('`', "``")),
+                        _ => format!("\"{}\"", col.replace('"', "\"\"")),
+                    };
+                    let qval = match val {
+                        None => "NULL".to_string(),
+                        Some(v) => match config.driver.as_str() {
+                            "mysql" => format!("'{}'", v.replace('\'', "\\'")),
+                            _ => format!("'{}'", v.replace('\'', "''")),
+                        },
+                    };
+                    (qcol, qval)
+                })
+                .unzip();
+
+            let sql = format!(
+                "INSERT INTO {} ({}) VALUES ({})",
+                tbl, col_list.join(", "), val_list.join(", ")
+            );
+
+            match ds.execute(&sql).await {
+                Ok(_) => success_count += 1,
+                Err(e) => {
+                    if stop_on_error {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(success_count)
+}

@@ -6,6 +6,28 @@ use std::time::Instant;
 use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, ViewMeta};
 use crate::AppResult;
 
+/// MySQL information_schema 的某些列（如 TABLE_NAME）使用 binary 排序规则，
+/// sqlx 将其识别为 VARBINARY 而非 VARCHAR。此函数先尝试 String，再降级为 Vec<u8>→UTF-8。
+fn get_str(row: &sqlx::mysql::MySqlRow, index: usize) -> String {
+    if let Ok(s) = row.try_get::<String, _>(index) {
+        return s;
+    }
+    if let Ok(bytes) = row.try_get::<Vec<u8>, _>(index) {
+        return String::from_utf8_lossy(&bytes).into_owned();
+    }
+    String::new()
+}
+
+fn get_opt_str(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
+    if let Ok(v) = row.try_get::<Option<String>, _>(index) {
+        return v;
+    }
+    if let Ok(v) = row.try_get::<Option<Vec<u8>>, _>(index) {
+        return v.map(|b| String::from_utf8_lossy(&b).into_owned());
+    }
+    None
+}
+
 pub struct MySqlDataSource {
     pool: MySqlPool,
 }
@@ -58,6 +80,14 @@ impl DataSource for MySqlDataSource {
                         } else if let Ok(val) = row.try_get::<Option<bool>, _>(i) {
                             val.map(|v| serde_json::json!(v))
                                 .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(i) {
+                            // VARBINARY / BLOB 列：转为 UTF-8 字符串展示，非 UTF-8 则显示为十六进制
+                            val.map(|b| {
+                                serde_json::Value::String(
+                                    String::from_utf8(b.clone())
+                                        .unwrap_or_else(|_| format!("0x{}", hex::encode(&b)))
+                                )
+                            }).unwrap_or(serde_json::Value::Null)
                         } else {
                             serde_json::Value::Null
                         }
@@ -71,16 +101,16 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_tables(&self) -> AppResult<Vec<TableMeta>> {
-        let rows: Vec<(String, String)> = sqlx::query_as(
+        let rows = sqlx::query(
             "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()"
         )
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(|(name, table_type)| TableMeta {
+        Ok(rows.iter().map(|r| TableMeta {
             schema: None,
-            name,
-            table_type,
+            name: get_str(r, 0),
+            table_type: get_str(r, 1),
         }).collect())
     }
 
@@ -100,12 +130,12 @@ impl DataSource for MySqlDataSource {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.iter().map(|r| ColumnMeta {
-            name: r.try_get::<String, _>(0).unwrap_or_default(),
-            data_type: r.try_get::<String, _>(1).unwrap_or_default(),
-            is_nullable: r.try_get::<String, _>(2).unwrap_or_default() == "YES",
-            column_default: r.try_get::<Option<String>, _>(3).ok().flatten(),
-            is_primary_key: r.try_get::<String, _>(4).unwrap_or_default() == "PRI",
-            extra: r.try_get::<Option<String>, _>(5).ok().flatten().filter(|s| !s.is_empty()),
+            name: get_str(r, 0),
+            data_type: get_str(r, 1),
+            is_nullable: get_str(r, 2) == "YES",
+            column_default: get_opt_str(r, 3),
+            is_primary_key: get_str(r, 4) == "PRI",
+            extra: get_opt_str(r, 5).filter(|s| !s.is_empty()),
         }).collect())
     }
 
@@ -121,9 +151,9 @@ impl DataSource for MySqlDataSource {
         .await?;
         let mut map: std::collections::BTreeMap<String, IndexMeta> = Default::default();
         for r in &rows {
-            let idx_name: String = r.try_get(0).unwrap_or_default();
+            let idx_name = get_str(r, 0);
             let non_unique: i64 = r.try_get(1).unwrap_or(1);
-            let col: String = r.try_get(2).unwrap_or_default();
+            let col = get_str(r, 2);
             map.entry(idx_name.clone()).or_insert_with(|| IndexMeta {
                 index_name: idx_name,
                 is_unique: non_unique == 0,
@@ -143,10 +173,10 @@ impl DataSource for MySqlDataSource {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.iter().map(|r| ForeignKeyMeta {
-            constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
-            column: r.try_get::<String, _>(1).unwrap_or_default(),
-            referenced_table: r.try_get::<String, _>(2).unwrap_or_default(),
-            referenced_column: r.try_get::<String, _>(3).unwrap_or_default(),
+            constraint_name: get_str(r, 0),
+            column: get_str(r, 1),
+            referenced_table: get_str(r, 2),
+            referenced_column: get_str(r, 3),
         }).collect())
     }
 
@@ -155,8 +185,8 @@ impl DataSource for MySqlDataSource {
             "SELECT TABLE_NAME, VIEW_DEFINITION FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE()"
         ).fetch_all(&self.pool).await?;
         Ok(rows.iter().map(|r| ViewMeta {
-            name: r.try_get::<String, _>(0).unwrap_or_default(),
-            definition: r.try_get::<Option<String>, _>(1).ok().flatten(),
+            name: get_str(r, 0),
+            definition: get_opt_str(r, 1),
         }).collect())
     }
 
@@ -165,8 +195,8 @@ impl DataSource for MySqlDataSource {
             "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE()"
         ).fetch_all(&self.pool).await?;
         Ok(rows.iter().map(|r| {
-            let name: String = r.try_get::<String, _>(0).unwrap_or_default();
-            let rt: String = r.try_get::<String, _>(1).unwrap_or_default();
+            let name = get_str(r, 0);
+            let rt = get_str(r, 1);
             ProcedureMeta {
                 name,
                 routine_type: match rt.as_str() {
@@ -181,53 +211,53 @@ impl DataSource for MySqlDataSource {
     async fn get_table_ddl(&self, table: &str) -> AppResult<String> {
         let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
         let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
-        Ok(row.try_get::<String, _>(1).unwrap_or_default())
+        Ok(get_str(&row, 1))
     }
 
     async fn list_databases(&self) -> AppResult<Vec<String>> {
-        let rows: Vec<(String,)> = sqlx::query_as("SHOW DATABASES")
+        let rows = sqlx::query("SHOW DATABASES")
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows.into_iter().map(|(name,)| name).collect())
+        Ok(rows.iter().map(|r| get_str(r, 0)).collect())
     }
 
     async fn list_objects(&self, database: &str, _schema: Option<&str>, category: &str) -> AppResult<Vec<String>> {
         let names: Vec<String> = match category {
             "tables" => {
-                let rows: Vec<(String,)> = sqlx::query_as(
+                let rows = sqlx::query(
                     "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
-                rows.into_iter().map(|(n,)| n).collect()
+                rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "views" => {
-                let rows: Vec<(String,)> = sqlx::query_as(
+                let rows = sqlx::query(
                     "SELECT TABLE_NAME FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
-                rows.into_iter().map(|(n,)| n).collect()
+                rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "functions" => {
-                let rows: Vec<(String,)> = sqlx::query_as(
+                let rows = sqlx::query(
                     "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION' ORDER BY ROUTINE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
-                rows.into_iter().map(|(n,)| n).collect()
+                rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "procedures" => {
-                let rows: Vec<(String,)> = sqlx::query_as(
+                let rows = sqlx::query(
                     "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
-                rows.into_iter().map(|(n,)| n).collect()
+                rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "triggers" => {
-                let rows: Vec<(String,)> = sqlx::query_as(
+                let rows = sqlx::query(
                     "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
-                rows.into_iter().map(|(n,)| n).collect()
+                rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "events" => {
-                let rows: Vec<(String,)> = sqlx::query_as(
+                let rows = sqlx::query(
                     "SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
-                rows.into_iter().map(|(n,)| n).collect()
+                rows.iter().map(|r| get_str(r, 0)).collect()
             }
             _ => vec![],
         };

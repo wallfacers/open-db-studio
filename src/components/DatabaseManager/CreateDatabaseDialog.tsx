@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { X, Database } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface Props {
   connectionId: number;
@@ -16,9 +18,11 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [charset, setCharset] = useState('utf8mb4');
-  const [collation, setCollation] = useState('utf8mb4_general_ci');
+  const [collation, setCollation] = useState('utf8mb4_unicode_ci');
+  const [pgEncoding, setPgEncoding] = useState('UTF8');
   const [defaultSchema, setDefaultSchema] = useState('public');
   const [switchAfterCreate, setSwitchAfterCreate] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -26,7 +30,7 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      setError('数据库名称不能为空');
+      setError(t('createDatabase.dbNameRequired'));
       return;
     }
     setIsLoading(true);
@@ -38,6 +42,7 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
         options: {
           charset: driver === 'mysql' ? charset : null,
           collation: driver === 'mysql' ? collation : null,
+          encoding: driver === 'postgres' ? pgEncoding : null,
           default_schema: driver === 'postgres' ? defaultSchema : null,
           tablespace: null,
         },
@@ -51,29 +56,32 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
     }
   };
 
+  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const labelClass = 'block text-xs text-gray-400 mb-1';
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#0d1520] border border-[#1e2d42] rounded-lg w-[400px]">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e2d42]">
+      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[400px] p-6">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Database size={14} className="text-[#3794ff]" />
-            <h3 className="text-sm text-[#e8f4ff] font-medium">新建数据库</h3>
+            <Database size={14} className="text-[#009e84]" />
+            <h3 className="text-white font-semibold">{t('createDatabase.title')}</h3>
           </div>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea]">
+          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors">
             <X size={16} />
           </button>
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="space-y-3">
           <div>
-            <label className="block text-xs text-[#7a9bb8] mb-1">
-              数据库名称 <span className="text-[#f44747]">*</span>
+            <label className={labelClass}>
+              {t('createDatabase.dbName')} <span className="text-red-400">*</span>
             </label>
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setError(''); }}
-              placeholder="my_new_db"
-              className="w-full bg-[#1a2639] border border-[#253347] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#3794ff]"
+              placeholder={t('createDatabase.dbNamePlaceholder')}
+              className={inputClass}
               autoFocus
             />
           </div>
@@ -81,43 +89,61 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
           {driver === 'mysql' && (
             <>
               <div>
-                <label className="block text-xs text-[#7a9bb8] mb-1">字符集 (MySQL)</label>
-                <select
+                <label className={labelClass}>{t('createDatabase.charset')}</label>
+                <DropdownSelect
                   value={charset}
-                  onChange={(e) => setCharset(e.target.value)}
-                  className="w-full bg-[#1a2639] border border-[#253347] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none"
-                >
-                  <option value="utf8mb4">utf8mb4</option>
-                  <option value="utf8">utf8</option>
-                  <option value="latin1">latin1</option>
-                  <option value="gbk">gbk</option>
-                </select>
+                  options={[
+                    { value: 'utf8mb4', label: 'UTF-8 (utf8mb4，推荐)' },
+                    { value: 'utf8', label: 'UTF-8 (utf8)' },
+                    { value: 'latin1', label: 'Latin1' },
+                    { value: 'gbk', label: 'GBK' },
+                  ]}
+                  onChange={setCharset}
+                  className="w-full"
+                />
               </div>
               <div>
-                <label className="block text-xs text-[#7a9bb8] mb-1">排序规则 (MySQL)</label>
-                <select
+                <label className={labelClass}>{t('createDatabase.collation')}</label>
+                <DropdownSelect
                   value={collation}
-                  onChange={(e) => setCollation(e.target.value)}
-                  className="w-full bg-[#1a2639] border border-[#253347] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none"
-                >
-                  <option value="utf8mb4_general_ci">utf8mb4_general_ci</option>
-                  <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>
-                  <option value="utf8mb4_0900_ai_ci">utf8mb4_0900_ai_ci</option>
-                </select>
+                  options={[
+                    { value: 'utf8mb4_unicode_ci', label: 'utf8mb4_unicode_ci（推荐）' },
+                    { value: 'utf8mb4_general_ci', label: 'utf8mb4_general_ci' },
+                    { value: 'utf8mb4_0900_ai_ci', label: 'utf8mb4_0900_ai_ci' },
+                  ]}
+                  onChange={setCollation}
+                  className="w-full"
+                />
               </div>
             </>
           )}
 
           {driver === 'postgres' && (
-            <div>
-              <label className="block text-xs text-[#7a9bb8] mb-1">默认 Schema 名称 (PostgreSQL)</label>
-              <input
-                value={defaultSchema}
-                onChange={(e) => setDefaultSchema(e.target.value)}
-                placeholder="public"
-                className="w-full bg-[#1a2639] border border-[#253347] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none"
-              />
-            </div>
+            <>
+              <div>
+                <label className={labelClass}>{t('createDatabase.encoding')}</label>
+                <DropdownSelect
+                  value={pgEncoding}
+                  options={[
+                    { value: 'UTF8', label: 'UTF-8（推荐）' },
+                    { value: 'SQL_ASCII', label: 'SQL_ASCII' },
+                    { value: 'LATIN1', label: 'LATIN1' },
+                    { value: 'GBK', label: 'GBK' },
+                  ]}
+                  onChange={setPgEncoding}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>{t('createDatabase.defaultSchema')}</label>
+                <input
+                  value={defaultSchema}
+                  onChange={(e) => setDefaultSchema(e.target.value)}
+                  placeholder="public"
+                  className={inputClass}
+                />
+              </div>
+            </>
           )}
 
           <label className="flex items-center gap-2 cursor-pointer">
@@ -125,31 +151,31 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
               type="checkbox"
               checked={switchAfterCreate}
               onChange={(e) => setSwitchAfterCreate(e.target.checked)}
-              className="accent-[#3794ff]"
+              className="accent-[#009e84]"
             />
-            <span className="text-xs text-[#c8daea]">创建后立即切换到该数据库</span>
+            <span className="text-sm text-white">{t('createDatabase.switchAfterCreate')}</span>
           </label>
 
           {error && (
-            <div className="text-xs text-[#f44747] bg-[#f44747]/10 px-2 py-1.5 rounded border border-[#f44747]/30">
+            <div className="text-sm text-red-400 bg-red-400/10 px-3 py-1.5 rounded border border-red-400/30">
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-[#1e2d42]">
+        <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded"
           >
-            取消
+            {t('createDatabase.cancel')}
           </button>
           <button
             onClick={handleCreate}
             disabled={isLoading || !name.trim()}
-            className="px-3 py-1.5 text-xs bg-[#1a4a8a] text-[#3794ff] border border-[#3794ff]/50 rounded hover:bg-[#1e5a9a] transition-colors disabled:opacity-40"
+            className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
           >
-            {isLoading ? '创建中...' : '创建'}
+            {isLoading ? t('createDatabase.creating') : t('createDatabase.create')}
           </button>
         </div>
       </div>

@@ -19,6 +19,7 @@ export interface Task {
   error: string | null;
   errorDetails: string[];     // 失败行详情
   outputPath: string | null;
+  description: string | null; // Markdown 格式任务描述
   startTime: string;          // ISO 8601
   endTime: string | null;
 }
@@ -64,8 +65,26 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   loadTasks: async () => {
     set({ isLoading: true });
     try {
-      const tasks = await invoke<Task[]>('get_task_list', { limit: 100 });
-      set({ tasks: tasks || [], isLoading: false });
+      const raw = await invoke<any[]>('get_task_list', { limit: 100 });
+      const tasks: Task[] = (raw || []).map((r) => ({
+        id: r.id,
+        type: r.type,
+        status: r.status,
+        title: r.title,
+        progress: r.progress ?? 0,
+        processedRows: r.processed_rows ?? r.processedRows ?? 0,
+        totalRows: r.total_rows ?? r.totalRows ?? null,
+        currentTarget: r.current_target ?? r.currentTarget ?? '',
+        error: r.error ?? null,
+        errorDetails: r.error_details
+          ? (typeof r.error_details === 'string' ? JSON.parse(r.error_details) : r.error_details)
+          : (r.errorDetails ?? []),
+        outputPath: r.output_path ?? r.outputPath ?? null,
+        description: r.description ?? null,
+        startTime: r.created_at ?? r.start_time ?? r.startTime ?? new Date().toISOString(),
+        endTime: r.completed_at ?? r.end_time ?? r.endTime ?? null,
+      }));
+      set({ tasks, isLoading: false });
     } catch (e) {
       console.error('Failed to load tasks:', e);
       set({ isLoading: false });
@@ -93,6 +112,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const newTask: Task = {
       ...task,
       id,
+      description: task.description ?? null,
       startTime: new Date().toISOString(),
     };
     set((s) => ({ tasks: [newTask, ...s.tasks] }));

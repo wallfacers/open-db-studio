@@ -10,6 +10,7 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         "ALTER TABLE connection_groups ADD COLUMN color TEXT",
         "ALTER TABLE connection_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
         "ALTER TABLE connections ADD COLUMN sort_order INTEGER DEFAULT 0",
+        "ALTER TABLE task_records ADD COLUMN description TEXT",
     ];
     for stmt in &alter_stmts {
         if let Err(e) = conn.execute_batch(stmt) {
@@ -24,14 +25,17 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
     }
 
     // 清理旧的 parent_id 孤儿列（SQLite 3.35.0+ 支持 DROP COLUMN）
-    if let Err(e) = conn.execute_batch("ALTER TABLE connection_groups DROP COLUMN parent_id") {
-        let is_ignorable = matches!(
-            &e,
-            RusqliteError::SqliteFailure(err, _) if err.extended_code == 1
-        );
-        if !is_ignorable {
-            log::warn!("Could not drop parent_id column: {}", e);
-        }
+    let has_parent_id: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('connection_groups') WHERE name = 'parent_id'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if has_parent_id {
+        conn.execute_batch("ALTER TABLE connection_groups DROP COLUMN parent_id")?;
+        log::info!("Dropped legacy parent_id column from connection_groups");
     }
 
     // 将 llm_configs.api_key 重命名为 api_key_enc（SQLite 3.25+ RENAME COLUMN）

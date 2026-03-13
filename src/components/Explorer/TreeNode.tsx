@@ -1,17 +1,17 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Tooltip } from '../common/Tooltip';
 import {
   ChevronDown, ChevronRight, Loader2,
-  Folder, FolderOpen, DatabaseZap, Database, Layers, TableProperties,
+  Folder, FolderOpen, Database, Layers, TableProperties,
   LayoutDashboard, Code2, GitBranch, Zap, Columns3,
   Eye, Hash
 } from 'lucide-react';
 import type { NodeType, TreeNode as TreeNodeType } from '../../types';
+import { DbDriverIcon } from './DbDriverIcon';
 
 const NODE_ICONS: Record<NodeType, React.ElementType> = {
   group: Folder,
-  connection: DatabaseZap,
+  connection: LayoutDashboard, // 占位，connection 节点由 DbDriverIcon 单独渲染
   database: Database,
   schema: Layers,
   category: Folder,   // 占位，实际由 isExpanded 动态选择
@@ -77,12 +77,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
     }
   };
 
-  const tooltipContent = node.nodeType === 'connection' && !isActive
-    ? t('dbTree.doubleClickToOpen')
-    : undefined;
-
   return (
-    <Tooltip content={tooltipContent}>
     <div
       className={`flex items-center py-1 px-2 cursor-pointer hover:bg-[#1a2639] outline-none select-none ${
         isSelected ? 'bg-[#1e2d42]' : ''
@@ -102,10 +97,18 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
         ) : null}
       </div>
 
-      <Icon
-        size={14}
-        className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
-      />
+      {node.nodeType === 'connection' ? (
+        <DbDriverIcon
+          driver={node.meta.driver ?? ''}
+          size={14}
+          className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+        />
+      ) : (
+        <Icon
+          size={14}
+          className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+        />
+      )}
 
       <span
         className={`text-[13px] truncate ${isSelected ? 'text-[#e8f4ff]' : 'text-[#b5cfe8]'}`}
@@ -113,6 +116,5 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
         {displayLabel}
       </span>
     </div>
-    </Tooltip>
   );
 };

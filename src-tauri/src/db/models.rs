@@ -90,3 +90,59 @@ pub struct UpdateLlmConfigInput {
     pub api_type: Option<String>,
     pub preset: Option<String>,
 }
+
+// ============ 任务记录模型 ============
+
+/// 任务记录（存储在 SQLite 中）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskRecord {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub status: String,
+    pub title: String,
+    pub params: Option<String>,
+    pub progress: i32,
+    pub processed_rows: i64,
+    pub total_rows: Option<i64>,
+    pub current_target: Option<String>,
+    pub error: Option<String>,
+    pub error_details: Option<String>,
+    pub output_path: Option<String>,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub completed_at: Option<String>,
+}
+
+/// 创建任务输入
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateTaskInput {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub status: String,
+    pub title: String,
+    pub params: Option<String>,
+    pub progress: Option<i32>,
+    pub processed_rows: Option<i64>,
+    pub total_rows: Option<i64>,
+    pub current_target: Option<String>,
+    pub error: Option<String>,
+    pub error_details: Option<String>,
+    pub output_path: Option<String>,
+    pub description: Option<String>,
+}
+
+/// 更新任务输入
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct UpdateTaskInput {
+    pub status: Option<String>,
+    pub progress: Option<i32>,
+    pub processed_rows: Option<i64>,
+    pub total_rows: Option<i64>,
+    pub current_target: Option<String>,
+    pub error: Option<String>,
+    pub error_details: Option<String>,
+    pub output_path: Option<String>,
+    pub completed_at: Option<String>,
+}

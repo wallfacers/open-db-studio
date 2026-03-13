@@ -53,25 +53,25 @@ export const ExportDialog: React.FC<Props> = ({ connectionId, database, tableNam
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-96 p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm text-[#c8daea] font-medium">{t('export.title', { table: tableName })}</h3>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16}/></button>
+          <h3 className="text-white font-semibold">{t('export.title', { table: tableName })}</h3>
+          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16}/></button>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-[#7a9bb8] mb-1 block">{t('export.format')}</label>
+            <label className="text-xs text-gray-400 mb-1 block">{t('export.format')}</label>
             <div className="flex gap-2">
               {(['csv', 'json', 'sql'] as const).map(f => (
                 <button key={f} onClick={() => setFormat(f)}
-                  className={`px-3 py-1 text-xs rounded ${format === f ? 'bg-[#3794ff] text-[#c8daea]' : 'bg-[#1a2639] text-[#7a9bb8]'}`}>
+                  className={`px-3 py-1.5 text-sm rounded ${format === f ? 'bg-[#009e84] text-white' : 'bg-[#1a2639] hover:bg-[#253347] text-white'}`}>
                   {f.toUpperCase()}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="text-xs text-[#7a9bb8] mb-1 block">WHERE ({t('export.optional')})</label>
+            <label className="text-xs text-gray-400 mb-1 block">WHERE ({t('export.optional')})</label>
             <input
-              className="w-full bg-[#0d1520] border border-[#1e2d42] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+              className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]"
               placeholder="id > 100"
               value={whereClause}
               onChange={e => setWhereClause(e.target.value)}
@@ -79,9 +79,9 @@ export const ExportDialog: React.FC<Props> = ({ connectionId, database, tableNam
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-3 py-1.5 bg-[#1a2639] text-[#7a9bb8] text-xs rounded">{t('common.cancel')}</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">{t('common.cancel')}</button>
           <button onClick={handleExport} disabled={isExporting}
-            className="px-3 py-1.5 bg-[#3794ff] text-[#c8daea] text-xs rounded disabled:opacity-50">
+            className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
             {isExporting ? t('export.exporting') : t('export.export')}
           </button>
         </div>

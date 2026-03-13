@@ -19,6 +19,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "@xyflow/react": "^12.10.1",
     "dagre": "^0.8.5",
     "diff": "^8.0.3",

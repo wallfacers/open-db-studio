@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { FullSchemaInfo, QueryContext } from '../../types';
+import { useAppStore } from '../../store/appStore';
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('odb-dark', {
@@ -51,7 +52,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2, ListTodo
+  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TabData } from '../../App';
@@ -93,8 +94,6 @@ interface MainContentProps {
   tableData: any[];
   executionTime: number;
   updateTabContext: (tabId: string, context: Partial<QueryContext>) => void;
-  onOpenAssistant: () => void;
-  onOpenTaskCenter: () => void;
 }
 
 interface ContextMenu {
@@ -187,9 +186,10 @@ export const MainContent: React.FC<MainContentProps> = ({
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
-  updateTabContext, onOpenAssistant, onOpenTaskCenter,
+  updateTabContext,
 }) => {
   const { t } = useTranslation();
+  const setAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis,
           removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
@@ -605,21 +605,12 @@ export const MainContent: React.FC<MainContentProps> = ({
               <Tooltip content={t('mainContent.openAiAssistant')}>
                 <button
                   className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors bg-[#00c9a7]/10 text-[#00c9a7] hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 hover:border-[#00c9a7]/60"
-                  onClick={onOpenAssistant}
+                  onClick={() => setAssistantOpen(true)}
                 >
                   <Bot size={14} />
                   <span>AI</span>
                 </button>
               </Tooltip>
-              <button
-                onClick={onOpenTaskCenter}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded transition-colors"
-                title={t('taskCenter.title', 'Task Center')}
-              >
-                <ListTodo size={14} />
-                <span>{t('taskCenter.title', 'Task Center')}</span>
-              </button>
-
               {/* 上下文选择器（右侧） */}
               <div className="flex items-center gap-1.5">
                 <DropdownSelect

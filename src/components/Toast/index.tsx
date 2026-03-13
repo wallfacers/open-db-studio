@@ -8,6 +8,8 @@ interface ToastProps {
   level?: ToastLevel;
   duration?: number;
   onClose?: () => void;
+  markdownContext?: string | null;
+  onAskAi?: () => void;
 }
 
 const LEVEL_CONFIG: Record<ToastLevel, {
@@ -53,6 +55,8 @@ export const Toast: React.FC<ToastProps> = ({
   level = 'default',
   duration = 3000,
   onClose,
+  markdownContext,
+  onAskAi,
 }) => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copied, setCopied] = useState(false);
@@ -112,6 +116,15 @@ export const Toast: React.FC<ToastProps> = ({
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
       </button>
+      {markdownContext && onAskAi && (
+        <button
+          onClick={() => { onAskAi(); }}
+          className="ml-1 px-1.5 py-0.5 rounded text-xs opacity-80 hover:opacity-100 hover:bg-white/10 transition-all flex items-center gap-1"
+          title="问 AI"
+        >
+          🤖 问 AI
+        </button>
+      )}
     </div>
   );
 };

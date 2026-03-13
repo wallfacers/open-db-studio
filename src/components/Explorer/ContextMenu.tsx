@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
   RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput,
-  Code2, Eraser, Download, Upload, Database
+  Code2, Eraser, Download, Upload, Database, Archive
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TreeNode } from '../../types';
@@ -45,6 +45,9 @@ interface ContextMenuProps {
   onDeleteGroup: () => void;
   onCreateConnectionInGroup: () => void;
   onCreateDatabase: () => void;
+  onExportDatabase?: () => void;
+  onBackupDatabase?: () => void;
+  onExportMultiTable?: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -55,6 +58,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onExportTableData, onImportToTable, onCopyName,
   onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onCreateConnectionInGroup,
   onCreateDatabase,
+  onExportDatabase,
+  onBackupDatabase,
+  onExportMultiTable,
 }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -91,6 +97,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         return [
           { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
           { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh },
+          ...(onExportDatabase ? [{ label: t('contextMenu.exportDatabase'), icon: Download, onClick: onExportDatabase, dividerBefore: true }] : []),
+          ...(onBackupDatabase ? [{ label: t('contextMenu.backupDatabase'), icon: Archive, onClick: onBackupDatabase }] : []),
         ];
       case 'category':
         if (node.meta.objectName === 'tables') {
@@ -98,6 +106,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             { label: t('contextMenu.createTable'), icon: FilePlus2, onClick: onCreateTable },
             { label: t('contextMenu.aiCreateTable'), icon: Sparkles, onClick: onAiCreateTable },
             { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh },
+            ...(onExportMultiTable ? [{ label: t('contextMenu.exportMultiTable'), icon: Download, onClick: onExportMultiTable, dividerBefore: true }] : []),
           ];
         }
         return [{ label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh }];

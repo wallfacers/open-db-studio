@@ -44,7 +44,16 @@
     "noConnectedModel": "No available model",
     "noConnectedModelHint": "Please configure and test an AI model in Settings first",
     "goToSettings": "Go to Settings",
-    "modelNotConnected": "This model has not passed connectivity test"
+    "modelNotConnected": "This model has not passed connectivity test",
+    "newChat": "New Session",
+    "backToChat": "Back to Chat",
+    "noHistory": "No chat history",
+    "sessionCount": "sessions",
+    "messageCount": "messages",
+    "deleteSession": "Delete session",
+    "justNow": "Just now",
+    "minutesAgo": "min ago",
+    "hoursAgo": "hr ago"
   },
   "connectionModal": {
     "editConnection": "Edit Connection",
@@ -567,6 +576,7 @@
   "tableSelector": {
     "searchPlaceholder": "Search tables...",
     "selectAll": "Select All",
+    "deselectAll": "Deselect All",
     "invertSelection": "Invert",
     "colName": "Table Name",
     "colRows": "Rows (est.)",

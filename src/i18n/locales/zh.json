@@ -44,7 +44,16 @@
     "noConnectedModel": "暂无可用模型",
     "noConnectedModelHint": "请先前往设置页面配置并测试通过 AI 模型",
     "goToSettings": "前往设置",
-    "modelNotConnected": "该模型未通过连通性测试，无法使用"
+    "modelNotConnected": "该模型未通过连通性测试，无法使用",
+    "newChat": "开启新会话",
+    "backToChat": "返回对话",
+    "noHistory": "暂无历史会话",
+    "sessionCount": "条会话",
+    "messageCount": "条消息",
+    "deleteSession": "删除会话",
+    "justNow": "刚刚",
+    "minutesAgo": "分钟前",
+    "hoursAgo": "小时前"
   },
   "connectionModal": {
     "editConnection": "编辑连接",
@@ -532,6 +541,7 @@
   "tableSelector": {
     "searchPlaceholder": "搜索表名...",
     "selectAll": "全选",
+    "deselectAll": "全不选",
     "invertSelection": "反选",
     "colName": "表名",
     "colRows": "行数(估算)",

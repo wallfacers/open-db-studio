@@ -28,4 +28,7 @@ pub struct AppState {
     /// 当前持久化 ACP session（None = 尚未建立）
     /// 使用 tokio::sync::Mutex 以便在 async 函数中跨 await 持锁
     pub acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
+    /// 最近一次 ai_chat_acp 传入的编辑器 SQL（供 MCP get_editor_sql 工具读取）
+    /// MVP：全局单一字段，仅支持单一活跃 Tab 场景
+    pub current_editor_sql: tokio::sync::Mutex<Option<String>>,
 }

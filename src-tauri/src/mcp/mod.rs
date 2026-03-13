@@ -132,7 +132,16 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["original", "modified", "reason"]
                 }
-            }
+            },
+            json!({
+                "name": "get_editor_sql",
+                "description": "Get the current SQL content from the active editor tab. Returns the full SQL text as a plain string. Use this when you need to read the editor content during a multi-step agent loop.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            })
         ]
     })
 }
@@ -238,6 +247,15 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> cr
             handle.emit("sql-diff-proposal", DiffProposalPayload { original, modified, reason })
                 .map_err(|e| crate::AppError::Other(e.to_string()))?;
             Ok("diff proposed, waiting for user confirmation".to_string())
+        }
+        "get_editor_sql" => {
+            use tauri::Manager;
+            let app_state = handle.state::<crate::AppState>();
+            let sql = app_state.current_editor_sql.lock().await.clone();
+            match sql {
+                Some(s) if !s.trim().is_empty() => Ok(s),
+                _ => Ok("(编辑器为空)".to_string()),
+            }
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

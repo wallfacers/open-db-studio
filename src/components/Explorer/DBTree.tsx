@@ -13,6 +13,7 @@ import { GroupModal } from '../GroupModal';
 import { DdlViewerDialog } from '../DdlViewerDialog';
 import { TruncateConfirmDialog } from '../TruncateConfirmDialog';
 import { ExportWizard } from '../ImportExport/ExportWizard';
+import { BackupWizard } from '../ImportExport/BackupWizard';
 import { ImportWizard } from '../ImportExport/ImportWizard';
 import { CreateDatabaseDialog } from '../DatabaseManager/CreateDatabaseDialog';
 import { useConnectionStore } from '../../store/connectionStore';
@@ -103,7 +104,13 @@ export const DBTree: React.FC<DBTreeProps> = ({
   const [editingGroup, setEditingGroup] = useState<{ id: number; name: string; color: string | null } | null>(null);
   const [newConnGroupId, setNewConnGroupId] = useState<number | null | undefined>(undefined); // undefined=关闭，null=无分组，number=指定分组
   const [exportWizard, setExportWizard] = useState<{
-    tableName: string; connectionId: number; database?: string; schema?: string;
+    tableName?: string; connectionId: number; database?: string; schema?: string;
+    initialScope?: import('../ImportExport/ExportWizard').ExportScope;
+  } | null>(null);
+  const [backupWizard, setBackupWizard] = useState<{
+    connectionId: number;
+    database: string;
+    driver: 'mysql' | 'postgresql';
   } | null>(null);
   const [importWizard, setImportWizard] = useState<{
     tableName: string; connectionId: number; database?: string; schema?: string;
@@ -171,6 +178,13 @@ export const DBTree: React.FC<DBTreeProps> = ({
 
   const getDriver = (connectionId: number): string => {
     return connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
+  };
+
+  const normalizeDriver = (raw: string): 'mysql' | 'postgresql' => {
+    const lower = raw.toLowerCase();
+    if (lower === 'mysql') return 'mysql';
+    if (lower.startsWith('pg') || lower.startsWith('postgres')) return 'postgresql';
+    return 'mysql';
   };
 
   const handleMoveToGroup = async (connectionId: number, groupId: number | null) => {
@@ -324,6 +338,47 @@ export const DBTree: React.FC<DBTreeProps> = ({
             setContextMenu(null);
             setCreateDb({ connectionId: getConnectionId(n), driver: getDriver(getConnectionId(n)) });
           }}
+          onExportDatabase={
+            (contextMenu.node.nodeType === 'database' || contextMenu.node.nodeType === 'schema')
+              ? () => {
+                  const n = contextMenu.node;
+                  setContextMenu(null);
+                  setExportWizard({
+                    connectionId: getConnectionId(n),
+                    database: n.meta.database ?? n.label,
+                    schema: n.meta.schema,
+                    initialScope: 'database',
+                  });
+                }
+              : undefined
+          }
+          onBackupDatabase={
+            (contextMenu.node.nodeType === 'database' || contextMenu.node.nodeType === 'schema')
+              ? () => {
+                  const n = contextMenu.node;
+                  setContextMenu(null);
+                  setBackupWizard({
+                    connectionId: getConnectionId(n),
+                    database: n.meta.database ?? n.label,
+                    driver: normalizeDriver(getDriver(getConnectionId(n))),
+                  });
+                }
+              : undefined
+          }
+          onExportMultiTable={
+            (contextMenu.node.nodeType === 'category' && contextMenu.node.meta.objectName === 'tables')
+              ? () => {
+                  const n = contextMenu.node;
+                  setContextMenu(null);
+                  setExportWizard({
+                    connectionId: getConnectionId(n),
+                    database: n.meta.database,
+                    schema: n.meta.schema,
+                    initialScope: 'multi_table',
+                  });
+                }
+              : undefined
+          }
         />
       )}
 
@@ -470,7 +525,17 @@ export const DBTree: React.FC<DBTreeProps> = ({
           connectionId={exportWizard.connectionId}
           database={exportWizard.database}
           schema={exportWizard.schema}
+          initialScope={exportWizard.initialScope}
           onClose={() => setExportWizard(null)}
+        />
+      )}
+
+      {backupWizard && (
+        <BackupWizard
+          connectionId={backupWizard.connectionId}
+          database={backupWizard.database}
+          driver={backupWizard.driver}
+          onClose={() => setBackupWizard(null)}
         />
       )}
 

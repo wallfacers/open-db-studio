@@ -1,7 +1,7 @@
 # Open-DB-Studio 功能实现状态总览
 
 > 本文档记录 docs/plans/ 中设计文档的实现状态
-> 最后更新: 2026-03-13
+> 最后更新: 2026-03-14
 
 ---
 
@@ -63,6 +63,9 @@
 | AI 模型配置列表 | `Settings/LlmSettings.tsx` | 完整 CRUD + 选择器 |
 | 视图/存储过程面板 | `ObjectPanel/index.tsx` | 对象管理面板 |
 | ACP + OpenCode 集成 | `src-tauri/src/acp/`, `mcp/` | 真正的工具调用支持 |
+| 智能错误上下文 | `src/store/appStore.ts`, `src/utils/errorContext.ts`, `src/utils/askAi.ts` | 操作前写入上下文快照；Toast/TaskCenter/查询区"问 AI"按钮 |
+| AI 助手全局常驻 Tab | `src/components/AssistantToggleTab/`, `App.tsx` | 右边缘浮动 Tab；拖拽定位；多会话历史 + AI 生成标题 |
+| DB 版本缓存 | `commands.rs (get_db_version)`, `connectionStore.ts` | 连接后缓存版本号，注入错误上下文 |
 
 ### 待实现 ❌
 
@@ -98,6 +101,7 @@
 | `2026-03-11-multi-result-smart-grouping-impl-plan.md` | 2026-03-11 | 结果智能分组实现 |
 | `2026-v1-implementation-plan.md` | 2026-03-11 | V1 阶段功能 |
 | `2026-03-12-acp-opencode-integration-plan.md` | 2026-03-13 | acp/, mcp/, Agent 工具调用 |
+| `docs/superpowers/plans/2026-03-13-smart-error-ai-context.md` | 2026-03-13 | appStore, errorContext, askAi, AssistantToggleTab, 多会话历史 |
 
 ### 进行中 🔄
 
@@ -161,3 +165,4 @@
 |------|---------|
 | 2026-03-11 | 创建本文档，整理 MVP 和 V1 实现状态 |
 | 2026-03-11 | 添加 insert_row 命令实现状态 |
+| 2026-03-14 | 补充智能错误上下文、AI 助手全局 Tab、DB 版本缓存实现状态；标记计划文件完成 |

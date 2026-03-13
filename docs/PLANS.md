@@ -68,6 +68,8 @@
 - [x] 安全修复：DB 密码按需获取（get_connection_password），编辑弹窗 isDirty 机制防覆盖
 - [x] 移除 page-agent，改为工具驱动 Agent 架构（见 docs/plans/2026-03-12-agent-tool-catalog-design.md）
 - [x] ACP + OpenCode 集成（用 opencode ACP 协议替换自建 Agent Loop，支持真正的工具调用）
+- [x] 智能错误上下文（操作前写入上下文快照；Toast/TaskCenter/查询区"问 AI"一键填入助手）
+- [x] AI 助手全局常驻 Tab（右边缘浮动 Tab，多会话历史，AI 自动生成会话标题）
 
 ---
 

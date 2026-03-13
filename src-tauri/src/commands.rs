@@ -1818,6 +1818,79 @@ async fn run_import(
     Ok(success_count)
 }
 
+// ============ 数据库备份 ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackupParams {
+    pub connection_id: i64,
+    pub database: String,
+    pub output_path: String,      // 完整文件路径（含文件名和后缀）
+    pub include_schema: bool,
+    pub include_data: bool,
+    pub compress: bool,           // MySQL: -C
+    pub custom_format: bool,      // PG only: --format=c → 输出 .dump
+}
+
+#[tauri::command]
+pub async fn backup_database(params: BackupParams) -> Result<(), String> {
+    use std::process::Command;
+
+    let config = crate::db::get_connection_config(params.connection_id)
+        .map_err(|e| e.to_string())?;
+
+    let host = &config.host;
+    let port = config.port;
+    let user = &config.username;
+    let password = &config.password;
+
+    let driver = config.driver.to_lowercase();
+
+    let mut cmd = if driver == "mysql" {
+        let mut c = Command::new("mysqldump");
+        c.arg(format!("-h{}", host))
+         .arg(format!("-P{}", port))
+         .arg(format!("-u{}", user))
+         .arg(format!("-p{}", password));
+        if params.compress { c.arg("-C"); }
+        if !params.include_data { c.arg("--no-data"); }
+        if !params.include_schema { c.arg("--no-create-info"); }
+        c.arg("--databases").arg(&params.database);
+        c
+    } else {
+        // PostgreSQL
+        let mut c = Command::new("pg_dump");
+        c.arg("-h").arg(host)
+         .arg("-p").arg(port.to_string())
+         .arg("-U").arg(user)
+         .arg("-d").arg(&params.database);
+        if !params.include_schema { c.arg("--data-only"); }
+        if !params.include_data { c.arg("--schema-only"); }
+        if params.custom_format { c.arg("--format=c"); }
+        c.env("PGPASSWORD", password);
+        c
+    };
+
+    // 将 stdout 重定向到输出文件
+    let output_file = std::fs::File::create(&params.output_path)
+        .map_err(|e| format!("无法创建输出文件：{}", e))?;
+    cmd.stdout(output_file);
+
+    let status = cmd.status().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            let tool = if driver == "mysql" { "mysqldump" } else { "pg_dump" };
+            format!("未找到 {}，请确认已安装并添加到 PATH", tool)
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    if !status.success() {
+        return Err(format!("备份命令退出码非零：{:?}", status.code()));
+    }
+
+    Ok(())
+}
+
 /// 在系统文件管理器中打开指定路径（文件或目录）
 #[tauri::command]
 pub async fn show_in_folder(path: String) -> AppResult<()> {

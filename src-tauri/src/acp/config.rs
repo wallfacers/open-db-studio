@@ -19,7 +19,6 @@ pub fn write_opencode_config(
     std::fs::write(&config_path, &content)
         .map_err(|e| crate::AppError::Other(format!("Config write error: {}", e)))?;
 
-    eprintln!("[acp] Wrote opencode.json to {:?}\n{}", config_path, content);
     log::info!("Wrote opencode.json to {:?}", config_path);
     Ok(())
 }

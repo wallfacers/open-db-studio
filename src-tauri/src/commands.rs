@@ -862,6 +862,10 @@ async fn ai_chat_acp_inner(
     use crate::state::AcpRequest;
     use crate::llm::StreamEvent;
 
+    // 写入当前编辑器 SQL 到共享状态（供 MCP get_editor_sql 工具读取）
+    // 必须在 opencode session 启动前写入
+    *state.current_editor_sql.lock().await = tab_sql.clone();
+
     // 1. 获取指定配置（未指定则用默认）
     let config = match config_id {
         Some(id) => crate::db::get_llm_config_by_id(id)?

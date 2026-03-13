@@ -9,6 +9,7 @@ import { Toast, type ToastLevel } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
+import { useAppStore } from './store/appStore';
 import { QueryContext } from './types';
 import { useToolBridge } from './hooks/useToolBridge';
 import { TaskCenter } from './components/TaskCenter';
@@ -27,8 +28,9 @@ export interface TabData {
 
 export default function App() {
   const { t } = useTranslation();
+  const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
+  const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   const [activeActivity, setActiveActivity] = useState('database');
-  const [isAssistantOpen, setIsAssistantOpen] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
     'demo': true,
     'birth_analysis': true,
@@ -87,6 +89,14 @@ JOIN
   useEffect(() => {
     initTaskProgressListener();
   }, []);
+  // 导入/导出完成后自动跳转到「我的任务」侧边栏
+  useEffect(() => {
+    if (taskCenterVisible) {
+      setActiveActivity('tasks');
+      setIsSidebarOpen(true);
+      setTaskCenterVisible(false);
+    }
+  }, [taskCenterVisible]);
   // activeTab 变化时同步到 queryStore，供 AI 读取当前 tab SQL
   useEffect(() => { setActiveTabId(activeTab); }, [activeTab]);
   useEffect(() => {
@@ -327,12 +337,10 @@ JOIN
         setActiveActivity={setActiveActivity}
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
-        isAssistantOpen={isAssistantOpen}
-        setIsAssistantOpen={setIsAssistantOpen}
         showToast={showToast}
       />
 
-      {activeActivity !== 'settings' && (
+      {activeActivity !== 'settings' && activeActivity !== 'tasks' && (
         <Explorer
           isSidebarOpen={isSidebarOpen}
           sidebarWidth={sidebarWidth}
@@ -346,9 +354,10 @@ JOIN
           onOpenTableStructure={handleOpenTableStructure}
         />
       )}
-
       {activeActivity === 'settings' ? (
         <SettingsPage />
+      ) : activeActivity === 'tasks' ? (
+        <TaskCenter />
       ) : (
       <MainContent
         tabs={tabs}
@@ -380,16 +389,13 @@ JOIN
         executionTime={executionTime}
         updateTabContext={updateTabContext}
         onOpenAssistant={() => setIsAssistantOpen(true)}
-        onOpenTaskCenter={() => setTaskCenterVisible(true)}
       />
       )}
 
       {activeActivity !== 'settings' && (
       <Assistant
-        isAssistantOpen={isAssistantOpen}
         assistantWidth={assistantWidth}
         handleAssistantResize={handleAssistantResize}
-        setIsAssistantOpen={setIsAssistantOpen}
         showToast={showToast}
         activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
         onOpenSettings={() => setActiveActivity('settings')}
@@ -398,9 +404,6 @@ JOIN
 
       <Toast message={toast?.message ?? null} level={toast?.level} onClose={() => setToast(null)} />
       </div>
-      {taskCenterVisible && (
-        <TaskCenter onClose={() => setTaskCenterVisible(false)} />
-      )}
     </div>
   );
 }

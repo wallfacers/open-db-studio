@@ -10,6 +10,7 @@ import { DiffPanel } from './DiffPanel';
 import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
+import { useAppStore } from '../../store/appStore';
 import type { ToastLevel } from '../Toast';
 
 // ── 代码块 ──────────────────────────────────────────────────────────────────
@@ -152,25 +153,22 @@ const StreamingMessage: React.FC = () => {
 
 // ── 主面板 ──────────────────────────────────────────────────────────────────
 interface AssistantProps {
-  isAssistantOpen: boolean;
   assistantWidth: number;
   handleAssistantResize: (e: React.MouseEvent) => void;
-  setIsAssistantOpen: (isOpen: boolean) => void;
   showToast: (msg: string, level?: ToastLevel) => void;
   activeConnectionId: number | null;
   onOpenSettings: () => void;
 }
 
 export const Assistant: React.FC<AssistantProps> = ({
-  isAssistantOpen,
   assistantWidth,
   handleAssistantResize,
-  setIsAssistantOpen,
   showToast,
   activeConnectionId,
   onOpenSettings,
 }) => {
   const { t } = useTranslation();
+  const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
   const isChatting = useAiStore((s) => s.isChatting);
@@ -186,6 +184,16 @@ export const Assistant: React.FC<AssistantProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const draftMessage = useAiStore((s) => s.draftMessage);
+  const setDraftMessage = useAiStore((s) => s.setDraftMessage);
+
+  useEffect(() => {
+    if (draftMessage) {
+      setChatInput(draftMessage);
+      setDraftMessage('');
+    }
+  }, [draftMessage]);
 
   // 新消息或流式内容更新时自动滚底
   const streamingContent = useAiStore((s) => s.streamingContent);
@@ -210,8 +218,6 @@ export const Assistant: React.FC<AssistantProps> = ({
       handleSendMessage();
     }
   };
-
-  if (!isAssistantOpen) return null;
 
   return (
     <div className="flex flex-col bg-[#080d12] flex-shrink-0 border-l border-[#1e2d42] relative" style={{ width: assistantWidth }}>

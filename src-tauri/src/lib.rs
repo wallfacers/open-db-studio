@@ -115,9 +115,11 @@ pub fn run() {
             commands::create_database,
             commands::drop_database,
             commands::export_tables,
+            commands::backup_database,
             commands::import_to_table,
             commands::preview_import_file,
             commands::get_table_columns_for_import,
+            commands::show_in_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

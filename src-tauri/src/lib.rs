@@ -28,6 +28,22 @@ pub fn run() {
                 .to_string();
             crate::db::init(&app_data_dir)?;
             crate::db::migrate_legacy_llm_settings()?;
+            // 写入 AGENTS.md 到 opencode 工作目录，指导 AI 使用工具
+            {
+                use std::path::PathBuf;
+                let agents_dir = PathBuf::from(
+                    std::env::var("APPDATA").unwrap_or_else(|_| ".".into())
+                ).join("open-db-studio");
+                std::fs::create_dir_all(&agents_dir).ok();
+                let agents_path = agents_dir.join("AGENTS.md");
+                let agents_content = include_str!("../assets/AGENTS.md");
+                if let Err(e) = std::fs::write(&agents_path, agents_content) {
+                    log::error!("Failed to write AGENTS.md: {}", e);
+                    // 降级：继续启动，AI 使用 opencode 默认行为
+                } else {
+                    log::info!("Wrote AGENTS.md to {:?}", agents_path);
+                }
+            }
             let mcp_port = tauri::async_runtime::block_on(
                 crate::mcp::start_mcp_server(app.handle().clone())
             ).expect("Failed to start MCP server");

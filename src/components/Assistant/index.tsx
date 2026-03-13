@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare } from 'lucide-react';
+import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -129,10 +129,10 @@ const AssistantMessage: React.FC<{ content: string; thinkingContent?: string }> 
 );
 
 // ── 流式消息（独立组件，用 Zustand selector 精准订阅，不影响历史消息）────────
-const StreamingMessage: React.FC = () => {
-  const content = useAiStore((s) => s.streamingContent);
-  const thinking = useAiStore((s) => s.streamingThinkingContent);
-  const sessionStatus = useAiStore((s) => s.sessionStatus);
+const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const content = useAiStore((s) => s.chatStates[sessionId]?.streamingContent ?? '');
+  const thinking = useAiStore((s) => s.chatStates[sessionId]?.streamingThinkingContent ?? '');
+  const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
 
   return (
     <div className="flex flex-col items-start">
@@ -171,9 +171,15 @@ export const Assistant: React.FC<AssistantProps> = ({
   const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const isChatting = useAiStore((s) => s.isChatting);
-  const activeToolName = useAiStore((s) => s.activeToolName);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, sessions, currentSessionId, configs, activeConfigId, setActiveConfigId, loadConfigs, cancelChat } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat } = useAiStore();
+  const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
+  const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
+  // 后台流式 session 的 isChatting map（用于历史列表角标）
+  const chattingSessionIds = useAiStore((s) =>
+    new Set(Object.entries(s.chatStates).filter(([, v]) => v.isChatting).map(([k]) => k))
+  );
+  // 当前 session 的模型配置 ID（从 sessions 读取）
+  const activeConfigId = sessions.find((s) => s.id === currentSessionId)?.configId ?? null;
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   const { connections } = useConnectionStore();
@@ -197,10 +203,12 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, [draftMessage]);
 
   // 新消息或流式内容更新时自动滚底
-  const streamingContent = useAiStore((s) => s.streamingContent);
+  const streamingContent = useAiStore(
+    (s) => s.chatStates[currentSessionId]?.streamingContent
+  );
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, streamingContent]);
+  }, [chatHistory, streamingContent, currentSessionId]);
 
   useEffect(() => {
     loadConfigs();
@@ -209,6 +217,12 @@ export const Assistant: React.FC<AssistantProps> = ({
   const handleSendMessage = async () => {
     if (!chatInput.trim() || isChatting) return;
     const prompt = chatInput.trim();
+    // 并发上限检查
+    const activeChatCount = Object.values(useAiStore.getState().chatStates).filter((s) => s.isChatting).length;
+    if (activeChatCount >= 10) {
+      showToast('已有多个对话正在进行，请等待其完成后再发送新消息', 'warning');
+      return;
+    }
     setChatInput('');
     await sendAgentChatStream(prompt, activeConnectionId);
   };
@@ -274,8 +288,12 @@ export const Assistant: React.FC<AssistantProps> = ({
                       }`}
                       onClick={() => {
                         if (!isConnected) return;
-                        setActiveConfigId(c.id);
+                        const hasHistory = (sessions.find(s => s.id === currentSessionId)?.messages.length ?? 0) > 0;
+                        setSessionConfigId(currentSessionId, c.id);
                         setIsModelMenuOpen(false);
+                        if (hasHistory) {
+                          showToast('已切换模型，新消息将使用新模型，ACP 上下文已重置', 'info');
+                        }
                       }}
                       title={!isConnected ? t('assistant.modelNotConnected') : undefined}
                     >
@@ -295,7 +313,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         {isChatting ? (
           <button
             className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
-            onClick={cancelChat}
+            onClick={() => cancelChat(currentSessionId)}
             title={t('assistant.stopGeneration')}
           >
             <Square size={14} />
@@ -326,7 +344,7 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
         <div className="flex items-center space-x-3 text-[#7a9bb8]">
-          <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(); showToast(t('assistant.historyCleared'), 'info'); }}>
+          <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(currentSessionId); showToast(t('assistant.historyCleared'), 'info'); }}>
             <Trash2 size={16} />
           </span>
           <span title={t('assistant.newChat')} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { newSession(); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
@@ -383,10 +401,13 @@ export const Assistant: React.FC<AssistantProps> = ({
                     >
                       <MessageSquare size={13} className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-[#00c9a7]' : 'text-[#4a6a8a]'}`} />
                       <div className="flex-1 min-w-0">
-                        <div className={`text-[12px] font-medium truncate leading-tight ${isActive ? 'text-[#c8daea]' : 'text-[#8ab0cc]'}`}>
-                          {sess.title}
+                        <div className={`text-[12px] font-medium truncate leading-tight flex items-center gap-1.5 ${isActive ? 'text-[#c8daea]' : 'text-[#8ab0cc]'}`}>
+                          <span className="truncate">{sess.title}</span>
                           {!sess.titleGenerated && (
-                            <span className="ml-1 text-[10px] text-[#4a6a8a] animate-pulse">•</span>
+                            <span className="text-[10px] text-[#4a6a8a] animate-pulse flex-shrink-0">•</span>
+                          )}
+                          {chattingSessionIds.has(sess.id) && (
+                            <RefreshCw size={10} className="animate-spin text-[#00c9a7] flex-shrink-0" />
                           )}
                         </div>
                         <div className="text-[11px] text-[#4a6a8a] mt-0.5">
@@ -453,7 +474,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                 />
               )
             )}
-            {isChatting && <StreamingMessage />}
+            {isChatting && <StreamingMessage sessionId={currentSessionId} />}
             <div ref={chatEndRef} />
           </div>
 

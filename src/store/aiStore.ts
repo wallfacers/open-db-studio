@@ -42,6 +42,23 @@ async function requestAiTitle(sessionId: string, firstUser: string, firstAssista
   }
 }
 
+// ── per-session 运行时状态（不持久化）────────────────────────────────────────
+interface SessionRuntimeState {
+  isChatting: boolean;
+  streamingContent: string;
+  streamingThinkingContent: string;
+  activeToolName: string | null;
+  sessionStatus: string | null;
+}
+
+const defaultRuntimeState = (): SessionRuntimeState => ({
+  isChatting: false,
+  streamingContent: '',
+  streamingThinkingContent: '',
+  activeToolName: null,
+  sessionStatus: null,
+});
+
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
 
 interface AiState {
@@ -54,36 +71,27 @@ interface AiState {
   setDefaultConfig: (id: number) => Promise<void>;
   testConfig: (id: number) => Promise<void>;
 
-  activeConfigId: number | null;
-  setActiveConfigId: (id: number | null) => void;
-
-  // ── 多会话管理（sessions 持久化到 localStorage）──
-  sessions: ChatSession[];          // 历史会话列表（持久化）
-  currentSessionId: string;         // 当前会话 ID（不持久化，每次启动新建）
-
-  /** 保存当前 chatHistory 到 sessions（有消息才保存），不切换会话 */
+  // ── 多会话管理 ──
+  sessions: ChatSession[];
+  currentSessionId: string;
   _saveCurrentSession: () => void;
-  /** 新建会话：将当前对话存档后开启空白会话 */
   newSession: () => void;
-  /** 切换到历史会话 */
   switchSession: (id: string) => void;
-  /** 删除指定会话 */
-  deleteSession: (id: string) => void;
+  deleteSession: (id: string) => Promise<void>;
+  setSessionConfigId: (sessionId: string, configId: number | null) => void;
 
-  // ── 当前对话 ──
+  // ── 当前对话视图缓存 ──
   chatHistory: ChatMessage[];
-  streamingContent: string;
-  streamingThinkingContent: string;
-  isChatting: boolean;
-  activeToolName: string | null;
-  sessionStatus: string | null;
 
-  /** 清空当前对话（不保存到历史，直接丢弃） */
-  clearHistory: () => void;
-  cancelChat: () => Promise<void>;
+  // ── per-session 运行时状态（不持久化）──
+  chatStates: Record<string, SessionRuntimeState>;
+
+  // ── 对话操作 ──
+  clearHistory: (sessionId: string) => Promise<void>;
+  cancelChat: (sessionId: string) => Promise<void>;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
-  // ── AI 功能 ──
+  // ── AI 工具功能（不变）──
   isExplaining: boolean;
   isOptimizing: boolean;
   isDiagnosing: boolean;
@@ -104,15 +112,10 @@ export const useAiStore = create<AiState>()(
     (set, get) => ({
       // ── 初始值 ──
       configs: [],
-      activeConfigId: null,
       sessions: [],
-      currentSessionId: uuid(),   // 每次启动自动生成新 ID（不持久化）
+      currentSessionId: uuid(),
       chatHistory: [],
-      streamingContent: '',
-      streamingThinkingContent: '',
-      isChatting: false,
-      activeToolName: null,
-      sessionStatus: null,
+      chatStates: {},
       isExplaining: false,
       isOptimizing: false,
       isDiagnosing: false,
@@ -120,7 +123,13 @@ export const useAiStore = create<AiState>()(
       error: null,
       draftMessage: '',
 
-      setActiveConfigId: (id) => set({ activeConfigId: id }),
+      setSessionConfigId: (sessionId, configId) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId ? { ...sess, configId } : sess
+          ),
+        }));
+      },
 
       // ── LLM 配置 CRUD ──
 
@@ -141,7 +150,6 @@ export const useAiStore = create<AiState>()(
 
       deleteConfig: async (id) => {
         await invoke('delete_llm_config', { id });
-        set((s) => ({ activeConfigId: s.activeConfigId === id ? null : s.activeConfigId }));
         await get().loadConfigs();
       },
 
@@ -191,6 +199,7 @@ export const useAiStore = create<AiState>()(
                 createdAt: now,
                 updatedAt: now,
                 titleGenerated: false,
+                configId: null,
               },
               ...s.sessions,
             ],
@@ -199,85 +208,129 @@ export const useAiStore = create<AiState>()(
       },
 
       newSession: () => {
-        // 先存档当前会话
         get()._saveCurrentSession();
-        // 创建新会话
         const newId = uuid();
-        set({
+        set((s) => ({
           currentSessionId: newId,
           chatHistory: [],
-          streamingContent: '',
-          streamingThinkingContent: '',
-        });
-        invoke('cancel_acp_session').catch(() => {});
+          chatStates: {
+            ...s.chatStates,
+            [newId]: defaultRuntimeState(),
+          },
+        }));
+        // 注意：不再调用 cancel_acp_session，后台 session 继续运行
       },
 
       switchSession: (id) => {
-        // 存档当前
         get()._saveCurrentSession();
-        // 加载目标会话
         const target = get().sessions.find((s) => s.id === id);
         if (!target) return;
         set({
           currentSessionId: id,
           chatHistory: target.messages,
-          streamingContent: '',
-          streamingThinkingContent: '',
-          isChatting: false,
+          // 注意：不重置 chatStates，后台 channel 继续运行
         });
-        invoke('cancel_acp_session').catch(() => {});
+        // 注意：不再调用 cancel_acp_session
       },
 
-      deleteSession: (id) => {
+      deleteSession: async (id) => {
+        // 若正在流式，先取消（必须 await，确保 commitAssistant 不再触发）
+        if (get().chatStates[id]?.isChatting) {
+          await get().cancelChat(id);
+        }
+        // 清理 chatStates
+        set((s) => {
+          const { [id]: _removed, ...restStates } = s.chatStates;
+          return { chatStates: restStates };
+        });
         const { currentSessionId, sessions } = get();
         set((s) => ({ sessions: s.sessions.filter((sess) => sess.id !== id) }));
-        // 删除的是当前会话时，新建一个空会话
+        // 若删除的是当前 session，切换到其他会话
         if (id === currentSessionId) {
           const remaining = sessions.filter((s) => s.id !== id);
           if (remaining.length > 0) {
             const next = remaining[0];
             set({ currentSessionId: next.id, chatHistory: next.messages });
           } else {
-            set({ currentSessionId: uuid(), chatHistory: [] });
+            const newId = uuid();
+            set({ currentSessionId: newId, chatHistory: [] });
           }
-          invoke('cancel_acp_session').catch(() => {});
         }
       },
 
-      // ── 清空当前对话（不存档，直接丢弃）──
+      cancelChat: async (sessionId) => {
+        const state = get().chatStates[sessionId];
+        const streamingContent = state?.streamingContent ?? '';
+        const streamingThinkingContent = state?.streamingThinkingContent ?? '';
+        const isCurrentSession = get().currentSessionId === sessionId;
 
-      clearHistory: () => {
-        set({ chatHistory: [], streamingContent: '', streamingThinkingContent: '' });
-        invoke('cancel_acp_session').catch(() => {});
-      },
+        if (streamingContent) {
+          const truncatedMsg = {
+            role: 'assistant' as const,
+            content: streamingContent,
+            thinkingContent: streamingThinkingContent || undefined,
+          };
+          const now = Date.now();
+          set((s) => {
+            const existing = s.sessions.find((sess) => sess.id === sessionId);
+            const updatedMessages = existing
+              ? [...existing.messages, truncatedMsg]
+              : [...s.chatHistory, truncatedMsg];
+            const updatedSessions = existing
+              ? s.sessions.map((sess) =>
+                  sess.id === sessionId
+                    ? { ...sess, messages: updatedMessages, updatedAt: now }
+                    : sess
+                )
+              : [
+                  {
+                    id: sessionId,
+                    title: makeDefaultTitle(
+                      updatedMessages.find((m) => m.role === 'user')?.content ?? '新对话'
+                    ),
+                    messages: updatedMessages,
+                    createdAt: now,
+                    updatedAt: now,
+                    titleGenerated: false,
+                    configId: null,
+                  },
+                  ...s.sessions,
+                ];
+            return {
+              sessions: updatedSessions,
+              chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
+              ...(isCurrentSession ? { chatHistory: updatedMessages } : {}),
+            };
+          });
+        } else {
+          set((s) => ({
+            chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
+          }));
+        }
 
-      // ── 停止生成 ──
-
-      cancelChat: async () => {
-        const { streamingContent, streamingThinkingContent } = get();
-        set((s) => ({
-          chatHistory: streamingContent
-            ? [
-                ...s.chatHistory,
-                {
-                  role: 'assistant' as const,
-                  content: streamingContent,
-                  thinkingContent: streamingThinkingContent || undefined,
-                },
-              ]
-            : s.chatHistory,
-          streamingContent: '',
-          streamingThinkingContent: '',
-          isChatting: false,
-          activeToolName: null,
-          sessionStatus: null,
-        }));
         try {
-          await invoke('cancel_acp_session');
-        } catch (_) { /* session 可能已不存在 */ }
+          await invoke('cancel_acp_session', { sessionId });
+        } catch (_) {
+          // session 可能已不存在
+        }
       },
 
-      // ── 流式 AI 对话（核心）──
+      clearHistory: async (sessionId) => {
+        // 必须 await cancelChat，防止 cancel 完成前 commitAssistant 仍写入
+        if (get().chatStates[sessionId]?.isChatting) {
+          await get().cancelChat(sessionId);
+        }
+        const isCurrentSession = get().currentSessionId === sessionId;
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId ? { ...sess, messages: [], updatedAt: Date.now() } : sess
+          ),
+          chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
+          ...(isCurrentSession ? { chatHistory: [] } : {}),
+        }));
+      },
+
+      // ── 流式 AI 对话（核心）── [Task 6 中替换此函数体]
 
       sendAgentChatStream: async (message, connectionId) => {
         const { useQueryStore } = await import('./queryStore');
@@ -287,62 +340,85 @@ export const useAiStore = create<AiState>()(
           ? queryStore.sqlContent[activeTabId] ?? null
           : null;
 
-        // 追加用户消息
+        // 捕获发送时的 sessionId
+        const sessionId = get().currentSessionId;
+
+        // 从 sessions 读取该 session 的 configId（不从 chatStates 读）
+        const configId = get().sessions.find((s) => s.id === sessionId)?.configId ?? null;
+
+        // 并发上限检查
+        const activeChatCount = Object.values(get().chatStates).filter((s) => s.isChatting).length;
+        if (activeChatCount >= 10) {
+          return;
+        }
+
+        // 追加用户消息到 chatHistory
         set((s) => ({
-          isChatting: true,
-          streamingContent: '',
-          streamingThinkingContent: '',
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: {
+              ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+              isChatting: true,
+              streamingContent: '',
+              streamingThinkingContent: '',
+              activeToolName: null,
+              sessionStatus: null,
+            },
+          },
           chatHistory: [...s.chatHistory, { role: 'user' as const, content: message }],
         }));
 
-        // 记录是否是本次会话的第一轮对话（用于触发 AI 标题生成）
         const isFirstRound = get().chatHistory.filter((m) => m.role === 'assistant').length === 0;
 
         const commitAssistant = (content: string, thinking: string) => {
-          set((s) => ({
-            chatHistory: [
-              ...s.chatHistory,
-              { role: 'assistant' as const, content, thinkingContent: thinking || undefined },
-            ],
-            streamingContent: '',
-            streamingThinkingContent: '',
-            isChatting: false,
-            activeToolName: null,
-            sessionStatus: null,
-          }));
+          // Guard 1: session 已被删除
+          if (!get().sessions.find((s) => s.id === sessionId)) return;
+          // Guard 2: 已被 cancel
+          if (!get().chatStates[sessionId]?.isChatting) return;
 
-          // 每次 AI 回复后自动保存会话快照
-          const { chatHistory, currentSessionId, sessions } = get();
+          const newMsg = {
+            role: 'assistant' as const,
+            content,
+            thinkingContent: thinking || undefined,
+          };
           const now = Date.now();
-          const existing = sessions.find((s) => s.id === currentSessionId);
-          if (existing) {
-            set((s) => ({
-              sessions: s.sessions.map((sess) =>
-                sess.id === currentSessionId
-                  ? { ...sess, messages: chatHistory, updatedAt: now }
-                  : sess
-              ),
-            }));
-          } else {
-            const firstUser = chatHistory.find((m) => m.role === 'user')?.content ?? '新对话';
-            set((s) => ({
-              sessions: [
-                {
-                  id: currentSessionId,
-                  title: makeDefaultTitle(firstUser),
-                  messages: chatHistory,
-                  createdAt: now,
-                  updatedAt: now,
-                  titleGenerated: false,
-                },
-                ...s.sessions,
-              ],
-            }));
-          }
+          const isCurrentSession = get().currentSessionId === sessionId;
 
-          // 第一轮对话完成后，后台生成 AI 标题
+          set((s) => {
+            const existing = s.sessions.find((sess) => sess.id === sessionId);
+            const baseMessages = existing ? existing.messages : s.chatHistory;
+            const updatedMessages = [...baseMessages, newMsg];
+
+            const updatedSessions = existing
+              ? s.sessions.map((sess) =>
+                  sess.id === sessionId
+                    ? { ...sess, messages: updatedMessages, updatedAt: now }
+                    : sess
+                )
+              : [
+                  {
+                    id: sessionId,
+                    title: makeDefaultTitle(
+                      updatedMessages.find((m) => m.role === 'user')?.content ?? '新对话'
+                    ),
+                    messages: updatedMessages,
+                    createdAt: now,
+                    updatedAt: now,
+                    titleGenerated: false,
+                    configId,
+                  },
+                  ...s.sessions,
+                ];
+
+            return {
+              sessions: updatedSessions,
+              chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
+              ...(isCurrentSession ? { chatHistory: updatedMessages } : {}),
+            };
+          });
+
           if (isFirstRound && content && !content.startsWith('Error:')) {
-            requestAiTitle(get().currentSessionId, message, content);
+            requestAiTitle(sessionId, message, content);
           }
         };
 
@@ -361,11 +437,27 @@ export const useAiStore = create<AiState>()(
             rafId = null;
             if (contentBuf) {
               const delta = contentBuf; contentBuf = '';
-              set((s) => ({ streamingContent: s.streamingContent + delta }));
+              set((s) => ({
+                chatStates: {
+                  ...s.chatStates,
+                  [sessionId]: {
+                    ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                    streamingContent: (s.chatStates[sessionId]?.streamingContent ?? '') + delta,
+                  },
+                },
+              }));
             }
             if (thinkingBuf) {
               const delta = thinkingBuf; thinkingBuf = '';
-              set((s) => ({ streamingThinkingContent: s.streamingThinkingContent + delta }));
+              set((s) => ({
+                chatStates: {
+                  ...s.chatStates,
+                  [sessionId]: {
+                    ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                    streamingThinkingContent: (s.chatStates[sessionId]?.streamingThinkingContent ?? '') + delta,
+                  },
+                },
+              }));
             }
           };
 
@@ -374,41 +466,50 @@ export const useAiStore = create<AiState>()(
           };
 
           const flushNow = () => {
-            if (rafId) { cancelAnimationFrame(rafId); flushBuffers(); }
+            if (rafId) { cancelAnimationFrame(rafId); rafId = null; flushBuffers(); }
+          };
+
+          const setChatStateField = (fields: Partial<SessionRuntimeState>) => {
+            set((s) => ({
+              chatStates: {
+                ...s.chatStates,
+                [sessionId]: { ...(s.chatStates[sessionId] ?? defaultRuntimeState()), ...fields },
+              },
+            }));
           };
 
           channel.onmessage = (event) => {
             if (event.type === 'StatusUpdate' && event.data?.message) {
-              set(() => ({ sessionStatus: event.data!.message! }));
+              setChatStateField({ sessionStatus: event.data.message });
             } else if (event.type === 'ThinkingChunk' && event.data?.delta) {
-              set(() => ({ sessionStatus: null }));
+              setChatStateField({ sessionStatus: null });
               thinkingBuf += event.data.delta;
               scheduleFlush();
             } else if (event.type === 'ContentChunk' && event.data?.delta) {
-              set(() => ({ sessionStatus: null }));
+              setChatStateField({ sessionStatus: null });
               contentBuf += event.data.delta;
               scheduleFlush();
             } else if (event.type === 'ToolCallRequest' && event.data?.name) {
               flushNow();
-              set(() => ({ activeToolName: event.data!.name!, sessionStatus: null }));
+              setChatStateField({ activeToolName: event.data.name, sessionStatus: null });
             } else if (event.type === 'Done') {
               flushNow();
-              if (!get().isChatting) return;
-              const { streamingContent, streamingThinkingContent } = get();
-              commitAssistant(streamingContent, streamingThinkingContent);
+              if (!get().chatStates[sessionId]?.isChatting) return;
+              const state = get().chatStates[sessionId];
+              commitAssistant(state?.streamingContent ?? '', state?.streamingThinkingContent ?? '');
             } else if (event.type === 'Error') {
               flushNow();
-              if (!get().isChatting) return;
+              if (!get().chatStates[sessionId]?.isChatting) return;
               commitAssistant(`Error: ${event.data?.message ?? 'Unknown error'}`, '');
             }
           };
 
-          const configId = get().activeConfigId;
           await invoke('ai_chat_acp', {
             prompt: message,
             tabSql,
             connectionId,
             configId,
+            sessionId,
             channel,
           });
         } catch (e) {

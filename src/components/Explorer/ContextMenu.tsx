@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
   RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput,
-  Code2, Eraser
+  Code2, Eraser, Download, Upload, Database
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TreeNode } from '../../types';
@@ -36,20 +36,25 @@ interface ContextMenuProps {
   onViewDdl: () => void;
   onTruncateTable: () => void;
   onDropTable: () => void;
+  onExportTableData: () => void;
+  onImportToTable: () => void;
   onCopyName: () => void;
   onMoveToGroup: () => void;
   onCreateGroup: () => void;
   onRenameGroup: () => void;
   onDeleteGroup: () => void;
   onCreateConnectionInGroup: () => void;
+  onCreateDatabase: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
   node, x, y, isConnected, onClose,
   onOpenConnection, onCloseConnection, onNewQuery, onRefresh,
   onEditConnection, onDeleteConnection, onCreateTable, onAiCreateTable,
-  onOpenTableData, onEditTable, onManageIndexes, onViewDdl, onTruncateTable, onDropTable, onCopyName,
+  onOpenTableData, onEditTable, onManageIndexes, onViewDdl, onTruncateTable, onDropTable,
+  onExportTableData, onImportToTable, onCopyName,
   onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onCreateConnectionInGroup,
+  onCreateDatabase,
 }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -77,6 +82,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery, disabled: !isConnected },
           { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh, dividerBefore: true },
           { label: t('contextMenu.moveToGroup'), icon: FolderInput, onClick: onMoveToGroup, dividerBefore: true },
+          { label: t('contextMenu.createDatabase', '新建数据库'), icon: Database, onClick: onCreateDatabase, disabled: !isConnected, dividerBefore: true },
           { label: t('contextMenu.editConnection'), icon: Pencil, onClick: onEditConnection },
           { label: t('contextMenu.deleteConnection'), icon: Trash2, onClick: onDeleteConnection, danger: true, dividerBefore: true },
         ];
@@ -102,6 +108,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           { label: t('contextMenu.viewDdl'), icon: Code2, onClick: onViewDdl },
           { label: t('contextMenu.editTableStructure'), icon: FileEdit, onClick: onEditTable, dividerBefore: true },
           { label: t('contextMenu.manageIndexes'), icon: ListTree, onClick: onManageIndexes },
+          { label: t('contextMenu.exportData', '导出数据'), icon: Download, onClick: onExportTableData, dividerBefore: true },
+          { label: t('contextMenu.importData', '导入数据'), icon: Upload, onClick: onImportToTable },
           { label: t('contextMenu.truncateTable'), icon: Eraser, onClick: onTruncateTable, danger: true, dividerBefore: true },
           { label: t('contextMenu.dropTable'), icon: Trash2, onClick: onDropTable, danger: true },
         ];

@@ -5,6 +5,7 @@ import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
 import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
+import { AssistantToggleTab } from './components/Assistant/AssistantToggleTab';
 import { Toast, type ToastLevel } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
@@ -29,7 +30,6 @@ export interface TabData {
 export default function App() {
   const { t } = useTranslation();
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
-  const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   const [activeActivity, setActiveActivity] = useState('database');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
     'demo': true,
@@ -388,18 +388,29 @@ JOIN
         tableData={tableData}
         executionTime={executionTime}
         updateTabContext={updateTabContext}
-        onOpenAssistant={() => setIsAssistantOpen(true)}
       />
       )}
 
       {activeActivity !== 'settings' && (
-      <Assistant
-        assistantWidth={assistantWidth}
-        handleAssistantResize={handleAssistantResize}
-        showToast={showToast}
-        activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
-        onOpenSettings={() => setActiveActivity('settings')}
-      />
+        <div className="flex h-full">
+          <AssistantToggleTab />
+          <div
+            style={{
+              width: isAssistantOpen ? assistantWidth : 0,
+              overflow: 'hidden',
+              transition: 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
+              flexShrink: 0,
+            }}
+          >
+            <Assistant
+              assistantWidth={assistantWidth}
+              handleAssistantResize={handleAssistantResize}
+              showToast={showToast}
+              activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
+              onOpenSettings={() => setActiveActivity('settings')}
+            />
+          </div>
+        </div>
       )}
 
       <Toast message={toast?.message ?? null} level={toast?.level} onClose={() => setToast(null)} />

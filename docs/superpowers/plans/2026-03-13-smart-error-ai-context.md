@@ -20,7 +20,7 @@
 - Create: `src/store/appStore.ts`
 - Modify: `src/store/index.ts`
 
-- [ ] **Step 1: 创建 appStore**
+- [x] **Step 1: 创建 appStore**
 
 ```typescript
 // src/store/appStore.ts
@@ -53,7 +53,7 @@ export const useAppStore = create<AppState>((set) => ({
 }));
 ```
 
-- [ ] **Step 2: 导出到 store/index.ts**
+- [x] **Step 2: 导出到 store/index.ts**
 
 在 `src/store/index.ts` 末尾追加：
 ```typescript
@@ -61,7 +61,7 @@ export { useAppStore } from './appStore';
 export type { OperationContext } from './appStore';
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add src/store/appStore.ts src/store/index.ts
 git commit -m "feat(store): add appStore with lastOperationContext and isAssistantOpen"
@@ -74,7 +74,7 @@ git commit -m "feat(store): add appStore with lastOperationContext and isAssista
 **Files:**
 - Modify: `src/store/connectionStore.ts`
 
-- [ ] **Step 1: 在 connectionStore.ts 顶部新增类型**
+- [x] **Step 1: 在 connectionStore.ts 顶部新增类型**
 
 在 `import type { Connection, ... }` 行下方追加：
 ```typescript
@@ -87,7 +87,7 @@ export interface ConnectionMeta {
 }
 ```
 
-- [ ] **Step 2: 在 `ConnectionState` interface 追加字段**
+- [x] **Step 2: 在 `ConnectionState` interface 追加字段**
 
 在 `error: string | null;` 行后追加：
 ```typescript
@@ -95,7 +95,7 @@ metaCache: Record<number, ConnectionMeta>;
 setMeta: (connectionId: number, meta: ConnectionMeta) => void;
 ```
 
-- [ ] **Step 3: 在 create() 初始值和 actions 追加**
+- [x] **Step 3: 在 create() 初始值和 actions 追加**
 
 初始值中追加：
 ```typescript
@@ -108,7 +108,7 @@ setMeta: (connectionId, meta) =>
   set((s) => ({ metaCache: { ...s.metaCache, [connectionId]: meta } })),
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add src/store/connectionStore.ts
 git commit -m "feat(store): add metaCache to connectionStore for DB version caching"
@@ -121,7 +121,7 @@ git commit -m "feat(store): add metaCache to connectionStore for DB version cach
 **Files:**
 - Modify: `src/store/aiStore.ts`
 
-- [ ] **Step 1: 在 AiState interface 追加**
+- [x] **Step 1: 在 AiState interface 追加**
 
 在 `error: string | null;` 行后追加：
 ```typescript
@@ -129,21 +129,21 @@ draftMessage: string;
 setDraftMessage: (msg: string) => void;
 ```
 
-- [ ] **Step 2: 在 create() 初始值追加**
+- [x] **Step 2: 在 create() 初始值追加**
 
 在 `error: null,` 行后追加：
 ```typescript
 draftMessage: '',
 ```
 
-- [ ] **Step 3: 在 actions 追加**
+- [x] **Step 3: 在 actions 追加**
 
 在 `clearHistory` 函数前追加：
 ```typescript
 setDraftMessage: (msg) => set({ draftMessage: msg }),
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add src/store/aiStore.ts
 git commit -m "feat(store): add draftMessage to aiStore for pre-filling assistant input"
@@ -157,7 +157,7 @@ git commit -m "feat(store): add draftMessage to aiStore for pre-filling assistan
 - Create: `src/utils/errorContext.ts`
 - Create: `src/utils/errorContext.test.ts`
 
-- [ ] **Step 1: 先写测试（TDD）**
+- [x] **Step 1: 先写测试（TDD）**
 
 ```typescript
 // src/utils/errorContext.test.ts
@@ -212,14 +212,14 @@ describe('buildErrorContext', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 npx vitest run src/utils/errorContext.test.ts
 ```
 预期：FAIL（`errorContext.ts` 不存在）
 
-- [ ] **Step 3: 实现 errorContext.ts**
+- [x] **Step 3: 实现 errorContext.ts**
 
 ```typescript
 // src/utils/errorContext.ts
@@ -343,14 +343,14 @@ export function buildErrorContext(
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 ```bash
 npx vitest run src/utils/errorContext.test.ts
 ```
 预期：PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add src/utils/errorContext.ts src/utils/errorContext.test.ts
 git commit -m "feat(utils): add buildErrorContext with three scenario templates"
@@ -363,7 +363,7 @@ git commit -m "feat(utils): add buildErrorContext with three scenario templates"
 **Files:**
 - Create: `src/utils/askAi.ts`
 
-- [ ] **Step 1: 实现 askAiWithContext**
+- [x] **Step 1: 实现 askAiWithContext**
 
 ```typescript
 // src/utils/askAi.ts
@@ -387,7 +387,7 @@ export function askAiWithContext(markdownContext: string): void {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/utils/askAi.ts
 git commit -m "feat(utils): add askAiWithContext helper"
@@ -403,7 +403,7 @@ git commit -m "feat(utils): add askAiWithContext helper"
 - Modify: `src-tauri/src/commands.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: 在 commands.rs 末尾（show_in_folder 函数之前）追加命令**
+- [x] **Step 1: 在 commands.rs 末尾（show_in_folder 函数之前）追加命令**
 
 ```rust
 /// 获取数据库版本字符串（供前端缓存，失败时返回空字符串）
@@ -429,14 +429,14 @@ pub async fn get_db_version(connection_id: i64) -> AppResult<String> {
 }
 ```
 
-- [ ] **Step 2: 注册到 lib.rs**
+- [x] **Step 2: 注册到 lib.rs**
 
 在 `commands::show_in_folder,` 行后追加：
 ```rust
 commands::get_db_version,
 ```
 
-- [ ] **Step 3: Rust 编译检查**
+- [x] **Step 3: Rust 编译检查**
 
 ```bash
 cargo check 2>&1 | tail -5
@@ -445,7 +445,7 @@ cargo check 2>&1 | tail -5
 
 若 `execute_query` 方法不存在，改用 `ds.query("SELECT VERSION()")` 或查看 datasource trait 中实际方法名。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add src-tauri/src/commands.rs src-tauri/src/lib.rs
 git commit -m "feat(backend): add get_db_version command"
@@ -462,7 +462,7 @@ git commit -m "feat(backend): add get_db_version command"
 - Modify: `src/components/ActivityBar/index.tsx`
 - Modify: `src/components/Assistant/index.tsx`
 
-- [ ] **Step 1: App.tsx — 替换本地 state 为 store**
+- [x] **Step 1: App.tsx — 替换本地 state 为 store**
 
 在 `src/App.tsx` 中：
 
@@ -475,7 +475,7 @@ git commit -m "feat(backend): add get_db_version command"
    ```
 4. 保留原有 `isAssistantOpen` / `setIsAssistantOpen` 使用处不变（变量名不变，行为一致）
 
-- [ ] **Step 2: ActivityBar — 改用 store（移除 prop 依赖）**
+- [x] **Step 2: ActivityBar — 改用 store（移除 prop 依赖）**
 
 打开 `src/components/ActivityBar/index.tsx`，找到接收 `isAssistantOpen` 和 `setIsAssistantOpen` 的 props：
 
@@ -488,7 +488,7 @@ git commit -m "feat(backend): add get_db_version command"
    ```
 3. `App.tsx` 中传给 `ActivityBar` 的这两个 prop 也对应删除
 
-- [ ] **Step 3: Assistant — 移除 isAssistantOpen prop，draftMessage 消费**
+- [x] **Step 3: Assistant — 移除 isAssistantOpen prop，draftMessage 消费**
 
 在 `src/components/Assistant/index.tsx` 中：
 
@@ -509,13 +509,13 @@ git commit -m "feat(backend): add get_db_version command"
    ```
 5. App.tsx 中传给 `Assistant` 的 `isAssistantOpen` / `setIsAssistantOpen` prop 删除
 
-- [ ] **Step 4: 运行类型检查**
+- [x] **Step 4: 运行类型检查**
 ```bash
 npx tsc --noEmit 2>&1 | head -20
 ```
 预期：无错误
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add src/App.tsx src/components/ActivityBar/index.tsx src/components/Assistant/index.tsx
 git commit -m "refactor: migrate isAssistantOpen to appStore, add draftMessage consumer in Assistant"
@@ -530,7 +530,7 @@ git commit -m "refactor: migrate isAssistantOpen to appStore, add draftMessage c
 - Modify: `src/App.tsx`
 - Modify: `src/index.css`（或在组件内用 Tailwind）
 
-- [ ] **Step 1: 创建 AssistantToggleTab**
+- [x] **Step 1: 创建 AssistantToggleTab**
 
 ```tsx
 // src/components/Assistant/AssistantToggleTab.tsx
@@ -562,7 +562,7 @@ export const AssistantToggleTab: React.FC = () => {
 };
 ```
 
-- [ ] **Step 2: 在 App.tsx 布局中插入 Tab 并加动画**
+- [x] **Step 2: 在 App.tsx 布局中插入 Tab 并加动画**
 
 找到 App.tsx 中 Assistant 面板渲染处（约第 397 行），将外层容器改为包含 Tab 的 flex 布局：
 
@@ -586,16 +586,16 @@ export const AssistantToggleTab: React.FC = () => {
 
 收起时 `isAssistantOpen = false`，Assistant 面板宽度为 0，Tab 依然可见。
 
-- [ ] **Step 3: 移除工具栏 AI 打开按钮**
+- [x] **Step 3: 移除工具栏 AI 打开按钮**
 
 在 `src/components/MainContent/index.tsx` 中搜索 `setIsAssistantOpen` 或 `onOpenAssistant` 调用，删除对应按钮。
 
-- [ ] **Step 4: 类型检查**
+- [x] **Step 4: 类型检查**
 ```bash
 npx tsc --noEmit 2>&1 | head -20
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add src/components/Assistant/AssistantToggleTab.tsx src/App.tsx src/components/MainContent/index.tsx
 git commit -m "feat(ui): add AssistantToggleTab, animate assistant panel open/close"
@@ -610,7 +610,7 @@ git commit -m "feat(ui): add AssistantToggleTab, animate assistant panel open/cl
 **Files:**
 - Modify: `src/components/Explorer/DBTree.tsx`（连接打开入口）
 
-- [ ] **Step 1: 找到连接打开/测试通过的时机**
+- [x] **Step 1: 找到连接打开/测试通过的时机**
 
 在 `DBTree.tsx` 中搜索 `openConnection` 或连接成功的回调处，追加：
 
@@ -637,7 +637,7 @@ if (conn) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/components/Explorer/DBTree.tsx
 git commit -m "feat: cache DB version in connectionStore after successful connection"
@@ -650,7 +650,7 @@ git commit -m "feat: cache DB version in connectionStore after successful connec
 **Files:**
 - Modify: `src/store/queryStore.ts`
 
-- [ ] **Step 1: 在 executeQuery 开头写入 lastOperationContext**
+- [x] **Step 1: 在 executeQuery 开头写入 lastOperationContext**
 
 在 `src/store/queryStore.ts` 的 `executeQuery` 函数中，找到 `set({ isExecuting: true, error: null, diagnosis: null });` 行，在其**前**追加：
 
@@ -684,7 +684,7 @@ useAppStore.getState().setLastOperationContext({
 });
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/store/queryStore.ts
 git commit -m "feat(store): write lastOperationContext before SQL execution"
@@ -698,7 +698,7 @@ git commit -m "feat(store): write lastOperationContext before SQL execution"
 - Modify: `src/components/ImportExport/ExportWizard.tsx`
 - Modify: `src/components/ImportExport/ImportWizard.tsx`
 
-- [ ] **Step 1: ExportWizard — 在 invoke('export_tables') 前写入**
+- [x] **Step 1: ExportWizard — 在 invoke('export_tables') 前写入**
 
 在 `ExportWizard.tsx` 的 `handleStart` 函数中，在 `await invoke('export_tables', { ... })` 前追加：
 
@@ -714,7 +714,7 @@ useAppStore.getState().setLastOperationContext({
 });
 ```
 
-- [ ] **Step 2: ImportWizard — 在 invoke('import_to_table') 前写入**
+- [x] **Step 2: ImportWizard — 在 invoke('import_to_table') 前写入**
 
 类似处理，在 `ImportWizard.tsx` 的导入调用前：
 
@@ -727,7 +727,7 @@ useAppStore.getState().setLastOperationContext({
 });
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add src/components/ImportExport/ExportWizard.tsx src/components/ImportExport/ImportWizard.tsx
 git commit -m "feat: write lastOperationContext before import/export operations"
@@ -740,7 +740,7 @@ git commit -m "feat: write lastOperationContext before import/export operations"
 **Files:**
 - Modify: `src/store/aiStore.ts`
 
-- [ ] **Step 1: explainSql / optimizeSql / createTable 前写入上下文**
+- [x] **Step 1: explainSql / optimizeSql / createTable 前写入上下文**
 
 在 `aiStore.ts` 中找到 `explainSql`、`optimizeSql`、`createTable` 函数，每个函数开头追加：
 
@@ -773,7 +773,7 @@ catch 块中补 httpStatus（若有 HTTP 错误）：
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/store/aiStore.ts
 git commit -m "feat(store): write operation context before AI requests, capture httpStatus on failure"
@@ -789,7 +789,7 @@ git commit -m "feat(store): write operation context before AI requests, capture 
 - Modify: `src/components/Toast/index.tsx`
 - Modify: `src/App.tsx`
 
-- [ ] **Step 1: 扩展 Toast props 和 UI**
+- [x] **Step 1: 扩展 Toast props 和 UI**
 
 修改 `src/components/Toast/index.tsx`：
 
@@ -812,7 +812,7 @@ git commit -m "feat(store): write operation context before AI requests, capture 
    )}
    ```
 
-- [ ] **Step 2: App.tsx — 扩展 toast state 支持 markdownContext**
+- [x] **Step 2: App.tsx — 扩展 toast state 支持 markdownContext**
 
 在 `App.tsx` 中：
 
@@ -842,7 +842,7 @@ git commit -m "feat(store): write operation context before AI requests, capture 
    />
    ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add src/components/Toast/index.tsx src/App.tsx
 git commit -m "feat(ui): add Ask AI button to Toast component"
@@ -855,7 +855,7 @@ git commit -m "feat(ui): add Ask AI button to Toast component"
 **Files:**
 - Modify: `src/components/TaskCenter/TaskItem.tsx`
 
-- [ ] **Step 1: 在展开区底部追加按钮（仅 failed 状态）**
+- [x] **Step 1: 在展开区底部追加按钮（仅 failed 状态）**
 
 在 `TaskItem.tsx` 展开区（`{isExpanded && ...}`）内部，在"错误详情"块之后追加：
 
@@ -887,7 +887,7 @@ git commit -m "feat(ui): add Ask AI button to Toast component"
 )}
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/components/TaskCenter/TaskItem.tsx
 git commit -m "feat(ui): add Ask AI button to failed TaskCenter items"
@@ -900,7 +900,7 @@ git commit -m "feat(ui): add Ask AI button to failed TaskCenter items"
 **Files:**
 - Modify: `src/components/MainContent/index.tsx`
 
-- [ ] **Step 1: 查询错误区追加"问 AI"按钮**
+- [x] **Step 1: 查询错误区追加"问 AI"按钮**
 
 在 `MainContent/index.tsx` 中找到 `if (error) showToast(error, 'error')` 的 useEffect（约第 326 行），改为调用 `showError`（需要通过 prop 传入）：
 
@@ -931,7 +931,7 @@ useEffect(() => {
 )}
 ```
 
-- [ ] **Step 2: AI 功能失败也改用 showError**
+- [x] **Step 2: AI 功能失败也改用 showError**
 
 在第 395 行（`showToast(t('mainContent.aiExplainFailed'), 'error')`）等处，改为：
 
@@ -942,12 +942,12 @@ showError(ctx.userMessage, ctx.markdownContext);
 
 需要通过 props 传入 `showError`，或通过 `useAppStore` 触发（根据实际 prop 链路调整）。
 
-- [ ] **Step 3: 类型检查**
+- [x] **Step 3: 类型检查**
 ```bash
 npx tsc --noEmit 2>&1 | head -20
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add src/components/MainContent/index.tsx
 git commit -m "feat(ui): add Ask AI button to query error area, improve error messages"
@@ -963,7 +963,7 @@ git commit -m "feat(ui): add Ask AI button to query error area, improve error me
 - Modify: `src/i18n/locales/zh.json`
 - Modify: `src/i18n/locales/en.json`
 
-- [ ] **Step 1: zh.json 追加**
+- [x] **Step 1: zh.json 追加**
 
 在合适的位置追加（或新增 `error` 节点）：
 ```json
@@ -974,7 +974,7 @@ git commit -m "feat(ui): add Ask AI button to query error area, improve error me
 }
 ```
 
-- [ ] **Step 2: en.json 追加**
+- [x] **Step 2: en.json 追加**
 
 ```json
 "error": {
@@ -984,7 +984,7 @@ git commit -m "feat(ui): add Ask AI button to query error area, improve error me
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add src/i18n/locales/zh.json src/i18n/locales/en.json
 git commit -m "i18n: add error.askAi, askAiAnalyze, copyError keys"
@@ -994,25 +994,25 @@ git commit -m "i18n: add error.askAi, askAiAnalyze, copyError keys"
 
 ### Task 17: 全量类型检查 + 运行所有测试
 
-- [ ] **Step 1: TypeScript 类型检查**
+- [x] **Step 1: TypeScript 类型检查**
 ```bash
 npx tsc --noEmit 2>&1 | head -30
 ```
 预期：无错误
 
-- [ ] **Step 2: 运行所有单元测试**
+- [x] **Step 2: 运行所有单元测试**
 ```bash
 npx vitest run
 ```
 预期：全部 PASS
 
-- [ ] **Step 3: Rust 编译检查**
+- [x] **Step 3: Rust 编译检查**
 ```bash
 cargo check 2>&1 | tail -5
 ```
 预期：`Finished` 无错误
 
-- [ ] **Step 4: Final commit**
+- [x] **Step 4: Final commit**
 ```bash
 git add -A
 git commit -m "feat: smart error context + AI assistant globalization complete"

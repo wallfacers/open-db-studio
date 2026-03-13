@@ -46,6 +46,7 @@ interface QueryState {
   diagnosis: string | null;
 
   setSql: (tabId: string, sql: string) => void;
+  setActiveTabId: (tabId: string) => void;
 
   executeQuery: (connectionId: number, tabId: string, sqlOverride?: string, database?: string | null, schema?: string | null) => Promise<void>;
   loadHistory: (connectionId: number) => Promise<void>;
@@ -82,6 +83,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   setSql: (tabId, sql) =>
     set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } })),
+  setActiveTabId: (tabId) => set({ activeTabId: tabId }),
 
   executeQuery: async (connectionId, tabId, sqlOverride, database, schema) => {
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';

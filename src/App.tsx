@@ -77,9 +77,11 @@ JOIN
   const [assistantWidth, setAssistantWidth] = useState(380);
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
-  const { results, error: queryError } = useQueryStore();
+  const { results, error: queryError, setActiveTabId } = useQueryStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
+  // activeTab 变化时同步到 queryStore，供 AI 读取当前 tab SQL
+  useEffect(() => { setActiveTabId(activeTab); }, [activeTab]);
   useEffect(() => {
     const len = (results[activeTab] ?? []).length;
     const hasError = !!queryError;

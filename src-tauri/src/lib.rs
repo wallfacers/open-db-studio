@@ -120,6 +120,7 @@ pub fn run() {
             commands::preview_import_file,
             commands::get_table_columns_for_import,
             commands::show_in_folder,
+            commands::get_db_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

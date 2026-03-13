@@ -11,6 +11,8 @@ import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
 import { QueryContext } from './types';
 import { useToolBridge } from './hooks/useToolBridge';
+import { TaskCenter } from './components/TaskCenter';
+import { initTaskProgressListener, useTaskStore } from './store';
 
 export interface TabData {
   id: string;
@@ -78,8 +80,13 @@ JOIN
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
   const { results, error: queryError, setActiveTabId } = useQueryStore();
+  const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
+  // 初始化任务进度监听器
+  useEffect(() => {
+    initTaskProgressListener();
+  }, []);
   // activeTab 变化时同步到 queryStore，供 AI 读取当前 tab SQL
   useEffect(() => { setActiveTabId(activeTab); }, [activeTab]);
   useEffect(() => {
@@ -373,6 +380,7 @@ JOIN
         executionTime={executionTime}
         updateTabContext={updateTabContext}
         onOpenAssistant={() => setIsAssistantOpen(true)}
+        onOpenTaskCenter={() => setTaskCenterVisible(true)}
       />
       )}
 
@@ -390,6 +398,9 @@ JOIN
 
       <Toast message={toast?.message ?? null} level={toast?.level} onClose={() => setToast(null)} />
       </div>
+      {taskCenterVisible && (
+        <TaskCenter onClose={() => setTaskCenterVisible(false)} />
+      )}
     </div>
   );
 }

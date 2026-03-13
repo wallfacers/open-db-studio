@@ -51,7 +51,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2
+  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2, ListTodo
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TabData } from '../../App';
@@ -94,6 +94,7 @@ interface MainContentProps {
   executionTime: number;
   updateTabContext: (tabId: string, context: Partial<QueryContext>) => void;
   onOpenAssistant: () => void;
+  onOpenTaskCenter: () => void;
 }
 
 interface ContextMenu {
@@ -186,7 +187,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
-  updateTabContext, onOpenAssistant,
+  updateTabContext, onOpenAssistant, onOpenTaskCenter,
 }) => {
   const { t } = useTranslation();
   const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis,
@@ -610,6 +611,14 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <span>AI</span>
                 </button>
               </Tooltip>
+              <button
+                onClick={onOpenTaskCenter}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded transition-colors"
+                title={t('taskCenter.title', 'Task Center')}
+              >
+                <ListTodo size={14} />
+                <span>{t('taskCenter.title', 'Task Center')}</span>
+              </button>
 
               {/* 上下文选择器（右侧） */}
               <div className="flex items-center gap-1.5">

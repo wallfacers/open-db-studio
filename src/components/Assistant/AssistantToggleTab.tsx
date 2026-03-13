@@ -1,27 +1,108 @@
 // src/components/Assistant/AssistantToggleTab.tsx
-import React from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { ChevronRight, Sparkles } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 
-export const AssistantToggleTab: React.FC = () => {
+interface AssistantToggleTabProps {
+  /** 当前 AI 助手面板实际宽度（面板关闭时传 0） */
+  assistantWidth: number;
+  /** 是否正在拖拽调整宽度（true 时禁用 transition 避免拖拽滞后） */
+  isResizing: boolean;
+}
+
+export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
+  assistantWidth,
+  isResizing,
+}) => {
   const isOpen = useAppStore((s) => s.isAssistantOpen);
   const setOpen = useAppStore((s) => s.setAssistantOpen);
 
+  // 垂直位置（px，从视口顶部计算）
+  const [posY, setPosY] = useState(300);
+  const isDragging = useRef(false);
+  const dragStartY = useRef(0);
+  const dragStartPosY = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = false;
+    dragStartY.current = e.clientY;
+    dragStartPosY.current = posY;
+    e.preventDefault();
+
+    const onMouseMove = (mv: MouseEvent) => {
+      const delta = mv.clientY - dragStartY.current;
+      if (Math.abs(delta) > 4) isDragging.current = true;
+      if (isDragging.current) {
+        const next = Math.max(60, Math.min(window.innerHeight - 80, dragStartPosY.current + delta));
+        setPosY(next);
+      }
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleClick = () => {
+    if (!isDragging.current) setOpen(!isOpen);
+  };
+
   return (
     <button
-      onClick={() => setOpen(!isOpen)}
-      className="
-        flex items-center justify-center
-        w-5 self-stretch flex-shrink-0
-        bg-[#111922] border-l border-[#1e2d42]
-        text-[#4a6a8a] hover:text-[#00c9a7] hover:bg-[#1a2639]
-        transition-colors duration-150 active:scale-110
-        cursor-pointer select-none
-      "
-      title={isOpen ? '收起 AI 助手' : '打开 AI 助手'}
-      aria-label={isOpen ? '收起 AI 助手' : '打开 AI 助手'}
+      style={{
+        position: 'fixed',
+        right: assistantWidth,
+        top: posY,
+        transform: 'translateY(-50%)',
+        zIndex: 60,
+        // 仅在非拖拽调整宽度时启用 transition，避免 resize 时按钮滞后
+        transition: isResizing ? 'none' : 'right 280ms cubic-bezier(0.32, 0.72, 0, 1)',
+      }}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      title={isOpen ? '收起 AI 助手' : '展开 AI 助手'}
+      aria-label={isOpen ? '收起 AI 助手' : '展开 AI 助手'}
+      className={[
+        'group flex flex-col items-center justify-center gap-0.5',
+        'w-5 py-3.5 rounded-l-lg',
+        'border border-r-0 outline-none',
+        'transition-colors duration-200',
+        'select-none',
+        isDragging.current ? 'cursor-grabbing' : 'cursor-grab',
+        isOpen
+          ? 'bg-[#0d1f33] border-[#1a3a5a] text-[#3a7aaa] hover:bg-[#102540] hover:border-[#2a5080] hover:text-[#00c9a7]'
+          : [
+              'bg-gradient-to-b from-[#0f2035] to-[#091828]',
+              'border-[#1e4060] text-[#00c9a7]',
+              'hover:from-[#142840] hover:to-[#0d2035] hover:border-[#2a6090]',
+              'shadow-[0_0_14px_rgba(0,201,167,0.12)]',
+              'hover:shadow-[0_0_20px_rgba(0,201,167,0.25)]',
+            ].join(' '),
+      ].join(' ')}
     >
-      {isOpen ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+      {isOpen ? (
+        <ChevronRight size={11} />
+      ) : (
+        <>
+          <Sparkles size={11} className="group-hover:scale-110 transition-transform duration-200" />
+          <span
+            className="text-[8px] font-bold tracking-widest leading-none opacity-80 group-hover:opacity-100"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+          >
+            AI
+          </span>
+        </>
+      )}
+      {/* 拖拽手柄提示点 */}
+      <div className="flex flex-col gap-[3px] mt-1 opacity-30 group-hover:opacity-60 transition-opacity">
+        <span className="w-1 h-px bg-current rounded-full" />
+        <span className="w-1 h-px bg-current rounded-full" />
+        <span className="w-1 h-px bg-current rounded-full" />
+      </div>
     </button>
   );
 };

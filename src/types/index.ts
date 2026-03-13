@@ -158,6 +158,15 @@ export interface ChatMessage {
   isStreaming?: boolean;      // 是否正在流式输出
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;             // AI 生成的标题，初始为第一条消息的截断
+  messages: ChatMessage[];
+  createdAt: number;         // Unix timestamp ms
+  updatedAt: number;
+  titleGenerated: boolean;   // AI 标题是否已生成
+}
+
 // ============ 导航树类型 ============
 
 export type NodeType =

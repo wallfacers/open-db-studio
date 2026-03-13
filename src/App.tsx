@@ -80,6 +80,7 @@ JOIN
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [resultsHeight, setResultsHeight] = useState(0);
   const [assistantWidth, setAssistantWidth] = useState(380);
+  const [isAssistantResizing, setIsAssistantResizing] = useState(false);
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
   const { results, error: queryError, setActiveTabId } = useQueryStore();
@@ -315,6 +316,7 @@ JOIN
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = assistantWidth;
+    setIsAssistantResizing(true);
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const newWidth = Math.max(200, Math.min(800, startWidth - (moveEvent.clientX - startX)));
@@ -322,6 +324,7 @@ JOIN
     };
 
     const onMouseUp = () => {
+      setIsAssistantResizing(false);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -397,24 +400,21 @@ JOIN
       )}
 
       {activeActivity !== 'settings' && (
-        <div className="flex h-full">
-          <AssistantToggleTab />
-          <div
-            style={{
-              width: isAssistantOpen ? assistantWidth : 0,
-              overflow: 'hidden',
-              transition: 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
-              flexShrink: 0,
-            }}
-          >
-            <Assistant
-              assistantWidth={assistantWidth}
-              handleAssistantResize={handleAssistantResize}
-              showToast={showToast}
-              activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
-              onOpenSettings={() => setActiveActivity('settings')}
-            />
-          </div>
+        <div
+          style={{
+            width: isAssistantOpen ? assistantWidth : 0,
+            overflow: 'hidden',
+            transition: 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
+            flexShrink: 0,
+          }}
+        >
+          <Assistant
+            assistantWidth={assistantWidth}
+            handleAssistantResize={handleAssistantResize}
+            showToast={showToast}
+            activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
+            onOpenSettings={() => setActiveActivity('settings')}
+          />
         </div>
       )}
 
@@ -429,6 +429,13 @@ JOIN
         onClose={() => setToast(null)}
       />
       </div>
+      {/* 浮动 AI 助手切换按钮（position:fixed，不占布局空间，无缝衔接内容区） */}
+      {activeActivity !== 'settings' && (
+        <AssistantToggleTab
+          assistantWidth={isAssistantOpen ? assistantWidth : 0}
+          isResizing={isAssistantResizing}
+        />
+      )}
     </div>
   );
 }

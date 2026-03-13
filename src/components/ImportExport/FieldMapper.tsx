@@ -42,10 +42,10 @@ export const FieldMapper: React.FC<Props> = ({
     onChange(sourceColumns.map((src) => ({ sourceColumn: src, targetColumn: null })));
   };
 
-  const updateMapping = (sourceColumn: string, targetColumn: string | null) => {
+  const updateMapping = (idx: number, targetColumn: string | null) => {
     onChange(
-      mappings.map((m) =>
-        m.sourceColumn === sourceColumn ? { ...m, targetColumn } : m
+      mappings.map((m, i) =>
+        i === idx ? { ...m, targetColumn } : m
       )
     );
   };
@@ -78,9 +78,9 @@ export const FieldMapper: React.FC<Props> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-1 mt-1">
-        {mappings.map((m) => (
+        {mappings.map((m, idx) => (
           <div
-            key={m.sourceColumn}
+            key={idx}
             className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center"
           >
             <div className="px-2 py-1 bg-[#1a2639] border border-[#253347] rounded text-xs text-[#c8daea] truncate">
@@ -89,7 +89,7 @@ export const FieldMapper: React.FC<Props> = ({
             <ArrowRight size={12} className="text-[#253347]" />
             <select
               value={m.targetColumn ?? ''}
-              onChange={(e) => updateMapping(m.sourceColumn, e.target.value || null)}
+              onChange={(e) => updateMapping(idx, e.target.value || null)}
               className="px-2 py-1 bg-[#1a2639] border border-[#253347] rounded text-xs text-[#c8daea] outline-none"
             >
               <option value="">（不映射）</option>

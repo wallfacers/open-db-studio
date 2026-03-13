@@ -572,5 +572,10 @@
     "reviewDdl": "检查并编辑生成的 DDL",
     "executeAndCreate": "执行并创建",
     "success": "表创建成功"
+  },
+  "error": {
+    "askAi": "问 AI",
+    "askAiAnalyze": "问 AI 分析失败原因",
+    "copyError": "复制错误"
   }
 }

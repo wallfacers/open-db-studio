@@ -110,6 +110,8 @@ pub fn run() {
             commands::update_task,
             commands::delete_task,
             commands::get_task_by_id,
+            commands::cancel_task,
+            commands::retry_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

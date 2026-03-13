@@ -572,5 +572,10 @@
     "colRows": "Rows (est.)",
     "colSize": "Size",
     "selectedCount": "Selected: {{selected}} / {{total}} tables"
+  },
+  "error": {
+    "askAi": "Ask AI",
+    "askAiAnalyze": "Ask AI to analyze failure",
+    "copyError": "Copy error"
   }
 }

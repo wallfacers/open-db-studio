@@ -35,6 +35,31 @@ pub fn get() -> &'static Mutex<Connection> {
     DB.get().expect("DB not initialized. Call db::init() first.")
 }
 
+/// 根据 ID 获取单个连接配置
+pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
+    let conn = get().lock().unwrap();
+    let result = conn.query_row(
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
+         FROM connections WHERE id = ?1",
+        [id],
+        |row| Ok(models::Connection {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            group_id: row.get(2)?,
+            driver: row.get(3)?,
+            host: row.get(4)?,
+            port: row.get(5)?,
+            database_name: row.get(6)?,
+            username: row.get(7)?,
+            extra_params: row.get(8)?,
+            sort_order: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
+        }),
+    ).optional()?;
+    Ok(result)
+}
+
 /// 列出所有连接配置（不包含密码）
 pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     let conn = get().lock().unwrap();
@@ -641,4 +666,191 @@ pub fn migrate_legacy_llm_settings() -> AppResult<()> {
     conn.execute("DELETE FROM app_settings WHERE key LIKE 'llm.%'", [])?;
     log::info!("Migrated legacy LLM settings to llm_configs table");
     Ok(())
+}
+
+// ============ 任务记录 CRUD ============
+
+/// 创建任务记录
+pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskRecord> {
+    let conn = get().lock().unwrap();
+    let now = Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+
+    let progress = task.progress.unwrap_or(0);
+    let processed_rows = task.processed_rows.unwrap_or(0);
+
+    conn.execute(
+        "INSERT INTO task_records (id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+        rusqlite::params![
+            id,
+            task.type_,
+            task.status,
+            task.title,
+            task.params,
+            progress,
+            processed_rows,
+            task.total_rows,
+            task.current_target,
+            task.error,
+            task.error_details,
+            task.output_path,
+            task.description,
+            now,
+        ],
+    )?;
+
+    Ok(models::TaskRecord {
+        id: id.clone(),
+        type_: task.type_.clone(),
+        status: task.status.clone(),
+        title: task.title.clone(),
+        params: task.params.clone(),
+        progress,
+        processed_rows,
+        total_rows: task.total_rows,
+        current_target: task.current_target.clone(),
+        error: task.error.clone(),
+        error_details: task.error_details.clone(),
+        output_path: task.output_path.clone(),
+        description: task.description.clone(),
+        created_at: now.clone(),
+        updated_at: now,
+        completed_at: None,
+    })
+}
+
+/// 获取任务列表（最近 limit 条）
+pub fn list_tasks(limit: i32) -> AppResult<Vec<models::TaskRecord>> {
+    let conn = get().lock().unwrap();
+    let mut stmt = conn.prepare(
+        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at
+         FROM task_records
+         ORDER BY created_at DESC
+         LIMIT ?1"
+    )?;
+    let rows = stmt.query_map([limit], |row| {
+        Ok(models::TaskRecord {
+            id: row.get(0)?,
+            type_: row.get(1)?,
+            status: row.get(2)?,
+            title: row.get(3)?,
+            params: row.get(4)?,
+            progress: row.get(5)?,
+            processed_rows: row.get(6)?,
+            total_rows: row.get(7)?,
+            current_target: row.get(8)?,
+            error: row.get(9)?,
+            error_details: row.get(10)?,
+            output_path: row.get(11)?,
+            description: row.get(12)?,
+            created_at: row.get(13)?,
+            updated_at: row.get(14)?,
+            completed_at: row.get(15)?,
+        })
+    })?;
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}
+
+/// 更新任务状态
+pub fn update_task(id: &str, updates: &models::UpdateTaskInput) -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    let now = Utc::now().to_rfc3339();
+
+    let mut set_clauses = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(v) = &updates.status {
+        set_clauses.push("status = ?");
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(v) = updates.progress {
+        set_clauses.push("progress = ?");
+        params.push(Box::new(v));
+    }
+    if let Some(v) = updates.processed_rows {
+        set_clauses.push("processed_rows = ?");
+        params.push(Box::new(v));
+    }
+    if let Some(v) = updates.total_rows {
+        set_clauses.push("total_rows = ?");
+        params.push(Box::new(v));
+    }
+    if let Some(v) = &updates.current_target {
+        set_clauses.push("current_target = ?");
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(v) = &updates.error {
+        set_clauses.push("error = ?");
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(v) = &updates.error_details {
+        set_clauses.push("error_details = ?");
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(v) = &updates.output_path {
+        set_clauses.push("output_path = ?");
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(v) = &updates.completed_at {
+        set_clauses.push("completed_at = ?");
+        params.push(Box::new(v.clone()));
+    }
+
+    if set_clauses.is_empty() {
+        return Ok(());
+    }
+
+    set_clauses.push("updated_at = ?");
+    params.push(Box::new(now));
+    params.push(Box::new(id.to_string()));
+
+    let sql = format!(
+        "UPDATE task_records SET {} WHERE id = ?",
+        set_clauses.join(", ")
+    );
+
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    conn.execute(&sql, params_refs.as_slice())?;
+    Ok(())
+}
+
+/// 删除任务记录
+pub fn delete_task(id: &str) -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    conn.execute("DELETE FROM task_records WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// 根据 ID 获取任务
+pub fn get_task_by_id(id: &str) -> AppResult<Option<models::TaskRecord>> {
+    let conn = get().lock().unwrap();
+    let task = conn.query_row(
+        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at
+         FROM task_records WHERE id = ?1",
+        [id],
+        |row| Ok(models::TaskRecord {
+            id: row.get(0)?,
+            type_: row.get(1)?,
+            status: row.get(2)?,
+            title: row.get(3)?,
+            params: row.get(4)?,
+            progress: row.get(5)?,
+            processed_rows: row.get(6)?,
+            total_rows: row.get(7)?,
+            current_target: row.get(8)?,
+            error: row.get(9)?,
+            error_details: row.get(10)?,
+            output_path: row.get(11)?,
+            description: row.get(12)?,
+            created_at: row.get(13)?,
+            updated_at: row.get(14)?,
+            completed_at: row.get(15)?,
+        }),
+    ).optional()?;
+    Ok(task)
 }

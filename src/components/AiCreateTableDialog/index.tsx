@@ -52,7 +52,7 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-[640px] max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
           <div className="flex items-center gap-2 text-[#c8daea] text-sm font-medium">
-            <Sparkles size={14} className="text-[#3794ff]"/>
+            <Sparkles size={14} className="text-[#00c9a7]"/>
             {t('aiCreateTable.title')}
           </div>
           <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16}/></button>
@@ -71,7 +71,7 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
           <button
             onClick={handleGenerate}
             disabled={isCreatingTable || !description.trim() || !activeConnectionId}
-            className="flex items-center gap-2 px-4 py-2 bg-[#3794ff] text-[#c8daea] text-xs rounded disabled:opacity-50 w-fit"
+            className="flex items-center gap-2 px-4 py-2 bg-[#00c9a7] text-[#0d1520] text-xs font-medium rounded disabled:opacity-50 w-fit hover:bg-[#00b396] transition-colors"
           >
             <Sparkles size={12}/>
             {isCreatingTable ? t('aiCreateTable.generating') : t('aiCreateTable.generate')}
@@ -96,7 +96,7 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
             <button
               onClick={handleExecute}
               disabled={isExecuting}
-              className="px-3 py-1.5 bg-[#3794ff] text-[#c8daea] text-xs rounded disabled:opacity-50"
+              className="px-3 py-1.5 bg-[#00c9a7] text-[#0d1520] text-xs font-medium rounded disabled:opacity-50 hover:bg-[#00b396] transition-colors"
             >
               {isExecuting ? t('common.executing') : t('aiCreateTable.executeAndCreate')}
             </button>

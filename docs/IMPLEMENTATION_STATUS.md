@@ -1,7 +1,7 @@
 # Open-DB-Studio 功能实现状态总览
 
 > 本文档记录 docs/plans/ 中设计文档的实现状态
-> 最后更新: 2026-03-11
+> 最后更新: 2026-03-13
 
 ---
 
@@ -62,6 +62,7 @@
 | AI 多轮对话 | `Assistant/index.tsx` | AI 面板保留上下文 |
 | AI 模型配置列表 | `Settings/LlmSettings.tsx` | 完整 CRUD + 选择器 |
 | 视图/存储过程面板 | `ObjectPanel/index.tsx` | 对象管理面板 |
+| ACP + OpenCode 集成 | `src-tauri/src/acp/`, `mcp/` | 真正的工具调用支持 |
 
 ### 待实现 ❌
 
@@ -96,6 +97,7 @@
 | `2026-03-11-multi-result-smart-grouping-design.md` | 2026-03-11 | MainContent/ 结果分组 |
 | `2026-03-11-multi-result-smart-grouping-impl-plan.md` | 2026-03-11 | 结果智能分组实现 |
 | `2026-v1-implementation-plan.md` | 2026-03-11 | V1 阶段功能 |
+| `2026-03-12-acp-opencode-integration-plan.md` | 2026-03-13 | acp/, mcp/, Agent 工具调用 |
 
 ### 进行中 🔄
 

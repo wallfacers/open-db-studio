@@ -1,6 +1,8 @@
 // src/components/ImportExport/FieldMapper.tsx
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 export interface ColumnMapping {
   sourceColumn: string;
@@ -27,6 +29,7 @@ export const FieldMapper: React.FC<Props> = ({
   mappings,
   onChange,
 }) => {
+  const { t } = useTranslation();
   const autoMatch = () => {
     const newMappings = sourceColumns.map((src) => ({
       sourceColumn: src,
@@ -55,50 +58,48 @@ export const FieldMapper: React.FC<Props> = ({
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={autoMatch}
-          className="px-2 py-1 text-xs text-[#3794ff] border border-[#3794ff]/50 rounded hover:bg-[#1a4a8a] transition-colors"
+          className="px-3 py-1.5 text-sm text-white bg-[#009e84] hover:bg-[#007a62] rounded transition-colors"
         >
-          自动匹配列名
+          {t('fieldMapper.autoMatch')}
         </button>
         <button
           onClick={clearAll}
-          className="px-2 py-1 text-xs text-[#7a9bb8] border border-[#253347] rounded hover:bg-[#1a2639] transition-colors"
+          className="px-3 py-1.5 text-sm text-white bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded transition-colors"
         >
-          清空映射
+          {t('fieldMapper.clearAll')}
         </button>
-        <span className="text-xs text-[#7a9bb8] ml-auto">
-          已映射: {mappings.filter((m) => m.targetColumn).length}/{sourceColumns.length}
+        <span className="text-sm text-gray-400 ml-auto">
+          {t('fieldMapper.mappedCount', { mapped: mappings.filter((m) => m.targetColumn).length, total: sourceColumns.length })}
         </span>
       </div>
 
       {/* Header */}
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1 py-1 text-[10px] text-[#4a6a8a] border-b border-[#1e2d42]">
-        <div>源文件列</div>
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1 py-1.5 text-xs text-gray-400 border-b border-[#253347]">
+        <div>{t('fieldMapper.sourceColumn')}</div>
         <div className="w-6" />
-        <div>目标表列</div>
+        <div>{t('fieldMapper.targetColumn')}</div>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-1 mt-1">
+      <div className="flex-1 overflow-y-auto space-y-1.5 mt-1.5">
         {mappings.map((m, idx) => (
           <div
             key={idx}
             className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center"
           >
-            <div className="px-2 py-1 bg-[#1a2639] border border-[#253347] rounded text-xs text-[#c8daea] truncate">
+            <div className="px-3 py-1.5 bg-[#1a2639] border border-[#253347] rounded text-sm text-white truncate">
               {m.sourceColumn}
             </div>
-            <ArrowRight size={12} className="text-[#253347]" />
-            <select
+            <ArrowRight size={14} className="text-gray-600" />
+            <DropdownSelect
               value={m.targetColumn ?? ''}
-              onChange={(e) => updateMapping(idx, e.target.value || null)}
-              className="px-2 py-1 bg-[#1a2639] border border-[#253347] rounded text-xs text-[#c8daea] outline-none"
-            >
-              <option value="">（不映射）</option>
-              {targetColumns.map((tc) => (
-                <option key={tc.name} value={tc.name}>
-                  {tc.name} ({tc.type}{tc.isPk ? ', PK' : ''})
-                </option>
-              ))}
-            </select>
+              placeholder={t('fieldMapper.noMapping')}
+              options={targetColumns.map((tc) => ({
+                value: tc.name,
+                label: `${tc.name} (${tc.type}${tc.isPk ? ', PK' : ''})`,
+              }))}
+              onChange={(v) => updateMapping(idx, v || null)}
+              className="flex-1"
+            />
           </div>
         ))}
       </div>

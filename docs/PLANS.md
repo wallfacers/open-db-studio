@@ -67,6 +67,7 @@
 - [x] 安全修复：api_key 不暴露前端（list_llm_configs 遮蔽，get_llm_config_key 按需获取）
 - [x] 安全修复：DB 密码按需获取（get_connection_password），编辑弹窗 isDirty 机制防覆盖
 - [x] 移除 page-agent，改为工具驱动 Agent 架构（见 docs/plans/2026-03-12-agent-tool-catalog-design.md）
+- [x] ACP + OpenCode 集成（用 opencode ACP 协议替换自建 Agent Loop，支持真正的工具调用）
 
 ---
 

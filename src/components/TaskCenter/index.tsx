@@ -1,0 +1,88 @@
+import React, { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useTaskStore } from '../../store/taskStore';
+import { TaskItem } from './TaskItem';
+
+type TabFilter = 'all' | 'running' | 'completed' | 'failed';
+
+export const TaskCenter: React.FC = () => {
+  const { t } = useTranslation();
+  const { tasks, loadTasks, clearCompleted } = useTaskStore();
+  const [filter, setFilter] = React.useState<TabFilter>('all');
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  const filteredTasks = React.useMemo(() => {
+    if (filter === 'all') return tasks;
+    return tasks.filter((task) => task.status === filter);
+  }, [tasks, filter]);
+
+  const counts = React.useMemo(() => ({
+    all: tasks.length,
+    running: tasks.filter((t) => t.status === 'running').length,
+    completed: tasks.filter((t) => t.status === 'completed').length,
+    failed: tasks.filter((t) => t.status === 'failed').length,
+  }), [tasks]);
+
+  const handleClearCompleted = async () => {
+    if (window.confirm(t('taskCenter.clearConfirm'))) {
+      await clearCompleted();
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 bg-[#111922] overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e2d42] flex-shrink-0">
+        <h2 className="text-white font-semibold text-base">{t('activity.myTasks')}</h2>
+        <button
+          onClick={handleClearCompleted}
+          className="text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-3 py-1.5 bg-[#1a2639] hover:bg-[#253347] rounded border border-[#253347]"
+        >
+          {t('taskCenter.clearCompleted')}
+        </button>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex border-b border-[#1e2d42] flex-shrink-0 px-6">
+        {(['all', 'running', 'completed', 'failed'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setFilter(tab)}
+            className={`px-4 py-2.5 text-sm transition-colors ${
+              filter === tab
+                ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]'
+                : 'text-[#7a9bb8] hover:text-[#c8daea]'
+            }`}
+          >
+            {t(`taskCenter.tab.${tab}`)}
+            {counts[tab] > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 bg-[#1a2639] rounded-full text-xs">
+                {counts[tab]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Task List */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {filteredTasks.length === 0 ? (
+          <div className="text-center text-[#7a9bb8] text-sm py-16">
+            {t('taskCenter.empty')}
+          </div>
+        ) : (
+          <div className="columns-2 gap-3" style={{ columnFill: 'balance' }}>
+            {filteredTasks.map((task) => (
+              <div key={task.id} className="break-inside-avoid mb-3">
+                <TaskItem task={task} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

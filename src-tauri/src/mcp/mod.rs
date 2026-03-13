@@ -141,6 +141,39 @@ fn tool_definitions() -> Value {
                     "properties": {},
                     "required": []
                 }
+            }),
+            json!({
+                "name": "list_tasks",
+                "description": "List import/export tasks with their status, progress, and error information. Use this to see what tasks are running, completed, or failed.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "description": "Filter by status: 'running', 'completed', 'failed', 'cancelled', 'pending'. Omit to list all tasks.",
+                            "enum": ["running", "completed", "failed", "cancelled", "pending"]
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of tasks to return (default: 20, max: 100)"
+                        }
+                    },
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "get_task_detail",
+                "description": "Get full details of a specific task including error message, error details (per-row failures), output path, and timing information. Use this to diagnose why a task failed.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {
+                            "type": "string",
+                            "description": "The task ID (from list_tasks)"
+                        }
+                    },
+                    "required": ["task_id"]
+                }
             })
         ]
     })
@@ -255,6 +288,62 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> cr
             match sql {
                 Some(s) if !s.trim().is_empty() => Ok(s),
                 _ => Ok("(编辑器为空)".to_string()),
+            }
+        }
+        "list_tasks" => {
+            let limit = args["limit"].as_i64().unwrap_or(20).min(100) as i32;
+            let status_filter = args["status"].as_str();
+            let tasks = crate::db::list_tasks(limit)?;
+            let filtered: Vec<_> = match status_filter {
+                Some(s) => tasks.into_iter().filter(|t| t.status == s).collect(),
+                None => tasks,
+            };
+            // 返回摘要信息（不含 params 字段，减少噪音）
+            let summary: Vec<serde_json::Value> = filtered.iter().map(|t| json!({
+                "id": t.id,
+                "type": t.type_,
+                "status": t.status,
+                "title": t.title,
+                "progress": t.progress,
+                "processed_rows": t.processed_rows,
+                "total_rows": t.total_rows,
+                "current_target": t.current_target,
+                "error": t.error,
+                "output_path": t.output_path,
+                "created_at": t.created_at,
+                "completed_at": t.completed_at,
+            })).collect();
+            Ok(serde_json::to_string_pretty(&summary).unwrap_or_default())
+        }
+        "get_task_detail" => {
+            let task_id = args["task_id"].as_str()
+                .ok_or_else(|| crate::AppError::Other("missing task_id".into()))?;
+            match crate::db::get_task_by_id(task_id)? {
+                None => Ok(format!("Task '{}' not found", task_id)),
+                Some(t) => {
+                    // 解析 error_details JSON 字符串为数组（方便 AI 阅读）
+                    let error_details: serde_json::Value = t.error_details
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok())
+                        .unwrap_or(serde_json::Value::Array(vec![]));
+                    let detail = json!({
+                        "id": t.id,
+                        "type": t.type_,
+                        "status": t.status,
+                        "title": t.title,
+                        "progress": t.progress,
+                        "processed_rows": t.processed_rows,
+                        "total_rows": t.total_rows,
+                        "current_target": t.current_target,
+                        "error": t.error,
+                        "error_details": error_details,
+                        "output_path": t.output_path,
+                        "created_at": t.created_at,
+                        "updated_at": t.updated_at,
+                        "completed_at": t.completed_at,
+                    });
+                    Ok(serde_json::to_string_pretty(&detail).unwrap_or_default())
+                }
             }
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),

@@ -1170,6 +1170,11 @@ pub async fn export_tables(
     use std::path::Path;
     use tauri::Emitter;
 
+    // Early return if no tables specified
+    if params.tables.is_empty() {
+        return Err(crate::AppError::Other("No tables specified for export".to_string()));
+    }
+
     // 1. 创建任务记录
     let title = if params.tables.len() == 1 {
         format!("导出 {} 表", params.tables[0])
@@ -1198,7 +1203,6 @@ pub async fn export_tables(
     let task_id_clone = task_id.clone();
     tokio::spawn(async move {
         let mut processed = 0u64;
-        let mut all_ok = true;
 
         for (i, table_name) in params.tables.iter().enumerate() {
             // 发送进度事件
@@ -1232,7 +1236,6 @@ pub async fn export_tables(
             };
 
             if let Err(e) = export_table_data(single_params).await {
-                all_ok = false;
                 let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
                     status: Some("failed".to_string()),
                     error: Some(e.to_string()),
@@ -1254,27 +1257,25 @@ pub async fn export_tables(
             processed += 1;
         }
 
-        if all_ok {
-            let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
-                status: Some("completed".to_string()),
-                progress: Some(100),
-                processed_rows: Some(processed as i64),
-                total_rows: Some(total as i64),
-                output_path: Some(params.output_dir.clone()),
-                completed_at: Some(chrono::Utc::now().to_rfc3339()),
-                ..Default::default()
-            });
-            let _ = app_handle.emit("task-progress", TaskProgressPayload {
-                task_id: task_id_clone.clone(),
-                status: "completed".to_string(),
-                progress: 100,
-                processed_rows: processed,
-                total_rows: Some(total),
-                current_target: String::new(),
-                error: None,
-                output_path: Some(params.output_dir),
-            });
-        }
+        let _ = crate::db::update_task(&task_id_clone, &crate::db::models::UpdateTaskInput {
+            status: Some("completed".to_string()),
+            progress: Some(100),
+            processed_rows: Some(processed as i64),
+            total_rows: Some(total as i64),
+            output_path: Some(params.output_dir.clone()),
+            completed_at: Some(chrono::Utc::now().to_rfc3339()),
+            ..Default::default()
+        });
+        let _ = app_handle.emit("task-progress", TaskProgressPayload {
+            task_id: task_id_clone.clone(),
+            status: "completed".to_string(),
+            progress: 100,
+            processed_rows: processed,
+            total_rows: Some(total),
+            current_target: String::new(),
+            error: None,
+            output_path: Some(params.output_dir),
+        });
     });
 
     Ok(task_id)

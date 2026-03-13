@@ -998,3 +998,57 @@ pub async fn cancel_acp_session(
     }
     Ok(())
 }
+
+// ============ 任务管理命令 ============
+
+#[tauri::command]
+pub async fn get_task_list(limit: Option<i32>) -> AppResult<Vec<crate::db::models::TaskRecord>> {
+    let limit = limit.unwrap_or(100).min(100);
+    crate::db::list_tasks(limit)
+}
+
+#[tauri::command]
+pub async fn create_task(task: crate::db::models::CreateTaskInput) -> AppResult<crate::db::models::TaskRecord> {
+    crate::db::create_task(&task)
+}
+
+#[tauri::command]
+pub async fn update_task(id: String, updates: crate::db::models::UpdateTaskInput) -> AppResult<()> {
+    crate::db::update_task(&id, &updates)
+}
+
+#[tauri::command]
+pub async fn delete_task(id: String) -> AppResult<()> {
+    crate::db::delete_task(&id)
+}
+
+#[tauri::command]
+pub async fn get_task_by_id(id: String) -> AppResult<Option<crate::db::models::TaskRecord>> {
+    crate::db::get_task_by_id(&id)
+}
+
+// ============ 任务取消与重试 ============
+
+#[tauri::command]
+pub async fn cancel_task(task_id: String) -> AppResult<()> {
+    crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
+        status: Some("cancelled".to_string()),
+        completed_at: Some(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
+    })
+}
+
+#[tauri::command]
+pub async fn retry_task(task_id: String) -> AppResult<()> {
+    // MVP: 仅重置状态，实际重新执行留待后续版本
+    // error: Some("".to_string()) 将 error 字段更新为空字符串 ——
+    // update_task 的 SQL 逻辑对 Some(v) 一律 SET error = v，
+    // 前端 `task.error && ...` 判断中，空字符串为 falsy，等同于无错误，行为正确。
+    crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
+        status: Some("pending".to_string()),
+        progress: Some(0),
+        error: Some("".to_string()),  // 清空错误文字
+        completed_at: None,
+        ..Default::default()
+    })
+}

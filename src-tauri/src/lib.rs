@@ -34,6 +34,7 @@ pub fn run() {
             app.manage(crate::state::AppState {
                 mcp_port,
                 acp_session: tokio::sync::Mutex::new(None),
+                current_editor_sql: tokio::sync::Mutex::new(None),
             });
             Ok(())
         })

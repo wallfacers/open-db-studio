@@ -1462,6 +1462,8 @@ async fn run_import(
 
     let rows: Vec<std::collections::HashMap<String, serde_json::Value>> = match params.file_type.as_str() {
         "csv" => {
+            // MVP 限制：简单 split(',') 解析，不支持字段内包含逗号（RFC 4180）
+            // 如有需要，后续可引入 csv crate 进行完整解析
             let mut lines = content.lines();
             let headers: Vec<String> = lines.next()
                 .ok_or_else(|| crate::AppError::Other("Empty CSV file".into()))?
@@ -1532,7 +1534,7 @@ async fn run_import(
                     let qval = match val {
                         None => "NULL".to_string(),
                         Some(v) => match config.driver.as_str() {
-                            "mysql" => format!("'{}'", v.replace('\'', "\\'")),
+                            "mysql" => format!("'{}'", v.replace('\'', "''")),
                             _ => format!("'{}'", v.replace('\'', "''")),
                         },
                     };

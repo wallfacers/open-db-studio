@@ -37,6 +37,8 @@ interface AiState {
   isDiagnosing: boolean;
   isCreatingTable: boolean;
   error: string | null;
+  draftMessage: string;
+  setDraftMessage: (msg: string) => void;
   explainSql: (sql: string, connectionId: number) => Promise<string>;
   optimizeSql: (sql: string, connectionId: number) => Promise<string>;
   createTable: (description: string, connectionId: number) => Promise<string>;
@@ -57,6 +59,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   isDiagnosing: false,
   isCreatingTable: false,
   error: null,
+  draftMessage: '',
 
   setActiveConfigId: (id) => set({ activeConfigId: id }),
 
@@ -100,6 +103,8 @@ export const useAiStore = create<AiState>((set, get) => ({
       await get().loadConfigs();
     }
   },
+
+  setDraftMessage: (msg) => set({ draftMessage: msg }),
 
   clearHistory: () => {
     set({

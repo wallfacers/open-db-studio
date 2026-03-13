@@ -12,6 +12,9 @@ import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
 import { DdlViewerDialog } from '../DdlViewerDialog';
 import { TruncateConfirmDialog } from '../TruncateConfirmDialog';
+import { ExportWizard } from '../ImportExport/ExportWizard';
+import { ImportWizard } from '../ImportExport/ImportWizard';
+import { CreateDatabaseDialog } from '../DatabaseManager/CreateDatabaseDialog';
 import { useConnectionStore } from '../../store/connectionStore';
 import { Folder, FolderX } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
@@ -99,6 +102,15 @@ export const DBTree: React.FC<DBTreeProps> = ({
   const [editingConnId, setEditingConnId] = useState<number | null>(null);
   const [editingGroup, setEditingGroup] = useState<{ id: number; name: string; color: string | null } | null>(null);
   const [newConnGroupId, setNewConnGroupId] = useState<number | null | undefined>(undefined); // undefined=关闭，null=无分组，number=指定分组
+  const [exportWizard, setExportWizard] = useState<{
+    tableName: string; connectionId: number; database?: string; schema?: string;
+  } | null>(null);
+  const [importWizard, setImportWizard] = useState<{
+    tableName: string; connectionId: number; database?: string; schema?: string;
+  } | null>(null);
+  const [createDb, setCreateDb] = useState<{
+    connectionId: number; driver: string;
+  } | null>(null);
 
   const { connections, loadConnections } = useConnectionStore();
 
@@ -155,6 +167,10 @@ export const DBTree: React.FC<DBTreeProps> = ({
     if (!connId) return '';
     const connNode = nodes.get(`conn_${connId}`);
     return connNode?.label ?? '';
+  };
+
+  const getDriver = (connectionId: number): string => {
+    return connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
   };
 
   const handleMoveToGroup = async (connectionId: number, groupId: number | null) => {
@@ -293,6 +309,21 @@ export const DBTree: React.FC<DBTreeProps> = ({
             useTreeStore.getState().init();
             showToast(t('dbTree.groupDeleted'), 'success');
           }}
+          onExportTableData={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            setExportWizard({ tableName: n.label, connectionId: getConnectionId(n), database: n.meta?.database, schema: n.meta?.schema });
+          }}
+          onImportToTable={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            setImportWizard({ tableName: n.label, connectionId: getConnectionId(n), database: n.meta?.database, schema: n.meta?.schema });
+          }}
+          onCreateDatabase={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            setCreateDb({ connectionId: getConnectionId(n), driver: getDriver(getConnectionId(n)) });
+          }}
         />
       )}
 
@@ -430,6 +461,41 @@ export const DBTree: React.FC<DBTreeProps> = ({
             if (parentId) refreshNode(parentId);
           }}
           showToast={showToast}
+        />
+      )}
+
+      {exportWizard && (
+        <ExportWizard
+          defaultTable={exportWizard.tableName}
+          connectionId={exportWizard.connectionId}
+          database={exportWizard.database}
+          schema={exportWizard.schema}
+          onClose={() => setExportWizard(null)}
+        />
+      )}
+
+      {importWizard && (
+        <ImportWizard
+          defaultTable={importWizard.tableName}
+          connectionId={importWizard.connectionId}
+          database={importWizard.database}
+          schema={importWizard.schema}
+          onClose={() => setImportWizard(null)}
+        />
+      )}
+
+      {createDb && (
+        <CreateDatabaseDialog
+          connectionId={createDb.connectionId}
+          driver={createDb.driver}
+          onClose={() => setCreateDb(null)}
+          onSuccess={(dbName, switchTo) => {
+            setCreateDb(null);
+            refreshNode(`conn_${createDb.connectionId}`);
+            if (switchTo) {
+              showToast(`已创建数据库 ${dbName}`, 'success');
+            }
+          }}
         />
       )}
     </div>

@@ -114,6 +114,7 @@ pub fn run() {
             commands::retry_task,
             commands::create_database,
             commands::drop_database,
+            commands::export_tables,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

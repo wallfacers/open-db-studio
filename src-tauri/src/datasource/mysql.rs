@@ -3,7 +3,7 @@ use sqlx::mysql::MySqlPool;
 use sqlx::Row;
 use std::time::Instant;
 
-use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, ViewMeta};
+use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, TableStatInfo, ViewMeta};
 use crate::AppResult;
 
 /// MySQL information_schema 的某些列（如 TABLE_NAME）使用 binary 排序规则，
@@ -26,6 +26,18 @@ fn get_opt_str(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
         return v.map(|b| String::from_utf8_lossy(&b).into_owned());
     }
     None
+}
+
+fn format_size(bytes: i64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }
 
 pub struct MySqlDataSource {
@@ -262,5 +274,23 @@ impl DataSource for MySqlDataSource {
             _ => vec![],
         };
         Ok(names)
+    }
+
+    async fn list_tables_with_stats(&self, database: &str, _schema: Option<&str>) -> AppResult<Vec<TableStatInfo>> {
+        let rows = sqlx::query(
+            "SELECT TABLE_NAME, TABLE_ROWS, (DATA_LENGTH + INDEX_LENGTH) \
+             FROM information_schema.TABLES \
+             WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' \
+             ORDER BY TABLE_NAME"
+        ).bind(database).fetch_all(&self.pool).await?;
+
+        let stats = rows.iter().map(|r| {
+            let name = get_str(r, 0);
+            let row_count: Option<i64> = r.try_get(1).ok();
+            let bytes: Option<i64> = r.try_get(2).ok();
+            let size = bytes.map(format_size);
+            TableStatInfo { name, row_count, size }
+        }).collect();
+        Ok(stats)
     }
 }

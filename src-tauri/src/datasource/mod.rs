@@ -83,6 +83,14 @@ pub struct ProcedureMeta {
     pub routine_type: RoutineType,
 }
 
+/// 表统计信息（用于导出向导的表选择列表）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TableStatInfo {
+    pub name: String,
+    pub row_count: Option<i64>,
+    pub size: Option<String>,
+}
+
 /// 表详细信息（含列/索引/外键）
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TableDetail {
@@ -158,6 +166,11 @@ pub trait DataSource: Send + Sync {
 
     /// 列出指定 category 的对象（tables/views/functions/procedures/triggers/events/sequences）
     async fn list_objects(&self, _database: &str, _schema: Option<&str>, _category: &str) -> AppResult<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// 列出表并附带行数和大小统计（用于导出向导）
+    async fn list_tables_with_stats(&self, _database: &str, _schema: Option<&str>) -> AppResult<Vec<TableStatInfo>> {
         Ok(vec![])
     }
 

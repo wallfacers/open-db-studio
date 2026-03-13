@@ -115,18 +115,21 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
   useEffect(() => {
     if (step === 2 && step1.scope !== 'current_table') {
       setIsLoading(true);
-      invoke<string[]>('list_objects', {
+      invoke<{ name: string; row_count: number | null; size: string | null }[]>('list_tables_with_stats', {
         connectionId: step1.connectionId,
         database: step1.database,
         schema: step1.schema || undefined,
-        category: 'tables',
       })
-        .then((names) => {
-          const tableList = names.map((name) => ({ name }));
+        .then((stats) => {
+          const tableList: TableInfo[] = stats.map((s) => ({
+            name: s.name,
+            rowCount: s.row_count ?? undefined,
+            size: s.size ?? undefined,
+          }));
           setTables(tableList);
           // database scope: 自动全选所有表
           if (step1.scope === 'database') {
-            setSelectedTables(names);
+            setSelectedTables(stats.map((s) => s.name));
           }
         })
         .catch(console.error)

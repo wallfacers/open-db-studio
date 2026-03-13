@@ -62,6 +62,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
     delimiter: ',',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Step 2: 加载表列表（multi_table 和 database scope 都要加载）
   useEffect(() => {
@@ -87,19 +88,22 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
   }, [step, step1]);
 
   const handleStart = async () => {
-    const outputDir = await openDialog({
-      directory: true,
-      title: '选择导出目录',
-    });
-    if (!outputDir) return;
-
-    // database scope：导出所有已加载的表（selectedTables 在 step 2 已被全选）
-    const tablesToExport =
-      step1.scope === 'current_table' && defaultTable
-        ? [defaultTable]
-        : selectedTables; // multi_table 和 database scope 都用 selectedTables
-
+    if (isLoading) return;
+    setIsLoading(true);
+    setExportError(null);
     try {
+      const outputDir = await openDialog({
+        directory: true,
+        title: '选择导出目录',
+      });
+      if (!outputDir || Array.isArray(outputDir)) return;
+
+      // database scope：导出所有已加载的表（selectedTables 在 step 2 已被全选）
+      const tablesToExport =
+        step1.scope === 'current_table' && defaultTable
+          ? [defaultTable]
+          : selectedTables; // multi_table 和 database scope 都用 selectedTables
+
       await invoke('export_tables', {
         params: {
           connection_id: step1.connectionId,
@@ -107,7 +111,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
           schema: step1.schema || null,
           tables: tablesToExport,
           format: options.format,
-          output_dir: outputDir as string,
+          output_dir: outputDir,
           options: {
             include_header: options.includeHeader,
             include_ddl: options.includeDdl,
@@ -121,6 +125,9 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
       onClose();
     } catch (e) {
       console.error('Export failed:', e);
+      setExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -289,6 +296,11 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                 <div>导出表数: {step1.scope === 'current_table' ? 1 : selectedTables.length}</div>
                 <div>格式: {options.format.toUpperCase()}</div>
               </div>
+              {exportError && (
+                <div className="text-xs text-[#f44747] bg-[#f44747]/10 px-2 py-1.5 rounded border border-[#f44747]/30">
+                  导出失败：{exportError}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -318,7 +330,8 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
             ) : (
               <button
                 onClick={handleStart}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#1a4a8a] text-[#3794ff] border border-[#3794ff]/50 rounded hover:bg-[#1e5a9a] transition-colors"
+                disabled={isLoading}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#1a4a8a] text-[#3794ff] border border-[#3794ff]/50 rounded hover:bg-[#1e5a9a] transition-colors disabled:opacity-40"
               >
                 <Download size={12} /> 开始导出
               </button>

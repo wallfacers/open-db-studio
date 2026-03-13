@@ -105,6 +105,11 @@ pub fn run() {
             commands::agent_execute_sql,
             commands::ai_chat_acp,
             commands::cancel_acp_session,
+            commands::get_task_list,
+            commands::create_task,
+            commands::update_task,
+            commands::delete_task,
+            commands::get_task_by_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

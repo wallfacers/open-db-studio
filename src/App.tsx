@@ -15,6 +15,7 @@ import { QueryContext } from './types';
 import { useToolBridge } from './hooks/useToolBridge';
 import { TaskCenter } from './components/TaskCenter';
 import { initTaskProgressListener, useTaskStore } from './store';
+import { askAiWithContext } from './utils/askAi';
 
 export interface TabData {
   id: string;
@@ -109,12 +110,15 @@ JOIN
     }
   }, [results, activeTab, queryError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [toast, setToast] = useState<{ message: string; level: ToastLevel } | null>(null);
+  const [toast, setToast] = useState<{ message: string; level: ToastLevel; markdownContext?: string | null } | null>(null);
 
   const showToast = (msg: string, level: ToastLevel = 'default') => {
     setToast({ message: msg, level });
   };
 
+  const showError = (userMessage: string, markdownContext?: string | null) => {
+    setToast({ message: userMessage, level: 'error', markdownContext });
+  };
 
   const toggleFolder = (folder: string) => {
     setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
@@ -375,6 +379,7 @@ JOIN
         handleFormat={handleFormat}
         handleClear={handleClear}
         showToast={showToast}
+        showError={showError}
         isDbMenuOpen={isDbMenuOpen}
         setIsDbMenuOpen={setIsDbMenuOpen}
         isTableMenuOpen={isTableMenuOpen}
@@ -413,7 +418,16 @@ JOIN
         </div>
       )}
 
-      <Toast message={toast?.message ?? null} level={toast?.level} onClose={() => setToast(null)} />
+      <Toast
+        message={toast?.message ?? null}
+        level={toast?.level}
+        markdownContext={toast?.markdownContext}
+        onAskAi={toast?.markdownContext ? () => {
+          askAiWithContext(toast!.markdownContext!);
+          setToast(null);
+        } : undefined}
+        onClose={() => setToast(null)}
+      />
       </div>
     </div>
   );

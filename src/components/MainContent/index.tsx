@@ -64,6 +64,8 @@ import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
+import { buildErrorContext } from '../../utils/errorContext';
+import { askAiWithContext } from '../../utils/askAi';
 
 interface MainContentProps {
   tabs: TabData[];
@@ -94,6 +96,7 @@ interface MainContentProps {
   tableData: any[];
   executionTime: number;
   updateTabContext: (tabId: string, context: Partial<QueryContext>) => void;
+  showError?: (msg: string, ctx?: string | null) => void;
 }
 
 interface ContextMenu {
@@ -187,6 +190,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   resultsHeight, handleResultsResize,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
   updateTabContext,
+  showError,
 }) => {
   const { t } = useTranslation();
   const setAssistantOpen = useAppStore((s) => s.setAssistantOpen);
@@ -324,7 +328,14 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   // Toast on execution error so user gets immediate feedback
   useEffect(() => {
-    if (error) showToast(error, 'error');
+    if (error) {
+      const ctx = buildErrorContext('sql_execute', { rawError: error });
+      if (showError) {
+        showError(ctx.userMessage, ctx.markdownContext);
+      } else {
+        showToast(ctx.userMessage, 'error');
+      }
+    }
   }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 结果集右键菜单：SQL 构建与复制
@@ -392,8 +403,10 @@ export const MainContent: React.FC<MainContentProps> = ({
     try {
       const result = await explainSql(currentSql, connId);
       setExplanation(result);
-    } catch {
-      showToast(t('mainContent.aiExplainFailed'), 'error');
+    } catch (e) {
+      const ctx = buildErrorContext('ai_request', { rawError: String(e) });
+      if (showError) showError(ctx.userMessage, ctx.markdownContext);
+      else showToast(ctx.userMessage, 'error');
     }
   };
 
@@ -406,8 +419,10 @@ export const MainContent: React.FC<MainContentProps> = ({
     try {
       const result = await optimizeSql(currentSql, connId);
       setOptimization(result);
-    } catch {
-      showToast(t('mainContent.aiOptimizeFailed'), 'error');
+    } catch (e) {
+      const ctx = buildErrorContext('ai_request', { rawError: String(e) });
+      if (showError) showError(ctx.userMessage, ctx.markdownContext);
+      else showToast(ctx.userMessage, 'error');
     }
   };
 

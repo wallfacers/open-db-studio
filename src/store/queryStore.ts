@@ -96,25 +96,33 @@ export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string } {
     const raw = localStorage.getItem('unified_tabs_state');
     if (raw) {
       const parsed = JSON.parse(raw);
-      const tabs: Tab[] = parsed.tabs ?? [];
+      const validTabs = (parsed.tabs ?? []).filter(
+        (t: unknown) => t && typeof (t as any).id === 'string' && typeof (t as any).type === 'string'
+      ) as Tab[];
       // Only return unified state if it has actual data; otherwise fall through to migration
-      if (tabs.length > 0) {
-        return { tabs, activeTabId: parsed.activeTabId ?? '' };
+      if (validTabs.length > 0) {
+        return { tabs: validTabs, activeTabId: parsed.activeTabId ?? '' };
       }
+      // One-time migration from old key
+      const oldRaw = localStorage.getItem('metrics_tabs_state');
+      if (oldRaw) {
+        const oldParsed = JSON.parse(oldRaw);
+        const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '' };
+        localStorage.setItem('unified_tabs_state', JSON.stringify(result));
+        localStorage.removeItem('metrics_tabs_state');
+        return result;
+      }
+      // Return empty unified state if it exists but has no tabs
+      return { tabs: [], activeTabId: parsed.activeTabId ?? '' };
     }
-    // One-time migration from old key
+    // One-time migration from old key (when unified key doesn't exist)
     const oldRaw = localStorage.getItem('metrics_tabs_state');
     if (oldRaw) {
-      const parsed = JSON.parse(oldRaw);
-      const result = { tabs: parsed.tabs ?? [], activeTabId: parsed.activeTabId ?? '' };
+      const oldParsed = JSON.parse(oldRaw);
+      const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '' };
       localStorage.setItem('unified_tabs_state', JSON.stringify(result));
       localStorage.removeItem('metrics_tabs_state');
       return result;
-    }
-    // Return empty unified state if it exists but has no tabs
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return { tabs: [], activeTabId: parsed.activeTabId ?? '' };
     }
   } catch {
     // ignore parse errors

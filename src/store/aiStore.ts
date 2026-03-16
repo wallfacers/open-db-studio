@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, ElicitationRequest, PermissionRequest } from '../types';
 import { useAppStore } from './appStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -49,6 +49,8 @@ interface SessionRuntimeState {
   streamingThinkingContent: string;
   activeToolName: string | null;
   sessionStatus: string | null;
+  pendingElicitation: ElicitationRequest | null;  // 文字检测路径（isChatting=false 时显示）
+  pendingPermission: PermissionRequest | null;     // ACP permission 路径（isChatting=true 时显示）
 }
 
 const defaultRuntimeState = (): SessionRuntimeState => ({
@@ -57,6 +59,8 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   streamingThinkingContent: '',
   activeToolName: null,
   sessionStatus: null,
+  pendingElicitation: null,
+  pendingPermission: null,
 });
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
@@ -91,6 +95,9 @@ interface AiState {
   // ── 对话操作 ──
   clearHistory: (sessionId: string) => Promise<void>;
   cancelChat: (sessionId: string) => Promise<void>;
+  respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
+  respondElicitation: (sessionId: string, selectedText: string) => Promise<void>;
+  clearElicitation: (sessionId: string) => void;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
@@ -327,6 +334,55 @@ export const useAiStore = create<AiState>()(
         }
       },
 
+      respondPermission: async (sessionId, permissionId, selectedOptionId, cancelled) => {
+        // 立即清空（UI 响应优先，不等待 Rust 确认）
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...s.chatStates[sessionId], pendingPermission: null },
+          },
+        }));
+        try {
+          await invoke('acp_permission_respond', {
+            sessionId,
+            permissionId,
+            selectedOptionId,
+            cancelled,
+          });
+        } catch (e) {
+          console.error('[elicitation] acp_permission_respond failed:', e);
+        }
+      },
+
+      respondElicitation: async (sessionId, selectedText) => {
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...s.chatStates[sessionId], pendingElicitation: null },
+          },
+        }));
+        // activeConnectionId 在 connectionStore，不在 aiStore
+        const { useConnectionStore } = await import('./connectionStore');
+        const connectionId = useConnectionStore.getState().activeConnectionId;
+        // ElicitationPanel 仅在当前 session 显示，用户无法跨 session 触发，
+        // 故 sessionId 与 get().currentSessionId 一致，无需额外传递。
+        //
+        // ⚠️ 已知边界情况：sendAgentChatStream 内部读取 get().currentSessionId，
+        // 如果用户在点击选项按钮后、此 await 执行前迅速切换了 session，
+        // 可能把消息发送到切换后的 session（而非原 sessionId 对应的 session）。
+        // 该场景概率极低（UI 面板切换 session 后立即隐藏），故不做额外保护。
+        await get().sendAgentChatStream(selectedText, connectionId);
+      },
+
+      clearElicitation: (sessionId) => {
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...s.chatStates[sessionId], pendingElicitation: null },
+          },
+        }));
+      },
+
       deleteAllSessions: () => {
         set({
           sessions: [],
@@ -393,11 +449,15 @@ export const useAiStore = create<AiState>()(
 
         const isFirstRound = get().chatHistory.filter((m) => m.role === 'assistant').length === 0;
 
-        const commitAssistant = (content: string, thinking: string) => {
+        const commitAssistant = async (content: string, thinking: string) => {
           // Guard 1: session 已被删除
           if (!get().sessions.find((s) => s.id === sessionId)) return;
           // Guard 2: 已被 cancel
           if (!get().chatStates[sessionId]?.isChatting) return;
+
+          // 检测是否含文字选项（需在 set() 之前计算，以便合并进同一次 set）
+          const { detectElicitation } = await import('../utils/elicitationDetector');
+          const detected = detectElicitation(content, sessionId);
 
           const newMsg = {
             role: 'assistant' as const,
@@ -435,7 +495,13 @@ export const useAiStore = create<AiState>()(
 
             return {
               sessions: updatedSessions,
-              chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
+              chatStates: {
+                ...s.chatStates,
+                [sessionId]: {
+                  ...defaultRuntimeState(),
+                  pendingElicitation: detected ?? null,  // 与 isChatting=false 同步写入，无竞态
+                },
+              },
               ...(isCurrentSession ? { chatHistory: updatedMessages } : {}),
             };
           });
@@ -448,8 +514,17 @@ export const useAiStore = create<AiState>()(
         try {
           const { Channel } = await import('@tauri-apps/api/core');
           const channel = new Channel<{
-            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
-            data?: { delta?: string; message?: string; call_id?: string; name?: string; arguments?: string };
+            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest';
+            data?: {
+              delta?: string;
+              message?: string;
+              call_id?: string;
+              name?: string;
+              arguments?: string;
+              // PermissionRequest 字段
+              permission_id?: string;
+              options?: Array<{ option_id: string; label: string; kind: string }>;
+            };
           }>();
 
           let contentBuf = '';
@@ -501,7 +576,7 @@ export const useAiStore = create<AiState>()(
             }));
           };
 
-          channel.onmessage = (event) => {
+          channel.onmessage = async (event) => {
             if (event.type === 'StatusUpdate' && event.data?.message) {
               setChatStateField({ sessionStatus: event.data.message });
             } else if (event.type === 'ThinkingChunk' && event.data?.delta) {
@@ -515,15 +590,34 @@ export const useAiStore = create<AiState>()(
             } else if (event.type === 'ToolCallRequest' && event.data?.name) {
               flushNow();
               setChatStateField({ activeToolName: event.data.name, sessionStatus: null });
+            } else if (event.type === 'PermissionRequest' && event.data?.permission_id) {
+              // PermissionRequest 在 isChatting=true 时到达（agent 暂停等待响应）
+              setChatStateField({
+                pendingPermission: {
+                  id: event.data.permission_id,
+                  sessionId,
+                  source: 'acp' as const,
+                  message: event.data.message ?? '工具执行确认',
+                  options: (event.data.options ?? []).map((o) => ({
+                    option_id: o.option_id,
+                    label: o.label,
+                    kind: o.kind as 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | 'deny',
+                  })),
+                },
+              });
             } else if (event.type === 'Done') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;
+              // 清空任何未完成的 pendingPermission（abort 场景兜底）
+              setChatStateField({ pendingPermission: null });
               const state = get().chatStates[sessionId];
-              commitAssistant(state?.streamingContent ?? '', state?.streamingThinkingContent ?? '');
+              await commitAssistant(state?.streamingContent ?? '', state?.streamingThinkingContent ?? '');
             } else if (event.type === 'Error') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;
-              commitAssistant(`Error: ${event.data?.message ?? 'Unknown error'}`, '');
+              // 清空任何未完成的 pendingPermission（abort 场景兜底）
+              setChatStateField({ pendingPermission: null });
+              await commitAssistant(`Error: ${event.data?.message ?? 'Unknown error'}`, '');
             }
           };
 
@@ -536,7 +630,7 @@ export const useAiStore = create<AiState>()(
             channel,
           });
         } catch (e) {
-          commitAssistant(`Error: ${String(e)}`, '');
+          await commitAssistant(`Error: ${String(e)}`, '');
         }
       },
 

@@ -116,8 +116,9 @@ pub async fn find_relevant_subgraph(
     let matched_nodes: Vec<GraphNode> = {
         let conn = crate::db::get().lock().unwrap();
         let mut stmt = conn.prepare(&sql)?;
-        stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_node)?
-            .collect::<Result<Vec<_>, _>>()?
+        let result = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_node)?
+            .collect::<Result<Vec<_>, _>>()?;
+        result
     };
 
     let matched_ids: Vec<String> = matched_nodes.iter().map(|n| n.id.clone()).collect();

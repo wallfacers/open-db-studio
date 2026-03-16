@@ -54,7 +54,7 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
 
     // 存量数据库迁移 — metrics 表新增字段（忽略重复列错误）
     let migration_stmts = [
-        "ALTER TABLE metrics ADD COLUMN metric_type TEXT NOT NULL DEFAULT 'atomic'",
+        "ALTER TABLE metrics ADD COLUMN metric_type TEXT DEFAULT 'atomic'",
         "ALTER TABLE metrics ADD COLUMN composite_components TEXT",
         "ALTER TABLE metrics ADD COLUMN composite_formula TEXT",
         "ALTER TABLE metrics ADD COLUMN category TEXT",

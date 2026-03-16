@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo } from '../types';
+import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo, MetricScope } from '../types';
 import { useAppStore } from './appStore';
 
 /** 判断是否为返回结果集的查询语句 */
@@ -41,13 +41,15 @@ interface QueryState {
   activeTabId: string;
   sqlContent: Record<string, string>;  // tabId → sql
   results: Record<string, QueryResult[]>;
-  isExecuting: boolean;
+  isExecuting: Record<string, boolean>;
   queryHistory: QueryHistory[];
   error: string | null;
   diagnosis: string | null;
 
   setSql: (tabId: string, sql: string) => void;
   setActiveTabId: (tabId: string) => void;
+  openMetricTab: (metricId: number, title: string) => void;
+  openMetricListTab: (scope: import('../types').MetricScope, title: string) => void;
 
   executeQuery: (connectionId: number, tabId: string, sqlOverride?: string, database?: string | null, schema?: string | null) => Promise<void>;
   loadHistory: (connectionId: number) => Promise<void>;
@@ -66,6 +68,14 @@ interface QueryState {
   // Monaco 编辑器光标/选区（由 MainContent 实时写入）
   editorInfo: Record<string, EditorInfo>;
   setEditorInfo: (tabId: string, info: EditorInfo) => void;
+
+  // SQL 解释（per-tab，流式内容）
+  explanationContent: Record<string, string>;
+  explanationStreaming: Record<string, boolean>;
+  setExplanationStreaming: (tabId: string, streaming: boolean) => void;
+  appendExplanationContent: (tabId: string, delta: string) => void;
+  clearExplanation: (tabId: string) => void;
+  startExplanation: (tabId: string) => void;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -75,16 +85,42 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   activeTabId: DEFAULT_TAB.id,
   sqlContent: { [DEFAULT_TAB.id]: '' },
   results: {},
-  isExecuting: false,
+  isExecuting: {},
   queryHistory: [],
   error: null,
   diagnosis: null,
   pendingDiff: null,
   editorInfo: {},
+  explanationContent: {},
+  explanationStreaming: {},
 
   setSql: (tabId, sql) =>
     set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } })),
   setActiveTabId: (tabId) => set({ activeTabId: tabId }),
+
+  openMetricTab: (metricId, title) => {
+    set(s => {
+      const existing = s.tabs.find(t => t.type === 'metric' && t.metricId === metricId);
+      if (existing) return { activeTabId: existing.id };
+      const id = `metric_${metricId}_${Date.now()}`;
+      const tab: Tab = { id, type: 'metric', title, metricId };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+  openMetricListTab: (scope, title) => {
+    const key = `ml_${scope.connectionId}_${scope.database ?? ''}_${scope.schema ?? ''}`;
+    set(s => {
+      const existing = s.tabs.find(t => t.id === key);
+      if (existing) return { activeTabId: key };
+      const tab: Tab = {
+        id: key,
+        type: 'metric_list',
+        title: `${title} 指标列表`,
+        metricScope: scope,
+      };
+      return { tabs: [...s.tabs, tab], activeTabId: key };
+    });
+  },
 
   executeQuery: async (connectionId, tabId, sqlOverride, database, schema) => {
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';
@@ -105,7 +141,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       sql,
     });
 
-    set({ isExecuting: true, error: null, diagnosis: null });
+    set(s => ({ isExecuting: { ...s.isExecuting, [tabId]: true }, error: null, diagnosis: null }));
 
     const selectResults: StmtResult[] = [];
     const dmlResults: StmtResult[] = [];
@@ -153,10 +189,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         finalList.push(dmlReport);
       }
 
-      set(s => ({ results: { ...s.results, [tabId]: finalList }, isExecuting: false }));
+      set(s => ({ results: { ...s.results, [tabId]: finalList }, isExecuting: { ...s.isExecuting, [tabId]: false } }));
     } catch (e) {
       const errorMsg = String(e);
-      set({ error: errorMsg, isExecuting: false });
+      set(s => ({ error: errorMsg, isExecuting: { ...s.isExecuting, [tabId]: false } }));
       invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId })
         .then(diagnosis => set({ diagnosis }))
         .catch(() => {});
@@ -210,6 +246,32 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   setEditorInfo: (tabId, info) =>
     set((s) => ({ editorInfo: { ...s.editorInfo, [tabId]: info } })),
+
+  setExplanationStreaming: (tabId, streaming) =>
+    set((s) => ({ explanationStreaming: { ...s.explanationStreaming, [tabId]: streaming } })),
+
+  appendExplanationContent: (tabId, delta) =>
+    set((s) => ({
+      explanationContent: {
+        ...s.explanationContent,
+        [tabId]: (s.explanationContent[tabId] ?? '') + delta,
+      },
+    })),
+
+  clearExplanation: (tabId) =>
+    set((s) => {
+      const ec = { ...s.explanationContent };
+      const es = { ...s.explanationStreaming };
+      delete ec[tabId];
+      delete es[tabId];
+      return { explanationContent: ec, explanationStreaming: es };
+    }),
+
+  startExplanation: (tabId) =>
+    set((s) => ({
+      explanationContent: { ...s.explanationContent, [tabId]: '' },
+      explanationStreaming: { ...s.explanationStreaming, [tabId]: true },
+    })),
 
   loadHistory: async (connectionId) => {
     try {

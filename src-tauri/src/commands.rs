@@ -699,24 +699,259 @@ pub async fn reorder_groups(items: Vec<crate::db::models::ReorderItem>) -> AppRe
 
 // ============ AI 高级命令 ============
 
+/// SQL 优化：每次调用创建新 ACP session，流式输出，支持取消。
+/// 不复用上次的 optimize session。
 #[tauri::command]
-pub async fn ai_optimize_sql(sql: String, connection_id: Option<i64>) -> AppResult<String> {
-    let client = build_llm_client()?;
+pub async fn ai_optimize_sql(
+    sql: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let result = ai_optimize_sql_inner(sql, connection_id, database, &channel, &state).await;
+    if let Err(ref e) = result {
+        let _ = channel.send(crate::llm::StreamEvent::Error { message: e.to_string() });
+    }
+    let _ = channel.send(crate::llm::StreamEvent::Done);
+    result
+}
 
-    let (schema_context, driver) = match connection_id {
-        Some(id) if id > 0 => {
-            let config = crate::db::get_connection_config(id)?;
-            let ds = crate::datasource::create_datasource(&config).await?;
-            let schema = ds.get_schema().await?;
-            let ctx = schema.tables.iter()
-                .map(|t| format!("Table: {}", t.name))
-                .collect::<Vec<_>>().join("\n");
-            (ctx, config.driver)
-        }
-        _ => ("".to_string(), "mysql".to_string()),
+async fn ai_optimize_sql_inner(
+    sql: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: &tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    use crate::state::AcpRequest;
+
+    // 获取默认 LLM 配置
+    let config = crate::db::get_default_llm_config()?
+        .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
+
+    // optimize session 专用工作目录（与 chat session 隔离）
+    let cwd = std::path::PathBuf::from(
+        std::env::var("APPDATA").unwrap_or_else(|_| ".".into()),
+    ).join("open-db-studio-optimize");
+    std::fs::create_dir_all(&cwd).ok();
+
+    // 写入 optimize 专用 AGENTS.md
+    let agents_content = include_str!("../assets/AGENTS_OPTIMIZE.md");
+    if let Err(e) = std::fs::write(cwd.join("AGENTS.md"), agents_content) {
+        log::warn!("[optimize] Failed to write AGENTS.md: {}", e);
+    }
+
+    // 构建 prompt（注入连接 ID + 数据库类型 + 当前库名，供模型校验表名和字段名）
+    let conn_context = if let Some(conn_id) = connection_id {
+        let driver = crate::db::get_connection_config(conn_id)
+            .map(|c| c.driver)
+            .unwrap_or_else(|_| "mysql".to_string());
+        let db_line = match &database {
+            Some(db) if !db.is_empty() => format!("当前数据库: {}\n", db),
+            _ => String::new(),
+        };
+        format!("当前数据库连接 ID: {}\n数据库类型: {}\n{}\n", conn_id, driver, db_line)
+    } else {
+        String::new()
     };
+    let prompt_text = format!("{}优化以下 SQL：\n\n{}", conn_context, sql);
 
-    client.optimize_sql(&sql, &schema_context, &driver).await
+    // 创建事件转发通道
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<crate::llm::StreamEvent>();
+    let channel_clone = channel.clone();
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let _ = channel_clone.send(event);
+        }
+    });
+
+    // 先 drop 旧的 optimize session（如有）
+    {
+        let mut guard = state.optimize_acp_session.lock().await;
+        if guard.is_some() {
+            *guard = None;
+            log::info!("[optimize] Dropped previous optimize session");
+        }
+    }
+
+    // 总是创建新 session，使用 /mcp/optimize 端点
+    let optimize_mcp_url = format!("http://127.0.0.1:{}/mcp/optimize", state.mcp_port);
+    let new_session = crate::acp::session::spawn_acp_session_thread(
+        config.api_key.clone(),
+        config.base_url.clone(),
+        config.model.clone(),
+        config.api_type.clone(),
+        config.preset.clone(),
+        config.id,
+        optimize_mcp_url,
+        cwd.clone(),
+        Some(event_tx.clone()),
+    ).await?;
+
+    // 存入 AppState（用于取消）
+    let request_tx = new_session.request_tx.clone();
+    {
+        let mut guard = state.optimize_acp_session.lock().await;
+        *guard = Some(crate::state::PersistentAcpSession {
+            config_id: new_session.config_id,
+            config_fingerprint: String::new(),
+            request_tx: new_session.request_tx,
+            abort_tx: new_session.abort_tx,
+        });
+    }
+
+    // 发送 prompt，等待完成
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+    request_tx
+        .send(AcpRequest { prompt_text, event_tx, done_tx })
+        .map_err(|_| AppError::Other("Optimize ACP session closed unexpectedly".into()))?;
+
+    let result = done_rx
+        .await
+        .map_err(|_| AppError::Other("Optimize ACP session thread dropped before responding".into()))?;
+
+    // 完成后清理 session
+    {
+        let mut guard = state.optimize_acp_session.lock().await;
+        *guard = None;
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn cancel_optimize_acp_session(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let mut guard = state.optimize_acp_session.lock().await;
+    if guard.is_some() {
+        *guard = None;
+        log::info!("[optimize] Session cancelled by user");
+    }
+    Ok(())
+}
+
+/// SQL 解释：每次调用创建新 ACP session，流式输出 Markdown 报告，支持取消。
+#[tauri::command]
+pub async fn ai_explain_sql_acp(
+    sql: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let result = ai_explain_sql_acp_inner(sql, connection_id, database, &channel, &state).await;
+    if let Err(ref e) = result {
+        let _ = channel.send(crate::llm::StreamEvent::Error { message: e.to_string() });
+    }
+    let _ = channel.send(crate::llm::StreamEvent::Done);
+    result
+}
+
+async fn ai_explain_sql_acp_inner(
+    sql: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: &tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    use crate::state::AcpRequest;
+
+    let config = crate::db::get_default_llm_config()?
+        .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
+
+    let cwd = std::path::PathBuf::from(
+        std::env::var("APPDATA").unwrap_or_else(|_| ".".into()),
+    ).join("open-db-studio-explain");
+    std::fs::create_dir_all(&cwd).ok();
+
+    let agents_content = include_str!("../assets/AGENTS_EXPLAIN.md");
+    if let Err(e) = std::fs::write(cwd.join("AGENTS.md"), agents_content) {
+        log::warn!("[explain] Failed to write AGENTS.md: {}", e);
+    }
+
+    let conn_context = if let Some(conn_id) = connection_id {
+        let driver = crate::db::get_connection_config(conn_id)
+            .map(|c| c.driver)
+            .unwrap_or_else(|_| "mysql".to_string());
+        let db_line = match &database {
+            Some(db) if !db.is_empty() => format!("当前数据库: {}\n", db),
+            _ => String::new(),
+        };
+        format!("当前数据库连接 ID: {}\n数据库类型: {}\n{}\n", conn_id, driver, db_line)
+    } else {
+        String::new()
+    };
+    let prompt_text = format!("{}请分析以下 SQL：\n\n{}", conn_context, sql);
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<crate::llm::StreamEvent>();
+    let channel_clone = channel.clone();
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let _ = channel_clone.send(event);
+        }
+    });
+
+    {
+        let mut guard = state.explain_acp_session.lock().await;
+        if guard.is_some() {
+            *guard = None;
+            log::info!("[explain] Dropped previous explain session");
+        }
+    }
+
+    let mcp_url = format!("http://127.0.0.1:{}/mcp/optimize", state.mcp_port);
+    let new_session = crate::acp::session::spawn_acp_session_thread(
+        config.api_key.clone(),
+        config.base_url.clone(),
+        config.model.clone(),
+        config.api_type.clone(),
+        config.preset.clone(),
+        config.id,
+        mcp_url,
+        cwd.clone(),
+        Some(event_tx.clone()),
+    ).await?;
+
+    let request_tx = new_session.request_tx.clone();
+    {
+        let mut guard = state.explain_acp_session.lock().await;
+        *guard = Some(crate::state::PersistentAcpSession {
+            config_id: new_session.config_id,
+            config_fingerprint: String::new(),
+            request_tx: new_session.request_tx,
+            abort_tx: new_session.abort_tx,
+        });
+    }
+
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+    request_tx
+        .send(AcpRequest { prompt_text, event_tx, done_tx })
+        .map_err(|_| AppError::Other("Explain ACP session closed unexpectedly".into()))?;
+
+    let result = done_rx
+        .await
+        .map_err(|_| AppError::Other("Explain ACP session thread dropped before responding".into()))?;
+
+    {
+        let mut guard = state.explain_acp_session.lock().await;
+        *guard = None;
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn cancel_explain_acp_session(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let mut guard = state.explain_acp_session.lock().await;
+    if guard.is_some() {
+        *guard = None;
+        log::info!("[explain] Session cancelled by user");
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -766,6 +1001,58 @@ pub async fn list_schemas(connection_id: i64, database: String) -> AppResult<Vec
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
     ds.list_schemas(&database).await
+}
+
+const SYSTEM_SCHEMAS: &[&str] = &[
+    "information_schema", "pg_catalog",
+    "performance_schema", "sys", "mysql",
+];
+
+#[tauri::command]
+pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let dbs = ds.list_databases().await?;
+    Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect())
+}
+
+#[tauri::command]
+pub async fn list_schemas_for_metrics(
+    connection_id: i64,
+    database: String,
+) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    let schemas = ds.list_schemas(&database).await?;
+    Ok(schemas.into_iter().filter(|s| !SYSTEM_SCHEMAS.contains(&s.as_str())).collect())
+}
+
+#[tauri::command]
+pub async fn get_metric(id: i64) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::crud::get_metric_pub(id)
+}
+
+#[tauri::command]
+pub async fn list_metrics_by_node(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+    status: Option<String>,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::crud::list_metrics_by_node(
+        connection_id,
+        database.as_deref(),
+        schema.as_deref(),
+        status.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub async fn count_metrics_batch(
+    connection_id: i64,
+    database: Option<String>,
+) -> AppResult<std::collections::HashMap<String, i64>> {
+    crate::metrics::crud::count_metrics_batch(connection_id, database.as_deref())
 }
 
 #[tauri::command]
@@ -1003,6 +1290,7 @@ async fn get_or_create_session(
         config.id,
         config.model
     );
+    let mcp_url = format!("http://127.0.0.1:{}/mcp", mcp_port);
     let new_session = crate::acp::session::spawn_acp_session_thread(
         config.api_key.clone(),
         config.base_url.clone(),
@@ -1010,7 +1298,7 @@ async fn get_or_create_session(
         config.api_type.clone(),
         config.preset.clone(),
         config.id,
-        mcp_port,
+        mcp_url,
         cwd.to_path_buf(),
         Some(event_tx.clone()),
     )
@@ -1021,6 +1309,7 @@ async fn get_or_create_session(
         config_id: new_session.config_id,
         config_fingerprint: fingerprint,
         request_tx: new_session.request_tx,
+        abort_tx: new_session.abort_tx,
     });
     Ok(tx)
 }
@@ -1972,4 +2261,146 @@ pub async fn show_in_folder(path: String) -> AppResult<()> {
             .map_err(|e| crate::AppError::Other(format!("Failed to open folder: {}", e)))?;
     }
     Ok(())
+}
+
+// ============ 指标管理 ============
+
+#[tauri::command]
+pub async fn list_metrics(
+    connection_id: i64,
+    status: Option<String>,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::list_metrics(connection_id, status.as_deref())
+}
+
+#[tauri::command]
+pub async fn save_metric(
+    input: crate::metrics::CreateMetricInput,
+) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::save_metric(&input)
+}
+
+#[tauri::command]
+pub async fn update_metric(
+    id: i64,
+    input: crate::metrics::UpdateMetricInput,
+) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::crud::update_metric(id, &input)
+}
+
+#[tauri::command]
+pub async fn delete_metric(id: i64) -> AppResult<()> {
+    crate::metrics::delete_metric(id)
+}
+
+#[tauri::command]
+pub async fn approve_metric(id: i64, status: String) -> AppResult<crate::metrics::Metric> {
+    if status != "approved" && status != "rejected" {
+        return Err(crate::AppError::Other("status must be 'approved' or 'rejected'".into()));
+    }
+    crate::metrics::set_metric_status(id, &status)
+}
+
+// ============ 知识图谱 ============
+
+#[tauri::command]
+pub async fn build_schema_graph(
+    connection_id: i64,
+    app_handle: tauri::AppHandle,
+) -> AppResult<usize> {
+    crate::graph::build_schema_graph(connection_id, app_handle).await
+}
+
+#[tauri::command]
+pub async fn get_graph_nodes(
+    connection_id: i64,
+    node_type: Option<String>,
+) -> AppResult<Vec<crate::graph::GraphNode>> {
+    crate::graph::query::get_nodes(connection_id, node_type.as_deref())
+}
+
+#[tauri::command]
+pub async fn search_graph(
+    connection_id: i64,
+    keyword: String,
+) -> AppResult<Vec<crate::graph::GraphNode>> {
+    crate::graph::search_graph(connection_id, &keyword)
+}
+
+// ============ 跨数据源迁移 ============
+
+#[tauri::command]
+pub async fn create_migration_task(
+    name: String,
+    src_connection_id: i64,
+    dst_connection_id: i64,
+    config: crate::migration::MigrationConfig,
+) -> AppResult<crate::migration::MigrationTask> {
+    crate::migration::create_task(&name, src_connection_id, dst_connection_id, &config)
+}
+
+#[tauri::command]
+pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationTask>> {
+    crate::migration::list_tasks()
+}
+
+#[tauri::command]
+pub async fn run_migration_precheck(
+    task_id: i64,
+) -> AppResult<crate::migration::precheck::PreCheckResult> {
+    crate::migration::precheck::run_precheck(task_id).await
+}
+
+#[tauri::command]
+pub async fn get_precheck_report(
+    task_id: i64,
+) -> AppResult<crate::migration::precheck::PreCheckResult> {
+    crate::migration::precheck::get_precheck_result(task_id)
+}
+
+#[tauri::command]
+pub async fn pause_migration(task_id: i64) -> AppResult<()> {
+    crate::migration::pause_migration(task_id)
+}
+
+#[tauri::command]
+pub async fn get_migration_progress(
+    task_id: i64,
+) -> AppResult<Option<crate::migration::task_mgr::MigrationProgress>> {
+    let task = crate::migration::get_task(task_id)?;
+    Ok(task.progress)
+}
+
+// ============ AI 指标草稿 + Text-to-SQL v2 ============
+
+#[tauri::command]
+pub async fn ai_generate_metrics(
+    connection_id: i64,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::ai_draft::generate_metric_drafts(connection_id).await
+}
+
+#[tauri::command]
+pub async fn ai_generate_sql_v2(
+    question: String,
+    connection_id: i64,
+    history: Option<Vec<crate::llm::ChatMessage>>,
+) -> AppResult<crate::pipeline::TextToSqlResult> {
+    let hist = history.unwrap_or_default();
+    crate::pipeline::generate_sql_v2(&question, connection_id, &hist).await
+}
+
+// ============ 数据迁移 — 启动 & 查询 ============
+
+#[tauri::command]
+pub async fn start_migration(
+    task_id: i64,
+    app_handle: tauri::AppHandle,
+) -> AppResult<()> {
+    crate::migration::start_migration(task_id, app_handle).await
+}
+
+#[tauri::command]
+pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
+    crate::migration::get_task(task_id)
 }

@@ -151,7 +151,7 @@ fn spawn_local_thread() -> tokio::sync::mpsc::UnboundedSender<SendableLocalFutur
 /// handshake (initialize / new_session) fails.  On failure the child process is
 /// killed before returning so no orphan processes are left behind.
 pub async fn start_acp_session(
-    mcp_port: u16,
+    mcp_url: &str,
     cwd: &std::path::Path,
     shared_event_tx: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<StreamEvent>>>>,
     status_tx: Option<&tokio::sync::mpsc::UnboundedSender<StreamEvent>>,
@@ -264,13 +264,12 @@ pub async fn start_acp_session(
     // several seconds on first call (transport negotiation + tool discovery).
     send_status("正在加载数据库工具...");
     let t_sess = std::time::Instant::now();
-    let mcp_url = format!("http://127.0.0.1:{}/mcp", mcp_port);
     let session_resp: NewSessionResponse = {
         let conn = connection.lock().await;
         handshake!(
             conn.new_session(
                 NewSessionRequest::new(cwd).mcp_servers(vec![McpServer::Http(
-                    McpServerHttp::new("db-tools", &mcp_url),
+                    McpServerHttp::new("db-tools", mcp_url),
                 )]),
             )
             .await,

@@ -27,9 +27,13 @@ export function useToolBridge() {
 
       // 全量扫描所有 Tab，找到第一个包含 original 文本的 Tab
       // （queryStore.activeTabId 为静态初始值，不可靠，故遍历所有条目）
+      // original 可能含尾部分号（AI 从编辑器读取时带分号），
+      // 但 parseStatements 的 s.text 不含分号，需统一去除后再比较
+      const normalizedOriginal = original.trim().replace(/;+$/, '');
+
       for (const [tabId, full] of Object.entries(sqlContent)) {
         const stmts = parseStatements(full);
-        const match = stmts.find(s => s.text.trim() === original.trim());
+        const match = stmts.find(s => s.text.trim() === normalizedOriginal);
         if (match) {
           proposeSqlDiff({
             original,

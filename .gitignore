@@ -27,3 +27,6 @@ src-tauri/WixTools/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# Git worktrees
+.worktrees/

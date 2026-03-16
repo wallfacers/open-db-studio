@@ -1,54 +1,50 @@
 # Open-DB-Studio 功能实现状态总览
 
 > 本文档记录 docs/plans/ 中设计文档的实现状态
-> 最后更新: 2026-03-14
+> 最后更新: 2026-03-16
 
 ---
 
-## MVP 阶段（当前 → Q2 2026）
-
-### 已完成 ✅
+## MVP 阶段（当前 → Q2 2026）— 已完成 ✅
 
 | 功能 | 实现文件 | 备注 |
 |------|---------|------|
 | Tauri 2.x 脚手架初始化 | `src-tauri/` 目录结构 | - |
 | Rust 后端骨架 | `src-tauri/src/db/`, `datasource/`, `llm/` | - |
 | 内置 SQLite schema（5 张表） | `schema/init.sql` | connections, query_history, saved_queries, llm_configs |
-| MySQL + PostgreSQL DataSource | `src-tauri/src/datasource/` | mysql.rs, postgres.rs |
+| MySQL + PostgreSQL DataSource | `src-tauri/src/datasource/mysql.rs`, `postgres.rs` | - |
+| Oracle DataSource | `src-tauri/src/datasource/oracle.rs`（136行）| 条件编译 feature="oracle-driver"，需 Oracle Instant Client |
+| SQL Server DataSource | `src-tauri/src/datasource/sqlserver.rs`（109行）| tiberius，含 TLS + winauth |
 | LLM 代理模块 | `src-tauri/src/llm/client.rs` | OpenAI/Anthropic 兼容接口 |
 | CLAUDE.md + docs/ 文档体系 | 根目录 + `docs/` | 已建立完整文档结构 |
-| 连接管理 UI（新建/编辑/删除/测试） | `ConnectionModal/`, `Settings/LlmSettings.tsx` | - |
+| 连接管理 UI（新建/编辑/删除/测试） | `ConnectionModal/` | - |
 | `execute_query` 命令完整实现 | `commands.rs:39-77` | SELECT + DDL/DML 支持 |
-| 密码加密存储 | `crypto.rs` | AES-256-GCM |
+| 密码加密存储 | `src-tauri/src/crypto.rs` | AES-256-GCM |
 | Schema 树面板 | `Explorer/DBTree.tsx` | 数据库 → 表 → 列 |
 | 查询结果表格展示 | `MainContent/index.tsx` | 分页 + 列排序 |
 | 查询历史 | `QueryHistory/index.tsx` | 最近查询列表 |
-| 基础 AI 生成 SQL | `commands.rs:125-137` | `ai_generate_sql` |
-| AI SQL 解释 | `commands.rs:140-144` | `ai_explain_sql` |
+| 基础 AI 生成 SQL | `commands.rs`（`ai_generate_sql`）| 注入 Schema 上下文 |
+| AI SQL 解释 | `commands.rs`（`ai_explain_sql`）| 选中 SQL → 中文解释 |
 | LLM 配置多配置列表 | `Settings/LlmSettings.tsx` | CRUD + 默认标记 + 测试状态 |
-| 表数据浏览 | `TableDataView.tsx` | 分页查看 + 行内编辑 |
-| 行操作（UPDATE/DELETE） | `commands.rs:328-400` | `update_row`, `delete_row` |
+| 表数据浏览 | `MainContent/TableDataView.tsx` | 分页查看 + 行内编辑 |
+| 行操作（UPDATE/DELETE） | `commands.rs`（`update_row`, `delete_row`）| - |
 | 数据导出 | `ExportDialog/index.tsx` | CSV/JSON/SQL |
+| TableDataView 行操作增强 | `EditableCell.tsx`, `RowContextMenu.tsx`, `usePendingChanges.ts`, `CellEditorModal.tsx` | 内联编辑 + 批量提交 |
+| 表右键菜单扩展 | `Explorer/ContextMenu.tsx`, `DdlViewerDialog/`, `TruncateConfirmDialog/` | 查看 DDL + 截断表 + 可视化编辑器 |
 
 ### 进行中/待完善 ⚠️
 
 | 功能 | 状态 | 备注 |
 |------|------|------|
-| `insert_row` 命令 | ✅ Rust 实现完成 | `commands.rs:411-478` |
-| TableDataView 行操作增强 | 🔄 进行中 | 设计文档已写，待前端实现 |
-| 右键菜单扩展 | 🔄 进行中 | View DDL + Truncate + 可视化编辑器 |
-| SQL 编辑器 Monaco 集成 | ⚠️ 部分实现 | 基础编辑可用，高级功能待完善 |
-| Oracle 驱动 | ❌ 未开始 | oracle crate |
-| SQL Server 驱动 | ❌ 未开始 | tiberius |
+| SQL 编辑器 Monaco 集成 | ⚠️ 部分实现 | 基础编辑可用，Schema 补全已有，高级错误标红待完善 |
 
 ---
 
-## V1 阶段（Q3 2026）
-
-### 已完成 ✅
+## V1 阶段（Q3 2026）— 已完成 ✅
 
 | 功能 | 实现文件 | 备注 |
 |------|---------|------|
+<<<<<<< HEAD
 | 表管理 GUI（建表/改表） | `TableManageDialog/index.tsx` | 可视化列编辑器 |
 | 索引管理 | `IndexManager/index.tsx` | 创建/删除索引 |
 | ERD 可视化 | `ERDiagram.tsx` | 外键自动生成 ER 图 |
@@ -74,6 +70,28 @@
 | 数据导入（CSV/JSON/Excel） | 中 | 需要导入对话框 + 字段映射 |
 | DML 结果报告增强 | 低 | 当前已有基础 row_count |
 | 表结构可视化编辑器（完整版） | 低 | ALTER SQL 预览已在 TableManageDialog |
+=======
+| 表管理 GUI（建表/改表/删表 + DDL 预览） | `TableManageDialog/index.tsx` | 可视化列编辑器 + ALTER SQL 预览 + 多方言 DDL |
+| 表结构可视化编辑器（完整版） | `TableManageDialog/index.tsx` | 列编辑器 + 约束/索引/默认值管理 |
+| 索引管理 | `IndexManager/index.tsx` | 创建/删除，唯一索引、复合索引 |
+| 视图 / 存储过程 / 函数管理 | `ObjectPanel/index.tsx` | 基础面板 |
+| ERD 可视化 | `ERDiagram.tsx` | 外键自动生成 ER 图 + FK 连线 |
+| Schema-aware 自动补全 | `MainContent/index.tsx` | Monaco 集成表名/字段提示 |
+| 语法高亮 + 错误标红 | Monaco Editor | 多方言支持 |
+| 一键格式化 SQL | 内置 Monaco | sql-formatter 集成 |
+| 多结果集 Tab | `MainContent/index.tsx` | 多语句各自展示结果 |
+| 数据导出（CSV/JSON/SQL Dump） | `ExportDialog/index.tsx` | 含 WHERE 条件部分导出 |
+| 数据导入（CSV/JSON/Excel） | `ImportExport/ImportWizard.tsx`, `FieldMapper.tsx` | 4 步向导 + 字段映射 + Task 进度跟踪；命令：`preview_import_file`, `import_to_table`, `run_import` |
+| DML 结果报告增强 | `commands.rs`（`QueryResult.row_count`）| insert/update/delete 均返回 row_count，持久化到 query_history |
+| AI 建表 | `AiCreateTableDialog/index.tsx` | 自然语言 → DDL → 确认执行 |
+| AI SQL 优化 | `commands.rs`（`ai_optimize_sql`）| 执行计划分析 + 索引建议 |
+| AI 错误诊断 | `commands.rs`（`ai_diagnose_error`）| 报错 → 原因解释 + 修复方案 |
+| AI 多轮对话 | `Assistant/index.tsx` | AI 面板保留上下文 + 持久化历史 |
+| AI 模型配置列表 | `Settings/LlmSettings.tsx` | 完整 CRUD + 默认标记 + 持久化测试状态 + AI 面板选择器 |
+| 安全修复：api_key 不暴露前端 | `commands.rs`（`list_llm_configs` 遮蔽, `get_llm_config_key`）| 按需获取 |
+| 安全修复：DB 密码按需获取 | `commands.rs`（`get_connection_password`）| 编辑弹窗 isDirty 机制防覆盖 |
+| ACP + OpenCode 集成 | `src-tauri/src/acp/`, `mcp/` | 真正的工具调用支持，替换自建 Agent Loop |
+>>>>>>> d396f4effe4d1f306a4b93851f4bccd80ee579ae
 
 ---
 
@@ -90,7 +108,7 @@
 | `2026-03-10-connection-edit-design.md` | 2026-03-10 | ConnectionModal/ |
 | `2026-03-10-connection-edit-plan.md` | 2026-03-10 | ConnectionModal/ |
 | `2026-03-11-anthropic-api-preset-design.md` | 2026-03-11 | llm/client.rs |
-| `2026-03-11-anthropic-api-preset.md` | 2026-03-11 | LLM 配置支持 anthropic |
+| `2026-03-11-anthropic-api-preset.md` | 2026-03-11 | LLM 配置支持 Anthropic |
 | `2026-03-11-navicat-style-db-tree-design.md` | 2026-03-11 | Explorer/DBTree.tsx |
 | `2026-03-11-navicat-tree-impl-plan.md` | 2026-03-11 | DBTree.tsx 实现 |
 | `2026-03-11-llm-config-list-design.md` | 2026-03-11 | Settings/LlmSettings.tsx |
@@ -101,61 +119,76 @@
 | `2026-03-11-multi-result-smart-grouping-impl-plan.md` | 2026-03-11 | 结果智能分组实现 |
 | `2026-v1-implementation-plan.md` | 2026-03-11 | V1 阶段功能 |
 | `2026-03-12-acp-opencode-integration-plan.md` | 2026-03-13 | acp/, mcp/, Agent 工具调用 |
+<<<<<<< HEAD
 | `docs/superpowers/plans/2026-03-13-smart-error-ai-context.md` | 2026-03-13 | appStore, errorContext, askAi, AssistantToggleTab, 多会话历史 |
+=======
+| `2026-03-11-table-data-view-row-operations-design.md` | 2026-03-16 | EditableCell, RowContextMenu, usePendingChanges, CellEditorModal |
+| `2026-03-11-table-data-view-row-operations-impl.md` | 2026-03-16 | 全部 Tasks 已完成 |
+| `2026-03-11-table-context-menu-and-visual-editor-design.md` | 2026-03-16 | Explorer/ContextMenu, DdlViewerDialog, TruncateConfirmDialog |
+| `2026-03-11-table-context-menu-and-visual-editor.md` | 2026-03-16 | 全部 7 个 Tasks 已完成 |
+>>>>>>> d396f4effe4d1f306a4b93851f4bccd80ee579ae
 
 ### 进行中 🔄
 
-| 文档 | 状态 | 备注 |
-|------|------|------|
-| `2026-03-11-table-data-view-row-operations-design.md` | 🔄 Rust 部分完成 | insert_row 命令已实现 |
-| `2026-03-11-table-data-view-row-operations-impl.md` | 🔄 Task 1 完成 | Task 2-6 待实现 |
-| `2026-03-11-table-context-menu-and-visual-editor-design.md` | 📋 待开始 | 设计文档已写 |
-| `2026-03-11-table-context-menu-and-visual-editor.md` | 📋 待开始 | 7 个 Tasks 待执行 |
+暂无
 
 ---
 
-## 未开始的设计文档 ❌
+## V2 阶段（Q4 2026）— 已完成 ✅
 
-暂无 - 所有设计文档都在进行中或已完成
+| 功能 | 实现文件 | 备注 |
+|------|---------|------|
+| graph/ 模块骨架 | `src-tauri/src/graph/mod.rs` | builder/traversal/query 三子模块 |
+| Schema 图构建（information_schema → 节点/边） | `graph/builder.rs` | 表/列/FK → graph_nodes/graph_edges |
+| BFS 路径推断（JOIN 路径发现） | `graph/traversal.rs` | BFS 多跳遍历 |
+| 图查询接口 | `graph/query.rs` | `search_graph`, `find_relevant_subgraph` |
+| metrics/ CRUD | `metrics/crud.rs` | list/save/delete/approve，status 流转 draft→approved |
+| AI 生成指标草稿 | `metrics/ai_draft.rs` | 扫描 Schema + 样本 → LLM 生成 |
+| Text-to-SQL v2 管道 | `pipeline/` | entity_extract → context_builder → sql_validator |
+| migration/ DDL 转换 | `migration/ddl_convert.rs` | 跨方言类型映射表（MySQL/PG/Oracle/MSSQL） |
+| migration/ 预检 | `migration/precheck.rs` | type_compat/null_constraint/pk_conflict 三类检查 |
+| migration/ 数据泵 | `migration/data_pump.rs` | 分批读写 + Tauri Event `migration:progress` 广播 |
+| migration/ 任务管理 | `migration/task_mgr.rs` | 状态机 pending/running/paused/done/failed |
+| GraphExplorer 前端 | `src/components/GraphExplorer/index.tsx` | 图谱主面板 |
+| MetricsPanel 前端 | `src/components/MetricsPanel/index.tsx` | 指标列表 + draft/approved/rejected 分组 |
+| MigrationWizard 前端 | `src/components/MigrationWizard/index.tsx` | 4 步向导：源/目标选择→表映射→预检→实时进度 |
+| SQL Explain ACP | `commands.rs`（`ai_explain_sql_acp`）| Channel 流式 + 取消，结果渲染在独立 Tab |
+| SQL Optimize ACP | `commands.rs`（`ai_optimize_sql`，重构）| 流式 + 取消，`/mcp/optimize` 独立只读端点 |
+| MCP propose_sql_diff | `mcp/mod.rs`（`propose_sql_diff` 工具）| AI 提议 SQL 修改 → Tauri 事件 → DiffPanel 确认 |
+| useToolBridge 前端 | `src/hooks/useToolBridge.ts` | 监听 `sql-diff-proposal` 事件，调用 proposeSqlDiff |
+| 数据库树任意节点新建查询 | `Explorer/DBTree.tsx`, `App.tsx` | table/view/column 预填 SQL 模板，category 补全上下文 |
+| AI 助手浮动按钮 + 会话历史 | `Assistant/index.tsx` | 浮动开关 + AI 生成会话标题 + 历史列表 |
+| Smart Error AI Context | `Toast`, `TaskCenter`, 错误区域 | "问 AI" 按钮，i18n 支持 zh/en |
+| ActivityBar V2 重构 | `ActivityBar/index.tsx` | 移除废弃入口，添加指标/图谱/迁移，底部改为 tasks/settings |
+| 启动恢复已打开连接 | `connectionStore.ts`, `Explorer/index.tsx` | localStorage 持久化，静默恢复上次会话 |
+
+### SQLite Schema 新增 6 张表
+`graph_nodes`, `graph_edges`, `metrics`, `semantic_aliases`, `migration_tasks`, `migration_checks`（均已追加至 `schema/init.sql`）
+
+### docs/superpowers/plans/ V2 计划文档
+| 文档 | 状态 |
+|------|------|
+| `2026-03-16-v2-design.md` | ✅ 已实现 |
+| `2026-03-16-v2-knowledge-graph-metrics-pipeline.md` | ✅ 已实现 |
+| `2026-03-16-v2-migration.md` | ✅ 已实现 |
+| `2026-03-16-sql-explain-acp.md` | ✅ 已实现（commit 170c0bb） |
+| `2026-03-16-sql-optimize-acp.md` | ✅ 已实现（commit 170c0bb） |
+| `2026-03-16-new-query-from-any-node.md` | ✅ 已实现（commit 736d0cc） |
+| `2026-03-13-propose-sql-diff-mcp.md` | ✅ 已实现（mcp/mod.rs + useToolBridge.ts） |
+| `2026-03-13-conversational-sql-editor.md` | ✅ 已实现（commit 05ecff6） |
+| `2026-03-13-smart-error-ai-context.md` | ✅ 已实现（commit f7b4d45） |
+| `2026-03-13-import-export-task-center.md` | ✅ 已实现（commit 62a3ae1） |
+| `2026-03-13-export-backup-enhancement.md` | ✅ 已实现（commit 62a3ae1） |
 
 ---
 
-## 下一批待办建议
+## 下一步：V3 阶段（2027）
 
-### 高优先级（接下来 1-2 天）
-
-1. **完成 TableDataView 行操作增强**
-   - i18n 键添加
-   - `usePendingChanges` Hook
-   - `EditableCell` 组件
-   - `RowContextMenu` 组件
-   - 整合到 TableDataView
-
-2. **实现表右键菜单扩展**
-   - `DdlViewerDialog` 组件
-   - `TruncateConfirmDialog` 组件
-   - ContextMenu 新增菜单项
-   - DBTree 接入新对话框
-
-### 中优先级（接下来 1 周）
-
-3. **Oracle 驱动实现**
-   - 添加 oracle crate 依赖
-   - 实现 DataSource trait
-
-4. **SQL Server 驱动实现**
-   - 添加 tiberius 依赖
-   - 实现 DataSource trait
-
-5. **数据导入功能**
-   - 导入对话框 UI
-   - CSV/JSON 解析
-   - 字段映射
-
-### 低优先级（V2 准备）
-
-6. **GraphRAG 知识图谱引擎**（V2 阶段）
-7. **业务指标层**（V2 阶段）
+1. **Milvus 向量库集成**（本地 + 独立部署两种模式）
+2. **完整 RAG 管道**（向量 + 指标 + GraphRAG 三路融合）
+3. **插件系统**（数据源/AI 提供商/导出格式）
+4. **团队协作**（SQL 片段共享、指标库导出/导入）
+5. **SeaTunnel 外部引擎接入**
 
 ---
 
@@ -165,4 +198,10 @@
 |------|---------|
 | 2026-03-11 | 创建本文档，整理 MVP 和 V1 实现状态 |
 | 2026-03-11 | 添加 insert_row 命令实现状态 |
+<<<<<<< HEAD
 | 2026-03-14 | 补充智能错误上下文、AI 助手全局 Tab、DB 版本缓存实现状态；标记计划文件完成 |
+=======
+| 2026-03-16 | 标记 TableDataView 行操作增强、表右键菜单扩展为已完成 |
+| 2026-03-16 | 全面代码评估：补录 Oracle/SQL Server 驱动、数据导入、DML 报告、可视化编辑器；MVP + V1 阶段 100% 完成；文档整体重整 |
+| 2026-03-16 | V2 阶段全部实现：图谱/指标/迁移/pipeline 模块 + 前端三大面板 + SQL ACP + propose_sql_diff；ActivityBar 重构；启动恢复连接 |
+>>>>>>> d396f4effe4d1f306a4b93851f4bccd80ee579ae

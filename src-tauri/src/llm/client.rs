@@ -262,23 +262,6 @@ impl LlmClient {
         self.chat(messages).await
     }
 
-    /// AI 优化 SQL（已有 prompt 文件）
-    pub async fn optimize_sql(
-        &self,
-        sql: &str,
-        schema_context: &str,
-        dialect: &str,
-    ) -> AppResult<String> {
-        let system_prompt = include_str!("../../../prompts/sql_optimize.txt")
-            .replace("{{DIALECT}}", dialect)
-            .replace("{{SCHEMA}}", schema_context);
-        let messages = vec![
-            ChatMessage { role: "system".into(), content: system_prompt },
-            ChatMessage { role: "user".into(), content: sql.to_string() },
-        ];
-        self.chat(messages).await
-    }
-
     /// AI 建表
     pub async fn create_table_ddl(
         &self,

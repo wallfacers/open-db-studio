@@ -2,6 +2,26 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Connection, CreateConnectionRequest, TableMeta } from '../types';
 
+const OPENED_CONNECTIONS_KEY = 'open-db-studio-opened-connections';
+
+function saveOpenedConnectionIds(ids: Set<number>) {
+  try {
+    localStorage.setItem(OPENED_CONNECTIONS_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
+export function loadOpenedConnectionIds(): number[] {
+  try {
+    const raw = localStorage.getItem(OPENED_CONNECTIONS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter((id): id is number => typeof id === 'number');
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export interface ConnectionMeta {
   dbVersion: string;
   driver: string;
@@ -107,12 +127,14 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   openConnection: (id) => set((s) => {
     const newIds = new Set(s.activeConnectionIds);
     newIds.add(id);
+    saveOpenedConnectionIds(newIds);
     return { activeConnectionIds: newIds };
   }),
 
   closeConnection: (id) => set((s) => {
     const newIds = new Set(s.activeConnectionIds);
     newIds.delete(id);
+    saveOpenedConnectionIds(newIds);
     return { activeConnectionIds: newIds };
   }),
 

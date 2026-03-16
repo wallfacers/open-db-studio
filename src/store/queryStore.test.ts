@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useQueryStore } from './queryStore';
+import { useQueryStore, loadTabsFromStorage } from './queryStore';
 
 // Reset store state before each test
 beforeEach(() => {
@@ -128,5 +128,37 @@ describe('openTableStructureTab', () => {
     useQueryStore.getState().openTableStructureTab(1, 'mydb', undefined, 'users');
     useQueryStore.getState().openTableStructureTab(1, 'mydb', undefined, 'users');
     expect(useQueryStore.getState().tabs).toHaveLength(1);
+  });
+});
+
+describe('localStorage persistence', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    // Reset store to initial empty state
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+  });
+
+  it('从 unified_tabs_state 加载已保存的 tabs', () => {
+    const saved = { tabs: [{ id: 't1', type: 'query', title: '查询1' }], activeTabId: 't1' };
+    localStorage.setItem('unified_tabs_state', JSON.stringify(saved));
+    const { tabs: loadedTabs, activeTabId: loadedId } = loadTabsFromStorage();
+    expect(loadedTabs).toHaveLength(1);
+    expect(loadedTabs[0].id).toBe('t1');
+    expect(loadedId).toBe('t1');
+  });
+
+  it('从 metrics_tabs_state 迁移并写入新键', () => {
+    const old = { tabs: [{ id: 'm1', type: 'metric', title: 'M1' }], activeTabId: 'm1' };
+    localStorage.setItem('metrics_tabs_state', JSON.stringify(old));
+    const { tabs: loadedTabs } = loadTabsFromStorage();
+    expect(loadedTabs).toHaveLength(1);
+    expect(localStorage.getItem('unified_tabs_state')).not.toBeNull();
+    expect(localStorage.getItem('metrics_tabs_state')).toBeNull();
+  });
+
+  it('两个键都不存在时返回空状态', () => {
+    const { tabs: loadedTabs, activeTabId: loadedId } = loadTabsFromStorage();
+    expect(loadedTabs).toHaveLength(0);
+    expect(loadedId).toBe('');
   });
 });

@@ -91,9 +91,42 @@ interface QueryState {
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
 
+export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string } {
+  try {
+    const raw = localStorage.getItem('unified_tabs_state');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const tabs: Tab[] = parsed.tabs ?? [];
+      // Only return unified state if it has actual data; otherwise fall through to migration
+      if (tabs.length > 0) {
+        return { tabs, activeTabId: parsed.activeTabId ?? '' };
+      }
+    }
+    // One-time migration from old key
+    const oldRaw = localStorage.getItem('metrics_tabs_state');
+    if (oldRaw) {
+      const parsed = JSON.parse(oldRaw);
+      const result = { tabs: parsed.tabs ?? [], activeTabId: parsed.activeTabId ?? '' };
+      localStorage.setItem('unified_tabs_state', JSON.stringify(result));
+      localStorage.removeItem('metrics_tabs_state');
+      return result;
+    }
+    // Return empty unified state if it exists but has no tabs
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { tabs: [], activeTabId: parsed.activeTabId ?? '' };
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return { tabs: [], activeTabId: '' };
+}
+
+const { tabs: initialTabs, activeTabId: initialActiveTabId } = loadTabsFromStorage();
+
 export const useQueryStore = create<QueryState>((set, get) => ({
-  tabs: [DEFAULT_TAB],
-  activeTabId: DEFAULT_TAB.id,
+  tabs: initialTabs.length > 0 ? initialTabs : [DEFAULT_TAB],
+  activeTabId: initialActiveTabId || DEFAULT_TAB.id,
   sqlContent: { [DEFAULT_TAB.id]: '' },
   results: {},
   isExecuting: {},
@@ -391,3 +424,14 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     }
   },
 }));
+
+useQueryStore.subscribe((state) => {
+  try {
+    localStorage.setItem('unified_tabs_state', JSON.stringify({
+      tabs: state.tabs,
+      activeTabId: state.activeTabId,
+    }));
+  } catch {
+    // ignore storage errors
+  }
+});

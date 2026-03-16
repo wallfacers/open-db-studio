@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { format as formatSql } from 'sql-formatter';
-import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
 import { MainContent } from './components/MainContent';
@@ -11,73 +10,19 @@ import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
 import { useAppStore } from './store/appStore';
-import { QueryContext } from './types';
 import { useToolBridge } from './hooks/useToolBridge';
 import { TaskCenter } from './components/TaskCenter';
-import { MetricsLayout } from './components/MetricsExplorer/MetricsLayout';
+import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
 import { GraphExplorer } from './components/GraphExplorer';
 import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
 
-export interface TabData {
-  id: string;
-  type: 'query' | 'table' | 'er_diagram' | 'table_structure';
-  title: string;
-  db?: string;
-  connectionId?: number;
-  schema?: string;
-  queryContext?: QueryContext;
-  isNewTable?: boolean;
-}
-
 export default function App() {
-  const { t } = useTranslation();
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
   const [activeActivity, setActiveActivity] = useState('database');
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
-    'demo': true,
-    'birth_analysis': true,
-    '表': true,
-  });
-  const [activeTab, setActiveTab] = useState('er_diagram');
-  const [tabs, setTabs] = useState<TabData[]>([
-    { id: 'birth_analysis', type: 'query', title: 'birth_analysis', db: 'demo' },
-    { id: 'er_diagram', type: 'er_diagram', title: 'ER Diagram', db: 'demo' }
-  ]);
-  
-  const [sqlContent, setSqlContent] = useState(`SELECT analysis_date, time_period, birth_rate, growth_rate, gender_ratio,
-avg_birth_weight
-FROM birth_trend_analysis
-WHERE region_id = 1
-  AND YEAR(analysis_date) = 2023
-ORDER BY analysis_date, time_period;
-
-SELECT
-    r.name AS region_name, ba.analysis_date, ba.birth_rate, ba.growth_rate,
-    ba.gender_ratio, ba.avg_birth_weight, ba.analysis_result
-FROM
-    birth_trend_analysis ba
-JOIN
-    region r ON ba.region_id = r.id;`);
-
-  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const [isPageSizeMenuOpen, setIsPageSizeMenuOpen] = useState(false);
-  const [isDbMenuOpen, setIsDbMenuOpen] = useState(false);
-  const [isTableMenuOpen, setIsTableMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [tableData, setTableData] = useState([
-    ['2023-01-01', '月度', '12.56', '0.78', '105.23'],
-    ['2023-02-01', '月度', '13.15', '0.78', '105.23'],
-    ['2023-03-01', '月度', '10.99', '1.23', '104.98'],
-    ['2023-04-01', '月度', '11.89', '-0.56', '106.12'],
-    ['2023-05-01', '月度', '13.21', '0.90', '105.56'],
-    ['2023-06-01', '月度', '11.30', '1.12', '104.78'],
-    ['2023-07-01', '月度', '13.45', '-0.67', '106.34'],
-  ]);
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [executionTime, setExecutionTime] = useState(46);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Resizable panel states
@@ -87,7 +32,8 @@ JOIN
   const [isAssistantResizing, setIsAssistantResizing] = useState(false);
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
-  const { results, error: queryError, setActiveTabId, explanationContent, explanationStreaming } = useQueryStore();
+  const { tabs, activeTabId, openQueryTab, openTableDataTab, openTableStructureTab, results, error: queryError, explanationContent, explanationStreaming } = useQueryStore();
+  const activeConnectionId = tabs.find(t => t.id === activeTabId)?.queryContext?.connectionId ?? null;
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
@@ -103,18 +49,16 @@ JOIN
       setTaskCenterVisible(false);
     }
   }, [taskCenterVisible]);
-  // activeTab 变化时同步到 queryStore，供 AI 读取当前 tab SQL
-  useEffect(() => { setActiveTabId(activeTab); }, [activeTab]);
   useEffect(() => {
-    const len = (results[activeTab] ?? []).length;
+    const len = (results[activeTabId] ?? []).length;
     const hasError = !!queryError;
-    const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
+    const hasExplanation = !!(explanationContent[activeTabId] || explanationStreaming[activeTabId]);
     if ((len > 0 || hasError || hasExplanation) && resultsHeight === 0) {
       setResultsHeight(250);
     } else if (len === 0 && !hasError && !hasExplanation && resultsHeight > 0) {
       setResultsHeight(0);
     }
-  }, [results, activeTab, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [results, activeTabId, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [toast, setToast] = useState<{ message: string; level: ToastLevel; markdownContext?: string | null } | null>(null);
 
@@ -124,129 +68,6 @@ JOIN
 
   const showError = (userMessage: string, markdownContext?: string | null) => {
     setToast({ message: userMessage, level: 'error', markdownContext });
-  };
-
-  const toggleFolder = (folder: string) => {
-    setExpandedFolders(prev => ({ ...prev, [folder]: !prev[folder] }));
-  };
-
-  const closeTab = (e: React.MouseEvent, tabId: string) => {
-    e.stopPropagation();
-    const newTabs = tabs.filter(t => t.id !== tabId);
-    setTabs(newTabs);
-    if (activeTab === tabId && newTabs.length > 0) {
-      setActiveTab(newTabs[newTabs.length - 1].id);
-    } else if (newTabs.length === 0) {
-      setActiveTab('');
-    }
-  };
-
-  const closeAllTabs = () => {
-    setTabs([]);
-    setActiveTab('');
-  };
-
-  const closeTabsLeft = (tabId: string) => {
-    const idx = tabs.findIndex(t => t.id === tabId);
-    if (idx <= 0) return;
-    const newTabs = tabs.slice(idx);
-    setTabs(newTabs);
-    if (!newTabs.find(t => t.id === activeTab)) {
-      setActiveTab(newTabs[0]?.id ?? '');
-    }
-  };
-
-  const closeTabsRight = (tabId: string) => {
-    const idx = tabs.findIndex(t => t.id === tabId);
-    if (idx === tabs.length - 1) return;
-    const newTabs = tabs.slice(0, idx + 1);
-    setTabs(newTabs);
-    if (!newTabs.find(t => t.id === activeTab)) {
-      setActiveTab(newTabs[newTabs.length - 1]?.id ?? '');
-    }
-  };
-
-  const closeOtherTabs = (tabId: string) => {
-    const targetTab = tabs.find(t => t.id === tabId);
-    if (!targetTab) return;
-    setTabs([targetTab]);
-    setActiveTab(tabId);
-  };
-
-  const handleOpenTableData = (tableName: string, connectionId: number, database?: string, schema?: string) => {
-    const dbName = database ?? `conn_${connectionId}`;
-    const tabId = `table_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
-    setTabs(prev => {
-      if (!prev.find(t => t.id === tabId)) {
-        return [...prev, { id: tabId, type: 'table', title: tableName, db: dbName, connectionId, schema }];
-      }
-      return prev;
-    });
-    setActiveTab(tabId);
-  };
-
-  const handleOpenTableStructure = (connectionId: number, database?: string, schema?: string, tableName?: string) => {
-    const dbName = database ?? `conn_${connectionId}`;
-    const isNew = !tableName;
-    const tabId = isNew
-      ? `table_structure_new_${connectionId}_${dbName}_${schema ?? ''}_${Date.now()}`
-      : `table_structure_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
-    setTabs(prev => {
-      if (!prev.find(t => t.id === tabId)) {
-        return [...prev, {
-          id: tabId,
-          type: 'table_structure' as const,
-          title: tableName ?? '新建表',
-          db: dbName,
-          connectionId,
-          schema,
-          isNewTable: isNew,
-        }];
-      }
-      return prev;
-    });
-    setActiveTab(tabId);
-  };
-
-  const handleNewQuery = (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => {
-    const tabId = `query_${connId}_${Date.now()}`;
-    const queryCount = tabs.filter(t => t.type === 'query').length + 1;
-    setTabs(prev => [...prev, {
-      id: tabId,
-      type: 'query',
-      title: `查询${queryCount}`,
-      db: connName,
-      queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
-    }]);
-    if (initialSql) {
-      useQueryStore.getState().setSql(tabId, initialSql);
-    }
-    setActiveTab(tabId);
-  };
-
-  const updateTabContext = (tabId: string, context: Partial<QueryContext>) => {
-    setTabs(prev => prev.map(t => {
-      if (t.id !== tabId) return t;
-      const existing = t.queryContext ?? { connectionId: null, database: null, schema: null };
-      return { ...t, queryContext: { ...existing, ...context } };
-    }));
-  };
-
-  const handleExecute = () => {
-    setIsExecuting(true);
-    // Simulate execution delay
-    setTimeout(() => {
-      setIsExecuting(false);
-      setExecutionTime(Math.floor(Math.random() * 100) + 20);
-      
-      // Shuffle data slightly to show it "updated"
-      setTableData(prev => {
-        const newData = [...prev];
-        const first = newData.shift();
-        if (first) newData.push(first);
-        return newData;
-      });
-    }, 800);
   };
 
   const handleFormat = () => {
@@ -264,22 +85,6 @@ JOIN
       showToast('SQL 格式化失败', 'error');
     }
   };
-
-  const handleClear = () => {
-    setSqlContent('');
-  };
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      setIsExportMenuOpen(false);
-      setIsPageSizeMenuOpen(false);
-      setIsDbMenuOpen(false);
-      setIsTableMenuOpen(false);
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
 
   // Resize handlers
   const handleSidebarResize = (e: React.MouseEvent) => {
@@ -355,42 +160,42 @@ JOIN
         showToast={showToast}
       />
 
-      {activeActivity !== 'settings' && activeActivity !== 'tasks' && activeActivity !== 'metrics' && activeActivity !== 'graph' && activeActivity !== 'migration' && (
-        <Explorer
-          isSidebarOpen={isSidebarOpen}
-          sidebarWidth={sidebarWidth}
-          handleSidebarResize={handleSidebarResize}
-          showToast={showToast}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          activeActivity={activeActivity}
-          onNewQuery={handleNewQuery}
-          onOpenTableData={handleOpenTableData}
-          onOpenTableStructure={handleOpenTableStructure}
-        />
+      {activeActivity === 'metrics' ? (
+        <MetricsSidebar sidebarWidth={sidebarWidth} onResize={handleSidebarResize} />
+      ) : (
+        activeActivity !== 'settings' && activeActivity !== 'tasks' &&
+        activeActivity !== 'graph' && activeActivity !== 'migration' && (
+          <Explorer
+            isSidebarOpen={isSidebarOpen}
+            sidebarWidth={sidebarWidth}
+            handleSidebarResize={handleSidebarResize}
+            showToast={showToast}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            activeActivity={activeActivity}
+            onNewQuery={openQueryTab}
+            onOpenTableData={openTableDataTab}
+            onOpenTableStructure={openTableStructureTab}
+          />
+        )
       )}
-      {/* MetricsLayout 始终挂载，保留 Tab 和树展开状态 */}
-      <div className={activeActivity === 'metrics' ? 'flex flex-1 overflow-hidden' : 'hidden'}>
-        <MetricsLayout />
-      </div>
 
       {activeActivity === 'settings' ? (
         <SettingsPage />
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
-      ) : activeActivity === 'metrics' ? null
-      : activeActivity === 'graph' ? (
-        <GraphExplorer connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
+      ) : activeActivity === 'graph' ? (
+        <GraphExplorer connectionId={activeConnectionId} />
       ) : activeActivity === 'migration' ? (
         <MigrationWizard />
       ) : (
-      <MainContent
-        handleFormat={handleFormat}
-        showToast={showToast}
-        showError={showError}
-        resultsHeight={resultsHeight}
-        handleResultsResize={handleResultsResize}
-      />
+        <MainContent
+          handleFormat={handleFormat}
+          showToast={showToast}
+          showError={showError}
+          resultsHeight={resultsHeight}
+          handleResultsResize={handleResultsResize}
+        />
       )}
 
       {activeActivity !== 'settings' && (
@@ -406,7 +211,7 @@ JOIN
             assistantWidth={assistantWidth}
             handleAssistantResize={handleAssistantResize}
             showToast={showToast}
-            activeConnectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null}
+            activeConnectionId={activeConnectionId}
             onOpenSettings={() => setActiveActivity('settings')}
           />
         </div>

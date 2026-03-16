@@ -523,7 +523,10 @@ export function LlmSettingsPanel() {
 
       {/* 删除确认 */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}
+        >
           <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-white font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>

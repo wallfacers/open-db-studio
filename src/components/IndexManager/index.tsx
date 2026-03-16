@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Trash2, Plus, X } from 'lucide-react';
 import type { IndexMeta, TableDetail } from '../../types';
 import { useEscClose } from '../../hooks/useEscClose';
+import { useConfirm } from '../../hooks/useConfirm';
 import type { ToastLevel } from '../Toast';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 
 export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose, showToast }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [indexes, setIndexes] = useState<IndexMeta[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [newIndex, setNewIndex] = useState({ name: '', columns: '', unique: false });
@@ -30,7 +32,7 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
   useEffect(() => { loadIndexes(); }, [connectionId, tableName]);
 
   const handleDrop = async (indexName: string) => {
-    if (!window.confirm(`${t('indexManager.confirmDrop')} "${indexName}"?`)) return;
+    if (!await confirm({ message: `${t('indexManager.confirmDrop')} "${indexName}"?`, variant: 'danger' })) return;
     try {
       await invoke('execute_query', {
         connectionId,
@@ -62,7 +64,10 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-[560px] max-h-[70vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
           <span className="text-[#c8daea] text-sm font-medium">{t('indexManager.title')} — {tableName}</span>

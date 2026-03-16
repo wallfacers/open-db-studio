@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
   RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput,
@@ -65,15 +66,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
+  useClickOutside(menuRef, onClose);
 
   const getMenuItems = (): MenuItem[] => {
     switch (node.nodeType) {
@@ -152,12 +145,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+      className="fixed z-50 bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl py-1 min-w-[160px]"
       style={{ left: safeX, top: safeY }}
     >
       {items.map((item) => (
         <React.Fragment key={item.label}>
-          {item.dividerBefore && <div className="h-px bg-[#2a3f5a] my-1" />}
+          {item.dividerBefore && <div className="h-px bg-[#253347] my-1" />}
           <button
             disabled={item.disabled}
             className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${
@@ -167,7 +160,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 ? 'text-red-400 hover:bg-[#1a2639] hover:text-red-300'
                 : 'text-[#c8daea] hover:bg-[#1a2639] hover:text-white'
             }`}
-            onClick={() => { if (!item.disabled) { item.onClick(); onClose(); } }}
+            onClick={() => { if (!item.disabled) { onClose(); item.onClick(); } }}
           >
             <item.icon size={13} />
             {item.label}

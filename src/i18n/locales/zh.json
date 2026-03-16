@@ -379,6 +379,8 @@
   "common": {
     "cancel": "取消",
     "confirm": "确认",
+    "confirmTitle": "确认操作",
+    "infoTitle": "提示",
     "execute": "执行",
     "executing": "执行中...",
     "close": "关闭",

@@ -50,7 +50,10 @@ export const ExportDialog: React.FC<Props> = ({ connectionId, database, tableNam
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-96 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-white font-semibold">{t('export.title', { table: tableName })}</h3>

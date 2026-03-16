@@ -379,6 +379,8 @@
   "common": {
     "cancel": "Cancel",
     "confirm": "Confirm",
+    "confirmTitle": "Confirm Action",
+    "infoTitle": "Info",
     "execute": "Execute",
     "executing": "Executing...",
     "close": "Close",

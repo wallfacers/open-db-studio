@@ -52,13 +52,16 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2
+  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
+  BarChart2,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
 import { TableStructureView } from './TableStructureView';
 import { CellEditorModal } from './CellEditorModal';
 import ERDiagram from '../ERDiagram';
+import { MetricTab } from '../MetricsExplorer/MetricTab';
+import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
 import type { ToastLevel } from '../Toast';
@@ -572,6 +575,10 @@ export const MainContent: React.FC<MainContentProps> = ({
               <DatabaseZap size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'table_structure' ? (
               <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'metric' ? (
+              <BarChart2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'metric_list' ? (
+              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
@@ -612,6 +619,17 @@ export const MainContent: React.FC<MainContentProps> = ({
               schema={activeTabObj.schema}
               onSuccess={() => showToast('操作成功', 'success')}
               showToast={showToast}
+            />
+          </div>
+        ) : activeTabObj.type === 'metric' && activeTabObj.metricId ? (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <MetricTab metricId={activeTabObj.metricId} />
+          </div>
+        ) : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <MetricListPanel
+              scope={activeTabObj.metricScope}
+              onOpenMetric={(id, title) => useQueryStore.getState().openMetricTab(id, title)}
             />
           </div>
         ) : (

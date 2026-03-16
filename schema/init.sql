@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_metrics_conn ON metrics(connection_id);
 CREATE INDEX IF NOT EXISTS idx_metrics_status ON metrics(status);
-CREATE INDEX IF NOT EXISTS idx_metrics_node ON metrics(connection_id, scope_database, scope_schema);
+-- idx_metrics_node 在 migrations.rs 中创建（需等 scope_database/scope_schema 列迁移完成后）
 
 -- 业务语义别名
 CREATE TABLE IF NOT EXISTS semantic_aliases (

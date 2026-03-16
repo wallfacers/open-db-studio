@@ -385,14 +385,6 @@ JOIN
         <MigrationWizard />
       ) : (
       <MainContent
-        tabs={tabs}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        closeTab={closeTab}
-        closeAllTabs={closeAllTabs}
-        closeTabsLeft={closeTabsLeft}
-        closeTabsRight={closeTabsRight}
-        closeOtherTabs={closeOtherTabs}
         sqlContent={sqlContent}
         setSqlContent={setSqlContent}
         handleExecute={handleExecute}
@@ -413,7 +405,6 @@ JOIN
         setIsExportMenuOpen={setIsExportMenuOpen}
         tableData={tableData}
         executionTime={executionTime}
-        updateTabContext={updateTabContext}
       />
       )}
 

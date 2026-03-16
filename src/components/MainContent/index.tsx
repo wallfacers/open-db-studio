@@ -4,7 +4,7 @@ import type { editor as MonacoEditorType, languages as MonacoLanguages } from 'm
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { FullSchemaInfo, QueryContext } from '../../types';
+import { FullSchemaInfo } from '../../types';
 import { useAppStore } from '../../store/appStore';
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
@@ -55,7 +55,6 @@ import {
   RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
-import { TabData } from '../../App';
 import { TableDataView } from './TableDataView';
 import { TableStructureView } from './TableStructureView';
 import { CellEditorModal } from './CellEditorModal';
@@ -69,14 +68,6 @@ import { askAiWithContext } from '../../utils/askAi';
 import { MarkdownContent } from '../shared/MarkdownContent';
 
 interface MainContentProps {
-  tabs: TabData[];
-  activeTab: string;
-  setActiveTab: (tabId: string) => void;
-  closeTab: (e: React.MouseEvent, tabId: string) => void;
-  closeAllTabs: () => void;
-  closeTabsLeft: (tabId: string) => void;
-  closeTabsRight: (tabId: string) => void;
-  closeOtherTabs: (tabId: string) => void;
   sqlContent: string;
   setSqlContent: (content: string) => void;
   handleExecute: () => void;
@@ -96,7 +87,6 @@ interface MainContentProps {
   setIsExportMenuOpen: (isOpen: boolean) => void;
   tableData: any[];
   executionTime: number;
-  updateTabContext: (tabId: string, context: Partial<QueryContext>) => void;
   showError?: (msg: string, ctx?: string | null) => void;
 }
 
@@ -206,17 +196,18 @@ const ExplanationTypingIndicator: React.FC = () => {
 };
 
 export const MainContent: React.FC<MainContentProps> = ({
-  tabs, activeTab, setActiveTab, closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
   handleFormat, showToast,
   isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize,
   isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
-  updateTabContext,
   showError,
 }) => {
   const { t } = useTranslation();
   const setAssistantOpen = useAppStore((s) => s.setAssistantOpen);
-  const { sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results, error, diagnosis,
+  const { tabs, activeTabId: activeTab, setActiveTabId: setActiveTab,
+          closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
+          updateTabContext,
+          sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results, error, diagnosis,
           removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults,
           explanationContent, explanationStreaming,
           appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
@@ -605,7 +596,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             <Tooltip content={t('mainContent.closeTab')}>
               <div
                 className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
-                onClick={(e) => closeTab(e, tab.id)}
+                onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               >
                 <X size={12} />
               </div>
@@ -996,8 +987,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
-              const e = { stopPropagation: () => {} } as React.MouseEvent;
-              closeTab(e, contextMenu.tabId);
+              closeTab(contextMenu.tabId);
               setContextMenu(null);
             }}
           >

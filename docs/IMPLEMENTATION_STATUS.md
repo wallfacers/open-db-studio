@@ -102,31 +102,61 @@
 
 ---
 
-## 未开始的设计文档 ❌
+## V2 阶段（Q4 2026）— 已完成 ✅
 
-暂无 - 所有设计文档都在进行中或已完成
+| 功能 | 实现文件 | 备注 |
+|------|---------|------|
+| graph/ 模块骨架 | `src-tauri/src/graph/mod.rs` | builder/traversal/query 三子模块 |
+| Schema 图构建（information_schema → 节点/边） | `graph/builder.rs` | 表/列/FK → graph_nodes/graph_edges |
+| BFS 路径推断（JOIN 路径发现） | `graph/traversal.rs` | BFS 多跳遍历 |
+| 图查询接口 | `graph/query.rs` | `search_graph`, `find_relevant_subgraph` |
+| metrics/ CRUD | `metrics/crud.rs` | list/save/delete/approve，status 流转 draft→approved |
+| AI 生成指标草稿 | `metrics/ai_draft.rs` | 扫描 Schema + 样本 → LLM 生成 |
+| Text-to-SQL v2 管道 | `pipeline/` | entity_extract → context_builder → sql_validator |
+| migration/ DDL 转换 | `migration/ddl_convert.rs` | 跨方言类型映射表（MySQL/PG/Oracle/MSSQL） |
+| migration/ 预检 | `migration/precheck.rs` | type_compat/null_constraint/pk_conflict 三类检查 |
+| migration/ 数据泵 | `migration/data_pump.rs` | 分批读写 + Tauri Event `migration:progress` 广播 |
+| migration/ 任务管理 | `migration/task_mgr.rs` | 状态机 pending/running/paused/done/failed |
+| GraphExplorer 前端 | `src/components/GraphExplorer/index.tsx` | 图谱主面板 |
+| MetricsPanel 前端 | `src/components/MetricsPanel/index.tsx` | 指标列表 + draft/approved/rejected 分组 |
+| MigrationWizard 前端 | `src/components/MigrationWizard/index.tsx` | 4 步向导：源/目标选择→表映射→预检→实时进度 |
+| SQL Explain ACP | `commands.rs`（`ai_explain_sql_acp`）| Channel 流式 + 取消，结果渲染在独立 Tab |
+| SQL Optimize ACP | `commands.rs`（`ai_optimize_sql`，重构）| 流式 + 取消，`/mcp/optimize` 独立只读端点 |
+| MCP propose_sql_diff | `mcp/mod.rs`（`propose_sql_diff` 工具）| AI 提议 SQL 修改 → Tauri 事件 → DiffPanel 确认 |
+| useToolBridge 前端 | `src/hooks/useToolBridge.ts` | 监听 `sql-diff-proposal` 事件，调用 proposeSqlDiff |
+| 数据库树任意节点新建查询 | `Explorer/DBTree.tsx`, `App.tsx` | table/view/column 预填 SQL 模板，category 补全上下文 |
+| AI 助手浮动按钮 + 会话历史 | `Assistant/index.tsx` | 浮动开关 + AI 生成会话标题 + 历史列表 |
+| Smart Error AI Context | `Toast`, `TaskCenter`, 错误区域 | "问 AI" 按钮，i18n 支持 zh/en |
+| ActivityBar V2 重构 | `ActivityBar/index.tsx` | 移除废弃入口，添加指标/图谱/迁移，底部改为 tasks/settings |
+| 启动恢复已打开连接 | `connectionStore.ts`, `Explorer/index.tsx` | localStorage 持久化，静默恢复上次会话 |
+
+### SQLite Schema 新增 6 张表
+`graph_nodes`, `graph_edges`, `metrics`, `semantic_aliases`, `migration_tasks`, `migration_checks`（均已追加至 `schema/init.sql`）
+
+### docs/superpowers/plans/ V2 计划文档
+| 文档 | 状态 |
+|------|------|
+| `2026-03-16-v2-design.md` | ✅ 已实现 |
+| `2026-03-16-v2-knowledge-graph-metrics-pipeline.md` | ✅ 已实现 |
+| `2026-03-16-v2-migration.md` | ✅ 已实现 |
+| `2026-03-16-sql-explain-acp.md` | ✅ 已实现（commit 170c0bb） |
+| `2026-03-16-sql-optimize-acp.md` | ✅ 已实现（commit 170c0bb） |
+| `2026-03-16-new-query-from-any-node.md` | ✅ 已实现（commit 736d0cc） |
+| `2026-03-13-propose-sql-diff-mcp.md` | ✅ 已实现（mcp/mod.rs + useToolBridge.ts） |
+| `2026-03-13-conversational-sql-editor.md` | ✅ 已实现（commit 05ecff6） |
+| `2026-03-13-smart-error-ai-context.md` | ✅ 已实现（commit f7b4d45） |
+| `2026-03-13-import-export-task-center.md` | ✅ 已实现（commit 62a3ae1） |
+| `2026-03-13-export-backup-enhancement.md` | ✅ 已实现（commit 62a3ae1） |
 
 ---
 
-## 下一步：V2 阶段
+## 下一步：V3 阶段（2027）
 
-1. **GraphRAG 知识图谱引擎**
-   - Schema 实体图构建（表/列/外键 → 图节点和边）
-   - 关系路径推断（自动发现 JOIN 路径）
-   - 图谱可视化（ERD + 业务语义标注）
-
-2. **业务指标层**
-   - 指标定义（名称/字段/聚合函数/业务含义）
-   - AI 生成指标草稿 + 用户审核确认
-   - 指标检索增强（提问时注入相关指标定义）
-
-3. **高精度 Text-to-SQL 管道**
-   - 指标 + GraphRAG + Schema 融合 Prompt 构建
-   - SQL 语法校验（生成后自动检查）
-
-4. **跨数据源迁移**（Rust 原生实现）
-   - DDL 跨方言转换（类型映射）
-   - 分批数据迁移（进度展示 + 错误报告）
+1. **Milvus 向量库集成**（本地 + 独立部署两种模式）
+2. **完整 RAG 管道**（向量 + 指标 + GraphRAG 三路融合）
+3. **插件系统**（数据源/AI 提供商/导出格式）
+4. **团队协作**（SQL 片段共享、指标库导出/导入）
+5. **SeaTunnel 外部引擎接入**
 
 ---
 
@@ -138,3 +168,4 @@
 | 2026-03-11 | 添加 insert_row 命令实现状态 |
 | 2026-03-16 | 标记 TableDataView 行操作增强、表右键菜单扩展为已完成 |
 | 2026-03-16 | 全面代码评估：补录 Oracle/SQL Server 驱动、数据导入、DML 报告、可视化编辑器；MVP + V1 阶段 100% 完成；文档整体重整 |
+| 2026-03-16 | V2 阶段全部实现：图谱/指标/迁移/pipeline 模块 + 前端三大面板 + SQL ACP + propose_sql_diff；ActivityBar 重构；启动恢复连接 |

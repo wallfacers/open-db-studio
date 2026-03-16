@@ -4,8 +4,11 @@ mod crypto;
 mod datasource;
 mod db;
 mod error;
+mod graph;
 mod llm;
 mod mcp;
+mod metrics;
+mod pipeline;
 mod state;
 
 pub use error::{AppError, AppResult};

@@ -1973,3 +1973,41 @@ pub async fn show_in_folder(path: String) -> AppResult<()> {
     }
     Ok(())
 }
+
+// ============ 指标管理 ============
+
+#[tauri::command]
+pub async fn list_metrics(
+    connection_id: i64,
+    status: Option<String>,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::list_metrics(connection_id, status.as_deref())
+}
+
+#[tauri::command]
+pub async fn save_metric(
+    input: crate::metrics::CreateMetricInput,
+) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::save_metric(&input)
+}
+
+#[tauri::command]
+pub async fn update_metric(
+    id: i64,
+    input: crate::metrics::UpdateMetricInput,
+) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::crud::update_metric(id, &input)
+}
+
+#[tauri::command]
+pub async fn delete_metric(id: i64) -> AppResult<()> {
+    crate::metrics::delete_metric(id)
+}
+
+#[tauri::command]
+pub async fn approve_metric(id: i64, status: String) -> AppResult<crate::metrics::Metric> {
+    if status != "approved" && status != "rejected" {
+        return Err(crate::AppError::Other("status must be 'approved' or 'rejected'".into()));
+    }
+    crate::metrics::set_metric_status(id, &status)
+}

@@ -4,7 +4,6 @@ pub mod precheck;
 pub mod task_mgr;
 
 pub use task_mgr::{
-    MigrationTask, MigrationConfig, MigrationStatus, MigrationTableConfig, MigrationProgress,
+    MigrationTask, MigrationConfig,
     create_task, get_task, list_tasks, start_migration, pause_migration,
 };
-pub use precheck::{run_precheck, PreCheckResult, CheckItem};

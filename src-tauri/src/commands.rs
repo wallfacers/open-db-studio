@@ -2011,3 +2011,29 @@ pub async fn approve_metric(id: i64, status: String) -> AppResult<crate::metrics
     }
     crate::metrics::set_metric_status(id, &status)
 }
+
+// ============ 知识图谱 ============
+
+#[tauri::command]
+pub async fn build_schema_graph(
+    connection_id: i64,
+    app_handle: tauri::AppHandle,
+) -> AppResult<usize> {
+    crate::graph::build_schema_graph(connection_id, app_handle).await
+}
+
+#[tauri::command]
+pub async fn get_graph_nodes(
+    connection_id: i64,
+    node_type: Option<String>,
+) -> AppResult<Vec<crate::graph::GraphNode>> {
+    crate::graph::query::get_nodes(connection_id, node_type.as_deref())
+}
+
+#[tauri::command]
+pub async fn search_graph(
+    connection_id: i64,
+    keyword: String,
+) -> AppResult<Vec<crate::graph::GraphNode>> {
+    crate::graph::search_graph(connection_id, &keyword)
+}

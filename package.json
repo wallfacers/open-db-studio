@@ -53,6 +53,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.0.0",
     "html-to-image": "^1.11.13",
+    "jsdom": "^29.0.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",

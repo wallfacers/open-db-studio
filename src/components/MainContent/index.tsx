@@ -52,7 +52,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
-  RefreshCw, Download, Search, Filter, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
+  RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
   BarChart2,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
@@ -579,6 +579,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <BarChart2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'metric_list' ? (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'table' ? (
+              <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}

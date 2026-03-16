@@ -51,6 +51,10 @@ interface QueryState {
   openMetricTab: (metricId: number, title: string) => void;
   openMetricListTab: (scope: import('../types').MetricScope, title: string) => void;
 
+  openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
+  openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
+  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
+
   closeTab: (tabId: string) => void;
   closeAllTabs: () => void;
   closeTabsLeft: (tabId: string) => void;
@@ -126,6 +130,49 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         metricScope: scope,
       };
       return { tabs: [...s.tabs, tab], activeTabId: key };
+    });
+  },
+
+  openQueryTab: (connId, connName, database, schema, initialSql) => {
+    const id = `query_${connId}_${Date.now()}`;
+    const queryCount = get().tabs.filter(t => t.type === 'query').length + 1;
+    const tab: Tab = {
+      id,
+      type: 'query',
+      title: `查询${queryCount}`,
+      db: connName,
+      queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
+    };
+    // Add tab first, then set SQL content
+    set(s => ({ tabs: [...s.tabs, tab], activeTabId: id }));
+    if (initialSql) get().setSql(id, initialSql);
+  },
+
+  openTableDataTab: (tableName, connectionId, database, schema) => {
+    const dbName = database ?? `conn_${connectionId}`;
+    const id = `table_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+    set(s => {
+      if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
+      const tab: Tab = { id, type: 'table', title: tableName, db: dbName, connectionId, schema };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+
+  openTableStructureTab: (connectionId, database, schema, tableName) => {
+    const dbName = database ?? `conn_${connectionId}`;
+    const isNew = !tableName;
+    const id = isNew
+      ? `table_structure_new_${connectionId}_${dbName}_${schema ?? ''}_${Date.now()}`
+      : `table_structure_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+    set(s => {
+      if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
+      const tab: Tab = {
+        id, type: 'table_structure',
+        title: tableName ?? '新建表',
+        db: dbName, connectionId, schema,
+        isNewTable: isNew,
+      };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },
 

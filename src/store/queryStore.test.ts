@@ -83,3 +83,35 @@ describe('updateTabContext', () => {
     expect(q2?.queryContext).toBeUndefined();
   });
 });
+
+describe('openQueryTab', () => {
+  it('新建查询 tab', () => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+    useQueryStore.getState().openQueryTab(1, 'myconn', 'mydb');
+    const { tabs, activeTabId } = useQueryStore.getState();
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].type).toBe('query');
+    expect(tabs[0].queryContext?.connectionId).toBe(1);
+    expect(tabs[0].queryContext?.database).toBe('mydb');
+    expect(activeTabId).toBe(tabs[0].id);
+  });
+});
+
+describe('openTableDataTab', () => {
+  it('相同 table 不重复开 tab', () => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+    useQueryStore.getState().openTableDataTab('users', 1, 'mydb');
+    useQueryStore.getState().openTableDataTab('users', 1, 'mydb');
+    expect(useQueryStore.getState().tabs).toHaveLength(1);
+  });
+});
+
+describe('openTableStructureTab', () => {
+  it('新建表时 title 为 新建表', () => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+    useQueryStore.getState().openTableStructureTab(1, 'mydb');
+    const { tabs } = useQueryStore.getState();
+    expect(tabs[0].title).toBe('新建表');
+    expect(tabs[0].isNewTable).toBe(true);
+  });
+});

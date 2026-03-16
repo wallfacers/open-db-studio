@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, memo } from 'react';
+import React, { useRef, useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -100,8 +100,17 @@ export const Assistant: React.FC<AssistantProps> = ({
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
-  const chattingSessionIds = useAiStore((s) =>
-    new Set(Object.entries(s.chatStates).filter(([, v]) => v.isChatting).map(([k]) => k))
+  // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
+  const chattingSessionIdsStr = useAiStore((s) =>
+    Object.entries(s.chatStates)
+      .filter(([, v]) => v.isChatting)
+      .map(([k]) => k)
+      .sort()
+      .join(',')
+  );
+  const chattingSessionIds = useMemo(
+    () => new Set(chattingSessionIdsStr ? chattingSessionIdsStr.split(',') : []),
+    [chattingSessionIdsStr]
   );
   // 当前 session 的模型配置 ID（从 sessions 读取）
   const activeConfigId = sessions.find((s) => s.id === currentSessionId)?.configId ?? null;

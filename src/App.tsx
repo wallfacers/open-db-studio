@@ -16,6 +16,7 @@ import { useToolBridge } from './hooks/useToolBridge';
 import { TaskCenter } from './components/TaskCenter';
 import { MetricsPanel } from './components/MetricsPanel';
 import { GraphExplorer } from './components/GraphExplorer';
+import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 
@@ -352,7 +353,7 @@ JOIN
         showToast={showToast}
       />
 
-      {activeActivity !== 'settings' && activeActivity !== 'tasks' && activeActivity !== 'metrics' && activeActivity !== 'graph' && (
+      {activeActivity !== 'settings' && activeActivity !== 'tasks' && activeActivity !== 'metrics' && activeActivity !== 'graph' && activeActivity !== 'migration' && (
         <Explorer
           isSidebarOpen={isSidebarOpen}
           sidebarWidth={sidebarWidth}
@@ -374,6 +375,8 @@ JOIN
         <MetricsPanel connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
       ) : activeActivity === 'graph' ? (
         <GraphExplorer connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
+      ) : activeActivity === 'migration' ? (
+        <MigrationWizard />
       ) : (
       <MainContent
         tabs={tabs}

@@ -4,6 +4,7 @@ import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, 
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { DiffPanel } from './DiffPanel';
+import ElicitationPanel from './ElicitationPanel';
 import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
@@ -96,9 +97,11 @@ export const Assistant: React.FC<AssistantProps> = ({
   const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
+  const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
+  const pendingElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingElicitation ?? null);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -510,6 +513,28 @@ export const Assistant: React.FC<AssistantProps> = ({
               )
             )}
             {isChatting && <StreamingMessage sessionId={currentSessionId} />}
+
+              {/* 权限确认面板（isChatting=true 时，ACP native 路径） */}
+              {pendingPermission && (
+                <ElicitationPanel
+                  type="permission"
+                  request={pendingPermission}
+                  onRespond={(optionId, cancelled) =>
+                    respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
+                  }
+                />
+              )}
+
+              {/* 选项选择面板（isChatting=false 时，文字检测路径） */}
+              {!isChatting && pendingElicitation && (
+                <ElicitationPanel
+                  type="elicitation"
+                  request={pendingElicitation}
+                  onSelect={(text) => respondElicitation(currentSessionId, text)}
+                  onCancel={() => clearElicitation(currentSessionId)}
+                />
+              )}
+
             <div ref={chatEndRef} />
           </div>
 

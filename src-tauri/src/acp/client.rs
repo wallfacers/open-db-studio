@@ -5,6 +5,7 @@ use agent_client_protocol::{
     Agent, Client, ClientSideConnection, InitializeRequest, InitializeResponse,
     NewSessionRequest, NewSessionResponse, ProtocolVersion,
     RequestPermissionRequest, RequestPermissionResponse, RequestPermissionOutcome,
+    SelectedPermissionOutcome, PermissionOptionKind,
     SessionNotification, SessionUpdate, ContentBlock,
     McpServer, McpServerHttp,
 };
@@ -22,6 +23,14 @@ use crate::llm::StreamEvent;
 /// - 使用 std::sync::Mutex（不跨 await 持锁，性能足够）
 pub struct AcpClientHandler {
     pub(crate) tx: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<StreamEvent>>>>,
+    pub(crate) pending_permissions: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                tokio::sync::oneshot::Sender<crate::state::PermissionReply>,
+            >,
+        >,
+    >,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -77,21 +86,72 @@ impl Client for AcpClientHandler {
         &self,
         req: RequestPermissionRequest,
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
-        // TODO: 当前对所有工具请求自动授权（仅适用于只读数据库工具）
-        // 未来需接入前端权限确认弹窗以支持写操作
-        use agent_client_protocol::PermissionOptionKind;
-        let allow_option = req.options.iter().find(|o| {
-            matches!(o.kind, PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways)
+        let permission_id = uuid::Uuid::new_v4().to_string();
+
+        // 1. 构建选项列表（单次 match 同时解构 label/kind，避免对非 Copy 枚举二次移动）
+        // PermissionOptionKind 是 #[non_exhaustive]，需保留 `_` 通配分支
+        let options: Vec<crate::llm::PermissionOption> = req.options.iter().map(|o| {
+            let (label, kind) = match o.kind {
+                PermissionOptionKind::AllowOnce   => ("允许一次", "allow_once"),
+                PermissionOptionKind::AllowAlways => ("总是允许", "allow_always"),
+                PermissionOptionKind::RejectOnce  => ("拒绝一次", "reject_once"),
+                PermissionOptionKind::RejectAlways => ("总是拒绝", "reject_always"),
+                _                                 => ("拒绝",     "deny"),
+            };
+            crate::llm::PermissionOption {
+                option_id: o.option_id.to_string(),
+                label: label.to_string(),
+                kind: kind.to_string(),
+            }
+        }).collect();
+
+        // 2. 创建 oneshot channel，tx 存入 pending map（短暂持锁，不跨 await）
+        let (tx, rx) = tokio::sync::oneshot::channel::<crate::state::PermissionReply>();
+        {
+            self.pending_permissions
+                .lock().unwrap()
+                .insert(permission_id.clone(), tx);
+        }
+
+        // 3. 构建工具描述信息（从 tool_call.fields.title 中获取）
+        let message = req.tool_call.fields.title
+            .as_deref()
+            .unwrap_or("工具执行")
+            .to_string();
+
+        // 4. 发送 PermissionRequest 事件给前端（短暂持锁，不跨 await）
+        {
+            let tx_opt = self.tx.lock().unwrap().clone();
+            if let Some(ref event_tx) = tx_opt {
+                let _ = event_tx.send(crate::llm::StreamEvent::PermissionRequest {
+                    permission_id: permission_id.clone(),
+                    message,
+                    options,
+                });
+            }
+        }
+
+        // 5. 等待用户响应
+        // LocalSet 内 rx.await 的安全性：
+        // - rx.await 挂起当前 task，LocalSet 继续轮询 io_future 等其他 task
+        // - Tauri 命令（多线程 runtime）调用 tx.send()，oneshot::Sender 是 Send 可跨线程
+        // - tx.send() 触发 waker，LocalSet 下次轮询时恢复此 future
+        let reply = rx.await.unwrap_or(crate::state::PermissionReply {
+            selected_option_id: String::new(),
+            cancelled: true,
         });
 
-        let outcome = if let Some(opt) = allow_option {
-            RequestPermissionOutcome::Selected(
-                agent_client_protocol::SelectedPermissionOutcome::new(opt.option_id.clone()),
-            )
-        } else {
-            RequestPermissionOutcome::Cancelled
-        };
+        // 6. 兜底清理（正常情况 rx.await 已消费，此处防止异常泄漏）
+        self.pending_permissions.lock().unwrap().remove(&permission_id);
 
+        // 7. 转换为 ACP 响应
+        let outcome = if reply.cancelled {
+            RequestPermissionOutcome::Cancelled
+        } else {
+            RequestPermissionOutcome::Selected(
+                SelectedPermissionOutcome::new(reply.selected_option_id),
+            )
+        };
         Ok(RequestPermissionResponse::new(outcome))
     }
 }
@@ -159,6 +219,7 @@ pub async fn start_acp_session(
     Arc<tokio::sync::Mutex<ClientSideConnection>>,
     String,
     tokio::process::Child,
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<crate::state::PermissionReply>>>>,
 )> {
     let config_path = cwd.join("opencode.json");
 
@@ -201,7 +262,11 @@ pub async fn start_acp_session(
     let local_tx = spawn_local_thread();
     let local_tx_for_spawn = local_tx.clone();
 
-    let handler = AcpClientHandler { tx: shared_event_tx };
+    let pending_permissions_arc = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let handler = AcpClientHandler {
+        tx: shared_event_tx,
+        pending_permissions: Arc::clone(&pending_permissions_arc),
+    };
 
     // The spawn callback is called synchronously inside ClientSideConnection::new
     // (via handle_incoming) to schedule the internal message-dispatch loop.
@@ -280,5 +345,5 @@ pub async fn start_acp_session(
         t_sess.elapsed().as_secs_f32(), t0.elapsed().as_secs_f32());
 
     let session_id = session_resp.session_id.to_string();
-    Ok((connection, session_id, child))
+    Ok((connection, session_id, child, pending_permissions_arc))
 }

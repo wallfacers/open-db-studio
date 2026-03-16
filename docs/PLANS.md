@@ -27,17 +27,21 @@
 - [x] TableDataView 行操作增强（内联编辑、批量提交）
 - [x] 表右键菜单扩展（查看 DDL、截断表、可视化编辑器）
 
+
 ### 进行中
-- (无)
+- （无）
+
+### 已完成（补录）
+- [x] Oracle 驱动实现（oracle crate，可选 feature，需 Oracle Instant Client）
+- [x] SQL Server 驱动实现（tiberius）
+- [x] 数据导入（CSV/JSON/Excel 字段映射，ImportWizard 4 步向导）
 
 ### 待开始
-- [ ] Oracle 驱动实现（oracle crate）
-- [ ] SQL Server 驱动实现（tiberius）
-- [ ] 数据导入（CSV/JSON/Excel 字段映射）
+- （无，MVP 阶段全部完成）
 
 ---
 
-## V1 阶段（Q3 2026）—— 好用 — 进行中 🔄
+## V1 阶段（Q3 2026）—— 好用 — 已完成 ✅
 
 ### 完整 DB 管理
 - [x] 表管理 GUI（建表/改表/删表 + DDL 预览）
@@ -55,7 +59,7 @@
 
 ### 数据导入导出
 - [x] 导出：CSV / JSON / SQL Dump（含导出 UI）
-- [ ] 导入：CSV / JSON / Excel 字段映射写入 - 待实现
+- [x] 导入：CSV / JSON / Excel 字段映射写入（ImportWizard + import_to_table 命令）
 - [x] 带 WHERE 条件的部分数据导出
 
 ### AI 能力增强

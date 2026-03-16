@@ -179,6 +179,63 @@ fn tool_definitions() -> Value {
     })
 }
 
+fn optimize_tool_definitions() -> Value {
+    json!({
+        "tools": [
+            {
+                "name": "list_databases",
+                "description": "List all databases for a connection",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer", "description": "Connection ID" }
+                    },
+                    "required": ["connection_id"]
+                }
+            },
+            {
+                "name": "list_tables",
+                "description": "List all tables in a database",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "database": { "type": "string" }
+                    },
+                    "required": ["connection_id", "database"]
+                }
+            },
+            {
+                "name": "get_table_schema",
+                "description": "Get column definitions, indexes, and foreign keys for a table",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "table": { "type": "string" },
+                        "database": { "type": "string" }
+                    },
+                    "required": ["connection_id", "table"]
+                }
+            },
+            {
+                "name": "get_table_sample",
+                "description": "Get sample rows from a table (max 20 rows)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "table": { "type": "string" },
+                        "database": { "type": "string" },
+                        "limit": { "type": "integer" }
+                    },
+                    "required": ["connection_id", "table"]
+                }
+            }
+        ]
+    })
+}
+
 async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> crate::AppResult<String> {
     match name {
         "list_databases" => {
@@ -390,6 +447,43 @@ async fn handle_mcp(
     }
 }
 
+async fn handle_optimize_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    Sse::new(stream::pending()).keep_alive(KeepAlive::default())
+}
+
+async fn handle_optimize_mcp(
+    State(handle): State<Arc<tauri::AppHandle>>,
+    Json(req): Json<JsonRpcRequest>,
+) -> Json<JsonRpcResponse> {
+    let id = req.id.clone();
+    match req.method.as_str() {
+        "initialize" => Json(JsonRpcResponse::ok(id, json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": { "tools": {} },
+            "serverInfo": { "name": "open-db-studio-optimize", "version": "0.1.0" }
+        }))),
+        "notifications/initialized" => Json(JsonRpcResponse::ok(id, json!(null))),
+        "tools/list" => Json(JsonRpcResponse::ok(id, optimize_tool_definitions())),
+        "tools/call" => {
+            let params = req.params.unwrap_or(Value::Null);
+            let name = params["name"].as_str().unwrap_or("").to_string();
+            let args = params["arguments"].clone();
+            // 白名单校验：只允许 4 个只读工具
+            let allowed = ["list_databases", "list_tables", "get_table_schema", "get_table_sample"];
+            if !allowed.contains(&name.as_str()) {
+                return Json(JsonRpcResponse::err(id, -32601, "Tool not available in optimize mode"));
+            }
+            match call_tool(Arc::clone(&handle), &name, args).await {
+                Ok(text) => Json(JsonRpcResponse::ok(id, json!({
+                    "content": [{ "type": "text", "text": text }]
+                }))),
+                Err(e) => Json(JsonRpcResponse::err(id, -32000, &e.to_string())),
+            }
+        }
+        _ => Json(JsonRpcResponse::err(id, -32601, "Method not found")),
+    }
+}
+
 pub async fn start_mcp_server(app_handle: tauri::AppHandle) -> crate::AppResult<u16> {
     // 优先使用固定端口便于调试；若已被占用则退回随机端口
     let listener = TcpListener::bind("127.0.0.1:19876")
@@ -401,6 +495,8 @@ pub async fn start_mcp_server(app_handle: tauri::AppHandle) -> crate::AppResult<
     let app = Router::new()
         .route("/mcp", get(handle_mcp_sse))
         .route("/mcp", post(handle_mcp))
+        .route("/mcp/optimize", get(handle_optimize_mcp_sse))
+        .route("/mcp/optimize", post(handle_optimize_mcp))
         .with_state(Arc::new(app_handle));
 
     listener.set_nonblocking(true)

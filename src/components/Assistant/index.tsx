@@ -1,118 +1,14 @@
-import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
+import React, { useRef, useEffect, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Square, ChevronLeft, MessageSquare } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
+import { MarkdownContent } from '../shared/MarkdownContent';
 import { DiffPanel } from './DiffPanel';
 import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
 import { useAppStore } from '../../store/appStore';
 import type { ToastLevel } from '../Toast';
-
-// ── 代码块 ──────────────────────────────────────────────────────────────────
-const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [code]);
-
-  return (
-    <div className="my-2 rounded overflow-hidden border border-[#1e2d42]">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
-        <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-        >
-          {copied ? (
-            <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
-          ) : (
-            <><Copy size={12} /><span>复制</span></>
-          )}
-        </button>
-      </div>
-      <SyntaxHighlighter
-        style={oneDark}
-        language={language || 'plaintext'}
-        useInlineStyles={false}
-        PreTag="div"
-        customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px' }}
-        codeTagProps={{ style: { background: 'transparent' } }}
-      >
-        {code}
-      </SyntaxHighlighter>
-    </div>
-  );
-});
-
-// ── Markdown 渲染器（已完成消息专用，用 memo 防止无关重渲染）───────────────
-const mdComponents = {
-  code({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { className?: string }) {
-    const match = /language-(\w+)/.exec(className ?? '');
-    const language = match ? match[1] : '';
-    if (match) {
-      return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
-    }
-    return (
-      <code className="bg-[#111922] text-[#569cd6] px-1 py-0.5 rounded text-xs font-mono" {...props}>
-        {children}
-      </code>
-    );
-  },
-  p({ children }: React.ComponentPropsWithoutRef<'p'>) {
-    return <p className="leading-relaxed mb-2 last:mb-0">{children}</p>;
-  },
-  ul({ children }: React.ComponentPropsWithoutRef<'ul'>) {
-    return <ul className="list-disc list-inside space-y-1 mb-2 pl-2">{children}</ul>;
-  },
-  ol({ children }: React.ComponentPropsWithoutRef<'ol'>) {
-    return <ol className="list-decimal list-inside space-y-1 mb-2 pl-2">{children}</ol>;
-  },
-  li({ children }: React.ComponentPropsWithoutRef<'li'>) {
-    return <li className="text-[#c8daea]">{children}</li>;
-  },
-  h1({ children }: React.ComponentPropsWithoutRef<'h1'>) {
-    return <h1 className="text-base font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h1>;
-  },
-  h2({ children }: React.ComponentPropsWithoutRef<'h2'>) {
-    return <h2 className="text-sm font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h2>;
-  },
-  h3({ children }: React.ComponentPropsWithoutRef<'h3'>) {
-    return <h3 className="text-sm font-medium text-[#e8f4fd] mb-1 mt-2 first:mt-0">{children}</h3>;
-  },
-  strong({ children }: React.ComponentPropsWithoutRef<'strong'>) {
-    return <strong className="font-semibold text-[#e8f4fd]">{children}</strong>;
-  },
-  blockquote({ children }: React.ComponentPropsWithoutRef<'blockquote'>) {
-    return <blockquote className="border-l-2 border-[#2a3f5a] pl-3 text-[#7a9bb8] italic my-2">{children}</blockquote>;
-  },
-  table({ children }: React.ComponentPropsWithoutRef<'table'>) {
-    return (
-      <div className="overflow-x-auto my-2">
-        <table className="text-xs border-collapse w-full">{children}</table>
-      </div>
-    );
-  },
-  th({ children }: React.ComponentPropsWithoutRef<'th'>) {
-    return <th className="border border-[#1e2d42] bg-[#111922] px-2 py-1 text-left font-medium text-[#c8daea]">{children}</th>;
-  },
-  td({ children }: React.ComponentPropsWithoutRef<'td'>) {
-    return <td className="border border-[#1e2d42] px-2 py-1 text-[#c8daea]">{children}</td>;
-  },
-};
-
-const MarkdownContent: React.FC<{ content: string }> = memo(({ content }) => (
-  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-    {content}
-  </ReactMarkdown>
-));
 
 // ── 历史消息（memo 隔离：chatHistory 不变时完全不重渲染）────────────────────
 const AssistantMessage: React.FC<{ content: string; thinkingContent?: string }> = memo(
@@ -128,24 +24,53 @@ const AssistantMessage: React.FC<{ content: string; thinkingContent?: string }> 
   )
 );
 
+// ── 等待第一个 Token 的弹跳动画（复用 ai-dot 样式，与 sessionStatus 视觉一致）────
+const TypingIndicator: React.FC = () => {
+  const { t } = useTranslation();
+  const [msgIdx, setMsgIdx] = useState(0);
+  const messages = [
+    t('assistant.waitMsg0'),
+    t('assistant.waitMsg1'),
+    t('assistant.waitMsg2'),
+  ];
+
+  useEffect(() => {
+    const id = setInterval(() => setMsgIdx((i) => (i + 1) % messages.length), 2200);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+      <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
+    </div>
+  );
+};
+
 // ── 流式消息（独立组件，用 Zustand selector 精准订阅，不影响历史消息）────────
 const StreamingMessage: React.FC = () => {
   const content = useAiStore((s) => s.streamingContent);
   const thinking = useAiStore((s) => s.streamingThinkingContent);
   const sessionStatus = useAiStore((s) => s.sessionStatus);
 
+  // 已收到任何内容（包含深度思考）则不再显示等待动画
+  const hasFirstToken = !!(content || thinking);
+
   return (
     <div className="flex flex-col items-start">
       <div className="text-[#c8daea] text-[13px] w-full">
         {thinking && <ThinkingBlock content={thinking} isStreaming={true} />}
-        {content ? (
-          <MarkdownContent content={content} />
-        ) : sessionStatus ? (
-          <div className="flex items-center gap-2 py-1">
-            <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-            <span className="text-xs text-[#5b8ab0] animate-pulse">{sessionStatus}</span>
-          </div>
-        ) : null}
+        {content && <MarkdownContent content={content} />}
+        {!hasFirstToken && (
+          sessionStatus ? (
+            <div className="flex items-center gap-2 py-1">
+              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+              <span className="text-xs text-[#5b8ab0] animate-pulse">{sessionStatus}</span>
+            </div>
+          ) : (
+            <TypingIndicator />
+          )
+        )}
       </div>
     </div>
   );
@@ -173,7 +98,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const chatHistory = useAiStore((s) => s.chatHistory);
   const isChatting = useAiStore((s) => s.isChatting);
   const activeToolName = useAiStore((s) => s.activeToolName);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, sessions, currentSessionId, configs, activeConfigId, setActiveConfigId, loadConfigs, cancelChat } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, activeConfigId, setActiveConfigId, loadConfigs, cancelChat } = useAiStore();
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   const { connections } = useConnectionStore();
@@ -184,6 +109,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const draftMessage = useAiStore((s) => s.draftMessage);
@@ -326,10 +252,12 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
         <div className="flex items-center space-x-3 text-[#7a9bb8]">
-          <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(); showToast(t('assistant.historyCleared'), 'info'); }}>
-            <Trash2 size={16} />
-          </span>
-          <span title={t('assistant.newChat')} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { newSession(); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
+          {!showHistory && chatHistory.length > 0 && (
+            <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(); showToast(t('assistant.historyCleared'), 'info'); }}>
+              <Trash2 size={16} />
+            </span>
+          )}
+          <span title={t('assistant.newChat')} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { newSession(); setShowHistory(false); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
           <span title={t('assistant.openHistory')} className={`cursor-pointer transition-colors ${showHistory ? 'text-[#00c9a7]' : 'hover:text-[#c8daea]'}`} onClick={() => setShowHistory((v) => !v)}><History size={16} /></span>
           <X size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }} />
         </div>
@@ -342,7 +270,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
             <button
               className="flex items-center gap-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-              onClick={() => setShowHistory(false)}
+              onClick={() => { setShowHistory(false); setConfirmDeleteAll(false); }}
             >
               <ChevronLeft size={14} />
               <span>{t('assistant.backToChat')}</span>
@@ -351,7 +279,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           </div>
 
           {/* 会话列表 */}
-          <div className="flex-1 overflow-auto py-1">
+          <div className="flex-1 overflow-auto py-1 min-h-0">
             {sessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-[#4a6a8a] text-center px-4 gap-3">
                 <MessageSquare size={28} className="opacity-20" />
@@ -405,6 +333,39 @@ export const Assistant: React.FC<AssistantProps> = ({
                 })
             )}
           </div>
+
+          {/* 清除所有会话按钮 */}
+          {sessions.length > 0 && (
+            <div className="px-3 py-2 border-t border-[#1e2d42] flex-shrink-0">
+              {confirmDeleteAll ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-[#c8daea]">{t('assistant.confirmDeleteAll')}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="px-2.5 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                      onClick={() => { setConfirmDeleteAll(false); deleteAllSessions(); setShowHistory(false); showToast(t('assistant.allSessionsDeleted'), 'info'); }}
+                    >
+                      {t('assistant.confirmYes')}
+                    </button>
+                    <button
+                      className="px-2.5 py-1 text-xs rounded bg-[#1e2d42] text-[#7a9bb8] hover:bg-[#2a3f5a] transition-colors"
+                      onClick={() => setConfirmDeleteAll(false)}
+                    >
+                      {t('assistant.confirmNo')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[#7a9bb8] hover:text-red-400 hover:bg-[#1e2d42] rounded transition-colors"
+                  onClick={() => setConfirmDeleteAll(true)}
+                >
+                  <Trash2 size={13} />
+                  <span>{t('assistant.deleteAllSessions')}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

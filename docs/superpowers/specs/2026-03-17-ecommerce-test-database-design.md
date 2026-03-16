@@ -107,6 +107,7 @@ CREATE TABLE categories (
     icon_url    VARCHAR(255),
     status      TINYINT DEFAULT 1,
     created_at  DATETIME NOT NULL,
+    updated_at  DATETIME NOT NULL,
     INDEX idx_parent_id (parent_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
@@ -301,6 +302,27 @@ CREATE TABLE refund_records (
 | 支付失败 | 100 | 2% | payments.status = 2 |
 | 退款记录 | 150 | 3% | refund_records 表 |
 
+### 4.4 状态一致性约束
+
+**订单与支付状态对应关系：**
+| orders.status | payments 记录 | payments.status |
+|---------------|---------------|-----------------|
+| 0 (待支付) | 有 | 0 (待支付) |
+| 10+ (已支付+) | 有 | 1 (成功) |
+| 40 (已取消) | 有 | 0 或 2 |
+
+**订单与物流状态对应关系：**
+| orders.status | shipments 记录 | shipments.status |
+|---------------|----------------|------------------|
+| 0/10 | 无 | - |
+| 20 (已发货) | 有 | 0/1/2 |
+| 30 (已完成) | 有 | 3 (已签收) |
+| 40 (已取消) | 无 | - |
+
+**退款记录与订单关系：**
+- 退款记录仅关联 status = 30 (已完成) 的订单
+- 一笔订单最多一条退款记录
+
 ---
 
 ## 5. 可验证指标
@@ -314,18 +336,22 @@ CREATE TABLE refund_records (
 | 完成订单数 | completed_order_count | orders | id | COUNT | status = 30 |
 | 取消订单数 | canceled_order_count | orders | id | COUNT | status = 40 |
 | 活跃用户数 | active_users | orders | user_id | COUNT | DISTINCT |
+| 总用户数 | total_users | users | id | COUNT | status = 1 |
 | 平均客单价 | avg_order_amount | orders | pay_amount | AVG | status IN (20, 30) |
 | 商品销量 | product_sales | order_items | quantity | SUM | - |
-| 支付成功率 | payment_success_rate | payments | id | - | status = 1 / COUNT(*) |
+| 支付成功数 | payment_success_count | payments | id | COUNT | status = 1 |
+| 支付总数 | payment_total_count | payments | id | COUNT | - |
+| 退款成功数 | refund_count | refund_records | id | COUNT | status = 1 |
 
 ### 5.2 复合指标示例
 
 | 指标名称 | 公式 | 说明 |
 |----------|------|------|
 | 订单完成率 | completed_order_count / order_count × 100 | 完成订单占比 |
-| DAU 占比 | active_users_daily / total_users × 100 | 当日活跃用户占比 |
+| DAU 占比 | active_users / total_users × 100 | 活跃用户占比（需配合日期过滤） |
 | 退款率 | refund_count / completed_order_count × 100 | 退款订单占比 |
-| 客单价指数 | avg_order_amount / baseline_amount | 相对基准的变化 |
+| 支付成功率 | payment_success_count / payment_total_count × 100 | 支付成功占比 |
+| 客单价指数 | avg_order_amount / baseline_amount | 相对基准的变化（baseline_amount 为业务设定值） |
 
 ---
 
@@ -393,7 +419,12 @@ docs/superpowers/scripts/
 - 使用 MySQL 存储过程 + 随机函数批量生成
 - 中文姓名/地址使用预定义数组随机组合
 - 时间戳使用 `DATE_ADD` + `FLOOR(RAND() * N)` 生成随机偏移
-- 订单号/支付号使用 `CONCAT('前缀', LPAD(id, 10, '0'))` 格式
+- **密码哈希**：使用固定测试密码的 bcrypt 哈希 `$2a$10$test12345678901234567890123456789012345678901234567890`
+- **编号前缀约定**：
+  - 订单号：`ORD` + 10位数字，如 `ORD0000000001`
+  - 支付号：`PAY` + 10位数字，如 `PAY0000000001`
+  - 退款号：`REF` + 10位数字，如 `REF0000000001`
+  - 物流单号：`SF` + 12位数字（顺丰）/`YT` + 12位数字（圆通）等
 
 ### 7.3 执行顺序
 
@@ -411,3 +442,27 @@ docs/superpowers/scripts/
 - [ ] 异常场景占比正确
 - [ ] 可执行典型指标 SQL 并返回合理结果
 - [ ] 外键关联完整性（无孤儿记录）
+
+### 外键完整性检查 SQL
+
+```sql
+-- 检查地址是否有孤儿记录
+SELECT COUNT(*) AS orphan_addresses FROM addresses a
+LEFT JOIN users u ON a.user_id = u.id WHERE u.id IS NULL;
+
+-- 检查订单是否有孤儿记录（用户/地址）
+SELECT COUNT(*) AS orphan_orders_user FROM orders o
+LEFT JOIN users u ON o.user_id = u.id WHERE u.id IS NULL;
+SELECT COUNT(*) AS orphan_orders_addr FROM orders o
+LEFT JOIN addresses a ON o.address_id = a.id WHERE a.id IS NULL;
+
+-- 检查支付记录是否有孤儿记录
+SELECT COUNT(*) AS orphan_payments FROM payments p
+LEFT JOIN orders o ON p.order_id = o.id WHERE o.id IS NULL;
+
+-- 检查物流记录是否有孤儿记录
+SELECT COUNT(*) AS orphan_shipments FROM shipments s
+LEFT JOIN orders o ON s.order_id = o.id WHERE o.id IS NULL;
+
+-- 所有检查结果应为 0
+```

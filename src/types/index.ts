@@ -88,13 +88,21 @@ export interface UpdateLlmConfigInput {
   preset?: string | null;
 }
 
-export type TabType = 'query' | 'table' | 'er_diagram';
+export type TabType = 'query' | 'table' | 'er_diagram' | 'metric' | 'metric_list';
+
+export interface MetricScope {
+  connectionId: number;
+  database?: string;
+  schema?: string;
+}
 
 export interface Tab {
   id: string;
   type: TabType;
   title: string;
   connectionId?: number;
+  metricId?: number;           // metric Tab 专用
+  metricScope?: MetricScope;   // metric_list Tab 专用
 }
 
 export interface ColumnMeta {
@@ -249,3 +257,75 @@ export interface EditorInfo {
   selectionEndLine: number;   // 选区结束行（0-based）
 }
 
+// ============ Metric 相关类型 ============
+
+export type MetricType = 'atomic' | 'composite';
+export type MetricStatus = 'draft' | 'approved' | 'rejected';
+export type MetricSource = 'manual' | 'ai';
+
+export interface CompositeComponent {
+  metric_id: number;
+  metric_name: string;    // 英文标识
+  display_name: string;   // 显示名称
+}
+
+export interface Metric {
+  id: number;
+  connection_id: number;
+  name: string;
+  display_name: string;
+  table_name: string;
+  column_name?: string;
+  aggregation?: string;
+  filter_sql?: string;
+  description?: string;
+  status: MetricStatus;
+  source: MetricSource;
+  metric_type: MetricType;
+  composite_components?: CompositeComponent[];
+  composite_formula?: string;
+  category?: string;
+  data_caliber?: string;
+  version?: string;
+  scope_database?: string;
+  scope_schema?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMetricPayload {
+  connection_id: number;
+  name: string;
+  display_name: string;
+  table_name?: string;
+  column_name?: string;
+  aggregation?: string;
+  filter_sql?: string;
+  description?: string;
+  metric_type?: MetricType;
+  composite_components?: string; // JSON string
+  composite_formula?: string;
+  category?: string;
+  data_caliber?: string;
+  version?: string;
+  scope_database?: string;
+  scope_schema?: string;
+}
+
+export interface UpdateMetricPayload {
+  name?: string;
+  display_name?: string;
+  table_name?: string;
+  column_name?: string;
+  aggregation?: string;
+  filter_sql?: string;
+  description?: string;
+  metric_type?: MetricType;
+  composite_components?: string;
+  composite_formula?: string;
+  category?: string;
+  data_caliber?: string;
+  version?: string;
+  scope_database?: string;
+  scope_schema?: string;
+}

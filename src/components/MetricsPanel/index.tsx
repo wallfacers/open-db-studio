@@ -1,0 +1,265 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { BarChart2, Plus, Check, X, Trash2, Loader2, Sparkles } from 'lucide-react';
+
+interface Metric {
+  id: number;
+  connection_id: number;
+  name: string;
+  display_name: string;
+  table_name: string;
+  column_name?: string;
+  aggregation?: string;
+  filter_sql?: string;
+  description?: string;
+  status: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MetricsPanelProps {
+  connectionId: number | null;
+}
+
+type StatusFilter = 'all' | 'draft' | 'approved' | 'rejected';
+
+const statusBadge = (status: string) => {
+  switch (status) {
+    case 'approved':
+      return 'bg-[#0d3d2e] text-[#00c9a7] border border-[#00c9a7]/30';
+    case 'rejected':
+      return 'bg-[#3d1a1a] text-[#f87171] border border-[#f87171]/30';
+    default:
+      return 'bg-[#1e2d42] text-[#7a9bb8] border border-[#253347]';
+  }
+};
+
+const statusLabel = (status: string) => {
+  switch (status) {
+    case 'approved': return '已通过';
+    case 'rejected': return '已拒绝';
+    default: return '草稿';
+  }
+};
+
+export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [filter, setFilter] = useState<StatusFilter>('all');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const loadMetrics = useCallback(async () => {
+    if (connectionId === null) return;
+    setIsLoading(true);
+    try {
+      const statusArg = filter === 'all' ? undefined : filter;
+      const result = await invoke<Metric[]>('list_metrics', {
+        connectionId,
+        status: statusArg,
+      });
+      setMetrics(result);
+    } catch (err) {
+      console.warn('[MetricsPanel] list_metrics error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [connectionId, filter]);
+
+  useEffect(() => {
+    loadMetrics();
+  }, [loadMetrics]);
+
+  const handleAiGenerate = async () => {
+    if (connectionId === null) return;
+    setIsGenerating(true);
+    try {
+      await invoke<Metric[]>('ai_generate_metrics', { connectionId });
+      await loadMetrics();
+    } catch (err) {
+      console.warn('[MetricsPanel] ai_generate_metrics error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleApprove = async (id: number) => {
+    try {
+      await invoke('set_metric_status', { id, status: 'approved' });
+      await loadMetrics();
+    } catch (err) {
+      console.warn('[MetricsPanel] approve error:', err);
+    }
+  };
+
+  const handleReject = async (id: number) => {
+    try {
+      await invoke('set_metric_status', { id, status: 'rejected' });
+      await loadMetrics();
+    } catch (err) {
+      console.warn('[MetricsPanel] reject error:', err);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await invoke('delete_metric', { id });
+      await loadMetrics();
+    } catch (err) {
+      console.warn('[MetricsPanel] delete error:', err);
+    }
+  };
+
+  const filteredMetrics = filter === 'all'
+    ? metrics
+    : metrics.filter(m => m.status === filter);
+
+  if (connectionId === null) {
+    return (
+      <div className="flex-1 flex flex-col min-w-0 bg-[#111922] items-center justify-center">
+        <BarChart2 size={40} className="text-[#253347] mb-3" />
+        <p className="text-[#7a9bb8] text-sm">请先选择数据库连接</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 bg-[#111922] overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e2d42] flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <BarChart2 size={18} className="text-[#00c9a7]" />
+          <h2 className="text-white font-semibold text-base">业务指标</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleAiGenerate}
+            disabled={isGenerating}
+            className="flex items-center gap-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-3 py-1.5 bg-[#1a2639] hover:bg-[#253347] rounded border border-[#253347] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGenerating
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Sparkles size={13} />
+            }
+            AI 生成指标
+          </button>
+          <button
+            onClick={() => {/* TODO: open create dialog */}}
+            className="flex items-center gap-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-3 py-1.5 bg-[#1a2639] hover:bg-[#253347] rounded border border-[#253347]"
+          >
+            <Plus size={13} />
+            新增指标
+          </button>
+        </div>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex border-b border-[#1e2d42] flex-shrink-0 px-6">
+        {(['all', 'draft', 'approved', 'rejected'] as const).map((tab) => {
+          const labelMap: Record<StatusFilter, string> = {
+            all: '全部',
+            draft: '草稿',
+            approved: '已通过',
+            rejected: '已拒绝',
+          };
+          return (
+            <button
+              key={tab}
+              onClick={() => setFilter(tab)}
+              className={`px-4 py-2.5 text-sm transition-colors ${
+                filter === tab
+                  ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]'
+                  : 'text-[#7a9bb8] hover:text-[#c8daea]'
+              }`}
+            >
+              {labelMap[tab]}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Metrics List */}
+      <div className="flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-32">
+            <Loader2 size={24} className="animate-spin text-[#7a9bb8]" />
+          </div>
+        ) : filteredMetrics.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-[#7a9bb8] text-sm">
+            <BarChart2 size={28} className="mb-2 text-[#253347]" />
+            暂无指标
+          </div>
+        ) : (
+          <div className="divide-y divide-[#1e2d42]">
+            {filteredMetrics.map((metric) => (
+              <div
+                key={metric.id}
+                className="flex items-center px-6 py-3 hover:bg-[#0d1117] transition-colors group"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[#c8daea] text-sm font-medium truncate">
+                      {metric.display_name}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${statusBadge(metric.status)}`}>
+                      {statusLabel(metric.status)}
+                    </span>
+                    {metric.source === 'ai' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1a1a3d] text-[#818cf8] border border-[#818cf8]/30 flex-shrink-0">
+                        AI
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-[#7a9bb8]">
+                    <span>{metric.table_name}</span>
+                    {metric.aggregation && (
+                      <>
+                        <span className="text-[#253347]">·</span>
+                        <span>{metric.aggregation}</span>
+                      </>
+                    )}
+                    {metric.column_name && (
+                      <>
+                        <span className="text-[#253347]">·</span>
+                        <span>{metric.column_name}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row Actions */}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-3 flex-shrink-0">
+                  {metric.status === 'draft' && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(metric.id)}
+                        title="审批通过"
+                        className="p-1.5 rounded text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#0d3d2e] transition-colors"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleReject(metric.id)}
+                        title="拒绝"
+                        className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => handleDelete(metric.id)}
+                    title="删除"
+                    className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

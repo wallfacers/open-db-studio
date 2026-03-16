@@ -586,6 +586,7 @@ const {
   setActiveTabId,
   closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
   updateTabContext,
+  openMetricTab,      // Task 7 中 MetricListPanel.onOpenMetric 会用到
   sqlContent, setSql, executeQuery,
   // ...其余原有字段不变
 } = useQueryStore();

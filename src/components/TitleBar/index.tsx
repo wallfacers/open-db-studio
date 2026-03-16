@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, X, Maximize2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../common/Tooltip';
+import appIcon from '../../assets/icon.png';
 
 export const TitleBar: React.FC = () => {
   const { t } = useTranslation();
@@ -23,9 +24,7 @@ export const TitleBar: React.FC = () => {
       data-tauri-drag-region
     >
       <div className="flex items-center px-3 gap-2" data-tauri-drag-region>
-        <div className="w-4 h-4 rounded-sm bg-[#00c9a7] flex items-center justify-center">
-          <span className="text-[8px] font-bold text-[#080d12]">DB</span>
-        </div>
+        <img src={appIcon} alt="Open DB Studio" className="w-4 h-4 rounded-sm" />
         <span className="text-[#4a6480] text-[11px]">Open DB Studio</span>
       </div>
 

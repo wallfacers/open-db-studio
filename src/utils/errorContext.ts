@@ -17,7 +17,8 @@ export function buildErrorContext(
     const { lastOperationContext } = useAppStore.getState();
     const { connections, metaCache, tables } = useConnectionStore.getState();
     const { queryHistory } = useQueryStore.getState();
-    const { configs, activeConfigId } = useAiStore.getState();
+    const { configs, sessions, currentSessionId } = useAiStore.getState();
+    const activeConfigId = sessions.find((s) => s.id === currentSessionId)?.configId ?? null;
 
     const connId = lastOperationContext?.connectionId;
     const conn = connId != null ? connections.find((c) => c.id === connId) : undefined;

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useQueryStore } from '../store/queryStore';
+import { useAppStore } from '../store/appStore';
 import { parseStatements } from '../utils/sqlParser';
 
 interface DiffProposalPayload {
@@ -27,13 +28,12 @@ export function useToolBridge() {
 
       // 全量扫描所有 Tab，找到第一个包含 original 文本的 Tab
       // （queryStore.activeTabId 为静态初始值，不可靠，故遍历所有条目）
-      // original 可能含尾部分号（AI 从编辑器读取时带分号），
-      // 但 parseStatements 的 s.text 不含分号，需统一去除后再比较
-      const normalizedOriginal = original.trim().replace(/;+$/, '');
-
+      // 规范化：去除首尾空白和末尾分号，以便与 parseStatements 返回的 text 对比
+      const normalizeStmt = (s: string) => s.trim().replace(/;+$/, '');
+      const originalNorm = normalizeStmt(original);
       for (const [tabId, full] of Object.entries(sqlContent)) {
         const stmts = parseStatements(full);
-        const match = stmts.find(s => s.text.trim() === normalizedOriginal);
+        const match = stmts.find(s => normalizeStmt(s.text) === originalNorm);
         if (match) {
           proposeSqlDiff({
             original,
@@ -43,6 +43,8 @@ export function useToolBridge() {
             startOffset: match.startOffset,
             endOffset: match.endOffset,
           });
+          // 自动打开 AI 助手面板，确保用户能看到 DiffPanel 确认界面
+          useAppStore.getState().setAssistantOpen(true);
           return;
         }
       }

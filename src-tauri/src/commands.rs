@@ -233,18 +233,22 @@ pub async fn set_default_llm_config(
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
     crate::db::set_default_llm_config(id)?;
-    // 默认配置变更，直接清空 session（前端若选中"默认"时需要重建）
-    *state.acp_session.lock().await = None;
+    // 默认配置变更，直接清空所有 session（前端若选中"默认"时需要重建）
+    state.acp_sessions.lock().await.clear();
     Ok(())
 }
 
 /// 若当前活跃 session 使用的是 config_id，则清空它（下次请求自动重建）
 async fn invalidate_session_if_matches(config_id: i64, state: &tauri::State<'_, crate::AppState>) {
-    let mut guard = state.acp_session.lock().await;
-    if guard.as_ref().map(|s| s.config_id == config_id).unwrap_or(false) {
-        *guard = None;
-        log::info!("[acp] Session invalidated because config {} was modified/deleted", config_id);
-    }
+    let mut guard = state.acp_sessions.lock().await;
+    guard.retain(|_, session| {
+        if session.config_id == config_id {
+            log::info!("[acp] Session invalidated because config {} was modified/deleted", config_id);
+            false
+        } else {
+            true
+        }
+    });
 }
 
 #[tauri::command]
@@ -1156,24 +1160,25 @@ pub async fn agent_execute_sql(
 
 // ============ ACP Agent 模式 ============
 
-/// 外层 wrapper：保证无论 inner 成功还是失败，都向前端发送 Done 事件。
+/// 外层 wrapper：保证无论 inner 成功还是失败，都向前端发送 Error 事件。
 #[tauri::command]
 pub async fn ai_chat_acp(
     prompt: String,
     tab_sql: Option<String>,
     connection_id: Option<i64>,
     config_id: Option<i64>,
+    session_id: String,
     channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
-    let result = ai_chat_acp_inner(prompt, tab_sql, connection_id, config_id, &channel, &state).await;
+    let result = ai_chat_acp_inner(
+        prompt, tab_sql, connection_id, config_id, session_id, &channel, &state,
+    ).await;
     if let Err(ref e) = result {
         let _ = channel.send(crate::llm::StreamEvent::Error {
             message: e.to_string(),
         });
     }
-    // Done 事件总是发送，无论成功或失败
-    let _ = channel.send(crate::llm::StreamEvent::Done);
     result
 }
 
@@ -1183,15 +1188,22 @@ async fn ai_chat_acp_inner(
     tab_sql: Option<String>,
     connection_id: Option<i64>,
     config_id: Option<i64>,
+    session_id: String,
     channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
     state: &tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
     use crate::state::AcpRequest;
     use crate::llm::StreamEvent;
 
-    // 写入当前编辑器 SQL 到共享状态（供 MCP get_editor_sql 工具读取）
-    // 必须在 opencode session 启动前写入
-    *state.current_editor_sql.lock().await = tab_sql.clone();
+    // 写入编辑器 SQL 到 per-session map，并更新 last_active_session_id
+    {
+        let mut map = state.editor_sql_map.lock().await;
+        map.insert(session_id.clone(), tab_sql.clone());
+    }
+    {
+        let mut last = state.last_active_session_id.lock().await;
+        *last = Some(session_id.clone());
+    }
 
     // 1. 获取指定配置（未指定则用默认）
     let config = match config_id {
@@ -1201,9 +1213,8 @@ async fn ai_chat_acp_inner(
             .ok_or_else(|| AppError::Other("No default LLM config found".into()))?,
     };
 
-    // 2. 构建 prompt 文本（注入连接 ID + SQL 上下文）
+    // 2. 构建 prompt 文本
     let mut prompt_text = prompt;
-    // 注入当前连接 ID，让 AI 知道调用数据库工具时用哪个连接
     if let Some(conn_id) = connection_id {
         prompt_text = format!("当前数据库连接 ID: {}\n\n{}", conn_id, prompt_text);
     }
@@ -1223,7 +1234,7 @@ async fn ai_chat_acp_inner(
     .join("open-db-studio");
     std::fs::create_dir_all(&cwd).ok();
 
-    // 4. 提前创建事件转发通道（使 session 建立阶段也能发送进度通知给前端）
+    // 4. 创建事件转发通道
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
     let channel_clone = channel.clone();
     tokio::spawn(async move {
@@ -1232,8 +1243,10 @@ async fn ai_chat_acp_inner(
         }
     });
 
-    // 5. 获取或创建 persistent session（首次建立时通过 event_tx 发送进度通知）
-    let request_tx = get_or_create_session(&config, state.mcp_port, &cwd, state, &event_tx).await?;
+    // 5. 获取或创建 ACP session（传入 session_id）
+    let request_tx = get_or_create_session(
+        &session_id, &config, state.mcp_port, &cwd, state, &event_tx,
+    ).await?;
 
     // 6. 创建完成信号 channel
     let (done_tx, done_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
@@ -1243,7 +1256,7 @@ async fn ai_chat_acp_inner(
         .send(AcpRequest { prompt_text, event_tx, done_tx })
         .map_err(|_| AppError::Other("ACP session closed unexpectedly".into()))?;
 
-    // 8. 等待 session 线程完成 prompt
+    // 8. 等待完成
     done_rx
         .await
         .map_err(|_| AppError::Other("ACP session thread dropped before responding".into()))?
@@ -1263,32 +1276,38 @@ fn config_fingerprint(config: &crate::db::models::LlmConfig) -> String {
 
 /// 获取当前 session（配置未变）或创建新 session（首次 / 配置变更 / session 已关闭）
 async fn get_or_create_session(
+    session_id: &str,
     config: &crate::db::models::LlmConfig,
     mcp_port: u16,
     cwd: &std::path::Path,
     state: &tauri::State<'_, crate::AppState>,
     event_tx: &tokio::sync::mpsc::UnboundedSender<crate::llm::StreamEvent>,
 ) -> AppResult<tokio::sync::mpsc::UnboundedSender<crate::state::AcpRequest>> {
-    let mut session_guard = state.acp_session.lock().await;
+    let mut sessions_guard = state.acp_sessions.lock().await;
     let fingerprint = config_fingerprint(config);
 
-    // 检查现有 session 是否可复用（config_id 相同且内容未变且连接未断）
-    if let Some(ref session) = *session_guard {
+    // 检查现有 session 是否可复用
+    if let Some(session) = sessions_guard.get(session_id) {
         if session.config_id == config.id
             && session.config_fingerprint == fingerprint
             && !session.request_tx.is_closed()
         {
-            log::debug!("[acp] Reusing existing session (config_id={})", config.id);
+            log::debug!(
+                "[acp] Reusing existing session (session_id={}, config_id={})",
+                session_id, config.id
+            );
             return Ok(session.request_tx.clone());
         }
-        log::info!("[acp] Session invalid (config changed or closed), rebuilding");
+        log::info!(
+            "[acp] Session invalid (config changed or closed), rebuilding for session_id={}",
+            session_id
+        );
+        sessions_guard.remove(session_id);
     }
 
-    // 创建新 session（通过 event_tx 向前端发送进度通知）
     log::info!(
-        "[acp] Creating new session for config_id={} model={}",
-        config.id,
-        config.model
+        "[acp] Creating new session for session_id={} config_id={} model={}",
+        session_id, config.id, config.model
     );
     let mcp_url = format!("http://127.0.0.1:{}/mcp", mcp_port);
     let new_session = crate::acp::session::spawn_acp_session_thread(
@@ -1305,25 +1324,26 @@ async fn get_or_create_session(
     .await?;
 
     let tx = new_session.request_tx.clone();
-    *session_guard = Some(crate::state::PersistentAcpSession {
-        config_id: new_session.config_id,
-        config_fingerprint: fingerprint,
-        request_tx: new_session.request_tx,
-        abort_tx: new_session.abort_tx,
-    });
+    sessions_guard.insert(
+        session_id.to_string(),
+        crate::state::PersistentAcpSession {
+            config_id: new_session.config_id,
+            config_fingerprint: fingerprint,
+            request_tx: new_session.request_tx,
+            abort_tx: new_session.abort_tx,
+        },
+    );
     Ok(tx)
 }
 
 #[tauri::command]
 pub async fn cancel_acp_session(
+    session_id: String,
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
-    let mut session_guard = state.acp_session.lock().await;
-    if session_guard.is_some() {
-        // Drop PersistentAcpSession → request_tx 被 drop →
-        // session 线程 request_rx.recv() 返回 None → 线程退出 → kill 子进程
-        *session_guard = None;
-        log::info!("[acp] Session cancelled, thread will exit on next idle");
+    let mut sessions_guard = state.acp_sessions.lock().await;
+    if sessions_guard.remove(&session_id).is_some() {
+        log::info!("[acp] Session {} cancelled, thread will exit on next idle", session_id);
     }
     Ok(())
 }

@@ -23,7 +23,7 @@ import type { ToastLevel } from '../Toast';
 interface DBTreeProps {
   searchQuery: string;
   showToast: (msg: string, level?: ToastLevel) => void;
-  onNewQuery: (connectionId: number, connName: string, database?: string, schema?: string) => void;
+  onNewQuery: (connectionId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   onOpenTableData: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
   onOpenTableStructure: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
   activeConnectionIds: Set<number>;
@@ -187,6 +187,18 @@ export const DBTree: React.FC<DBTreeProps> = ({
     return 'mysql';
   };
 
+  const quoteIdentifier = (name: string, driver: string): string => {
+    const isPgOrOracle = driver === 'postgres' || driver === 'postgresql' || driver === 'oracle';
+    return isPgOrOracle ? `"${name}"` : `\`${name}\``;
+  };
+
+  const buildSelectSql = (tableName: string, connectionId: number, columnName?: string): string => {
+    const driver = getDriver(connectionId);
+    const q = (name: string) => quoteIdentifier(name, driver);
+    const cols = columnName ? q(columnName) : '*';
+    return `SELECT ${cols} FROM ${q(tableName)} LIMIT 100;`;
+  };
+
   const handleMoveToGroup = async (connectionId: number, groupId: number | null) => {
     await invoke('move_connection_to_group', { connectionId, groupId });
     useTreeStore.getState().init();
@@ -249,7 +261,17 @@ export const DBTree: React.FC<DBTreeProps> = ({
           onCloseConnection={() => onCloseConnection(getConnectionId(contextMenu.node))}
           onNewQuery={() => {
             const n = contextMenu.node;
-            onNewQuery(getConnectionId(n), getConnName(n), n.meta.database, n.meta.schema);
+            const connId = getConnectionId(n);
+            let initialSql: string | undefined;
+            if (n.nodeType === 'table' || n.nodeType === 'view') {
+              initialSql = buildSelectSql(n.label, connId);
+            } else if (n.nodeType === 'column') {
+              const parentNode = nodes.get(n.parentId ?? '');
+              const tableName = parentNode?.label ?? 'table_name';
+              initialSql = buildSelectSql(tableName, connId, n.label);
+            }
+            // connection / database / schema / category: initialSql = undefined, only pre-select context
+            onNewQuery(connId, getConnName(n), n.meta.database, n.meta.schema, initialSql);
           }}
           onRefresh={() => refreshNode(contextMenu.node.id)}
           onMoveToGroup={() => {
@@ -298,9 +320,32 @@ export const DBTree: React.FC<DBTreeProps> = ({
             setContextMenu(null);
             setTruncateConfirm({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
           }}
-          onDropTable={() => {
+          onDropTable={async () => {
             const n = contextMenu.node;
-            setTableManageDialog({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
+            if (!window.confirm(t('tableManageDialog.confirmDrop', { table: n.label }))) return;
+            setContextMenu(null);
+            const driver = getDriver(getConnectionId(n));
+            const isPostgres = driver === 'postgres' || driver === 'postgresql';
+            const q = (name: string) => isPostgres ? `"${name}"` : `\`${name}\``;
+            const sql = isPostgres
+              ? n.meta.schema
+                ? `DROP TABLE ${q(n.meta.schema)}.${q(n.label)}`
+                : `DROP TABLE ${q(n.label)}`
+              : `DROP TABLE ${q(n.label)}`;
+            try {
+              await invoke('execute_query', {
+                connectionId: getConnectionId(n),
+                sql,
+                database: n.meta.database ?? null,
+                schema: n.meta.schema ?? null,
+              });
+              const parentId = Array.from(useTreeStore.getState().nodes.values())
+                .find(nd => nd.label === n.label && nd.nodeType === 'table')?.parentId ?? '';
+              if (parentId) refreshNode(parentId);
+              showToast(t('dbTree.operationSuccess'), 'success');
+            } catch (e) {
+              showToast(String(e), 'error');
+            }
           }}
           onCopyName={() => {
             navigator.clipboard.writeText(contextMenu.node.label);

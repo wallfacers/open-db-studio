@@ -203,7 +203,7 @@ JOIN
     setActiveTab(tabId);
   };
 
-  const handleNewQuery = (connId: number, connName: string, database?: string, schema?: string) => {
+  const handleNewQuery = (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => {
     const tabId = `query_${connId}_${Date.now()}`;
     const queryCount = tabs.filter(t => t.type === 'query').length + 1;
     setTabs(prev => [...prev, {
@@ -213,6 +213,9 @@ JOIN
       db: connName,
       queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
     }]);
+    if (initialSql) {
+      useQueryStore.getState().setSql(tabId, initialSql);
+    }
     setActiveTab(tabId);
   };
 
@@ -404,7 +407,7 @@ JOIN
           style={{
             width: isAssistantOpen ? assistantWidth : 0,
             overflow: 'hidden',
-            transition: 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
+            transition: isAssistantResizing ? 'none' : 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
             flexShrink: 0,
           }}
         >

@@ -103,13 +103,17 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       case 'category':
         if (node.meta.objectName === 'tables') {
           return [
-            { label: t('contextMenu.createTable'), icon: FilePlus2, onClick: onCreateTable },
+            { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
+            { label: t('contextMenu.createTable'), icon: FilePlus2, onClick: onCreateTable, dividerBefore: true },
             { label: t('contextMenu.aiCreateTable'), icon: Sparkles, onClick: onAiCreateTable },
             { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh },
             ...(onExportMultiTable ? [{ label: t('contextMenu.exportMultiTable'), icon: Download, onClick: onExportMultiTable, dividerBefore: true }] : []),
           ];
         }
-        return [{ label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh }];
+        return [
+          { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
+          { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh },
+        ];
       case 'table':
         return [
           { label: t('contextMenu.openTableData'), icon: Eye, onClick: onOpenTableData },
@@ -130,7 +134,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         ];
       case 'column':
         return [
-          { label: t('contextMenu.copyColumnName'), icon: Copy, onClick: onCopyName },
+          { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
+          { label: t('contextMenu.copyColumnName'), icon: Copy, onClick: onCopyName, dividerBefore: true },
         ];
       default:
         return [{ label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh }];

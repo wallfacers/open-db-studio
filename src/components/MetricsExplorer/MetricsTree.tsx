@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ChevronDown, ChevronRight, Loader2,
@@ -61,7 +61,8 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
     nodes, expandedIds, selectedId, metricCounts, loadingIds,
     init, toggleExpand, selectNode, refreshNode, search,
   } = useMetricsTreeStore();
-  const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => { init(); }, []);
 
@@ -92,6 +93,12 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
 
   return (
     <div className="flex-1 overflow-y-auto py-1">
+      {deleteError && (
+        <div className="mx-2 mb-1 px-3 py-1.5 text-xs text-red-400 bg-red-900/20 rounded border border-red-900/40 flex items-center justify-between">
+          <span>{deleteError}</span>
+          <button onClick={() => setDeleteError(null)} className="ml-2 text-red-400/60 hover:text-red-400">✕</button>
+        </div>
+      )}
       {visibleNodes.map(node => {
         const indent = searchQuery.trim() ? 0 : getIndentLevel(node, nodes);
         const isExpanded = expandedIds.has(node.id);
@@ -169,7 +176,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       {/* 右键菜单 */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl py-1 min-w-[160px]"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={e => e.stopPropagation()}
         >
@@ -184,9 +191,9 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                   setContextMenu(null);
                 }}
               ><Eye size={13} />打开</button>
-              <div className="h-px bg-[#2a3f5a] my-1" />
+              <div className="h-px bg-[#253347] my-1" />
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[#3d1a1a] hover:text-red-300"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[#1a2639] hover:text-red-300"
                 onClick={async () => {
                   const { metricId } = contextMenu.node.meta;
                   if (!metricId) return;
@@ -195,7 +202,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                     await invoke('delete_metric', { id: metricId });
                     if (parentId) refreshNode(parentId);
                   } catch (e: any) {
-                    alert(e?.message ?? '删除失败');
+                    setDeleteError(e?.message ?? '删除失败');
                   }
                   setContextMenu(null);
                 }}
@@ -218,7 +225,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                       setContextMenu(null);
                     }}
                   ><List size={13} />打开指标列表</button>
-                  <div className="h-px bg-[#2a3f5a] my-1" />
+                  <div className="h-px bg-[#253347] my-1" />
                 </>
               )}
               <button

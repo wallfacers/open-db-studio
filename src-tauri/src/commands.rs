@@ -1342,7 +1342,14 @@ pub async fn cancel_acp_session(
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
     let mut sessions_guard = state.acp_sessions.lock().await;
-    if sessions_guard.remove(&session_id).is_some() {
+    if session_id.is_empty() {
+        // 空字符串：清空所有 session（drop PersistentAcpSession → drop abort_tx → kill 子进程）
+        let count = sessions_guard.len();
+        sessions_guard.clear();
+        if count > 0 {
+            log::info!("[acp] All {} sessions cancelled", count);
+        }
+    } else if sessions_guard.remove(&session_id).is_some() {
         log::info!("[acp] Session {} cancelled, thread will exit on next idle", session_id);
     }
     Ok(())

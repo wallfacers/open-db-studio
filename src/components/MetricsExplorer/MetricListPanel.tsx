@@ -50,7 +50,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   const doDelete = async (ids: number[]) => {
     for (const id of ids) {
-      try { await invoke('delete_metric', { id }); } catch (e: any) { alert(e?.message); return; }
+      try { await invoke('delete_metric', { id }); } catch (e: any) { setError(e?.message ?? '删除失败'); return; }
     }
     setSelected(new Set());
     load();
@@ -84,7 +84,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       load();
       onOpenMetric?.(m.id, m.display_name);
     } catch (e: any) {
-      alert(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
+      setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
     }
   };
 
@@ -95,7 +95,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       await invoke('ai_generate_metrics', { connectionId: scope.connectionId });
       load();
     } catch (e: any) {
-      alert(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
+      setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
     } finally {
       setAiLoading(false);
     }

@@ -2,12 +2,14 @@ import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store/taskStore';
 import { TaskItem } from './TaskItem';
+import { useConfirm } from '../../hooks/useConfirm';
 
 type TabFilter = 'all' | 'running' | 'completed' | 'failed';
 
 export const TaskCenter: React.FC = () => {
   const { t } = useTranslation();
   const { tasks, loadTasks, clearCompleted } = useTaskStore();
+  const confirm = useConfirm();
   const [filter, setFilter] = React.useState<TabFilter>('all');
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export const TaskCenter: React.FC = () => {
   }), [tasks]);
 
   const handleClearCompleted = async () => {
-    if (window.confirm(t('taskCenter.clearConfirm'))) {
+    if (await confirm({ message: t('taskCenter.clearConfirm') })) {
       await clearCompleted();
     }
   };

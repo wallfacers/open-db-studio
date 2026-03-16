@@ -19,6 +19,7 @@ import { GraphExplorer } from './components/GraphExplorer';
 import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
+import { ConfirmDialog } from './components/common/ConfirmDialog';
 
 export interface TabData {
   id: string;
@@ -445,6 +446,7 @@ JOIN
         } : undefined}
         onClose={() => setToast(null)}
       />
+      <ConfirmDialog />
       </div>
       {/* 浮动 AI 助手切换按钮（position:fixed，不占布局空间，无缝衔接内容区） */}
       {activeActivity !== 'settings' && (

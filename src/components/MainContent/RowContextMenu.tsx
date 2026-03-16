@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -45,15 +46,7 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
     if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
   }, [x, y]);
 
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
+  useClickOutside(menuRef, onClose);
 
   const copyToClipboard = async (text: string) => {
     try {

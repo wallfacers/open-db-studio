@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 
 interface Option {
   value: string;
@@ -28,14 +29,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  useClickOutside(ref, () => setOpen(false), open);
 
   const selected = options.find(o => o.value === value);
   const displayLabel = selected?.label ?? placeholder;

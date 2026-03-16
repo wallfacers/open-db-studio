@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Square, RotateCcw, Trash2, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Task, useTaskStore } from '../../store/taskStore';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface Props {
   task: Task;
@@ -25,6 +26,7 @@ const progressBarColor = {
 
 export const TaskItem: React.FC<Props> = ({ task }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { cancelTask, retryTask, removeTask } = useTaskStore();
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -45,7 +47,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
   };
 
   const handleCancel = async () => {
-    if (window.confirm(t('taskCenter.cancelConfirm', 'Cancel this task?'))) {
+    if (await confirm({ message: t('taskCenter.cancelConfirm', 'Cancel this task?'), variant: 'danger' })) {
       await cancelTask(task.id);
     }
   };

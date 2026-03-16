@@ -196,10 +196,16 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const { pendingDiff } = get();
     if (!pendingDiff) return;
     const full = get().sqlContent[pendingDiff.tabId] ?? '';
+    // endOffset 指向语句末尾（不含分号），若原文紧跟分号则一并消费，
+    // 避免 modified 自带分号时出现双分号
+    const endOffset =
+      full[pendingDiff.endOffset] === ';'
+        ? pendingDiff.endOffset + 1
+        : pendingDiff.endOffset;
     const newSql =
       full.slice(0, pendingDiff.startOffset) +
       pendingDiff.modified +
-      full.slice(pendingDiff.endOffset);
+      full.slice(endOffset);
     set((s) => ({
       sqlContent: { ...s.sqlContent, [pendingDiff.tabId]: newSql },
       pendingDiff: null,

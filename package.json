@@ -12,7 +12,8 @@
     "tauri:build": "tauri build",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "generate:icons": "node scripts/generate-icons.cjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -52,6 +53,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.0.0",
     "html-to-image": "^1.11.13",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.1.14",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",

@@ -161,4 +161,11 @@ describe('localStorage persistence', () => {
     expect(loadedTabs).toHaveLength(0);
     expect(loadedId).toBe('');
   });
+
+  it('JSON 格式错误时返回空状态', () => {
+    localStorage.setItem('unified_tabs_state', '{invalid json}');
+    const { tabs: loadedTabs, activeTabId: loadedId } = loadTabsFromStorage();
+    expect(loadedTabs).toHaveLength(0);
+    expect(loadedId).toBe('');
+  });
 });

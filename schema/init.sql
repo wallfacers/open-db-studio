@@ -120,22 +120,31 @@ CREATE INDEX IF NOT EXISTS idx_graph_edges_to ON graph_edges(to_node);
 -- ============ V2: 业务指标 ============
 
 CREATE TABLE IF NOT EXISTS metrics (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
-    name          TEXT NOT NULL,
-    display_name  TEXT NOT NULL,
-    table_name    TEXT NOT NULL,
-    column_name   TEXT,
-    aggregation   TEXT CHECK(aggregation IN ('SUM','COUNT','AVG','MAX','MIN','CUSTOM')),
-    filter_sql    TEXT,
-    description   TEXT,
-    status        TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','rejected')),
-    source        TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user','ai')),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id        INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    name                 TEXT NOT NULL,
+    display_name         TEXT NOT NULL,
+    table_name           TEXT NOT NULL DEFAULT '',
+    column_name          TEXT,
+    aggregation          TEXT CHECK(aggregation IN ('SUM','COUNT','AVG','MAX','MIN','CUSTOM')),
+    filter_sql           TEXT,
+    description          TEXT,
+    status               TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','rejected')),
+    source               TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','ai')),
+    metric_type          TEXT NOT NULL DEFAULT 'atomic' CHECK(metric_type IN ('atomic','composite')),
+    composite_components TEXT,
+    composite_formula    TEXT,
+    category             TEXT,
+    data_caliber         TEXT,
+    version              TEXT,
+    scope_database       TEXT,
+    scope_schema         TEXT,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_metrics_conn ON metrics(connection_id);
 CREATE INDEX IF NOT EXISTS idx_metrics_status ON metrics(status);
+CREATE INDEX IF NOT EXISTS idx_metrics_node ON metrics(connection_id, scope_database, scope_schema);
 
 -- 业务语义别名
 CREATE TABLE IF NOT EXISTS semantic_aliases (

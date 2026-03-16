@@ -165,6 +165,7 @@ pub fn run() {
             commands::ai_generate_sql_v2,
             commands::start_migration,
             commands::get_migration_task,
+            commands::acp_permission_respond,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

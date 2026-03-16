@@ -16,6 +16,16 @@ use crate::error::{AppError, AppResult};
 use crate::llm::StreamEvent;
 use crate::state::{AcpRequest, PersistentAcpSession};
 
+/// pending_permissions 的共享类型，用于在 spawn_acp_session_thread 和 session_loop 间传递
+type PendingPermissionsMap = std::sync::Arc<
+    std::sync::Mutex<
+        std::collections::HashMap<
+            String,
+            tokio::sync::oneshot::Sender<crate::state::PermissionReply>,
+        >,
+    >,
+>;
+
 /// 启动持久化 ACP session 线程。
 ///
 /// 函数会阻塞直到 ACP 握手完成（或失败）。
@@ -49,7 +59,7 @@ pub async fn spawn_acp_session_thread(
     let (abort_tx, abort_rx) = tokio::sync::oneshot::channel::<()>();
 
     // 用于等待线程完成握手的 oneshot channel
-    let (setup_tx, setup_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+    let (setup_tx, setup_rx) = tokio::sync::oneshot::channel::<AppResult<PendingPermissionsMap>>();
 
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -64,11 +74,17 @@ pub async fn spawn_acp_session_thread(
     });
 
     // 等待握手结果
-    setup_rx
+    let pending_permissions = setup_rx
         .await
         .map_err(|_| AppError::Other("ACP session thread died before setup completed".into()))??;
 
-    Ok(PersistentAcpSession { config_id, config_fingerprint: String::new(), request_tx, abort_tx })
+    Ok(PersistentAcpSession {
+        config_id,
+        config_fingerprint: String::new(),
+        request_tx,
+        abort_tx,
+        pending_permissions,
+    })
 }
 
 /// 向前端发送 StatusUpdate 事件（status_tx 为 None 时静默跳过）
@@ -84,7 +100,7 @@ async fn session_loop(
     cwd: PathBuf,
     mut request_rx: tokio::sync::mpsc::UnboundedReceiver<AcpRequest>,
     abort_rx: tokio::sync::oneshot::Receiver<()>,
-    setup_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
+    setup_tx: tokio::sync::oneshot::Sender<AppResult<PendingPermissionsMap>>,
     status_tx: Option<UnboundedSender<StreamEvent>>,
 ) {
     // 共享 event sender：每次 prompt 前由循环设置，prompt 后清空
@@ -93,7 +109,7 @@ async fn session_loop(
 
     // 启动 ACP session（握手）— 内部会发送细粒度状态通知
     let t_total = std::time::Instant::now();
-    let (connection, session_id, mut child) =
+    let (connection, session_id, mut child, pending_permissions_arc) =
         match crate::acp::client::start_acp_session(
             &mcp_url,
             &cwd,
@@ -121,7 +137,7 @@ async fn session_loop(
     send_status(&status_tx, "连接就绪");
 
     // 通知调用方握手成功
-    let _ = setup_tx.send(Ok(()));
+    let _ = setup_tx.send(Ok(pending_permissions_arc.clone()));
 
     log::info!("[acp] Persistent session ready (session_id={})", session_id);
 

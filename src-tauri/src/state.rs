@@ -16,6 +16,22 @@ pub struct PersistentAcpSession {
     pub request_tx: UnboundedSender<AcpRequest>,
     /// 发送取消信号：drop 或 send 均会触发 session 线程 kill child process
     pub abort_tx: tokio::sync::oneshot::Sender<()>,
+    /// 待处理的权限确认请求，key = permission_id（UUID）
+    /// Arc 与 AcpClientHandler 中的字段共享同一实例
+    pub pending_permissions: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                tokio::sync::oneshot::Sender<PermissionReply>,
+            >,
+        >,
+    >,
+}
+
+/// 用户对权限请求的回复（内部类型，避免与 ACP crate 命名冲突）
+pub struct PermissionReply {
+    pub selected_option_id: String, // 用户选择的 option_id；取消时为空字符串
+    pub cancelled: bool,            // true = 用户关闭面板（取消）
 }
 
 /// 全局应用状态（注入 Tauri manage）

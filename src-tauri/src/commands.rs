@@ -802,6 +802,7 @@ async fn ai_optimize_sql_inner(
             config_fingerprint: String::new(),
             request_tx: new_session.request_tx,
             abort_tx: new_session.abort_tx,
+            pending_permissions: new_session.pending_permissions,
         });
     }
 
@@ -926,6 +927,7 @@ async fn ai_explain_sql_acp_inner(
             config_fingerprint: String::new(),
             request_tx: new_session.request_tx,
             abort_tx: new_session.abort_tx,
+            pending_permissions: new_session.pending_permissions,
         });
     }
 
@@ -1331,6 +1333,7 @@ async fn get_or_create_session(
             config_fingerprint: fingerprint,
             request_tx: new_session.request_tx,
             abort_tx: new_session.abort_tx,
+            pending_permissions: new_session.pending_permissions,
         },
     );
     Ok(tx)
@@ -2430,4 +2433,42 @@ pub async fn start_migration(
 #[tauri::command]
 pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
     crate::migration::get_task(task_id)
+}
+
+// ============ ACP Elicitation — 权限确认回传 ============
+
+/// 前端回传用户对 ACP permission 请求的响应
+///
+/// `selected_option_id` 为用户选择的 option_id；`cancelled=true` 时此值被忽略。
+#[tauri::command]
+pub async fn acp_permission_respond(
+    session_id: String,
+    permission_id: String,
+    selected_option_id: String,
+    cancelled: bool,
+    state: tauri::State<'_, crate::AppState>,
+) -> crate::AppResult<()> {
+    use crate::AppError;
+    let sessions = state.acp_sessions.lock().await;
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| AppError::Other(format!("ACP session '{}' not found", session_id)))?;
+
+    let tx = session
+        .pending_permissions
+        .lock()
+        .unwrap()
+        .remove(&permission_id)
+        .ok_or_else(|| {
+            AppError::Other(format!(
+                "Permission request '{}' not found or already responded",
+                permission_id
+            ))
+        })?;
+
+    let _ = tx.send(crate::state::PermissionReply {
+        selected_option_id,
+        cancelled,
+    });
+    Ok(())
 }

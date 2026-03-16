@@ -616,16 +616,6 @@ export const MainContent: React.FC<MainContentProps> = ({
                 </Tooltip>
               </div>
 
-              {/* AI 助手入口 */}
-              <Tooltip content={t('mainContent.openAiAssistant')}>
-                <button
-                  className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors bg-[#00c9a7]/10 text-[#00c9a7] hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 hover:border-[#00c9a7]/60"
-                  onClick={() => setAssistantOpen(true)}
-                >
-                  <Bot size={14} />
-                  <span>AI</span>
-                </button>
-              </Tooltip>
               {/* 上下文选择器（右侧） */}
               <div className="flex items-center gap-1.5">
                 <DropdownSelect

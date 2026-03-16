@@ -27,17 +27,21 @@
 - [x] TableDataView 行操作增强（内联编辑、批量提交）
 - [x] 表右键菜单扩展（查看 DDL、截断表、可视化编辑器）
 
+
 ### 进行中
-- (无)
+- （无）
+
+### 已完成（补录）
+- [x] Oracle 驱动实现（oracle crate，可选 feature，需 Oracle Instant Client）
+- [x] SQL Server 驱动实现（tiberius）
+- [x] 数据导入（CSV/JSON/Excel 字段映射，ImportWizard 4 步向导）
 
 ### 待开始
-- [ ] Oracle 驱动实现（oracle crate）
-- [ ] SQL Server 驱动实现（tiberius）
-- [ ] 数据导入（CSV/JSON/Excel 字段映射）
+- （无，MVP 阶段全部完成）
 
 ---
 
-## V1 阶段（Q3 2026）—— 好用 — 进行中 🔄
+## V1 阶段（Q3 2026）—— 好用 — 已完成 ✅
 
 ### 完整 DB 管理
 - [x] 表管理 GUI（建表/改表/删表 + DDL 预览）
@@ -55,7 +59,7 @@
 
 ### 数据导入导出
 - [x] 导出：CSV / JSON / SQL Dump（含导出 UI）
-- [ ] 导入：CSV / JSON / Excel 字段映射写入 - 待实现
+- [x] 导入：CSV / JSON / Excel 字段映射写入（ImportWizard + import_to_table 命令）
 - [x] 带 WHERE 条件的部分数据导出
 
 ### AI 能力增强
@@ -73,28 +77,36 @@
 
 ---
 
-## V2 阶段（Q4 2026）—— 专业版
+## V2 阶段（Q4 2026）—— 专业版 — 已完成 ✅
 
 ### GraphRAG 知识图谱引擎
-- [ ] Schema 实体图构建（表/列/外键 → 图节点和边）
-- [ ] 关系路径推断（自动发现 JOIN 路径）
-- [ ] 图谱可视化（ERD + 业务语义标注）
+- [x] Schema 实体图构建（表/列/外键 → 图节点和边）
+- [x] 关系路径推断（自动发现 JOIN 路径）
+- [x] 图谱可视化（GraphExplorer 面板）
 
 ### 业务指标层
-- [ ] 指标定义（名称/字段/聚合函数/业务含义）
-- [ ] AI 生成指标草稿（扫描 Schema + 数据样本）
-- [ ] 用户审核确认（编辑/批准/拒绝 → 入库）
-- [ ] 指标检索增强（提问时注入相关指标定义）
+- [x] 指标定义（名称/字段/聚合函数/业务含义）
+- [x] AI 生成指标草稿（扫描 Schema + 数据样本）
+- [x] 用户审核确认（编辑/批准/拒绝 → 入库）
+- [x] 指标检索增强（提问时注入相关指标定义）
 
 ### 高精度 Text-to-SQL 管道
-- [ ] 指标 + GraphRAG + Schema 融合 Prompt 构建
-- [ ] SQL 语法校验（生成后自动检查）
+- [x] 指标 + GraphRAG + Schema 融合 Prompt 构建
+- [x] SQL 语法校验（生成后自动检查）
 
 ### 跨数据源迁移（Rust 原生实现）
-- [ ] DDL 跨方言转换（类型映射）
-- [ ] 分批数据迁移（进度展示 + 错误报告）
-- [ ] 迁移预检（兼容性检查）
-- [ ] 迁移任务管理（暂停/恢复/重试）
+- [x] DDL 跨方言转换（类型映射）
+- [x] 分批数据迁移（进度展示 + 错误报告）
+- [x] 迁移预检（兼容性检查）
+- [x] 迁移任务管理（暂停/恢复/重试）
+
+### 其他 V2 特性
+- [x] SQL Explain/Optimize ACP（流式 + 取消，结果独立 Tab）
+- [x] MCP propose_sql_diff 工具（AI 提议 SQL 修改 → DiffPanel 确认）
+- [x] 数据库树任意节点"新建查询"（SQL 模板预填）
+- [x] AI 助手浮动按钮 + 会话历史（AI 生成标题）
+- [x] ActivityBar V2 重构（移除废弃入口，添加指标/图谱/迁移）
+- [x] 启动时恢复上次已打开连接（localStorage 持久化）
 
 ---
 

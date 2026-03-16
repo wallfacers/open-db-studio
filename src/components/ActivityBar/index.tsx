@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '../../store/appStore';
-import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, ListTodo, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { User, Database, ListTodo, BarChart2, GitBranch, ArrowLeftRight, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -21,7 +20,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   showToast
 }) => {
   const { t } = useTranslation();
-  const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -73,39 +71,42 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? t('activity.dashboard') : undefined}>
+        <Tooltip content={!isExpanded ? '业务指标' : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'dashboard' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
             onClick={() => {
-              setActiveActivity('dashboard');
+              setActiveActivity('metrics');
               setIsSidebarOpen(true);
             }}
           >
-            <LayoutDashboard size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.dashboard')}</span>}
+            <BarChart2 size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">业务指标</span>}
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? t('activity.aiAssistant') : undefined}>
+        <Tooltip content={!isExpanded ? '知识图谱' : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'chat' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'graph' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
             onClick={() => {
-              setActiveActivity('chat');
-              setIsAssistantOpen(true);
+              setActiveActivity('graph');
+              setIsSidebarOpen(true);
             }}
           >
-            <MessageSquare size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.aiAssistant')}</span>}
+            <GitBranch size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">知识图谱</span>}
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? t('activity.gridView') : undefined}>
+        <Tooltip content={!isExpanded ? '数据迁移' : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'grid' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
-            onClick={() => setActiveActivity('grid')}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'migration' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('migration');
+              setIsSidebarOpen(true);
+            }}
           >
-            <LayoutGrid size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.gridView')}</span>}
+            <ArrowLeftRight size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">数据迁移</span>}
           </div>
         </Tooltip>
 
@@ -124,35 +125,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       </div>
 
       <div className="flex flex-col w-full">
-        <Tooltip content={!isExpanded ? t('activity.refresh') : undefined}>
-          <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent`}
-            onClick={() => {
-              const el = document.getElementById('refresh-icon');
-              if (el) {
-                el.classList.add('animate-spin');
-                setTimeout(() => el.classList.remove('animate-spin'), 1000);
-              }
-            }}
-          >
-            <RefreshCw id="refresh-icon" size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.refresh')}</span>}
-          </div>
-        </Tooltip>
-
-        <Tooltip content={!isExpanded ? t('activity.notifications') : undefined}>
-          <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent`}
-            onClick={() => showToast(t('activity.openNotifications'), 'info')}
-          >
-            <div className="relative">
-              <Bell size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-              <span className={`absolute bg-[#00c9a7] ${isExpanded ? 'top-0 right-3 w-2 h-2' : 'top-0 right-0 w-2 h-2'}`}></span>
-            </div>
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.notifications')}</span>}
-          </div>
-        </Tooltip>
-
         <Tooltip content={!isExpanded ? t('activity.settings') : undefined}>
           <div
             className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}

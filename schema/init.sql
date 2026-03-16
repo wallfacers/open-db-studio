@@ -89,3 +89,97 @@ CREATE TABLE IF NOT EXISTS task_records (
 -- 任务记录索引（按时间倒序，支持快速查询最近 100 条）
 CREATE INDEX IF NOT EXISTS idx_task_records_created ON task_records(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_records_status ON task_records(status);
+
+-- ============ V2: 知识图谱 ============
+
+-- 图谱节点（三层统一建模）
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    id            TEXT PRIMARY KEY,
+    node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias')),
+    connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    display_name  TEXT,
+    metadata      TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+
+-- 图谱边
+CREATE TABLE IF NOT EXISTS graph_edges (
+    id         TEXT PRIMARY KEY,
+    from_node  TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    to_node    TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    edge_type  TEXT NOT NULL CHECK(edge_type IN ('has_column','foreign_key','metric_ref','alias_of','join_path')),
+    weight     REAL NOT NULL DEFAULT 1.0,
+    metadata   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_from ON graph_edges(from_node);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_to ON graph_edges(to_node);
+
+-- ============ V2: 业务指标 ============
+
+CREATE TABLE IF NOT EXISTS metrics (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id        INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    name                 TEXT NOT NULL,
+    display_name         TEXT NOT NULL,
+    table_name           TEXT NOT NULL DEFAULT '',
+    column_name          TEXT,
+    aggregation          TEXT CHECK(aggregation IN ('SUM','COUNT','AVG','MAX','MIN','CUSTOM')),
+    filter_sql           TEXT,
+    description          TEXT,
+    status               TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','rejected')),
+    source               TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user','ai')),
+    metric_type          TEXT NOT NULL DEFAULT 'atomic' CHECK(metric_type IN ('atomic','composite')),
+    composite_components TEXT,
+    composite_formula    TEXT,
+    category             TEXT,
+    data_caliber         TEXT,
+    version              TEXT,
+    scope_database       TEXT,
+    scope_schema         TEXT,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_metrics_conn ON metrics(connection_id);
+CREATE INDEX IF NOT EXISTS idx_metrics_status ON metrics(status);
+-- idx_metrics_node 在 migrations.rs 中创建（需等 scope_database/scope_schema 列迁移完成后）
+
+-- 业务语义别名
+CREATE TABLE IF NOT EXISTS semantic_aliases (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    alias         TEXT NOT NULL,
+    node_id       TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    confidence    REAL NOT NULL DEFAULT 1.0,
+    source        TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user','ai')),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_semantic_aliases_conn ON semantic_aliases(connection_id);
+
+-- ============ V2: 跨数据源迁移 ============
+
+CREATE TABLE IF NOT EXISTS migration_tasks (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT NOT NULL,
+    src_connection_id INTEGER NOT NULL REFERENCES connections(id),
+    dst_connection_id INTEGER NOT NULL REFERENCES connections(id),
+    config            TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','paused','done','failed')),
+    progress          TEXT,
+    error_report      TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_checks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id     INTEGER NOT NULL REFERENCES migration_tasks(id) ON DELETE CASCADE,
+    check_type  TEXT NOT NULL CHECK(check_type IN ('type_compat','null_constraint','pk_conflict','other')),
+    table_name  TEXT NOT NULL,
+    column_name TEXT,
+    severity    TEXT NOT NULL CHECK(severity IN ('error','warning','info')),
+    message     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_migration_checks_task ON migration_checks(task_id);

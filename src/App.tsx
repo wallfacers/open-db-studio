@@ -14,6 +14,9 @@ import { useAppStore } from './store/appStore';
 import { QueryContext } from './types';
 import { useToolBridge } from './hooks/useToolBridge';
 import { TaskCenter } from './components/TaskCenter';
+import { MetricsLayout } from './components/MetricsExplorer/MetricsLayout';
+import { GraphExplorer } from './components/GraphExplorer';
+import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 
@@ -83,7 +86,7 @@ JOIN
   const [isAssistantResizing, setIsAssistantResizing] = useState(false);
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
-  const { results, error: queryError, setActiveTabId } = useQueryStore();
+  const { results, error: queryError, setActiveTabId, explanationContent, explanationStreaming } = useQueryStore();
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
@@ -104,12 +107,13 @@ JOIN
   useEffect(() => {
     const len = (results[activeTab] ?? []).length;
     const hasError = !!queryError;
-    if ((len > 0 || hasError) && resultsHeight === 0) {
+    const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
+    if ((len > 0 || hasError || hasExplanation) && resultsHeight === 0) {
       setResultsHeight(250);
-    } else if (len === 0 && !hasError && resultsHeight > 0) {
+    } else if (len === 0 && !hasError && !hasExplanation && resultsHeight > 0) {
       setResultsHeight(0);
     }
-  }, [results, activeTab, queryError]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [results, activeTab, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [toast, setToast] = useState<{ message: string; level: ToastLevel; markdownContext?: string | null } | null>(null);
 
@@ -203,7 +207,7 @@ JOIN
     setActiveTab(tabId);
   };
 
-  const handleNewQuery = (connId: number, connName: string, database?: string, schema?: string) => {
+  const handleNewQuery = (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => {
     const tabId = `query_${connId}_${Date.now()}`;
     const queryCount = tabs.filter(t => t.type === 'query').length + 1;
     setTabs(prev => [...prev, {
@@ -213,6 +217,9 @@ JOIN
       db: connName,
       queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
     }]);
+    if (initialSql) {
+      useQueryStore.getState().setSql(tabId, initialSql);
+    }
     setActiveTab(tabId);
   };
 
@@ -347,7 +354,7 @@ JOIN
         showToast={showToast}
       />
 
-      {activeActivity !== 'settings' && activeActivity !== 'tasks' && (
+      {activeActivity !== 'settings' && activeActivity !== 'tasks' && activeActivity !== 'metrics' && activeActivity !== 'graph' && activeActivity !== 'migration' && (
         <Explorer
           isSidebarOpen={isSidebarOpen}
           sidebarWidth={sidebarWidth}
@@ -361,10 +368,20 @@ JOIN
           onOpenTableStructure={handleOpenTableStructure}
         />
       )}
+      {/* MetricsLayout 始终挂载，保留 Tab 和树展开状态 */}
+      <div className={activeActivity === 'metrics' ? 'flex flex-1 overflow-hidden' : 'hidden'}>
+        <MetricsLayout />
+      </div>
+
       {activeActivity === 'settings' ? (
         <SettingsPage />
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
+      ) : activeActivity === 'metrics' ? null
+      : activeActivity === 'graph' ? (
+        <GraphExplorer connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
+      ) : activeActivity === 'migration' ? (
+        <MigrationWizard />
       ) : (
       <MainContent
         tabs={tabs}
@@ -404,7 +421,7 @@ JOIN
           style={{
             width: isAssistantOpen ? assistantWidth : 0,
             overflow: 'hidden',
-            transition: 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
+            transition: isAssistantResizing ? 'none' : 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
             flexShrink: 0,
           }}
         >

@@ -66,6 +66,7 @@ import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 import { buildErrorContext } from '../../utils/errorContext';
 import { askAiWithContext } from '../../utils/askAi';
+import { MarkdownContent } from '../shared/MarkdownContent';
 
 interface MainContentProps {
   tabs: TabData[];
@@ -183,6 +184,27 @@ const ResultCellContextMenu = React.forwardRef<HTMLDivElement, ResultCellContext
   }
 );
 
+// ── 等待 SQL 解释首词的弹跳动画（复用 ai-dot 样式） ────────────────────────
+const ExplanationTypingIndicator: React.FC = () => {
+  const { t } = useTranslation();
+  const [msgIdx, setMsgIdx] = useState(0);
+  const messages = [
+    t('assistant.waitMsg0'),
+    t('assistant.waitMsg1'),
+    t('assistant.waitMsg2'),
+  ];
+  useEffect(() => {
+    const id = setInterval(() => setMsgIdx((i) => (i + 1) % messages.length), 2200);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="flex items-center gap-2 p-4">
+      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+      <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
+    </div>
+  );
+};
+
 export const MainContent: React.FC<MainContentProps> = ({
   tabs, activeTab, setActiveTab, closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
   handleFormat, showToast,
@@ -194,15 +216,20 @@ export const MainContent: React.FC<MainContentProps> = ({
 }) => {
   const { t } = useTranslation();
   const setAssistantOpen = useAppStore((s) => s.setAssistantOpen);
-  const { sqlContent, setSql, executeQuery, isExecuting, results, error, diagnosis,
-          removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults } = useQueryStore();
+  const { sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results, error, diagnosis,
+          removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults,
+          explanationContent, explanationStreaming,
+          appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
   const { nodes } = useTreeStore();
-  const { explainSql, isExplaining, optimizeSql, isOptimizing } = useAiStore();
-  const [explanation, setExplanation] = useState<string | null>(null);
-  const [optimization, setOptimization] = useState<string | null>(null);
+  const { explainSql, isExplaining: isExplainingMap, optimizeSql, isOptimizing: isOptimizingMap, cancelOptimizeSql, cancelExplainSql } = useAiStore();
+  const isExecuting = isExecutingMap[activeTab] ?? false;
+  const isExplaining = isExplainingMap[activeTab] ?? false;
+  const isOptimizing = isOptimizingMap[activeTab] ?? false;
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
+  const [explanationContextMenu, setExplanationContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const explanationContextMenuRef = useRef<HTMLDivElement>(null);
   const [resultCellViewer, setResultCellViewer] = useState<{ value: string | null; columnName: string } | null>(null);
   const [resultCellMenu, setResultCellMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null);
   const resultCellMenuRef = useRef<HTMLDivElement>(null);
@@ -312,19 +339,30 @@ export const MainContent: React.FC<MainContentProps> = ({
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
   const currentResults = results[activeTab] ?? [];
-  const [selectedResultIdx, setSelectedResultIdx] = useState(0);
+  const [selectedResultPane, setSelectedResultPane] = useState<number | 'explanation'>(0);
 
   // Reset selected result index when active editor tab changes
   useEffect(() => {
-    setSelectedResultIdx(0);
+    setSelectedResultPane(0);
   }, [activeTab]);
 
   // Reset to first result tab after a new execution completes
   useEffect(() => {
     if (!isExecuting) {
-      setSelectedResultIdx(0);
+      setSelectedResultPane(0);
     }
   }, [isExecuting]);
+
+  // 解释内容消失时自动切回第一个结果集（避免 Zustand/React 批处理差异导致残留空白页）
+  useEffect(() => {
+    if (
+      selectedResultPane === 'explanation' &&
+      !explanationStreaming[activeTab] &&
+      !explanationContent[activeTab]
+    ) {
+      setSelectedResultPane(0);
+    }
+  }, [explanationStreaming, explanationContent, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Toast on execution error so user gets immediate feedback
   useEffect(() => {
@@ -349,8 +387,8 @@ export const MainContent: React.FC<MainContentProps> = ({
     setResultCellMenu(null);
   };
 
-  const getResultRow = (rowIdx: number) => currentResults[selectedResultIdx]?.rows[rowIdx] ?? [];
-  const getResultCols = () => currentResults[selectedResultIdx]?.columns ?? [];
+  const getResultRow = (rowIdx: number) => (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.rows[rowIdx] ?? [];
+  const getResultCols = () => (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns ?? [];
 
   const buildResultInsertSql = (rowIdx: number) => {
     const cols = getResultCols().map(c => `\`${c}\``).join(', ');
@@ -400,9 +438,30 @@ export const MainContent: React.FC<MainContentProps> = ({
       showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
       return;
     }
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    const selectedSql =
+      selection && !selection.isEmpty()
+        ? editor!.getModel()?.getValueInRange(selection) ?? ''
+        : '';
+    const sqlToExplain = selectedSql.trim() ? selectedSql : currentSql;
+
+    startExplanation(activeTab);       // 原子操作：清内容 + streaming=true（一次 zustand set）
+    setSelectedResultPane('explanation');
+
     try {
-      const result = await explainSql(currentSql, connId);
-      setExplanation(result);
+      await explainSql(
+        sqlToExplain,
+        connId,
+        activeTabObj?.queryContext?.database ?? null,
+        activeTab,
+        (delta) => appendExplanationContent(activeTab, delta),
+        () => setExplanationStreaming(activeTab, false),
+        (err) => {
+          setExplanationStreaming(activeTab, false);
+          showToast(err, 'error');
+        },
+      );
     } catch (e) {
       const ctx = buildErrorContext('ai_request', { rawError: String(e) });
       if (showError) showError(ctx.userMessage, ctx.markdownContext);
@@ -416,9 +475,21 @@ export const MainContent: React.FC<MainContentProps> = ({
       showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
       return;
     }
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    const selectedSql =
+      selection && !selection.isEmpty()
+        ? editor!.getModel()?.getValueInRange(selection) ?? ''
+        : '';
+    const sqlToOptimize = selectedSql.trim() ? selectedSql : currentSql;
     try {
-      const result = await optimizeSql(currentSql, connId);
-      setOptimization(result);
+      const result = await optimizeSql(sqlToOptimize, connId, activeTabObj?.queryContext?.database ?? null, activeTab);
+      if (selectedSql.trim() && selection && editor) {
+        editor.executeEdits('optimize', [{ range: selection, text: result }]);
+        editor.focus();
+      } else {
+        setSql(activeTab, result);
+      }
     } catch (e) {
       const ctx = buildErrorContext('ai_request', { rawError: String(e) });
       if (showError) showError(ctx.userMessage, ctx.markdownContext);
@@ -434,6 +505,9 @@ export const MainContent: React.FC<MainContentProps> = ({
       }
       if (resultContextMenuRef.current && !resultContextMenuRef.current.contains(e.target as Node)) {
         setResultContextMenu(null);
+      }
+      if (explanationContextMenuRef.current && !explanationContextMenuRef.current.contains(e.target as Node)) {
+        setExplanationContextMenu(null);
       }
       if (editorContextMenuRef.current && !editorContextMenuRef.current.contains(e.target as Node)) {
         setEditorContextMenu(null);
@@ -580,24 +654,64 @@ export const MainContent: React.FC<MainContentProps> = ({
                     {isExecuting ? <Square size={16} /> : <Play size={16} />}
                   </button>
                 </Tooltip>
-                <Tooltip content={isExplaining ? t('mainContent.explaining') : t('mainContent.explainSql')}>
-                  <button
-                    className={`p-1.5 rounded transition-colors ${isExplaining ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                    onClick={handleExplain}
-                    disabled={isExplaining || !activeTabObj?.queryContext?.connectionId}
-                  >
-                    <Lightbulb size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip content={isOptimizing ? t('mainContent.optimizing') : t('mainContent.optimizeSql')}>
-                  <button
-                    className={`p-1.5 rounded transition-colors ${isOptimizing ? 'text-[#7a9bb8] cursor-not-allowed opacity-50' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                    onClick={handleOptimize}
-                    disabled={isOptimizing || !activeTabObj?.queryContext?.connectionId}
-                  >
-                    <Zap size={16} />
-                  </button>
-                </Tooltip>
+                {isExplaining ? (
+                  <Tooltip content={t('mainContent.stopExplaining')}>
+                    <button
+                      className="p-1.5 rounded transition-colors text-[#3794ff] hover:text-red-400 hover:bg-[#1e2d42] group"
+                      onClick={() => { cancelExplainSql(activeTab); setExplanationStreaming(activeTab, false); }}
+                    >
+                      <span className="block group-hover:hidden">
+                        <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        </svg>
+                      </span>
+                      <span className="hidden group-hover:block">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </span>
+                    </button>
+                  </Tooltip>
+                ) : (
+                  <Tooltip content={!currentSql.trim() ? '' : t('mainContent.explainSql')}>
+                    <button
+                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      onClick={handleExplain}
+                      disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
+                    >
+                      <Lightbulb size={16} />
+                    </button>
+                  </Tooltip>
+                )}
+                {isOptimizing ? (
+                  <Tooltip content={t('mainContent.stopOptimizing')}>
+                    <button
+                      className="p-1.5 rounded transition-colors text-[#f59e0b] hover:text-red-400 hover:bg-[#1e2d42] group"
+                      onClick={() => cancelOptimizeSql(activeTab)}
+                    >
+                      <span className="block group-hover:hidden">
+                        <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        </svg>
+                      </span>
+                      <span className="hidden group-hover:block">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </span>
+                    </button>
+                  </Tooltip>
+                ) : (
+                  <Tooltip content={!currentSql.trim() ? '' : t('mainContent.optimizeSql')}>
+                    <button
+                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      onClick={handleOptimize}
+                      disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
+                    >
+                      <Zap size={16} />
+                    </button>
+                  </Tooltip>
+                )}
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <Tooltip content={t('mainContent.saveSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={() => showToast(t('mainContent.sqlSaved'), 'info')}>
@@ -607,11 +721,6 @@ export const MainContent: React.FC<MainContentProps> = ({
                 <Tooltip content={t('mainContent.formatSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
                     <FileEdit size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip content={t('mainContent.openEditorSettings')}>
-                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={() => showToast(t('mainContent.openEditorSettings'), 'info')}>
-                    <Settings size={16} />
                   </button>
                 </Tooltip>
               </div>
@@ -711,150 +820,171 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* Results Resizer */}
             <div
-              className="h-1 cursor-row-resize z-10 flex flex-col justify-center group"
+              className="h-1 cursor-row-resize z-10 hover:bg-[#00c9a7] transition-colors"
               onMouseDown={handleResultsResize}
-            >
-              <div className="h-px bg-[#1e2d42] group-hover:bg-[#00c9a7] transition-colors" />
-            </div>
+            />
 
             {/* Results Area */}
             <div className="flex flex-col bg-[#080d12] flex-shrink-0" style={{ height: resultsHeight }}>
               {/* Result tabs — one per result set, numbered from 1 */}
               <div className="flex items-center bg-[#0d1117] border-b border-[#1e2d42] overflow-x-auto">
-                {currentResults.length === 0 ? (
-                  <div className="px-4 h-[38px] flex items-center text-xs text-[#00c9a7] border-t-2 border-t-[#00c9a7] border-r border-r-[#1e2d42] bg-[#080d12]">
-                    {t('mainContent.resultSet')}
+                {currentResults.map((result, idx) => (
+                  <div
+                    key={idx}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    onClick={() => setSelectedResultPane(idx)}
+                    onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
+                  >
+                    <span>
+                      {result.kind === 'dml-report'
+                        ? `${t('mainContent.dmlReport')}（${result.rows.length}${t('mainContent.dmlReportCount')}）`
+                        : `${t('mainContent.resultSet')} ${idx + 1}`}
+                    </span>
+                    <Tooltip content={t('mainContent.closeResult')}>
+                      <span
+                        className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeResult(activeTab, idx);
+                          if (typeof selectedResultPane === 'number' && selectedResultPane >= idx && selectedResultPane > 0)
+                            setSelectedResultPane((s) => typeof s === 'number' ? Math.max(0, s - 1) : s);
+                        }}
+                      >✕</span>
+                    </Tooltip>
                   </div>
-                ) : (
-                  currentResults.map((result, idx) => (
-                    <div
-                      key={idx}
-                      className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultIdx === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
-                      onClick={() => setSelectedResultIdx(idx)}
-                      onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
-                    >
-                      <span>
-                        {result.kind === 'dml-report'
-                          ? `${t('mainContent.dmlReport')}（${result.rows.length}${t('mainContent.dmlReportCount')}）`
-                          : `${t('mainContent.resultSet')} ${idx + 1}`}
-                      </span>
+                ))}
+                {/* SQL 解释 Tab — 仅在有内容或正在解释时显示 */}
+                {(explanationStreaming[activeTab] || explanationContent[activeTab]) && (
+                  <div
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === 'explanation' ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    onClick={() => setSelectedResultPane('explanation')}
+                    onContextMenu={(e) => { e.preventDefault(); setExplanationContextMenu({ x: e.clientX, y: e.clientY }); }}
+                  >
+                    {explanationStreaming[activeTab] ? (
+                      <svg className="animate-spin flex-shrink-0" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                    ) : (
+                      <Lightbulb size={11} className="flex-shrink-0" />
+                    )}
+                    <span>{t('mainContent.sqlExplanation')}</span>
+                    {!(explanationStreaming[activeTab] && explanationContent[activeTab]) && (
                       <Tooltip content={t('mainContent.closeResult')}>
                         <span
                           className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
                           onClick={(e) => {
                             e.stopPropagation();
-                            removeResult(activeTab, idx);
-                            if (selectedResultIdx >= idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
+                            cancelExplainSql(activeTab);
+                            clearExplanation(activeTab);
+                            setSelectedResultPane(0);
                           }}
                         >✕</span>
                       </Tooltip>
-                    </div>
-                  ))
+                    )}
+                  </div>
                 )}
               </div>
 
               <div className="flex-1 overflow-auto">
-                {isExecuting ? (
-                  <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
-                ) : error ? (
-                  <div className="p-3 text-red-400 text-xs font-mono">
-                    {error}
-                    {diagnosis && (
-                      <div className="mt-2 p-2 bg-[#1a2639] rounded text-[#c8daea] whitespace-pre-wrap font-sans">
-                        <span className="text-[#3794ff]">{t('mainContent.aiDiagnosis')}</span>{diagnosis}
+                {selectedResultPane === 'explanation' ? (
+                  <div className="p-4 h-full overflow-auto">
+                    {explanationContent[activeTab] ? (
+                      <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                        <MarkdownContent content={explanationContent[activeTab]} />
+                      </div>
+                    ) : explanationStreaming[activeTab] ? (
+                      <ExplanationTypingIndicator />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-[#7a9bb8] text-sm gap-2 pt-12">
+                        <Lightbulb size={32} className="opacity-20" />
+                        <span>{t('mainContent.clickToExplain')}</span>
                       </div>
                     )}
                   </div>
-                ) : currentResults.length === 0 ? (
-                  <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
-                ) : currentResults[selectedResultIdx]?.kind === 'select' && currentResults[selectedResultIdx]?.columns.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
                 ) : (
                   <>
-                    <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
-                      <thead className="sticky top-0 bg-[#0d1117] z-10">
-                        <tr>
-                          <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
-                          {currentResults[selectedResultIdx]?.columns.map((col) => (
-                            <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
-                              {col}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {currentResults[selectedResultIdx]?.rows.map((row, ri) => (
-                          <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
-                            <td
-                              className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-left text-xs select-none cursor-default"
-                              onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
-                            >{ri + 1}</td>
-                            {row.map((cell, ci) => {
-                              const colName = currentResults[selectedResultIdx]?.columns[ci] ?? '';
-                              const cellStr = cell === null ? null : String(cell);
-                              return (
+                    {isExecuting ? (
+                      <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
+                    ) : error ? (
+                      <div className="p-3 text-red-400 text-xs font-mono">
+                        {error}
+                        {diagnosis && (
+                          <div className="mt-2 p-2 bg-[#1a2639] rounded text-[#c8daea] whitespace-pre-wrap font-sans">
+                            <span className="text-[#3794ff]">{t('mainContent.aiDiagnosis')}</span>{diagnosis}
+                          </div>
+                        )}
+                      </div>
+                    ) : currentResults.length === 0 ? (
+                      <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
+                    ) : (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.kind === 'select' && (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.length === 0 ? (
+                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
+                    ) : (
+                      <>
+                        <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                          <thead className="sticky top-0 bg-[#0d1117] z-10">
+                            <tr>
+                              <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                              {(typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.map((col) => (
+                                <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
+                                  {col}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.rows.map((row, ri) => (
+                              <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
                                 <td
-                                  key={ci}
-                                  className="px-3 py-1.5 border-r border-[#1e2d42] relative group text-left"
-                                  onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
-                                >
-                                  <div
-                                    className="max-w-[300px] truncate"
-                                    title={cellStr ?? undefined}
-                                  >
-                                    {cell === null
-                                      ? <span className="text-[#7a9bb8]">NULL</span>
-                                      : typeof cell === 'string' && cell.startsWith('✓')
-                                        ? <span className="text-green-400">{cell}</span>
-                                        : <span className="text-[#c8daea]">{cellStr}</span>}
-                                  </div>
-                                  {cellStr !== null && (
-                                    <button
-                                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
-                                      onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
+                                  className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-left text-xs select-none cursor-default"
+                                  onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
+                                >{ri + 1}</td>
+                                {row.map((cell, ci) => {
+                                  const colName = (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns[ci] ?? '';
+                                  const cellStr = cell === null ? null : String(cell);
+                                  return (
+                                    <td
+                                      key={ci}
+                                      className="px-3 py-1.5 border-r border-[#1e2d42] relative group text-left"
+                                      onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                     >
-                                      <Maximize2 size={10} />
-                                    </button>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                                      <div
+                                        className="max-w-[300px] truncate"
+                                        title={cellStr ?? undefined}
+                                      >
+                                        {cell === null
+                                          ? <span className="text-[#7a9bb8]">NULL</span>
+                                          : typeof cell === 'string' && cell.startsWith('✓')
+                                            ? <span className="text-green-400">{cell}</span>
+                                            : <span className="text-[#c8daea]">{cellStr}</span>}
+                                      </div>
+                                      {cellStr !== null && (
+                                        <button
+                                          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                          onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
+                                        >
+                                          <Maximize2 size={10} />
+                                        </button>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
+                    )}
                   </>
                 )}
               </div>
 
               {/* Status Bar */}
-              {!isExecuting && !error && currentResults[selectedResultIdx]?.kind === 'select' && currentResults[selectedResultIdx]?.columns.length > 0 && (
+              {!isExecuting && !error && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
                 <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
-                  <span>{currentResults[selectedResultIdx]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultIdx]?.duration_ms}ms</span>
+                  <span>{currentResults[selectedResultPane]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultPane]?.duration_ms}ms</span>
                 </div>
               )}
 
-              {/* AI 解释面板 */}
-              {explanation && (
-                <div className="border-t border-[#1e2d42] p-4 bg-[#0d1117]">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-gray-400 font-medium">{t('mainContent.aiExplanation')}</span>
-                    <button onClick={() => setExplanation(null)} className="text-xs text-[#7a9bb8] hover:text-[#c8daea]">✕</button>
-                  </div>
-                  <p className="text-sm text-[#c8daea] whitespace-pre-wrap">{explanation}</p>
-                </div>
-              )}
-
-              {/* AI 优化面板 */}
-              {optimization && (
-                <div className="border-t border-[#1e2d42] p-4 bg-[#0d1117]">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-gray-400 font-medium">{t('mainContent.aiOptimization')}</span>
-                    <button onClick={() => setOptimization(null)} className="text-xs text-[#7a9bb8] hover:text-[#c8daea]">✕</button>
-                  </div>
-                  <p className="text-sm text-[#c8daea] whitespace-pre-wrap">{optimization}</p>
-                </div>
-              )}
             </div>
           </div>
         )
@@ -938,7 +1068,13 @@ export const MainContent: React.FC<MainContentProps> = ({
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
               removeResult(activeTab, resultContextMenu.idx);
-              if (selectedResultIdx >= resultContextMenu.idx && selectedResultIdx > 0) setSelectedResultIdx(s => s - 1);
+              const willBeEmpty = currentResults.length === 1;
+              const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
+              if (willBeEmpty && hasExplanation) {
+                setSelectedResultPane('explanation');
+              } else if (typeof selectedResultPane === 'number' && selectedResultPane >= resultContextMenu.idx && selectedResultPane > 0) {
+                setSelectedResultPane(s => typeof s === 'number' ? Math.max(0, s - 1) : s);
+              }
               setResultContextMenu(null);
             }}
           >
@@ -950,7 +1086,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             disabled={resultContextMenu.idx === 0}
             onClick={() => {
               removeResultsLeft(activeTab, resultContextMenu.idx);
-              setSelectedResultIdx(0);
+              setSelectedResultPane(0);
               setResultContextMenu(null);
             }}
           >
@@ -958,10 +1094,20 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={resultContextMenu.idx === currentResults.length - 1}
+            disabled={
+              resultContextMenu.idx === currentResults.length - 1 &&
+              !(explanationContent[activeTab] && !explanationStreaming[activeTab])
+            }
             onClick={() => {
               removeResultsRight(activeTab, resultContextMenu.idx);
-              if (selectedResultIdx > resultContextMenu.idx) setSelectedResultIdx(resultContextMenu.idx);
+              // 若右侧只剩解释 Tab 且未在流式输出中，一并关闭
+              if (explanationContent[activeTab] && !explanationStreaming[activeTab]) {
+                cancelExplainSql(activeTab);
+                clearExplanation(activeTab);
+                if (selectedResultPane === 'explanation') setSelectedResultPane(resultContextMenu.idx);
+              } else if (typeof selectedResultPane === 'number' && selectedResultPane > resultContextMenu.idx) {
+                setSelectedResultPane(resultContextMenu.idx);
+              }
               setResultContextMenu(null);
             }}
           >
@@ -972,7 +1118,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             disabled={currentResults.length <= 1}
             onClick={() => {
               removeOtherResults(activeTab, resultContextMenu.idx);
-              setSelectedResultIdx(0);
+              setSelectedResultPane(0);
               setResultContextMenu(null);
             }}
           >
@@ -983,8 +1129,73 @@ export const MainContent: React.FC<MainContentProps> = ({
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
             onClick={() => {
               clearResults(activeTab);
-              setSelectedResultIdx(0);
+              const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
+              setSelectedResultPane(hasExplanation ? 'explanation' : 0);
               setResultContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeAll')}
+          </button>
+        </div>
+      )}
+
+      {/* SQL 解释 Tab 右键菜单 */}
+      {explanationContextMenu && (
+        <div
+          ref={explanationContextMenuRef}
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          style={{ left: explanationContextMenu.x, top: explanationContextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!!(explanationStreaming[activeTab] && explanationContent[activeTab])}
+            onClick={() => {
+              cancelExplainSql(activeTab);
+              clearExplanation(activeTab);
+              setSelectedResultPane(0);
+              setExplanationContextMenu(null);
+            }}
+          >
+            {t('mainContent.close')}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={currentResults.length === 0}
+            onClick={() => {
+              clearResults(activeTab);
+              setSelectedResultPane('explanation');
+              setExplanationContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeLeft')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled
+          >
+            {t('mainContent.closeRight')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={currentResults.length === 0}
+            onClick={() => {
+              clearResults(activeTab);
+              setSelectedResultPane('explanation');
+              setExplanationContextMenu(null);
+            }}
+          >
+            {t('mainContent.closeOther')}
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => {
+              cancelExplainSql(activeTab);
+              clearResults(activeTab);
+              clearExplanation(activeTab);
+              setSelectedResultPane(0);
+              setExplanationContextMenu(null);
             }}
           >
             {t('mainContent.closeAll')}

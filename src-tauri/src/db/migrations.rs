@@ -52,6 +52,26 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("Migrated llm_configs.api_key -> api_key_enc");
     }
 
+    // 存量数据库迁移 — metrics 表新增字段（忽略重复列错误）
+    let migration_stmts = [
+        "ALTER TABLE metrics ADD COLUMN metric_type TEXT DEFAULT 'atomic'",
+        "ALTER TABLE metrics ADD COLUMN composite_components TEXT",
+        "ALTER TABLE metrics ADD COLUMN composite_formula TEXT",
+        "ALTER TABLE metrics ADD COLUMN category TEXT",
+        "ALTER TABLE metrics ADD COLUMN data_caliber TEXT",
+        "ALTER TABLE metrics ADD COLUMN version TEXT",
+        "ALTER TABLE metrics ADD COLUMN scope_database TEXT",
+        "ALTER TABLE metrics ADD COLUMN scope_schema TEXT",
+    ];
+    for stmt in &migration_stmts {
+        let _ = conn.execute(stmt, []);
+    }
+    let _ = conn.execute("UPDATE metrics SET source='manual' WHERE source='user'", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_metrics_node ON metrics(connection_id, scope_database, scope_schema)",
+        [],
+    );
+
     log::info!("Database migrations completed");
     Ok(())
 }

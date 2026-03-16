@@ -4,8 +4,12 @@ mod crypto;
 mod datasource;
 mod db;
 mod error;
+mod graph;
 mod llm;
 mod mcp;
+mod metrics;
+mod migration;
+mod pipeline;
 mod state;
 
 pub use error::{AppError, AppResult};
@@ -51,6 +55,8 @@ pub fn run() {
                 mcp_port,
                 acp_session: tokio::sync::Mutex::new(None),
                 current_editor_sql: tokio::sync::Mutex::new(None),
+                optimize_acp_session: tokio::sync::Mutex::new(None),
+                explain_acp_session: tokio::sync::Mutex::new(None),
             });
             Ok(())
         })
@@ -87,6 +93,9 @@ pub fn run() {
             commands::insert_row,
             commands::export_table_data,
             commands::ai_optimize_sql,
+            commands::cancel_optimize_acp_session,
+            commands::ai_explain_sql_acp,
+            commands::cancel_explain_acp_session,
             commands::ai_create_table,
             commands::ai_diagnose_error,
             commands::list_groups,
@@ -97,6 +106,11 @@ pub fn run() {
             commands::reorder_connections,
             commands::reorder_groups,
             commands::list_databases,
+            commands::list_databases_for_metrics,
+            commands::list_schemas_for_metrics,
+            commands::get_metric,
+            commands::list_metrics_by_node,
+            commands::count_metrics_batch,
             commands::list_schemas,
             commands::list_objects,
             commands::list_tables_with_stats,
@@ -122,6 +136,24 @@ pub fn run() {
             commands::get_table_columns_for_import,
             commands::show_in_folder,
             commands::get_db_version,
+            commands::list_metrics,
+            commands::save_metric,
+            commands::update_metric,
+            commands::delete_metric,
+            commands::approve_metric,
+            commands::build_schema_graph,
+            commands::get_graph_nodes,
+            commands::search_graph,
+            commands::create_migration_task,
+            commands::list_migration_tasks,
+            commands::run_migration_precheck,
+            commands::get_precheck_report,
+            commands::pause_migration,
+            commands::get_migration_progress,
+            commands::ai_generate_metrics,
+            commands::ai_generate_sql_v2,
+            commands::start_migration,
+            commands::get_migration_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

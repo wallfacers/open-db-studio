@@ -27,7 +27,7 @@ pub async fn spawn_acp_session_thread(
     api_type: String,
     preset: Option<String>,
     config_id: i64,
-    mcp_port: u16,
+    mcp_url: String,
     cwd: PathBuf,
     // 用于在 session 建立阶段向前端发送进度通知（可为 None）
     status_tx: Option<tokio::sync::mpsc::UnboundedSender<StreamEvent>>,
@@ -45,6 +45,9 @@ pub async fn spawn_acp_session_thread(
     // 创建 prompt 请求 channel（tx 存入 AppState，rx 传入线程）
     let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel::<AcpRequest>();
 
+    // 取消信号 channel：abort_tx 存入 AppState，drop 时触发 session kill child
+    let (abort_tx, abort_rx) = tokio::sync::oneshot::channel::<()>();
+
     // 用于等待线程完成握手的 oneshot channel
     let (setup_tx, setup_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
@@ -56,7 +59,7 @@ pub async fn spawn_acp_session_thread(
         let local = tokio::task::LocalSet::new();
 
         local.block_on(&rt, async move {
-            session_loop(mcp_port, cwd, request_rx, setup_tx, status_tx).await;
+            session_loop(mcp_url, cwd, request_rx, abort_rx, setup_tx, status_tx).await;
         });
     });
 
@@ -65,7 +68,7 @@ pub async fn spawn_acp_session_thread(
         .await
         .map_err(|_| AppError::Other("ACP session thread died before setup completed".into()))??;
 
-    Ok(PersistentAcpSession { config_id, config_fingerprint: String::new(), request_tx })
+    Ok(PersistentAcpSession { config_id, config_fingerprint: String::new(), request_tx, abort_tx })
 }
 
 /// 向前端发送 StatusUpdate 事件（status_tx 为 None 时静默跳过）
@@ -77,9 +80,10 @@ fn send_status(tx: &Option<UnboundedSender<StreamEvent>>, msg: &str) {
 
 /// session 线程主循环（在专用 current-thread 运行时 + LocalSet 内执行）
 async fn session_loop(
-    mcp_port: u16,
+    mcp_url: String,
     cwd: PathBuf,
     mut request_rx: tokio::sync::mpsc::UnboundedReceiver<AcpRequest>,
+    abort_rx: tokio::sync::oneshot::Receiver<()>,
     setup_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
     status_tx: Option<UnboundedSender<StreamEvent>>,
 ) {
@@ -91,7 +95,7 @@ async fn session_loop(
     let t_total = std::time::Instant::now();
     let (connection, session_id, mut child) =
         match crate::acp::client::start_acp_session(
-            mcp_port,
+            &mcp_url,
             &cwd,
             Arc::clone(&shared_event_tx),
             status_tx.as_ref(),
@@ -121,31 +125,56 @@ async fn session_loop(
 
     log::info!("[acp] Persistent session ready (session_id={})", session_id);
 
+    // 将 abort_rx 包成 fuse，方便在 select! 中多次使用
+    let mut abort_rx = std::pin::pin!(abort_rx);
+
     // Prompt 处理循环
-    while let Some(req) = request_rx.recv().await {
-        // 设置当前请求的 event sender
-        *shared_event_tx.lock().unwrap() = Some(req.event_tx);
-
-        // 发送 prompt
-        let content_blocks = vec![ContentBlock::Text(TextContent::new(req.prompt_text))];
-        let result = {
-            let conn = connection.lock().await;
-            conn.prompt(PromptRequest::new(session_id.clone(), content_blocks))
-                .await
-        };
-
-        // 清空 event sender（下一个请求到来前不应有事件流出）
-        *shared_event_tx.lock().unwrap() = None;
-
-        // 回传结果
-        let outcome = match result {
-            Ok(resp) => {
-                log::info!("[acp] Prompt done, stop_reason: {:?}", resp.stop_reason);
-                Ok(())
+    loop {
+        tokio::select! {
+            // 取消信号（abort_tx drop 或 send 均触发）
+            _ = &mut abort_rx => {
+                log::info!("[acp] Session aborted by user, killing opencode-cli");
+                let _ = child.kill().await;
+                return;
             }
-            Err(e) => Err(AppError::Other(format!("ACP prompt failed: {}", e))),
-        };
-        let _ = req.done_tx.send(outcome);
+            maybe_req = request_rx.recv() => {
+                let req = match maybe_req {
+                    Some(r) => r,
+                    None => break, // request_tx 全部 drop，正常退出
+                };
+
+                // 设置当前请求的 event sender
+                *shared_event_tx.lock().unwrap() = Some(req.event_tx);
+
+                // 执行 prompt，同时监听取消信号
+                let content_blocks = vec![ContentBlock::Text(TextContent::new(req.prompt_text))];
+                let result = tokio::select! {
+                    _ = &mut abort_rx => {
+                        log::info!("[acp] Prompt aborted mid-flight, killing opencode-cli");
+                        let _ = child.kill().await;
+                        *shared_event_tx.lock().unwrap() = None;
+                        // done_tx dropped here，调用方 done_rx.await 返回 Err
+                        return;
+                    }
+                    r = async {
+                        let conn = connection.lock().await;
+                        conn.prompt(PromptRequest::new(session_id.clone(), content_blocks)).await
+                    } => r,
+                };
+
+                // 清空 event sender
+                *shared_event_tx.lock().unwrap() = None;
+
+                let outcome = match result {
+                    Ok(resp) => {
+                        log::info!("[acp] Prompt done, stop_reason: {:?}", resp.stop_reason);
+                        Ok(())
+                    }
+                    Err(e) => Err(AppError::Other(format!("ACP prompt failed: {}", e))),
+                };
+                let _ = req.done_tx.send(outcome);
+            }
+        }
     }
 
     // request_tx 全部 drop 后退出循环，清理进程

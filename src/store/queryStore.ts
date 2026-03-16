@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo, MetricScope } from '../types';
+import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
 
 /** 判断是否为返回结果集的查询语句 */
@@ -50,6 +50,13 @@ interface QueryState {
   setActiveTabId: (tabId: string) => void;
   openMetricTab: (metricId: number, title: string) => void;
   openMetricListTab: (scope: import('../types').MetricScope, title: string) => void;
+
+  closeTab: (tabId: string) => void;
+  closeAllTabs: () => void;
+  closeTabsLeft: (tabId: string) => void;
+  closeTabsRight: (tabId: string) => void;
+  closeOtherTabs: (tabId: string) => void;
+  updateTabContext: (tabId: string, ctx: Partial<QueryContext>) => void;
 
   executeQuery: (connectionId: number, tabId: string, sqlOverride?: string, database?: string | null, schema?: string | null) => Promise<void>;
   loadHistory: (connectionId: number) => Promise<void>;
@@ -121,6 +128,51 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       return { tabs: [...s.tabs, tab], activeTabId: key };
     });
   },
+
+  closeTab: (tabId) =>
+    set(s => {
+      const next = s.tabs.filter(t => t.id !== tabId);
+      if (s.activeTabId !== tabId) return { tabs: next };
+      const idx = s.tabs.findIndex(t => t.id === tabId);
+      const newActive = next[Math.min(idx, next.length - 1)]?.id ?? '';
+      return { tabs: next, activeTabId: newActive };
+    }),
+
+  closeAllTabs: () => set({ tabs: [], activeTabId: '' }),
+
+  closeTabsLeft: (tabId) =>
+    set(s => {
+      const idx = s.tabs.findIndex(t => t.id === tabId);
+      if (idx <= 0) return s;
+      const next = s.tabs.slice(idx);
+      const newActive = next.find(t => t.id === s.activeTabId) ? s.activeTabId : tabId;
+      return { tabs: next, activeTabId: newActive };
+    }),
+
+  closeTabsRight: (tabId) =>
+    set(s => {
+      const idx = s.tabs.findIndex(t => t.id === tabId);
+      if (idx === s.tabs.length - 1) return s;
+      const next = s.tabs.slice(0, idx + 1);
+      const newActive = next.find(t => t.id === s.activeTabId) ? s.activeTabId : tabId;
+      return { tabs: next, activeTabId: newActive };
+    }),
+
+  closeOtherTabs: (tabId) =>
+    set(s => ({
+      tabs: s.tabs.filter(t => t.id === tabId),
+      activeTabId: tabId,
+    })),
+
+  updateTabContext: (tabId, ctx) =>
+    set(s => ({
+      tabs: s.tabs.map(t =>
+        t.id !== tabId ? t : {
+          ...t,
+          queryContext: { ...(t.queryContext ?? { connectionId: null, database: null, schema: null }), ...ctx },
+        }
+      ),
+    })),
 
   executeQuery: async (connectionId, tabId, sqlOverride, database, schema) => {
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';

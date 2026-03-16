@@ -189,7 +189,13 @@ async fn request_permission(
     let options: Vec<PermissionOption> = req.options.iter().map(|o| PermissionOption {
         option_id: o.option_id.to_string(),
         label: permission_option_label(&o.kind),
-        kind: format!("{:?}", o.kind).to_lowercase(),
+        // 使用 match 显式映射，避免 Debug 格式产生错误字符串（如 "allowonce" 而非 "allow_once"）
+        kind: match o.kind {
+            PermissionOptionKind::AllowOnce   => "allow_once",
+            PermissionOptionKind::AllowAlways => "allow_always",
+            PermissionOptionKind::Deny        => "deny",
+            _                                 => "deny",  // 未知变体视为拒绝
+        }.to_string(),
     }).collect();
 
     // 2. 创建 oneshot channel，tx 存入 pending map
@@ -393,7 +399,13 @@ respondElicitation: async (sessionId, selectedText) => {
       [sessionId]: { ...s.chatStates[sessionId], pendingElicitation: null },
     },
   }));
-  await get().sendAgentChatStream(selectedText, get().activeConnectionId);
+  // activeConnectionId 在 connectionStore 中，不在 aiStore
+  const { useConnectionStore } = await import('./connectionStore');
+  const connectionId = useConnectionStore.getState().activeConnectionId;
+  // sendAgentChatStream 内部捕获 get().currentSessionId，
+  // ElicitationPanel 仅在对应 session 显示，用户无法跨 session 触发，
+  // 因此此处 sessionId 与 currentSessionId 一致，无需额外传递
+  await get().sendAgentChatStream(selectedText, connectionId);
 },
 ```
 
@@ -517,6 +529,23 @@ AI 输出 "1. 创建表\n2. 查询表\n您需要哪个？" → 流式结束
     → respondElicitation(sessionId, "1. 创建表")
       → 清空 pendingElicitation → sendAgentChatStream("1. 创建表", connectionId)
         → 发起新一轮 ACP prompt → agent 继续
+```
+
+---
+
+## Abort 路径说明
+
+当 session 被 abort（用户取消生成或切换配置）时，`request_permission` 的 `rx.await` 未完成，`pending_permissions` 中的 oneshot sender 随 session Arc drop 而释放，无持久泄漏。
+
+但前端 `pendingPermission` 状态仍存在，需要在 `Done` 或 `Error` 事件到达时清除：
+
+```typescript
+// channel.onmessage 中 Done/Error 分支新增：
+} else if (event.type === 'Done' || event.type === 'Error') {
+  // ...现有逻辑...
+  // 同时清空任何未完成的 pendingPermission（abort 场景兜底）
+  setChatStateField({ pendingPermission: null });
+}
 ```
 
 ---

@@ -67,3 +67,19 @@ describe('closeOtherTabs', () => {
     expect(useQueryStore.getState().activeTabId).toBe('q2');
   });
 });
+
+describe('updateTabContext', () => {
+  it('合并 Partial<QueryContext> 到指定 tab', () => {
+    useQueryStore.getState().updateTabContext('q1', { connectionId: 5, database: 'mydb' });
+    const tab = useQueryStore.getState().tabs.find(t => t.id === 'q1');
+    expect(tab?.queryContext?.connectionId).toBe(5);
+    expect(tab?.queryContext?.database).toBe('mydb');
+    expect(tab?.queryContext?.schema).toBeNull();
+  });
+
+  it('不影响其他 tab', () => {
+    useQueryStore.getState().updateTabContext('q1', { connectionId: 5 });
+    const q2 = useQueryStore.getState().tabs.find(t => t.id === 'q2');
+    expect(q2?.queryContext).toBeUndefined();
+  });
+});

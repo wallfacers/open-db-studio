@@ -446,7 +446,7 @@
     "uniqueIndex": "唯一索引",
     "dropSuccess": "索引删除成功",
     "createSuccess": "索引创建成功",
-    "confirmDrop": "确认删除索引",
+    "confirmDrop": "确认删除索引 \"{{name}}\"？",
     "nameAndColumnsRequired": "请输入索引名和列名"
   },
   "export": {

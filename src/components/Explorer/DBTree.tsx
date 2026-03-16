@@ -316,7 +316,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onDropTable={async () => {
             const n = contextMenu.node;
-            if (!await confirm({ message: t('tableManageDialog.confirmDrop', { table: n.label }), variant: 'danger' })) return;
+            if (!await confirm({ message: t('tableManage.confirmDrop', { table: n.label }), variant: 'danger' })) return;
             const driver = getDriver(getConnectionId(n));
             const isPostgres = driver === 'postgres' || driver === 'postgresql';
             const q = (name: string) => isPostgres ? `"${name}"` : `\`${name}\``;

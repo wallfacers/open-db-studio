@@ -95,6 +95,14 @@ describe('openQueryTab', () => {
     expect(tabs[0].queryContext?.database).toBe('mydb');
     expect(activeTabId).toBe(tabs[0].id);
   });
+
+  it('传入 initialSql 时写入 sqlContent', () => {
+    useQueryStore.setState({ tabs: [], activeTabId: '', sqlContent: {} });
+    useQueryStore.getState().openQueryTab(1, 'MyDB', undefined, undefined, 'SELECT 1');
+    const state = useQueryStore.getState();
+    const tab = state.tabs[0];
+    expect(state.sqlContent[tab.id]).toBe('SELECT 1');
+  });
 });
 
 describe('openTableDataTab', () => {
@@ -113,5 +121,12 @@ describe('openTableStructureTab', () => {
     const { tabs } = useQueryStore.getState();
     expect(tabs[0].title).toBe('新建表');
     expect(tabs[0].isNewTable).toBe(true);
+  });
+
+  it('相同 table 不重复开 tab', () => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+    useQueryStore.getState().openTableStructureTab(1, 'mydb', undefined, 'users');
+    useQueryStore.getState().openTableStructureTab(1, 'mydb', undefined, 'users');
+    expect(useQueryStore.getState().tabs).toHaveLength(1);
   });
 });

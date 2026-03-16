@@ -1,6 +1,7 @@
 use crate::datasource::ColumnMeta;
 
 /// 将 src_driver 的类型名转换为 dst_driver 的类型名
+#[allow(dead_code)]
 pub fn convert_type(src_driver: &str, dst_driver: &str, src_type: &str) -> String {
     let normalized = src_type.to_uppercase();
     let base = normalized.split('(').next().unwrap_or(&normalized).trim();
@@ -62,6 +63,7 @@ pub fn convert_type(src_driver: &str, dst_driver: &str, src_type: &str) -> Strin
 }
 
 /// 生成目标表的 CREATE TABLE DDL
+#[allow(dead_code)]
 pub fn generate_create_table_ddl(
     src_driver: &str,
     dst_driver: &str,

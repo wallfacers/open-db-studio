@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo } from '../types';
+import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo, MetricScope } from '../types';
 import { useAppStore } from './appStore';
 
 /** 判断是否为返回结果集的查询语句 */
@@ -48,6 +48,8 @@ interface QueryState {
 
   setSql: (tabId: string, sql: string) => void;
   setActiveTabId: (tabId: string) => void;
+  openMetricTab: (metricId: number, title: string) => void;
+  openMetricListTab: (scope: import('../types').MetricScope, title: string) => void;
 
   executeQuery: (connectionId: number, tabId: string, sqlOverride?: string, database?: string | null, schema?: string | null) => Promise<void>;
   loadHistory: (connectionId: number) => Promise<void>;
@@ -95,6 +97,30 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   setSql: (tabId, sql) =>
     set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } })),
   setActiveTabId: (tabId) => set({ activeTabId: tabId }),
+
+  openMetricTab: (metricId, title) => {
+    set(s => {
+      const existing = s.tabs.find(t => t.type === 'metric' && t.metricId === metricId);
+      if (existing) return { activeTabId: existing.id };
+      const id = `metric_${metricId}_${Date.now()}`;
+      const tab: Tab = { id, type: 'metric', title, metricId };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+  openMetricListTab: (scope, title) => {
+    const key = `ml_${scope.connectionId}_${scope.database ?? ''}_${scope.schema ?? ''}`;
+    set(s => {
+      const existing = s.tabs.find(t => t.id === key);
+      if (existing) return { activeTabId: key };
+      const tab: Tab = {
+        id: key,
+        type: 'metric_list',
+        title: `${title} 指标列表`,
+        metricScope: scope,
+      };
+      return { tabs: [...s.tabs, tab], activeTabId: key };
+    });
+  },
 
   executeQuery: async (connectionId, tabId, sqlOverride, database, schema) => {
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';

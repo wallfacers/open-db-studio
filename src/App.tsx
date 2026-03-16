@@ -14,7 +14,7 @@ import { useAppStore } from './store/appStore';
 import { QueryContext } from './types';
 import { useToolBridge } from './hooks/useToolBridge';
 import { TaskCenter } from './components/TaskCenter';
-import { MetricsPanel } from './components/MetricsPanel';
+import { MetricsLayout } from './components/MetricsExplorer/MetricsLayout';
 import { GraphExplorer } from './components/GraphExplorer';
 import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
@@ -373,7 +373,7 @@ JOIN
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
       ) : activeActivity === 'metrics' ? (
-        <MetricsPanel connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
+        <MetricsLayout />
       ) : activeActivity === 'graph' ? (
         <GraphExplorer connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
       ) : activeActivity === 'migration' ? (

@@ -5,11 +5,12 @@ import type { Metric, MetricScope, MetricStatus } from '../../types';
 
 interface Props {
   scope: MetricScope;
+  onOpenMetric?: (metricId: number, title: string) => void;
 }
 
 type FilterTab = 'all' | MetricStatus;
 
-export function MetricListPanel({ scope }: Props) {
+export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -64,9 +65,7 @@ export function MetricListPanel({ scope }: Props) {
   };
 
   const openMetric = (m: Metric) => {
-    import('../../store/queryStore').then(({ useQueryStore }) => {
-      (useQueryStore.getState() as any).openMetricTab?.(m.id, m.display_name);
-    });
+    onOpenMetric?.(m.id, m.display_name);
   };
 
   const statusBadge = (status: MetricStatus) => {

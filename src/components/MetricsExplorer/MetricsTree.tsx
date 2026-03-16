@@ -6,21 +6,9 @@ import {
 } from 'lucide-react';
 import { useMetricsTreeStore, MetricsTreeNode } from '../../store/metricsTreeStore';
 
-// queryStore 中 openMetricTab/openMetricListTab 的调用需要等 Task 7 完成
-// 这里先用动态导入方式避免循环依赖
-function openMetricTab(metricId: number, label: string) {
-  import('../../store/queryStore').then(({ useQueryStore }) => {
-    (useQueryStore.getState() as any).openMetricTab?.(metricId, label);
-  });
-}
-
-function openMetricListTab(node: MetricsTreeNode) {
-  const { connectionId, database, schema } = node.meta;
-  if (!connectionId) return;
-  const title = schema ?? database ?? 'Metrics';
-  import('../../store/queryStore').then(({ useQueryStore }) => {
-    (useQueryStore.getState() as any).openMetricListTab?.({ connectionId, database, schema }, title);
-  });
+interface TreeProps {
+  onOpenMetricTab?: (metricId: number, title: string) => void;
+  onOpenMetricListTab?: (scope: { connectionId: number; database?: string; schema?: string }, title: string) => void;
 }
 
 interface ContextMenuState {
@@ -29,7 +17,7 @@ interface ContextMenuState {
   y: number;
 }
 
-export function MetricsTree() {
+export function MetricsTree({ onOpenMetricTab, onOpenMetricListTab }: TreeProps) {
   const {
     nodes, expandedIds, selectedId, metricCounts, loadingIds,
     init, toggleExpand, selectNode, refreshNode, getChildNodes,
@@ -82,7 +70,7 @@ export function MetricsTree() {
           }}
           onDoubleClick={() => {
             if (node.nodeType === 'metric' && node.meta.metricId) {
-              openMetricTab(node.meta.metricId, node.label);
+              onOpenMetricTab?.(node.meta.metricId, node.label);
             }
           }}
           onContextMenu={e => handleContextMenu(e, node)}
@@ -131,7 +119,7 @@ export function MetricsTree() {
                 className="w-full text-left px-3 py-1.5 text-xs text-[#a0b4c8] hover:bg-[#253347] hover:text-white"
                 onClick={() => {
                   if (contextMenu.node.meta.metricId) {
-                    openMetricTab(contextMenu.node.meta.metricId, contextMenu.node.label);
+                    onOpenMetricTab?.(contextMenu.node.meta.metricId, contextMenu.node.label);
                   }
                   setContextMenu(null);
                 }}
@@ -140,7 +128,7 @@ export function MetricsTree() {
                 className="w-full text-left px-3 py-1.5 text-xs text-[#a0b4c8] hover:bg-[#253347] hover:text-white"
                 onClick={() => {
                   if (contextMenu.node.meta.metricId) {
-                    openMetricTab(contextMenu.node.meta.metricId, contextMenu.node.label);
+                    onOpenMetricTab?.(contextMenu.node.meta.metricId, contextMenu.node.label);
                   }
                   setContextMenu(null);
                 }}
@@ -169,7 +157,10 @@ export function MetricsTree() {
                   <button
                     className="w-full text-left px-3 py-1.5 text-xs text-[#a0b4c8] hover:bg-[#253347] hover:text-white"
                     onClick={() => {
-                      openMetricListTab(contextMenu.node);
+                      const { connectionId, database, schema } = contextMenu.node.meta;
+                      if (connectionId) {
+                        onOpenMetricListTab?.({ connectionId, database, schema }, schema ?? database ?? 'Metrics');
+                      }
                       setContextMenu(null);
                     }}
                   >📋 打开指标列表</button>

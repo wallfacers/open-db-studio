@@ -134,6 +134,12 @@ pub fn run() {
             commands::build_schema_graph,
             commands::get_graph_nodes,
             commands::search_graph,
+            commands::create_migration_task,
+            commands::list_migration_tasks,
+            commands::run_migration_precheck,
+            commands::get_precheck_report,
+            commands::pause_migration,
+            commands::get_migration_progress,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

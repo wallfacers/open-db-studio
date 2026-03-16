@@ -2037,3 +2037,47 @@ pub async fn search_graph(
 ) -> AppResult<Vec<crate::graph::GraphNode>> {
     crate::graph::search_graph(connection_id, &keyword)
 }
+
+// ============ 跨数据源迁移 ============
+
+#[tauri::command]
+pub async fn create_migration_task(
+    name: String,
+    src_connection_id: i64,
+    dst_connection_id: i64,
+    config: crate::migration::MigrationConfig,
+) -> AppResult<crate::migration::MigrationTask> {
+    crate::migration::create_task(&name, src_connection_id, dst_connection_id, &config)
+}
+
+#[tauri::command]
+pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationTask>> {
+    crate::migration::list_tasks()
+}
+
+#[tauri::command]
+pub async fn run_migration_precheck(
+    task_id: i64,
+) -> AppResult<crate::migration::precheck::PreCheckResult> {
+    crate::migration::precheck::run_precheck(task_id).await
+}
+
+#[tauri::command]
+pub async fn get_precheck_report(
+    task_id: i64,
+) -> AppResult<crate::migration::precheck::PreCheckResult> {
+    crate::migration::precheck::get_precheck_result(task_id)
+}
+
+#[tauri::command]
+pub async fn pause_migration(task_id: i64) -> AppResult<()> {
+    crate::migration::pause_migration(task_id)
+}
+
+#[tauri::command]
+pub async fn get_migration_progress(
+    task_id: i64,
+) -> AppResult<Option<crate::migration::task_mgr::MigrationProgress>> {
+    let task = crate::migration::get_task(task_id)?;
+    Ok(task.progress)
+}

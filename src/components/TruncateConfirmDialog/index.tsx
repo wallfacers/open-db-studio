@@ -54,7 +54,10 @@ export const TruncateConfirmDialog: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-[420px] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
           <span className="text-red-400 text-sm font-medium flex items-center gap-2">

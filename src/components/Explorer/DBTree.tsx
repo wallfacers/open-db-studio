@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
+import { useConfirm } from '../../hooks/useConfirm';
 import { useTranslation } from 'react-i18next';
 import { useTreeStore } from '../../store/treeStore';
 import { TreeNode } from './TreeNode';
@@ -84,6 +86,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
   onCloseConnection,
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { nodes, expandedIds, selectedId, loadingIds, toggleExpand, selectNode, refreshNode, search } = useTreeStore();
 
   const [contextMenu, setContextMenu] = useState<{ node: TreeNodeType; x: number; y: number } | null>(null);
@@ -124,16 +127,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
   useEffect(() => { loadConnections(); }, []);
 
   // 分组选择器点击外部关闭
-  useEffect(() => {
-    if (!moveToGroupPicker) return;
-    const handler = (e: MouseEvent) => {
-      if (groupPickerRef.current && !groupPickerRef.current.contains(e.target as Node)) {
-        setMoveToGroupPicker(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [moveToGroupPicker]);
+  useClickOutside(groupPickerRef, () => setMoveToGroupPicker(null), !!moveToGroupPicker);
 
   const visibleNodes = useMemo(() => {
     if (searchQuery.trim()) return search(searchQuery);
@@ -286,7 +280,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onEditConnection={() => setEditingConnId(getConnectionId(contextMenu.node))}
           onDeleteConnection={async () => {
-            if (!window.confirm(t('dbTree.confirmDeleteConnection'))) return;
+            if (!await confirm({ message: t('dbTree.confirmDeleteConnection'), variant: 'danger' })) return;
             await invoke('delete_connection', { id: getConnectionId(contextMenu.node) });
             useTreeStore.getState().init();
             showToast(t('dbTree.connectionDeleted'), 'success');
@@ -322,8 +316,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
           }}
           onDropTable={async () => {
             const n = contextMenu.node;
-            if (!window.confirm(t('tableManageDialog.confirmDrop', { table: n.label }))) return;
-            setContextMenu(null);
+            if (!await confirm({ message: t('tableManageDialog.confirmDrop', { table: n.label }), variant: 'danger' })) return;
             const driver = getDriver(getConnectionId(n));
             const isPostgres = driver === 'postgres' || driver === 'postgresql';
             const q = (name: string) => isPostgres ? `"${name}"` : `\`${name}\``;
@@ -362,7 +355,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
             setEditingGroup({ id: groupId, name: n.label, color: n.meta.color ?? null });
           }}
           onDeleteGroup={async () => {
-            if (!window.confirm(t('dbTree.confirmDeleteGroup'))) return;
+            if (!await confirm({ message: t('dbTree.confirmDeleteGroup'), variant: 'danger' })) return;
             const groupId = parseInt(contextMenu.node.id.replace('group_', ''), 10);
             await invoke('delete_group', { id: groupId });
             useTreeStore.getState().init();

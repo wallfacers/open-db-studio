@@ -4,8 +4,12 @@ mod crypto;
 mod datasource;
 mod db;
 mod error;
+mod graph;
 mod llm;
 mod mcp;
+mod metrics;
+mod migration;
+mod pipeline;
 mod state;
 
 pub use error::{AppError, AppResult};
@@ -127,6 +131,24 @@ pub fn run() {
             commands::get_table_columns_for_import,
             commands::show_in_folder,
             commands::get_db_version,
+            commands::list_metrics,
+            commands::save_metric,
+            commands::update_metric,
+            commands::delete_metric,
+            commands::approve_metric,
+            commands::build_schema_graph,
+            commands::get_graph_nodes,
+            commands::search_graph,
+            commands::create_migration_task,
+            commands::list_migration_tasks,
+            commands::run_migration_precheck,
+            commands::get_precheck_report,
+            commands::pause_migration,
+            commands::get_migration_progress,
+            commands::ai_generate_metrics,
+            commands::ai_generate_sql_v2,
+            commands::start_migration,
+            commands::get_migration_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

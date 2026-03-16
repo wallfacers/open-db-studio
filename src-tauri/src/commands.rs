@@ -2210,3 +2210,145 @@ pub async fn show_in_folder(path: String) -> AppResult<()> {
     }
     Ok(())
 }
+
+// ============ 指标管理 ============
+
+#[tauri::command]
+pub async fn list_metrics(
+    connection_id: i64,
+    status: Option<String>,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::list_metrics(connection_id, status.as_deref())
+}
+
+#[tauri::command]
+pub async fn save_metric(
+    input: crate::metrics::CreateMetricInput,
+) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::save_metric(&input)
+}
+
+#[tauri::command]
+pub async fn update_metric(
+    id: i64,
+    input: crate::metrics::UpdateMetricInput,
+) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::crud::update_metric(id, &input)
+}
+
+#[tauri::command]
+pub async fn delete_metric(id: i64) -> AppResult<()> {
+    crate::metrics::delete_metric(id)
+}
+
+#[tauri::command]
+pub async fn approve_metric(id: i64, status: String) -> AppResult<crate::metrics::Metric> {
+    if status != "approved" && status != "rejected" {
+        return Err(crate::AppError::Other("status must be 'approved' or 'rejected'".into()));
+    }
+    crate::metrics::set_metric_status(id, &status)
+}
+
+// ============ 知识图谱 ============
+
+#[tauri::command]
+pub async fn build_schema_graph(
+    connection_id: i64,
+    app_handle: tauri::AppHandle,
+) -> AppResult<usize> {
+    crate::graph::build_schema_graph(connection_id, app_handle).await
+}
+
+#[tauri::command]
+pub async fn get_graph_nodes(
+    connection_id: i64,
+    node_type: Option<String>,
+) -> AppResult<Vec<crate::graph::GraphNode>> {
+    crate::graph::query::get_nodes(connection_id, node_type.as_deref())
+}
+
+#[tauri::command]
+pub async fn search_graph(
+    connection_id: i64,
+    keyword: String,
+) -> AppResult<Vec<crate::graph::GraphNode>> {
+    crate::graph::search_graph(connection_id, &keyword)
+}
+
+// ============ 跨数据源迁移 ============
+
+#[tauri::command]
+pub async fn create_migration_task(
+    name: String,
+    src_connection_id: i64,
+    dst_connection_id: i64,
+    config: crate::migration::MigrationConfig,
+) -> AppResult<crate::migration::MigrationTask> {
+    crate::migration::create_task(&name, src_connection_id, dst_connection_id, &config)
+}
+
+#[tauri::command]
+pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationTask>> {
+    crate::migration::list_tasks()
+}
+
+#[tauri::command]
+pub async fn run_migration_precheck(
+    task_id: i64,
+) -> AppResult<crate::migration::precheck::PreCheckResult> {
+    crate::migration::precheck::run_precheck(task_id).await
+}
+
+#[tauri::command]
+pub async fn get_precheck_report(
+    task_id: i64,
+) -> AppResult<crate::migration::precheck::PreCheckResult> {
+    crate::migration::precheck::get_precheck_result(task_id)
+}
+
+#[tauri::command]
+pub async fn pause_migration(task_id: i64) -> AppResult<()> {
+    crate::migration::pause_migration(task_id)
+}
+
+#[tauri::command]
+pub async fn get_migration_progress(
+    task_id: i64,
+) -> AppResult<Option<crate::migration::task_mgr::MigrationProgress>> {
+    let task = crate::migration::get_task(task_id)?;
+    Ok(task.progress)
+}
+
+// ============ AI 指标草稿 + Text-to-SQL v2 ============
+
+#[tauri::command]
+pub async fn ai_generate_metrics(
+    connection_id: i64,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::ai_draft::generate_metric_drafts(connection_id).await
+}
+
+#[tauri::command]
+pub async fn ai_generate_sql_v2(
+    question: String,
+    connection_id: i64,
+    history: Option<Vec<crate::llm::ChatMessage>>,
+) -> AppResult<crate::pipeline::TextToSqlResult> {
+    let hist = history.unwrap_or_default();
+    crate::pipeline::generate_sql_v2(&question, connection_id, &hist).await
+}
+
+// ============ 数据迁移 — 启动 & 查询 ============
+
+#[tauri::command]
+pub async fn start_migration(
+    task_id: i64,
+    app_handle: tauri::AppHandle,
+) -> AppResult<()> {
+    crate::migration::start_migration(task_id, app_handle).await
+}
+
+#[tauri::command]
+pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
+    crate::migration::get_task(task_id)
+}

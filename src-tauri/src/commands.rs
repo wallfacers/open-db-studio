@@ -2100,3 +2100,18 @@ pub async fn ai_generate_sql_v2(
     let hist = history.unwrap_or_default();
     crate::pipeline::generate_sql_v2(&question, connection_id, &hist).await
 }
+
+// ============ 数据迁移 — 启动 & 查询 ============
+
+#[tauri::command]
+pub async fn start_migration(
+    task_id: i64,
+    app_handle: tauri::AppHandle,
+) -> AppResult<()> {
+    crate::migration::start_migration(task_id, app_handle).await
+}
+
+#[tauri::command]
+pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
+    crate::migration::get_task(task_id)
+}

@@ -142,6 +142,8 @@ pub fn run() {
             commands::get_migration_progress,
             commands::ai_generate_metrics,
             commands::ai_generate_sql_v2,
+            commands::start_migration,
+            commands::get_migration_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -152,7 +152,39 @@ pub async fn start_migration(
     task_id: i64,
     app_handle: tauri::AppHandle,
 ) -> AppResult<()> {
-    let _ = (task_id, app_handle);
+    let task = get_task(task_id)?;
+    set_status(task_id, &MigrationStatus::Running)?;
+
+    let mut any_error = false;
+    for table_cfg in &task.config.tables {
+        // 检查是否已暂停
+        if get_task(task_id)?.status == MigrationStatus::Paused {
+            return Ok(());
+        }
+
+        match super::data_pump::pump_table(
+            task_id,
+            task.src_connection_id,
+            task.dst_connection_id,
+            &table_cfg.src_table,
+            &table_cfg.dst_table,
+            task.config.batch_size,
+            task.config.skip_errors,
+            &app_handle,
+        ).await {
+            Ok(p) => log::info!("[migration] table {} done: {}/{}", table_cfg.src_table, p.done_rows, p.total_rows),
+            Err(e) => {
+                log::error!("[migration] table {} failed: {}", table_cfg.src_table, e);
+                if !task.config.skip_errors {
+                    set_status(task_id, &MigrationStatus::Failed)?;
+                    return Err(e);
+                }
+                any_error = true;
+            }
+        }
+    }
+
+    set_status(task_id, if any_error { &MigrationStatus::Failed } else { &MigrationStatus::Done })?;
     Ok(())
 }
 

@@ -446,7 +446,7 @@
     "uniqueIndex": "Unique index",
     "dropSuccess": "Index dropped successfully",
     "createSuccess": "Index created successfully",
-    "confirmDrop": "Confirm drop index",
+    "confirmDrop": "Confirm drop index \"{{name}}\"?",
     "nameAndColumnsRequired": "Please enter index name and column names"
   },
   "export": {

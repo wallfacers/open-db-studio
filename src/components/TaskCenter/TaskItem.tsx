@@ -47,7 +47,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
   };
 
   const handleCancel = async () => {
-    if (await confirm({ message: t('taskCenter.cancelConfirm', 'Cancel this task?'), variant: 'danger' })) {
+    if (await confirm({ message: t('taskCenter.cancelConfirm'), variant: 'danger' })) {
       await cancelTask(task.id);
     }
   };

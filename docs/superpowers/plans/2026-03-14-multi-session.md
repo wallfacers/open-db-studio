@@ -40,6 +40,8 @@ pub struct PersistentAcpSession {
     pub config_id: i64,
     pub config_fingerprint: String,
     pub request_tx: UnboundedSender<AcpRequest>,
+    /// 取消信号：drop 时触发 session 线程 kill child process（oneshot sender）
+    pub abort_tx: tokio::sync::oneshot::Sender<()>,
 }
 
 /// 全局应用状态（注入 Tauri manage）
@@ -457,16 +459,27 @@ interface AiState {
   cancelChat: (sessionId: string) => Promise<void>;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
-  // ── AI 工具功能（不变）──
-  isExplaining: boolean;
-  isOptimizing: boolean;
+  // ── AI 工具功能（per-tab，不与 AI 助手 session 共享状态）──
+  // 注意：isExplaining / isOptimizing 是 Record<tabId, boolean>，不是全局 boolean
+  isExplaining: Record<string, boolean>;
+  isOptimizing: Record<string, boolean>;
   isDiagnosing: boolean;
   isCreatingTable: boolean;
   error: string | null;
   draftMessage: string;
   setDraftMessage: (msg: string) => void;
-  explainSql: (sql: string, connectionId: number) => Promise<string>;
-  optimizeSql: (sql: string, connectionId: number) => Promise<string>;
+  explainSql: (
+    sql: string,
+    connectionId: number | null,
+    database: string | null | undefined,
+    tabId: string,
+    onDelta: (delta: string) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+  ) => Promise<void>;
+  cancelExplainSql: (tabId: string) => Promise<void>;
+  optimizeSql: (sql: string, connectionId: number | null, database: string | null | undefined, tabId: string) => Promise<string>;
+  cancelOptimizeSql: (tabId: string) => Promise<void>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }

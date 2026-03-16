@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Database, ListTodo, BarChart2, GitBranch, ArrowLeftRight, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { User, Database, ListTodo, BarChart2, Network, ArrowLeftRight, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -92,7 +92,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               setIsSidebarOpen(true);
             }}
           >
-            <GitBranch size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            <Network size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             {isExpanded && <span className="text-[13px] truncate">知识图谱</span>}
           </div>
         </Tooltip>

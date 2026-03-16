@@ -32,7 +32,7 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
   useEffect(() => { loadIndexes(); }, [connectionId, tableName]);
 
   const handleDrop = async (indexName: string) => {
-    if (!await confirm({ message: `${t('indexManager.confirmDrop')} "${indexName}"?`, variant: 'danger' })) return;
+    if (!await confirm({ message: t('indexManager.confirmDrop', { name: indexName }), variant: 'danger' })) return;
     try {
       await invoke('execute_query', {
         connectionId,

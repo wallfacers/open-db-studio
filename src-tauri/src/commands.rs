@@ -2081,3 +2081,22 @@ pub async fn get_migration_progress(
     let task = crate::migration::get_task(task_id)?;
     Ok(task.progress)
 }
+
+// ============ AI 指标草稿 + Text-to-SQL v2 ============
+
+#[tauri::command]
+pub async fn ai_generate_metrics(
+    connection_id: i64,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::ai_draft::generate_metric_drafts(connection_id).await
+}
+
+#[tauri::command]
+pub async fn ai_generate_sql_v2(
+    question: String,
+    connection_id: i64,
+    history: Option<Vec<crate::llm::ChatMessage>>,
+) -> AppResult<crate::pipeline::TextToSqlResult> {
+    let hist = history.unwrap_or_default();
+    crate::pipeline::generate_sql_v2(&question, connection_id, &hist).await
+}

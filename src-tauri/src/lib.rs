@@ -131,6 +131,9 @@ pub fn run() {
             commands::update_metric,
             commands::delete_metric,
             commands::approve_metric,
+            commands::build_schema_graph,
+            commands::get_graph_nodes,
+            commands::search_graph,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

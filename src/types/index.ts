@@ -173,6 +173,7 @@ export interface ChatSession {
   createdAt: number;         // Unix timestamp ms
   updatedAt: number;
   titleGenerated: boolean;   // AI 标题是否已生成
+  configId: number | null;   // 该 session 使用的模型配置 ID（null = 使用全局默认）
 }
 
 // ============ 导航树类型 ============

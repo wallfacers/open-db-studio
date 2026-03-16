@@ -3178,6 +3178,7 @@ dependencies = [
  "env_logger",
  "futures-util",
  "hex",
+ "image",
  "log",
  "once_cell",
  "oracle",

@@ -341,7 +341,13 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> cr
         "get_editor_sql" => {
             use tauri::Manager;
             let app_state = handle.state::<crate::AppState>();
-            let sql = app_state.current_editor_sql.lock().await.clone();
+            let last_id = app_state.last_active_session_id.lock().await.clone();
+            let sql = if let Some(sid) = last_id {
+                let map = app_state.editor_sql_map.lock().await;
+                map.get(&sid).cloned().flatten()
+            } else {
+                None
+            };
             match sql {
                 Some(s) if !s.trim().is_empty() => Ok(s),
                 _ => Ok("(编辑器为空)".to_string()),

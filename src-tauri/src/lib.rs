@@ -26,6 +26,16 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             use tauri::Manager;
+            // 运行时设置窗口图标（dev 模式下 .exe 内嵌图标尚未更新时也能生效）
+            if let Some(window) = app.get_webview_window("main") {
+                let icon_bytes = include_bytes!("../icons/icon.png");
+                if let Ok(img) = image::load_from_memory(icon_bytes) {
+                    let rgba = img.into_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    let icon = tauri::image::Image::new_owned(rgba.into_raw(), w, h);
+                    let _ = window.set_icon(icon);
+                }
+            }
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data dir")
                 .to_string_lossy()
@@ -53,8 +63,9 @@ pub fn run() {
             ).expect("Failed to start MCP server");
             app.manage(crate::state::AppState {
                 mcp_port,
-                acp_session: tokio::sync::Mutex::new(None),
-                current_editor_sql: tokio::sync::Mutex::new(None),
+                acp_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                last_active_session_id: tokio::sync::Mutex::new(None),
                 optimize_acp_session: tokio::sync::Mutex::new(None),
                 explain_acp_session: tokio::sync::Mutex::new(None),
             });

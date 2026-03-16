@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/appStore';
-import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, ListTodo, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { User, Database, LayoutDashboard, MessageSquare, LayoutGrid, ListTodo, BarChart2, GitBranch, ArrowLeftRight, RefreshCw, Bell, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -119,6 +119,45 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           >
             <ListTodo size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             {isExpanded && <span className="text-[13px] truncate">{t('activity.myTasks')}</span>}
+          </div>
+        </Tooltip>
+
+        <Tooltip content={!isExpanded ? '业务指标' : undefined}>
+          <div
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('metrics');
+              setIsSidebarOpen(true);
+            }}
+          >
+            <BarChart2 size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">业务指标</span>}
+          </div>
+        </Tooltip>
+
+        <Tooltip content={!isExpanded ? '知识图谱' : undefined}>
+          <div
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'graph' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('graph');
+              setIsSidebarOpen(true);
+            }}
+          >
+            <GitBranch size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">知识图谱</span>}
+          </div>
+        </Tooltip>
+
+        <Tooltip content={!isExpanded ? '数据迁移' : undefined}>
+          <div
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'migration' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('migration');
+              setIsSidebarOpen(true);
+            }}
+          >
+            <ArrowLeftRight size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">数据迁移</span>}
           </div>
         </Tooltip>
       </div>

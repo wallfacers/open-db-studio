@@ -368,13 +368,17 @@ JOIN
           onOpenTableStructure={handleOpenTableStructure}
         />
       )}
+      {/* MetricsLayout 始终挂载，保留 Tab 和树展开状态 */}
+      <div className={activeActivity === 'metrics' ? 'flex flex-1 overflow-hidden' : 'hidden'}>
+        <MetricsLayout />
+      </div>
+
       {activeActivity === 'settings' ? (
         <SettingsPage />
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
-      ) : activeActivity === 'metrics' ? (
-        <MetricsLayout />
-      ) : activeActivity === 'graph' ? (
+      ) : activeActivity === 'metrics' ? null
+      : activeActivity === 'graph' ? (
         <GraphExplorer connectionId={tabs.find(t => t.id === activeTab)?.queryContext?.connectionId ?? null} />
       ) : activeActivity === 'migration' ? (
         <MigrationWizard />

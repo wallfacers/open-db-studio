@@ -232,6 +232,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const newExpanded = new Set(s.expandedIds);
       if (newExpanded.has(nodeId)) {
         newExpanded.delete(nodeId);
+        // 递归清除所有子孙节点的展开状态
+        const collapseDescendants = (pid: string) => {
+          for (const [id, n] of s.nodes) {
+            if (n.parentId === pid) {
+              newExpanded.delete(id);
+              collapseDescendants(id);
+            }
+          }
+        };
+        collapseDescendants(nodeId);
       } else {
         newExpanded.add(nodeId);
         if (!node.loaded) {

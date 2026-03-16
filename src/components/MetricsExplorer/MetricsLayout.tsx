@@ -1,8 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { MetricsTree } from './MetricsTree';
 import { MetricTab } from './MetricTab';
 import { MetricListPanel } from './MetricListPanel';
-import { BarChart2, X, GitMerge, TableProperties } from 'lucide-react';
+import { BarChart2, X, GitMerge, TableProperties, RefreshCw, Search } from 'lucide-react';
+import { Tooltip } from '../common/Tooltip';
+import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import type { MetricScope } from '../../types';
 
 type MetricsTabType = 'metric' | 'metric_list';
@@ -15,12 +17,33 @@ interface MetricsTab {
   metricScope?: MetricScope;
 }
 
+interface TabContextMenu { tabId: string; x: number; y: number; }
+
+const STORAGE_KEY = 'metrics_tabs_state';
+
+function loadTabsState(): { tabs: MetricsTab[]; activeTabId: string | null } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { tabs: [], activeTabId: null };
+}
+
+function saveTabsState(tabs: MetricsTab[], activeTabId: string | null) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabs, activeTabId }));
+}
+
 /** 自包含的指标布局：左侧树 + 右侧 Tab 内容区 */
 export function MetricsLayout() {
-  const [tabs, setTabs] = useState<MetricsTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const { init } = useMetricsTreeStore();
+  const initial = loadTabsState();
+  const [tabs, setTabs] = useState<MetricsTab[]>(initial.tabs);
+  const [activeTabId, setActiveTabId] = useState<string | null>(initial.activeTabId);
   const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isResizing, setIsResizing] = useState(false);
+  const [contextMenu, setContextMenu] = useState<TabContextMenu | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const openMetricTab = useCallback((metricId: number, title: string) => {
     setTabs(prev => {
@@ -55,6 +78,53 @@ export function MetricsLayout() {
     });
   };
 
+  const closeTabsLeft = (tabId: string) => {
+    setTabs(prev => {
+      const idx = prev.findIndex(t => t.id === tabId);
+      return prev.slice(idx);
+    });
+  };
+
+  const closeTabsRight = (tabId: string) => {
+    setTabs(prev => {
+      const idx = prev.findIndex(t => t.id === tabId);
+      const next = prev.slice(0, idx + 1);
+      if (activeTabId && !next.find(t => t.id === activeTabId)) {
+        setActiveTabId(next[next.length - 1]?.id ?? null);
+      }
+      return next;
+    });
+  };
+
+  const closeOtherTabs = (tabId: string) => {
+    setTabs(prev => {
+      const kept = prev.filter(t => t.id === tabId);
+      setActiveTabId(tabId);
+      return kept;
+    });
+  };
+
+  const closeAllTabs = () => {
+    setTabs([]);
+    setActiveTabId(null);
+  };
+
+  // 持久化 Tab 状态
+  useEffect(() => {
+    saveTabsState(tabs, activeTabId);
+  }, [tabs, activeTabId]);
+
+  // 点击外部关闭右键菜单
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    if (contextMenu) window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [contextMenu]);
+
   // 侧边栏 resize
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -78,21 +148,54 @@ export function MetricsLayout() {
   return (
     <div className="flex flex-1 overflow-hidden" style={{ userSelect: isResizing ? 'none' : undefined }}>
       {/* 左侧树 */}
-      <div className="flex flex-col bg-[#111922] border-r border-[#1e2d42] flex-shrink-0 overflow-hidden"
+      <div className="flex flex-col bg-[#0d1117] border-r border-[#1e2d42] flex-shrink-0 relative"
         style={{ width: sidebarWidth }}>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1e2d42] flex-shrink-0">
-          <BarChart2 size={14} className="text-[#00c9a7]" />
-          <span className="text-xs font-semibold text-[#a0b4c8] uppercase tracking-wider">业务指标</span>
+        {/* resize 拖拽条：absolute 骑在 border 两侧，与 Explorer/Assistant 一致 */}
+        <div
+          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-20 transition-colors"
+          onMouseDown={handleMouseDown}
+        />
+        <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <BarChart2 size={14} className="text-[#00c9a7]" />
+            <span className="font-medium text-[#c8daea]">业务指标</span>
+          </div>
+          <div className="flex items-center space-x-2 text-[#7a9bb8]">
+            <Tooltip content="刷新">
+              <RefreshCw
+                size={16}
+                className="cursor-pointer hover:text-[#c8daea]"
+                onClick={() => init()}
+              />
+            </Tooltip>
+          </div>
         </div>
-        <MetricsTree onOpenMetricTab={openMetricTab} onOpenMetricListTab={openMetricListTab} />
+        <div className="p-2 border-b border-[#1e2d42]">
+          <div className="flex items-center bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-1 focus-within:border-[#00a98f] transition-colors">
+            <Search size={14} className="text-[#7a9bb8] mr-1 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="搜索指标..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"
+            />
+            {searchQuery && (
+              <button
+                className="text-[#7a9bb8] ml-1 hover:text-[#c8daea] flex-shrink-0"
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+        <MetricsTree
+          searchQuery={searchQuery}
+          onOpenMetricTab={openMetricTab}
+          onOpenMetricListTab={openMetricListTab}
+        />
       </div>
-
-      {/* resize 拖拽条 */}
-      <div
-        className="w-1 cursor-col-resize hover:bg-[#00c9a7] flex-shrink-0 transition-colors"
-        style={{ background: isResizing ? '#00c9a7' : 'transparent' }}
-        onMouseDown={handleMouseDown}
-      />
 
       {/* 右侧内容区 */}
       <div className="flex flex-col flex-1 overflow-hidden bg-[#0d1821]">
@@ -103,16 +206,17 @@ export function MetricsLayout() {
         ) : (
           <>
             {/* Tab 栏 */}
-            <div className="flex items-end border-b border-[#1e2d42] bg-[#0d1821] overflow-x-auto flex-shrink-0">
+            <div className="flex-shrink-0 h-10 flex items-start border-b border-[#1e2d42] bg-[#0d1821] overflow-x-auto no-scrollbar">
               {tabs.map(tab => (
                 <div
                   key={tab.id}
-                  className={`flex items-center gap-1.5 px-3 py-2 border-r border-[#1e2d42] cursor-pointer
-                    text-xs whitespace-nowrap flex-shrink-0 select-none
+                  className={`flex items-center gap-1.5 px-3 h-[38px] border-r border-[#1e2d42] cursor-pointer
+                    text-xs whitespace-nowrap flex-shrink-0 select-none border-t-2
                     ${tab.id === activeTabId
-                      ? 'bg-[#111922] text-white border-t-2 border-t-[#00c9a7]'
-                      : 'text-[#7a9bb8] hover:bg-[#111922] hover:text-white'}`}
+                      ? 'bg-[#111922] text-white border-t-[#00c9a7]'
+                      : 'text-[#7a9bb8] hover:bg-[#111922] hover:text-white border-t-transparent'}`}
                   onClick={() => setActiveTabId(tab.id)}
+                  onContextMenu={e => { e.preventDefault(); setContextMenu({ tabId: tab.id, x: e.clientX, y: e.clientY }); }}
                 >
                   {tab.type === 'metric_list'
                     ? <TableProperties size={11} className="flex-shrink-0" />
@@ -122,7 +226,7 @@ export function MetricsLayout() {
                     className="ml-1 opacity-50 hover:opacity-100 flex-shrink-0"
                     onClick={e => { e.stopPropagation(); closeTab(tab.id); }}
                   >
-                    <X size={10} />
+                    <X size={12} />
                   </button>
                 </div>
               ))}
@@ -143,6 +247,40 @@ export function MetricsLayout() {
           </>
         )}
       </div>
+      {/* Tab 右键菜单 */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => { closeTab(contextMenu.tabId); setContextMenu(null); }}
+          >关闭</button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === 0}
+            onClick={() => { closeTabsLeft(contextMenu.tabId); setContextMenu(null); }}
+          >关闭左侧</button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === tabs.length - 1}
+            onClick={() => { closeTabsRight(contextMenu.tabId); setContextMenu(null); }}
+          >关闭右侧</button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={tabs.length <= 1}
+            onClick={() => { closeOtherTabs(contextMenu.tabId); setContextMenu(null); }}
+          >关闭其他</button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            onClick={() => { closeAllTabs(); setContextMenu(null); }}
+          >关闭全部</button>
+        </div>
+      )}
     </div>
   );
 }

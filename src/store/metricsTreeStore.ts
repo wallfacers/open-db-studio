@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Metric } from '../types';
 
-export type MetricsNodeType = 'connection' | 'database' | 'schema' | 'metric';
+export type MetricsNodeType = 'group' | 'connection' | 'database' | 'schema' | 'metric';
 
 export interface MetricsTreeNode {
   id: string;
@@ -13,11 +13,14 @@ export interface MetricsTreeNode {
   hasChildren: boolean;
   loaded: boolean;
   meta: {
+    groupId?: number;
     connectionId?: number;
+    driver?: string;
     database?: string;
     schema?: string;
     metricId?: number;
     metricType?: string;
+    sortOrder?: number;
   };
 }
 
@@ -34,6 +37,7 @@ interface MetricsTreeState {
   selectNode: (nodeId: string | null) => void;
   refreshNode: (nodeId: string) => Promise<void>;
   getChildNodes: (parentId: string | null) => MetricsTreeNode[];
+  search: (query: string) => MetricsTreeNode[];
 }
 
 export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
@@ -44,21 +48,42 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
   loadingIds: new Set(),
 
   init: async () => {
-    const conns: Array<{ id: number; name: string; driver: string }> =
-      await invoke('list_connections');
+    const [groups, conns] = await Promise.all([
+      invoke<{ id: number; name: string; color: string | null; sort_order: number }[]>('list_groups'),
+      invoke<{ id: number; name: string; group_id: number | null; driver: string; sort_order: number }[]>('list_connections'),
+    ]);
+
     const nodes = new Map<string, MetricsTreeNode>();
+
+    // 分组节点（根节点）
+    for (const g of groups) {
+      const id = `group_${g.id}`;
+      nodes.set(id, {
+        id,
+        nodeType: 'group',
+        label: g.name,
+        parentId: null,
+        hasChildren: conns.some(c => c.group_id === g.id),
+        loaded: false,
+        meta: { groupId: g.id, sortOrder: g.sort_order },
+      });
+    }
+
+    // 连接节点：属于分组的挂分组下，无分组的挂根节点
     for (const c of conns) {
       const id = `conn_${c.id}`;
+      const parentId = c.group_id ? `group_${c.group_id}` : null;
       nodes.set(id, {
         id,
         nodeType: 'connection',
         label: c.name,
-        parentId: null,
+        parentId,
         hasChildren: true,
         loaded: false,
-        meta: { connectionId: c.id },
+        meta: { connectionId: c.id, driver: c.driver, sortOrder: c.sort_order },
       });
     }
+
     set({ nodes });
   },
 
@@ -67,6 +92,14 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     if (loadingIds.has(nodeId)) return;
     const node = nodes.get(nodeId);
     if (!node) return;
+
+    // group 节点：子节点已在 init 中建好，只需标记 loaded
+    if (node.nodeType === 'group') {
+      const newNodes = new Map(get().nodes);
+      newNodes.set(nodeId, { ...node, loaded: true });
+      set({ nodes: newNodes });
+      return;
+    }
 
     set(s => ({ loadingIds: new Set([...s.loadingIds, nodeId]) }));
 
@@ -167,13 +200,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
             parentId: nodeId,
             hasChildren: false,
             loaded: true,
-            meta: {
-              connectionId,
-              database,
-              schema,
-              metricId: m.id,
-              metricType: m.metric_type,
-            },
+            meta: { connectionId, database, schema, metricId: m.id, metricType: m.metric_type },
           });
         }
         newNodes.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
@@ -195,9 +222,19 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     const next = new Set(expandedIds);
     if (next.has(nodeId)) {
       next.delete(nodeId);
+      // 递归清除所有子孙节点的展开状态
+      const collapseDescendants = (pid: string) => {
+        for (const [id, n] of nodes) {
+          if (n.parentId === pid) {
+            next.delete(id);
+            collapseDescendants(id);
+          }
+        }
+      };
+      collapseDescendants(nodeId);
     } else {
       next.add(nodeId);
-      if (!node.loaded && node.hasChildren) {
+      if (!node.loaded) {
         get().loadChildren(nodeId);
       }
     }
@@ -211,9 +248,16 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     const node = nodes.get(nodeId);
     if (!node) return;
     const newNodes = new Map(nodes);
-    for (const [id, n] of newNodes) {
-      if (n.parentId === nodeId) newNodes.delete(id);
-    }
+    // 递归删除所有子孙节点
+    const removeChildren = (pid: string) => {
+      for (const [id, n] of newNodes) {
+        if (n.parentId === pid) {
+          removeChildren(id);
+          newNodes.delete(id);
+        }
+      }
+    };
+    removeChildren(nodeId);
     newNodes.set(nodeId, { ...node, loaded: false });
     set({ nodes: newNodes });
     await get().loadChildren(nodeId);
@@ -221,6 +265,14 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
 
   getChildNodes: (parentId: string | null) => {
     const { nodes } = get();
-    return [...nodes.values()].filter(n => n.parentId === parentId);
+    return [...nodes.values()]
+      .filter(n => n.parentId === parentId)
+      .sort((a, b) => (a.meta.sortOrder ?? 0) - (b.meta.sortOrder ?? 0) || a.label.localeCompare(b.label));
+  },
+
+  search: (query: string): MetricsTreeNode[] => {
+    if (!query.trim()) return [];
+    const q = query.toLowerCase();
+    return [...get().nodes.values()].filter(n => n.label.toLowerCase().includes(q));
   },
 }));

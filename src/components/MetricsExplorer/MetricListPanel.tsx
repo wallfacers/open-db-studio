@@ -68,6 +68,39 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     onOpenMetric?.(m.id, m.display_name);
   };
 
+  const doCreate = async () => {
+    try {
+      const m = await invoke<Metric>('save_metric', {
+        input: {
+          connection_id: scope.connectionId,
+          name: `metric_${Date.now()}`,
+          display_name: '新指标',
+          metric_type: 'atomic',
+          source: 'user',
+          scope_database: scope.database ?? null,
+          scope_schema: scope.schema ?? null,
+        },
+      });
+      load();
+      onOpenMetric?.(m.id, m.display_name);
+    } catch (e: any) {
+      alert(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
+    }
+  };
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const doAiGenerate = async () => {
+    setAiLoading(true);
+    try {
+      await invoke('ai_generate_metrics', { connectionId: scope.connectionId });
+      load();
+    } catch (e: any) {
+      alert(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const statusBadge = (status: MetricStatus) => {
     const map: Record<MetricStatus, { cls: string; label: string }> = {
       approved: { cls: 'bg-[#0d3d2e] text-[#00c9a7]', label: '✅ 已通过' },
@@ -86,9 +119,9 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#111922] text-white">
+    <div className="flex flex-col h-full bg-[#080d12] text-white">
       {/* 过滤栏 */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-[#1e2d42] flex-wrap flex-shrink-0">
+      <div className="flex items-center gap-2 px-4 h-10 border-b border-[#1e2d42] flex-wrap flex-shrink-0">
         <div className="flex gap-1">
           {TABS.map(t => (
             <button
@@ -101,7 +134,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           ))}
         </div>
         <input
-          className="flex-1 min-w-[120px] bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1 text-xs
+          className="w-40 bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1 text-xs
                      text-white placeholder-[#4a6a8a] focus:outline-none focus:border-[#00c9a7]"
           placeholder="搜索指标名称..."
           value={search}
@@ -110,30 +143,31 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         <button
           className="flex items-center gap-1 px-2 py-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
                      text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7]"
-          onClick={() => {/* TODO */}}
+          onClick={doCreate}
         ><Plus size={12} /> 新增</button>
         <button
           className="flex items-center gap-1 px-2 py-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
-                     text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7]"
-          onClick={() => {/* TODO */}}
-        ><Sparkles size={12} /> AI 生成</button>
+                     text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7] disabled:opacity-50"
+          onClick={doAiGenerate}
+          disabled={aiLoading}
+        ><Sparkles size={12} /> {aiLoading ? '生成中...' : 'AI 生成'}</button>
       </div>
 
       {/* 表格 */}
       <div className="flex-1 overflow-auto">
         {error && <div className="px-4 py-2 text-xs text-red-400">{error}</div>}
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-[#0d1821] text-[#7a9bb8] text-[10px] uppercase tracking-wider">
+        <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+          <thead className="sticky top-0 bg-[#0d1117] z-10">
             <tr>
-              <th className="w-8 px-3 py-2 text-left">
+              <th className="w-8 px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-[#00c9a7]" />
               </th>
-              <th className="px-3 py-2 text-left">显示名称</th>
-              <th className="px-3 py-2 text-left">关联表</th>
-              <th className="px-3 py-2 text-left">聚合</th>
-              <th className="px-3 py-2 text-left">类型</th>
-              <th className="px-3 py-2 text-left">状态</th>
-              <th className="px-3 py-2 text-right">操作</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">显示名称</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">关联表</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">聚合</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">类型</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">状态</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal text-right">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -144,23 +178,23 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
               <tr><td colSpan={7} className="text-center py-8 text-[#4a6a8a]">暂无指标</td></tr>
             )}
             {filtered.map(m => (
-              <tr key={m.id} className="border-b border-[#1a2a3a] hover:bg-[#1a2a3a]">
-                <td className="px-3 py-2">
+              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
+                <td className="px-3 py-1.5 border-r border-[#1e2d42]">
                   <input type="checkbox" checked={selected.has(m.id)}
                     onChange={() => toggleSelect(m.id)} className="accent-[#00c9a7]" />
                 </td>
-                <td className="px-3 py-2 text-white font-medium">{m.display_name}</td>
-                <td className="px-3 py-2 text-[#a0b4c8]">{m.table_name || '-'}</td>
-                <td className="px-3 py-2 text-[#a0b4c8]">{m.aggregation ?? '-'}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-white font-medium">{m.display_name}</td>
+                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#a0b4c8]">{m.table_name || '-'}</td>
+                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#a0b4c8]">{m.aggregation ?? '-'}</td>
+                <td className="px-3 py-1.5 border-r border-[#1e2d42]">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                     m.metric_type === 'composite' ? 'bg-[#2d1a4a] text-[#c084fc]' : 'bg-[#1a2a3a] text-[#7a9bb8]'
                   }`}>
                     {m.metric_type === 'composite' ? '复合' : '原子'}
                   </span>
                 </td>
-                <td className="px-3 py-2">{statusBadge(m.status)}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-1.5 border-r border-[#1e2d42]">{statusBadge(m.status)}</td>
+                <td className="px-3 py-1.5 border-r border-[#1e2d42]">
                   <div className="flex items-center gap-2 justify-end">
                     <button className="text-[#7a9bb8] hover:text-white" onClick={() => openMetric(m)} title="打开">
                       <ExternalLink size={12} />

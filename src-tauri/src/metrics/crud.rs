@@ -128,7 +128,7 @@ pub fn list_metrics(connection_id: i64, status: Option<&str>) -> AppResult<Vec<M
 
 pub fn save_metric(input: &CreateMetricInput) -> AppResult<Metric> {
     let conn = crate::db::get().lock().unwrap();
-    let source = input.source.as_deref().unwrap_or("manual");
+    let source = input.source.as_deref().unwrap_or("user");
     let metric_type = input.metric_type.as_deref().unwrap_or("atomic");
     let table_name = input.table_name.as_deref().unwrap_or("");
     conn.execute(

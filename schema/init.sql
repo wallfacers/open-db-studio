@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS metrics (
     filter_sql           TEXT,
     description          TEXT,
     status               TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','rejected')),
-    source               TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','ai')),
+    source               TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user','ai')),
     metric_type          TEXT NOT NULL DEFAULT 'atomic' CHECK(metric_type IN ('atomic','composite')),
     composite_components TEXT,
     composite_formula    TEXT,

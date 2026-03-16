@@ -1003,6 +1003,58 @@ pub async fn list_schemas(connection_id: i64, database: String) -> AppResult<Vec
     ds.list_schemas(&database).await
 }
 
+const SYSTEM_SCHEMAS: &[&str] = &[
+    "information_schema", "pg_catalog",
+    "performance_schema", "sys", "mysql",
+];
+
+#[tauri::command]
+pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource(&config).await?;
+    let dbs = ds.list_databases().await?;
+    Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect())
+}
+
+#[tauri::command]
+pub async fn list_schemas_for_metrics(
+    connection_id: i64,
+    database: String,
+) -> AppResult<Vec<String>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    let schemas = ds.list_schemas(&database).await?;
+    Ok(schemas.into_iter().filter(|s| !SYSTEM_SCHEMAS.contains(&s.as_str())).collect())
+}
+
+#[tauri::command]
+pub async fn get_metric(id: i64) -> AppResult<crate::metrics::Metric> {
+    crate::metrics::crud::get_metric_pub(id)
+}
+
+#[tauri::command]
+pub async fn list_metrics_by_node(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+    status: Option<String>,
+) -> AppResult<Vec<crate::metrics::Metric>> {
+    crate::metrics::crud::list_metrics_by_node(
+        connection_id,
+        database.as_deref(),
+        schema.as_deref(),
+        status.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub async fn count_metrics_batch(
+    connection_id: i64,
+    database: Option<String>,
+) -> AppResult<std::collections::HashMap<String, i64>> {
+    crate::metrics::crud::count_metrics_batch(connection_id, database.as_deref())
+}
+
 #[tauri::command]
 pub async fn list_objects(
     connection_id: i64,

@@ -88,7 +88,13 @@ export interface UpdateLlmConfigInput {
   preset?: string | null;
 }
 
-export type TabType = 'query' | 'table' | 'er_diagram' | 'metric' | 'metric_list';
+export type TabType =
+  | 'query'
+  | 'table'
+  | 'er_diagram'
+  | 'table_structure'   // 从 App.tsx TabData 迁移
+  | 'metric'
+  | 'metric_list';
 
 export interface MetricScope {
   connectionId: number;
@@ -103,6 +109,10 @@ export interface Tab {
   connectionId?: number;
   metricId?: number;           // metric Tab 专用
   metricScope?: MetricScope;   // metric_list Tab 专用
+  db?: string;
+  schema?: string;
+  queryContext?: QueryContext;
+  isNewTable?: boolean;        // table_structure Tab 专用
 }
 
 export interface ColumnMeta {

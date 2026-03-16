@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, RefreshCw, Search, X, DatabaseZap, FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTreeStore } from '../../store/treeStore';
-import { useConnectionStore } from '../../store/connectionStore';
+import { useConnectionStore, loadOpenedConnectionIds } from '../../store/connectionStore';
 import { DBTree } from './DBTree';
 import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
@@ -43,12 +43,51 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const [showGroupModal, setShowGroupModal] = useState(false);
 
   useEffect(() => {
-    // 仅首次挂载时初始化；若 store 已有数据（从设置页切回）则跳过，
-    // 避免 init() 内的 expandedIds: new Set() 清空已展开节点状态
-    if (useTreeStore.getState().nodes.size === 0) {
-      init();
-    }
+    const restoreOpenedConnections = async () => {
+      // 仅首次挂载时初始化；若 store 已有数据（从设置页切回）则跳过，
+      // 避免 init() 内的 expandedIds: new Set() 清空已展开节点状态
+      if (useTreeStore.getState().nodes.size === 0) {
+        await init();
+      }
+      // 静默恢复上次已打开的连接，失败则跳过（不弹 toast）
+      const savedIds = loadOpenedConnectionIds();
+      if (savedIds.length > 0) {
+        await Promise.allSettled(savedIds.map(id => handleOpenConnectionSilent(id)));
+      }
+    };
+    restoreOpenedConnections();
   }, []);
+
+  // 静默版本：恢复上次展开状态时使用，失败不弹 toast
+  const handleOpenConnectionSilent = async (connectionId: number) => {
+    const nodeId = `conn_${connectionId}`;
+    const store = useTreeStore.getState();
+    // 验证节点存在（连接可能已被删除）
+    if (!store.nodes.get(nodeId)) return;
+    if (!store.nodes.get(nodeId)?.loaded) {
+      await store.loadChildren(nodeId);
+      if (!useTreeStore.getState().nodes.get(nodeId)?.loaded) return;
+    }
+    openConnection(connectionId);
+    const conn = useConnectionStore.getState().connections.find((c) => c.id === connectionId);
+    if (conn) {
+      invoke<string>('get_db_version', { connectionId })
+        .then((version) => {
+          if (version) {
+            useConnectionStore.getState().setMeta(connectionId, {
+              dbVersion: version,
+              driver: conn.driver,
+              host: conn.host ?? '',
+              port: conn.port ?? undefined,
+              name: conn.name,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+    const { expandedIds, toggleExpand } = useTreeStore.getState();
+    if (!expandedIds.has(nodeId)) toggleExpand(nodeId);
+  };
 
   const handleOpenConnection = async (connectionId: number) => {
     const nodeId = `conn_${connectionId}`;

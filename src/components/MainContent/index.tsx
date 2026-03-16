@@ -820,11 +820,9 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* Results Resizer */}
             <div
-              className="h-1 cursor-row-resize z-10 flex flex-col justify-center group"
+              className="h-1 cursor-row-resize z-10 hover:bg-[#00c9a7] transition-colors"
               onMouseDown={handleResultsResize}
-            >
-              <div className="h-px bg-[#1e2d42] group-hover:bg-[#00c9a7] transition-colors" />
-            </div>
+            />
 
             {/* Results Area */}
             <div className="flex flex-col bg-[#080d12] flex-shrink-0" style={{ height: resultsHeight }}>

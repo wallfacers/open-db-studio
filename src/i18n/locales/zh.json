@@ -28,6 +28,8 @@
     "selectContext": "选择 AI 助手的上下文",
     "connection": "连接 #",
     "noConnectionSelected": "未选择连接",
+    "followActiveTab": "跟随当前标签页",
+    "noOpenedConnections": "暂无已打开的连接",
     "inputPlaceholder": "描述你的查询需求... (Enter 发送)",
     "aiGenerateSql": "AI 生成 SQL",
     "generateSql": "生成 SQL",

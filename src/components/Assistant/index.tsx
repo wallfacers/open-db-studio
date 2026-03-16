@@ -101,13 +101,40 @@ export const Assistant: React.FC<AssistantProps> = ({
   const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, activeConfigId, setActiveConfigId, loadConfigs, cancelChat } = useAiStore();
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
-  const { connections } = useConnectionStore();
-  const activeConnectionName = activeConnectionId
-    ? (connections.find(c => c.id === activeConnectionId)?.name ?? `#${activeConnectionId}`)
-    : null;
+  const { connections, activeConnectionIds } = useConnectionStore();
 
   const [chatInput, setChatInput] = useState('');
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isModelMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+        setIsModelMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [isModelMenuOpen]);
+  const [isConnectionMenuOpen, setIsConnectionMenuOpen] = useState(false);
+  const [manualConnectionId, setManualConnectionId] = useState<number | null>(null);
+
+  const effectiveConnectionId = manualConnectionId ?? activeConnectionId;
+  const effectiveConnectionName = effectiveConnectionId
+    ? (connections.find(c => c.id === effectiveConnectionId)?.name ?? `#${effectiveConnectionId}`)
+    : null;
+  const openedConnections = connections.filter(c => activeConnectionIds.has(c.id));
+  const connectionMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isConnectionMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (connectionMenuRef.current && !connectionMenuRef.current.contains(e.target as Node)) {
+        setIsConnectionMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [isConnectionMenuOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -136,7 +163,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     if (!chatInput.trim() || isChatting) return;
     const prompt = chatInput.trim();
     setChatInput('');
-    await sendAgentChatStream(prompt, activeConnectionId);
+    await sendAgentChatStream(prompt, effectiveConnectionId);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -149,10 +176,48 @@ export const Assistant: React.FC<AssistantProps> = ({
   // 输入框 JSX，在空状态和正常状态中复用
   const renderInputBox = () => (
     <div className="bg-[#111922] border border-[#2a3f5a] rounded-lg p-2 flex flex-col focus-within:border-[#00c9a7] transition-colors">
-      <div className="flex items-center text-xs text-[#7a9bb8] mb-2 cursor-pointer hover:text-[#c8daea] w-fit" onClick={() => showToast(t('assistant.selectContext'), 'info')}>
-        <DatabaseZap size={12} className="mr-1 text-[#00c9a7]" />
-        <span>{activeConnectionName ?? t('assistant.noConnectionSelected')}</span>
-        <ChevronDown size={12} className="ml-1" />
+      <div className="relative mb-2 w-fit" ref={connectionMenuRef}>
+        <div
+          className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea]"
+          onClick={(e) => { e.stopPropagation(); setIsConnectionMenuOpen(!isConnectionMenuOpen); }}
+        >
+          <DatabaseZap size={12} className="mr-1 text-[#00c9a7]" />
+          <span className="max-w-[120px] truncate">{effectiveConnectionName ?? t('assistant.noConnectionSelected')}</span>
+          <ChevronDown size={12} className="ml-1 flex-shrink-0" />
+        </div>
+
+        {isConnectionMenuOpen && (
+          <div className="absolute left-0 top-full mt-1 w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
+            {/* 跟随标签页选项 */}
+            <div
+              className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[#1e2d42] ${
+                manualConnectionId === null ? 'text-[#009e84]' : 'text-[#7a9bb8]'
+              }`}
+              onClick={() => { setManualConnectionId(null); setIsConnectionMenuOpen(false); }}
+            >
+              <span className="text-xs italic">{t('assistant.followActiveTab')}</span>
+            </div>
+            {openedConnections.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-[#7a9bb8]">{t('assistant.noOpenedConnections')}</div>
+            ) : (
+              openedConnections.map((c) => {
+                const isActive = manualConnectionId === c.id;
+                return (
+                  <div
+                    key={c.id}
+                    className={`px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-[#1e2d42] ${
+                      isActive ? 'text-[#009e84]' : 'text-[#c8daea]'
+                    }`}
+                    onClick={() => { setManualConnectionId(c.id); setIsConnectionMenuOpen(false); }}
+                  >
+                    <span className="text-xs truncate flex-1">{c.name}</span>
+                    <span className="ml-2 w-2 h-2 rounded-full flex-shrink-0 bg-green-400" />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
       <textarea
         className="bg-transparent text-[13px] text-[#c8daea] outline-none resize-none h-16 w-full placeholder-[#7a9bb8]"
@@ -164,10 +229,10 @@ export const Assistant: React.FC<AssistantProps> = ({
       />
       <div className="flex items-center justify-between mt-2 relative">
         {/* 模型选择器 */}
-        <div className="relative">
+        <div className="relative" ref={modelMenuRef}>
           <div
             className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]"
-            onClick={(e) => { e.stopPropagation(); setIsModelMenuOpen(!isModelMenuOpen); }}
+            onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
           >
             <span className="max-w-[96px] truncate">
               {configs.length === 0
@@ -245,7 +310,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   return (
     <div className="flex flex-col bg-[#080d12] flex-shrink-0 border-l border-[#1e2d42] relative h-full" style={{ width: assistantWidth }}>
       <div
-        className="absolute left-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
+        className="absolute left-[-4px] top-0 bottom-0 w-2 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
         onMouseDown={handleAssistantResize}
       />
       {/* Header */}

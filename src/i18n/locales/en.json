@@ -28,6 +28,8 @@
     "selectContext": "Select AI Assistant context",
     "connection": "Connection #",
     "noConnectionSelected": "No connection selected",
+    "followActiveTab": "Follow active tab",
+    "noOpenedConnections": "No opened connections",
     "inputPlaceholder": "Describe your query requirements... (Enter to send)",
     "aiGenerateSql": "AI Generate SQL",
     "generateSql": "Generate SQL",

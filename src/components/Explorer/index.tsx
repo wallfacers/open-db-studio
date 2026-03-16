@@ -158,14 +158,17 @@ export const Explorer: React.FC<ExplorerProps> = ({
         style={{ width: sidebarWidth }}
       >
         <div
-          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
+          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-20 transition-colors"
           onMouseDown={handleSidebarResize}
         />
 
         {activeActivity === 'database' ? (
           <>
             <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42]">
-              <span className="font-medium text-[#c8daea]">{t('explorer.database')}</span>
+              <div className="flex items-center gap-2">
+                <DatabaseZap size={14} className="text-[#00c9a7]" />
+                <span className="font-medium text-[#c8daea]">{t('explorer.database')}</span>
+              </div>
               <div className="flex items-center space-x-2 text-[#7a9bb8]">
                 <Tooltip content={t('groupModal.createTitle')}>
                   <FolderPlus

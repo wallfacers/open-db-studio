@@ -45,25 +45,10 @@ vi.mock('../shared/MarkdownContent', () => ({
 }));
 
 const defaultProps = {
-  sqlContent: '',
-  setSqlContent: vi.fn(),
-  handleExecute: vi.fn(),
-  isExecuting: false,
   handleFormat: vi.fn(),
-  handleClear: vi.fn(),
   showToast: vi.fn(),
-  isDbMenuOpen: false,
-  setIsDbMenuOpen: vi.fn(),
-  isTableMenuOpen: false,
-  setIsTableMenuOpen: vi.fn(),
   resultsHeight: 0,
   handleResultsResize: vi.fn(),
-  isPageSizeMenuOpen: false,
-  setIsPageSizeMenuOpen: vi.fn(),
-  isExportMenuOpen: false,
-  setIsExportMenuOpen: vi.fn(),
-  tableData: [],
-  executionTime: 0,
 };
 
 describe('MainContent', () => {

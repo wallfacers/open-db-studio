@@ -68,25 +68,10 @@ import { askAiWithContext } from '../../utils/askAi';
 import { MarkdownContent } from '../shared/MarkdownContent';
 
 interface MainContentProps {
-  sqlContent: string;
-  setSqlContent: (content: string) => void;
-  handleExecute: () => void;
-  isExecuting: boolean;
   handleFormat: () => void;
-  handleClear: () => void;
   showToast: (msg: string, level?: ToastLevel) => void;
-  isDbMenuOpen: boolean;
-  setIsDbMenuOpen: (isOpen: boolean) => void;
-  isTableMenuOpen: boolean;
-  setIsTableMenuOpen: (isOpen: boolean) => void;
   resultsHeight: number;
   handleResultsResize: (e: React.MouseEvent) => void;
-  isPageSizeMenuOpen: boolean;
-  setIsPageSizeMenuOpen: (isOpen: boolean) => void;
-  isExportMenuOpen: boolean;
-  setIsExportMenuOpen: (isOpen: boolean) => void;
-  tableData: any[];
-  executionTime: number;
   showError?: (msg: string, ctx?: string | null) => void;
 }
 
@@ -197,9 +182,7 @@ const ExplanationTypingIndicator: React.FC = () => {
 
 export const MainContent: React.FC<MainContentProps> = ({
   handleFormat, showToast,
-  isDbMenuOpen, setIsDbMenuOpen, isTableMenuOpen, setIsTableMenuOpen,
   resultsHeight, handleResultsResize,
-  isPageSizeMenuOpen, setIsPageSizeMenuOpen, isExportMenuOpen, setIsExportMenuOpen,
   showError,
 }) => {
   const { t } = useTranslation();

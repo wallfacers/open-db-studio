@@ -385,26 +385,11 @@ JOIN
         <MigrationWizard />
       ) : (
       <MainContent
-        sqlContent={sqlContent}
-        setSqlContent={setSqlContent}
-        handleExecute={handleExecute}
-        isExecuting={isExecuting}
         handleFormat={handleFormat}
-        handleClear={handleClear}
         showToast={showToast}
         showError={showError}
-        isDbMenuOpen={isDbMenuOpen}
-        setIsDbMenuOpen={setIsDbMenuOpen}
-        isTableMenuOpen={isTableMenuOpen}
-        setIsTableMenuOpen={setIsTableMenuOpen}
         resultsHeight={resultsHeight}
         handleResultsResize={handleResultsResize}
-        isPageSizeMenuOpen={isPageSizeMenuOpen}
-        setIsPageSizeMenuOpen={setIsPageSizeMenuOpen}
-        isExportMenuOpen={isExportMenuOpen}
-        setIsExportMenuOpen={setIsExportMenuOpen}
-        tableData={tableData}
-        executionTime={executionTime}
       />
       )}
 

@@ -69,6 +69,8 @@ interface AiState {
   switchSession: (id: string) => void;
   /** 删除指定会话 */
   deleteSession: (id: string) => void;
+  /** 删除所有会话并重置为新会话 */
+  deleteAllSessions: () => void;
 
   // ── 当前对话 ──
   chatHistory: ChatMessage[];
@@ -84,15 +86,25 @@ interface AiState {
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
-  isExplaining: boolean;
-  isOptimizing: boolean;
+  isExplaining: Record<string, boolean>;
+  isOptimizing: Record<string, boolean>;
   isDiagnosing: boolean;
   isCreatingTable: boolean;
   error: string | null;
   draftMessage: string;
   setDraftMessage: (msg: string) => void;
-  explainSql: (sql: string, connectionId: number) => Promise<string>;
-  optimizeSql: (sql: string, connectionId: number) => Promise<string>;
+  explainSql: (
+    sql: string,
+    connectionId: number | null,
+    database: string | null | undefined,
+    tabId: string,
+    onDelta: (delta: string) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+  ) => Promise<void>;
+  cancelExplainSql: (tabId: string) => Promise<void>;
+  optimizeSql: (sql: string, connectionId: number | null, database: string | null | undefined, tabId: string) => Promise<string>;
+  cancelOptimizeSql: (tabId: string) => Promise<void>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }
@@ -113,8 +125,8 @@ export const useAiStore = create<AiState>()(
       isChatting: false,
       activeToolName: null,
       sessionStatus: null,
-      isExplaining: false,
-      isOptimizing: false,
+      isExplaining: {},
+      isOptimizing: {},
       isDiagnosing: false,
       isCreatingTable: false,
       error: null,
@@ -244,10 +256,31 @@ export const useAiStore = create<AiState>()(
         }
       },
 
-      // ── 清空当前对话（不存档，直接丢弃）──
+      // ── 清空当前对话（不存档，直接丢弃，同时从 sessions 中移除）──
 
       clearHistory: () => {
-        set({ chatHistory: [], streamingContent: '', streamingThinkingContent: '' });
+        const { currentSessionId } = get();
+        set((s) => ({
+          chatHistory: [],
+          streamingContent: '',
+          streamingThinkingContent: '',
+          currentSessionId: uuid(),
+          sessions: s.sessions.filter((sess) => sess.id !== currentSessionId),
+        }));
+        invoke('cancel_acp_session').catch(() => {});
+      },
+
+      deleteAllSessions: () => {
+        set({
+          sessions: [],
+          chatHistory: [],
+          streamingContent: '',
+          streamingThinkingContent: '',
+          currentSessionId: uuid(),
+          isChatting: false,
+          activeToolName: null,
+          sessionStatus: null,
+        });
         invoke('cancel_acp_session').catch(() => {});
       },
 
@@ -418,44 +451,98 @@ export const useAiStore = create<AiState>()(
 
       // ── AI 工具功能 ──
 
-      explainSql: async (sql, connectionId) => {
-        set({ isExplaining: true, error: null });
-        useAppStore.getState().setLastOperationContext({
-          type: 'ai_request', connectionId, aiRequestType: 'explain', prompt: sql,
-        });
+      explainSql: async (sql, connectionId, database, tabId, onDelta, onDone, onError) => {
+        set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: true }, error: null }));
         try {
-          return await invoke<string>('ai_explain_sql', { sql, connectionId });
+          const { Channel } = await import('@tauri-apps/api/core');
+          const channel = new Channel<{
+            type: 'ContentChunk' | 'ThinkingChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
+            data?: { delta?: string; message?: string };
+          }>();
+
+          channel.onmessage = (event) => {
+            // 已取消则忽略后续所有事件
+            if (!get().isExplaining[tabId]) return;
+            if (event.type === 'ContentChunk' && event.data?.delta) {
+              onDelta(event.data.delta);
+            } else if (event.type === 'Done') {
+              set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: false } }));
+              onDone();
+            } else if (event.type === 'Error') {
+              set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: false }, error: event.data?.message ?? 'Unknown error' }));
+              onError(event.data?.message ?? 'Unknown error');
+            }
+          };
+
+          await invoke('ai_explain_sql_acp', {
+            sql,
+            connectionId,
+            database: database ?? null,
+            channel,
+          });
         } catch (e) {
-          const status = (e as any)?.status ?? (e as any)?.response?.status;
-          if (status) {
-            const ctx = useAppStore.getState().lastOperationContext;
-            if (ctx) useAppStore.getState().setLastOperationContext({ ...ctx, httpStatus: status });
+          set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: false } }));
+          // 用户主动取消时 backend 会 drop done_tx，产生特定错误信息，静默处理不弹 toast
+          const isCancelledError = String(e).includes('thread dropped') || String(e).includes('cancelled');
+          if (!isCancelledError) {
+            set(s => ({ ...s, error: String(e) }));
+            onError(String(e));
           }
-          set({ error: String(e) });
-          throw e;
-        } finally {
-          set({ isExplaining: false });
         }
       },
 
-      optimizeSql: async (sql, connectionId) => {
-        set({ isOptimizing: true, error: null });
-        useAppStore.getState().setLastOperationContext({
-          type: 'ai_request', connectionId, aiRequestType: 'optimize', prompt: sql,
-        });
-        try {
-          return await invoke<string>('ai_optimize_sql', { sql, connectionId });
-        } catch (e) {
-          const status = (e as any)?.status ?? (e as any)?.response?.status;
-          if (status) {
-            const ctx = useAppStore.getState().lastOperationContext;
-            if (ctx) useAppStore.getState().setLastOperationContext({ ...ctx, httpStatus: status });
+      cancelExplainSql: async (tabId) => {
+        await invoke('cancel_explain_acp_session').catch(() => {});
+        set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: false } }));
+      },
+
+      optimizeSql: async (sql, connectionId, database, tabId) => {
+        set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: true }, error: null }));
+        return new Promise<string>(async (resolve, reject) => {
+          try {
+            const { Channel } = await import('@tauri-apps/api/core');
+            const channel = new Channel<{
+              type: 'ContentChunk' | 'ThinkingChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
+              data?: { delta?: string; message?: string };
+            }>();
+
+            let resultBuf = '';
+
+            channel.onmessage = (event) => {
+              // 已取消则忽略后续所有事件
+              if (!get().isOptimizing[tabId]) return;
+              if (event.type === 'ContentChunk' && event.data?.delta) {
+                resultBuf += event.data.delta;
+              } else if (event.type === 'Done') {
+                set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
+                resolve(resultBuf.trim());
+              } else if (event.type === 'Error') {
+                set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false }, error: event.data?.message ?? 'Unknown error' }));
+                reject(new Error(event.data?.message ?? 'Unknown error'));
+              }
+            };
+
+            await invoke('ai_optimize_sql', {
+              sql,
+              connectionId,
+              database: database ?? null,
+              channel,
+            });
+          } catch (e) {
+            set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
+            // 用户主动取消时 backend 会 drop done_tx，产生特定错误信息，静默处理不弹 toast
+            const isCancelledError = String(e).includes('thread dropped') || String(e).includes('cancelled');
+            if (!isCancelledError) {
+              set(s => ({ ...s, error: String(e) }));
+              reject(e);
+            }
           }
-          set({ error: String(e) });
-          throw e;
-        } finally {
-          set({ isOptimizing: false });
-        }
+        });
+      },
+
+      cancelOptimizeSql: async (tabId) => {
+        await invoke('cancel_optimize_acp_session').catch(() => {});
+        set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
       },
 
       createTable: async (description, connectionId) => {

@@ -53,7 +53,15 @@
     "deleteSession": "删除会话",
     "justNow": "刚刚",
     "minutesAgo": "分钟前",
-    "hoursAgo": "小时前"
+    "hoursAgo": "小时前",
+    "deleteAllSessions": "清除所有对话",
+    "allSessionsDeleted": "所有对话已清除",
+    "confirmDeleteAll": "确认清除所有对话？",
+    "confirmYes": "确认",
+    "confirmNo": "取消",
+    "waitMsg0": "正在连接模型...",
+    "waitMsg1": "AI 正在思考...",
+    "waitMsg2": "整理回复中..."
   },
   "connectionModal": {
     "editConnection": "编辑连接",
@@ -191,6 +199,11 @@
     "executionOverviewInfo": "执行概览信息",
     "aiExplanation": "AI 解释",
     "optimizeSql": "⚡ 优化 SQL",
+    "stopOptimizing": "停止优化",
+    "sqlExplanation": "SQL 解释",
+    "stopExplaining": "停止解释",
+    "clickToExplain": "点击 💡 开始解释 SQL",
+    "analyzing": "AI 正在分析...",
     "optimizing": "优化中...",
     "aiOptimizeFailed": "AI 优化失败，请检查 LLM 配置",
     "aiOptimization": "AI 优化建议",

@@ -19,6 +19,8 @@ pub struct PersistentAcpSession {
     pub config_fingerprint: String,
     /// 向 session 线程发送 prompt 请求
     pub request_tx: UnboundedSender<AcpRequest>,
+    /// 发送取消信号：drop 或 send 均会触发 session 线程 kill child process
+    pub abort_tx: tokio::sync::oneshot::Sender<()>,
 }
 
 /// 全局应用状态（注入 Tauri manage）
@@ -31,4 +33,8 @@ pub struct AppState {
     /// 最近一次 ai_chat_acp 传入的编辑器 SQL（供 MCP get_editor_sql 工具读取）
     /// MVP：全局单一字段，仅支持单一活跃 Tab 场景
     pub current_editor_sql: tokio::sync::Mutex<Option<String>>,
+    /// SQL 优化专用 ACP session（每次优化创建新 session，存储仅用于取消）
+    pub optimize_acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
+    /// SQL 解释专用 ACP session（每次解释创建新 session，存储仅用于取消）
+    pub explain_acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
 }

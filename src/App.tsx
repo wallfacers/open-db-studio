@@ -83,7 +83,7 @@ JOIN
   const [isAssistantResizing, setIsAssistantResizing] = useState(false);
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
-  const { results, error: queryError, setActiveTabId } = useQueryStore();
+  const { results, error: queryError, setActiveTabId, explanationContent, explanationStreaming } = useQueryStore();
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
@@ -104,12 +104,13 @@ JOIN
   useEffect(() => {
     const len = (results[activeTab] ?? []).length;
     const hasError = !!queryError;
-    if ((len > 0 || hasError) && resultsHeight === 0) {
+    const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
+    if ((len > 0 || hasError || hasExplanation) && resultsHeight === 0) {
       setResultsHeight(250);
-    } else if (len === 0 && !hasError && resultsHeight > 0) {
+    } else if (len === 0 && !hasError && !hasExplanation && resultsHeight > 0) {
       setResultsHeight(0);
     }
-  }, [results, activeTab, queryError]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [results, activeTab, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [toast, setToast] = useState<{ message: string; level: ToastLevel; markdownContext?: string | null } | null>(null);
 

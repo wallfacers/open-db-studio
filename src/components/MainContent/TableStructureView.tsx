@@ -287,7 +287,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
           <table className="w-full text-left border-collapse whitespace-nowrap text-xs table-fixed">
             <thead className="sticky top-0 bg-[#0d1117] z-10">
               <tr>
-                <th className="w-[30px] px-1 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
                 <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal w-[160px]">{t('tableManage.columnName')}</th>
                 <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal w-[130px]">{t('tableManage.dataType')}</th>
                 <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal w-[80px]">{t('tableManage.length')}</th>

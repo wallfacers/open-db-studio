@@ -51,6 +51,8 @@ pub fn run() {
                 mcp_port,
                 acp_session: tokio::sync::Mutex::new(None),
                 current_editor_sql: tokio::sync::Mutex::new(None),
+                optimize_acp_session: tokio::sync::Mutex::new(None),
+                explain_acp_session: tokio::sync::Mutex::new(None),
             });
             Ok(())
         })
@@ -87,6 +89,9 @@ pub fn run() {
             commands::insert_row,
             commands::export_table_data,
             commands::ai_optimize_sql,
+            commands::cancel_optimize_acp_session,
+            commands::ai_explain_sql_acp,
+            commands::cancel_explain_acp_session,
             commands::ai_create_table,
             commands::ai_diagnose_error,
             commands::list_groups,

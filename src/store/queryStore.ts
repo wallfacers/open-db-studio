@@ -133,19 +133,23 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
+  /** 每次调用均新建查询 Tab（无去重），适用于用户主动触发的"新建查询"操作 */
   openQueryTab: (connId, connName, database, schema, initialSql) => {
-    const id = `query_${connId}_${Date.now()}`;
-    const queryCount = get().tabs.filter(t => t.type === 'query').length + 1;
-    const tab: Tab = {
-      id,
-      type: 'query',
-      title: `查询${queryCount}`,
-      db: connName,
-      queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
-    };
-    // Add tab first, then set SQL content
-    set(s => ({ tabs: [...s.tabs, tab], activeTabId: id }));
-    if (initialSql) get().setSql(id, initialSql);
+    let newTabId = '';
+    set(s => {
+      const id = `query_${connId}_${Date.now()}`;
+      const queryCount = s.tabs.filter(t => t.type === 'query').length + 1;
+      const tab: Tab = {
+        id,
+        type: 'query',
+        title: `查询${queryCount}`,
+        db: connName,
+        queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
+      };
+      newTabId = id;
+      return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+    if (initialSql && newTabId) get().setSql(newTabId, initialSql);
   },
 
   openTableDataTab: (tableName, connectionId, database, schema) => {

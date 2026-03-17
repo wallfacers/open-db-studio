@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, ElicitationRequest, PermissionRequest, AcpElicitationRequest } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, ElicitationRequest, PermissionRequest } from '../types';
 import { useAppStore } from './appStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ const makeDefaultTitle = (firstMsg: string): string => {
 const uuid = () => crypto.randomUUID();
 
 /**
- * 后台调用 AI 生成会话标题（复用已有的 ai_chat 命令）。
+ * 后台调用 AI 生成会话标题（复用 agent_request_ai_title 命令）。
  * 失败时静默忽略，保留默认标题。
  */
 async function requestAiTitle(sessionId: string, firstUser: string, firstAssistant: string) {
@@ -25,9 +25,9 @@ async function requestAiTitle(sessionId: string, firstUser: string, firstAssista
       `根据以下对话内容，给出一个简洁的标题（最多6个词或字，不加引号和标点）：\n` +
       `用户：${firstUser.slice(0, 150)}\n` +
       `助手：${firstAssistant.slice(0, 200)}`;
-    const raw = await invoke<string>('ai_chat', {
-      message: prompt,
-      context: { history: [] },
+    const raw = await invoke<string>('agent_request_ai_title', {
+      sessionId,
+      context: prompt,
     });
     const title = raw.trim().replace(/^["'「『【\s]+|["'」』】\s.]+$/g, '');
     if (title) {
@@ -50,8 +50,7 @@ interface SessionRuntimeState {
   activeToolName: string | null;
   sessionStatus: string | null;
   pendingElicitation: ElicitationRequest | null;       // 文字检测路径
-  pendingPermission: PermissionRequest | null;          // ACP permission 路径（isChatting=true）
-  pendingAcpElicitation: AcpElicitationRequest | null;  // ACP elicitation 路径（ext_method 桥接）
+  pendingPermission: PermissionRequest | null;          // permission 路径（isChatting=true）
   streamingElicitationFired: boolean;                   // P0：mid-stream 已触发，防重复
 }
 
@@ -63,7 +62,6 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   sessionStatus: null,
   pendingElicitation: null,
   pendingPermission: null,
-  pendingAcpElicitation: null,
   streamingElicitationFired: false,
 });
 
@@ -83,7 +81,7 @@ interface AiState {
   sessions: ChatSession[];
   currentSessionId: string;
   _saveCurrentSession: () => void;
-  newSession: () => void;
+  newSession: () => Promise<void>;
   switchSession: (id: string) => void;
   deleteSession: (id: string) => Promise<void>;
   /** 删除所有会话并重置为新会话 */
@@ -106,8 +104,6 @@ interface AiState {
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
   respondElicitation: (sessionId: string, selectedText: string) => Promise<void>;
   clearElicitation: (sessionId: string) => void;
-  respondAcpElicitation: (sessionId: string, elicitationId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => Promise<void>;
-  clearAcpElicitation: (sessionId: string) => void;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
@@ -239,9 +235,15 @@ export const useAiStore = create<AiState>()(
         }
       },
 
-      newSession: () => {
+      newSession: async () => {
         get()._saveCurrentSession();
-        const newId = uuid();
+        // 从服务端获取 session_id，失败则 fallback 到本地 uuid()
+        let newId: string;
+        try {
+          newId = await invoke<string>('agent_create_session', {});
+        } catch {
+          newId = uuid();
+        }
         set((s) => ({
           currentSessionId: newId,
           chatHistory: [],
@@ -250,7 +252,6 @@ export const useAiStore = create<AiState>()(
             [newId]: defaultRuntimeState(),
           },
         }));
-        // 注意：不再调用 cancel_acp_session，后台 session 继续运行
       },
 
       switchSession: (id) => {
@@ -262,7 +263,6 @@ export const useAiStore = create<AiState>()(
           chatHistory: target.messages,
           // 注意：不重置 chatStates，后台 channel 继续运行
         });
-        // 注意：不再调用 cancel_acp_session
       },
 
       deleteSession: async (id) => {
@@ -270,6 +270,8 @@ export const useAiStore = create<AiState>()(
         if (get().chatStates[id]?.isChatting) {
           await get().cancelChat(id);
         }
+        // 通知服务端删除 session（不阻塞 UI）
+        invoke('agent_delete_session', { sessionId: id }).catch(() => {});
         // 清理 chatStates
         set((s) => {
           const { [id]: _removed, ...restStates } = s.chatStates;
@@ -341,7 +343,7 @@ export const useAiStore = create<AiState>()(
         }
 
         try {
-          await invoke('cancel_acp_session', { sessionId });
+          await invoke('agent_cancel_session', { sessionId });
         } catch (_) {
           // session 可能已不存在
         }
@@ -356,14 +358,14 @@ export const useAiStore = create<AiState>()(
           },
         }));
         try {
-          await invoke('acp_permission_respond', {
+          await invoke('agent_permission_respond', {
             sessionId,
             permissionId,
-            selectedOptionId,
-            cancelled,
+            response: selectedOptionId,
+            remember: !cancelled,
           });
         } catch (e) {
-          console.error('[elicitation] acp_permission_respond failed:', e);
+          console.error('[permission] agent_permission_respond failed:', e);
         }
       },
 
@@ -377,13 +379,6 @@ export const useAiStore = create<AiState>()(
         // activeConnectionId 在 connectionStore，不在 aiStore
         const { useConnectionStore } = await import('./connectionStore');
         const connectionId = useConnectionStore.getState().activeConnectionId;
-        // ElicitationPanel 仅在当前 session 显示，用户无法跨 session 触发，
-        // 故 sessionId 与 get().currentSessionId 一致，无需额外传递。
-        //
-        // ⚠️ 已知边界情况：sendAgentChatStream 内部读取 get().currentSessionId，
-        // 如果用户在点击选项按钮后、此 await 执行前迅速切换了 session，
-        // 可能把消息发送到切换后的 session（而非原 sessionId 对应的 session）。
-        // 该场景概率极低（UI 面板切换 session 后立即隐藏），故不做额外保护。
         await get().sendAgentChatStream(selectedText, connectionId);
       },
 
@@ -396,35 +391,6 @@ export const useAiStore = create<AiState>()(
         }));
       },
 
-      respondAcpElicitation: async (sessionId, elicitationId, action, content) => {
-        set((s) => ({
-          chatStates: {
-            ...s.chatStates,
-            [sessionId]: { ...s.chatStates[sessionId], pendingAcpElicitation: null },
-          },
-        }));
-        try {
-          await invoke('acp_elicitation_respond', {
-            sessionId,
-            elicitationId,
-            action,
-            content: content ?? null,
-          });
-        } catch (e) {
-          console.error('[elicitation] acp_elicitation_respond failed:', e);
-        }
-      },
-
-      clearAcpElicitation: (sessionId) => {
-        set((s) => ({
-          chatStates: {
-            ...s.chatStates,
-            [sessionId]: { ...s.chatStates[sessionId], pendingAcpElicitation: null },
-          },
-        }));
-        // 取消响应（让 Rust 侧超时或发 cancel）
-      },
-
       deleteAllSessions: () => {
         set({
           sessions: [],
@@ -432,8 +398,8 @@ export const useAiStore = create<AiState>()(
           chatStates: {},
           currentSessionId: uuid(),
         });
-        // 取消所有后台 session（尽力，不阻塞）
-        invoke('cancel_acp_session', { sessionId: '' }).catch(() => {});
+        // 删除所有后台 session（尽力，不阻塞）
+        invoke('agent_delete_all_sessions').catch(() => {});
       },
 
       clearHistory: async (sessionId) => {
@@ -441,17 +407,43 @@ export const useAiStore = create<AiState>()(
         if (get().chatStates[sessionId]?.isChatting) {
           await get().cancelChat(sessionId);
         }
-        const isCurrentSession = get().currentSessionId === sessionId;
-        set((s) => ({
-          sessions: s.sessions.map((sess) =>
-            sess.id === sessionId ? { ...sess, messages: [], updatedAt: Date.now() } : sess
-          ),
-          chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
-          ...(isCurrentSession ? { chatHistory: [] } : {}),
-        }));
+        // 通过服务端清空 session 历史，获取新 session_id
+        try {
+          const newSessionId = await invoke<string>('agent_clear_session_history', { sessionId });
+          const isCurrentSession = get().currentSessionId === sessionId;
+          set((s) => ({
+            sessions: s.sessions.map((sess) =>
+              sess.id === sessionId
+                ? { ...sess, id: newSessionId, messages: [], updatedAt: Date.now() }
+                : sess
+            ),
+            chatStates: {
+              ...s.chatStates,
+              [newSessionId]: defaultRuntimeState(),
+            },
+            ...(isCurrentSession ? { currentSessionId: newSessionId, chatHistory: [] } : {}),
+          }));
+          // 删除旧 session 的 chatState（如果 id 确实改变了）
+          if (newSessionId !== sessionId) {
+            set((s) => {
+              const { [sessionId]: _removed, ...restStates } = s.chatStates;
+              return { chatStates: restStates };
+            });
+          }
+        } catch {
+          // 失败则仅清空本地状态
+          const isCurrentSession = get().currentSessionId === sessionId;
+          set((s) => ({
+            sessions: s.sessions.map((sess) =>
+              sess.id === sessionId ? { ...sess, messages: [], updatedAt: Date.now() } : sess
+            ),
+            chatStates: { ...s.chatStates, [sessionId]: defaultRuntimeState() },
+            ...(isCurrentSession ? { chatHistory: [] } : {}),
+          }));
+        }
       },
 
-      // ── 流式 AI 对话（核心）── [Task 6 中替换此函数体]
+      // ── 流式 AI 对话（核心）──
 
       sendAgentChatStream: async (message, connectionId) => {
         // 预导入检测器（commitAssistant 和 flushBuffers 均需要，必须在两者定义之前）
@@ -560,7 +552,7 @@ export const useAiStore = create<AiState>()(
         try {
           const { Channel } = await import('@tauri-apps/api/core');
           const channel = new Channel<{
-            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest' | 'ElicitationRequest';
+            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest';
             data?: {
               delta?: string;
               message?: string;
@@ -570,10 +562,6 @@ export const useAiStore = create<AiState>()(
               // PermissionRequest 字段
               permission_id?: string;
               options?: Array<{ option_id: string; label: string; kind: string }>;
-              // ElicitationRequest 字段
-              elicitation_id?: string;
-              schema?: Record<string, unknown>;
-              mode?: string;
             };
           }>();
 
@@ -677,19 +665,6 @@ export const useAiStore = create<AiState>()(
                   })),
                 },
               });
-            } else if (event.type === 'ElicitationRequest' && event.data?.elicitation_id) {
-              // ElicitationRequest 在 isChatting=true 时到达（agent 暂停等待结构化输入）
-              flushNow();
-              setChatStateField({
-                pendingAcpElicitation: {
-                  id: event.data.elicitation_id,
-                  sessionId,
-                  source: 'acp-elicitation' as const,
-                  mode: (event.data.mode === 'url' ? 'url' : 'form') as 'form' | 'url',
-                  message: event.data.message ?? '请提供信息',
-                  schema: event.data.schema ?? {},
-                },
-              });
             } else if (event.type === 'Done') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;
@@ -706,7 +681,7 @@ export const useAiStore = create<AiState>()(
             }
           };
 
-          await invoke('ai_chat_acp', {
+          await invoke('agent_chat', {
             prompt: message,
             tabSql,
             connectionId,
@@ -744,7 +719,7 @@ export const useAiStore = create<AiState>()(
             }
           };
 
-          await invoke('ai_explain_sql_acp', {
+          await invoke('agent_explain_sql', {
             sql,
             connectionId,
             database: database ?? null,
@@ -762,7 +737,7 @@ export const useAiStore = create<AiState>()(
       },
 
       cancelExplainSql: async (tabId) => {
-        await invoke('cancel_explain_acp_session').catch(() => {});
+        await invoke('cancel_explain_sql').catch(() => {});
         set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: false } }));
       },
 
@@ -792,7 +767,7 @@ export const useAiStore = create<AiState>()(
               }
             };
 
-            await invoke('ai_optimize_sql', {
+            await invoke('agent_optimize_sql', {
               sql,
               connectionId,
               database: database ?? null,
@@ -811,7 +786,7 @@ export const useAiStore = create<AiState>()(
       },
 
       cancelOptimizeSql: async (tabId) => {
-        await invoke('cancel_optimize_acp_session').catch(() => {});
+        await invoke('cancel_optimize_sql').catch(() => {});
         set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
       },
 
@@ -849,8 +824,8 @@ export const useAiStore = create<AiState>()(
     }),
     {
       name: 'open-db-studio-ai-sessions',
-      // 只持久化历史会话列表，其他状态（流式内容、isChatting 等）不持久化
-      partialize: (state) => ({ sessions: state.sessions, linkedConnectionId: state.linkedConnectionId }),
+      // 只持久化 linkedConnectionId，sessions 以服务端为准不再本地持久化
+      partialize: (state) => ({ linkedConnectionId: state.linkedConnectionId }),
     }
   )
 );

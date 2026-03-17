@@ -1,4 +1,3 @@
-mod acp;
 mod agent;
 mod commands;
 mod crypto;
@@ -72,10 +71,6 @@ pub fn run() {
                 serve_port,
                 current_explain_session_id: tokio::sync::Mutex::new(None),
                 current_optimize_session_id: tokio::sync::Mutex::new(None),
-                // ACP 字段保留兼容，待 Task 2/4 清理
-                acp_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-                optimize_acp_session: tokio::sync::Mutex::new(None),
-                explain_acp_session: tokio::sync::Mutex::new(None),
                 editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 last_active_session_id: tokio::sync::Mutex::new(None),
                 pending_diff_response: tokio::sync::Mutex::new(None),

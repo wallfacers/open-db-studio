@@ -2744,3 +2744,386 @@ pub async fn mcp_query_respond(
     }
     Ok(())
 }
+
+// ============ Agent Serve 模式命令 ============
+
+/// Agent session 记录（从 SQLite agent_sessions 表返回）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AgentSessionRecord {
+    pub id: String,
+    pub title: Option<String>,
+    pub config_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 创建 agent session
+/// 1. 如果 config_id 指定，获取 LLM 配置并调用 patch_config
+/// 2. POST /session → 获取 session_id
+/// 3. 写入 SQLite agent_sessions 表（is_temp=0）
+/// 4. 返回 session_id
+#[tauri::command]
+pub async fn agent_create_session(
+    config_id: Option<i64>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<String> {
+    // 如果指定了 config_id，写入 opencode.json 并热更新
+    if let Some(id) = config_id {
+        let cfg = crate::db::get_llm_config_by_id(id)?
+            .ok_or_else(|| AppError::Other(format!("LLM config {} not found", id)))?;
+        let agent_dir = state.app_data_dir.join("agent");
+        if let Err(e) = crate::agent::config::write_opencode_json(
+            &agent_dir,
+            &cfg.model,
+            &cfg.api_type,
+            &cfg.api_key,
+            if cfg.base_url.is_empty() { None } else { Some(cfg.base_url.as_str()) },
+        ) {
+            log::warn!("[agent_create_session] Failed to write opencode.json: {}", e);
+        }
+        if let Err(e) = crate::agent::client::patch_config(state.serve_port, &cfg.model, &cfg.api_type).await {
+            log::warn!("[agent_create_session] Failed to patch_config: {}", e);
+        }
+    }
+
+    let session_id = crate::agent::client::create_session(state.serve_port, None).await?;
+    crate::db::insert_agent_session(&session_id, None, config_id, false)?;
+    Ok(session_id)
+}
+
+/// 删除 agent session
+/// DELETE /session/:id + 从 agent_sessions 表删除
+#[tauri::command]
+pub async fn agent_delete_session(
+    session_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    if let Err(e) = crate::agent::client::delete_session(state.serve_port, &session_id).await {
+        log::warn!("[agent_delete_session] HTTP delete failed (ignored): {}", e);
+    }
+    crate::db::delete_agent_session(&session_id)?;
+    Ok(())
+}
+
+/// 删除所有 agent sessions（包括临时 session）
+/// 逐一调用 DELETE /session/:id（忽略个别失败），清空 agent_sessions 表
+#[tauri::command]
+pub async fn agent_delete_all_sessions(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let records = crate::db::list_agent_sessions(true)?;
+    for record in &records {
+        if let Err(e) = crate::agent::client::delete_session(state.serve_port, &record.id).await {
+            log::warn!("[agent_delete_all_sessions] Failed to delete session {}: {}", record.id, e);
+        }
+    }
+    crate::db::delete_all_agent_sessions()?;
+    Ok(())
+}
+
+/// 列出所有 agent sessions（is_temp=0）
+#[tauri::command]
+pub async fn agent_list_sessions(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<Vec<AgentSessionRecord>> {
+    let _ = state; // state not needed but kept for consistency
+    crate::db::list_agent_sessions(false)
+}
+
+/// 获取 session 消息历史
+/// GET /session/:id/message
+#[tauri::command]
+pub async fn agent_get_session_messages(
+    session_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<serde_json::Value> {
+    crate::agent::client::get_messages(state.serve_port, &session_id).await
+}
+
+/// 清除 session 历史（删除旧 session 并创建新 session）
+/// 1. DELETE /session/:id + 从 agent_sessions 表删除
+/// 2. POST /session → 获取新 session_id
+/// 3. 写入 agent_sessions 表
+/// 4. 返回新 session_id
+#[tauri::command]
+pub async fn agent_clear_session_history(
+    session_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<String> {
+    // 先获取旧 session 的 config_id，以便新 session 继承
+    let old_records = crate::db::list_agent_sessions(true)?;
+    let old_config_id = old_records.iter()
+        .find(|r| r.id == session_id)
+        .and_then(|r| r.config_id);
+
+    if let Err(e) = crate::agent::client::delete_session(state.serve_port, &session_id).await {
+        log::warn!("[agent_clear_session_history] HTTP delete failed (ignored): {}", e);
+    }
+    crate::db::delete_agent_session(&session_id)?;
+
+    let new_id = crate::agent::client::create_session(state.serve_port, None).await?;
+    crate::db::insert_agent_session(&new_id, None, old_config_id, false)?;
+    Ok(new_id)
+}
+
+/// 取消（abort）agent session
+/// POST /session/:id/abort
+#[tauri::command]
+pub async fn agent_cancel_session(
+    session_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::abort_session(state.serve_port, &session_id).await
+}
+
+/// 权限请求回复
+/// POST /session/:id/permissions/:permissionID { response, remember? }
+#[tauri::command]
+pub async fn agent_permission_respond(
+    session_id: String,
+    permission_id: String,
+    response: String,
+    remember: Option<bool>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::permission_respond(
+        state.serve_port,
+        &session_id,
+        &permission_id,
+        &response,
+        remember,
+    )
+    .await
+}
+
+/// Agent 对话（Serve 模式）
+/// 1. 写入 editor_sql_map 和 last_active_session_id
+/// 2. 构建 prompt_text
+/// 3. 获取 model 字段
+/// 4. POST /session/:id/message 并解析 SSE 流 → channel
+#[tauri::command]
+pub async fn agent_chat(
+    prompt: String,
+    tab_sql: Option<String>,
+    connection_id: Option<i64>,
+    config_id: Option<i64>,
+    session_id: String,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let result = agent_chat_inner(
+        prompt, tab_sql, connection_id, config_id, session_id, &channel, &state,
+    )
+    .await;
+    if let Err(ref e) = result {
+        let _ = channel.send(crate::llm::StreamEvent::Error {
+            message: e.to_string(),
+        });
+    }
+    result
+}
+
+async fn agent_chat_inner(
+    prompt: String,
+    tab_sql: Option<String>,
+    connection_id: Option<i64>,
+    config_id: Option<i64>,
+    session_id: String,
+    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: &tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    // 1. 写入编辑器 SQL 到 per-session map，并更新 last_active_session_id
+    {
+        let mut map = state.editor_sql_map.lock().await;
+        map.insert(session_id.clone(), tab_sql.clone());
+    }
+    {
+        let mut last = state.last_active_session_id.lock().await;
+        *last = Some(session_id.clone());
+    }
+
+    // 2. 构建 prompt 文本（复用现有逻辑）
+    let mut prompt_text = prompt;
+    if let Some(conn_id) = connection_id {
+        prompt_text = format!("当前数据库连接 ID: {}\n\n{}", conn_id, prompt_text);
+    }
+    if let Some(ref sql) = tab_sql {
+        if !sql.trim().is_empty() {
+            prompt_text = format!(
+                "当前编辑器 SQL：\n```sql\n{}\n```\n\n{}",
+                sql, prompt_text
+            );
+        }
+    }
+
+    // 3. 获取 model 字段（从 config_id 或默认配置）
+    let model_str = match config_id {
+        Some(id) => {
+            let cfg = crate::db::get_llm_config_by_id(id)?
+                .ok_or_else(|| AppError::Other(format!("LLM config {} not found", id)))?;
+            cfg.model
+        }
+        None => {
+            match crate::db::get_default_llm_config()? {
+                Some(cfg) => cfg.model,
+                None => String::new(),
+            }
+        }
+    };
+
+    // 4. 发送消息，获取 SSE 响应
+    let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
+    let response = crate::agent::client::send_message(
+        state.serve_port,
+        &session_id,
+        &prompt_text,
+        model_opt,
+        None,
+    )
+    .await?;
+
+    // 5. 解析 SSE 流 → channel
+    crate::agent::stream::consume_sse_stream(response, channel).await
+}
+
+/// 请求 AI 生成标题（使用临时 session）
+/// 1. POST /session { title: "temp-title" } → 临时 session_id，is_temp=1
+/// 2. 发送单条消息（根据 context 生成标题）
+/// 3. 收集 SSE 流的所有 ContentChunk 合并为完整文本
+/// 4. DELETE /session/:id（finally 路径）
+/// 5. 返回标题文本
+#[tauri::command]
+pub async fn agent_request_ai_title(
+    session_id: String,
+    context: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<String> {
+    let _ = session_id; // 仅用于上下文，不直接使用
+
+    // 1. 创建临时 session
+    let temp_id = crate::agent::client::create_session(state.serve_port, Some("temp-title")).await?;
+    crate::db::insert_agent_session(&temp_id, Some("temp-title"), None, true)?;
+
+    // 2. 发送消息
+    let prompt = format!(
+        "请根据以下内容，生成一个简洁的对话标题，不超过20个字，只返回标题文本，不要解释：\n\n{}",
+        context
+    );
+
+    let response_result = crate::agent::client::send_message(
+        state.serve_port,
+        &temp_id,
+        &prompt,
+        None,
+        None,
+    )
+    .await;
+
+    // 3. 收集 SSE 流（无论成功失败，finally 路径均清理）
+    let title = match response_result {
+        Ok(resp) => {
+            let title = collect_sse_text(resp).await.unwrap_or_default();
+            title
+        }
+        Err(e) => {
+            // finally: 清理临时 session
+            let _ = crate::agent::client::delete_session(state.serve_port, &temp_id).await;
+            let _ = crate::db::delete_agent_session(&temp_id);
+            return Err(e);
+        }
+    };
+
+    // 4. 清理临时 session（finally 路径）
+    if let Err(e) = crate::agent::client::delete_session(state.serve_port, &temp_id).await {
+        log::warn!("[agent_request_ai_title] Failed to delete temp session: {}", e);
+    }
+    let _ = crate::db::delete_agent_session(&temp_id);
+
+    // 5. 返回标题
+    Ok(title.trim().to_string())
+}
+
+/// 收集 SSE 流中所有 ContentChunk 合并为完整文本
+async fn collect_sse_text(response: reqwest::Response) -> AppResult<String> {
+    use futures_util::StreamExt;
+
+    let mut stream = response.bytes_stream();
+    let mut current_event: Option<String> = None;
+    let mut current_data: Option<String> = None;
+    let mut line_buf = String::new();
+    let mut result = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = match chunk_result {
+            Ok(c) => c,
+            Err(_) => break,
+        };
+        let text = match std::str::from_utf8(&chunk) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        line_buf.push_str(text);
+
+        loop {
+            if let Some(pos) = line_buf.find('\n') {
+                let line = line_buf[..pos].trim_end_matches('\r').to_string();
+                line_buf = line_buf[pos + 1..].to_string();
+
+                if line.is_empty() {
+                    if let (Some(ev), Some(data)) = (current_event.take(), current_data.take()) {
+                        if ev == "message.part.delta" {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+                                if json["type"].as_str() == Some("text") {
+                                    if let Some(delta) = json["delta"].as_str() {
+                                        result.push_str(delta);
+                                    }
+                                }
+                            }
+                        } else if ev == "message.completed" {
+                            return Ok(result);
+                        }
+                    } else {
+                        current_event.take();
+                        current_data.take();
+                    }
+                } else if let Some(rest) = line.strip_prefix("event:") {
+                    current_event = Some(rest.trim().to_string());
+                } else if let Some(rest) = line.strip_prefix("data:") {
+                    current_data = Some(rest.trim().to_string());
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// 应用 LLM 配置到 opencode serve（写盘 + 热更新）
+/// 1. 从 SQLite 获取 LLM 配置（解密 apiKey）
+/// 2. 调用 write_opencode_json 写盘
+/// 3. 调用 patch_config 热更新（失败仅 warn）
+#[tauri::command]
+pub async fn agent_apply_config(
+    config_id: i64,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let cfg = crate::db::get_llm_config_by_id(config_id)?
+        .ok_or_else(|| AppError::Other(format!("LLM config {} not found", config_id)))?;
+
+    let agent_dir = state.app_data_dir.join("agent");
+    crate::agent::config::write_opencode_json(
+        &agent_dir,
+        &cfg.model,
+        &cfg.api_type,
+        &cfg.api_key,
+        if cfg.base_url.is_empty() { None } else { Some(cfg.base_url.as_str()) },
+    )?;
+
+    if let Err(e) = crate::agent::client::patch_config(state.serve_port, &cfg.model, &cfg.api_type).await {
+        log::warn!("[agent_apply_config] patch_config failed (ignored): {}", e);
+    }
+
+    Ok(())
+}

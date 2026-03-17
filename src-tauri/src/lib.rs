@@ -215,6 +215,17 @@ pub fn run() {
             commands::set_auto_mode,
             commands::mcp_ui_action_respond,
             commands::mcp_query_respond,
+            commands::agent_create_session,
+            commands::agent_delete_session,
+            commands::agent_delete_all_sessions,
+            commands::agent_list_sessions,
+            commands::agent_get_session_messages,
+            commands::agent_clear_session_history,
+            commands::agent_cancel_session,
+            commands::agent_permission_respond,
+            commands::agent_chat,
+            commands::agent_request_ai_title,
+            commands::agent_apply_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

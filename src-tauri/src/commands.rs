@@ -2615,3 +2615,74 @@ pub async fn test_connection_by_id(connection_id: i64) -> AppResult<bool> {
         _ => Ok(false),
     }
 }
+
+// ============ Tab SQL 文件管理 ============
+
+fn tabs_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    let dir = data_dir.join("tabs");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
+#[tauri::command]
+pub async fn read_tab_file(
+    app_handle: tauri::AppHandle,
+    tab_id: String,
+) -> Result<Option<String>, String> {
+    let path = tabs_dir(&app_handle)?.join(format!("{}.sql", tab_id));
+    if path.exists() {
+        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        Ok(Some(content))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn write_tab_file(
+    app_handle: tauri::AppHandle,
+    tab_id: String,
+    content: String,
+) -> Result<(), String> {
+    let path = tabs_dir(&app_handle)?.join(format!("{}.sql", tab_id));
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_tab_file(
+    app_handle: tauri::AppHandle,
+    tab_id: String,
+) -> Result<(), String> {
+    let path = tabs_dir(&app_handle)?.join(format!("{}.sql", tab_id));
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_tab_files(
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    let dir = tabs_dir(&app_handle)?;
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    let ids: Vec<String> = std::fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.strip_suffix(".sql").map(|s| s.to_string())
+        })
+        .collect();
+    Ok(ids)
+}

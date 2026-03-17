@@ -174,6 +174,10 @@ pub fn run() {
             commands::set_ui_state,
             commands::delete_ui_state,
             commands::test_connection_by_id,
+            commands::read_tab_file,
+            commands::write_tab_file,
+            commands::delete_tab_file,
+            commands::list_tab_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -34,7 +34,7 @@ fn spawn_child(
     agent_dir: &std::path::Path,
     port: u16,
 ) -> std::io::Result<tokio::process::Child> {
-    tokio::process::Command::new("opencode")
+    tokio::process::Command::new("opencode-cli")
         .args(["serve", "--port", &port.to_string()])
         .current_dir(agent_dir)
         .kill_on_drop(false) // we manage lifecycle explicitly

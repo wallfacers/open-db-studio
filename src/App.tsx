@@ -11,6 +11,7 @@ import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
 import { useAppStore } from './store/appStore';
 import { useToolBridge } from './hooks/useToolBridge';
+import { useMcpBridge } from './hooks/useMcpBridge';
 import { TaskCenter } from './components/TaskCenter';
 import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
 import { GraphExplorer } from './components/GraphExplorer';
@@ -37,6 +38,8 @@ export default function App() {
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
+  // 全局挂载 MCP 双向桥接（UI action / query request）
+  useMcpBridge();
   // 初始化任务进度监听器
   useEffect(() => {
     initTaskProgressListener();

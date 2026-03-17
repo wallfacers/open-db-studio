@@ -104,7 +104,9 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
 
   refresh: async () => {
     const savedExpandedIds = new Set(get().expandedIds);
-    await get().init(); // 重建根节点，不清 expandedIds（但子节点消失了）
+    await get().init(); // 重建根节点，子节点消失了
+    // 清空旧 expandedIds（含 stale ID），后续 restoreExpansion 只添加仍存在的节点
+    set({ expandedIds: new Set() });
 
     const restoreExpansion = async (nodeId: string) => {
       const node = get().nodes.get(nodeId);

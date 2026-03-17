@@ -33,6 +33,13 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "skills/db-read/SKILL.md",
+      "skills/tab-control/SKILL.md",
+      "skills/metric-edit/SKILL.md",
+      "skills/table-edit/SKILL.md",
+      "skills/history/SKILL.md"
     ]
   }
 }

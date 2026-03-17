@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, ElicitationRequest, PermissionRequest } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, ElicitationRequest, PermissionRequest, AcpElicitationRequest } from '../types';
 import { useAppStore } from './appStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -49,8 +49,10 @@ interface SessionRuntimeState {
   streamingThinkingContent: string;
   activeToolName: string | null;
   sessionStatus: string | null;
-  pendingElicitation: ElicitationRequest | null;  // 文字检测路径（isChatting=false 时显示）
-  pendingPermission: PermissionRequest | null;     // ACP permission 路径（isChatting=true 时显示）
+  pendingElicitation: ElicitationRequest | null;       // 文字检测路径
+  pendingPermission: PermissionRequest | null;          // ACP permission 路径（isChatting=true）
+  pendingAcpElicitation: AcpElicitationRequest | null;  // ACP elicitation 路径（ext_method 桥接）
+  streamingElicitationFired: boolean;                   // P0：mid-stream 已触发，防重复
 }
 
 const defaultRuntimeState = (): SessionRuntimeState => ({
@@ -61,6 +63,8 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   sessionStatus: null,
   pendingElicitation: null,
   pendingPermission: null,
+  pendingAcpElicitation: null,
+  streamingElicitationFired: false,
 });
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
@@ -86,6 +90,10 @@ interface AiState {
   deleteAllSessions: () => void;
   setSessionConfigId: (sessionId: string, configId: number | null) => void;
 
+  // ── AI 助手连接绑定（null = 跟随活跃标签页）──
+  linkedConnectionId: number | null;
+  setLinkedConnectionId: (id: number | null) => void;
+
   // ── 当前对话视图缓存 ──
   chatHistory: ChatMessage[];
 
@@ -98,6 +106,8 @@ interface AiState {
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
   respondElicitation: (sessionId: string, selectedText: string) => Promise<void>;
   clearElicitation: (sessionId: string) => void;
+  respondAcpElicitation: (sessionId: string, elicitationId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>) => Promise<void>;
+  clearAcpElicitation: (sessionId: string) => void;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
@@ -141,6 +151,9 @@ export const useAiStore = create<AiState>()(
       isCreatingTable: false,
       error: null,
       draftMessage: '',
+      linkedConnectionId: null,
+
+      setLinkedConnectionId: (id) => set({ linkedConnectionId: id }),
 
       setSessionConfigId: (sessionId, configId) => {
         set((s) => ({
@@ -383,6 +396,35 @@ export const useAiStore = create<AiState>()(
         }));
       },
 
+      respondAcpElicitation: async (sessionId, elicitationId, action, content) => {
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...s.chatStates[sessionId], pendingAcpElicitation: null },
+          },
+        }));
+        try {
+          await invoke('acp_elicitation_respond', {
+            sessionId,
+            elicitationId,
+            action,
+            content: content ?? null,
+          });
+        } catch (e) {
+          console.error('[elicitation] acp_elicitation_respond failed:', e);
+        }
+      },
+
+      clearAcpElicitation: (sessionId) => {
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...s.chatStates[sessionId], pendingAcpElicitation: null },
+          },
+        }));
+        // 取消响应（让 Rust 侧超时或发 cancel）
+      },
+
       deleteAllSessions: () => {
         set({
           sessions: [],
@@ -412,6 +454,9 @@ export const useAiStore = create<AiState>()(
       // ── 流式 AI 对话（核心）── [Task 6 中替换此函数体]
 
       sendAgentChatStream: async (message, connectionId) => {
+        // 预导入检测器（commitAssistant 和 flushBuffers 均需要，必须在两者定义之前）
+        const { detectElicitation, isLikelyComplete } = await import('../utils/elicitationDetector');
+
         const { useQueryStore } = await import('./queryStore');
         const queryStore = useQueryStore.getState();
         const activeTabId = queryStore.activeTabId;
@@ -450,14 +495,15 @@ export const useAiStore = create<AiState>()(
         const isFirstRound = get().chatHistory.filter((m) => m.role === 'assistant').length === 0;
 
         const commitAssistant = async (content: string, thinking: string) => {
-          // Guard 1: session 已被删除
-          if (!get().sessions.find((s) => s.id === sessionId)) return;
-          // Guard 2: 已被 cancel
+          // Guard: 已被 cancel 或 session 已被删除（deleteSession 会同时清除 chatStates）
           if (!get().chatStates[sessionId]?.isChatting) return;
 
-          // 检测是否含文字选项（需在 set() 之前计算，以便合并进同一次 set）
-          const { detectElicitation } = await import('../utils/elicitationDetector');
-          const detected = detectElicitation(content, sessionId);
+          // 若 mid-stream 已触发检测，保留现有 pendingElicitation，否则在此执行检测
+          const streamingFired = get().chatStates[sessionId]?.streamingElicitationFired ?? false;
+          const existingElicitation = streamingFired
+            ? (get().chatStates[sessionId]?.pendingElicitation ?? null)
+            : null;
+          const detected = streamingFired ? existingElicitation : (detectElicitation(content, sessionId) ?? null);
 
           const newMsg = {
             role: 'assistant' as const,
@@ -514,7 +560,7 @@ export const useAiStore = create<AiState>()(
         try {
           const { Channel } = await import('@tauri-apps/api/core');
           const channel = new Channel<{
-            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest';
+            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest' | 'ElicitationRequest';
             data?: {
               delta?: string;
               message?: string;
@@ -524,6 +570,10 @@ export const useAiStore = create<AiState>()(
               // PermissionRequest 字段
               permission_id?: string;
               options?: Array<{ option_id: string; label: string; kind: string }>;
+              // ElicitationRequest 字段
+              elicitation_id?: string;
+              schema?: Record<string, unknown>;
+              mode?: string;
             };
           }>();
 
@@ -535,12 +585,34 @@ export const useAiStore = create<AiState>()(
             rafId = null;
             if (contentBuf) {
               const delta = contentBuf; contentBuf = '';
+              const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
+              const newContent = (currentState.streamingContent ?? '') + delta;
+
+              // P0：mid-stream 检测——当新增内容含换行且尚未触发过
+              if (!currentState.streamingElicitationFired && delta.includes('\n') && isLikelyComplete(newContent)) {
+                const detected = detectElicitation(newContent, sessionId);
+                if (detected) {
+                  set((s) => ({
+                    chatStates: {
+                      ...s.chatStates,
+                      [sessionId]: {
+                        ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                        streamingContent: newContent,
+                        pendingElicitation: detected,
+                        streamingElicitationFired: true,
+                      },
+                    },
+                  }));
+                  return;
+                }
+              }
+
               set((s) => ({
                 chatStates: {
                   ...s.chatStates,
                   [sessionId]: {
                     ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
-                    streamingContent: (s.chatStates[sessionId]?.streamingContent ?? '') + delta,
+                    streamingContent: newContent,
                   },
                 },
               }));
@@ -603,6 +675,19 @@ export const useAiStore = create<AiState>()(
                     label: o.label,
                     kind: o.kind as 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | 'deny',
                   })),
+                },
+              });
+            } else if (event.type === 'ElicitationRequest' && event.data?.elicitation_id) {
+              // ElicitationRequest 在 isChatting=true 时到达（agent 暂停等待结构化输入）
+              flushNow();
+              setChatStateField({
+                pendingAcpElicitation: {
+                  id: event.data.elicitation_id,
+                  sessionId,
+                  source: 'acp-elicitation' as const,
+                  mode: (event.data.mode === 'url' ? 'url' : 'form') as 'form' | 'url',
+                  message: event.data.message ?? '请提供信息',
+                  schema: event.data.schema ?? {},
                 },
               });
             } else if (event.type === 'Done') {
@@ -765,7 +850,7 @@ export const useAiStore = create<AiState>()(
     {
       name: 'open-db-studio-ai-sessions',
       // 只持久化历史会话列表，其他状态（流式内容、isChatting 等）不持久化
-      partialize: (state) => ({ sessions: state.sessions }),
+      partialize: (state) => ({ sessions: state.sessions, linkedConnectionId: state.linkedConnectionId }),
     }
   )
 );

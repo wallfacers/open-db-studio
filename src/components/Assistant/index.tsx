@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
@@ -97,11 +98,12 @@ export const Assistant: React.FC<AssistantProps> = ({
   const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation, respondAcpElicitation, clearAcpElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
   const pendingElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingElicitation ?? null);
+  const pendingAcpElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingAcpElicitation ?? null);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -135,13 +137,74 @@ export const Assistant: React.FC<AssistantProps> = ({
     return () => window.removeEventListener('mousedown', handler);
   }, [isModelMenuOpen]);
   const [isConnectionMenuOpen, setIsConnectionMenuOpen] = useState(false);
-  const [manualConnectionId, setManualConnectionId] = useState<number | null>(null);
+  // 连接切换确认对话框：当 session 有内容时，Tab 切换触发
+  const [pendingConnectionSwitch, setPendingConnectionSwitch] = useState<{
+    oldConnectionId: number | null;
+    oldConnectionName: string;
+    newConnectionId: number | null;
+    newConnectionName: string;
+  } | null>(null);
 
-  const effectiveConnectionId = manualConnectionId ?? activeConnectionId;
+  const effectiveConnectionId = linkedConnectionId ?? activeConnectionId;
   const effectiveConnectionName = effectiveConnectionId
     ? (connections.find(c => c.id === effectiveConnectionId)?.name ?? `#${effectiveConnectionId}`)
     : null;
   const openedConnections = connections.filter(c => activeConnectionIds.has(c.id));
+
+  // 当 Tab 切换导致 activeConnectionId 变化时，记录"待处理的连接切换"
+  // （回答中暂存，回答结束后再弹提示）
+  const prevActiveConnectionIdRef = useRef(activeConnectionId);
+  const pendingConnSwitchAfterChatRef = useRef<{
+    oldConnectionId: number | null;
+    oldConnectionName: string;
+    newConnectionId: number | null;
+    newConnectionName: string;
+  } | null>(null);
+
+  const getConnName = (id: number | null) =>
+    id ? (connections.find(c => c.id === id)?.name ?? `#${id}`) : t('assistant.noConnectionSelected');
+
+  useEffect(() => {
+    const prev = prevActiveConnectionIdRef.current;
+    prevActiveConnectionIdRef.current = activeConnectionId;
+    if (prev === activeConnectionId) return;
+
+    const hasContent = chatHistory.length > 0;
+    if (!hasContent) {
+      // 空会话直接跟随
+      if (linkedConnectionId !== null) setLinkedConnectionId(null);
+      return;
+    }
+
+    const oldEffectiveId = linkedConnectionId ?? prev;
+    const newEffectiveId = activeConnectionId;
+    if (oldEffectiveId === newEffectiveId) return;
+
+    const switchInfo = {
+      oldConnectionId: oldEffectiveId,
+      oldConnectionName: getConnName(oldEffectiveId),
+      newConnectionId: newEffectiveId,
+      newConnectionName: getConnName(newEffectiveId),
+    };
+
+    if (isChatting) {
+      // 回答中：暂存，待回答完成后再弹提示
+      pendingConnSwitchAfterChatRef.current = switchInfo;
+    } else {
+      setPendingConnectionSwitch(switchInfo);
+    }
+  }, [activeConnectionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 回答结束时，检查是否有暂存的连接切换请求
+  const prevIsChatting = useRef(isChatting);
+  useEffect(() => {
+    const wasChatting = prevIsChatting.current;
+    prevIsChatting.current = isChatting;
+    if (wasChatting && !isChatting && pendingConnSwitchAfterChatRef.current) {
+      setPendingConnectionSwitch(pendingConnSwitchAfterChatRef.current);
+      pendingConnSwitchAfterChatRef.current = null;
+    }
+  }, [isChatting]);
   const connectionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isConnectionMenuOpen) return;
@@ -217,9 +280,9 @@ export const Assistant: React.FC<AssistantProps> = ({
             {/* 跟随标签页选项 */}
             <div
               className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[#1e2d42] ${
-                manualConnectionId === null ? 'text-[#009e84]' : 'text-[#7a9bb8]'
+                linkedConnectionId === null ? 'text-[#009e84]' : 'text-[#7a9bb8]'
               }`}
-              onClick={() => { setManualConnectionId(null); setIsConnectionMenuOpen(false); }}
+              onClick={() => { setLinkedConnectionId(null); setIsConnectionMenuOpen(false); }}
             >
               <span className="text-xs italic">{t('assistant.followActiveTab')}</span>
             </div>
@@ -227,14 +290,14 @@ export const Assistant: React.FC<AssistantProps> = ({
               <div className="px-3 py-2 text-xs text-[#7a9bb8]">{t('assistant.noOpenedConnections')}</div>
             ) : (
               openedConnections.map((c) => {
-                const isActive = manualConnectionId === c.id;
+                const isActive = linkedConnectionId === c.id;
                 return (
                   <div
                     key={c.id}
                     className={`px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-[#1e2d42] ${
                       isActive ? 'text-[#009e84]' : 'text-[#c8daea]'
                     }`}
-                    onClick={() => { setManualConnectionId(c.id); setIsConnectionMenuOpen(false); }}
+                    onClick={() => { setLinkedConnectionId(c.id); setIsConnectionMenuOpen(false); }}
                   >
                     <span className="text-xs truncate flex-1">{c.name}</span>
                     <span className="ml-2 w-2 h-2 rounded-full flex-shrink-0 bg-green-400" />
@@ -340,7 +403,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   return (
     <div className="flex flex-col bg-[#080d12] flex-shrink-0 border-l border-[#1e2d42] relative h-full" style={{ width: assistantWidth }}>
       <div
-        className="absolute left-[-4px] top-0 bottom-0 w-2 cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
+        className="absolute left-[-2px] top-0 bottom-0 w-[4.5px] cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
         onMouseDown={handleAssistantResize}
       />
       {/* Header */}
@@ -525,8 +588,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                 />
               )}
 
-              {/* 选项选择面板（isChatting=false 时，文字检测路径） */}
-              {!isChatting && pendingElicitation && (
+              {/* 选项选择面板（文字检测路径：mid-stream 或 turn 结束后均可显示） */}
+              {pendingElicitation && (
                 <ElicitationPanel
                   type="elicitation"
                   request={pendingElicitation}
@@ -535,12 +598,62 @@ export const Assistant: React.FC<AssistantProps> = ({
                 />
               )}
 
+              {/* ACP elicitation 面板（ext_method 桥接路径，isChatting=true 时显示） */}
+              {pendingAcpElicitation && (
+                <ElicitationPanel
+                  type="acp-elicitation"
+                  request={pendingAcpElicitation}
+                  onRespond={(action, content) =>
+                    respondAcpElicitation(currentSessionId, pendingAcpElicitation.id, action, content)
+                  }
+                />
+              )}
+
             <div ref={chatEndRef} />
           </div>
 
           {/* SQL Diff 确认面板 */}
           {pendingDiff && (
-            <DiffPanel proposal={pendingDiff} onApply={applyDiff} onCancel={cancelDiff} />
+            <DiffPanel
+              proposal={pendingDiff}
+              onApply={() => { applyDiff(); invoke('mcp_diff_respond', { confirmed: true }).catch(() => {}); }}
+              onCancel={() => { cancelDiff(); invoke('mcp_diff_respond', { confirmed: false }).catch(() => {}); }}
+            />
+          )}
+
+          {/* 连接切换确认 banner */}
+          {pendingConnectionSwitch && (
+            <div className="mx-3 mb-2 p-2 bg-[#1a2639] border border-[#2a3f5a] rounded-lg flex-shrink-0">
+              <p className="text-xs text-[#7a9bb8] mb-2">
+                {t('assistant.connectionSwitchTitle')}
+              </p>
+              <p className="text-[11px] text-[#5b8ab0] mb-2">
+                {t('assistant.connectionSwitchDesc', {
+                  old: pendingConnectionSwitch.oldConnectionName,
+                  new: pendingConnectionSwitch.newConnectionName,
+                })}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[#111922] border border-[#2a3f5a] text-[#7a9bb8] hover:text-[#c8daea] hover:border-[#3a4f6a]"
+                  onClick={() => {
+                    setLinkedConnectionId(pendingConnectionSwitch.oldConnectionId);
+                    setPendingConnectionSwitch(null);
+                  }}
+                >
+                  {t('assistant.keepLastConnection', { name: pendingConnectionSwitch.oldConnectionName })}
+                </button>
+                <button
+                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[#003d2f] border border-[#00c9a7] text-[#00c9a7] hover:bg-[#004d3a]"
+                  onClick={() => {
+                    setLinkedConnectionId(null);
+                    setPendingConnectionSwitch(null);
+                  }}
+                >
+                  {t('assistant.switchToNewConnection', { name: pendingConnectionSwitch.newConnectionName })}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* 底部输入框 */}

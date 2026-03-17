@@ -63,7 +63,11 @@
     "confirmNo": "取消",
     "waitMsg0": "正在连接模型...",
     "waitMsg1": "AI 正在思考...",
-    "waitMsg2": "整理回复中..."
+    "waitMsg2": "整理回复中...",
+    "connectionSwitchTitle": "标签页已切换，是否更新连接？",
+    "connectionSwitchDesc": "AI 当前使用 {{old}}，新标签页关联 {{new}}",
+    "keepLastConnection": "继续用 {{name}}",
+    "switchToNewConnection": "切换到 {{name}}"
   },
   "connectionModal": {
     "editConnection": "编辑连接",
@@ -222,6 +226,7 @@
     "selectDatabase": "选择数据库...",
     "selectSchema": "选择 Schema...",
     "selectConnectionAndDatabase": "请先选择连接和数据库",
+    "aiChattingBlockTabSwitch": "AI 正在回答中，请等待完成后再切换标签页",
     "openAiAssistant": "打开 AI 助手",
     "formatSql": "格式化 SQL",
     "saveSql": "保存",

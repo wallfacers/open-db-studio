@@ -72,6 +72,19 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         [],
     );
 
+    // V4: agent_sessions 表（opencode HTTP Serve 模式）
+    // init.sql 使用 IF NOT EXISTS，新安装自动创建；存量数据库通过此处幂等建表
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS agent_sessions (
+          id          TEXT PRIMARY KEY,
+          title       TEXT,
+          config_id   INTEGER,
+          is_temp     INTEGER DEFAULT 0,
+          created_at  TEXT NOT NULL,
+          updated_at  TEXT NOT NULL
+        );"
+    );
+
     log::info!("Database migrations completed");
     Ok(())
 }

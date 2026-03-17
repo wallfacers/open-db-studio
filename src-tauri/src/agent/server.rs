@@ -5,9 +5,10 @@ const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_POLL_MAX_ATTEMPTS: u32 = 20; // 10 seconds total
 
 /// Check whether the serve process is already running by hitting the health endpoint.
-async fn check_health(port: u16) -> bool {
+/// Accepts a shared `reqwest::Client` to avoid per-call allocation.
+async fn check_health(client: &reqwest::Client, port: u16) -> bool {
     let url = format!("http://127.0.0.1:{}/global/health", port);
-    reqwest::Client::new()
+    client
         .get(&url)
         .timeout(std::time::Duration::from_millis(800))
         .send()
@@ -17,9 +18,10 @@ async fn check_health(port: u16) -> bool {
 }
 
 /// Poll health endpoint until success or timeout (10 s / 20 attempts).
-async fn wait_for_health(port: u16) -> bool {
+/// Accepts a shared `reqwest::Client` to avoid per-call allocation.
+async fn wait_for_health(client: &reqwest::Client, port: u16) -> bool {
     for _ in 0..HEALTH_POLL_MAX_ATTEMPTS {
-        if check_health(port).await {
+        if check_health(client, port).await {
             return true;
         }
         tokio::time::sleep(std::time::Duration::from_millis(HEALTH_POLL_INTERVAL_MS)).await;
@@ -40,24 +42,23 @@ fn spawn_child(
 }
 
 /// Core logic: attempt to start serve once.
-/// Returns Ok(child) on success, Err on failure.
+/// Returns Ok(Some(child)) when a new process was spawned,
+/// Ok(None) when opencode is already running externally,
+/// Err on failure.
 async fn try_start(
     agent_dir: &std::path::Path,
     port: u16,
-) -> AppResult<tokio::process::Child> {
-    // If already running (dev/debug scenario), reuse without spawning.
-    if check_health(port).await {
-        log::info!("opencode serve already running on port {}", port);
-        // Return a dummy sentinel: we need something in the Mutex.
-        // Spawn a no-op child that exits immediately so the crash monitor
-        // does not trigger false positives. We use a platform-safe command.
-        #[cfg(target_os = "windows")]
-        let child = tokio::process::Command::new("cmd")
-            .args(["/C", "exit 0"])
-            .spawn()?;
-        #[cfg(not(target_os = "windows"))]
-        let child = tokio::process::Command::new("true").spawn()?;
-        return Ok(child);
+) -> AppResult<Option<tokio::process::Child>> {
+    // Fix I1: create the client once and reuse across health checks.
+    let client = reqwest::Client::new();
+
+    // Fix C2: when already running, return None instead of a sentinel child.
+    if check_health(&client, port).await {
+        log::info!(
+            "opencode serve already running on port {}; skipping spawn",
+            port
+        );
+        return Ok(None);
     }
 
     // Ensure the agent directory exists.
@@ -67,7 +68,7 @@ async fn try_start(
     let child = spawn_child(agent_dir, port)
         .map_err(|e| crate::AppError::Other(format!("Failed to spawn opencode-cli: {}", e)))?;
 
-    if !wait_for_health(port).await {
+    if !wait_for_health(&client, port).await {
         return Err(crate::AppError::Other(
             "opencode serve did not become healthy within 10s. \
              Please check that opencode-cli is installed and accessible in PATH."
@@ -76,7 +77,7 @@ async fn try_start(
     }
 
     log::info!("opencode serve started successfully on port {}", port);
-    Ok(child)
+    Ok(Some(child))
 }
 
 /// Background task that monitors the serve child process and restarts it on crash.
@@ -84,52 +85,60 @@ async fn crash_monitor(app_handle: tauri::AppHandle, agent_dir: std::path::PathB
     let mut retry_count: u32 = 0;
 
     loop {
-        // Wait until the current child exits.
-        {
+        // Fix C1: take the child out of the Mutex *before* calling wait(),
+        // so the lock is released while we block on the child.
+        let maybe_child = {
             let state = app_handle.state::<crate::AppState>();
             let mut guard = state.serve_child.lock().await;
-            if let Some(child) = guard.as_mut() {
-                match child.wait().await {
-                    Ok(status) => {
-                        log::warn!("opencode serve exited with status: {}", status);
-                    }
-                    Err(e) => {
-                        log::warn!("opencode serve wait error: {}", e);
-                    }
-                }
-                // Clear the stale child handle.
-                *guard = None;
-            } else {
-                // No child to monitor; sleep and check again.
+
+            // Fix C2: None means an external process — no crash monitoring needed.
+            if guard.is_none() {
                 drop(guard);
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 continue;
+            }
+
+            guard.take() // moves child out; lock released when guard drops here
+        };
+
+        if let Some(mut child) = maybe_child {
+            match child.wait().await {
+                Ok(status) => {
+                    log::warn!("opencode serve exited with status: {}", status);
+                }
+                Err(e) => {
+                    log::warn!("opencode serve wait error: {}", e);
+                }
             }
         }
 
-        // Child exited — decide whether to restart.
-        retry_count += 1;
-        if retry_count >= 3 {
-            log::error!("opencode serve failed {} times; giving up", retry_count);
-            let _ = app_handle.emit("serve_failed", ());
-            break;
-        }
-
-        log::info!("Restarting opencode serve (attempt {})...", retry_count);
+        // Fix I4: attempt restart first, then check the retry budget.
+        log::info!(
+            "Attempting to restart opencode serve (attempt {})...",
+            retry_count + 1
+        );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
         match try_start(&agent_dir, port).await {
-            Ok(new_child) => {
+            Ok(new_child_opt) => {
                 let state = app_handle.state::<crate::AppState>();
                 let mut guard = state.serve_child.lock().await;
-                *guard = Some(new_child);
+                *guard = new_child_opt;
                 retry_count = 0;
                 log::info!("opencode serve restarted successfully");
                 let _ = app_handle.emit("serve_restarted", ());
             }
             Err(e) => {
                 log::error!("Failed to restart opencode serve: {}", e);
-                // Loop will increment retry_count on next iteration.
+                retry_count += 1;
+                if retry_count >= 3 {
+                    log::error!(
+                        "opencode serve failed to restart {} time(s); giving up",
+                        retry_count
+                    );
+                    let _ = app_handle.emit("serve_failed", ());
+                    break;
+                }
             }
         }
     }
@@ -147,11 +156,11 @@ pub async fn start_serve(
     let agent_dir = app_data_dir.join("agent");
 
     match try_start(&agent_dir, port).await {
-        Ok(child) => {
+        Ok(child_opt) => {
             {
                 let state = app_handle.state::<crate::AppState>();
                 let mut guard = state.serve_child.lock().await;
-                *guard = Some(child);
+                *guard = child_opt;
             }
 
             // Spawn crash monitor in background.

@@ -4,6 +4,18 @@ use tauri::{Emitter, Manager};
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_POLL_MAX_ATTEMPTS: u32 = 20; // 10 seconds total
 
+/// Find the first available TCP port starting from `base_port`.
+/// Tries up to 20 consecutive ports; returns `base_port` as fallback if all are busy.
+pub fn find_available_port(base_port: u16) -> u16 {
+    for offset in 0u16..20 {
+        let port = base_port.saturating_add(offset);
+        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+    }
+    base_port
+}
+
 /// Check whether the serve process is already running by hitting the health endpoint.
 /// Accepts a shared `reqwest::Client` to avoid per-call allocation.
 async fn check_health(client: &reqwest::Client, port: u16) -> bool {

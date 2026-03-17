@@ -57,12 +57,16 @@ pub fn run() {
                 log::warn!("Failed to write agent prompts: {}", e);
             }
 
-            // 从 app_settings 读取 serve port（默认 4096）
-            let serve_port: u16 = crate::db::get_app_setting("serve_port")
+            // 从 app_settings 读取 serve 基础端口（默认 6686），自动递增避免占用
+            let base_port: u16 = crate::db::get_app_setting("serve_port")
                 .unwrap_or_default()
                 .as_deref()
                 .and_then(|s| s.parse::<u16>().ok())
-                .unwrap_or(4096);
+                .unwrap_or(6686);
+            let serve_port = crate::agent::server::find_available_port(base_port);
+            if serve_port != base_port {
+                log::info!("Port {} busy, using {} for opencode serve", base_port, serve_port);
+            }
 
             app.manage(crate::state::AppState {
                 mcp_port,

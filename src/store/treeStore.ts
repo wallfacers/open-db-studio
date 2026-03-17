@@ -20,6 +20,18 @@ const CATEGORY_LABELS: Record<CategoryKey, string> = {
   sequences: 'Sequences',
 };
 
+let _persistTreeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistTreeExpandedIds(ids: Set<string>): void {
+  if (_persistTreeTimer) clearTimeout(_persistTreeTimer);
+  _persistTreeTimer = setTimeout(() => {
+    invoke('set_ui_state', {
+      key: 'tree_expanded_ids',
+      value: JSON.stringify([...ids]),
+    }).catch(() => {});
+  }, 800);
+}
+
 function makeCategoryNodes(parentId: string, driver: string, meta: TreeNode['meta']): TreeNode[] {
   const cats = CATEGORIES_BY_DRIVER[driver] ?? ['tables', 'views'];
   return cats.map((cat): TreeNode => ({
@@ -97,8 +109,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         newNodes.set(node.id, node);
       }
 
-      // Reset expanded state on full reinit to avoid stale expanded IDs
-      set({ nodes: newNodes, searchIndex: new Map(newNodes), expandedIds: new Set() });
+      // Keep expanded state from memory (will be restored from SQLite on app startup)
+      set({ nodes: newNodes, searchIndex: new Map(newNodes) });
     } catch (e) {
       set({ error: String(e) });
     }
@@ -245,7 +257,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const newNodes = new Map(s.nodes);
         const node = newNodes.get(nodeId);
         if (node) newNodes.set(nodeId, { ...node, loaded: false });
-        return { nodes: newNodes, error: String(e) };
+        const expandedIds = new Set(s.expandedIds);
+        expandedIds.delete(nodeId); // 加载失败时折叠，避免"展开但无内容"
+        return { nodes: newNodes, error: String(e), expandedIds };
       });
     } finally {
       set(s => {
@@ -259,9 +273,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   toggleExpand: (nodeId: string) => {
     const node = get().nodes.get(nodeId);
     if (!node) return;
+    const isCurrentlyExpanded = get().expandedIds.has(nodeId);
+
     set(s => {
       const newExpanded = new Set(s.expandedIds);
-      if (newExpanded.has(nodeId)) {
+      if (isCurrentlyExpanded) {
         newExpanded.delete(nodeId);
         // 递归清除所有子孙节点的展开状态
         const collapseDescendants = (pid: string) => {
@@ -275,12 +291,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         collapseDescendants(nodeId);
       } else {
         newExpanded.add(nodeId);
-        if (!node.loaded) {
-          get().loadChildren(nodeId);
-        }
       }
       return { expandedIds: newExpanded };
     });
+
+    persistTreeExpandedIds(get().expandedIds);
+
+    // loadChildren 必须在 set() 回调外部调用，否则会读到旧 state
+    if (!isCurrentlyExpanded && !node.loaded) {
+      get().loadChildren(nodeId);
+    }
   },
 
   selectNode: (nodeId: string) => set({ selectedId: nodeId }),
@@ -395,3 +415,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     });
   },
 }));
+
+export async function loadPersistedTreeExpandedIds(): Promise<Set<string>> {
+  try {
+    const raw = await invoke<string | null>('get_ui_state', { key: 'tree_expanded_ids' });
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed))
+      return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+    return new Set();
+  } catch {
+    return new Set();
+  }
+}

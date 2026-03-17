@@ -396,6 +396,7 @@
     "saving": "Saving..."
   },
   "tableManage": {
+    "tableName": "Table Name",
     "createTable": "Create Table",
     "editTable": "Edit Table {{table}}",
     "dropTable": "Drop Table",

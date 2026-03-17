@@ -186,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_migration_checks_task ON migration_checks(task_id
 
 -- UI 状态持久化（树展开、标签页、已打开连接等）
 CREATE TABLE IF NOT EXISTS ui_state (
-  key        TEXT PRIMARY KEY,
-  value      TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

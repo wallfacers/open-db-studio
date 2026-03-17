@@ -65,6 +65,26 @@ pub struct AgentToolCallFunction {
     pub arguments: String,
 }
 
+/// AI 建表返回的单列定义
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AiColumnDef {
+    pub name: String,
+    pub column_type: String,
+    pub length: Option<u32>,
+    pub nullable: bool,
+    pub default_value: Option<String>,
+    pub primary_key: bool,
+    pub auto_increment: bool,
+    pub comment: String,
+}
+
+/// AI 建表返回的完整表结构
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TableSchemaResult {
+    pub table_name: String,
+    pub columns: Vec<AiColumnDef>,
+}
+
 const DEFAULT_ANTHROPIC_MAX_TOKENS: u32 = 8192;
 
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
@@ -288,6 +308,49 @@ impl LlmClient {
             ChatMessage { role: "user".into(), content: description.to_string() },
         ];
         self.chat(messages).await
+    }
+
+    /// AI 建表 — 返回结构化字段数组（供 TableManageDialog 填充）
+    pub async fn generate_table_schema(
+        &self,
+        description: &str,
+        driver: &str,
+    ) -> AppResult<TableSchemaResult> {
+        let type_enum = match driver {
+            "postgres" | "postgresql" => {
+                "INTEGER, BIGINT, SMALLINT, VARCHAR, TEXT, TIMESTAMP, DATE, NUMERIC, BOOLEAN, BYTEA, UUID, JSONB, SERIAL"
+            }
+            _ => {
+                "INT, BIGINT, TINYINT, SMALLINT, VARCHAR, TEXT, LONGTEXT, DATETIME, DATE, TIMESTAMP, DECIMAL, FLOAT, DOUBLE, BOOLEAN, BLOB"
+            }
+        };
+
+        let system_prompt = include_str!("../../../prompts/generate_table_schema.txt")
+            .replace("{{DRIVER}}", driver)
+            .replace("{{TYPE_ENUM}}", type_enum)
+            .replace("{{DESCRIPTION}}", description);
+
+        // description 已嵌入 system_prompt，user 消息使用固定触发语避免重复
+        let messages = vec![
+            ChatMessage { role: "system".into(), content: system_prompt },
+            ChatMessage { role: "user".into(), content: "Generate table schema.".to_string() },
+        ];
+
+        // 第一次尝试
+        let raw = self.chat(messages.clone()).await?;
+        if let Ok(result) = serde_json::from_str::<TableSchemaResult>(&raw) {
+            if !result.columns.is_empty() {
+                return Ok(result);
+            }
+        }
+
+        // 自动重试一次
+        log::warn!("[generate_table_schema] First attempt returned invalid JSON, retrying...");
+        let raw2 = self.chat(messages).await?;
+        serde_json::from_str::<TableSchemaResult>(&raw2)
+            .map_err(|e| crate::AppError::Other(
+                format!("AI returned invalid JSON format, please try again. Detail: {e}")
+            ))
     }
 
     /// AI 错误诊断

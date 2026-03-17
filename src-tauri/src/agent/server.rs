@@ -109,7 +109,7 @@ async fn crash_monitor(app_handle: tauri::AppHandle, agent_dir: std::path::PathB
 
         // Child exited — decide whether to restart.
         retry_count += 1;
-        if retry_count > 3 {
+        if retry_count >= 3 {
             log::error!("opencode serve failed {} times; giving up", retry_count);
             let _ = app_handle.emit("serve_failed", ());
             break;

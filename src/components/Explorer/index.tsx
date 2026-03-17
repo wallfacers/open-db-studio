@@ -50,14 +50,14 @@ export const Explorer: React.FC<ExplorerProps> = ({
     const node = store.nodes.get(nodeId);
     if (!node) return;
 
-    // 展开节点（避免重复调用 toggleExpand）
-    if (!store.expandedIds.has(nodeId)) {
-      useTreeStore.getState().toggleExpand(nodeId);
-    }
-
-    // 加载子节点（若未加载）
+    // 先加载子节点（若未加载），避免 toggleExpand 内部的 fire-and-forget loadChildren 冲突
     if (!node.loaded) {
       await useTreeStore.getState().loadChildren(nodeId);
+    }
+
+    // 展开节点（避免重复）
+    if (!useTreeStore.getState().expandedIds.has(nodeId)) {
+      useTreeStore.getState().toggleExpand(nodeId);
     }
 
     // 递归恢复子节点

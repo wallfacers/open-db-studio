@@ -974,6 +974,41 @@ pub async fn ai_create_table(description: String, connection_id: Option<i64>) ->
 }
 
 #[tauri::command]
+pub async fn ai_generate_table_schema(
+    description: String,
+    connection_id: i64,
+) -> AppResult<crate::llm::client::TableSchemaResult> {
+    let client = build_llm_client()?;
+    let config = crate::db::get_connection_config(connection_id)?;
+    let driver = &config.driver;
+
+    let result = client.generate_table_schema(&description, driver).await?;
+
+    // 校验返回的 column_type 是否在合法枚举内（仅记录警告，不阻断）
+    let valid_types: &[&str] = match driver.as_str() {
+        "postgres" | "postgresql" => &[
+            "INTEGER", "BIGINT", "SMALLINT", "VARCHAR", "TEXT", "TIMESTAMP",
+            "DATE", "NUMERIC", "BOOLEAN", "BYTEA", "UUID", "JSONB", "SERIAL",
+        ],
+        _ => &[
+            "INT", "BIGINT", "TINYINT", "SMALLINT", "VARCHAR", "TEXT", "LONGTEXT",
+            "DATETIME", "DATE", "TIMESTAMP", "DECIMAL", "FLOAT", "DOUBLE", "BOOLEAN", "BLOB",
+        ],
+    };
+    for col in &result.columns {
+        if !valid_types.iter().any(|t| t.eq_ignore_ascii_case(&col.column_type)) {
+            log::warn!(
+                "[ai_generate_table_schema] column '{}' has non-standard type '{}', keeping as-is",
+                col.name,
+                col.column_type
+            );
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Option<i64>) -> AppResult<String> {
     let client = build_llm_client()?;
 
@@ -2470,5 +2505,18 @@ pub async fn acp_permission_respond(
         selected_option_id,
         cancelled,
     });
+    Ok(())
+}
+
+/// 前端 DiffPanel 用户点击"应用"或"取消"后调用，解除 propose_sql_diff 的阻塞等待。
+/// confirmed=true 表示用户应用了修改，confirmed=false 表示用户取消。
+#[tauri::command]
+pub async fn mcp_diff_respond(
+    confirmed: bool,
+    state: tauri::State<'_, crate::AppState>,
+) -> crate::AppResult<()> {
+    if let Some(tx) = state.pending_diff_response.lock().await.take() {
+        let _ = tx.send(confirmed);
+    }
     Ok(())
 }

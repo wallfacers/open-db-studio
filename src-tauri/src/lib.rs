@@ -68,6 +68,7 @@ pub fn run() {
                 last_active_session_id: tokio::sync::Mutex::new(None),
                 optimize_acp_session: tokio::sync::Mutex::new(None),
                 explain_acp_session: tokio::sync::Mutex::new(None),
+                pending_diff_response: tokio::sync::Mutex::new(None),
             });
             Ok(())
         })
@@ -108,6 +109,7 @@ pub fn run() {
             commands::ai_explain_sql_acp,
             commands::cancel_explain_acp_session,
             commands::ai_create_table,
+            commands::ai_generate_table_schema,
             commands::ai_diagnose_error,
             commands::list_groups,
             commands::create_group,
@@ -166,6 +168,7 @@ pub fn run() {
             commands::start_migration,
             commands::get_migration_task,
             commands::acp_permission_respond,
+            commands::mcp_diff_respond,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

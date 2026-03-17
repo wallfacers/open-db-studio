@@ -1274,10 +1274,10 @@ async fn ai_chat_acp_inner(
     .join("open-db-studio");
     std::fs::create_dir_all(&cwd).ok();
 
-    // 4. 创建事件转发通道
+    // 4. 创建事件转发通道，保存 JoinHandle 以便后续 await
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
     let channel_clone = channel.clone();
-    tokio::spawn(async move {
+    let forward_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             let _ = channel_clone.send(event);
         }
@@ -1296,10 +1296,17 @@ async fn ai_chat_acp_inner(
         .send(AcpRequest { prompt_text, event_tx, done_tx })
         .map_err(|_| AppError::Other("ACP session closed unexpectedly".into()))?;
 
-    // 8. 等待完成
-    done_rx
+    // 8. 等待 session 线程完成（Done/Error 已由 session_loop 在 done_tx 前发出）
+    let outcome = done_rx
         .await
-        .map_err(|_| AppError::Other("ACP session thread dropped before responding".into()))?
+        .map_err(|_| AppError::Other("ACP session thread dropped before responding".into()))?;
+
+    // 9. 等待 forwarding task 将所有事件（含 Done/Error）发送到前端后再返回。
+    //    这确保 Done 在 invoke 返回之前进入 IPC 队列，JS 端 channel.onmessage 一定先于
+    //    await invoke() 的 Promise resolve 被调用，从而正确重置 isChatting。
+    let _ = forward_handle.await;
+
+    outcome
 }
 
 /// 计算配置内容指纹，用于检测同 ID 配置被修改的情况

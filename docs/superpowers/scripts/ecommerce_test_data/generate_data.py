@@ -170,11 +170,14 @@ def generate_users():
     return '\n'.join(lines)
 
 def generate_addresses():
+    """生成地址数据，返回 SQL 和地址映射 {user_id: [address_id1, address_id2, ...]}"""
     lines = ['-- 地址数据 (~1500条)', 'USE test_store;', '']
     addr_id = 1
+    address_map = {}  # user_id -> list of address_ids
 
     for user_id in range(1, CONFIG['users'] + 1):
         addr_count = random.randint(1, 2)
+        address_map[user_id] = []
         for j in range(addr_count):
             receiver = random.choice(SURNAMES) + random.choice(GIVEN_NAMES)
             phone = f'138{random.randint(10000000, 99999999):08d}'
@@ -187,12 +190,14 @@ def generate_addresses():
             created_at = random_date()
 
             lines.append(f"INSERT INTO addresses (id, user_id, receiver_name, phone, province, city, district, detail, is_default, created_at, updated_at) VALUES ({addr_id}, {user_id}, '{receiver}', '{phone}', '{province}', '{city}', '{district}', '{detail}', {is_default}, '{format_datetime(created_at)}', '{format_datetime(created_at)}');")
+            address_map[user_id].append(addr_id)
             addr_id += 1
 
     lines.append(f"\nSELECT CONCAT('Created ', COUNT(*), ' addresses') AS message FROM addresses;")
-    return '\n'.join(lines)
+    return '\n'.join(lines), address_map
 
-def generate_orders(product_list):
+def generate_orders(product_list, address_map):
+    """生成订单数据，使用地址映射确保 address_id 有效"""
     lines = ['-- 订单数据 (5000条)', 'USE test_store;', '']
 
     # 取消订单索引
@@ -207,7 +212,13 @@ def generate_orders(product_list):
 
     for order_id in range(1, CONFIG['orders'] + 1):
         user_id = random.randint(1, CONFIG['users'])
-        address_id = (user_id - 1) * 2 + random.randint(1, 2)
+        # 从该用户的地址列表中随机选择一个有效地址
+        user_addresses = address_map.get(user_id, [])
+        if user_addresses:
+            address_id = random.choice(user_addresses)
+        else:
+            # 兜底：选择第一个用户的地址
+            address_id = address_map[1][0]
         order_date = random_date()
         order_no = f'ORD{order_id:010d}'
 
@@ -372,13 +383,14 @@ def main():
 
     # 生成地址数据
     print("  [4/7] 地址数据...")
+    addr_sql, address_map = generate_addresses()
     with open(output_dir / '05_addresses.sql', 'w', encoding='utf-8') as f:
-        f.write(generate_addresses())
+        f.write(addr_sql)
 
     # 生成订单数据
     print("  [5/7] 订单数据...")
     with open(output_dir / '06_orders.sql', 'w', encoding='utf-8') as f:
-        f.write(generate_orders(product_list))
+        f.write(generate_orders(product_list, address_map))
 
     # 生成退款数据
     print("  [6/7] 退款数据...")

@@ -243,9 +243,6 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           isExpanded={searchExpandedIds ? searchExpandedIds.has(node.id) : expandedIds.has(node.id)}
           isSelected={selectedId === node.id}
           isLoading={loadingIds.has(node.id)}
-          isActive={node.nodeType === 'connection'
-            ? activeConnectionIds.has(getConnectionId(node))
-            : undefined}
           onClick={() => handleNodeClick(node)}
           onContextMenu={(e) => handleContextMenu(e, node)}
         />

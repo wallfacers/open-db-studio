@@ -50,12 +50,15 @@ interface QueryState {
   setActiveTabId: (tabId: string) => void;
   openMetricTab: (metricId: number, title: string) => void;
   openMetricListTab: (scope: import('../types').MetricScope, title: string) => void;
+  openNewMetricTab: (scope: import('../types').MetricScope, scopeTitle: string) => void;
+  updateMetricTabId: (tabId: string, metricId: number, title: string) => void;
 
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
   openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
 
   closeTab: (tabId: string) => void;
+  closeMetricTabById: (metricId: number) => void;
   closeAllTabs: () => void;
   closeTabsLeft: (tabId: string) => void;
   closeTabsRight: (tabId: string) => void;
@@ -182,6 +185,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },
+  openNewMetricTab: (scope, scopeTitle) => {
+    const id = `metric_new_${Date.now()}`;
+    const tab: Tab = { id, type: 'metric', title: `新建指标`, metricScope: scope };
+    set(s => ({ tabs: [...s.tabs, tab], activeTabId: id }));
+  },
+
+  updateMetricTabId: (tabId, metricId, title) => {
+    set(s => ({
+      tabs: s.tabs.map(t => t.id === tabId ? { ...t, metricId, title, metricScope: undefined } : t),
+    }));
+  },
+
   openMetricListTab: (scope, title) => {
     const key = `ml_${scope.connectionId}_${scope.database ?? ''}_${scope.schema ?? ''}`;
     set(s => {
@@ -253,6 +268,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       return { tabs: next, activeTabId: newActive };
     });
     invoke('delete_tab_file', { tabId }).catch(() => {});
+  },
+
+  closeMetricTabById: (metricId) => {
+    set(s => {
+      const tab = s.tabs.find(t => t.type === 'metric' && t.metricId === metricId);
+      if (!tab) return s;
+      const tabs = s.tabs.filter(t => t.id !== tab.id);
+      const activeTabId = s.activeTabId === tab.id
+        ? (tabs[Math.max(0, s.tabs.findIndex(t => t.id === tab.id) - 1)]?.id ?? '')
+        : s.activeTabId;
+      return { tabs, activeTabId };
+    });
   },
 
   closeAllTabs: () => {

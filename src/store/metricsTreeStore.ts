@@ -49,7 +49,8 @@ interface MetricsTreeState {
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
   refreshNode: (nodeId: string) => Promise<void>;
-  deleteMetric: (metricId: number, nodeId: string) => Promise<void>;
+  deleteMetric: (metricId: number, nodeId: string, knownParentNodeId?: string) => Promise<void>;
+  notifyMetricAdded: (parentNodeId: string) => Promise<void>;
   getChildNodes: (parentId: string | null) => MetricsTreeNode[];
   search: (query: string) => MetricsTreeNode[];
 }
@@ -222,8 +223,10 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
               meta: { connectionId, database, metricId: m.id, metricType: m.metric_type },
             });
           }
+          const newCounts = new Map(get().metricCounts);
+          newCounts.set(nodeId, metrics.length);
           newNodes.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
-          set({ nodes: newNodes });
+          set({ nodes: newNodes, metricCounts: newCounts });
         }
 
       } else if (node.nodeType === 'schema') {
@@ -246,8 +249,10 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
             meta: { connectionId, database, schema, metricId: m.id, metricType: m.metric_type },
           });
         }
+        const newCounts = new Map(get().metricCounts);
+        newCounts.set(nodeId, metrics.length);
         newNodes.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
-        set({ nodes: newNodes });
+        set({ nodes: newNodes, metricCounts: newCounts });
       }
     } catch {
       set(s => {
@@ -313,22 +318,39 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     await get().loadChildren(nodeId);
   },
 
-  deleteMetric: async (metricId: number, nodeId: string) => {
+  deleteMetric: async (metricId: number, nodeId: string, knownParentNodeId?: string) => {
     await invoke('delete_metric', { id: metricId });
     set(s => {
       const nodes = new Map(s.nodes);
       const metricCounts = new Map(s.metricCounts);
       const node = nodes.get(nodeId);
-      nodes.delete(nodeId);
-      // 递减所有祖先节点的计数
-      let current = node;
-      while (current?.parentId) {
-        const parentId = current.parentId;
-        const currentCount = metricCounts.get(parentId) ?? 0;
-        if (currentCount > 0) metricCounts.set(parentId, currentCount - 1);
-        current = nodes.get(parentId);
+      if (node) nodes.delete(nodeId);
+      // 从指标节点的父节点（或提供的 knownParentNodeId）开始递减祖先计数
+      const startParentId = node?.parentId ?? knownParentNodeId ?? null;
+      let current = startParentId ? nodes.get(startParentId) : undefined;
+      while (current) {
+        const count = metricCounts.get(current.id) ?? 0;
+        if (count > 0) metricCounts.set(current.id, count - 1);
+        current = current.parentId ? nodes.get(current.parentId) : undefined;
       }
       return { nodes, metricCounts };
+    });
+  },
+
+  notifyMetricAdded: async (parentNodeId: string) => {
+    // 刷新父节点（重新加载子节点列表并更新其计数）
+    await get().refreshNode(parentNodeId);
+    // 递增父节点以上所有祖先的计数
+    set(s => {
+      const metricCounts = new Map(s.metricCounts);
+      const parent = s.nodes.get(parentNodeId);
+      let current = parent?.parentId ? s.nodes.get(parent.parentId) : undefined;
+      while (current) {
+        const count = metricCounts.get(current.id) ?? 0;
+        metricCounts.set(current.id, count + 1);
+        current = current.parentId ? s.nodes.get(current.parentId) : undefined;
+      }
+      return { metricCounts };
     });
   },
 

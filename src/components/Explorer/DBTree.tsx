@@ -9,7 +9,6 @@ import { invoke } from '@tauri-apps/api/core';
 import type { TreeNode as TreeNodeType } from '../../types';
 import { TableManageDialog } from '../TableManageDialog';
 import { IndexManager } from '../IndexManager';
-import { AiCreateTableDialog } from '../AiCreateTableDialog';
 import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
 import { DdlViewerDialog } from '../DdlViewerDialog';
@@ -102,8 +101,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
   const [indexManagerState, setIndexManagerState] = useState<{ connectionId: number; tableName: string } | null>(null);
   const [ddlViewer, setDdlViewer] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string } | null>(null);
   const [truncateConfirm, setTruncateConfirm] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string } | null>(null);
-  const [showAiCreateTable, setShowAiCreateTable] = useState(false);
-  const [editingConnId, setEditingConnId] = useState<number | null>(null);
+const [editingConnId, setEditingConnId] = useState<number | null>(null);
   const [editingGroup, setEditingGroup] = useState<{ id: number; name: string; color: string | null } | null>(null);
   const [newConnGroupId, setNewConnGroupId] = useState<number | null | undefined>(undefined); // undefined=关闭，null=无分组，number=指定分组
   const [exportWizard, setExportWizard] = useState<{
@@ -299,7 +297,6 @@ export const DBTree: React.FC<DBTreeProps> = ({
             setContextMenu(null);
             onOpenTableStructure(getConnectionId(n), n.meta.database, n.meta.schema, undefined);
           }}
-          onAiCreateTable={() => setShowAiCreateTable(true)}
           onOpenTableData={() => {
             const n = contextMenu.node;
             onOpenTableData(n.label, getConnectionId(n), n.meta.database, n.meta.schema);
@@ -498,14 +495,6 @@ export const DBTree: React.FC<DBTreeProps> = ({
           tableName={indexManagerState.tableName}
           onClose={() => setIndexManagerState(null)}
           showToast={showToast}
-        />
-      )}
-
-      {showAiCreateTable && (
-        <AiCreateTableDialog
-          onClose={() => setShowAiCreateTable(false)}
-          showToast={showToast}
-          onRefresh={() => {}}
         />
       )}
 

@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
-  RefreshCw, FileEdit, ListTree, Copy, Eye, Sparkles, FolderOpen, DatabaseZap, FolderInput,
+  RefreshCw, FileEdit, ListTree, Copy, Eye, FolderOpen, DatabaseZap, FolderInput,
   Code2, Eraser, Download, Upload, Database, Archive
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +30,6 @@ interface ContextMenuProps {
   onEditConnection: () => void;
   onDeleteConnection: () => void;
   onCreateTable: () => void;
-  onAiCreateTable: () => void;
   onOpenTableData: () => void;
   onEditTable: () => void;
   onManageIndexes: () => void;
@@ -54,7 +53,7 @@ interface ContextMenuProps {
 export const ContextMenu: React.FC<ContextMenuProps> = ({
   node, x, y, isConnected, onClose,
   onOpenConnection, onCloseConnection, onNewQuery, onRefresh,
-  onEditConnection, onDeleteConnection, onCreateTable, onAiCreateTable,
+  onEditConnection, onDeleteConnection, onCreateTable,
   onOpenTableData, onEditTable, onManageIndexes, onViewDdl, onTruncateTable, onDropTable,
   onExportTableData, onImportToTable, onCopyName,
   onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onCreateConnectionInGroup,
@@ -98,7 +97,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           return [
             { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
             { label: t('contextMenu.createTable'), icon: FilePlus2, onClick: onCreateTable, dividerBefore: true },
-            { label: t('contextMenu.aiCreateTable'), icon: Sparkles, onClick: onAiCreateTable },
             { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh },
             ...(onExportMultiTable ? [{ label: t('contextMenu.exportMultiTable'), icon: Download, onClick: onExportMultiTable, dividerBefore: true }] : []),
           ];

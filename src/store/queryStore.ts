@@ -415,6 +415,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       sqlContent: { ...s.sqlContent, [pendingDiff.tabId]: newSql },
       pendingDiff: null,
     }));
+    persistSqlContent(pendingDiff.tabId, newSql);
   },
 
   cancelDiff: () => set({ pendingDiff: null }),

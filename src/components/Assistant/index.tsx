@@ -96,6 +96,13 @@ export const Assistant: React.FC<AssistantProps> = ({
 }) => {
   const { t } = useTranslation();
   const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
+  const autoMode = useAppStore((s) => s.autoMode);
+  const setAutoMode = useAppStore((s) => s.setAutoMode);
+  const initAutoMode = useAppStore((s) => s.initAutoMode);
+
+  useEffect(() => {
+    initAutoMode();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
   const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation, respondAcpElicitation, clearAcpElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
@@ -410,6 +417,19 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
         <div className="flex items-center space-x-3 text-[#7a9bb8]">
+          {/* Auto Mode Toggle */}
+          <button
+            title={autoMode ? 'Auto 模式：开（写操作直接执行）' : 'Auto 模式：关（写操作需 ACP 确认）'}
+            onClick={() => setAutoMode(!autoMode)}
+            className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors ${
+              autoMode
+                ? 'text-[#00c9a7] bg-[#00c9a7]/10 hover:bg-[#00c9a7]/20'
+                : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${autoMode ? 'bg-[#00c9a7]' : 'bg-orange-400'}`} />
+            <span>Auto</span>
+          </button>
           {!showHistory && chatHistory.length > 0 && (
             <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(currentSessionId); showToast(t('assistant.historyCleared'), 'info'); }}>
               <Trash2 size={16} />

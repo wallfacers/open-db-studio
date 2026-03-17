@@ -6,8 +6,15 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+import { invoke } from '@tauri-apps/api/core';
+const mockInvoke = vi.mocked(invoke);
+
 // Reset store state before each test
 beforeEach(() => {
+  vi.clearAllMocks();
+  // closeTab / closeAllTabs 等函数会调用 invoke('delete_tab_file', ...)，
+  // 需要返回 Promise 否则 .catch() 报错
+  mockInvoke.mockResolvedValue(null);
   useQueryStore.setState({
     tabs: [
       { id: 'q1', type: 'query', title: 'Q1' },
@@ -221,5 +228,81 @@ describe('SQLite/file persistence (loadTabsFromStorage)', () => {
     expect(tabs).toHaveLength(0);
     expect(activeTabId).toBe('');
     expect(Object.keys(sqlContent)).toHaveLength(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// MCP Tab 联动相关：openMetricTab / openMetricListTab / setActiveTabId
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('openMetricTab', () => {
+  beforeEach(() => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+  });
+
+  it('新建 metric tab，type=metric，metricId 正确', () => {
+    useQueryStore.getState().openMetricTab(42, 'monthly_revenue');
+    const { tabs, activeTabId } = useQueryStore.getState();
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].type).toBe('metric');
+    expect(tabs[0].metricId).toBe(42);
+    expect(tabs[0].title).toBe('monthly_revenue');
+    expect(activeTabId).toBe(tabs[0].id);
+  });
+
+  it('相同 metricId 不重复创建 tab，聚焦已有 tab', () => {
+    useQueryStore.getState().openMetricTab(42, 'monthly_revenue');
+    const firstId = useQueryStore.getState().tabs[0].id;
+    useQueryStore.getState().openMetricTab(42, 'monthly_revenue');
+    const { tabs, activeTabId } = useQueryStore.getState();
+    expect(tabs).toHaveLength(1);
+    expect(activeTabId).toBe(firstId);
+  });
+
+  it('不同 metricId 创建独立 tab', () => {
+    useQueryStore.getState().openMetricTab(1, 'metric_a');
+    useQueryStore.getState().openMetricTab(2, 'metric_b');
+    expect(useQueryStore.getState().tabs).toHaveLength(2);
+  });
+});
+
+describe('openMetricListTab', () => {
+  beforeEach(() => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+  });
+
+  it('新建 metric_list tab，scope 正确', () => {
+    const scope = { connectionId: 1, database: 'mydb' };
+    useQueryStore.getState().openMetricListTab(scope, '指标列表');
+    const { tabs } = useQueryStore.getState();
+    expect(tabs[0].type).toBe('metric_list');
+    expect(tabs[0].metricScope).toEqual(scope);
+  });
+
+  it('相同 scope 不重复开 tab', () => {
+    const scope = { connectionId: 1, database: 'mydb' };
+    useQueryStore.getState().openMetricListTab(scope, '指标列表');
+    useQueryStore.getState().openMetricListTab(scope, '指标列表');
+    expect(useQueryStore.getState().tabs).toHaveLength(1);
+  });
+});
+
+describe('setActiveTabId（MCP focus_tab 底层依赖）', () => {
+  it('切换 activeTabId', () => {
+    useQueryStore.setState({
+      tabs: [
+        { id: 'a', type: 'query', title: 'A' },
+        { id: 'b', type: 'query', title: 'B' },
+      ],
+      activeTabId: 'a',
+    });
+    useQueryStore.getState().setActiveTabId('b');
+    expect(useQueryStore.getState().activeTabId).toBe('b');
+  });
+
+  it('切换到不存在的 tabId 时 activeTabId 仍更新（防御性检查由调用方保证）', () => {
+    useQueryStore.setState({ tabs: [{ id: 'a', type: 'query', title: 'A' }], activeTabId: 'a' });
+    useQueryStore.getState().setActiveTabId('ghost');
+    expect(useQueryStore.getState().activeTabId).toBe('ghost');
   });
 });

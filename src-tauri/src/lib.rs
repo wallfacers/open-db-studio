@@ -10,6 +10,7 @@ mod mcp;
 mod metrics;
 mod migration;
 mod pipeline;
+mod skill_sync;
 mod state;
 
 pub use error::{AppError, AppResult};
@@ -69,7 +70,16 @@ pub fn run() {
                 optimize_acp_session: tokio::sync::Mutex::new(None),
                 explain_acp_session: tokio::sync::Mutex::new(None),
                 pending_diff_response: tokio::sync::Mutex::new(None),
+                pending_ui_actions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                pending_queries: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                auto_mode: tokio::sync::Mutex::new({
+                    // 从 app_settings 读取持久化的 auto_mode 值
+                    crate::db::get_app_setting("auto_mode").unwrap_or_default()
+                        .as_deref() == Some("true")
+                }),
             });
+            // 同步 skills 到 opencode 可读取的目录
+            crate::skill_sync::sync_skills_on_startup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -178,6 +188,10 @@ pub fn run() {
             commands::write_tab_file,
             commands::delete_tab_file,
             commands::list_tab_files,
+            commands::get_auto_mode,
+            commands::set_auto_mode,
+            commands::mcp_ui_action_respond,
+            commands::mcp_query_respond,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2693,3 +2693,61 @@ pub async fn list_tab_files(
         .collect();
     Ok(ids)
 }
+
+// ============ Auto 模式 ============
+
+#[tauri::command]
+pub async fn get_auto_mode(state: tauri::State<'_, crate::AppState>) -> AppResult<bool> {
+    let mode = state.auto_mode.lock().await;
+    Ok(*mode)
+}
+
+#[tauri::command]
+pub async fn set_auto_mode(
+    state: tauri::State<'_, crate::AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    {
+        let mut mode = state.auto_mode.lock().await;
+        *mode = enabled;
+    }
+    // 持久化到 app_settings
+    crate::db::set_app_setting("auto_mode", if enabled { "true" } else { "false" })?;
+    Ok(())
+}
+
+// ============ MCP 双向桥接回调 ============
+
+#[tauri::command]
+pub async fn mcp_ui_action_respond(
+    state: tauri::State<'_, crate::AppState>,
+    request_id: String,
+    success: bool,
+    data: Option<serde_json::Value>,
+    error: Option<String>,
+) -> AppResult<()> {
+    let tx = {
+        let mut pending = state.pending_ui_actions.lock().await;
+        pending.remove(&request_id)
+    };
+    if let Some(tx) = tx {
+        let _ = tx.send(crate::state::UiActionResponse { success, data, error });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn mcp_query_respond(
+    state: tauri::State<'_, crate::AppState>,
+    request_id: String,
+    data: serde_json::Value,
+) -> AppResult<()> {
+    let tx = {
+        let mut pending = state.pending_queries.lock().await;
+        pending.remove(&request_id)
+    };
+    if let Some(tx) = tx {
+        let _ = tx.send(data);
+    }
+    Ok(())
+}

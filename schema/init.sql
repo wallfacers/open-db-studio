@@ -190,3 +190,19 @@ CREATE TABLE IF NOT EXISTS ui_state (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ============ V3: MCP Tab 联动变更历史 ============
+
+CREATE TABLE IF NOT EXISTS change_history (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  TEXT NOT NULL,
+  tool_name   TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id   TEXT NOT NULL,
+  old_value   TEXT NOT NULL,
+  new_value   TEXT,
+  status      TEXT NOT NULL CHECK(status IN ('pending','success','failed','undone')),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_change_history_session ON change_history(session_id, id DESC);

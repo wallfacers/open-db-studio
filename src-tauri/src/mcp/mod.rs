@@ -1,3 +1,5 @@
+mod tools;
+
 use axum::{routing::{get, post}, Router, Json, extract::State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_util::stream;
@@ -174,6 +176,153 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["task_id"]
                 }
+            }),
+            json!({
+                "name": "search_db_metadata",
+                "description": "Search database metadata from the cached tree (tables, views by name). Returns tables matching the keyword.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keyword": { "type": "string", "description": "Table/view name to search (prefix or fuzzy match)" }
+                    },
+                    "required": ["keyword"]
+                }
+            }),
+            json!({
+                "name": "search_tabs",
+                "description": "Search currently opened tabs by type or table name",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": { "type": "string" },
+                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list"] }
+                    },
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "get_tab_content",
+                "description": "Get the content of a specific tab (SQL, table data, metric definition, etc.)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tab_id": { "type": "string" }
+                    },
+                    "required": ["tab_id"]
+                }
+            }),
+            json!({
+                "name": "focus_tab",
+                "description": "Switch focus to a specific tab",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tab_id": { "type": "string" }
+                    },
+                    "required": ["tab_id"]
+                }
+            }),
+            json!({
+                "name": "open_tab",
+                "description": "Open a new tab for a table structure or metric. Waits for tab to be fully opened before returning.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "type": { "type": "string", "enum": ["table_structure", "metric", "query"] },
+                        "table_name": { "type": "string" },
+                        "database": { "type": "string" },
+                        "metric_id": { "type": "integer" }
+                    },
+                    "required": ["connection_id", "type"]
+                }
+            }),
+            json!({
+                "name": "get_metric",
+                "description": "Get metric definition by ID",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "metric_id": { "type": "integer" }
+                    },
+                    "required": ["metric_id"]
+                }
+            }),
+            json!({
+                "name": "update_metric_definition",
+                "description": "Update a metric's description or display_name. Requires Auto mode ON or ACP confirmation.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "metric_id": { "type": "integer" },
+                        "description": { "type": "string" },
+                        "display_name": { "type": "string" }
+                    },
+                    "required": ["metric_id"]
+                }
+            }),
+            json!({
+                "name": "create_metric",
+                "description": "Create a new metric definition",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "name": { "type": "string" },
+                        "display_name": { "type": "string" },
+                        "table_name": { "type": "string" },
+                        "description": { "type": "string" }
+                    },
+                    "required": ["connection_id", "name", "display_name"]
+                }
+            }),
+            json!({
+                "name": "get_column_meta",
+                "description": "Get column metadata for a table",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "table_name": { "type": "string" },
+                        "database": { "type": "string" }
+                    },
+                    "required": ["connection_id", "table_name"]
+                }
+            }),
+            json!({
+                "name": "update_column_comment",
+                "description": "Update a column's comment/description via ALTER TABLE. Requires Auto mode ON.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer" },
+                        "table_name": { "type": "string" },
+                        "column_name": { "type": "string" },
+                        "comment": { "type": "string" },
+                        "database": { "type": "string" }
+                    },
+                    "required": ["connection_id", "table_name", "column_name", "comment"]
+                }
+            }),
+            json!({
+                "name": "get_change_history",
+                "description": "Get the change history for the current session",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": { "type": "integer", "description": "Max records to return (default 10, max 50)" }
+                    },
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "undo_last_change",
+                "description": "Undo the last successful change in the current session (LIFO). Only undoes status=success records.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             })
         ]
     })
@@ -236,7 +385,7 @@ fn optimize_tool_definitions() -> Value {
     })
 }
 
-async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> crate::AppResult<String> {
+async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, session_id: String) -> crate::AppResult<String> {
     match name {
         "list_databases" => {
             let conn_id = args["connection_id"].as_i64()
@@ -431,6 +580,42 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> cr
                 }
             }
         }
+        "search_db_metadata" => {
+            tools::db_read::search_db_metadata(Arc::clone(&handle), args).await
+        }
+        "search_tabs" => {
+            tools::tab_control::search_tabs(Arc::clone(&handle), args).await
+        }
+        "get_tab_content" => {
+            tools::tab_control::get_tab_content(Arc::clone(&handle), args).await
+        }
+        "focus_tab" => {
+            tools::tab_control::focus_tab(Arc::clone(&handle), args).await
+        }
+        "open_tab" => {
+            tools::tab_control::open_tab(Arc::clone(&handle), args).await
+        }
+        "get_metric" => {
+            tools::metric_edit::get_metric(Arc::clone(&handle), args).await
+        }
+        "update_metric_definition" => {
+            tools::metric_edit::update_metric_definition(Arc::clone(&handle), args, session_id).await
+        }
+        "create_metric" => {
+            tools::metric_edit::create_metric(Arc::clone(&handle), args).await
+        }
+        "get_column_meta" => {
+            tools::table_edit::get_column_meta(Arc::clone(&handle), args).await
+        }
+        "update_column_comment" => {
+            tools::table_edit::update_column_comment(Arc::clone(&handle), args, session_id).await
+        }
+        "get_change_history" => {
+            tools::history::get_change_history(Arc::clone(&handle), args, session_id).await
+        }
+        "undo_last_change" => {
+            tools::history::undo_last_change(Arc::clone(&handle), args, session_id).await
+        }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }
 }
@@ -464,7 +649,13 @@ async fn handle_mcp(
             let params = req.params.unwrap_or(Value::Null);
             let name = params["name"].as_str().unwrap_or("").to_string();
             let args = params["arguments"].clone();
-            match call_tool(Arc::clone(&handle), &name, args).await {
+            // 获取 session_id
+            let session_id = {
+                use tauri::Manager;
+                let app_state = handle.state::<crate::AppState>();
+                let x = app_state.last_active_session_id.lock().await.clone().unwrap_or_else(|| "default".into()); x
+            };
+            match call_tool(Arc::clone(&handle), &name, args, session_id).await {
                 Ok(text) => Json(JsonRpcResponse::ok(id, json!({
                     "content": [{ "type": "text", "text": text }]
                 }))),
@@ -501,7 +692,7 @@ async fn handle_optimize_mcp(
             if !allowed.contains(&name.as_str()) {
                 return Json(JsonRpcResponse::err(id, -32601, "Tool not available in optimize mode"));
             }
-            match call_tool(Arc::clone(&handle), &name, args).await {
+            match call_tool(Arc::clone(&handle), &name, args, "default".to_string()).await {
                 Ok(text) => Json(JsonRpcResponse::ok(id, json!({
                     "content": [{ "type": "text", "text": text }]
                 }))),

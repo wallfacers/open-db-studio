@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Trash2, ExternalLink, Pencil, Plus, Sparkles } from 'lucide-react';
 import type { Metric, MetricScope, MetricStatus } from '../../types';
+import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 
 interface Props {
   scope: MetricScope;
@@ -17,6 +18,13 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const refreshNode = useMetricsTreeStore(s => s.refreshNode);
+
+  const parentNodeId = scope.schema
+    ? `schema_${scope.connectionId}_${scope.database}_${scope.schema}`
+    : scope.database
+      ? `db_${scope.connectionId}_${scope.database}`
+      : null;
 
   const load = async () => {
     setLoading(true);
@@ -54,6 +62,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     }
     setSelected(new Set());
     load();
+    if (parentNodeId) refreshNode(parentNodeId);
   };
 
   const doSetStatus = async (ids: number[], status: string) => {

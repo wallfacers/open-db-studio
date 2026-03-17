@@ -55,12 +55,16 @@ App 启动
 
 ```
 监控线程检测到子进程退出（非 App 主动 kill）
-  └─ 等待 1s（避免快速重启死循环）
-      └─ 重新执行启动流程（同上）
-          ├─ 成功 → 通过 Tauri 事件通知前端（serve_restarted）
-          │         前端显示短暂提示："AI 服务已重连"
-          └─ 失败（连续 3 次）→ 通知前端 serve_failed，提示用户手动重启
+  └─ retry_count += 1
+      └─ 等待 1s（避免快速重启死循环）
+          └─ 重新执行启动流程（同上）
+              ├─ 成功 → retry_count = 0（重置计数器）
+              │         通过 Tauri 事件通知前端（serve_restarted）
+              │         前端显示短暂提示："AI 服务已重连"
+              └─ 失败（retry_count >= 3）→ 通知前端 serve_failed，提示用户手动重启
 ```
+
+> **计数器重置规则：** 每次健康检查通过后立即重置为 0，保证长时运行的 App 不会因早期重启消耗次数而无法恢复。
 
 **设计决策：**
 - 单个 serve 实例，所有 Session 共享
@@ -167,15 +171,18 @@ delete_session(session_id)
     // DELETE /session/:id，从 agent_sessions 表删除
 
 delete_all_sessions()
-    // 遍历 list_sessions() 结果，逐一调用 DELETE /session/:id
+    // 遍历 list_sessions()（is_temp=0）+ agent_sessions 表中所有 is_temp=1 记录
+    // 逐一调用 DELETE /session/:id，确保临时 session 也被清理
 
-clear_session_history(session_id)
-    // 删除当前 session 并创建新 session，前端更新 currentSessionId
+clear_session_history(session_id) -> String  // 返回新 session_id
+    // 删除当前 session 并创建新 session，返回新 session_id
+    // 前端收到返回值后更新 currentSessionId
     // 注意：serve 模式无法仅清空消息而保留 session，此操作等同于 delete+create
 
-request_ai_title(session_id, context)
+request_ai_title(session_id, context) -> String
     // 创建临时 session（is_temp=1），发送单条消息生成标题，完成后删除临时 session
     // 返回 String（标题文本），非流式
+    // 无论成功或失败（LLM 报错、超时），均保证在 finally 路径中删除临时 session
 
 apply_agent_config(config_id)
     // 生成 opencode.json 写盘 + PATCH /config 热更新
@@ -297,6 +304,8 @@ invoke('ai_optimize_sql', { sql, connectionId, database, channel })
 - `cancel_optimize_sql()` — 调用 `cancel_session(current_optimize_session_id)` 并清理临时 session
 
 Rust 层在 AppState 中各维护一个 `current_explain_session_id: Option<String>` 和 `current_optimize_session_id: Option<String>`，流结束时清空。
+
+**并发策略：** explain 和 optimize 各自串行，同一时刻只允许一个请求。新请求到达时，若对应 AppState 字段非空（上一次请求仍在进行），先自动 abort 旧 session 并清理，再创建新 session。前端层面通过禁用按钮保证 UX 一致性。
 
 ---
 

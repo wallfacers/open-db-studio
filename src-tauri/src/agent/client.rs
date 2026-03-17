@@ -1,5 +1,6 @@
 use once_cell::sync::OnceCell;
 use reqwest::Client;
+use std::time::Duration;
 use crate::AppResult;
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
@@ -7,6 +8,7 @@ static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 fn client() -> &'static Client {
     HTTP_CLIENT.get_or_init(|| {
         Client::builder()
+            .connect_timeout(Duration::from_secs(5))
             .build()
             .expect("Failed to build reqwest client")
     })

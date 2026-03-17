@@ -396,6 +396,7 @@
     "saving": "保存中..."
   },
   "tableManage": {
+    "tableName": "表名",
     "createTable": "新建表",
     "editTable": "编辑表 {{table}}",
     "dropTable": "删除表",

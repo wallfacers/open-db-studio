@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { X, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, ChevronUp, ChevronDown, Sparkles } from 'lucide-react';
 import { useEscClose } from '../../hooks/useEscClose';
 import { useConnectionStore } from '../../store/connectionStore';
 import type { ToastLevel } from '../Toast';
@@ -19,6 +19,22 @@ interface EditableColumn {
   _originalName?: string;
   _isNew?: boolean;
   _isDeleted?: boolean;
+}
+
+interface AiColumnDef {
+  name: string;
+  column_type: string;
+  length: number | null;
+  nullable: boolean;
+  default_value: string | null;
+  primary_key: boolean;
+  auto_increment: boolean;
+  comment: string;
+}
+
+interface TableSchemaResult {
+  table_name: string;
+  columns: AiColumnDef[];
 }
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
@@ -124,6 +140,26 @@ function generateSql(
   return statements.length > 0 ? statements.join('\n') : '-- 无变更';
 }
 
+function makeId() { return Math.random().toString(36).slice(2); }
+
+function mapAiColumn(col: AiColumnDef, driver: string): EditableColumn {
+  const isPostgres = driver === 'postgres' || driver === 'postgresql';
+  // PostgreSQL 中 auto_increment 通过 SERIAL 类型表达
+  const dataType = (isPostgres && col.auto_increment) ? 'SERIAL' : col.column_type;
+  const extra = (!isPostgres && col.auto_increment) ? 'auto_increment' : '';
+  return {
+    id: makeId(),
+    name: col.name,
+    dataType,
+    length: col.length ? String(col.length) : '',
+    isNullable: col.nullable,
+    defaultValue: col.default_value ?? '',
+    isPrimaryKey: col.primary_key,
+    extra,
+    _isNew: true,
+  };
+}
+
 interface Props {
   connectionId: number;
   tableName?: string;
@@ -134,8 +170,6 @@ interface Props {
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
-function makeId() { return Math.random().toString(36).slice(2); }
-
 export const TableManageDialog: React.FC<Props> = ({
   connectionId, tableName, database, schema, onClose, onSuccess, showToast
 }) => {
@@ -144,6 +178,31 @@ export const TableManageDialog: React.FC<Props> = ({
   const [originalColumns, setOriginalColumns] = useState<EditableColumn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [localTableName, setLocalTableName] = useState('');
+
+  // AI 面板状态
+  const [aiPanelOpen, setAiPanelOpen] = useState(true);
+  const [aiDescription, setAiDescription] = useState('');
+  type AiState = 'idle' | 'loading' | 'error' | 'confirming' | 'filling';
+  const [aiState, setAiState] = useState<AiState>('idle');
+  const [aiError, setAiError] = useState('');
+  const [pendingAiCols, setPendingAiCols] = useState<{
+    cols: EditableColumn[];
+    count: number;
+    existingCount: number;
+  } | null>(null);
+
+  // 卸载守卫
+  const mountedRef = useRef(true);
+  const fillingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fillingRef.current = false;
+    };
+  }, []);
 
   const { connections } = useConnectionStore();
   const driver = connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
@@ -213,7 +272,58 @@ export const TableManageDialog: React.FC<Props> = ({
     });
   }, []);
 
-  const previewSql = generateSql(tableName ?? 'new_table', originalColumns, columns, driver, !tableName);
+  const fillColumns = async (newCols: EditableColumn[], mode: 'replace' | 'append') => {
+    fillingRef.current = true;
+    if (mode === 'replace') setColumns([]);
+    for (const col of newCols) {
+      if (!fillingRef.current || !mountedRef.current) break;
+      await new Promise(r => setTimeout(r, 80));
+      if (!mountedRef.current) break;
+      setColumns(prev => [...prev, col]);
+    }
+    fillingRef.current = false;
+    if (mountedRef.current) {
+      setAiState('idle');
+      setAiPanelOpen(false);
+    }
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiDescription.trim()) return;
+    setAiState('loading');
+    setAiError('');
+
+    let result: TableSchemaResult;
+    try {
+      result = await invoke<TableSchemaResult>('ai_generate_table_schema', {
+        description: aiDescription,
+        connectionId,
+      });
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setAiState('error');
+      setAiError(String(e));
+      return;
+    }
+
+    if (!mountedRef.current) return;
+
+    const mappedCols = result.columns.map(c => mapAiColumn(c, driver));
+    setLocalTableName(result.table_name);
+
+    const currentVisible = columns.filter(c => !c._isDeleted);
+    if (currentVisible.length > 0) {
+      setAiState('confirming');
+      setPendingAiCols({ cols: mappedCols, count: mappedCols.length, existingCount: currentVisible.length });
+    } else {
+      setAiState('filling');
+      fillColumns(mappedCols, 'replace');
+    }
+  };
+
+  const isAiBusy = aiState === 'loading' || aiState === 'confirming' || aiState === 'filling';
+
+  const previewSql = generateSql(tableName ?? (localTableName || 'new_table'), originalColumns, columns, driver, !tableName);
 
   const handleExecute = async () => {
     if (previewSql.startsWith('-- ')) return;
@@ -241,7 +351,7 @@ export const TableManageDialog: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[800px] max-h-[85vh] flex flex-col">
+      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[800px] max-h-[85vh] flex flex-col relative">
         <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
           <span className="text-[#c8daea] text-sm font-medium">
             {tableName ? t('tableManage.editTable', { table: tableName }) : t('tableManage.createTable')}
@@ -250,6 +360,61 @@ export const TableManageDialog: React.FC<Props> = ({
         </div>
 
         <div className="overflow-auto flex-1 p-4">
+          {/* AI 建表面板（仅新建表时显示）*/}
+          {!tableName && (
+            <div className="mb-3 border border-[#1e2d42] rounded overflow-hidden">
+              <button
+                className="w-full flex items-center justify-between px-3 py-2 bg-[#0d1520] text-xs text-[#7a9bb8] hover:text-[#c8daea]"
+                onClick={() => setAiPanelOpen(v => !v)}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-[#009e84]" />
+                  AI 建表
+                </span>
+                {aiPanelOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+
+              {aiPanelOpen && (
+                <div className="p-3 bg-[#111922] space-y-2">
+                  <textarea
+                    className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] resize-none h-[60px] disabled:opacity-50"
+                    placeholder='描述你想要的表，例如："用户表，包含昵称、头像、手机号、注册时间"'
+                    value={aiDescription}
+                    onChange={e => setAiDescription(e.target.value)}
+                    disabled={aiState === 'loading'}
+                  />
+                  {aiError && (
+                    <p className="text-xs text-red-400">{aiError}</p>
+                  )}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleAiGenerate}
+                      disabled={aiState === 'loading' || !aiDescription.trim()}
+                      className="px-3 py-1 bg-[#009e84] text-white rounded text-xs hover:bg-[#007a67] disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {aiState === 'loading' ? (
+                        <><span className="animate-spin inline-block w-3 h-3 border border-white border-t-transparent rounded-full" /> 正在生成...</>
+                      ) : '生成字段 →'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 新建表时显示表名输入 */}
+          {!tableName && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-[#7a9bb8] whitespace-nowrap">{t('tableManage.tableName')}</span>
+              <input
+                className="flex-1 bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-1 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                value={localTableName}
+                onChange={e => setLocalTableName(e.target.value)}
+                placeholder="e.g. users"
+              />
+            </div>
+          )}
+
           {isLoadingData ? (
             <div className="text-center text-xs text-[#7a9bb8] py-8">{t('tableDataView.loading')}</div>
           ) : (
@@ -271,25 +436,29 @@ export const TableManageDialog: React.FC<Props> = ({
                   <tr key={col.id} className="border-b border-[#1a2639] hover:bg-[#1a2639]/40">
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
                         value={col.name}
                         onChange={e => updateColumn(col.id, { name: e.target.value })}
+                        disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
-                      <DropdownSelect
-                        value={col.dataType}
-                        options={getTypeOptions(col.dataType)}
-                        onChange={v => updateColumn(col.id, { dataType: v })}
-                        className="w-full"
-                      />
+                      <div className={isAiBusy ? 'pointer-events-none opacity-50' : ''}>
+                        <DropdownSelect
+                          value={col.dataType}
+                          options={getTypeOptions(col.dataType)}
+                          onChange={v => updateColumn(col.id, { dataType: v })}
+                          className="w-full"
+                        />
+                      </div>
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
                         value={col.length}
                         onChange={e => updateColumn(col.id, { length: e.target.value })}
                         placeholder="—"
+                        disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2 text-center">
@@ -298,14 +467,16 @@ export const TableManageDialog: React.FC<Props> = ({
                         checked={col.isNullable}
                         onChange={e => updateColumn(col.id, { isNullable: e.target.checked })}
                         className="accent-[#009e84]"
+                        disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
                         value={col.defaultValue}
                         onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
                         placeholder="—"
+                        disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2 text-center">
@@ -314,34 +485,37 @@ export const TableManageDialog: React.FC<Props> = ({
                         checked={col.isPrimaryKey}
                         onChange={e => updateColumn(col.id, { isPrimaryKey: e.target.checked })}
                         className="accent-[#3794ff]"
+                        disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
                         value={col.extra}
                         onChange={e => updateColumn(col.id, { extra: e.target.value })}
                         placeholder="—"
+                        disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <div className="flex items-center gap-0.5 justify-center">
                         <button
                           onClick={() => moveColumn(col.id, 'up')}
-                          disabled={idx === 0}
+                          disabled={idx === 0 || isAiBusy}
                           className="text-[#7a9bb8] hover:text-[#c8daea] disabled:opacity-30 p-0.5"
                         ><ChevronUp size={12} /></button>
                         <button
                           onClick={() => moveColumn(col.id, 'down')}
-                          disabled={idx === visibleColumns.length - 1}
+                          disabled={idx === visibleColumns.length - 1 || isAiBusy}
                           className="text-[#7a9bb8] hover:text-[#c8daea] disabled:opacity-30 p-0.5"
                         ><ChevronDown size={12} /></button>
                         <button
-                          onClick={() => col._isNew
+                          disabled={isAiBusy}
+                          onClick={() => !isAiBusy && (col._isNew
                             ? setColumns(prev => prev.filter(c => c.id !== col.id))
                             : updateColumn(col.id, { _isDeleted: true })
-                          }
-                          className="text-red-500/70 hover:text-red-400 p-0.5"
+                          )}
+                          className="text-red-500/70 hover:text-red-400 p-0.5 disabled:opacity-30"
                         ><Trash2 size={12} /></button>
                       </div>
                     </td>
@@ -352,7 +526,8 @@ export const TableManageDialog: React.FC<Props> = ({
           )}
           <button
             onClick={addColumn}
-            className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1"
+            disabled={isAiBusy}
+            className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1 disabled:opacity-40"
           >
             <Plus size={13} />
             {t('tableManage.addColumn')}
@@ -378,7 +553,7 @@ export const TableManageDialog: React.FC<Props> = ({
           >{t('common.cancel')}</button>
           <button
             onClick={handleExecute}
-            disabled={isLoading || previewSql.startsWith('-- ') || isLoadingData}
+            disabled={isLoading || previewSql.startsWith('-- ') || isLoadingData || isAiBusy}
             className="px-3 py-1.5 bg-[#3794ff] text-[#c8daea] hover:bg-[#2b7cdb] rounded text-xs disabled:opacity-50"
           >
             {isLoading
@@ -386,6 +561,43 @@ export const TableManageDialog: React.FC<Props> = ({
               : tableName ? t('tableManage.executeAlter') : t('tableManage.executeCreate')}
           </button>
         </div>
+
+        {/* AI 字段应用确认弹窗 */}
+        {aiState === 'confirming' && pendingAiCols && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10 rounded-lg">
+            <div className="bg-[#111922] border border-[#253347] rounded-lg p-5 w-[320px] space-y-3">
+              <p className="text-sm text-[#c8daea] font-medium">应用 AI 生成的字段</p>
+              <p className="text-xs text-[#7a9bb8]">
+                AI 已生成 {pendingAiCols.count} 个字段，当前表格已有 {pendingAiCols.existingCount} 个字段。
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setAiState('filling');
+                    fillColumns(pendingAiCols.cols, 'replace');
+                    setPendingAiCols(null);
+                  }}
+                  className="flex-1 px-2 py-1.5 bg-[#3794ff] text-white rounded text-xs hover:bg-[#2b7cdb]"
+                >替换现有字段</button>
+                <button
+                  onClick={() => {
+                    setAiState('filling');
+                    fillColumns(pendingAiCols.cols, 'append');
+                    setPendingAiCols(null);
+                  }}
+                  className="flex-1 px-2 py-1.5 bg-[#1a2639] text-[#c8daea] rounded text-xs hover:bg-[#253347]"
+                >追加到末尾</button>
+                <button
+                  onClick={() => {
+                    setAiState('idle');
+                    setPendingAiCols(null);
+                  }}
+                  className="px-2 py-1.5 text-[#7a9bb8] rounded text-xs hover:text-[#c8daea]"
+                >取消</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

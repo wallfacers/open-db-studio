@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use tauri::Manager;
 
-/// 将内置 skills 目录同步到 opencode 可读取的目标目录
-/// 目标目录优先级：OPENCODE_CONFIG 环境变量的父目录 / skills，其次是 app_config_dir / skills
-/// 只写本项目定义的 5 个 skill，不删除目标目录其他文件
+/// 将内置 skills 目录增量同步到各 ACP 工作目录下的 skills\ 子目录
+/// 目标：acp\skills\、acp-optimize\skills\、acp-explain\skills\
+/// 只写/覆盖本项目定义的 skill，不删除目标目录其他文件
 pub fn sync_skills_on_startup(app: &tauri::AppHandle) {
     let src_dir = match app.path().resource_dir() {
         Ok(p) => p.join("skills"),
@@ -18,21 +18,18 @@ pub fn sync_skills_on_startup(app: &tauri::AppHandle) {
         return;
     }
 
-    let target_dir = resolve_target_dir(app);
-
-    sync_dir(&src_dir, &target_dir);
-}
-
-fn resolve_target_dir(app: &tauri::AppHandle) -> PathBuf {
-    if let Ok(cfg) = std::env::var("OPENCODE_CONFIG") {
-        if let Some(parent) = PathBuf::from(&cfg).parent().map(|p| p.to_path_buf()) {
-            return parent.join("skills");
+    let base = match app.path().app_data_dir() {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("skill_sync: failed to get app_data_dir: {}", e);
+            return;
         }
+    };
+
+    for acp_dir in &["acp", "acp-optimize", "acp-explain"] {
+        let target_dir = base.join(acp_dir).join("skills");
+        sync_dir(&src_dir, &target_dir);
     }
-    app.path()
-        .app_config_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("skills")
 }
 
 fn sync_dir(src_dir: &PathBuf, target_dir: &PathBuf) {

@@ -736,9 +736,7 @@ async fn ai_optimize_sql_inner(
         .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
 
     // optimize session 专用工作目录（与 chat session 隔离）
-    let cwd = std::path::PathBuf::from(
-        std::env::var("APPDATA").unwrap_or_else(|_| ".".into()),
-    ).join("open-db-studio-optimize");
+    let cwd = state.app_data_dir.join("acp-optimize");
     std::fs::create_dir_all(&cwd).ok();
 
     // 写入 optimize 专用 AGENTS.md
@@ -868,9 +866,7 @@ async fn ai_explain_sql_acp_inner(
     let config = crate::db::get_default_llm_config()?
         .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
 
-    let cwd = std::path::PathBuf::from(
-        std::env::var("APPDATA").unwrap_or_else(|_| ".".into()),
-    ).join("open-db-studio-explain");
+    let cwd = state.app_data_dir.join("acp-explain");
     std::fs::create_dir_all(&cwd).ok();
 
     let agents_content = include_str!("../assets/AGENTS_EXPLAIN.md");
@@ -1268,10 +1264,7 @@ async fn ai_chat_acp_inner(
     }
 
     // 3. 工作目录
-    let cwd = std::path::PathBuf::from(
-        std::env::var("APPDATA").unwrap_or_else(|_| ".".into()),
-    )
-    .join("open-db-studio");
+    let cwd = state.app_data_dir.join("acp");
     std::fs::create_dir_all(&cwd).ok();
 
     // 4. 创建事件转发通道，保存 JoinHandle 以便后续 await

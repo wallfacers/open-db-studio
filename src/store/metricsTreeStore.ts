@@ -3,6 +3,18 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Metric } from '../types';
 
+let _persistMetricsTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistMetricsExpandedIds(ids: Set<string>): void {
+  if (_persistMetricsTimer) clearTimeout(_persistMetricsTimer);
+  _persistMetricsTimer = setTimeout(() => {
+    invoke('set_ui_state', {
+      key: 'metrics_tree_expanded_ids',
+      value: JSON.stringify([...ids]),
+    }).catch(() => {});
+  }, 800);
+}
+
 export type MetricsNodeType = 'group' | 'connection' | 'database' | 'schema' | 'metric';
 
 export interface MetricsTreeNode {
@@ -37,6 +49,7 @@ interface MetricsTreeState {
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
   refreshNode: (nodeId: string) => Promise<void>;
+  deleteMetric: (metricId: number, nodeId: string) => Promise<void>;
   getChildNodes: (parentId: string | null) => MetricsTreeNode[];
   search: (query: string) => MetricsTreeNode[];
 }
@@ -91,8 +104,6 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
   refresh: async () => {
     const savedExpandedIds = new Set(get().expandedIds);
     await get().init(); // 重建根节点，不清 expandedIds（但子节点消失了）
-    // 清空 stale expandedIds，重新从有效节点出发恢复
-    set({ expandedIds: new Set() });
 
     const restoreExpansion = async (nodeId: string) => {
       const node = get().nodes.get(nodeId);
@@ -238,6 +249,12 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
         newNodes.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
         set({ nodes: newNodes });
       }
+    } catch {
+      set(s => {
+        const expandedIds = new Set(s.expandedIds);
+        expandedIds.delete(nodeId); // 加载失败时折叠，避免"展开但无内容"
+        return { expandedIds };
+      });
     } finally {
       set(s => {
         const ids = new Set(s.loadingIds);
@@ -271,6 +288,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
       }
     }
     set({ expandedIds: next });
+    persistMetricsExpandedIds(get().expandedIds);
   },
 
   selectNode: (nodeId: string | null) => set({ selectedId: nodeId }),
@@ -293,6 +311,25 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     newNodes.set(nodeId, { ...node, loaded: false });
     set({ nodes: newNodes });
     await get().loadChildren(nodeId);
+  },
+
+  deleteMetric: async (metricId: number, nodeId: string) => {
+    await invoke('delete_metric', { id: metricId });
+    set(s => {
+      const nodes = new Map(s.nodes);
+      const metricCounts = new Map(s.metricCounts);
+      const node = nodes.get(nodeId);
+      nodes.delete(nodeId);
+      // 递减所有祖先节点的计数
+      let current = node;
+      while (current?.parentId) {
+        const parentId = current.parentId;
+        const currentCount = metricCounts.get(parentId) ?? 0;
+        if (currentCount > 0) metricCounts.set(parentId, currentCount - 1);
+        current = nodes.get(parentId);
+      }
+      return { nodes, metricCounts };
+    });
   },
 
   getChildNodes: (parentId: string | null) => {
@@ -340,3 +377,16 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     return result;
   },
 }));
+
+export async function loadPersistedMetricsExpandedIds(): Promise<Set<string>> {
+  try {
+    const raw = await invoke<string | null>('get_ui_state', { key: 'metrics_tree_expanded_ids' });
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed))
+      return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+    return new Set();
+  } catch {
+    return new Set();
+  }
+}

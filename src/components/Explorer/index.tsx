@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, RefreshCw, Search, X, DatabaseZap, FolderPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useTreeStore } from '../../store/treeStore';
+import { useTreeStore, loadPersistedTreeExpandedIds } from '../../store/treeStore';
 import { useConnectionStore, loadOpenedConnectionIds } from '../../store/connectionStore';
 import { DBTree } from './DBTree';
 import { ConnectionModal } from '../ConnectionModal';
@@ -42,32 +42,56 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
 
-  useEffect(() => {
-    const restoreOpenedConnections = async () => {
-      // 首次挂载（store 无数据）：初始化并恢复连接
-      // 重新挂载（切页切回，store 已有数据）：跳过，Zustand 状态已保留，无需重复恢复
-      if (useTreeStore.getState().nodes.size > 0) return;
-      await init();
-      // 静默恢复上次已打开的连接，失败则跳过（不弹 toast）
-      const savedIds = await loadOpenedConnectionIds();
-      if (savedIds.length > 0) {
-        await Promise.allSettled(savedIds.map(id => handleOpenConnectionSilent(id)));
-      }
-    };
-    restoreOpenedConnections();
-  }, []);
+  // 递归恢复节点展开状态（深度优先）
+  const restoreNodeExpansion = async (nodeId: string, savedExpandedIds: Set<string>): Promise<void> => {
+    if (!savedExpandedIds.has(nodeId)) return;
 
-  // 静默版本：恢复上次展开状态时使用，失败不弹 toast
-  const handleOpenConnectionSilent = async (connectionId: number) => {
-    const nodeId = `conn_${connectionId}`;
     const store = useTreeStore.getState();
-    // 验证节点存在（连接可能已被删除）
-    if (!store.nodes.get(nodeId)) return;
-    if (!store.nodes.get(nodeId)?.loaded) {
-      await store.loadChildren(nodeId);
-      if (!useTreeStore.getState().nodes.get(nodeId)?.loaded) return;
+    const node = store.nodes.get(nodeId);
+    if (!node) return;
+
+    // 展开节点（避免重复调用 toggleExpand）
+    if (!store.expandedIds.has(nodeId)) {
+      useTreeStore.getState().toggleExpand(nodeId);
     }
+
+    // 加载子节点（若未加载）
+    if (!node.loaded) {
+      await useTreeStore.getState().loadChildren(nodeId);
+    }
+
+    // 递归恢复子节点
+    const currentNodes = useTreeStore.getState().nodes;
+    const children = [...currentNodes.values()].filter((n) => n.parentId === nodeId);
+    await Promise.allSettled(
+      children
+        .filter((child) => savedExpandedIds.has(child.id))
+        .map((child) => restoreNodeExpansion(child.id, savedExpandedIds))
+    );
+  };
+
+  // 恢复单个连接的树展开状态
+  const restoreConnectionTree = async (
+    connectionId: number,
+    savedExpandedIds: Set<string>
+  ): Promise<void> => {
+    const nodeId = `conn_${connectionId}`;
+    if (!useTreeStore.getState().nodes.get(nodeId)) return;
+
+    // 检测连接可用性
+    let available = false;
+    try {
+      available = await invoke<boolean>('test_connection_by_id', { connectionId });
+    } catch {
+      available = false;
+    }
+
+    if (!available) return; // 不可用：保持默认折叠状态
+
+    // 标记连接已打开
     openConnection(connectionId);
+
+    // 异步获取版本（不阻断恢复）
     const conn = useConnectionStore.getState().connections.find((c) => c.id === connectionId);
     if (conn) {
       invoke<string>('get_db_version', { connectionId })
@@ -84,9 +108,31 @@ export const Explorer: React.FC<ExplorerProps> = ({
         })
         .catch(() => {});
     }
-    const { expandedIds, toggleExpand } = useTreeStore.getState();
-    if (!expandedIds.has(nodeId)) toggleExpand(nodeId);
+
+    // 深度优先恢复展开状态
+    await restoreNodeExpansion(nodeId, savedExpandedIds);
   };
+
+  useEffect(() => {
+    const restoreOpenedConnections = async () => {
+      // 首次挂载（store 无数据）：初始化并恢复连接
+      // 重新挂载（切页切回，store 已有数据）：跳过，Zustand 状态已保留，无需重复恢复
+      if (useTreeStore.getState().nodes.size > 0) return;
+      await init();
+
+      const [savedIds, savedExpandedIds] = await Promise.all([
+        loadOpenedConnectionIds(),
+        loadPersistedTreeExpandedIds(),
+      ]);
+
+      if (savedIds.length === 0) return;
+
+      await Promise.allSettled(
+        savedIds.map((id) => restoreConnectionTree(id, savedExpandedIds))
+      );
+    };
+    restoreOpenedConnections();
+  }, []);
 
   const handleOpenConnection = async (connectionId: number) => {
     const nodeId = `conn_${connectionId}`;

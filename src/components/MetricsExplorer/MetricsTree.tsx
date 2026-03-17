@@ -83,6 +83,15 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
     [nodes, expandedIds, searchQuery, search]
   );
 
+  // 搜索模式下：有子节点出现在结果里的节点视为"已展开"
+  const searchExpandedIds = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const resultIds = new Set(visibleNodes.map(n => n.id));
+    return new Set(
+      visibleNodes.filter(n => n.parentId && resultIds.has(n.parentId)).map(n => n.parentId!)
+    );
+  }, [visibleNodes, searchQuery]);
+
   if (visibleNodes.length === 0) {
     return (
       <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
@@ -100,8 +109,8 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         </div>
       )}
       {visibleNodes.map(node => {
-        const indent = searchQuery.trim() ? 0 : getIndentLevel(node, nodes);
-        const isExpanded = expandedIds.has(node.id);
+        const indent = getIndentLevel(node, nodes);
+        const isExpanded = searchExpandedIds ? searchExpandedIds.has(node.id) : expandedIds.has(node.id);
         const isSelected = selectedId === node.id;
         const isLoading = loadingIds.has(node.id);
         const count = metricCounts.get(node.id);
@@ -141,7 +150,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
             <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#7a9bb8] flex-shrink-0">
               {isLoading ? (
                 <Loader2 size={12} className="animate-spin" />
-              ) : !searchQuery.trim() && (node.hasChildren || node.nodeType !== 'metric') ? (
+              ) : (node.hasChildren || node.nodeType !== 'metric') ? (
                 isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
               ) : null}
             </div>

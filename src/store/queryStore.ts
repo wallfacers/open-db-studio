@@ -91,7 +91,7 @@ interface QueryState {
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
 
-export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string } {
+export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string; sqlContent: Record<string, string> } {
   try {
     const raw = localStorage.getItem('unified_tabs_state');
     if (raw) {
@@ -99,27 +99,30 @@ export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string } {
       const validTabs = (parsed.tabs ?? []).filter(
         (t: unknown) => t && typeof (t as any).id === 'string' && typeof (t as any).type === 'string'
       ) as Tab[];
+      const sqlContent: Record<string, string> = parsed.sqlContent && typeof parsed.sqlContent === 'object'
+        ? parsed.sqlContent
+        : {};
       // Only return unified state if it has actual data; otherwise fall through to migration
       if (validTabs.length > 0) {
-        return { tabs: validTabs, activeTabId: parsed.activeTabId ?? '' };
+        return { tabs: validTabs, activeTabId: parsed.activeTabId ?? '', sqlContent };
       }
       // One-time migration from old key
       const oldRaw = localStorage.getItem('metrics_tabs_state');
       if (oldRaw) {
         const oldParsed = JSON.parse(oldRaw);
-        const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '' };
+        const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '', sqlContent: {} };
         localStorage.setItem('unified_tabs_state', JSON.stringify(result));
         localStorage.removeItem('metrics_tabs_state');
         return result;
       }
       // Return empty unified state if it exists but has no tabs
-      return { tabs: [], activeTabId: parsed.activeTabId ?? '' };
+      return { tabs: [], activeTabId: parsed.activeTabId ?? '', sqlContent: {} };
     }
     // One-time migration from old key (when unified key doesn't exist)
     const oldRaw = localStorage.getItem('metrics_tabs_state');
     if (oldRaw) {
       const oldParsed = JSON.parse(oldRaw);
-      const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '' };
+      const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '', sqlContent: {} };
       localStorage.setItem('unified_tabs_state', JSON.stringify(result));
       localStorage.removeItem('metrics_tabs_state');
       return result;
@@ -127,15 +130,15 @@ export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string } {
   } catch {
     // ignore parse errors
   }
-  return { tabs: [], activeTabId: '' };
+  return { tabs: [], activeTabId: '', sqlContent: {} };
 }
 
-const { tabs: initialTabs, activeTabId: initialActiveTabId } = loadTabsFromStorage();
+const { tabs: initialTabs, activeTabId: initialActiveTabId, sqlContent: initialSqlContent } = loadTabsFromStorage();
 
 export const useQueryStore = create<QueryState>((set, get) => ({
   tabs: initialTabs.length > 0 ? initialTabs : [DEFAULT_TAB],
   activeTabId: initialActiveTabId || DEFAULT_TAB.id,
-  sqlContent: { [DEFAULT_TAB.id]: '' },
+  sqlContent: Object.keys(initialSqlContent).length > 0 ? initialSqlContent : { [DEFAULT_TAB.id]: '' },
   results: {},
   isExecuting: {},
   queryHistory: [],
@@ -438,6 +441,7 @@ useQueryStore.subscribe((state) => {
     localStorage.setItem('unified_tabs_state', JSON.stringify({
       tabs: state.tabs,
       activeTabId: state.activeTabId,
+      sqlContent: state.sqlContent,
     }));
   } catch {
     // ignore storage errors

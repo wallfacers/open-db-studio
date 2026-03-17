@@ -32,6 +32,7 @@ interface MetricsTreeState {
   loadingIds: Set<string>;
 
   init: () => Promise<void>;
+  refresh: () => Promise<void>;
   loadChildren: (nodeId: string) => Promise<void>;
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
@@ -85,6 +86,37 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     }
 
     set({ nodes });
+  },
+
+  refresh: async () => {
+    const savedExpandedIds = new Set(get().expandedIds);
+    await get().init(); // 重建根节点，不清 expandedIds（但子节点消失了）
+    // 清空 stale expandedIds，重新从有效节点出发恢复
+    set({ expandedIds: new Set() });
+
+    const restoreExpansion = async (nodeId: string) => {
+      const node = get().nodes.get(nodeId);
+      if (!node) return;
+      set(s => {
+        const expandedIds = new Set(s.expandedIds);
+        expandedIds.add(nodeId);
+        return { expandedIds };
+      });
+      if (!node.loaded) {
+        await get().loadChildren(nodeId);
+      }
+      for (const child of get().nodes.values()) {
+        if (child.parentId === nodeId && savedExpandedIds.has(child.id)) {
+          await restoreExpansion(child.id);
+        }
+      }
+    };
+
+    for (const node of get().nodes.values()) {
+      if (node.parentId === null && savedExpandedIds.has(node.id)) {
+        await restoreExpansion(node.id);
+      }
+    }
   },
 
   loadChildren: async (nodeId: string) => {
@@ -273,6 +305,38 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
   search: (query: string): MetricsTreeNode[] => {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
-    return [...get().nodes.values()].filter(n => n.label.toLowerCase().includes(q));
+    const { nodes } = get();
+
+    // 找出所有匹配节点
+    const matchingIds = new Set<string>();
+    for (const [id, node] of nodes) {
+      if (node.label.toLowerCase().includes(q)) matchingIds.add(id);
+    }
+
+    // 找出所有匹配节点的祖先
+    const ancestorIds = new Set<string>();
+    for (const id of matchingIds) {
+      let cur = nodes.get(id);
+      while (cur?.parentId) {
+        ancestorIds.add(cur.parentId);
+        cur = nodes.get(cur.parentId);
+      }
+    }
+
+    const relevantIds = new Set([...ancestorIds, ...matchingIds]);
+
+    // 按树层级顺序（DFS）返回结果
+    const result: MetricsTreeNode[] = [];
+    function visit(parentId: string | null) {
+      const children = [...nodes.values()]
+        .filter(n => n.parentId === parentId && relevantIds.has(n.id))
+        .sort((a, b) => (a.meta.sortOrder ?? 0) - (b.meta.sortOrder ?? 0) || a.label.localeCompare(b.label));
+      for (const node of children) {
+        result.push(node);
+        if (ancestorIds.has(node.id)) visit(node.id);
+      }
+    }
+    visit(null);
+    return result;
   },
 }));

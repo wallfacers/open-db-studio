@@ -6,8 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Shared state for capturing MetricsTree props across tests
 const capturedMetricsTreeProps: { current: any } = { current: null };
 
-// Shared mock init function reference — replaced per test
-const mockInitHolder: { fn: ReturnType<typeof vi.fn> } = { fn: vi.fn() };
+// Shared mock refresh function reference — replaced per test
+const mockRefreshHolder: { fn: ReturnType<typeof vi.fn> } = { fn: vi.fn() };
 
 // Mock MetricsTree to capture props for inspection in tests
 vi.mock('./MetricsTree', () => ({
@@ -20,7 +20,7 @@ vi.mock('./MetricsTree', () => ({
 // Mock Tauri and stores
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue([]) }));
 vi.mock('../../store/metricsTreeStore', () => ({
-  useMetricsTreeStore: () => ({ init: mockInitHolder.fn }),
+  useMetricsTreeStore: () => ({ refresh: mockRefreshHolder.fn }),
 }));
 vi.mock('../../store/queryStore', () => ({
   useQueryStore: {
@@ -41,7 +41,7 @@ describe('MetricsSidebar', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     capturedMetricsTreeProps.current = null;
-    mockInitHolder.fn = vi.fn();
+    mockRefreshHolder.fn = vi.fn();
   });
 
   it('渲染侧边栏标题和搜索框', async () => {
@@ -66,9 +66,9 @@ describe('MetricsSidebar', () => {
     expect((sidebar as HTMLElement).style.width).toBe('300px');
   });
 
-  it('点击刷新按钮调用 init()', async () => {
-    const mockInit = vi.fn();
-    mockInitHolder.fn = mockInit;
+  it('点击刷新按钮调用 refresh()', async () => {
+    const mockRefresh = vi.fn();
+    mockRefreshHolder.fn = mockRefresh;
 
     const { MetricsSidebar } = await import('./MetricsSidebar');
     await act(async () => {
@@ -95,7 +95,7 @@ describe('MetricsSidebar', () => {
       });
     });
 
-    expect(mockInit).toHaveBeenCalled();
+    expect(mockRefresh).toHaveBeenCalled();
   });
 
   it('resize 手柄触发 onResize 回调', async () => {

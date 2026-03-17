@@ -168,7 +168,12 @@ pub fn run() {
             commands::start_migration,
             commands::get_migration_task,
             commands::acp_permission_respond,
+            commands::acp_elicitation_respond,
             commands::mcp_diff_respond,
+            commands::get_ui_state,
+            commands::set_ui_state,
+            commands::delete_ui_state,
+            commands::test_connection_by_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

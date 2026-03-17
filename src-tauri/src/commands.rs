@@ -2,6 +2,7 @@ use crate::datasource::{ConnectionConfig, QueryResult, SchemaInfo, TableMeta};
 use crate::db::models::{Connection, CreateConnectionRequest, QueryHistory};
 use crate::llm::{ChatContext, ChatMessage, AgentMessage, ToolDefinition};
 use crate::{AppError, AppResult};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 // ============ 连接管理 ============
@@ -803,6 +804,7 @@ async fn ai_optimize_sql_inner(
             request_tx: new_session.request_tx,
             abort_tx: new_session.abort_tx,
             pending_permissions: new_session.pending_permissions,
+            pending_elicitations: new_session.pending_elicitations,
         });
     }
 
@@ -928,6 +930,7 @@ async fn ai_explain_sql_acp_inner(
             request_tx: new_session.request_tx,
             abort_tx: new_session.abort_tx,
             pending_permissions: new_session.pending_permissions,
+            pending_elicitations: new_session.pending_elicitations,
         });
     }
 
@@ -1369,6 +1372,7 @@ async fn get_or_create_session(
             request_tx: new_session.request_tx,
             abort_tx: new_session.abort_tx,
             pending_permissions: new_session.pending_permissions,
+            pending_elicitations: new_session.pending_elicitations,
         },
     );
     Ok(tx)
@@ -2508,6 +2512,39 @@ pub async fn acp_permission_respond(
     Ok(())
 }
 
+/// 前端回传用户对 ACP elicitation 请求的响应
+///
+/// `action` 为 "accept"/"decline"/"cancel"；accept 时 `content` 携带表单数据。
+#[tauri::command]
+pub async fn acp_elicitation_respond(
+    session_id: String,
+    elicitation_id: String,
+    action: String,
+    content: Option<serde_json::Value>,
+    state: tauri::State<'_, crate::AppState>,
+) -> crate::AppResult<()> {
+    use crate::AppError;
+    let sessions = state.acp_sessions.lock().await;
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| AppError::Other(format!("ACP session '{}' not found", session_id)))?;
+
+    let tx = session
+        .pending_elicitations
+        .lock()
+        .unwrap()
+        .remove(&elicitation_id)
+        .ok_or_else(|| {
+            AppError::Other(format!(
+                "Elicitation request '{}' not found or already responded",
+                elicitation_id
+            ))
+        })?;
+
+    let _ = tx.send(crate::state::ElicitationReply { action, content });
+    Ok(())
+}
+
 /// 前端 DiffPanel 用户点击"应用"或"取消"后调用，解除 propose_sql_diff 的阻塞等待。
 /// confirmed=true 表示用户应用了修改，confirmed=false 表示用户取消。
 #[tauri::command]
@@ -2519,4 +2556,62 @@ pub async fn mcp_diff_respond(
         let _ = tx.send(confirmed);
     }
     Ok(())
+}
+
+// ============ UI 状态持久化 ============
+
+#[tauri::command]
+pub async fn get_ui_state(key: String) -> AppResult<Option<String>> {
+    let conn = crate::db::get().lock().unwrap();
+    let result = conn
+        .query_row(
+            "SELECT value FROM ui_state WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| crate::AppError::Other(e.to_string()))?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn set_ui_state(key: String, value: String) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "INSERT INTO ui_state (key, value, updated_at) VALUES (?1, ?2, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        rusqlite::params![key, value],
+    )
+    .map_err(|e| crate::AppError::Other(e.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_ui_state(key: String) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "DELETE FROM ui_state WHERE key = ?1",
+        rusqlite::params![key],
+    )
+    .map_err(|e| crate::AppError::Other(e.to_string()))?;
+    Ok(())
+}
+
+/// 通过连接 ID 测试连接是否可用（从 SQLite 读取配置并解密密码），3 秒超时。
+#[tauri::command]
+pub async fn test_connection_by_id(connection_id: i64) -> AppResult<bool> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        async {
+            let ds = crate::datasource::create_datasource(&config).await?;
+            ds.test_connection().await?;
+            Ok::<bool, crate::AppError>(true)
+        },
+    )
+    .await;
+    match result {
+        Ok(Ok(_)) => Ok(true),
+        _ => Ok(false),
+    }
 }

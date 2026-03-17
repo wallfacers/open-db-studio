@@ -625,7 +625,10 @@ export const MainContent: React.FC<MainContentProps> = ({
           </div>
         ) : activeTabObj.type === 'metric' && activeTabObj.metricId ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <MetricTab metricId={activeTabObj.metricId} />
+            <MetricTab
+              metricId={activeTabObj.metricId}
+              onDelete={() => useQueryStore.getState().closeTab(activeTab)}
+            />
           </div>
         ) : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">

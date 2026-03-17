@@ -63,7 +63,11 @@
     "confirmNo": "Cancel",
     "waitMsg0": "Connecting to model...",
     "waitMsg1": "AI is thinking...",
-    "waitMsg2": "Composing reply..."
+    "waitMsg2": "Composing reply...",
+    "connectionSwitchTitle": "Tab switched — update connection?",
+    "connectionSwitchDesc": "AI is using {{old}}, new tab uses {{new}}",
+    "keepLastConnection": "Keep {{name}}",
+    "switchToNewConnection": "Switch to {{name}}"
   },
   "connectionModal": {
     "editConnection": "Edit Connection",
@@ -222,6 +226,7 @@
     "selectDatabase": "Select database...",
     "selectSchema": "Select Schema...",
     "selectConnectionAndDatabase": "Please select a connection and database first",
+    "aiChattingBlockTabSwitch": "AI is responding, please wait before switching tabs",
     "openAiAssistant": "Open AI Assistant",
     "formatSql": "Format SQL",
     "saveSql": "Save",

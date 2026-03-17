@@ -1056,6 +1056,65 @@ pub fn update_metric_fields(
     Ok(updated)
 }
 
+// ============ agent_sessions CRUD ============
+
+/// 插入 agent session 记录
+pub fn insert_agent_session(
+    id: &str,
+    title: Option<&str>,
+    config_id: Option<i64>,
+    is_temp: bool,
+) -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO agent_sessions (id, title, config_id, is_temp, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        rusqlite::params![id, title, config_id, is_temp as i64, now],
+    )?;
+    Ok(())
+}
+
+/// 删除指定 agent session 记录
+pub fn delete_agent_session(id: &str) -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    conn.execute("DELETE FROM agent_sessions WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// 查询 agent session 列表
+/// include_temp=true 包含 is_temp=1 的临时 session
+pub fn list_agent_sessions(include_temp: bool) -> AppResult<Vec<crate::commands::AgentSessionRecord>> {
+    let conn = get().lock().unwrap();
+    let sql = if include_temp {
+        "SELECT id, title, config_id, created_at, updated_at FROM agent_sessions ORDER BY created_at DESC"
+    } else {
+        "SELECT id, title, config_id, created_at, updated_at FROM agent_sessions WHERE is_temp = 0 ORDER BY created_at DESC"
+    };
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok(crate::commands::AgentSessionRecord {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            config_id: row.get(2)?,
+            created_at: row.get(3)?,
+            updated_at: row.get(4)?,
+        })
+    })?;
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}
+
+/// 删除所有 agent session 记录（包括临时 session）
+pub fn delete_all_agent_sessions() -> AppResult<()> {
+    let conn = get().lock().unwrap();
+    conn.execute("DELETE FROM agent_sessions", [])?;
+    Ok(())
+}
+
 pub fn create_metric_from_mcp(
     connection_id: i64,
     name: &str,

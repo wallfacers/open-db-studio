@@ -60,6 +60,8 @@ pub struct UiActionResponse {
 /// 全局应用状态（注入 Tauri manage）
 pub struct AppState {
     pub mcp_port: u16,
+    /// 应用数据目录（%APPDATA%\com.open-db-studio.app），启动时设置，不可变
+    pub app_data_dir: std::path::PathBuf,
     /// key = frontend_session_id（UUID 字符串），每个前端 session 独立 ACP 进程
     pub acp_sessions: tokio::sync::Mutex<HashMap<String, PersistentAcpSession>>,
     /// 编辑器 SQL per session，供 MCP get_editor_sql 工具读取

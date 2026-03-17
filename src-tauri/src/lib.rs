@@ -38,25 +38,25 @@ pub fn run() {
                 }
             }
             let app_data_dir = app.path().app_data_dir()
-                .expect("Failed to get app data dir")
-                .to_string_lossy()
-                .to_string();
-            crate::db::init(&app_data_dir)?;
+                .expect("Failed to get app data dir");
+            crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
-            // 写入 AGENTS.md 到 opencode 工作目录，指导 AI 使用工具
+            // 启动时写入各 ACP 工作目录的 AGENTS.md
             {
-                use std::path::PathBuf;
-                let agents_dir = PathBuf::from(
-                    std::env::var("APPDATA").unwrap_or_else(|_| ".".into())
-                ).join("open-db-studio");
-                std::fs::create_dir_all(&agents_dir).ok();
-                let agents_path = agents_dir.join("AGENTS.md");
-                let agents_content = include_str!("../assets/AGENTS.md");
-                if let Err(e) = std::fs::write(&agents_path, agents_content) {
-                    log::error!("Failed to write AGENTS.md: {}", e);
-                    // 降级：继续启动，AI 使用 opencode 默认行为
-                } else {
-                    log::info!("Wrote AGENTS.md to {:?}", agents_path);
+                let acp_files: &[(&str, &str)] = &[
+                    ("acp",         include_str!("../assets/AGENTS.md")),
+                    ("acp-optimize", include_str!("../assets/AGENTS_OPTIMIZE.md")),
+                    ("acp-explain",  include_str!("../assets/AGENTS_EXPLAIN.md")),
+                ];
+                for (dir_name, content) in acp_files {
+                    let dir = app_data_dir.join(dir_name);
+                    std::fs::create_dir_all(&dir).ok();
+                    let path = dir.join("AGENTS.md");
+                    if let Err(e) = std::fs::write(&path, content) {
+                        log::error!("Failed to write AGENTS.md to {:?}: {}", path, e);
+                    } else {
+                        log::info!("Wrote AGENTS.md to {:?}", path);
+                    }
                 }
             }
             let mcp_port = tauri::async_runtime::block_on(
@@ -64,6 +64,7 @@ pub fn run() {
             ).expect("Failed to start MCP server");
             app.manage(crate::state::AppState {
                 mcp_port,
+                app_data_dir: app_data_dir.clone(),
                 acp_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 last_active_session_id: tokio::sync::Mutex::new(None),

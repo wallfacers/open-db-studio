@@ -105,12 +105,11 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation, respondAcpElicitation, clearAcpElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
   const pendingElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingElicitation ?? null);
-  const pendingAcpElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingAcpElicitation ?? null);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -615,17 +614,6 @@ export const Assistant: React.FC<AssistantProps> = ({
                   request={pendingElicitation}
                   onSelect={(text) => respondElicitation(currentSessionId, text)}
                   onCancel={() => clearElicitation(currentSessionId)}
-                />
-              )}
-
-              {/* ACP elicitation 面板（ext_method 桥接路径，isChatting=true 时显示） */}
-              {pendingAcpElicitation && (
-                <ElicitationPanel
-                  type="acp-elicitation"
-                  request={pendingAcpElicitation}
-                  onRespond={(action, content) =>
-                    respondAcpElicitation(currentSessionId, pendingAcpElicitation.id, action, content)
-                  }
                 />
               )}
 

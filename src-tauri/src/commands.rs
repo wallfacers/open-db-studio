@@ -3022,7 +3022,7 @@ pub async fn agent_request_ai_title(
     // 3. 收集 SSE 流（无论成功失败，finally 路径均清理）
     let title = match response_result {
         Ok(resp) => {
-            let title = collect_sse_text(resp).await.unwrap_or_default();
+            let title = crate::agent::stream::collect_text_from_sse(resp).await.unwrap_or_default();
             title
         }
         Err(e) => {
@@ -3043,62 +3043,6 @@ pub async fn agent_request_ai_title(
     Ok(title.trim().to_string())
 }
 
-/// 收集 SSE 流中所有 ContentChunk 合并为完整文本
-async fn collect_sse_text(response: reqwest::Response) -> AppResult<String> {
-    use futures_util::StreamExt;
-
-    let mut stream = response.bytes_stream();
-    let mut current_event: Option<String> = None;
-    let mut current_data: Option<String> = None;
-    let mut line_buf = String::new();
-    let mut result = String::new();
-
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = match chunk_result {
-            Ok(c) => c,
-            Err(_) => break,
-        };
-        let text = match std::str::from_utf8(&chunk) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        line_buf.push_str(text);
-
-        loop {
-            if let Some(pos) = line_buf.find('\n') {
-                let line = line_buf[..pos].trim_end_matches('\r').to_string();
-                line_buf = line_buf[pos + 1..].to_string();
-
-                if line.is_empty() {
-                    if let (Some(ev), Some(data)) = (current_event.take(), current_data.take()) {
-                        if ev == "message.part.delta" {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
-                                if json["type"].as_str() == Some("text") {
-                                    if let Some(delta) = json["delta"].as_str() {
-                                        result.push_str(delta);
-                                    }
-                                }
-                            }
-                        } else if ev == "message.completed" {
-                            return Ok(result);
-                        }
-                    } else {
-                        current_event.take();
-                        current_data.take();
-                    }
-                } else if let Some(rest) = line.strip_prefix("event:") {
-                    current_event = Some(rest.trim().to_string());
-                } else if let Some(rest) = line.strip_prefix("data:") {
-                    current_data = Some(rest.trim().to_string());
-                }
-            } else {
-                break;
-            }
-        }
-    }
-
-    Ok(result)
-}
 
 /// 应用 LLM 配置到 opencode serve（写盘 + 热更新）
 /// 1. 从 SQLite 获取 LLM 配置（解密 apiKey）

@@ -27,7 +27,7 @@ vi.mock('../store/queryStore', () => ({
 }));
 
 vi.mock('../store/aiStore', () => ({
-  useAiStore: { getState: () => ({ configs: [], activeConfigId: null }) },
+  useAiStore: { getState: () => ({ configs: [], sessions: [], currentSessionId: null }) },
 }));
 
 describe('buildErrorContext', () => {

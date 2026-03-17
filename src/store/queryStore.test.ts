@@ -168,4 +168,26 @@ describe('localStorage persistence', () => {
     expect(loadedTabs).toHaveLength(0);
     expect(loadedId).toBe('');
   });
+
+  it('从 localStorage 加载时恢复 sqlContent', () => {
+    const saved = {
+      tabs: [{ id: 'q1', type: 'query', title: '查询1' }],
+      activeTabId: 'q1',
+      sqlContent: { 'q1': 'SELECT * FROM users' },
+    };
+    localStorage.setItem('unified_tabs_state', JSON.stringify(saved));
+    const { sqlContent } = loadTabsFromStorage();
+    expect(sqlContent['q1']).toBe('SELECT * FROM users');
+  });
+
+  it('subscribe 写入 localStorage 时包含 sqlContent', () => {
+    useQueryStore.setState({
+      tabs: [{ id: 'q1', type: 'query', title: '查询1' }],
+      activeTabId: 'q1',
+      sqlContent: { 'q1': 'SELECT 1' },
+    });
+    const raw = localStorage.getItem('unified_tabs_state');
+    const parsed = JSON.parse(raw!);
+    expect(parsed.sqlContent?.['q1']).toBe('SELECT 1');
+  });
 });

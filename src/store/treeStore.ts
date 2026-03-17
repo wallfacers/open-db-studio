@@ -42,6 +42,7 @@ interface TreeStore {
   error: string | null;
 
   init: () => Promise<void>;
+  refresh: () => Promise<void>;
   loadChildren: (nodeId: string) => Promise<void>;
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string) => void;
@@ -100,6 +101,36 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       set({ nodes: newNodes, searchIndex: new Map(newNodes), expandedIds: new Set() });
     } catch (e) {
       set({ error: String(e) });
+    }
+  },
+
+  refresh: async () => {
+    const savedExpandedIds = new Set(get().expandedIds);
+    await get().init(); // init 会清空 expandedIds
+
+    // 深度优先恢复展开状态并重新加载子节点
+    const restoreExpansion = async (nodeId: string) => {
+      const node = get().nodes.get(nodeId);
+      if (!node) return;
+      set(s => {
+        const expandedIds = new Set(s.expandedIds);
+        expandedIds.add(nodeId);
+        return { expandedIds };
+      });
+      if (!node.loaded) {
+        await get().loadChildren(nodeId);
+      }
+      for (const child of get().nodes.values()) {
+        if (child.parentId === nodeId && savedExpandedIds.has(child.id)) {
+          await restoreExpansion(child.id);
+        }
+      }
+    };
+
+    for (const node of get().nodes.values()) {
+      if (node.parentId === null && savedExpandedIds.has(node.id)) {
+        await restoreExpansion(node.id);
+      }
     }
   },
 
@@ -285,9 +316,46 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   search: (query: string): TreeNode[] => {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
-    return Array.from(get().searchIndex.values()).filter(n =>
-      n.label.toLowerCase().includes(q)
-    );
+    const { nodes } = get();
+
+    // 找出所有匹配节点
+    const matchingIds = new Set<string>();
+    for (const [id, node] of nodes) {
+      if (node.label.toLowerCase().includes(q)) matchingIds.add(id);
+    }
+
+    // 找出所有匹配节点的祖先
+    const ancestorIds = new Set<string>();
+    for (const id of matchingIds) {
+      let cur = nodes.get(id);
+      while (cur?.parentId) {
+        ancestorIds.add(cur.parentId);
+        cur = nodes.get(cur.parentId);
+      }
+    }
+
+    const relevantIds = new Set([...ancestorIds, ...matchingIds]);
+
+    // 按树层级顺序（DFS）返回结果
+    const result: TreeNode[] = [];
+    function visit(parentId: string | null) {
+      const children = [...nodes.values()]
+        .filter(n => n.parentId === parentId && relevantIds.has(n.id))
+        .sort((a, b) => {
+          const isOrderable = a.nodeType === 'connection' || a.nodeType === 'group';
+          if (isOrderable) {
+            const diff = (a.meta.sortOrder ?? 0) - (b.meta.sortOrder ?? 0);
+            if (diff !== 0) return diff;
+          }
+          return a.label.localeCompare(b.label);
+        });
+      for (const node of children) {
+        result.push(node);
+        if (ancestorIds.has(node.id)) visit(node.id);
+      }
+    }
+    visit(null);
+    return result;
   },
 
   _addNodes: (newNodes: TreeNode[]) => {

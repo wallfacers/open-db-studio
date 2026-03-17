@@ -12,7 +12,7 @@ export interface MetricsSidebarProps {
 }
 
 export function MetricsSidebar({ sidebarWidth, onResize }: MetricsSidebarProps) {
-  const { init } = useMetricsTreeStore();
+  const { refresh } = useMetricsTreeStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleOpenMetricTab = (metricId: number, title: string) => {
@@ -45,7 +45,7 @@ export function MetricsSidebar({ sidebarWidth, onResize }: MetricsSidebarProps) 
             <RefreshCw
               size={16}
               className="cursor-pointer hover:text-[#c8daea]"
-              onClick={() => init()}
+              onClick={() => refresh()}
             />
           </Tooltip>
         </div>

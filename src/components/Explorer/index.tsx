@@ -37,7 +37,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   onOpenTableStructure,
 }) => {
   const { t } = useTranslation();
-  const { init, nodes } = useTreeStore();
+  const { init, refresh, nodes } = useTreeStore();
   const { activeConnectionIds, openConnection, closeConnection } = useConnectionStore();
   const [showModal, setShowModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -188,7 +188,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
                   <RefreshCw
                     size={16}
                     className="cursor-pointer hover:text-[#c8daea]"
-                    onClick={() => init()}
+                    onClick={() => refresh()}
                   />
                 </Tooltip>
               </div>

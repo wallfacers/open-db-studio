@@ -134,6 +134,15 @@ export const DBTree: React.FC<DBTreeProps> = ({
     return computeVisibleNodes(nodes, expandedIds);
   }, [nodes, expandedIds, searchQuery, search]);
 
+  // 搜索模式下：有子节点出现在结果里的节点视为"已展开"
+  const searchExpandedIds = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const resultIds = new Set(visibleNodes.map(n => n.id));
+    return new Set(
+      visibleNodes.filter(n => n.parentId && resultIds.has(n.parentId)).map(n => n.parentId!)
+    );
+  }, [visibleNodes, searchQuery]);
+
   // 所有分组节点，用于分组选择器
   const groupNodes = useMemo(() =>
     Array.from(nodes.values()).filter(n => n.nodeType === 'group'),
@@ -232,8 +241,8 @@ export const DBTree: React.FC<DBTreeProps> = ({
         <TreeNode
           key={node.id}
           node={node}
-          indent={searchQuery ? 0 : getIndentLevel(node, nodes)}
-          isExpanded={expandedIds.has(node.id)}
+          indent={getIndentLevel(node, nodes)}
+          isExpanded={searchExpandedIds ? searchExpandedIds.has(node.id) : expandedIds.has(node.id)}
           isSelected={selectedId === node.id}
           isLoading={loadingIds.has(node.id)}
           isActive={node.nodeType === 'connection'

@@ -118,7 +118,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
   refresh: async () => {
     const savedExpandedIds = new Set(get().expandedIds);
-    await get().init(); // init 会清空 expandedIds
+    await get().init(); // init 只更新节点，不重置 expandedIds（由持久化机制维护）
 
     // 深度优先恢复展开状态并重新加载子节点
     const restoreExpansion = async (nodeId: string) => {

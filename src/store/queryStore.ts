@@ -255,31 +255,46 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     invoke('delete_tab_file', { tabId }).catch(() => {});
   },
 
-  closeAllTabs: () => set({ tabs: [], activeTabId: '' }),
+  closeAllTabs: () => {
+    const removedIds = get().tabs.map(t => t.id);
+    set({ tabs: [], activeTabId: '' });
+    removedIds.forEach(id => invoke('delete_tab_file', { tabId: id }).catch(() => {}));
+  },
 
-  closeTabsLeft: (tabId) =>
+  closeTabsLeft: (tabId) => {
+    let removedIds: string[] = [];
     set(s => {
       const idx = s.tabs.findIndex(t => t.id === tabId);
       if (idx <= 0) return s;
+      removedIds = s.tabs.slice(0, idx).map(t => t.id);
       const next = s.tabs.slice(idx);
       const newActive = next.find(t => t.id === s.activeTabId) ? s.activeTabId : tabId;
       return { tabs: next, activeTabId: newActive };
-    }),
+    });
+    removedIds.forEach(id => invoke('delete_tab_file', { tabId: id }).catch(() => {}));
+  },
 
-  closeTabsRight: (tabId) =>
+  closeTabsRight: (tabId) => {
+    let removedIds: string[] = [];
     set(s => {
       const idx = s.tabs.findIndex(t => t.id === tabId);
       if (idx === s.tabs.length - 1) return s;
+      removedIds = s.tabs.slice(idx + 1).map(t => t.id);
       const next = s.tabs.slice(0, idx + 1);
       const newActive = next.find(t => t.id === s.activeTabId) ? s.activeTabId : tabId;
       return { tabs: next, activeTabId: newActive };
-    }),
+    });
+    removedIds.forEach(id => invoke('delete_tab_file', { tabId: id }).catch(() => {}));
+  },
 
-  closeOtherTabs: (tabId) =>
-    set(s => ({
-      tabs: s.tabs.filter(t => t.id === tabId),
-      activeTabId: tabId,
-    })),
+  closeOtherTabs: (tabId) => {
+    let removedIds: string[] = [];
+    set(s => {
+      removedIds = s.tabs.filter(t => t.id !== tabId).map(t => t.id);
+      return { tabs: s.tabs.filter(t => t.id === tabId), activeTabId: tabId };
+    });
+    removedIds.forEach(id => invoke('delete_tab_file', { tabId: id }).catch(() => {}));
+  },
 
   updateTabContext: (tabId, ctx) =>
     set(s => ({
@@ -468,9 +483,13 @@ export function persistSqlContent(tabId: string, content: string): void {
   }, 500);
 }
 
+// 初始化完成标志：防止 loadTabsFromStorage 完成前 subscribe 回调把 DEFAULT_TAB 写入 SQLite
+let _storeInitialized = false;
+
 // 持久化元数据（防抖 500ms）
 let _saveMetaTimer: ReturnType<typeof setTimeout> | null = null;
 useQueryStore.subscribe((state) => {
+  if (!_storeInitialized) return; // 初始化完成前不写
   if (_saveMetaTimer) clearTimeout(_saveMetaTimer);
   _saveMetaTimer = setTimeout(() => {
     invoke('set_ui_state', {
@@ -487,4 +506,7 @@ useQueryStore.subscribe((state) => {
 // 异步加载持久化状态（应用启动时执行）
 loadTabsFromStorage().then(({ tabs, activeTabId, sqlContent }) => {
   useQueryStore.setState({ tabs, activeTabId, sqlContent });
-}).catch(() => {});
+  _storeInitialized = true; // 标记初始化完成
+}).catch(() => {
+  _storeInitialized = true; // 即使加载失败也要打开持久化
+});

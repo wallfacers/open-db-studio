@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   ChevronDown, ChevronRight, Loader2,
   Folder, FolderOpen, Database, Layers, BarChart2, GitMerge,
   Eye, RefreshCw, Trash2, List,
 } from 'lucide-react';
 import { DbDriverIcon } from '../Explorer/DbDriverIcon';
-import { useMetricsTreeStore, MetricsTreeNode } from '../../store/metricsTreeStore';
+import { useMetricsTreeStore, MetricsTreeNode, loadPersistedMetricsExpandedIds } from '../../store/metricsTreeStore';
 
 interface TreeProps {
   searchQuery?: string;
@@ -59,12 +58,31 @@ function computeVisible(
 export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricListTab }: TreeProps) {
   const {
     nodes, expandedIds, selectedId, metricCounts, loadingIds,
-    init, toggleExpand, selectNode, refreshNode, search,
+    init, toggleExpand, selectNode, refreshNode, deleteMetric, search,
   } = useMetricsTreeStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  useEffect(() => { init(); }, []);
+  useEffect(() => {
+    // 首次挂载（store 无数据）才初始化；切页切回时 Zustand 状态已保留，跳过以维持展开状态
+    if (useMetricsTreeStore.getState().nodes.size === 0) {
+      const restoreState = async () => {
+        await init();
+
+        // 从 SQLite 读取持久化的展开状态并恢复
+        const savedExpandedIds = await loadPersistedMetricsExpandedIds();
+        if (savedExpandedIds.size === 0) return;
+
+        const { nodes, toggleExpand, expandedIds } = useMetricsTreeStore.getState();
+        for (const nodeId of savedExpandedIds) {
+          if (nodes.has(nodeId) && !expandedIds.has(nodeId)) {
+            toggleExpand(nodeId);
+          }
+        }
+      };
+      restoreState();
+    }
+  }, []);
 
   useEffect(() => {
     const handler = () => setContextMenu(null);
@@ -115,7 +133,8 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         const isLoading = loadingIds.has(node.id);
         const count = metricCounts.get(node.id);
 
-        const isGreen = isExpanded && node.hasChildren;
+        // 统一规则：展开 → 主题色；收起 → 灰色
+        const isGreen = isExpanded;
 
         const Icon = node.nodeType === 'group'
           ? (isExpanded ? FolderOpen : Folder)
@@ -206,10 +225,8 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                 onClick={async () => {
                   const { metricId } = contextMenu.node.meta;
                   if (!metricId) return;
-                  const parentId = contextMenu.node.parentId;
                   try {
-                    await invoke('delete_metric', { id: metricId });
-                    if (parentId) refreshNode(parentId);
+                    await deleteMetric(metricId, contextMenu.node.id);
                   } catch (e: any) {
                     setDeleteError(e?.message ?? '删除失败');
                   }

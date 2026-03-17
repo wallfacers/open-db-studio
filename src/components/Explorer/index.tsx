@@ -44,13 +44,12 @@ export const Explorer: React.FC<ExplorerProps> = ({
 
   useEffect(() => {
     const restoreOpenedConnections = async () => {
-      // 仅首次挂载时初始化；若 store 已有数据（从设置页切回）则跳过，
-      // 避免 init() 内的 expandedIds: new Set() 清空已展开节点状态
-      if (useTreeStore.getState().nodes.size === 0) {
-        await init();
-      }
+      // 首次挂载（store 无数据）：初始化并恢复连接
+      // 重新挂载（切页切回，store 已有数据）：跳过，Zustand 状态已保留，无需重复恢复
+      if (useTreeStore.getState().nodes.size > 0) return;
+      await init();
       // 静默恢复上次已打开的连接，失败则跳过（不弹 toast）
-      const savedIds = loadOpenedConnectionIds();
+      const savedIds = await loadOpenedConnectionIds();
       if (savedIds.length > 0) {
         await Promise.allSettled(savedIds.map(id => handleOpenConnectionSilent(id)));
       }

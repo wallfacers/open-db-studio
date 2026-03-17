@@ -62,16 +62,30 @@ pub struct AppState {
     pub mcp_port: u16,
     /// 应用数据目录（%APPDATA%\com.open-db-studio.app），启动时设置，不可变
     pub app_data_dir: std::path::PathBuf,
+
+    // ── Serve 模式（opencode HTTP Serve）────────────────────────────────────
+    /// opencode HTTP Serve 子进程句柄
+    pub serve_child: tokio::sync::Mutex<Option<tokio::process::Child>>,
+    /// opencode serve 监听端口（从 app_settings 读取，默认 4096）
+    pub serve_port: u16,
+    /// 当前 SQL 解释专用的 opencode session ID
+    pub current_explain_session_id: tokio::sync::Mutex<Option<String>>,
+    /// 当前 SQL 优化专用的 opencode session ID
+    pub current_optimize_session_id: tokio::sync::Mutex<Option<String>>,
+
+    // ── ACP 模式（待 Task 2/4 清理）─────────────────────────────────────────
     /// key = frontend_session_id（UUID 字符串），每个前端 session 独立 ACP 进程
     pub acp_sessions: tokio::sync::Mutex<HashMap<String, PersistentAcpSession>>,
-    /// 编辑器 SQL per session，供 MCP get_editor_sql 工具读取
-    pub editor_sql_map: tokio::sync::Mutex<HashMap<String, Option<String>>>,
-    /// 最近活跃的 session_id（MCP 工具调用时用于查找对应 SQL）
-    pub last_active_session_id: tokio::sync::Mutex<Option<String>>,
     /// SQL 优化专用 ACP session（每次优化创建新 session，存储仅用于取消）
     pub optimize_acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
     /// SQL 解释专用 ACP session（每次解释创建新 session，存储仅用于取消）
     pub explain_acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
+
+    // ── 共享字段 ─────────────────────────────────────────────────────────────
+    /// 编辑器 SQL per session，供 MCP get_editor_sql 工具读取
+    pub editor_sql_map: tokio::sync::Mutex<HashMap<String, Option<String>>>,
+    /// 最近活跃的 session_id（MCP 工具调用时用于查找对应 SQL）
+    pub last_active_session_id: tokio::sync::Mutex<Option<String>>,
     /// propose_sql_diff 阻塞等待用户确认的 oneshot channel sender
     /// MCP 工具调用时存入，前端调用 mcp_diff_respond 命令时取出并发送结果
     pub pending_diff_response: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
@@ -83,6 +97,6 @@ pub struct AppState {
     pub pending_queries: tokio::sync::Mutex<
         std::collections::HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>
     >,
-    /// Auto 模式：true=自动执行写操作，false=需要 ACP 确认
+    /// Auto 模式：true=自动执行写操作，false=需要确认
     pub auto_mode: tokio::sync::Mutex<bool>,
 }

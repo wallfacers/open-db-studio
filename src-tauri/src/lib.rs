@@ -1,4 +1,5 @@
 mod acp;
+mod agent;
 mod commands;
 mod crypto;
 mod datasource;
@@ -41,35 +42,42 @@ pub fn run() {
                 .expect("Failed to get app data dir");
             crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
-            // 启动时写入各 ACP 工作目录的 AGENTS.md
-            {
-                let acp_files: &[(&str, &str)] = &[
-                    ("acp",         include_str!("../assets/AGENTS.md")),
-                    ("acp-optimize", include_str!("../assets/AGENTS_OPTIMIZE.md")),
-                    ("acp-explain",  include_str!("../assets/AGENTS_EXPLAIN.md")),
-                ];
-                for (dir_name, content) in acp_files {
-                    let dir = app_data_dir.join(dir_name);
-                    std::fs::create_dir_all(&dir).ok();
-                    let path = dir.join("AGENTS.md");
-                    if let Err(e) = std::fs::write(&path, content) {
-                        log::error!("Failed to write AGENTS.md to {:?}: {}", path, e);
-                    } else {
-                        log::info!("Wrote AGENTS.md to {:?}", path);
-                    }
-                }
-            }
+
             let mcp_port = tauri::async_runtime::block_on(
                 crate::mcp::start_mcp_server(app.handle().clone())
             ).expect("Failed to start MCP server");
+
+            // 写入 MCP 配置（agent_dir/.opencode/config.json）
+            let agent_dir = app_data_dir.join("agent");
+            if let Err(e) = crate::agent::config::write_mcp_config(&agent_dir, mcp_port) {
+                log::warn!("Failed to write MCP config: {}", e);
+            }
+
+            // 写入 Agent 提示词文件
+            if let Err(e) = crate::agent::config::write_agent_prompts(&agent_dir) {
+                log::warn!("Failed to write agent prompts: {}", e);
+            }
+
+            // 从 app_settings 读取 serve port（默认 4096）
+            let serve_port: u16 = crate::db::get_app_setting("serve_port")
+                .unwrap_or_default()
+                .as_deref()
+                .and_then(|s| s.parse::<u16>().ok())
+                .unwrap_or(4096);
+
             app.manage(crate::state::AppState {
                 mcp_port,
                 app_data_dir: app_data_dir.clone(),
+                serve_child: tokio::sync::Mutex::new(None),
+                serve_port,
+                current_explain_session_id: tokio::sync::Mutex::new(None),
+                current_optimize_session_id: tokio::sync::Mutex::new(None),
+                // ACP 字段保留兼容，待 Task 2/4 清理
                 acp_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-                editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
-                last_active_session_id: tokio::sync::Mutex::new(None),
                 optimize_acp_session: tokio::sync::Mutex::new(None),
                 explain_acp_session: tokio::sync::Mutex::new(None),
+                editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                last_active_session_id: tokio::sync::Mutex::new(None),
                 pending_diff_response: tokio::sync::Mutex::new(None),
                 pending_ui_actions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 pending_queries: tokio::sync::Mutex::new(std::collections::HashMap::new()),
@@ -79,6 +87,20 @@ pub fn run() {
                         .as_deref() == Some("true")
                 }),
             });
+
+            // 启动 opencode serve 进程（失败时仅 warn，不影响其他功能）
+            let handle = app.handle().clone();
+            let agent_dir_clone = agent_dir.clone();
+            if let Err(e) = tauri::async_runtime::block_on(
+                crate::agent::server::start_serve(handle, &agent_dir_clone, serve_port)
+            ) {
+                log::warn!(
+                    "opencode serve failed to start (port {}): {}. \
+                     Other features remain available.",
+                    serve_port, e
+                );
+            }
+
             // 同步 skills 到 opencode 可读取的目录
             crate::skill_sync::sync_skills_on_startup(app.handle());
             Ok(())

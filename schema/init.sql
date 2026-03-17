@@ -206,3 +206,14 @@ CREATE TABLE IF NOT EXISTS change_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_change_history_session ON change_history(session_id, id DESC);
+
+-- ============ V4: Agent Sessions (opencode HTTP Serve 模式) ============
+
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id          TEXT PRIMARY KEY,   -- opencode session UUID
+  title       TEXT,
+  config_id   INTEGER,            -- 关联 llm_configs 表
+  is_temp     INTEGER DEFAULT 0,  -- 1 = SQL解释/优化临时session，不显示在历史
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);

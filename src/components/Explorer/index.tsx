@@ -127,9 +127,24 @@ export const Explorer: React.FC<ExplorerProps> = ({
 
       if (savedIds.length === 0) return;
 
+      // 先恢复各连接的子树（含可用性检测）
       await Promise.allSettled(
         savedIds.map((id) => restoreConnectionTree(id, savedExpandedIds))
       );
+
+      // 再展开分组节点（group 是 connection 的父节点，必须单独处理）
+      // 不递归进连接子树（已由上面处理），只展开 group 层本身
+      for (const [nodeId, node] of useTreeStore.getState().nodes) {
+        if (node.nodeType === 'group' && savedExpandedIds.has(nodeId)) {
+          const storeNow = useTreeStore.getState();
+          if (!storeNow.nodes.get(nodeId)?.loaded) {
+            await storeNow.loadChildren(nodeId);
+          }
+          if (!useTreeStore.getState().expandedIds.has(nodeId)) {
+            useTreeStore.getState().toggleExpand(nodeId);
+          }
+        }
+      }
     };
     restoreOpenedConnections();
   }, []);

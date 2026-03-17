@@ -91,54 +91,72 @@ interface QueryState {
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
 
-export function loadTabsFromStorage(): { tabs: Tab[]; activeTabId: string; sqlContent: Record<string, string> } {
+export async function loadTabsFromStorage(): Promise<{
+  tabs: Tab[];
+  activeTabId: string;
+  sqlContent: Record<string, string>;
+}> {
   try {
-    const raw = localStorage.getItem('unified_tabs_state');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const validTabs = (parsed.tabs ?? []).filter(
-        (t: unknown) => t && typeof (t as any).id === 'string' && typeof (t as any).type === 'string'
-      ) as Tab[];
-      const sqlContent: Record<string, string> = parsed.sqlContent && typeof parsed.sqlContent === 'object'
-        ? parsed.sqlContent
-        : {};
-      // Only return unified state if it has actual data; otherwise fall through to migration
-      if (validTabs.length > 0) {
-        return { tabs: validTabs, activeTabId: parsed.activeTabId ?? '', sqlContent };
-      }
-      // One-time migration from old key
-      const oldRaw = localStorage.getItem('metrics_tabs_state');
+    const rawMeta = await invoke<string | null>('get_ui_state', { key: 'tabs_metadata' });
+    const rawActiveId = await invoke<string | null>('get_ui_state', { key: 'active_tab_id' });
+
+    let tabs: Tab[] = [];
+    if (rawMeta) {
+      const parsed: unknown = JSON.parse(rawMeta);
+      if (Array.isArray(parsed)) tabs = parsed as Tab[];
+    }
+
+    // 孤儿文件清理
+    const existingFiles = await invoke<string[]>('list_tab_files');
+    const tabIds = new Set(tabs.map((t) => t.id));
+    await Promise.allSettled(
+      existingFiles
+        .filter((id) => !tabIds.has(id))
+        .map((id) => invoke('delete_tab_file', { tabId: id }))
+    );
+
+    // 读取每个 tab 的 SQL 文件
+    const sqlContent: Record<string, string> = {};
+    await Promise.allSettled(
+      tabs.map(async (tab) => {
+        const sql = await invoke<string | null>('read_tab_file', { tabId: tab.id });
+        if (sql != null) sqlContent[tab.id] = sql;
+      })
+    );
+
+    // 兼容旧 localStorage（一次性迁移）
+    if (tabs.length === 0) {
+      const oldRaw =
+        localStorage.getItem('unified_tabs_state') ??
+        localStorage.getItem('metrics_tabs_state');
       if (oldRaw) {
-        const oldParsed = JSON.parse(oldRaw);
-        const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '', sqlContent: {} };
-        localStorage.setItem('unified_tabs_state', JSON.stringify(result));
+        const old = JSON.parse(oldRaw) as { tabs?: Tab[]; sqlContent?: Record<string, string>; activeTabId?: string };
+        tabs = old.tabs ?? [];
+        const oldSql: Record<string, string> = old.sqlContent ?? {};
+        await Promise.allSettled(
+          Object.entries(oldSql).map(([id, sql]) =>
+            invoke('write_tab_file', { tabId: id, content: sql })
+          )
+        );
+        Object.assign(sqlContent, oldSql);
+        if (old.activeTabId && !rawActiveId) {
+          await invoke('set_ui_state', { key: 'active_tab_id', value: old.activeTabId });
+        }
+        localStorage.removeItem('unified_tabs_state');
         localStorage.removeItem('metrics_tabs_state');
-        return result;
       }
-      // Return empty unified state if it exists but has no tabs
-      return { tabs: [], activeTabId: parsed.activeTabId ?? '', sqlContent: {} };
     }
-    // One-time migration from old key (when unified key doesn't exist)
-    const oldRaw = localStorage.getItem('metrics_tabs_state');
-    if (oldRaw) {
-      const oldParsed = JSON.parse(oldRaw);
-      const result = { tabs: oldParsed.tabs ?? [], activeTabId: oldParsed.activeTabId ?? '', sqlContent: {} };
-      localStorage.setItem('unified_tabs_state', JSON.stringify(result));
-      localStorage.removeItem('metrics_tabs_state');
-      return result;
-    }
+
+    return { tabs, activeTabId: rawActiveId ?? '', sqlContent };
   } catch {
-    // ignore parse errors
+    return { tabs: [], activeTabId: '', sqlContent: {} };
   }
-  return { tabs: [], activeTabId: '', sqlContent: {} };
 }
 
-const { tabs: initialTabs, activeTabId: initialActiveTabId, sqlContent: initialSqlContent } = loadTabsFromStorage();
-
 export const useQueryStore = create<QueryState>((set, get) => ({
-  tabs: initialTabs.length > 0 ? initialTabs : [DEFAULT_TAB],
-  activeTabId: initialActiveTabId || DEFAULT_TAB.id,
-  sqlContent: Object.keys(initialSqlContent).length > 0 ? initialSqlContent : { [DEFAULT_TAB.id]: '' },
+  tabs: [DEFAULT_TAB],
+  activeTabId: DEFAULT_TAB.id,
+  sqlContent: { [DEFAULT_TAB.id]: '' },
   results: {},
   isExecuting: {},
   queryHistory: [],
@@ -149,8 +167,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   explanationContent: {},
   explanationStreaming: {},
 
-  setSql: (tabId, sql) =>
-    set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } })),
+  setSql: (tabId, sql) => {
+    set((s) => ({ sqlContent: { ...s.sqlContent, [tabId]: sql } }));
+    persistSqlContent(tabId, sql);
+  },
   setActiveTabId: (tabId) => set({ activeTabId: tabId }),
 
   openMetricTab: (metricId, title) => {
@@ -224,14 +244,16 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
-  closeTab: (tabId) =>
+  closeTab: (tabId) => {
     set(s => {
       const next = s.tabs.filter(t => t.id !== tabId);
       if (s.activeTabId !== tabId) return { tabs: next };
       const idx = s.tabs.findIndex(t => t.id === tabId);
       const newActive = next[Math.min(idx, next.length - 1)]?.id ?? '';
       return { tabs: next, activeTabId: newActive };
-    }),
+    });
+    invoke('delete_tab_file', { tabId }).catch(() => {});
+  },
 
   closeAllTabs: () => set({ tabs: [], activeTabId: '' }),
 
@@ -436,14 +458,32 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   },
 }));
 
+// SQL 内容防抖写入文件
+const _saveSqlTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+export function persistSqlContent(tabId: string, content: string): void {
+  if (_saveSqlTimers[tabId]) clearTimeout(_saveSqlTimers[tabId]);
+  _saveSqlTimers[tabId] = setTimeout(() => {
+    invoke('write_tab_file', { tabId, content }).catch(() => {});
+  }, 500);
+}
+
+// 持久化元数据（防抖 500ms）
+let _saveMetaTimer: ReturnType<typeof setTimeout> | null = null;
 useQueryStore.subscribe((state) => {
-  try {
-    localStorage.setItem('unified_tabs_state', JSON.stringify({
-      tabs: state.tabs,
-      activeTabId: state.activeTabId,
-      sqlContent: state.sqlContent,
-    }));
-  } catch {
-    // ignore storage errors
-  }
+  if (_saveMetaTimer) clearTimeout(_saveMetaTimer);
+  _saveMetaTimer = setTimeout(() => {
+    invoke('set_ui_state', {
+      key: 'tabs_metadata',
+      value: JSON.stringify(state.tabs),
+    }).catch(() => {});
+    invoke('set_ui_state', {
+      key: 'active_tab_id',
+      value: state.activeTabId,
+    }).catch(() => {});
+  }, 500);
 });
+
+// 异步加载持久化状态（应用启动时执行）
+loadTabsFromStorage().then(({ tabs, activeTabId, sqlContent }) => {
+  useQueryStore.setState({ tabs, activeTabId, sqlContent });
+}).catch(() => {});

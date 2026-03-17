@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useQueryStore, loadTabsFromStorage } from './queryStore';
+
+// Mock @tauri-apps/api/core so loadTabsFromStorage can run in unit tests
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}));
 
 // Reset store state before each test
 beforeEach(() => {
@@ -131,63 +136,90 @@ describe('openTableStructureTab', () => {
   });
 });
 
-describe('localStorage persistence', () => {
+describe('SQLite/file persistence (loadTabsFromStorage)', () => {
   beforeEach(() => {
     localStorage.clear();
-    // Reset store to initial empty state
     useQueryStore.setState({ tabs: [], activeTabId: '' });
+    vi.clearAllMocks();
   });
 
-  it('从 unified_tabs_state 加载已保存的 tabs', () => {
-    const saved = { tabs: [{ id: 't1', type: 'query', title: '查询1' }], activeTabId: 't1' };
-    localStorage.setItem('unified_tabs_state', JSON.stringify(saved));
-    const { tabs: loadedTabs, activeTabId: loadedId } = loadTabsFromStorage();
-    expect(loadedTabs).toHaveLength(1);
-    expect(loadedTabs[0].id).toBe('t1');
-    expect(loadedId).toBe('t1');
-  });
-
-  it('从 metrics_tabs_state 迁移并写入新键', () => {
-    const old = { tabs: [{ id: 'm1', type: 'metric', title: 'M1' }], activeTabId: 'm1' };
-    localStorage.setItem('metrics_tabs_state', JSON.stringify(old));
-    const { tabs: loadedTabs } = loadTabsFromStorage();
-    expect(loadedTabs).toHaveLength(1);
-    expect(localStorage.getItem('unified_tabs_state')).not.toBeNull();
-    expect(localStorage.getItem('metrics_tabs_state')).toBeNull();
-  });
-
-  it('两个键都不存在时返回空状态', () => {
-    const { tabs: loadedTabs, activeTabId: loadedId } = loadTabsFromStorage();
-    expect(loadedTabs).toHaveLength(0);
-    expect(loadedId).toBe('');
-  });
-
-  it('JSON 格式错误时返回空状态', () => {
-    localStorage.setItem('unified_tabs_state', '{invalid json}');
-    const { tabs: loadedTabs, activeTabId: loadedId } = loadTabsFromStorage();
-    expect(loadedTabs).toHaveLength(0);
-    expect(loadedId).toBe('');
-  });
-
-  it('从 localStorage 加载时恢复 sqlContent', () => {
-    const saved = {
-      tabs: [{ id: 'q1', type: 'query', title: '查询1' }],
-      activeTabId: 'q1',
-      sqlContent: { 'q1': 'SELECT * FROM users' },
-    };
-    localStorage.setItem('unified_tabs_state', JSON.stringify(saved));
-    const { sqlContent } = loadTabsFromStorage();
-    expect(sqlContent['q1']).toBe('SELECT * FROM users');
-  });
-
-  it('subscribe 写入 localStorage 时包含 sqlContent', () => {
-    useQueryStore.setState({
-      tabs: [{ id: 'q1', type: 'query', title: '查询1' }],
-      activeTabId: 'q1',
-      sqlContent: { 'q1': 'SELECT 1' },
+  it('从 SQLite 元数据加载 tabs 和 activeTabId', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const mockInvoke = vi.mocked(invoke);
+    const tabsMeta = JSON.stringify([{ id: 't1', type: 'query', title: '查询1' }]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_ui_state') return Promise.resolve(
+        // discriminate by call order via argument inspection
+        undefined
+      );
+      if (cmd === 'list_tab_files') return Promise.resolve([]);
+      return Promise.resolve(null);
     });
-    const raw = localStorage.getItem('unified_tabs_state');
-    const parsed = JSON.parse(raw!);
-    expect(parsed.sqlContent?.['q1']).toBe('SELECT 1');
+    // More precise: mock per key argument
+    mockInvoke.mockImplementation((cmd: string, args?: unknown) => {
+      const a = args as Record<string, unknown> | undefined;
+      if (cmd === 'get_ui_state' && a?.key === 'tabs_metadata') return Promise.resolve(tabsMeta);
+      if (cmd === 'get_ui_state' && a?.key === 'active_tab_id') return Promise.resolve('t1');
+      if (cmd === 'list_tab_files') return Promise.resolve([]);
+      if (cmd === 'read_tab_file') return Promise.resolve('SELECT 1');
+      return Promise.resolve(null);
+    });
+
+    const { tabs, activeTabId, sqlContent } = await loadTabsFromStorage();
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].id).toBe('t1');
+    expect(activeTabId).toBe('t1');
+    expect(sqlContent['t1']).toBe('SELECT 1');
+  });
+
+  it('SQLite 元数据为空时触发 localStorage 一次性迁移', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const mockInvoke = vi.mocked(invoke);
+    const oldData = {
+      tabs: [{ id: 'm1', type: 'query', title: 'M1' }],
+      activeTabId: 'm1',
+      sqlContent: { m1: 'SELECT * FROM t' },
+    };
+    localStorage.setItem('unified_tabs_state', JSON.stringify(oldData));
+
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_ui_state') return Promise.resolve(null);
+      if (cmd === 'list_tab_files') return Promise.resolve([]);
+      if (cmd === 'write_tab_file') return Promise.resolve(null);
+      if (cmd === 'set_ui_state') return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+
+    const { tabs, sqlContent } = await loadTabsFromStorage();
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].id).toBe('m1');
+    expect(sqlContent['m1']).toBe('SELECT * FROM t');
+    // localStorage 旧键应被清除
+    expect(localStorage.getItem('unified_tabs_state')).toBeNull();
+  });
+
+  it('invoke 全部返回 null 时返回空状态', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const mockInvoke = vi.mocked(invoke);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'list_tab_files') return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    const { tabs, activeTabId, sqlContent } = await loadTabsFromStorage();
+    expect(tabs).toHaveLength(0);
+    expect(activeTabId).toBe('');
+    expect(Object.keys(sqlContent)).toHaveLength(0);
+  });
+
+  it('invoke 抛出异常时返回空状态', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const mockInvoke = vi.mocked(invoke);
+    mockInvoke.mockRejectedValue(new Error('Tauri not available'));
+
+    const { tabs, activeTabId, sqlContent } = await loadTabsFromStorage();
+    expect(tabs).toHaveLength(0);
+    expect(activeTabId).toBe('');
+    expect(Object.keys(sqlContent)).toHaveLength(0);
   });
 });

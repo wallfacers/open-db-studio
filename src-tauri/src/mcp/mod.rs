@@ -324,7 +324,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> cr
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
         "propose_sql_diff" => {
-            use tauri::Emitter;
+            use tauri::{Emitter, Manager};
             let original = args["original"].as_str()
                 .ok_or_else(|| crate::AppError::Other("missing original".into()))?
                 .to_string();
@@ -334,9 +334,31 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value) -> cr
             let reason = args["reason"].as_str()
                 .unwrap_or("")
                 .to_string();
+
+            // 创建 oneshot channel，rx 在此等待用户响应
+            let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+            {
+                let app_state = handle.state::<crate::AppState>();
+                let mut pending = app_state.pending_diff_response.lock().await;
+                // 若上一个 diff 尚未响应则丢弃（只允许一个 pending diff）
+                *pending = Some(tx);
+            }
+
             handle.emit("sql-diff-proposal", DiffProposalPayload { original, modified, reason })
                 .map_err(|e| crate::AppError::Other(e.to_string()))?;
-            Ok("diff proposed, waiting for user confirmation".to_string())
+
+            // 阻塞等待前端通过 mcp_diff_respond 命令回复，超时 5 分钟
+            match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
+                Ok(Ok(true))  => Ok(r#"{"confirmed":true,"message":"用户已确认，SQL 修改已应用到编辑器"}"#.to_string()),
+                Ok(Ok(false)) => Ok(r#"{"confirmed":false,"message":"用户已取消，SQL 修改未应用"}"#.to_string()),
+                Ok(Err(_))    => Err(crate::AppError::Other("diff response channel dropped".into())),
+                Err(_)        => {
+                    // 超时：清空 pending（tx 已在 AppState 中，drop 即可）
+                    let app_state = handle.state::<crate::AppState>();
+                    app_state.pending_diff_response.lock().await.take();
+                    Err(crate::AppError::Other("等待用户确认超时（5分钟）".into()))
+                }
+            }
         }
         "get_editor_sql" => {
             use tauri::Manager;

@@ -8,6 +8,7 @@ use agent_client_protocol::{
     SelectedPermissionOutcome, PermissionOptionKind,
     SessionNotification, SessionUpdate, ContentBlock,
     McpServer, McpServerHttp,
+    ExtRequest, ExtResponse,
 };
 use tokio::process::Command;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -28,6 +29,14 @@ pub struct AcpClientHandler {
             std::collections::HashMap<
                 String,
                 tokio::sync::oneshot::Sender<crate::state::PermissionReply>,
+            >,
+        >,
+    >,
+    pub(crate) pending_elicitations: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                tokio::sync::oneshot::Sender<crate::state::ElicitationReply>,
             >,
         >,
     >,
@@ -154,6 +163,85 @@ impl Client for AcpClientHandler {
         };
         Ok(RequestPermissionResponse::new(outcome))
     }
+
+    /// 拦截 ACP 扩展方法，处理 `session/elicitation`（SDK 0.10.x 尚未原生支持）
+    async fn ext_method(
+        &self,
+        args: ExtRequest,
+    ) -> agent_client_protocol::Result<ExtResponse> {
+        if args.method.as_ref() == "session/elicitation" {
+            return self.handle_elicitation(args).await;
+        }
+        // 其他未知扩展方法：返回空响应，不阻塞 agent
+        let raw = serde_json::value::RawValue::from_string("{}".to_string())
+            .expect("static JSON is valid");
+        Ok(ExtResponse::new(std::sync::Arc::from(raw)))
+    }
+}
+
+impl AcpClientHandler {
+    /// 处理 `session/elicitation` 请求，暂停 agent 直到用户响应
+    async fn handle_elicitation(
+        &self,
+        args: ExtRequest,
+    ) -> agent_client_protocol::Result<ExtResponse> {
+        let params: serde_json::Value = serde_json::from_str(args.params.get())
+            .unwrap_or(serde_json::Value::Null);
+
+        let elicitation_id = uuid::Uuid::new_v4().to_string();
+        let message = params["message"].as_str().unwrap_or("请提供信息").to_string();
+        let schema = params.get("requestedSchema").cloned().unwrap_or(serde_json::Value::Null);
+        let mode = params["mode"].as_str().unwrap_or("form").to_string();
+
+        // 1. 创建 oneshot channel，存入 pending map
+        let (tx, rx) = tokio::sync::oneshot::channel::<crate::state::ElicitationReply>();
+        {
+            self.pending_elicitations
+                .lock().unwrap()
+                .insert(elicitation_id.clone(), tx);
+        }
+
+        // 2. 通知前端展示 elicitation 面板
+        {
+            let tx_opt = self.tx.lock().unwrap().clone();
+            if let Some(ref event_tx) = tx_opt {
+                let _ = event_tx.send(crate::llm::StreamEvent::ElicitationRequest {
+                    elicitation_id: elicitation_id.clone(),
+                    message,
+                    schema,
+                    mode,
+                });
+            }
+        }
+
+        // 3. 等待用户响应（超时 5 分钟）
+        let reply = match tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            rx,
+        ).await {
+            Ok(Ok(r)) => r,
+            _ => crate::state::ElicitationReply {
+                action: "cancel".to_string(),
+                content: None,
+            },
+        };
+
+        // 4. 清理 pending map
+        self.pending_elicitations.lock().unwrap().remove(&elicitation_id);
+
+        // 5. 构建 ACP 响应 JSON
+        let response_val = if reply.action == "accept" {
+            serde_json::json!({
+                "action": "accept",
+                "content": reply.content.unwrap_or_else(|| serde_json::json!({}))
+            })
+        } else {
+            serde_json::json!({ "action": reply.action })
+        };
+
+        let raw = serde_json::value::RawValue::from_string(response_val.to_string())?;
+        Ok(ExtResponse::new(std::sync::Arc::from(raw)))
+    }
 }
 
 /// A boxed `!Send` future with `'static` lifetime, matching `LocalBoxFuture<'static, ()>`.
@@ -220,6 +308,7 @@ pub async fn start_acp_session(
     String,
     tokio::process::Child,
     std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<crate::state::PermissionReply>>>>,
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<crate::state::ElicitationReply>>>>,
 )> {
     let config_path = cwd.join("opencode.json");
 
@@ -263,9 +352,11 @@ pub async fn start_acp_session(
     let local_tx_for_spawn = local_tx.clone();
 
     let pending_permissions_arc = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_elicitations_arc = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let handler = AcpClientHandler {
         tx: shared_event_tx,
         pending_permissions: Arc::clone(&pending_permissions_arc),
+        pending_elicitations: Arc::clone(&pending_elicitations_arc),
     };
 
     // The spawn callback is called synchronously inside ClientSideConnection::new
@@ -345,5 +436,5 @@ pub async fn start_acp_session(
         t_sess.elapsed().as_secs_f32(), t0.elapsed().as_secs_f32());
 
     let session_id = session_resp.session_id.to_string();
-    Ok((connection, session_id, child, pending_permissions_arc))
+    Ok((connection, session_id, child, pending_permissions_arc, pending_elicitations_arc))
 }

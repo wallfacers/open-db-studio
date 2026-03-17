@@ -623,10 +623,12 @@ export const MainContent: React.FC<MainContentProps> = ({
               showToast={showToast}
             />
           </div>
-        ) : activeTabObj.type === 'metric' && activeTabObj.metricId ? (
+        ) : activeTabObj.type === 'metric' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <MetricTab
               metricId={activeTabObj.metricId}
+              newMetricScope={!activeTabObj.metricId ? activeTabObj.metricScope : undefined}
+              onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(activeTab, id, title)}
               onDelete={() => useQueryStore.getState().closeTab(activeTab)}
             />
           </div>

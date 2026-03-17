@@ -19,6 +19,13 @@ pub enum StreamEvent {
         message: String,
         options: Vec<PermissionOption>,
     },
+    /// ACP session/elicitation（ext_method 桥接路径）
+    ElicitationRequest {
+        elicitation_id: String,
+        message: String,
+        schema: serde_json::Value,
+        mode: String,
+    },
 }
 
 /// ACP request_permission 的选项，序列化后发往前端

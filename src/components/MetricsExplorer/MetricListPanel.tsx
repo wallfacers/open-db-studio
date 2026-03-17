@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Trash2, ExternalLink, Pencil, Plus, Sparkles } from 'lucide-react';
+import { Trash2, Pencil, Plus, Sparkles } from 'lucide-react';
 import type { Metric, MetricScope, MetricStatus } from '../../types';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
+import { useConfirmStore } from '../../store/confirmStore';
+import { useQueryStore } from '../../store/queryStore';
 
 interface Props {
   scope: MetricScope;
@@ -11,6 +13,11 @@ interface Props {
 
 type FilterTab = 'all' | MetricStatus;
 
+/** 判断是否为从未填写过内容的空白指标 */
+function isBlankMetric(m: Metric): boolean {
+  return m.display_name === '新指标' && !m.table_name && !m.description;
+}
+
 export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(false);
@@ -18,7 +25,11 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const refreshNode = useMetricsTreeStore(s => s.refreshNode);
+
+  const deleteMetric = useMetricsTreeStore(s => s.deleteMetric);
+  const confirm = useConfirmStore(s => s.confirm);
+  const closeMetricTabById = useQueryStore(s => s.closeMetricTabById);
+  const openNewMetricTab = useQueryStore(s => s.openNewMetricTab);
 
   const parentNodeId = scope.schema
     ? `schema_${scope.connectionId}_${scope.database}_${scope.schema}`
@@ -57,12 +68,33 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filtered.map(m => m.id)));
 
   const doDelete = async (ids: number[]) => {
+    const toDelete = metrics.filter(m => ids.includes(m.id));
+    const skipConfirm = toDelete.length === 1 && isBlankMetric(toDelete[0]);
+
+    if (!skipConfirm) {
+      const msg = ids.length === 1
+        ? `确定要删除指标「${toDelete[0]?.display_name}」吗？此操作不可撤销。`
+        : `确定要删除选中的 ${ids.length} 个指标吗？此操作不可撤销。`;
+      const ok = await confirm({
+        title: '删除指标',
+        message: msg,
+        variant: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
+    }
+
     for (const id of ids) {
-      try { await invoke('delete_metric', { id }); } catch (e: any) { setError(e?.message ?? '删除失败'); return; }
+      try {
+        await deleteMetric(id, `metric_${id}`, parentNodeId ?? undefined);
+        closeMetricTabById(id);
+      } catch (e: any) {
+        setError(e?.message ?? '删除失败');
+        return;
+      }
     }
     setSelected(new Set());
     load();
-    if (parentNodeId) refreshNode(parentNodeId);
   };
 
   const doSetStatus = async (ids: number[], status: string) => {
@@ -73,28 +105,11 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     load();
   };
 
-  const openMetric = (m: Metric) => {
-    onOpenMetric?.(m.id, m.display_name);
-  };
-
-  const doCreate = async () => {
-    try {
-      const m = await invoke<Metric>('save_metric', {
-        input: {
-          connection_id: scope.connectionId,
-          name: `metric_${Date.now()}`,
-          display_name: '新指标',
-          metric_type: 'atomic',
-          source: 'user',
-          scope_database: scope.database ?? null,
-          scope_schema: scope.schema ?? null,
-        },
-      });
-      load();
-      onOpenMetric?.(m.id, m.display_name);
-    } catch (e: any) {
-      setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
-    }
+  const doCreate = () => {
+    const scopeTitle = scope.schema && scope.database
+      ? `${scope.database}.${scope.schema}`
+      : scope.database ?? '新指标';
+    openNewMetricTab(scope, scopeTitle);
   };
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -168,8 +183,10 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
           <thead className="sticky top-0 bg-[#0d1117] z-10">
             <tr>
-              <th className="w-8 px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-[#00c9a7]" />
+              <th className="w-8 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
+                <div className="flex items-center justify-center h-full py-1.5">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-[#00c9a7] block" />
+                </div>
               </th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">显示名称</th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">关联表</th>
@@ -188,9 +205,11 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
             )}
             {filtered.map(m => (
               <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
-                <td className="px-3 py-1.5 border-r border-[#1e2d42]">
-                  <input type="checkbox" checked={selected.has(m.id)}
-                    onChange={() => toggleSelect(m.id)} className="accent-[#00c9a7]" />
+                <td className="border-r border-[#1e2d42]">
+                  <div className="flex items-center justify-center py-1.5">
+                    <input type="checkbox" checked={selected.has(m.id)}
+                      onChange={() => toggleSelect(m.id)} className="accent-[#00c9a7] block" />
+                  </div>
                 </td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42] text-white font-medium">{m.display_name}</td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#a0b4c8]">{m.table_name || '-'}</td>
@@ -205,13 +224,18 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]">{statusBadge(m.status)}</td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]">
                   <div className="flex items-center gap-2 justify-end">
-                    <button className="text-[#7a9bb8] hover:text-white" onClick={() => openMetric(m)} title="打开">
-                      <ExternalLink size={12} />
-                    </button>
-                    <button className="text-[#7a9bb8] hover:text-white" onClick={() => openMetric(m)} title="编辑">
+                    <button
+                      className="flex items-center justify-center text-[#7a9bb8] hover:text-white"
+                      onClick={() => onOpenMetric?.(m.id, m.display_name)}
+                      title="编辑"
+                    >
                       <Pencil size={12} />
                     </button>
-                    <button className="text-red-400 hover:text-red-300" onClick={() => doDelete([m.id])} title="删除">
+                    <button
+                      className="flex items-center justify-center text-red-400 hover:text-red-300"
+                      onClick={() => doDelete([m.id])}
+                      title="删除"
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -231,6 +255,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           <button className="text-[#f87171] hover:text-red-300" onClick={() => doSetStatus([...selected], 'rejected')}>批量拒绝</button>
         </div>
       )}
+
     </div>
   );
 }

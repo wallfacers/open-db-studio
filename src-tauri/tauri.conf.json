@@ -16,6 +16,7 @@
         "height": 800,
         "resizable": true,
         "fullscreen": false,
+        "maximized": true,
         "decorations": false
       }
     ],

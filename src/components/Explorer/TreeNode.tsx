@@ -31,8 +31,6 @@ interface TreeNodeProps {
   isExpanded: boolean;
   isSelected: boolean;
   isLoading: boolean;
-  /** connection 节点专用：是否已显式打开（控制图标绿色） */
-  isActive?: boolean;
   onClick: () => void;
   onDoubleClick?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -44,7 +42,6 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
   isExpanded,
   isSelected,
   isLoading,
-  isActive,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -56,11 +53,8 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
     ? (isExpanded ? FolderOpen : Folder)
     : (NODE_ICONS[node.nodeType] ?? LayoutDashboard);
 
-  // connection 节点：只有显式打开（isActive）才变绿，与树展开状态无关
-  // 其他节点：展开且有子节点时变绿
-  const isGreen = node.nodeType === 'connection'
-    ? !!isActive
-    : isExpanded && node.hasChildren;
+  // 统一规则：展开 → 主题色；收起 → 灰色（与节点类型、是否有子节点无关）
+  const isGreen = isExpanded;
 
   // category 节点显示 i18n 标签
   const displayLabel = node.nodeType === 'category' && node.meta.objectName

@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown, ChevronRight, Loader2,
   Folder, FolderOpen, Database, Layers, BarChart2, GitMerge,
-  Eye, RefreshCw, Trash2, List,
+  Eye, RefreshCw, Trash2, List, Plus,
 } from 'lucide-react';
 import { DbDriverIcon } from '../Explorer/DbDriverIcon';
 import { useMetricsTreeStore, MetricsTreeNode, loadPersistedMetricsExpandedIds } from '../../store/metricsTreeStore';
+import { useConfirmStore } from '../../store/confirmStore';
+import { useQueryStore } from '../../store/queryStore';
 
 interface TreeProps {
   searchQuery?: string;
@@ -18,6 +20,7 @@ interface ContextMenuState {
   x: number;
   y: number;
 }
+
 
 function getIndentLevel(node: MetricsTreeNode, nodes: Map<string, MetricsTreeNode>): number {
   let level = 0;
@@ -60,11 +63,14 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
     nodes, expandedIds, selectedId, metricCounts, loadingIds,
     init, toggleExpand, selectNode, refreshNode, deleteMetric, search,
   } = useMetricsTreeStore();
+  const confirm = useConfirmStore(s => s.confirm);
+  const closeMetricTabById = useQueryStore(s => s.closeMetricTabById);
+  const openNewMetricTab = useQueryStore(s => s.openNewMetricTab);
+
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
-    // 首次挂载（store 无数据）才初始化；切页切回时 Zustand 状态已保留，跳过以维持展开状态
     if (useMetricsTreeStore.getState().nodes.size === 0) {
       const restoreState = async () => {
         await init();
@@ -72,8 +78,6 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         const savedExpandedIds = await loadPersistedMetricsExpandedIds();
         if (savedExpandedIds.size === 0) return;
 
-        // 深度优先：先 loadChildren，再展开，再递归子节点
-        // 平铺遍历无法恢复深层节点（init 后只有 group/connection 在 nodes 中）
         const restoreNode = async (nodeId: string): Promise<void> => {
           if (!savedExpandedIds.has(nodeId)) return;
           const store = useMetricsTreeStore.getState();
@@ -117,12 +121,42 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
     setContextMenu({ node, x: e.clientX, y: e.clientY });
   };
 
+  const handleDeleteMetric = async (node: MetricsTreeNode) => {
+    const { metricId } = node.meta;
+    if (!metricId) return;
+    const isBlank = node.label === '新指标';
+    if (!isBlank) {
+      const ok = await confirm({
+        title: '删除指标',
+        message: `确定要删除指标「${node.label}」吗？此操作不可撤销。`,
+        variant: 'danger',
+        confirmLabel: '删除',
+      });
+      if (!ok) return;
+    }
+    try {
+      await deleteMetric(metricId, node.id);
+      closeMetricTabById(metricId);
+    } catch (e: any) {
+      setDeleteError(e?.message ?? '删除失败');
+    }
+  };
+
+  const handleNewMetric = (node: MetricsTreeNode) => {
+    const { connectionId, database, schema } = node.meta;
+    if (!connectionId) return;
+    const scopeTitle = schema && database
+      ? `${database}.${schema}`
+      : database ?? '新指标';
+    openNewMetricTab({ connectionId, database, schema }, scopeTitle);
+    setContextMenu(null);
+  };
+
   const visibleNodes = useMemo(
     () => searchQuery.trim() ? search(searchQuery) : computeVisible(nodes, expandedIds),
     [nodes, expandedIds, searchQuery, search]
   );
 
-  // 搜索模式下：有子节点出现在结果里的节点视为"已展开"
   const searchExpandedIds = useMemo(() => {
     if (!searchQuery.trim()) return null;
     const resultIds = new Set(visibleNodes.map(n => n.id));
@@ -154,7 +188,6 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         const isLoading = loadingIds.has(node.id);
         const count = metricCounts.get(node.id);
 
-        // 统一规则：展开 → 主题色；收起 → 灰色
         const isGreen = isExpanded;
 
         const Icon = node.nodeType === 'group'
@@ -186,7 +219,6 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
             }}
             onContextMenu={e => handleContextMenu(e, node)}
           >
-            {/* 展开箭头 */}
             <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#7a9bb8] flex-shrink-0">
               {isLoading ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -195,7 +227,6 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               ) : null}
             </div>
 
-            {/* 节点图标 */}
             {node.nodeType === 'connection' ? (
               <DbDriverIcon
                 driver={node.meta.driver ?? ''}
@@ -209,13 +240,11 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               />
             )}
 
-            {/* 标签 */}
             <span className={`text-[13px] truncate flex-1 ${isSelected ? 'text-[#e8f4ff]' : 'text-[#b5cfe8]'}`}>
               {node.label}
             </span>
 
-            {/* 指标数量徽章 */}
-            {count !== undefined && (
+            {count !== undefined && count > 0 && (
               <span className="text-[10px] text-[#7a9bb8] flex-shrink-0 ml-1">[{count}]</span>
             )}
           </div>
@@ -244,14 +273,9 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               <button
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[#1a2639] hover:text-red-300"
                 onClick={async () => {
-                  const { metricId } = contextMenu.node.meta;
-                  if (!metricId) return;
-                  try {
-                    await deleteMetric(metricId, contextMenu.node.id);
-                  } catch (e: any) {
-                    setDeleteError(e?.message ?? '删除失败');
-                  }
+                  const node = contextMenu.node;
                   setContextMenu(null);
+                  await handleDeleteMetric(node);
                 }}
               ><Trash2 size={13} />删除</button>
             </>
@@ -272,6 +296,10 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                       setContextMenu(null);
                     }}
                   ><List size={13} />打开指标列表</button>
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+                    onClick={() => handleNewMetric(contextMenu.node)}
+                  ><Plus size={13} />新增指标</button>
                   <div className="h-px bg-[#253347] my-1" />
                 </>
               )}
@@ -286,6 +314,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
           )}
         </div>
       )}
+
     </div>
   );
 }

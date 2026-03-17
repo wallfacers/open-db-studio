@@ -360,6 +360,16 @@ export interface ElicitationRequest {
   options: ElicitationOption[]
 }
 
+/** ACP session/elicitation 路径的请求（ext_method 桥接，来自 Rust StreamEvent） */
+export interface AcpElicitationRequest {
+  id: string                       // elicitation_id（Rust 生成的 UUID）
+  sessionId: string
+  source: 'acp-elicitation'
+  mode: 'form' | 'url'
+  message: string
+  schema: Record<string, unknown>  // requestedSchema JSON（ACP 规范的受限 JSON Schema）
+}
+
 /** ACP request_permission 路径的权限确认请求（来自 Rust StreamEvent） */
 export interface PermissionRequest {
   id: string              // permission_id（Rust 生成的 UUID）

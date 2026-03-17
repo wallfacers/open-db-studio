@@ -26,12 +26,27 @@ pub struct PersistentAcpSession {
             >,
         >,
     >,
+    /// 待处理的 elicitation 请求，key = elicitation_id（UUID）
+    pub pending_elicitations: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                String,
+                tokio::sync::oneshot::Sender<ElicitationReply>,
+            >,
+        >,
+    >,
 }
 
 /// 用户对权限请求的回复（内部类型，避免与 ACP crate 命名冲突）
 pub struct PermissionReply {
     pub selected_option_id: String, // 用户选择的 option_id；取消时为空字符串
     pub cancelled: bool,            // true = 用户关闭面板（取消）
+}
+
+/// 用户对 ACP elicitation 请求的回复
+pub struct ElicitationReply {
+    pub action: String,                    // "accept" | "decline" | "cancel"
+    pub content: Option<serde_json::Value>, // accept 时携带的表单数据
 }
 
 /// 全局应用状态（注入 Tauri manage）
@@ -47,4 +62,7 @@ pub struct AppState {
     pub optimize_acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
     /// SQL 解释专用 ACP session（每次解释创建新 session，存储仅用于取消）
     pub explain_acp_session: tokio::sync::Mutex<Option<PersistentAcpSession>>,
+    /// propose_sql_diff 阻塞等待用户确认的 oneshot channel sender
+    /// MCP 工具调用时存入，前端调用 mcp_diff_respond 命令时取出并发送结果
+    pub pending_diff_response: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
 }

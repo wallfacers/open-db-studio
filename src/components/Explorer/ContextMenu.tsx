@@ -3,7 +3,7 @@ import { useClickOutside } from '../../hooks/useClickOutside';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
   RefreshCw, FileEdit, ListTree, Copy, Eye, FolderOpen, DatabaseZap, FolderInput,
-  Code2, Eraser, Download, Upload, Database, Archive
+  Code2, Eraser, Download, Upload, Database, Archive, PlugZap, Unplug
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TreeNode } from '../../types';
@@ -77,7 +77,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         ];
       case 'connection':
         return [
-          { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery, disabled: !isConnected },
+          isConnected
+            ? { label: t('contextMenu.closeConnection', '断开连接'), icon: Unplug, onClick: onCloseConnection }
+            : { label: t('contextMenu.openConnection', '连接'), icon: PlugZap, onClick: onOpenConnection },
+          { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery, disabled: !isConnected, dividerBefore: true },
           { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh, dividerBefore: true },
           { label: t('contextMenu.moveToGroup'), icon: FolderInput, onClick: onMoveToGroup, dividerBefore: true },
           { label: t('contextMenu.createDatabase', '新建数据库'), icon: Database, onClick: onCreateDatabase, disabled: !isConnected, dividerBefore: true },

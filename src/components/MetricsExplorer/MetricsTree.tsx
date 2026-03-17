@@ -69,15 +69,36 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       const restoreState = async () => {
         await init();
 
-        // 从 SQLite 读取持久化的展开状态并恢复
         const savedExpandedIds = await loadPersistedMetricsExpandedIds();
         if (savedExpandedIds.size === 0) return;
 
-        const { nodes, toggleExpand, expandedIds } = useMetricsTreeStore.getState();
-        for (const nodeId of savedExpandedIds) {
-          if (nodes.has(nodeId) && !expandedIds.has(nodeId)) {
-            toggleExpand(nodeId);
+        // 深度优先：先 loadChildren，再展开，再递归子节点
+        // 平铺遍历无法恢复深层节点（init 后只有 group/connection 在 nodes 中）
+        const restoreNode = async (nodeId: string): Promise<void> => {
+          if (!savedExpandedIds.has(nodeId)) return;
+          const store = useMetricsTreeStore.getState();
+          const node = store.nodes.get(nodeId);
+          if (!node) return;
+
+          if (!node.loaded) {
+            await store.loadChildren(nodeId);
           }
+          if (!useMetricsTreeStore.getState().expandedIds.has(nodeId)) {
+            useMetricsTreeStore.getState().toggleExpand(nodeId);
+          }
+          const children = [...useMetricsTreeStore.getState().nodes.values()].filter(
+            (n) => n.parentId === nodeId
+          );
+          for (const child of children) {
+            await restoreNode(child.id);
+          }
+        };
+
+        const rootNodes = [...useMetricsTreeStore.getState().nodes.values()].filter(
+          (n) => n.parentId === null
+        );
+        for (const node of rootNodes) {
+          await restoreNode(node.id);
         }
       };
       restoreState();

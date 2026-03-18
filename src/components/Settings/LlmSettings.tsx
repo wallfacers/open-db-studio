@@ -233,6 +233,9 @@ function ConfigFormDialog({
       opencode_provider_id: isCustom ? '' : pid,
       config_mode: (isCustom ? 'custom' : 'opencode') as ConfigMode,
       model: '',
+      opencode_model_options: isCustom
+        ? (f.opencode_model_options || DEFAULT_CUSTOM_MODEL_OPTIONS)
+        : f.opencode_model_options,
     }));
     setTestResult(null);
   };
@@ -383,7 +386,7 @@ function ConfigFormDialog({
                 className={`${inputCls} font-mono text-xs h-24 resize-none`}
                 value={form.opencode_model_options ?? ''}
                 onChange={(e) => setForm((f) => ({ ...f, opencode_model_options: e.target.value }))}
-                placeholder={'{"modalities":{"input":["text","image"],"output":["text"]},"options":{"thinking":{"type":"enabled","budgetTokens":10000}}}'}
+                placeholder={'{"modalities":{"input":["text"],"output":["text"]},"limit":{"context":1000000,"output":65536}}'}
               />
               <p className="text-[10px] text-[#4a6480] mt-1">modalities / options.thinking 等，写入 opencode.json models 字段</p>
             </div>
@@ -467,6 +470,22 @@ function ConfigFormDialog({
     </div>
   );
 }
+
+// 自定义厂商时模型扩展选项默认值
+const DEFAULT_CUSTOM_MODEL_OPTIONS = JSON.stringify(
+  {
+    modalities: {
+      input: ['text'],
+      output: ['text'],
+    },
+    limit: {
+      context: 1000000,
+      output: 65536,
+    },
+  },
+  null,
+  2,
+);
 
 // ──────────────── 主组件 ────────────────
 const EMPTY_FORM: CreateLlmConfigInput = {

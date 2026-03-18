@@ -77,20 +77,25 @@ pub async fn delete_session(port: u16, session_id: &str) -> AppResult<()> {
 }
 
 /// 发送消息（返回 Response 供 stream.rs 使用 SSE 流）
-/// POST /session/:id/message { "parts": [{"type":"text","text":"..."}], "model": "...", "agent": "..." }
+/// POST /session/:id/message { "parts": [...], "model": { "modelID": "...", "providerID": "..." }, "agent": "..." }
 pub async fn send_message(
     port: u16,
     session_id: &str,
     text: &str,
-    model: Option<&str>,
+    model_id: Option<&str>,
+    provider_id: Option<&str>,
     agent: Option<&str>,
 ) -> AppResult<reqwest::Response> {
     let url = format!("{}/session/{}/message", base_url(port), session_id);
     let mut body = serde_json::json!({
         "parts": [{ "type": "text", "text": text }]
     });
-    if let Some(m) = model {
-        body["model"] = serde_json::Value::String(m.to_string());
+    if let Some(m) = model_id {
+        let mut model_obj = serde_json::json!({ "modelID": m });
+        if let Some(p) = provider_id {
+            model_obj["providerID"] = serde_json::Value::String(p.to_string());
+        }
+        body["model"] = model_obj;
     }
     if let Some(a) = agent {
         body["agent"] = serde_json::Value::String(a.to_string());
@@ -141,36 +146,6 @@ pub async fn get_messages(port: u16, session_id: &str) -> AppResult<serde_json::
     Ok(json)
 }
 
-/// 列出所有 session
-/// GET /session
-pub async fn list_sessions_api(port: u16) -> AppResult<Vec<serde_json::Value>> {
-    let url = format!("{}/session", base_url(port));
-    let resp = client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| crate::AppError::Other(format!("list_sessions_api request failed: {}", e)))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(crate::AppError::Other(format!(
-            "list_sessions_api failed: {} — {}",
-            status, text
-        )));
-    }
-
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| crate::AppError::Other(format!("list_sessions_api parse error: {}", e)))?;
-
-    let arr = json
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    Ok(arr)
-}
 
 /// abort session
 /// POST /session/:id/abort
@@ -232,10 +207,14 @@ pub async fn permission_respond(
 }
 
 /// 热更新模型配置
-/// PATCH /config { "model": "...", "provider": "..." }
+/// PATCH /config { "model": { "modelID": "...", "providerID": "..." } }
 pub async fn patch_config(port: u16, model: &str, provider: &str) -> AppResult<()> {
     let url = format!("{}/config", base_url(port));
-    let body = serde_json::json!({ "model": model, "provider": provider });
+    let mut model_obj = serde_json::json!({ "modelID": model });
+    if !provider.is_empty() {
+        model_obj["providerID"] = serde_json::Value::String(provider.to_string());
+    }
+    let body = serde_json::json!({ "model": model_obj });
 
     let resp = client()
         .patch(&url)

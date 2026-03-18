@@ -1,39 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { CheckCircle, XCircle, Loader2, Star, Plus, Pencil, Trash2, X } from 'lucide-react';
+import {
+  CheckCircle, XCircle, Loader2, Star, Plus, Pencil, Trash2, X, ChevronDown,
+} from 'lucide-react';
 import { PasswordInput } from '../common/PasswordInput';
 import { useAiStore } from '../../store';
-import type { LlmConfig, CreateLlmConfigInput, ApiType } from '../../types';
+import type {
+  LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput,
+  OpenCodeProvider, OpenCodeProviderModel, ConfigMode,
+} from '../../types';
 import { useEscClose } from '../../hooks/useEscClose';
 
-// -------- 厂商预设 --------
-interface ProviderPreset {
-  id: string;
-  labelKey: string;
-  base_url: string;
-  api_type: ApiType;
-  default_model: string;
-}
+// ──────────────── 共用类名 ────────────────
+const inputCls = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] focus:outline-none focus:border-[#009e84]';
+const labelCls = 'block text-xs text-[#7a9bb8] mb-1 uppercase tracking-wide';
 
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    id: 'alicloud',
-    labelKey: 'llmSettings.alicloud',
-    base_url: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
-    api_type: 'anthropic',
-    default_model: 'qwen3.5-plus',
-  },
-];
-
-// -------- 连通性状态指示 --------
+// ──────────────── TestStatusBadge ────────────────
 function TestStatusBadge({ status, error, testedAt }: {
-  status: string;
-  error: string | null;
-  testedAt: string | null;
+  status: string; error: string | null; testedAt: string | null;
 }) {
   const { t } = useTranslation();
-
   const ago = (() => {
     if (!testedAt) return '';
     const diff = Date.now() - new Date(testedAt).getTime();
@@ -44,24 +31,17 @@ function TestStatusBadge({ status, error, testedAt }: {
     if (hours < 24) return t('llmSettings.hoursAgo', { n: hours });
     return t('llmSettings.daysAgo', { n: Math.floor(hours / 24) });
   })();
-
-  if (status === 'untested') {
-    return <span className="text-xs text-gray-500">○ {t('llmSettings.untested')}</span>;
-  }
-  if (status === 'testing') {
-    return (
-      <span className="text-xs text-yellow-400 flex items-center gap-1">
-        <Loader2 size={11} className="animate-spin" />{t('llmSettings.testing')}
-      </span>
-    );
-  }
-  if (status === 'success') {
-    return (
-      <span className="text-xs text-green-400 flex items-center gap-1">
-        <CheckCircle size={11} />{t('llmSettings.connected')} {ago}
-      </span>
-    );
-  }
+  if (status === 'untested') return <span className="text-xs text-[#4a6480]">○ {t('llmSettings.untested')}</span>;
+  if (status === 'testing') return (
+    <span className="text-xs text-yellow-400 flex items-center gap-1">
+      <Loader2 size={11} className="animate-spin" />{t('llmSettings.testing')}
+    </span>
+  );
+  if (status === 'success') return (
+    <span className="text-xs text-[#4ade80] flex items-center gap-1">
+      <CheckCircle size={11} />{t('llmSettings.connected')} {ago}
+    </span>
+  );
   return (
     <span className="text-xs text-red-400 flex items-center gap-1" title={error ?? ''}>
       <XCircle size={11} />{t('llmSettings.failed')}
@@ -69,101 +49,209 @@ function TestStatusBadge({ status, error, testedAt }: {
   );
 }
 
-// -------- 编辑/新建 模态对话框 --------
-const EMPTY_FORM: CreateLlmConfigInput = {
-  name: '',
-  api_key: '',
-  base_url: 'https://api.openai.com/v1',
-  model: 'gpt-4o-mini',
-  api_type: 'openai',
-  preset: null,
-};
+// ──────────────── ModelCombobox ────────────────
+function ModelCombobox({
+  models, value, onChange,
+}: {
+  models: OpenCodeProviderModel[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [customInput, setCustomInput] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
 
-type EffectiveTestStatus = 'success' | 'untested' | null;
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
-// 连通性相关字段，用于判断测试后配置是否变更
-type ConnSnapshot = { api_key: string; base_url: string; model: string; api_type: ApiType };
-
-function snapshotFrom(form: CreateLlmConfigInput): ConnSnapshot {
-  return { api_key: form.api_key, base_url: form.base_url, model: form.model, api_type: form.api_type };
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`w-full bg-[#1a2639] border rounded px-3 py-1.5 text-sm text-[#c8daea] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[#253347]'}`}
+      >
+        <span>{value || '选择模型…'}</span>
+        <ChevronDown size={13} className="text-[#4a6480]" />
+      </button>
+      {open && (
+        <div className="absolute z-10 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-52 overflow-y-auto">
+          {models.length > 0 && (
+            <div className="px-3 pt-2 pb-1 text-[10px] text-[#4a6480] uppercase tracking-wide">供应商模型</div>
+          )}
+          {models.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => { onChange(m.id); setOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#1a2639] ${value === m.id ? 'text-[#00c9a7] bg-[#003d2f]/20' : 'text-[#7a9bb8]'}`}
+            >
+              {value === m.id && '✓ '}{m.name || m.id}
+            </button>
+          ))}
+          <div className="border-t border-[#1e2d42] mx-2 my-1" />
+          <div className="px-2 pb-2">
+            <input
+              className="w-full bg-[#0d1117] border border-dashed border-[#253347] rounded px-2 py-1 text-xs text-[#4a6480] focus:outline-none focus:border-[#009e84] focus:text-[#c8daea]"
+              placeholder="输入自定义模型 ID…"
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && customInput.trim()) {
+                  onChange(customInput.trim());
+                  setCustomInput('');
+                  setOpen(false);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function snapshotEqual(a: ConnSnapshot, b: ConnSnapshot): boolean {
-  return a.api_key === b.api_key && a.base_url === b.base_url && a.model === b.model && a.api_type === b.api_type;
+// ──────────────── ProviderDropdown ────────────────
+function ProviderDropdown({
+  providers, value, onChange,
+}: {
+  providers: OpenCodeProvider[];
+  value: string;       // provider id 或 'custom'
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selectedProvider = providers.find((p) => p.id === value);
+  const displayLabel = value === 'custom'
+    ? '⚙ 自定义供应商'
+    : ((selectedProvider?.name ?? value) || '选择供应商…');
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`w-full bg-[#1a2639] border rounded px-3 py-1.5 text-sm text-[#c8daea] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[#253347]'}`}
+      >
+        <span className="flex items-center gap-2">
+          {value && value !== 'custom' && (
+            <span className="w-2 h-2 rounded-full bg-[#00c9a7] flex-shrink-0 inline-block" />
+          )}
+          {value === 'custom' && (
+            <span className="w-2 h-2 rounded-full bg-[#7a9bb8] flex-shrink-0 inline-block" />
+          )}
+          {displayLabel}
+        </span>
+        <ChevronDown size={13} className="text-[#4a6480]" />
+      </button>
+      {open && (
+        <div className="absolute z-10 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-64 overflow-y-auto">
+          {providers.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { onChange(p.id); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[#1a2639] flex items-center gap-2 ${value === p.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+            >
+              <span className="w-2 h-2 rounded-full bg-[#00c9a7] flex-shrink-0 inline-block" />
+              {p.name || p.id}
+            </button>
+          ))}
+          <div className="border-t border-[#1e2d42] mx-2 my-1" />
+          <button
+            type="button"
+            onClick={() => { onChange('custom'); setOpen(false); }}
+            className={`w-full text-left px-3 py-2 text-xs hover:bg-[#1a2639] flex items-center gap-2 ${value === 'custom' ? 'text-[#00c9a7]' : 'text-[#4a6480]'}`}
+          >
+            <span className="w-2 h-2 rounded-full bg-[#7a9bb8] flex-shrink-0 inline-block" />
+            ⚙ 自定义供应商…
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
+// ──────────────── ConfigFormDialog ────────────────
 interface ConfigFormDialogProps {
   title: string;
   initial: CreateLlmConfigInput;
-  editId?: number;   // 编辑模式时传入，用于 get_llm_config_key
-  onSave: (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus, apiKeyDirty: boolean) => Promise<void>;
+  editId?: number;
+  providers: OpenCodeProvider[];
+  providersLoading: boolean;
+  onSave: (input: CreateLlmConfigInput, testPassed: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
-function ConfigFormDialog({ title, initial, editId, onSave, onCancel }: ConfigFormDialogProps) {
-  const { t } = useTranslation();
+function ConfigFormDialog({
+  title, initial, editId, providers, providersLoading, onSave, onCancel,
+}: ConfigFormDialogProps) {
   const [form, setForm] = useState<CreateLlmConfigInput>(initial);
+  const [nameTouched, setNameTouched] = useState(!!initial.name);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg?: string } | null>(null);
-  // 测试通过时记录的字段快照，用于判断保存时配置是否仍与测试时一致
-  const [successSnapshot, setSuccessSnapshot] = useState<ConnSnapshot | null>(null);
   const [apiKeyDirty, setApiKeyDirty] = useState(false);
 
   useEscClose(onCancel);
 
-  // 计算有效测试状态：通过且字段未变 → success；通过但字段已变 → untested；未测试 → null
-  const effectiveTestStatus: EffectiveTestStatus = (() => {
-    if (!successSnapshot) return null;
-    return snapshotEqual(snapshotFrom(form), successSnapshot) ? 'success' : 'untested';
-  })();
+  // 当前选中的供应商对象
+  const selectedProvider = providers.find((p) => p.id === form.opencode_provider_id);
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
-  const labelClass = 'block text-xs text-gray-400 mb-1';
-
-  const handlePreset = (preset: ProviderPreset | null) => {
-    if (!preset) {
-      setForm((f) => ({ ...f, preset: null }));
-    } else {
-      setForm((f) => ({
-        ...f,
-        preset: preset.id,
-        base_url: preset.base_url,
-        api_type: preset.api_type,
-        model: preset.default_model,
-      }));
+  // 自动填充配置名称（用户未手动修改时）
+  useEffect(() => {
+    if (nameTouched) return;
+    let autoName = '';
+    if (form.config_mode === 'opencode' && form.model && form.opencode_provider_id) {
+      const pName = selectedProvider?.name ?? form.opencode_provider_id;
+      autoName = `${form.model} · ${pName}`;
+    } else if (form.config_mode === 'custom' && form.model && form.opencode_provider_id) {
+      autoName = `${form.opencode_provider_id} · ${form.model}`;
     }
+    if (autoName) setForm((f) => ({ ...f, name: autoName }));
+  }, [form.model, form.opencode_provider_id, form.config_mode, nameTouched]);
+
+  // 切换供应商时，重置模型
+  const handleProviderChange = (pid: string) => {
+    const isCustom = pid === 'custom';
+    setForm((f) => ({
+      ...f,
+      opencode_provider_id: isCustom ? '' : pid,
+      config_mode: (isCustom ? 'custom' : 'opencode') as ConfigMode,
+      model: '',
+    }));
+    setTestResult(null);
   };
 
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
-    setSuccessSnapshot(null);
-
-    // 编辑模式且未修改 api_key 时，临时获取真实 key 用于测试（不写入 form state）
     let effectiveApiKey = form.api_key;
     if (editId && !apiKeyDirty) {
-      try {
-        effectiveApiKey = await invoke<string>('get_llm_config_key', { id: editId });
-      } catch {}
+      try { effectiveApiKey = await invoke<string>('get_llm_config_key', { id: editId }); } catch {}
     }
-
-    const tempInput: CreateLlmConfigInput = {
-      ...form,
-      api_key: effectiveApiKey,
-      name: form.name || `${form.model} · ${form.api_type}`,
-    };
     try {
-      const created = await invoke<LlmConfig>('create_llm_config', { input: tempInput });
-      try {
-        await invoke('test_llm_config', { id: created.id });
-        setTestResult({ ok: true });
-        setSuccessSnapshot(snapshotFrom(form));  // 记录测试通过时的字段快照
-      } catch (e) {
-        setTestResult({ ok: false, msg: String(e) });
-      } finally {
-        await invoke('delete_llm_config', { id: created.id });
-      }
+      await invoke('test_llm_config_inline', {
+        model: form.model,
+        apiType: form.api_type,
+        baseUrl: form.base_url,
+        apiKey: effectiveApiKey,
+      });
+      setTestResult({ ok: true });
     } catch (e) {
       setTestResult({ ok: false, msg: String(e) });
     } finally {
@@ -174,191 +262,169 @@ function ConfigFormDialog({ title, initial, editId, onSave, onCancel }: ConfigFo
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(form, effectiveTestStatus, apiKeyDirty);
+      await onSave(form, testResult?.ok === true);
     } finally {
       setSaving(false);
     }
   };
 
-  // 测试按钮禁用逻辑：编辑模式下未修改 api_key 也允许测试（会自动获取真实 key）
-  const testDisabled = testing || (!editId && !form.api_key);
+  const isCustomMode = form.config_mode === 'custom';
+  const dropdownValue = isCustomMode ? 'custom' : form.opencode_provider_id;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
-      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4">
+      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        {/* 标题 */}
         <div className="flex items-center justify-between">
-          <h3 className="text-white font-semibold text-sm">{title}</h3>
-          <button onClick={onCancel} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+          <h3 className="text-[#e8f4ff] font-semibold text-sm">{title}</h3>
+          <button onClick={onCancel} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16} /></button>
         </div>
 
-        {/* 厂商预设 */}
+        {/* 配置名称 */}
         <div>
-          <label className={labelClass}>{t('llmSettings.preset')}</label>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => handlePreset(null)}
-              className={`px-3 py-1 text-xs rounded border transition-colors ${
-                !form.preset
-                  ? 'bg-[#009e84] border-[#009e84] text-white'
-                  : 'border-[#253347] text-[#c8daea] hover:bg-[#1a2639]'
-              }`}
-            >
-              {t('llmSettings.custom')}
-            </button>
-            {PROVIDER_PRESETS.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => handlePreset(p)}
-                className={`px-3 py-1 text-xs rounded border transition-colors ${
-                  form.preset === p.id
-                    ? 'bg-[#009e84] border-[#009e84] text-white'
-                    : 'border-[#253347] text-[#c8daea] hover:bg-[#1a2639]'
-                }`}
-              >
-                {t(p.labelKey)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 名称 */}
-        <div>
-          <label className={labelClass}>{t('llmSettings.name')}（{t('llmSettings.namePlaceholder')}）</label>
+          <label className={labelCls}>配置名称</label>
           <input
-            className={inputClass}
+            className={inputCls}
             value={form.name ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder={`${form.model} · ${form.api_type}`}
+            onChange={(e) => {
+              setNameTouched(true);
+              setForm((f) => ({ ...f, name: e.target.value }));
+            }}
+            placeholder="自动填充…"
           />
         </div>
 
-        {/* API 协议 */}
+        {/* 供应商下拉 */}
         <div>
-          <label className={labelClass}>
-            {t('llmSettings.apiType')}
-            {form.preset && <span className="ml-2 text-[#5b8ab0]">({t('llmSettings.lockedByPreset')})</span>}
+          <label className={labelCls}>
+            供应商
+            {providersLoading && <span className="ml-2 text-[#4a6480] normal-case">加载中…</span>}
           </label>
-          <div className="flex gap-4">
-            {(['openai', 'anthropic'] as ApiType[]).map((type) => (
-              <label
-                key={type}
-                className={`flex items-center gap-1.5 text-sm ${
-                  form.preset ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-[#c8daea]'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="api_type"
-                  value={type}
-                  checked={form.api_type === type}
-                  onChange={() => setForm((f) => ({ ...f, api_type: type, preset: null }))}
-                  disabled={!!form.preset}
-                  className="accent-[#009e84]"
-                />
-                {type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}
-              </label>
-            ))}
-          </div>
+          <ProviderDropdown
+            providers={providers}
+            value={dropdownValue}
+            onChange={handleProviderChange}
+          />
         </div>
 
-        {/* API Key */}
-        <div>
-          <label className={labelClass}>{t('llmSettings.apiKey')}</label>
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
+        {/* 自定义模式展开框 */}
+        {isCustomMode && (
+          <div className="bg-[#111922] border border-[#1e2d42] rounded-lg p-4 space-y-3">
+            <div className="text-[10px] text-[#4a6480] uppercase tracking-wide">自定义供应商配置</div>
+
+            <div>
+              <label className={labelCls}>Provider ID</label>
+              <input
+                className={inputCls}
+                value={form.opencode_provider_id}
+                onChange={(e) => setForm((f) => ({ ...f, opencode_provider_id: e.target.value }))}
+                placeholder="my-azure-gpt"
+              />
+              <p className="text-[10px] text-[#4a6480] mt-1">opencode 中的唯一标识</p>
+            </div>
+
+            <div>
+              <label className={labelCls}>API 兼容类型</label>
+              <div className="flex gap-4">
+                {(['openai', 'anthropic'] as const).map((type) => (
+                  <label key={type} className="flex items-center gap-1.5 text-xs text-[#c8daea] cursor-pointer">
+                    <input
+                      type="radio"
+                      name="api_type"
+                      value={type}
+                      checked={form.api_type === type}
+                      onChange={() => setForm((f) => ({ ...f, api_type: type }))}
+                      className="accent-[#009e84]"
+                    />
+                    {type === 'openai' ? 'OpenAI 兼容' : 'Anthropic 兼容'}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>Base URL</label>
+              <input
+                className={inputCls}
+                value={form.base_url}
+                onChange={(e) => setForm((f) => ({ ...f, base_url: e.target.value }))}
+                placeholder="https://api.example.com/v1"
+              />
+            </div>
+
+            <div>
+              <label className={labelCls}>API Key</label>
               <PasswordInput
-                className={inputClass}
+                className={inputCls}
                 value={form.api_key}
                 onChange={(v) => {
                   setForm((f) => ({ ...f, api_key: v }));
                   setApiKeyDirty(true);
                 }}
-                placeholder={editId ? t('llmSettings.apiKeyPlaceholder') : 'sk-...'}
+                placeholder={editId ? '不修改则留空' : 'sk-…'}
               />
             </div>
-            {editId && !apiKeyDirty && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const key = await invoke<string>('get_llm_config_key', { id: editId });
-                    setForm((f) => ({ ...f, api_key: key }));
-                    setApiKeyDirty(true);
-                  } catch {}
-                }}
-                className="text-xs px-2 py-1.5 border border-[#253347] text-[#7a9bb8] hover:text-[#c8daea] rounded whitespace-nowrap flex-shrink-0"
-              >
-                {t('llmSettings.revealKey')}
-              </button>
-            )}
           </div>
-        </div>
+        )}
 
-        {/* Base URL */}
+        {/* 模型选择 */}
         <div>
-          <label className={labelClass}>{t('llmSettings.baseUrl')}</label>
-          <input
-            className={inputClass}
-            value={form.base_url}
-            onChange={(e) => setForm((f) => ({ ...f, base_url: e.target.value }))}
-            placeholder="https://api.openai.com/v1"
-          />
+          <label className={labelCls}>模型</label>
+          {isCustomMode ? (
+            <>
+              <input
+                className={inputCls}
+                value={form.model}
+                onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+                placeholder="直接输入模型 ID"
+              />
+              <p className="text-[10px] text-[#4a6480] mt-1">直接输入模型 ID</p>
+            </>
+          ) : (
+            <ModelCombobox
+              models={selectedProvider?.models ?? []}
+              value={form.model}
+              onChange={(v) => setForm((f) => ({ ...f, model: v }))}
+            />
+          )}
         </div>
 
-        {/* 模型 */}
-        <div>
-          <label className={labelClass}>{t('llmSettings.model')}</label>
-          <input
-            className={inputClass}
-            value={form.model}
-            onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-            placeholder="gpt-4o-mini"
-          />
-        </div>
-
-        {/* 测试结果 */}
-        {testResult && (
-          <p className={`text-xs flex items-center gap-1 ${
-            effectiveTestStatus === 'success' ? 'text-green-400' :
-            effectiveTestStatus === 'untested' ? 'text-yellow-400' : 'text-red-400'
-          }`}>
-            {effectiveTestStatus === 'success' && <CheckCircle size={12} />}
-            {effectiveTestStatus === 'untested' && <XCircle size={12} />}
-            {!testResult.ok && <XCircle size={12} />}
-            {effectiveTestStatus === 'success'
-              ? t('llmSettings.testPassed')
-              : effectiveTestStatus === 'untested'
-              ? t('llmSettings.configChangedRetest')
-              : testResult.msg}
-          </p>
+        {/* 测试结果（仅自定义模式） */}
+        {isCustomMode && testResult && (
+          <div className={`flex items-center gap-1.5 text-xs ${testResult.ok ? 'text-[#4ade80]' : 'text-red-400'}`}>
+            {testResult.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
+            {testResult.ok ? '连接成功' : testResult.msg}
+          </div>
         )}
 
         {/* 操作按钮 */}
-        <div className="flex items-center justify-between pt-2">
-          <button
-            onClick={handleTest}
-            disabled={testDisabled}
-            className="px-3 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {testing && <Loader2 size={12} className="animate-spin" />}
-            {testing ? t('llmSettings.testing') : t('llmSettings.testConnectivity')}
-          </button>
+        <div className={`flex items-center pt-2 ${isCustomMode ? 'justify-between' : 'justify-end gap-2'}`}>
+          {isCustomMode && (
+            <button
+              onClick={handleTest}
+              disabled={testing || !form.model || !form.base_url}
+              className="px-3 py-1.5 text-xs border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {testing && <Loader2 size={12} className="animate-spin" />}
+              {testing ? '测试中…' : '测试连接'}
+            </button>
+          )}
           <div className="flex gap-2">
             <button
               onClick={onCancel}
               className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
             >
-              {t('llmSettings.cancel')}
+              取消
             </button>
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || !form.model || (!isCustomMode && !form.opencode_provider_id)}
               className="px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
             >
-              {saving ? t('llmSettings.saving') : t('llmSettings.save')}
+              {saving ? '保存中…' : '保存'}
             </button>
           </div>
         </div>
@@ -367,42 +433,78 @@ function ConfigFormDialog({ title, initial, editId, onSave, onCancel }: ConfigFo
   );
 }
 
-// -------- 主组件 --------
+// ──────────────── 主组件 ────────────────
+const EMPTY_FORM: CreateLlmConfigInput = {
+  name: '',
+  api_key: '',
+  base_url: '',
+  model: '',
+  api_type: 'openai',
+  opencode_provider_id: '',
+  config_mode: 'opencode',
+  preset: null,
+};
+
 export function LlmSettingsPanel() {
   const { t } = useTranslation();
-  const { configs, loadConfigs, createConfig, updateConfig, deleteConfig, setDefaultConfig, testConfig } = useAiStore();
+  const { configs, loadConfigs, deleteConfig, setDefaultConfig, testConfig } = useAiStore();
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<LlmConfig | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<LlmConfig | null>(null);
+  const [providers, setProviders] = useState<OpenCodeProvider[]>([]);
+  const [providersLoading, setProvidersLoading] = useState(false);
 
   useEffect(() => { loadConfigs(); }, []);
 
-  // ESC 关闭删除确认弹窗（ConfigFormDialog 内部自己处理 ESC）
   useEscClose(() => setDeleteConfirm(null), !!deleteConfirm && !showCreate && !editTarget);
 
-  const handleCreate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus, _apiKeyDirty: boolean) => {
-    // 新建模式直接用 input.api_key，apiKeyDirty 不影响创建
+  // 打开弹框时加载供应商列表
+  const loadProviders = async () => {
+    setProvidersLoading(true);
+    try {
+      const list = await invoke<OpenCodeProvider[]>('agent_list_providers');
+      setProviders(list);
+    } catch {
+      setProviders([]);
+    } finally {
+      setProvidersLoading(false);
+    }
+  };
+
+  const handleOpenCreate = () => {
+    loadProviders();
+    setShowCreate(true);
+  };
+
+  const handleOpenEdit = (config: LlmConfig) => {
+    loadProviders();
+    setEditTarget(config);
+  };
+
+  const handleCreate = async (input: CreateLlmConfigInput, testPassed: boolean) => {
     const created = await invoke<LlmConfig>('create_llm_config', { input });
-    if (effectiveTestStatus === 'success') {
+    if (testPassed) {
       await invoke('set_llm_config_test_status', { id: created.id, status: 'success', error: null });
     }
     await loadConfigs();
     setShowCreate(false);
   };
 
-  const handleUpdate = async (input: CreateLlmConfigInput, effectiveTestStatus: EffectiveTestStatus, apiKeyDirty: boolean) => {
+  const handleUpdate = async (input: CreateLlmConfigInput, testPassed: boolean) => {
     if (!editTarget) return;
-    const updateInput = {
+    const updateInput: UpdateLlmConfigInput = {
       name: input.name,
-      api_key: apiKeyDirty ? input.api_key : undefined,
+      api_key: input.api_key || undefined,
       base_url: input.base_url,
       model: input.model,
       api_type: input.api_type,
       preset: input.preset,
+      opencode_provider_id: input.opencode_provider_id,
+      config_mode: input.config_mode,
     };
     await invoke('update_llm_config', { id: editTarget.id, input: updateInput });
-    if (effectiveTestStatus !== null) {
-      await invoke('set_llm_config_test_status', { id: editTarget.id, status: effectiveTestStatus, error: null });
+    if (testPassed) {
+      await invoke('set_llm_config_test_status', { id: editTarget.id, status: 'success', error: null });
     }
     await loadConfigs();
     setEditTarget(null);
@@ -414,19 +516,29 @@ export function LlmSettingsPanel() {
     setDeleteConfirm(null);
   };
 
+  // 供应商标签（卡片显示用）
+  const providerLabel = (config: LlmConfig) => {
+    if (config.config_mode === 'custom') {
+      return `⚙ 自定义 · ${config.opencode_provider_id || config.api_type}`;
+    }
+    return (providers.find((p) => p.id === config.opencode_provider_id)?.name
+      ?? config.opencode_provider_id)
+      || config.api_type;
+  };
+
   return (
     <div className="w-full max-w-2xl p-8">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-white font-semibold text-sm">{t('llmSettings.aiModelConfig')}</h3>
+        <h3 className="text-[#e8f4ff] font-semibold text-sm">{t('llmSettings.aiModelConfig')}</h3>
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={handleOpenCreate}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
         >
           <Plus size={13} />{t('llmSettings.addConfig')}
         </button>
       </div>
 
-      {/* 卡片网格 */}
+      {/* 配置卡片网格 */}
       {configs.length === 0 ? (
         <div className="text-center py-16 text-[#7a9bb8]">
           <p className="text-sm">{t('llmSettings.noConfigs')}</p>
@@ -437,29 +549,26 @@ export function LlmSettingsPanel() {
           {configs.map((config) => (
             <div
               key={config.id}
-              className={`bg-[#0d1a26] border rounded-lg p-4 flex flex-col gap-2 ${
-                config.is_default ? 'border-[#009e84]' : 'border-[#1e2d42]'
-              }`}
+              className={`bg-[#111922] border rounded-lg p-4 flex flex-col gap-2 ${config.is_default ? 'border-[#00c9a7]' : 'border-[#1e2d42]'}`}
             >
               {/* 标题行 */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-start justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {config.is_default && <Star size={13} className="text-[#009e84] fill-[#009e84] flex-shrink-0" />}
+                  <span className="text-sm text-[#e8f4ff] font-medium truncate">{config.name}</span>
+                </div>
                 {config.is_default && (
-                  <Star size={13} className="text-[#009e84] fill-[#009e84] flex-shrink-0" />
+                  <span className="text-[10px] bg-[#003d2f] text-[#00c9a7] px-1.5 py-0.5 rounded flex-shrink-0">默认</span>
                 )}
-                <span className="text-sm text-white font-medium truncate">{config.name}</span>
               </div>
-              {/* 配置信息 */}
+              {/* 供应商 + 模型 */}
               <div className="text-xs text-[#7a9bb8] space-y-0.5">
-                <div className="truncate">{config.model}</div>
-                <div>{config.api_type === 'openai' ? t('llmSettings.openaiCompat') : t('llmSettings.anthropicCompat')}</div>
+                <div className="truncate">{providerLabel(config)}</div>
+                <div className="text-[#c8daea] truncate">{config.model}</div>
               </div>
-              {/* 连通性状态 */}
-              <TestStatusBadge
-                status={config.test_status}
-                error={config.test_error}
-                testedAt={config.tested_at}
-              />
-              {/* 操作按钮 */}
+              {/* 测试状态 */}
+              <TestStatusBadge status={config.test_status} error={config.test_error} testedAt={config.tested_at} />
+              {/* 操作 */}
               <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-[#1e2d42] flex-wrap">
                 {!config.is_default && (
                   <button
@@ -469,24 +578,25 @@ export function LlmSettingsPanel() {
                     {t('llmSettings.setDefault')}
                   </button>
                 )}
+                {config.config_mode === 'custom' && (
+                  <button
+                    onClick={() => testConfig(config.id)}
+                    disabled={config.test_status === 'testing'}
+                    className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
+                    {t('llmSettings.test')}
+                  </button>
+                )}
                 <button
-                  onClick={() => testConfig(config.id)}
-                  disabled={config.test_status === 'testing'}
-                  className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
-                >
-                  {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
-                  {t('llmSettings.test')}
-                </button>
-                <button
-                  onClick={() => setEditTarget(config)}
+                  onClick={() => handleOpenEdit(config)}
                   className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1"
                 >
                   <Pencil size={11} />{t('llmSettings.edit')}
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(config)}
-                  disabled={config.test_status === 'testing'}
-                  className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1"
                 >
                   <Trash2 size={11} />{t('llmSettings.delete')}
                 </button>
@@ -496,29 +606,35 @@ export function LlmSettingsPanel() {
         </div>
       )}
 
-      {/* 新建对话框 */}
+      {/* 新建弹框 */}
       {showCreate && (
         <ConfigFormDialog
           title={t('llmSettings.addConfigTitle')}
           initial={EMPTY_FORM}
+          providers={providers}
+          providersLoading={providersLoading}
           onSave={handleCreate}
           onCancel={() => setShowCreate(false)}
         />
       )}
 
-      {/* 编辑对话框 */}
+      {/* 编辑弹框 */}
       {editTarget && (
         <ConfigFormDialog
           title={t('llmSettings.editConfigTitle')}
           initial={{
             name: editTarget.name,
-            api_key: '',            // 永远以空串打开（store 中也是空串）
+            api_key: '',
             base_url: editTarget.base_url,
             model: editTarget.model,
             api_type: editTarget.api_type,
+            opencode_provider_id: editTarget.opencode_provider_id,
+            config_mode: editTarget.config_mode,
             preset: editTarget.preset,
           }}
           editId={editTarget.id}
+          providers={providers}
+          providersLoading={providersLoading}
           onSave={handleUpdate}
           onCancel={() => setEditTarget(null)}
         />
@@ -532,28 +648,20 @@ export function LlmSettingsPanel() {
         >
           <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-white font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
-              <button onClick={() => setDeleteConfirm(null)} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+              <h3 className="text-[#e8f4ff] font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
+              <button onClick={() => setDeleteConfirm(null)} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16} /></button>
             </div>
             <p className="text-xs text-[#c8daea]">
               {t('llmSettings.confirmDeleteMsg', { name: deleteConfirm.name })}
               {deleteConfirm.is_default && (
-                <span className="text-yellow-400 block mt-1">
-                  {t('llmSettings.defaultDeleteWarning')}
-                </span>
+                <span className="text-yellow-400 block mt-1">{t('llmSettings.defaultDeleteWarning')}</span>
               )}
             </p>
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
-              >
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded">
                 {t('llmSettings.cancel')}
               </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-800 text-white rounded"
-              >
+              <button onClick={handleDelete} className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-800 text-white rounded">
                 {t('llmSettings.delete')}
               </button>
             </div>

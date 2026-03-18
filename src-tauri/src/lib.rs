@@ -225,11 +225,22 @@ pub fn run() {
             commands::agent_chat,
             commands::agent_request_ai_title,
             commands::agent_apply_config,
+            commands::agent_list_providers,
+            commands::test_llm_config_inline,
             commands::agent_explain_sql,
             commands::agent_optimize_sql,
             commands::cancel_explain_sql,
             commands::cancel_optimize_sql,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                use tauri::Manager;
+                let handle = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::agent::server::stop_serve(&handle).await;
+                });
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

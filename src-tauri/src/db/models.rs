@@ -69,6 +69,8 @@ pub struct LlmConfig {
     pub test_error: Option<String>,
     pub tested_at: Option<String>,
     pub created_at: String,
+    pub opencode_provider_id: String,
+    pub config_mode: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,6 +81,8 @@ pub struct CreateLlmConfigInput {
     pub model: String,
     pub api_type: String,
     pub preset: Option<String>,
+    pub opencode_provider_id: String,  // opencode 模式传实际 providerID；自定义模式传用户自定义 ID
+    pub config_mode: String,           // "opencode" | "custom"
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -89,6 +93,8 @@ pub struct UpdateLlmConfigInput {
     pub model: Option<String>,
     pub api_type: Option<String>,
     pub preset: Option<String>,
+    pub opencode_provider_id: Option<String>,
+    pub config_mode: Option<String>,
 }
 
 // ============ 任务记录模型 ============

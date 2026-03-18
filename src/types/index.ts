@@ -54,6 +54,7 @@ export interface QueryHistory {
 
 export type ApiType = 'openai' | 'anthropic';
 export type TestStatus = 'untested' | 'testing' | 'success' | 'fail';
+export type ConfigMode = 'opencode' | 'custom';
 
 export interface LlmConfig {
   id: number;
@@ -68,6 +69,8 @@ export interface LlmConfig {
   test_error: string | null;
   tested_at: string | null;
   created_at: string;
+  opencode_provider_id: string;
+  config_mode: ConfigMode;
 }
 
 export interface CreateLlmConfigInput {
@@ -77,6 +80,8 @@ export interface CreateLlmConfigInput {
   model: string;
   api_type: ApiType;
   preset?: string | null;
+  opencode_provider_id: string;
+  config_mode: ConfigMode;
 }
 
 export interface UpdateLlmConfigInput {
@@ -86,6 +91,8 @@ export interface UpdateLlmConfigInput {
   model?: string;
   api_type?: ApiType;
   preset?: string | null;
+  opencode_provider_id?: string;
+  config_mode?: ConfigMode;
 }
 
 export type TabType =
@@ -381,4 +388,16 @@ export interface PermissionRequest {
     label: string         // "允许一次" | "总是允许" | "拒绝一次" | "总是拒绝"
     kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | 'deny'
   }>
+}
+
+export interface OpenCodeProviderModel {
+  id: string;
+  name: string;
+}
+
+export interface OpenCodeProvider {
+  id: string;
+  name: string;
+  source: string;  // "api" | "config" | "custom"
+  models: OpenCodeProviderModel[];
 }

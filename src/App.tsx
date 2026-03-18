@@ -34,7 +34,12 @@ export default function App() {
 
   // Auto-expand results panel when results appear or an error occurs; collapse when cleared
   const { tabs, activeTabId, openQueryTab, openTableDataTab, openTableStructureTab, results, error: queryError, explanationContent, explanationStreaming } = useQueryStore();
-  const activeConnectionId = tabs.find(t => t.id === activeTabId)?.queryContext?.connectionId ?? null;
+  const activeTab = tabs.find(t => t.id === activeTabId);
+  const activeConnectionId =
+    activeTab?.queryContext?.connectionId ??
+    activeTab?.metricScope?.connectionId ??
+    activeTab?.connectionId ??
+    null;
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();

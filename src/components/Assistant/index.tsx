@@ -166,7 +166,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   const effectiveConnectionName = effectiveConnectionId
     ? (connections.find(c => c.id === effectiveConnectionId)?.name ?? `#${effectiveConnectionId}`)
     : null;
-  const openedConnections = connections.filter(c => activeConnectionIds.has(c.id));
+  const openedConnections = connections.filter(c => activeConnectionIds.has(c.id) || c.id === (linkedConnectionId ?? activeConnectionId));
 
   // 当 Tab 切换导致 activeConnectionId 变化时，记录"待处理的连接切换"
   // （回答中暂存，回答结束后再弹提示）

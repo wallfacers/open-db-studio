@@ -15,8 +15,8 @@ export function MetricsSidebar({ sidebarWidth, onResize }: MetricsSidebarProps) 
   const { refresh } = useMetricsTreeStore();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleOpenMetricTab = (metricId: number, title: string) => {
-    useQueryStore.getState().openMetricTab(metricId, title);
+  const handleOpenMetricTab = (metricId: number, title: string, connectionId?: number) => {
+    useQueryStore.getState().openMetricTab(metricId, title, connectionId);
   };
 
   const handleOpenMetricListTab = (scope: MetricScope, title: string) => {

@@ -11,7 +11,7 @@ import { useQueryStore } from '../../store/queryStore';
 
 interface TreeProps {
   searchQuery?: string;
-  onOpenMetricTab?: (metricId: number, title: string) => void;
+  onOpenMetricTab?: (metricId: number, title: string, connectionId?: number) => void;
   onOpenMetricListTab?: (scope: { connectionId: number; database?: string; schema?: string }, title: string) => void;
 }
 
@@ -214,7 +214,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
             }}
             onDoubleClick={() => {
               if (node.nodeType === 'metric' && node.meta.metricId) {
-                onOpenMetricTab?.(node.meta.metricId, node.label);
+                onOpenMetricTab?.(node.meta.metricId, node.label, node.meta.connectionId);
               }
             }}
             onContextMenu={e => handleContextMenu(e, node)}
@@ -264,7 +264,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
                 onClick={() => {
                   if (contextMenu.node.meta.metricId) {
-                    onOpenMetricTab?.(contextMenu.node.meta.metricId, contextMenu.node.label);
+                    onOpenMetricTab?.(contextMenu.node.meta.metricId, contextMenu.node.label, contextMenu.node.meta.connectionId);
                   }
                   setContextMenu(null);
                 }}

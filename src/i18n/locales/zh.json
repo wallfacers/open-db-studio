@@ -182,7 +182,15 @@
     "copy": "复制",
     "paste": "粘贴",
     "selectAll": "全选",
-    "format": "格式化文档"
+    "format": "格式化文档",
+    "executeAll": "执行全部",
+    "executeSelected": "执行选中",
+    "undo": "撤销",
+    "redo": "重做",
+    "toggleComment": "注释/取消注释",
+    "findReplace": "查找/替换",
+    "explainSql": "解释 SQL",
+    "optimizeSql": "优化 SQL"
   },
   "mainContent": {
     "selectConnectionFirst": "请先在左侧选择一个数据库连接",

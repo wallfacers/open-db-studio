@@ -10,6 +10,7 @@ import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
 import { useAppStore } from '../../store/appStore';
+import { Tooltip } from '../common/Tooltip';
 import type { ToastLevel } from '../Toast';
 
 // ── 历史消息（memo 隔离：chatHistory 不变时完全不重渲染）────────────────────
@@ -105,7 +106,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
@@ -123,8 +124,12 @@ export const Assistant: React.FC<AssistantProps> = ({
     () => new Set(chattingSessionIdsStr ? chattingSessionIdsStr.split(',') : []),
     [chattingSessionIdsStr]
   );
-  // 当前 session 的模型配置 ID（从 sessions 读取）
-  const activeConfigId = sessions.find((s) => s.id === currentSessionId)?.configId ?? null;
+  // 当前 session 的模型配置 ID：优先 chatStates.pendingConfigId（切换后立即生效），fallback sessions
+  const pendingConfigId = useAiStore((s) => s.chatStates[currentSessionId]?.pendingConfigId ?? null);
+  const activeConfigId =
+    pendingConfigId ??
+    sessions.find((s) => s.id === currentSessionId)?.configId ??
+    null;
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
   const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
   const { connections, activeConnectionIds } = useConnectionStore();
@@ -246,7 +251,8 @@ export const Assistant: React.FC<AssistantProps> = ({
 
   useEffect(() => {
     loadConfigs();
-  }, []);
+    loadSessions();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSendMessage = async () => {
     if (!chatInput.trim() || isChatting) return;
@@ -323,7 +329,8 @@ export const Assistant: React.FC<AssistantProps> = ({
         disabled={isChatting}
       />
       <div className="flex items-center justify-between mt-2 relative">
-        {/* 模型选择器 */}
+        {/* 模型选择器 + Auto 开关 */}
+        <div className="flex items-center gap-2">
         <div className="relative" ref={modelMenuRef}>
           <div
             className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]"
@@ -336,7 +343,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                     const active = configs.find((c) => c.id === activeConfigId)
                       ?? configs.find((c) => c.is_default)
                       ?? configs[0];
-                    return active?.name ?? t('assistant.selectModel');
+                    return active ? (active.opencode_display_name || active.model) : t('assistant.selectModel');
                   })()}
             </span>
             <ChevronDown size={12} className="ml-1 flex-shrink-0" />
@@ -358,19 +365,10 @@ export const Assistant: React.FC<AssistantProps> = ({
                           ? `cursor-pointer hover:bg-[#1e2d42] ${isActive ? 'text-[#009e84]' : 'text-[#c8daea]'}`
                           : 'cursor-not-allowed opacity-40 text-[#7a9bb8]'
                       }`}
-                      onClick={async () => {
+                      onClick={() => {
                         if (!isConnected) return;
-                        const hasHistory = (sessions.find(s => s.id === currentSessionId)?.messages.length ?? 0) > 0;
                         setIsModelMenuOpen(false);
-                        if (hasHistory) {
-                          // 有历史时：新建 session 真正重置上下文，再绑定新模型
-                          await newSession();
-                          const newSessionId = useAiStore.getState().currentSessionId;
-                          setSessionConfigId(newSessionId, c.id);
-                          showToast('已切换模型，上下文已重置', 'info');
-                        } else {
-                          setSessionConfigId(currentSessionId, c.id);
-                        }
+                        setSessionConfigId(currentSessionId, c.id);
                       }}
                       title={!isConnected ? t('assistant.modelNotConnected') : undefined}
                     >
@@ -385,6 +383,32 @@ export const Assistant: React.FC<AssistantProps> = ({
               )}
             </div>
           )}
+        </div>
+
+        {/* Auto 模式开关 */}
+        <Tooltip
+          content={autoMode
+            ? 'Auto 模式：开启 — AI 可直接执行写操作，无需逐一确认'
+            : 'Auto 模式：关闭 — 写操作执行前需要手动确认'}
+          delay={500}
+        >
+          <button
+            onClick={() => setAutoMode(!autoMode)}
+            className="flex items-center gap-1.5 px-1.5 py-1 rounded transition-colors hover:bg-[#1e2d42]"
+            aria-label="切换 Auto 模式"
+          >
+            <span className="text-[11px] text-[#5b8ab0] select-none">Auto</span>
+            {/* 开关轨道 */}
+            <span className={`relative inline-flex h-3.5 w-6 flex-shrink-0 rounded-full transition-colors duration-200 ${
+              autoMode ? 'bg-[#00c9a7]' : 'bg-[#2a3f5a]'
+            }`}>
+              {/* 滑块 */}
+              <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow transition-transform duration-200 ${
+                autoMode ? 'translate-x-[10px]' : 'translate-x-0.5'
+              }`} />
+            </span>
+          </button>
+        </Tooltip>
         </div>
 
         {isChatting ? (
@@ -421,19 +445,6 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
         <div className="flex items-center space-x-3 text-[#7a9bb8]">
-          {/* Auto Mode Toggle */}
-          <button
-            title={autoMode ? 'Auto 模式：开（写操作直接执行）' : 'Auto 模式：关（写操作需 ACP 确认）'}
-            onClick={() => setAutoMode(!autoMode)}
-            className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors ${
-              autoMode
-                ? 'text-[#00c9a7] bg-[#00c9a7]/10 hover:bg-[#00c9a7]/20'
-                : 'text-orange-400 bg-orange-400/10 hover:bg-orange-400/20'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${autoMode ? 'bg-[#00c9a7]' : 'bg-orange-400'}`} />
-            <span>Auto</span>
-          </button>
           {!showHistory && chatHistory.length > 0 && (
             <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(currentSessionId); showToast(t('assistant.historyCleared'), 'info'); }}>
               <Trash2 size={16} />
@@ -591,7 +602,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                     {msg.content}
                   </div>
                 </div>
-              ) : (
+              ) : msg.role === 'system' ? null : (
                 <AssistantMessage
                   key={idx}
                   content={msg.content}

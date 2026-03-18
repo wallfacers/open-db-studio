@@ -206,6 +206,32 @@ pub async fn permission_respond(
     Ok(())
 }
 
+/// 列出所有 sessions
+/// GET /session
+pub async fn list_sessions(port: u16) -> AppResult<serde_json::Value> {
+    let url = format!("{}/session", base_url(port));
+    let resp = client()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("list_sessions request failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!(
+            "list_sessions failed: {} — {}",
+            status, text
+        )));
+    }
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("list_sessions parse error: {}", e)))?;
+    Ok(json)
+}
+
 /// 热更新模型配置
 /// PATCH /config { "model": "providerID/modelID" }
 pub async fn patch_config(port: u16, model: &str, provider: &str) -> AppResult<()> {

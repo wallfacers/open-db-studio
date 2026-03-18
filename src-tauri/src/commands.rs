@@ -2482,6 +2482,43 @@ pub async fn agent_chat(
     result
 }
 
+/// 将 LLM 配置应用到 opencode（写入自定义供应商文件 + 热更新模型/供应商）。
+/// 返回 (model, effective_provider_id)。
+/// 当 opencode_provider_id 为空时降级到 api_type，保持对旧配置的向后兼容。
+async fn apply_llm_config_to_opencode(
+    cfg: &crate::db::models::LlmConfig,
+    state: &tauri::State<'_, crate::AppState>,
+) -> (String, String) {
+    let effective_provider = if cfg.opencode_provider_id.is_empty() {
+        cfg.api_type.clone()
+    } else {
+        cfg.opencode_provider_id.clone()
+    };
+
+    if cfg.config_mode == "custom" && !effective_provider.is_empty() {
+        let agent_dir = state.app_data_dir.join("agent");
+        if let Err(e) = crate::agent::config::upsert_custom_provider(
+            &agent_dir,
+            &effective_provider,
+            &cfg.api_type,
+            &cfg.base_url,
+            &cfg.api_key,
+        ) {
+            log::warn!("[apply_llm_config] upsert_custom_provider failed: {}", e);
+        }
+    }
+
+    if !cfg.model.is_empty() && !effective_provider.is_empty() {
+        if let Err(e) = crate::agent::client::patch_config(
+            state.serve_port, &cfg.model, &effective_provider,
+        ).await {
+            log::warn!("[apply_llm_config] patch_config failed: {}", e);
+        }
+    }
+
+    (cfg.model.clone(), effective_provider)
+}
+
 async fn agent_chat_inner(
     prompt: String,
     tab_sql: Option<String>,
@@ -2515,16 +2552,16 @@ async fn agent_chat_inner(
         }
     }
 
-    // 3. 获取 model/provider 字段（从 config_id 或默认配置）
+    // 3. 获取 model/provider 字段，并确保 opencode 配置正确（含 API Key 热写入）
     let (model_str, provider_str) = match config_id {
         Some(id) => {
             let cfg = crate::db::get_llm_config_by_id(id)?
                 .ok_or_else(|| AppError::Other(format!("LLM config {} not found", id)))?;
-            (cfg.model, cfg.opencode_provider_id)
+            apply_llm_config_to_opencode(&cfg, state).await
         }
         None => {
             match crate::db::get_default_llm_config()? {
-                Some(cfg) => (cfg.model, cfg.opencode_provider_id),
+                Some(cfg) => apply_llm_config_to_opencode(&cfg, state).await,
                 None => (String::new(), String::new()),
             }
         }
@@ -2798,9 +2835,10 @@ async fn agent_explain_sql_inner(
         *guard = Some(session_id.clone());
     }
 
-    // 6. 发送消息（SSE 流）
-    let model_opt = if config.model.is_empty() { None } else { Some(config.model.as_str()) };
-    let provider_opt = if config.opencode_provider_id.is_empty() { None } else { Some(config.opencode_provider_id.as_str()) };
+    // 6. 确保 opencode 配置正确，发送消息（SSE 流）
+    let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
+    let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
+    let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
     let send_result = crate::agent::client::send_message(
         port,
         &session_id,
@@ -2894,9 +2932,10 @@ async fn agent_optimize_sql_inner(
         *guard = Some(session_id.clone());
     }
 
-    // 6. 发送消息（SSE 流）
-    let model_opt = if config.model.is_empty() { None } else { Some(config.model.as_str()) };
-    let provider_opt = if config.opencode_provider_id.is_empty() { None } else { Some(config.opencode_provider_id.as_str()) };
+    // 6. 确保 opencode 配置正确，发送消息（SSE 流）
+    let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
+    let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
+    let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
     let send_result = crate::agent::client::send_message(
         port,
         &session_id,

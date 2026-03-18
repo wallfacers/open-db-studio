@@ -132,13 +132,21 @@ pub fn upsert_custom_provider(
         base_url.trim_end_matches('/').to_string()
     };
 
-    let provider_entry = serde_json::json!({
+    // 保留已有的 models / name 等字段，只更新 npm 和 options
+    let existing = root["provider"][provider_id].clone();
+    let mut provider_entry = serde_json::json!({
         "npm": npm_pkg,
         "options": {
             "apiKey": api_key,
             "baseURL": effective_base_url
         }
     });
+    if let Some(models) = existing.get("models") {
+        provider_entry["models"] = models.clone();
+    }
+    if let Some(name) = existing.get("name") {
+        provider_entry["name"] = name.clone();
+    }
 
     root["provider"][provider_id] = provider_entry;
 

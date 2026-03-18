@@ -2311,6 +2311,114 @@ pub struct AgentSessionRecord {
     pub updated_at: String,
 }
 
+/// OpenCode 消息解析结果（用于前端展示）
+#[derive(Debug, Serialize)]
+pub struct ParsedChatMessage {
+    pub role: String,
+    pub content: String,
+    pub thinking_content: Option<String>,
+}
+
+/// 从 OpenCode GET /session/:id/message 响应解析 ChatMessage 列表。
+/// OpenCode 消息格式：[{ "role": "user"|"assistant", "parts": [{ "type": "text"|"reasoning", "text": "..." }] }]
+/// 从 user 消息文本中分离注入的上下文前缀和用户原始输入。
+///
+/// 注入顺序（见 agent_chat_inner）：
+/// 1. `当前数据库连接 ID: {N}\n\n{prompt}`
+/// 2. `当前编辑器 SQL：\n```sql\n{sql}\n```\n\n{prev}`
+///
+/// 返回 `(context_summary, user_input)`：
+/// - `context_summary`：上下文摘要（连接 ID / SQL 标记），为空表示无前缀
+/// - `user_input`：用户实际输入
+fn split_user_context(text: &str) -> (String, &str) {
+    let mut s = text;
+
+    // 剥离 SQL 代码块前缀，记录是否存在
+    let has_sql = s.contains("当前编辑器 SQL：");
+    if let Some(pos) = s.find("\n```\n\n") {
+        s = &s[pos + 6..];
+    }
+
+    // 剥离连接 ID 前缀，提取 ID 值
+    let mut conn_line: Option<String> = None;
+    if s.starts_with("当前数据库连接 ID:") {
+        if let Some(pos) = s.find("\n\n") {
+            conn_line = Some(s[..pos].trim().to_string());
+            s = &s[pos + 2..];
+        }
+    }
+
+    // 构建上下文摘要
+    let summary = match (conn_line, has_sql) {
+        (Some(conn), true)  => format!("{} | 含编辑器 SQL", conn),
+        (Some(conn), false) => conn,
+        (None, true)        => "含编辑器 SQL".to_string(),
+        (None, false)       => String::new(),
+    };
+
+    (summary, s)
+}
+
+fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
+    let arr = match raw.as_array() {
+        Some(a) => a,
+        None => return vec![],
+    };
+
+    let mut result = Vec::new();
+    for msg in arr {
+        let role = msg["info"]["role"].as_str().unwrap_or("assistant");
+        if role == "system" {
+            continue;
+        }
+
+        let mut content = String::new();
+        let mut thinking = String::new();
+
+        if let Some(parts) = msg["parts"].as_array() {
+            for part in parts {
+                match part["type"].as_str().unwrap_or("") {
+                    "text" => {
+                        if let Some(t) = part["text"].as_str() {
+                            content.push_str(t);
+                        }
+                    }
+                    "reasoning" => {
+                        if let Some(t) = part["text"].as_str() {
+                            thinking.push_str(t);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // 跳过 tool-use only 消息（没有文本内容的 assistant 消息）
+        if content.is_empty() && role != "user" {
+            continue;
+        }
+
+        if role == "user" {
+            // 剥离注入的上下文前缀，只保留用户实际输入
+            let (_, user_input) = split_user_context(&content);
+            if !user_input.is_empty() {
+                result.push(ParsedChatMessage {
+                    role: "user".to_string(),
+                    content: user_input.to_string(),
+                    thinking_content: None,
+                });
+            }
+        } else {
+            result.push(ParsedChatMessage {
+                role: role.to_string(),
+                content,
+                thinking_content: if thinking.is_empty() { None } else { Some(thinking) },
+            });
+        }
+    }
+    result
+}
+
 /// 创建 agent session
 /// 1. 如果 config_id 指定，获取 LLM 配置并调用 patch_config
 /// 2. POST /session → 获取 session_id
@@ -2380,23 +2488,94 @@ pub async fn agent_delete_all_sessions(
     Ok(())
 }
 
-/// 列出所有 agent sessions（is_temp=0）
+/// 列出所有 agent sessions：优先从 OpenCode API 获取，再用 SQLite 补充 config_id / title
 #[tauri::command]
 pub async fn agent_list_sessions(
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<Vec<AgentSessionRecord>> {
-    let _ = state; // state not needed but kept for consistency
-    crate::db::list_agent_sessions(false)
+    // 尝试从 OpenCode API 获取 session 列表
+    let oc_result = crate::agent::client::list_sessions(state.serve_port).await;
+
+    // 从 SQLite 获取补充信息（config_id / title）
+    let db_sessions = crate::db::list_agent_sessions(false).unwrap_or_default();
+    let db_map: std::collections::HashMap<String, &AgentSessionRecord> =
+        db_sessions.iter().map(|r| (r.id.clone(), r)).collect();
+
+    match oc_result {
+        Ok(json) => {
+            // OpenCode 返回值可能是 array 或 { sessions: [...] } 等形式，兼容处理
+            let arr = if let Some(a) = json.as_array() {
+                a.clone()
+            } else if let Some(a) = json.get("sessions").and_then(|v| v.as_array()) {
+                a.clone()
+            } else {
+                log::warn!("[agent_list_sessions] Unexpected OpenCode response shape, falling back to SQLite");
+                return crate::db::list_agent_sessions(false);
+            };
+
+            let mut result: Vec<AgentSessionRecord> = Vec::new();
+            for sess in &arr {
+                let id = match sess["id"].as_str() {
+                    Some(s) if !s.is_empty() => s.to_string(),
+                    _ => continue,
+                };
+
+                // title：优先 SQLite（用户/AI 已生成），其次 OpenCode 返回值
+                let title = db_map
+                    .get(&id)
+                    .and_then(|r| r.title.clone())
+                    .or_else(|| sess["title"].as_str().map(|s| s.to_string()));
+
+                let config_id = db_map.get(&id).and_then(|r| r.config_id);
+
+                // 时间戳：OpenCode 可能用 time.created / createdAt / created_at 等字段
+                let created_at = sess["time"]["created"]
+                    .as_i64()
+                    .and_then(|ms| {
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(ms / 1000, 0)
+                            .map(|dt| dt.to_rfc3339())
+                    })
+                    .or_else(|| sess["createdAt"].as_str().map(|s| s.to_string()))
+                    .or_else(|| sess["created_at"].as_str().map(|s| s.to_string()))
+                    .or_else(|| db_map.get(&id).map(|r| r.created_at.clone()))
+                    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+                let updated_at = sess["time"]["updated"]
+                    .as_i64()
+                    .and_then(|ms| {
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(ms / 1000, 0)
+                            .map(|dt| dt.to_rfc3339())
+                    })
+                    .or_else(|| sess["updatedAt"].as_str().map(|s| s.to_string()))
+                    .or_else(|| sess["updated_at"].as_str().map(|s| s.to_string()))
+                    .or_else(|| db_map.get(&id).map(|r| r.updated_at.clone()))
+                    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+                // 同步 OpenCode session 到 SQLite（保持一致，config_id 保留已有值）
+                let _ = crate::db::insert_agent_session(&id, title.as_deref(), config_id, false);
+
+                result.push(AgentSessionRecord { id, title, config_id, created_at, updated_at });
+            }
+
+            log::info!("[agent_list_sessions] Loaded {} sessions from OpenCode", result.len());
+            Ok(result)
+        }
+        Err(e) => {
+            log::warn!("[agent_list_sessions] OpenCode unavailable ({}), falling back to SQLite", e);
+            crate::db::list_agent_sessions(false)
+        }
+    }
 }
 
-/// 获取 session 消息历史
+/// 获取 session 消息历史，解析为前端可用的 ChatMessage 列表
 /// GET /session/:id/message
 #[tauri::command]
 pub async fn agent_get_session_messages(
     session_id: String,
     state: tauri::State<'_, crate::AppState>,
-) -> AppResult<serde_json::Value> {
-    crate::agent::client::get_messages(state.serve_port, &session_id).await
+) -> AppResult<Vec<ParsedChatMessage>> {
+    let raw = crate::agent::client::get_messages(state.serve_port, &session_id).await?;
+    Ok(parse_opencode_messages(&raw))
 }
 
 /// 清除 session 历史（删除旧 session 并创建新 session）

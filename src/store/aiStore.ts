@@ -101,6 +101,8 @@ interface AiState {
   chatStates: Record<string, SessionRuntimeState>;
 
   // ── 对话操作 ──
+  loadSessions: () => Promise<void>;
+  loadSessionMessages: (sessionId: string) => Promise<void>;
   clearHistory: (sessionId: string) => Promise<void>;
   cancelChat: (sessionId: string) => Promise<void>;
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
@@ -279,6 +281,10 @@ export const useAiStore = create<AiState>()(
           chatHistory: target.messages,
           // 注意：不重置 chatStates，后台 channel 继续运行
         });
+        // 若消息未加载（空数组），从 OpenCode API 懒加载
+        if (target.messages.length === 0) {
+          get().loadSessionMessages(id).catch(() => {});
+        }
       },
 
       deleteSession: async (id) => {
@@ -422,6 +428,86 @@ export const useAiStore = create<AiState>()(
           .catch(() => {});
       },
 
+      loadSessions: async () => {
+        try {
+          const records = await invoke<Array<{
+            id: string;
+            title: string | null;
+            config_id: number | null;
+            created_at: string;
+            updated_at: string;
+          }>>('agent_list_sessions');
+
+          if (records.length === 0) {
+            // 没有历史会话，创建新 session
+            await get().newSession();
+            return;
+          }
+
+          const chatSessions: ChatSession[] = records.map((r) => ({
+            id: r.id,
+            title: r.title ?? '新对话',
+            messages: [],
+            createdAt: new Date(r.created_at).getTime() || Date.now(),
+            updatedAt: new Date(r.updated_at).getTime() || Date.now(),
+            titleGenerated: !!r.title,
+            configId: r.config_id ?? null,
+          }));
+
+          // 取最近更新的 session 作为当前 session
+          const mostRecent = chatSessions.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b));
+
+          set((s) => ({
+            sessions: chatSessions,
+            currentSessionId: mostRecent.id,
+            chatHistory: [],
+            chatStates: {
+              ...s.chatStates,
+              [mostRecent.id]: s.chatStates[mostRecent.id] ?? defaultRuntimeState(),
+            },
+          }));
+
+          // 懒加载当前 session 的历史消息
+          await get().loadSessionMessages(mostRecent.id);
+        } catch (e) {
+          console.warn('[loadSessions] Failed, creating new session:', e);
+          try {
+            await get().newSession();
+          } catch {
+            // fallback: 保持空状态
+          }
+        }
+      },
+
+      loadSessionMessages: async (sessionId: string) => {
+        try {
+          const messages = await invoke<Array<{
+            role: string;
+            content: string;
+            thinking_content: string | null;
+          }>>('agent_get_session_messages', { sessionId });
+
+          const chatMessages: ChatMessage[] = messages
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .map((m) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              ...(m.thinking_content ? { thinkingContent: m.thinking_content } : {}),
+            }));
+
+          const isCurrentSession = get().currentSessionId === sessionId;
+          set((s) => ({
+            sessions: s.sessions.map((sess) =>
+              sess.id === sessionId ? { ...sess, messages: chatMessages } : sess
+            ),
+            ...(isCurrentSession ? { chatHistory: chatMessages } : {}),
+          }));
+        } catch (e) {
+          // 静默忽略：session 可能尚无消息
+          console.debug('[loadSessionMessages] No messages or error:', e);
+        }
+      },
+
       clearHistory: async (sessionId) => {
         // 必须 await cancelChat，防止 cancel 完成前 commitAssistant 仍写入
         if (get().chatStates[sessionId]?.isChatting) {
@@ -478,6 +564,13 @@ export const useAiStore = create<AiState>()(
 
         // 捕获发送时的 sessionId；若不是有效的 opencode session（需以 'ses' 开头）则先创建
         let sessionId = get().currentSessionId;
+
+        // 必须在 sessionId 替换之前读取 configId（pendingConfigId 存在旧 UUID 下）
+        const configId =
+          get().chatStates[sessionId]?.pendingConfigId ??
+          get().sessions.find((s) => s.id === sessionId)?.configId ??
+          null;
+
         if (!sessionId.startsWith('ses')) {
           try {
             sessionId = await invoke<string>('agent_create_session', {});
@@ -486,12 +579,6 @@ export const useAiStore = create<AiState>()(
             // 创建失败继续执行，downstream 会报错
           }
         }
-
-        // 读取 configId：优先 chatStates（切换后立即可用），fallback sessions（持久化）
-        const configId =
-          get().chatStates[sessionId]?.pendingConfigId ??
-          get().sessions.find((s) => s.id === sessionId)?.configId ??
-          null;
 
         // 并发上限检查
         const activeChatCount = Object.values(get().chatStates).filter((s) => s.isChatting).length;

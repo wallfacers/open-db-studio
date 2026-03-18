@@ -143,8 +143,8 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         t.status !== 'running' &&
         !respondedIds.has(t.id) &&
         t.connectionId === scope.connectionId &&
-        t.database === (scope.database ?? undefined) &&
-        t.schema === (scope.schema ?? undefined)
+        (t.database ?? undefined) === (scope.database ?? undefined) &&
+        (t.schema ?? undefined) === (scope.schema ?? undefined)
       );
       if (relevant) {
         respondedIds.add(relevant.id);

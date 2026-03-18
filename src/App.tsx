@@ -16,7 +16,7 @@ import { TaskCenter } from './components/TaskCenter';
 import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
 import { GraphExplorer } from './components/GraphExplorer';
 import { MigrationWizard } from './components/MigrationWizard';
-import { initTaskProgressListener, useTaskStore } from './store';
+import { initTaskProgressListener, initBgTaskListeners, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
 import { TaskBar } from './components/TaskBar';
@@ -49,6 +49,7 @@ export default function App() {
   // 初始化任务进度监听器
   useEffect(() => {
     initTaskProgressListener();
+    initBgTaskListeners();
   }, []);
   // 导入/导出完成后自动跳转到「我的任务」侧边栏
   useEffect(() => {

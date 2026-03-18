@@ -65,8 +65,19 @@ export function TablePickerModal({
 
   const scopeLabel = [database, schema].filter(Boolean).join(' > ');
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div
         className="bg-[#0d1117] border border-[#2a3f5a] rounded-lg shadow-2xl flex flex-col"
         style={{ width: '100%', maxWidth: 480 }}
@@ -112,8 +123,7 @@ export function TablePickerModal({
                   checked={isChecked}
                   onChange={() => toggleRow(table.name)}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-shrink-0 cursor-pointer"
-                  style={{ accentColor: '#00c9a7' }}
+                  className="flex-shrink-0 cursor-pointer accent-[#00c9a7]"
                 />
                 <span className="flex-1 text-sm text-[#c8daea] truncate">{table.name}</span>
                 <span className="text-xs text-[#7a9bb8] flex-shrink-0">

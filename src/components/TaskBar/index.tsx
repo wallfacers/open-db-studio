@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useBgTaskStore } from '../../store';
 import { TaskLogPanel } from './TaskLogPanel';
@@ -6,6 +6,10 @@ import { TaskLogPanel } from './TaskLogPanel';
 export const TaskBar: React.FC = () => {
   const tasks = useBgTaskStore((s) => s.tasks);
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (tasks.length === 0) setIsOpen(false);
+  }, [tasks.length]);
 
   // Derive display state
   const runningTasks = tasks.filter((t) => t.status === 'running');

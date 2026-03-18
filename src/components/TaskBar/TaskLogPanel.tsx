@@ -23,12 +23,12 @@ const TaskCard: React.FC<TaskCardProps> = ({ task }) => {
     }
   }, [task.status]);
 
-  // Auto-scroll to the latest log line while running
+  // Auto-scroll to the latest log line whenever logs change while expanded
   useEffect(() => {
-    if (task.status === 'running' && expanded) {
+    if (expanded) {
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [task.logs.length, task.status, expanded]);
+  }, [task.logs.length, expanded]);
 
   const statusIcon = () => {
     if (task.status === 'running') {
@@ -117,11 +117,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task }) => {
 // Panel
 // ---------------------------------------------------------------------------
 
-interface TaskLogPanelProps {
-  onClose?: () => void;
-}
-
-export const TaskLogPanel: React.FC<TaskLogPanelProps> = ({ onClose: _onClose }) => {
+export const TaskLogPanel: React.FC = () => {
   const tasks = useBgTaskStore((s) => s.tasks);
   const clearCompleted = useBgTaskStore((s) => s.clearCompleted);
 

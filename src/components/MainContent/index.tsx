@@ -3,7 +3,7 @@ import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@mona
 import type { editor as MonacoEditorType, languages as MonacoLanguages, IRange as MonacoIRange } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { FullSchemaInfo } from '../../types';
 import { useAppStore } from '../../store/appStore';
 
@@ -1245,6 +1245,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           ref={editorContextMenuRef}
           className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[200px]"
           style={{ left: editorContextMenu.x, top: editorContextMenu.y }}
+          onMouseDown={(e) => e.preventDefault()}
         >
           {/* 分组1：剪贴板 */}
           <button
@@ -1292,21 +1293,23 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => {
+            onClick={async () => {
               const ed = editorRef.current;
               setEditorContextMenu(null);
-              readText().then((text) => {
-                if (text === null || !ed) return;
+              try {
+                const text = await navigator.clipboard.readText();
+                if (!text || !ed) return;
                 const sel = ed.getSelection();
-                const range = (sel && !sel.isEmpty()) ? sel : {
-                  startLineNumber: ed.getPosition()?.lineNumber ?? 1,
-                  startColumn: ed.getPosition()?.column ?? 1,
-                  endLineNumber: ed.getPosition()?.lineNumber ?? 1,
-                  endColumn: ed.getPosition()?.column ?? 1,
+                const pos = ed.getPosition();
+                const range: MonacoIRange = (sel && !sel.isEmpty()) ? sel : {
+                  startLineNumber: pos?.lineNumber ?? 1,
+                  startColumn: pos?.column ?? 1,
+                  endLineNumber: pos?.lineNumber ?? 1,
+                  endColumn: pos?.column ?? 1,
                 };
-                ed.executeEdits('paste', [{ range, text }]);
+                ed.executeEdits(null, [{ range, text }]);
                 ed.focus();
-              });
+              } catch { /* 剪贴板读取失败时静默忽略 */ }
             }}
           >
             <Clipboard size={13} color="#7a9bb8" />

@@ -185,8 +185,6 @@
     "format": "格式化文档",
     "executeAll": "执行全部",
     "executeSelected": "执行选中",
-    "undo": "撤销",
-    "redo": "重做",
     "toggleComment": "注释/取消注释",
     "findReplace": "查找/替换",
     "explainSql": "解释 SQL",

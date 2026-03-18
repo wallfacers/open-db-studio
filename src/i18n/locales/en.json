@@ -185,8 +185,6 @@
     "format": "Format Document",
     "executeAll": "Execute All",
     "executeSelected": "Execute Selected",
-    "undo": "Undo",
-    "redo": "Redo",
     "toggleComment": "Toggle Comment",
     "findReplace": "Find & Replace",
     "explainSql": "Explain SQL",

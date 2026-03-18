@@ -5,6 +5,8 @@ import type { Metric, MetricScope, MetricStatus } from '../../types';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
 import { useQueryStore } from '../../store/queryStore';
+import { useBgTaskStore } from '../../store';
+import { TablePickerModal } from './TablePickerModal';
 
 interface Props {
   scope: MetricScope;
@@ -112,18 +114,45 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     openNewMetricTab(scope, scopeTitle);
   };
 
-  const [aiLoading, setAiLoading] = useState(false);
-  const doAiGenerate = async () => {
-    setAiLoading(true);
+  const [showTablePicker, setShowTablePicker] = useState(false);
+
+  const handleAiConfirm = async (tableNames: string[]) => {
+    setShowTablePicker(false);
+    const title = `AI 生成指标 · ${scope.database ?? 'default'}`;
     try {
-      await invoke('ai_generate_metrics', { connectionId: scope.connectionId });
-      load();
+      const taskId = await invoke<string>('ai_generate_metrics', {
+        connectionId: scope.connectionId,
+        database: scope.database ?? null,
+        schema: scope.schema ?? null,
+        tableNames,
+      });
+      useBgTaskStore.getState().addTask(taskId, 'ai_generate_metrics', title, {
+        connectionId: scope.connectionId,
+        database: scope.database,
+        schema: scope.schema,
+      });
     } catch (e: any) {
       setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
-    } finally {
-      setAiLoading(false);
     }
   };
+
+  useEffect(() => {
+    const respondedIds = new Set<string>();
+    return useBgTaskStore.subscribe((state) => {
+      const relevant = state.tasks.find(t =>
+        t.status !== 'running' &&
+        !respondedIds.has(t.id) &&
+        t.connectionId === scope.connectionId &&
+        t.database === (scope.database ?? undefined) &&
+        t.schema === (scope.schema ?? undefined)
+      );
+      if (relevant) {
+        respondedIds.add(relevant.id);
+        load();
+        if (parentNodeId) useMetricsTreeStore.getState().refreshNode(parentNodeId);
+      }
+    });
+  }, [scope.connectionId, scope.database, scope.schema]);
 
   const statusBadge = (status: MetricStatus) => {
     const map: Record<MetricStatus, { cls: string; label: string }> = {
@@ -171,10 +200,9 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         ><Plus size={12} /> 新增</button>
         <button
           className="flex items-center gap-1 px-2 py-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
-                     text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7] disabled:opacity-50"
-          onClick={doAiGenerate}
-          disabled={aiLoading}
-        ><Sparkles size={12} /> {aiLoading ? '生成中...' : 'AI 生成'}</button>
+                     text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7]"
+          onClick={() => setShowTablePicker(true)}
+        ><Sparkles size={12} /> AI 生成</button>
       </div>
 
       {/* 表格 */}
@@ -256,6 +284,15 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         </div>
       )}
 
+      {showTablePicker && (
+        <TablePickerModal
+          connectionId={scope.connectionId}
+          database={scope.database}
+          schema={scope.schema}
+          onConfirm={handleAiConfirm}
+          onClose={() => setShowTablePicker(false)}
+        />
+      )}
     </div>
   );
 }

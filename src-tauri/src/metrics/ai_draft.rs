@@ -255,15 +255,13 @@ Schema:
                     "SELECT COUNT(*) FROM metrics \
                      WHERE connection_id=?1 \
                        AND table_name=?2 \
-                       AND name=?3 \
-                       AND (column_name=?4 OR (column_name IS NULL AND ?4 IS NULL)) \
-                       AND (aggregation=?5 OR (aggregation IS NULL AND ?5 IS NULL)) \
-                       AND (scope_database=?6 OR (scope_database IS NULL AND ?6 IS NULL)) \
-                       AND (scope_schema=?7 OR (scope_schema IS NULL AND ?7 IS NULL))",
+                       AND (column_name=?3 OR (column_name IS NULL AND ?3 IS NULL)) \
+                       AND (aggregation=?4 OR (aggregation IS NULL AND ?4 IS NULL)) \
+                       AND (scope_database=?5 OR (scope_database IS NULL AND ?5 IS NULL)) \
+                       AND (scope_schema=?6 OR (scope_schema IS NULL AND ?6 IS NULL))",
                     rusqlite::params![
                         connection_id,
                         item.table_name,
-                        item.name,
                         item.column_name,
                         item.aggregation,
                         database,

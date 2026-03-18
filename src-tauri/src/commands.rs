@@ -2092,18 +2092,32 @@ pub async fn list_tables_with_column_count(
     .await?;
     let schema_info = ds.get_schema().await?;
 
-    let mut result = Vec::new();
-    for table in &schema_info.tables {
-        let cols = ds
-            .get_columns(&table.name, schema.as_deref())
-            .await
-            .unwrap_or_default();
-        result.push(TableWithColumnCount {
-            name: table.name.clone(),
-            column_count: cols.len(),
-        });
-    }
-    Ok(result)
+    // 为每张表创建独立的 datasource 实例，使用 join_all 并发拉取列数，避免 N+1 串行超时
+    let config = std::sync::Arc::new(config);
+    let futures: Vec<_> = schema_info.tables.into_iter().map(|table| {
+        let config = config.clone();
+        let db = database.clone();
+        let sc = schema.clone();
+        async move {
+            let ds = crate::datasource::create_datasource_with_context(
+                &config,
+                db.as_deref(),
+                sc.as_deref(),
+            )
+            .await?;
+            let cols = ds
+                .get_columns(&table.name, sc.as_deref())
+                .await
+                .unwrap_or_default();
+            Ok::<TableWithColumnCount, crate::AppError>(TableWithColumnCount {
+                name: table.name,
+                column_count: cols.len(),
+            })
+        }
+    }).collect();
+
+    let results = futures_util::future::join_all(futures).await;
+    Ok(results.into_iter().filter_map(|r| r.ok()).collect())
 }
 
 #[tauri::command]

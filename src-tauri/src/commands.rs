@@ -2049,9 +2049,61 @@ pub async fn get_migration_progress(
 
 #[tauri::command]
 pub async fn ai_generate_metrics(
+    app_handle: tauri::AppHandle,
     connection_id: i64,
-) -> AppResult<Vec<crate::metrics::Metric>> {
-    crate::metrics::ai_draft::generate_metric_drafts(connection_id).await
+    database: Option<String>,
+    schema: Option<String>,
+    table_names: Vec<String>,
+) -> AppResult<String> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let task_id_clone = task_id.clone();
+    tokio::spawn(async move {
+        crate::metrics::ai_draft::generate_metric_drafts(
+            app_handle,
+            task_id_clone,
+            connection_id,
+            database,
+            schema,
+            table_names,
+        )
+        .await;
+    });
+    Ok(task_id)
+}
+
+#[derive(serde::Serialize)]
+pub struct TableWithColumnCount {
+    pub name: String,
+    pub column_count: usize,
+}
+
+#[tauri::command]
+pub async fn list_tables_with_column_count(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+) -> AppResult<Vec<TableWithColumnCount>> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_context(
+        &config,
+        database.as_deref(),
+        schema.as_deref(),
+    )
+    .await?;
+    let schema_info = ds.get_schema().await?;
+
+    let mut result = Vec::new();
+    for table in &schema_info.tables {
+        let cols = ds
+            .get_columns(&table.name, schema.as_deref())
+            .await
+            .unwrap_or_default();
+        result.push(TableWithColumnCount {
+            name: table.name.clone(),
+            column_count: cols.len(),
+        });
+    }
+    Ok(result)
 }
 
 #[tauri::command]

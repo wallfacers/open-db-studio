@@ -209,6 +209,7 @@ pub fn run() {
             commands::pause_migration,
             commands::get_migration_progress,
             commands::ai_generate_metrics,
+            commands::list_tables_with_column_count,
             commands::ai_generate_sql_v2,
             commands::start_migration,
             commands::get_migration_task,

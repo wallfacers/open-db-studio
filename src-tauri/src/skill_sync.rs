@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 use tauri::Manager;
 
-/// 将内置 skills 目录增量同步到各 ACP 工作目录下的 skills\ 子目录
-/// 目标：acp\skills\、acp-optimize\skills\、acp-explain\skills\
+/// 将内置 skills 目录增量同步到 opencode/skills/（由 OPENCODE_CONFIG_DIR 指定）
 /// 只写/覆盖本项目定义的 skill，不删除目标目录其他文件
 pub fn sync_skills_on_startup(app: &tauri::AppHandle) {
     let src_dir = match app.path().resource_dir() {
@@ -26,10 +25,8 @@ pub fn sync_skills_on_startup(app: &tauri::AppHandle) {
         }
     };
 
-    for acp_dir in &["acp", "acp-optimize", "acp-explain"] {
-        let target_dir = base.join(acp_dir).join("skills");
-        sync_dir(&src_dir, &target_dir);
-    }
+    let target_dir = base.join("opencode").join("skills");
+    sync_dir(&src_dir, &target_dir);
 }
 
 fn sync_dir(src_dir: &PathBuf, target_dir: &PathBuf) {

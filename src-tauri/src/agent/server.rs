@@ -42,13 +42,22 @@ async fn wait_for_health(client: &reqwest::Client, port: u16) -> bool {
 }
 
 /// Spawn `opencode-cli serve --port {port}` and return the child handle.
+///
+/// `OPENCODE_CONFIG` points to the single `opencode.json` that contains
+/// provider, mcp, and model config.  `OPENCODE_CONFIG_DIR` points to the
+/// app data `opencode/` directory so that `opencode/agents/` is picked up.
 fn spawn_child(
-    agent_dir: &std::path::Path,
+    opencode_dir: &std::path::Path,
     port: u16,
 ) -> std::io::Result<tokio::process::Child> {
+    let config_file = opencode_dir.join("opencode.json");
     tokio::process::Command::new("opencode-cli")
         .args(["serve", "--port", &port.to_string()])
-        .current_dir(agent_dir)
+        .current_dir(opencode_dir)
+        .env("OPENCODE_CONFIG", &config_file)
+        .env("OPENCODE_CONFIG_DIR", opencode_dir)
+        // 禁用自动更新（autoupdate: false 在非全局路径下是已知 bug #6984，需用环境变量）
+        .env("OPENCODE_DISABLE_AUTOUPDATE", "true")
         .kill_on_drop(false) // we manage lifecycle explicitly
         .spawn()
 }
@@ -58,7 +67,7 @@ fn spawn_child(
 /// Ok(None) when opencode is already running externally,
 /// Err on failure.
 async fn try_start(
-    agent_dir: &std::path::Path,
+    opencode_dir: &std::path::Path,
     port: u16,
 ) -> AppResult<Option<tokio::process::Child>> {
     // Fix I1: create the client once and reuse across health checks.
@@ -74,10 +83,10 @@ async fn try_start(
     }
 
     // Ensure the agent directory exists.
-    std::fs::create_dir_all(agent_dir)
+    std::fs::create_dir_all(opencode_dir)
         .map_err(|e| crate::AppError::Other(format!("Failed to create agent dir: {}", e)))?;
 
-    let child = spawn_child(agent_dir, port)
+    let child = spawn_child(opencode_dir, port)
         .map_err(|e| crate::AppError::Other(format!("Failed to spawn opencode-cli: {}", e)))?;
 
     if !wait_for_health(&client, port).await {
@@ -93,7 +102,7 @@ async fn try_start(
 }
 
 /// Background task that monitors the serve child process and restarts it on crash.
-async fn crash_monitor(app_handle: tauri::AppHandle, agent_dir: std::path::PathBuf, port: u16) {
+async fn crash_monitor(app_handle: tauri::AppHandle, opencode_dir: std::path::PathBuf, port: u16) {
     let mut retry_count: u32 = 0;
 
     loop {
@@ -131,7 +140,7 @@ async fn crash_monitor(app_handle: tauri::AppHandle, agent_dir: std::path::PathB
         );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-        match try_start(&agent_dir, port).await {
+        match try_start(&opencode_dir, port).await {
             Ok(new_child_opt) => {
                 let state = app_handle.state::<crate::AppState>();
                 let mut guard = state.serve_child.lock().await;
@@ -165,9 +174,9 @@ pub async fn start_serve(
     app_data_dir: &std::path::Path,
     port: u16,
 ) -> AppResult<()> {
-    let agent_dir = app_data_dir.join("agent");
+    let opencode_dir = app_data_dir.join("opencode");
 
-    match try_start(&agent_dir, port).await {
+    match try_start(&opencode_dir, port).await {
         Ok(child_opt) => {
             {
                 let state = app_handle.state::<crate::AppState>();
@@ -177,7 +186,7 @@ pub async fn start_serve(
 
             // Spawn crash monitor in background.
             let handle_clone = app_handle.clone();
-            let dir_clone = agent_dir.clone();
+            let dir_clone = opencode_dir.clone();
             tauri::async_runtime::spawn(async move {
                 crash_monitor(handle_clone, dir_clone, port).await;
             });

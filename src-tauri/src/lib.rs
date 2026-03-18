@@ -79,6 +79,7 @@ pub fn run() {
             // ── 后台初始化（文件 I/O + 进程启动，避免阻塞主线程导致"未响应"）──────
             let handle = app.handle().clone();
             let data_dir_clone = app_data_dir.clone();
+
             tauri::async_runtime::spawn(async move {
                 let opencode_dir = data_dir_clone.join("opencode");
 

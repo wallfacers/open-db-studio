@@ -71,6 +71,9 @@ export interface LlmConfig {
   created_at: string;
   opencode_provider_id: string;
   config_mode: ConfigMode;
+  opencode_display_name: string;
+  opencode_model_options: string;
+  opencode_provider_name: string;
 }
 
 export interface CreateLlmConfigInput {
@@ -82,6 +85,9 @@ export interface CreateLlmConfigInput {
   preset?: string | null;
   opencode_provider_id: string;
   config_mode: ConfigMode;
+  opencode_display_name?: string;
+  opencode_model_options?: string;
+  opencode_provider_name?: string;
 }
 
 export interface UpdateLlmConfigInput {
@@ -93,6 +99,9 @@ export interface UpdateLlmConfigInput {
   preset?: string | null;
   opencode_provider_id?: string;
   config_mode?: ConfigMode;
+  opencode_display_name?: string;
+  opencode_model_options?: string;
+  opencode_provider_name?: string;
 }
 
 export type TabType =

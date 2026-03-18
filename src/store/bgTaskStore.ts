@@ -128,22 +128,19 @@ export function initBgTaskListeners() {
 
   listen<BgTaskDonePayload>('bg_task_done', (event) => {
     const p = event.payload;
-    const extra: Partial<BackgroundTask> = {
+    if (!p.success && p.error) {
+      useBgTaskStore.getState().appendLog(p.task_id, {
+        timestamp: Date.now(),
+        level: 'error',
+        message: p.error,
+      });
+    }
+    useBgTaskStore.getState().completeTask(p.task_id, p.success, {
+      metricCount: p.metric_count,
+      skippedCount: p.skipped_count,
       connectionId: p.connection_id,
       database: p.database,
       schema: p.schema,
-      metricCount: p.metric_count,
-      skippedCount: p.skipped_count,
-    };
-    if (!p.success && p.error) {
-      extra.logs = [
-        {
-          timestamp: Date.now(),
-          level: 'error',
-          message: p.error,
-        },
-      ];
-    }
-    useBgTaskStore.getState().completeTask(p.task_id, p.success, extra);
+    });
   });
 }

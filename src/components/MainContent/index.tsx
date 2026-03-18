@@ -3,7 +3,7 @@ import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@mona
 import type { editor as MonacoEditorType, languages as MonacoLanguages, IRange as MonacoIRange } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { FullSchemaInfo } from '../../types';
 import { useAppStore } from '../../store/appStore';
 
@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, Undo2, Redo2, TextSelect, MessageSquare,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -1249,7 +1249,21 @@ export const MainContent: React.FC<MainContentProps> = ({
           {/* 分组1：剪贴板 */}
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.clipboardCutAction', null); setEditorContextMenu(null); }}
+            onClick={() => {
+              const ed = editorRef.current;
+              const menu = editorContextMenu!;
+              setEditorContextMenu(null);
+              if (menu.selectedSql && menu.selectionRange && ed) {
+                writeText(menu.selectedSql).then(() => {
+                  ed.executeEdits('cut', [{ range: menu.selectionRange!, text: '' }]);
+                  ed.focus();
+                });
+              } else if (ed) {
+                // 无选区：剪切当前行（Monaco 原生行为，焦点恢复后触发）
+                ed.focus();
+                ed.trigger('keyboard', 'editor.action.clipboardCutAction', null);
+              }
+            }}
           >
             <Scissors size={13} color="#7a9bb8" />
             <span className="flex-1">{t('editorContextMenu.cut')}</span>
@@ -1257,7 +1271,20 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.clipboardCopyAction', null); setEditorContextMenu(null); }}
+            onClick={() => {
+              const ed = editorRef.current;
+              const menu = editorContextMenu!;
+              setEditorContextMenu(null);
+              const text = menu.selectedSql || ed?.getModel()?.getValue() || '';
+              const range = menu.selectionRange ?? ed?.getModel()?.getFullModelRange();
+              if (text && range) {
+                writeText(menu.selectedSql
+                  ? menu.selectedSql
+                  : (ed?.getModel()?.getValueInRange(range) ?? ''));
+              }
+              ed?.focus();
+              ed?.trigger('keyboard', 'editor.action.clipboardCopyAction', null);
+            }}
           >
             <Copy size={13} color="#7a9bb8" />
             <span className="flex-1">{t('editorContextMenu.copy')}</span>
@@ -1265,7 +1292,22 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.clipboardPasteAction', null); setEditorContextMenu(null); }}
+            onClick={() => {
+              const ed = editorRef.current;
+              setEditorContextMenu(null);
+              readText().then((text) => {
+                if (text === null || !ed) return;
+                const sel = ed.getSelection();
+                const range = (sel && !sel.isEmpty()) ? sel : {
+                  startLineNumber: ed.getPosition()?.lineNumber ?? 1,
+                  startColumn: ed.getPosition()?.column ?? 1,
+                  endLineNumber: ed.getPosition()?.lineNumber ?? 1,
+                  endColumn: ed.getPosition()?.column ?? 1,
+                };
+                ed.executeEdits('paste', [{ range, text }]);
+                ed.focus();
+              });
+            }}
           >
             <Clipboard size={13} color="#7a9bb8" />
             <span className="flex-1">{t('editorContextMenu.paste')}</span>
@@ -1299,22 +1341,6 @@ export const MainContent: React.FC<MainContentProps> = ({
           <div className="h-px bg-[#2a3f5a] my-1" />
 
           {/* 分组3：编辑辅助 */}
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.undo', null); setEditorContextMenu(null); }}
-          >
-            <Undo2 size={13} color="#7a9bb8" />
-            <span className="flex-1">{t('editorContextMenu.undo')}</span>
-            <span className="text-[#3a5070]">Ctrl+Z</span>
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.redo', null); setEditorContextMenu(null); }}
-          >
-            <Redo2 size={13} color="#7a9bb8" />
-            <span className="flex-1">{t('editorContextMenu.redo')}</span>
-            <span className="text-[#3a5070]">Ctrl+Y</span>
-          </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.selectAll', null); setEditorContextMenu(null); }}

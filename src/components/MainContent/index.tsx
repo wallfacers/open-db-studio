@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@monaco-editor/react';
-import type { editor as MonacoEditorType, languages as MonacoLanguages } from 'monaco-editor';
+import type { editor as MonacoEditorType, languages as MonacoLanguages, IRange as MonacoIRange } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
-  BarChart2,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, Undo2, Redo2, TextSelect, MessageSquare,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -69,6 +69,20 @@ import { Tooltip } from '../common/Tooltip';
 import { buildErrorContext } from '../../utils/errorContext';
 import { askAiWithContext } from '../../utils/askAi';
 import { MarkdownContent } from '../shared/MarkdownContent';
+
+function getSqlAtCursor(sql: string, cursorOffset: number): string {
+  const parts = sql.split(';');
+  let offset = 0;
+  for (const part of parts) {
+    const end = offset + part.length;
+    if (cursorOffset <= end) {
+      const trimmed = part.trim();
+      return trimmed !== '' ? trimmed : sql.trim();
+    }
+    offset = end + 1;
+  }
+  return sql.trim();
+}
 
 interface MainContentProps {
   handleFormat: () => void;
@@ -210,7 +224,12 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [resultCellViewer, setResultCellViewer] = useState<{ value: string | null; columnName: string } | null>(null);
   const [resultCellMenu, setResultCellMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null);
   const resultCellMenuRef = useRef<HTMLDivElement>(null);
-  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editorContextMenu, setEditorContextMenu] = useState<{
+    x: number; y: number;
+    selectedSql: string;
+    cursorOffset: number;
+    selectionRange: MonacoIRange | null;
+  } | null>(null);
   const resultContextMenuRef = useRef<HTMLDivElement>(null);
   const editorContextMenuRef = useRef<HTMLDivElement>(null);
   // 上下文选择器动态缓存：数据库列表 key = connId，schema 列表 key = "connId/database"
@@ -269,9 +288,24 @@ export const MainContent: React.FC<MainContentProps> = ({
     if (completionProviderRegistered.current) return;
     completionProviderRegistered.current = true;
 
+    // 阻止浏览器原生右键菜单（Monaco 的 e.event.preventDefault 只影响 Monaco 内部事件）
+    editor.getDomNode()?.addEventListener('contextmenu', (e) => e.preventDefault());
+
     editor.onContextMenu((e) => {
       e.event.preventDefault();
-      setEditorContextMenu({ x: e.event.posx, y: e.event.posy });
+      const sel = editor.getSelection();
+      const selectedSql = (sel && !sel.isEmpty())
+        ? editor.getModel()?.getValueInRange(sel) ?? ''
+        : '';
+      const pos = editor.getPosition();
+      const cursorOffset = pos ? (editor.getModel()?.getOffsetAt(pos) ?? 0) : 0;
+      setEditorContextMenu({
+        x: e.event.posx,
+        y: e.event.posy,
+        selectedSql,
+        cursorOffset,
+        selectionRange: (sel && !sel.isEmpty()) ? sel : null,
+      });
     });
 
     monaco.languages.registerCompletionItemProvider('sql', {
@@ -409,19 +443,24 @@ export const MainContent: React.FC<MainContentProps> = ({
     setSql(activeTab, '');
   };
 
-  const handleExplain = async () => {
+  const handleExplain = async (sqlOverride?: string) => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     if (!currentSql.trim() || !connId) {
       showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
       return;
     }
-    const editor = editorRef.current;
-    const selection = editor?.getSelection();
-    const selectedSql =
-      selection && !selection.isEmpty()
-        ? editor!.getModel()?.getValueInRange(selection) ?? ''
-        : '';
-    const sqlToExplain = selectedSql.trim() ? selectedSql : currentSql;
+    let sqlToExplain: string;
+    if (sqlOverride !== undefined) {
+      sqlToExplain = sqlOverride.trim() || currentSql;
+    } else {
+      const editor = editorRef.current;
+      const selection = editor?.getSelection();
+      const selectedSql =
+        selection && !selection.isEmpty()
+          ? editor!.getModel()?.getValueInRange(selection) ?? ''
+          : '';
+      sqlToExplain = selectedSql.trim() ? selectedSql : currentSql;
+    }
 
     startExplanation(activeTab);       // 原子操作：清内容 + streaming=true（一次 zustand set）
     setSelectedResultPane('explanation');
@@ -446,23 +485,31 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
   };
 
-  const handleOptimize = async () => {
+  const handleOptimize = async (options?: { sqlOverride: string; range?: MonacoIRange | null }) => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     if (!currentSql.trim() || !connId) {
       showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
       return;
     }
+    let sqlToOptimize: string;
+    let rangeToReplace: MonacoIRange | null = null;
     const editor = editorRef.current;
-    const selection = editor?.getSelection();
-    const selectedSql =
-      selection && !selection.isEmpty()
-        ? editor!.getModel()?.getValueInRange(selection) ?? ''
-        : '';
-    const sqlToOptimize = selectedSql.trim() ? selectedSql : currentSql;
+    if (options?.sqlOverride !== undefined) {
+      sqlToOptimize = options.sqlOverride;
+      rangeToReplace = options.range ?? null;
+    } else {
+      const selection = editor?.getSelection();
+      const selectedSql =
+        selection && !selection.isEmpty()
+          ? editor!.getModel()?.getValueInRange(selection) ?? ''
+          : '';
+      sqlToOptimize = selectedSql.trim() ? selectedSql : currentSql;
+      rangeToReplace = (selectedSql.trim() && selection) ? selection : null;
+    }
     try {
       const result = await optimizeSql(sqlToOptimize, connId, activeTabObj?.queryContext?.database ?? null, activeTab);
-      if (selectedSql.trim() && selection && editor) {
-        editor.executeEdits('optimize', [{ range: selection, text: result }]);
+      if (rangeToReplace && editor) {
+        editor.executeEdits('optimize', [{ range: rangeToReplace, text: result }]);
         editor.focus();
       } else {
         setSql(activeTab, result);
@@ -675,7 +722,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <Tooltip content={!currentSql.trim() ? '' : t('mainContent.explainSql')}>
                     <button
                       className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                      onClick={handleExplain}
+                      onClick={() => handleExplain()}
                       disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
                     >
                       <Lightbulb size={16} />
@@ -704,7 +751,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <Tooltip content={!currentSql.trim() ? '' : t('mainContent.optimizeSql')}>
                     <button
                       className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                      onClick={handleOptimize}
+                      onClick={() => handleOptimize()}
                       disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
                     >
                       <Zap size={16} />
@@ -1196,55 +1243,143 @@ export const MainContent: React.FC<MainContentProps> = ({
       {editorContextMenu && (
         <div
           ref={editorContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[200px]"
           style={{ left: editorContextMenu.x, top: editorContextMenu.y }}
         >
+          {/* 分组1：剪贴板 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
-            onClick={() => {
-              editorRef.current?.trigger('menu', 'editor.action.clipboardCutAction', null);
-              setEditorContextMenu(null);
-            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.clipboardCutAction', null); setEditorContextMenu(null); }}
           >
-            {t('editorContextMenu.cut')}
+            <Scissors size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.cut')}</span>
+            <span className="text-[#3a5070]">Ctrl+X</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
-            onClick={() => {
-              editorRef.current?.trigger('menu', 'editor.action.clipboardCopyAction', null);
-              setEditorContextMenu(null);
-            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.clipboardCopyAction', null); setEditorContextMenu(null); }}
           >
-            {t('editorContextMenu.copy')}
+            <Copy size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.copy')}</span>
+            <span className="text-[#3a5070]">Ctrl+C</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
-            onClick={() => {
-              editorRef.current?.trigger('menu', 'editor.action.clipboardPasteAction', null);
-              setEditorContextMenu(null);
-            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.clipboardPasteAction', null); setEditorContextMenu(null); }}
           >
-            {t('editorContextMenu.paste')}
+            <Clipboard size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.paste')}</span>
+            <span className="text-[#3a5070]">Ctrl+V</span>
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
+
+          {/* 分组2：执行 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
             onClick={() => {
-              editorRef.current?.trigger('menu', 'editor.action.selectAll', null);
+              const ed = editorRef.current;
+              if (ed) { const pos = ed.getPosition(); if (pos) ed.setPosition(pos); }
+              handleExecute();
               setEditorContextMenu(null);
             }}
           >
-            {t('editorContextMenu.selectAll')}
+            <Play size={13} color="#00c9a7" />
+            <span className="flex-1">{t('editorContextMenu.executeAll')}</span>
+            <span className="text-[#3a5070]">F5</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
+            style={{ color: editorContextMenu.selectedSql.trim() ? '#c8daea' : '#3a5070' }}
+            disabled={!editorContextMenu.selectedSql.trim()}
+            onClick={() => { handleExecute(); setEditorContextMenu(null); }}
+          >
+            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? '#00c9a7' : '#3a5070'} />
+            <span className="flex-1">{t('editorContextMenu.executeSelected')}</span>
           </button>
           <div className="h-px bg-[#2a3f5a] my-1" />
+
+          {/* 分组3：编辑辅助 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.undo', null); setEditorContextMenu(null); }}
+          >
+            <Undo2 size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.undo')}</span>
+            <span className="text-[#3a5070]">Ctrl+Z</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.redo', null); setEditorContextMenu(null); }}
+          >
+            <Redo2 size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.redo')}</span>
+            <span className="text-[#3a5070]">Ctrl+Y</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.selectAll', null); setEditorContextMenu(null); }}
+          >
+            <TextSelect size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.selectAll')}</span>
+            <span className="text-[#3a5070]">Ctrl+A</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.commentLine', null); setEditorContextMenu(null); }}
+          >
+            <MessageSquare size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.toggleComment')}</span>
+            <span className="text-[#3a5070]">Ctrl+/</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { editorRef.current?.trigger('menu', 'editor.action.startFindReplaceAction', null); setEditorContextMenu(null); }}
+          >
+            <Search size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.findReplace')}</span>
+            <span className="text-[#3a5070]">Ctrl+H</span>
+          </button>
+          <div className="h-px bg-[#2a3f5a] my-1" />
+
+          {/* 分组4：SQL / AI */}
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            onClick={() => { handleFormat(); setEditorContextMenu(null); }}
+          >
+            <FileEdit size={13} color="#7a9bb8" />
+            <span className="flex-1">{t('editorContextMenu.format')}</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
+            style={{ color: activeTabObj?.queryContext?.connectionId ? '#c8daea' : '#3a5070' }}
+            disabled={!activeTabObj?.queryContext?.connectionId}
             onClick={() => {
-              handleFormat();
+              const menu = editorContextMenu!;
+              const sql = menu.selectedSql.trim()
+                ? menu.selectedSql
+                : getSqlAtCursor(currentSql, menu.cursorOffset);
               setEditorContextMenu(null);
+              handleExplain(sql);
             }}
           >
-            {t('editorContextMenu.format')}
+            <Lightbulb size={13} color={activeTabObj?.queryContext?.connectionId ? '#5eb2f7' : '#3a5070'} />
+            <span className="flex-1">{t('editorContextMenu.explainSql')}</span>
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
+            style={{ color: activeTabObj?.queryContext?.connectionId ? '#c8daea' : '#3a5070' }}
+            disabled={!activeTabObj?.queryContext?.connectionId}
+            onClick={() => {
+              const menu = editorContextMenu!;
+              const sql = menu.selectedSql.trim()
+                ? menu.selectedSql
+                : getSqlAtCursor(currentSql, menu.cursorOffset);
+              setEditorContextMenu(null);
+              handleOptimize({ sqlOverride: sql, range: menu.selectionRange });
+            }}
+          >
+            <Zap size={13} color={activeTabObj?.queryContext?.connectionId ? '#5eb2f7' : '#3a5070'} />
+            <span className="flex-1">{t('editorContextMenu.optimizeSql')}</span>
           </button>
         </div>
       )}

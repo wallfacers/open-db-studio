@@ -48,7 +48,7 @@ interface QueryState {
 
   setSql: (tabId: string, sql: string) => void;
   setActiveTabId: (tabId: string) => void;
-  openMetricTab: (metricId: number, title: string) => void;
+  openMetricTab: (metricId: number, title: string, connectionId?: number) => void;
   openMetricListTab: (scope: import('../types').MetricScope, title: string) => void;
   openNewMetricTab: (scope: import('../types').MetricScope, scopeTitle: string) => void;
   updateMetricTabId: (tabId: string, metricId: number, title: string) => void;
@@ -176,12 +176,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   },
   setActiveTabId: (tabId) => set({ activeTabId: tabId }),
 
-  openMetricTab: (metricId, title) => {
+  openMetricTab: (metricId, title, connectionId) => {
     set(s => {
       const existing = s.tabs.find(t => t.type === 'metric' && t.metricId === metricId);
       if (existing) return { activeTabId: existing.id };
       const id = `metric_${metricId}_${Date.now()}`;
-      const tab: Tab = { id, type: 'metric', title, metricId };
+      const tab: Tab = { id, type: 'metric', title, metricId, connectionId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },

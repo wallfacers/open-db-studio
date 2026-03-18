@@ -53,6 +53,9 @@ interface SessionRuntimeState {
   pendingPermission: PermissionRequest | null;          // permission 路径（isChatting=true）
   streamingElicitationFired: boolean;                   // P0：mid-stream 已触发，防重复
   pendingConfigId: number | null;                       // 切换模型时暂存（session 尚未进入 sessions 列表）
+  lastUserMessageId: string | null;                     // OpenCode message ID，undo 用
+  canRedo: boolean;                                     // redo 可用标志
+  isCompacting: boolean;                                // compact 执行中（防重复触发）
 }
 
 const defaultRuntimeState = (): SessionRuntimeState => ({
@@ -65,6 +68,9 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   pendingPermission: null,
   streamingElicitationFired: false,
   pendingConfigId: null,
+  lastUserMessageId: null,
+  canRedo: false,
+  isCompacting: false,
 });
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
@@ -105,6 +111,9 @@ interface AiState {
   loadSessionMessages: (sessionId: string) => Promise<void>;
   clearHistory: (sessionId: string) => Promise<void>;
   cancelChat: (sessionId: string) => Promise<void>;
+  undoMessage: (sessionId: string) => Promise<void>;
+  redoMessage: (sessionId: string) => Promise<void>;
+  compactSession: (sessionId: string, modelId: string, providerId: string) => Promise<void>;
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
   respondElicitation: (sessionId: string, selectedText: string) => Promise<void>;
   clearElicitation: (sessionId: string) => void;
@@ -549,6 +558,85 @@ export const useAiStore = create<AiState>()(
         }
       },
 
+      undoMessage: async (sessionId) => {
+        const state = get().chatStates[sessionId];
+        const messageId = state?.lastUserMessageId;
+        if (!messageId) return;
+        await invoke('agent_revert_message', { sessionId, messageId });
+        // 从 chatHistory 移除最后一条 assistant 消息和最后一条 user 消息
+        const history = [...(sessionId === get().currentSessionId ? get().chatHistory : (get().sessions.find(s => s.id === sessionId)?.messages ?? []))];
+        const lastAssistantIdx = [...history].map((m, i) => ({ m, i })).filter(({ m }) => m.role === 'assistant').at(-1)?.i ?? -1;
+        if (lastAssistantIdx >= 0) history.splice(lastAssistantIdx, 1);
+        const lastUserIdx = [...history].map((m, i) => ({ m, i })).filter(({ m }) => m.role === 'user').at(-1)?.i ?? -1;
+        if (lastUserIdx >= 0) history.splice(lastUserIdx, 1);
+        const isCurrentSession = get().currentSessionId === sessionId;
+        const now = Date.now();
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId ? { ...sess, messages: history, updatedAt: now } : sess
+          ),
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...(s.chatStates[sessionId] ?? defaultRuntimeState()), canRedo: true, lastUserMessageId: null },
+          },
+          ...(isCurrentSession ? { chatHistory: history } : {}),
+        }));
+      },
+
+      redoMessage: async (sessionId) => {
+        const state = get().chatStates[sessionId];
+        if (!state?.canRedo) return;
+        await invoke('agent_unrevert_message', { sessionId });
+        // 重新拉取消息列表以服务端为准
+        await get().loadSessionMessages(sessionId);
+        // 获取最新 lastUserMessageId
+        const lastId = await invoke<string>('agent_get_last_user_message_id', { sessionId }).catch(() => null);
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: {
+              ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+              canRedo: false,
+              lastUserMessageId: lastId ?? null,
+            },
+          },
+        }));
+      },
+
+      compactSession: async (sessionId, modelId, providerId) => {
+        const state = get().chatStates[sessionId];
+        if (state?.isCompacting) return;
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: { ...(s.chatStates[sessionId] ?? defaultRuntimeState()), isCompacting: true },
+          },
+        }));
+        try {
+          await invoke('agent_summarize_session', { sessionId, modelId, providerId });
+          await get().loadSessionMessages(sessionId);
+          set((s) => ({
+            chatStates: {
+              ...s.chatStates,
+              [sessionId]: {
+                ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                isCompacting: false,
+                canRedo: false,
+                lastUserMessageId: null,
+              },
+            },
+          }));
+        } catch (e) {
+          set((s) => ({
+            chatStates: {
+              ...s.chatStates,
+              [sessionId]: { ...(s.chatStates[sessionId] ?? defaultRuntimeState()), isCompacting: false },
+            },
+          }));
+          throw e;
+        }
+      },
+
       // ── 流式 AI 对话（核心）──
 
       sendAgentChatStream: async (message, connectionId) => {
@@ -796,6 +884,10 @@ export const useAiStore = create<AiState>()(
               // 如果内容为空，说明 opencode/provider 未能返回任何内容，给出提示
               const finalContent = content || 'AI 未返回内容，请检查 LLM 配置（供应商、模型、API Key）是否正确。';
               await commitAssistant(finalContent, state?.streamingThinkingContent ?? '');
+              // 后台拉取 lastUserMessageId（静默失败，不影响主流程）
+              invoke<string>('agent_get_last_user_message_id', { sessionId })
+                .then(id => setChatStateField({ lastUserMessageId: id, canRedo: false }))
+                .catch(() => {});
             } else if (event.type === 'Error') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;

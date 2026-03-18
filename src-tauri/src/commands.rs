@@ -3149,3 +3149,56 @@ pub async fn cancel_optimize_sql(
     }
     Ok(())
 }
+
+// ============ Agent Session 操作（undo / redo / compact）============
+
+/// 撤销最后一轮对话
+#[tauri::command]
+pub async fn agent_revert_message(
+    session_id: String,
+    message_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::revert_message(state.serve_port, &session_id, &message_id).await
+}
+
+/// 恢复被撤销的对话
+#[tauri::command]
+pub async fn agent_unrevert_message(
+    session_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::unrevert_message(state.serve_port, &session_id).await
+}
+
+/// 压缩会话 context
+#[tauri::command]
+pub async fn agent_summarize_session(
+    session_id: String,
+    model_id: String,
+    provider_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::summarize_session(state.serve_port, &session_id, &provider_id, &model_id).await
+}
+
+/// 获取最后一条 user 消息的 ID
+/// GET /session/:id/message → 找最后一条 role=="user" 的顶层 id 字段
+#[tauri::command]
+pub async fn agent_get_last_user_message_id(
+    session_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<String> {
+    let json = crate::agent::client::get_messages(state.serve_port, &session_id).await?;
+    let arr = json
+        .as_array()
+        .ok_or_else(|| crate::AppError::Other("get_messages: expected array".into()))?;
+    let last_user_id = arr
+        .iter()
+        .rev()
+        .find(|msg| msg.get("role").and_then(|r| r.as_str()) == Some("user"))
+        .and_then(|msg| msg.get("id").and_then(|id| id.as_str()))
+        .ok_or_else(|| crate::AppError::Other("No user message found".into()))?
+        .to_string();
+    Ok(last_user_id)
+}

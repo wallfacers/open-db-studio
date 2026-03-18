@@ -104,8 +104,8 @@ interface BgTaskDonePayload {
   success: boolean;
   error?: string;
   connection_id: number;
-  database?: string;
-  schema?: string;
+  database?: string | null;
+  schema?: string | null;
   metric_count?: number;
   skipped_count?: number;
 }
@@ -139,8 +139,8 @@ export function initBgTaskListeners() {
       metricCount: p.metric_count,
       skippedCount: p.skipped_count,
       connectionId: p.connection_id,
-      database: p.database,
-      schema: p.schema,
+      database: p.database ?? undefined,
+      schema: p.schema ?? undefined,
     });
   });
 }

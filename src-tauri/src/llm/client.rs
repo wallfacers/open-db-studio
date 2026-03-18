@@ -12,19 +12,6 @@ pub enum StreamEvent {
     ToolCallRequest { call_id: String, name: String, arguments: String },
     Done,
     Error { message: String },
-    PermissionRequest {
-        permission_id: String,
-        message: String,
-        options: Vec<PermissionOption>,
-    },
-}
-
-/// ACP request_permission 的选项，序列化后发往前端
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PermissionOption {
-    pub option_id: String,
-    pub label: String,
-    pub kind: String, // "allow_once" | "allow_always" | "deny"
 }
 
 /// OpenAI tool definition（从前端传入）

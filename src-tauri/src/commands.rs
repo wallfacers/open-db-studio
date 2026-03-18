@@ -199,18 +199,24 @@ pub async fn get_llm_config_key(id: i64) -> AppResult<String> {
 }
 
 #[tauri::command]
-pub async fn create_llm_config(input: crate::db::models::CreateLlmConfigInput) -> AppResult<crate::db::models::LlmConfig> {
+pub async fn create_llm_config(
+    state: tauri::State<'_, crate::AppState>,
+    input: crate::db::models::CreateLlmConfigInput,
+) -> AppResult<crate::db::models::LlmConfig> {
     let mut config = crate::db::create_llm_config(&input)?;
+    sync_on_config_save(&config, &state).await;
     config.api_key = String::new();
     Ok(config)
 }
 
 #[tauri::command]
 pub async fn update_llm_config(
+    state: tauri::State<'_, crate::AppState>,
     id: i64,
     input: crate::db::models::UpdateLlmConfigInput,
 ) -> AppResult<crate::db::models::LlmConfig> {
     let mut config = crate::db::update_llm_config(id, &input)?;
+    sync_on_config_save(&config, &state).await;
     config.api_key = String::new();
     Ok(config)
 }
@@ -2659,6 +2665,103 @@ pub async fn agent_chat(
         });
     }
     result
+}
+
+/// 新增/编辑模型配置时同步到 opencode：
+/// 1. 更新 opencode.json 文件（两种模式都写）
+/// 2. PATCH /config 热更新运行时 provider 配置
+async fn sync_on_config_save(
+    cfg: &crate::db::models::LlmConfig,
+    state: &tauri::State<'_, crate::AppState>,
+) {
+    let opencode_dir = state.app_data_dir.join("opencode");
+
+    let provider_id = if cfg.opencode_provider_id.is_empty() {
+        cfg.api_type.clone()
+    } else {
+        cfg.opencode_provider_id.clone()
+    };
+    if provider_id.is_empty() {
+        return;
+    }
+
+    // 1a. 自定义模式：全量同步（保证同 provider 下其他 model 条目完整）
+    if cfg.config_mode == "custom" {
+        match crate::db::list_llm_configs() {
+            Ok(all_configs) => {
+                if let Err(e) = crate::agent::config::sync_all_providers(&opencode_dir, &all_configs) {
+                    log::warn!("[sync_on_config_save] sync_all_providers failed: {}", e);
+                }
+            }
+            Err(e) => log::warn!("[sync_on_config_save] list_llm_configs failed: {}", e),
+        }
+    }
+
+    // 1b. 将当前 config 的 provider 条目写入 opencode.json（两种模式均执行）
+    //     自定义模式：npm + options + 当前 model 条目；opencode 模式：options + 当前 model 条目
+    let entry = build_provider_entry_for_json(cfg);
+    if let Err(e) = crate::agent::config::upsert_provider_entry(&opencode_dir, &provider_id, &entry) {
+        log::warn!("[sync_on_config_save] upsert_provider_entry failed: {}", e);
+    }
+
+    // 2. PATCH /config 热更新运行时配置
+    if !cfg.model.is_empty() {
+        let body = serde_json::json!({ "provider": { &provider_id: entry } });
+        if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
+            log::warn!("[sync_on_config_save] patch_config_json failed (ignored): {}", e);
+        }
+    }
+}
+
+/// 构建 provider 条目（用于写入 opencode.json 或 PATCH /config）
+fn build_provider_entry_for_json(cfg: &crate::db::models::LlmConfig) -> serde_json::Value {
+    let npm_pkg = if cfg.api_type == "anthropic" {
+        "@ai-sdk/anthropic"
+    } else {
+        "@ai-sdk/openai"
+    };
+
+    let effective_base_url = if cfg.api_type == "anthropic" {
+        let trimmed = cfg.base_url.trim_end_matches('/');
+        if trimmed.ends_with("/v1") {
+            trimmed.to_string()
+        } else {
+            format!("{}/v1", trimmed)
+        }
+    } else {
+        cfg.base_url.trim_end_matches('/').to_string()
+    };
+
+    // 构建 model 条目
+    let display_name = if cfg.opencode_display_name.is_empty() {
+        &cfg.name
+    } else {
+        &cfg.opencode_display_name
+    };
+    let mut model_entry = serde_json::json!({ "name": display_name });
+    if !cfg.opencode_model_options.is_empty() {
+        if let Ok(extra) = serde_json::from_str::<serde_json::Value>(&cfg.opencode_model_options) {
+            if let Some(obj) = extra.as_object() {
+                for (k, v) in obj {
+                    model_entry[k] = v.clone();
+                }
+            }
+        }
+    }
+
+    if cfg.config_mode == "custom" {
+        serde_json::json!({
+            "npm": npm_pkg,
+            "options": { "apiKey": cfg.api_key, "baseURL": effective_base_url },
+            "models": { &cfg.model: model_entry }
+        })
+    } else {
+        // opencode 预定义 provider：只更新 apiKey 和 model 选项
+        serde_json::json!({
+            "options": { "apiKey": cfg.api_key },
+            "models": { &cfg.model: model_entry }
+        })
+    }
 }
 
 /// 将 LLM 配置应用到 opencode（写入自定义供应商文件 + 热更新模型/供应商）。

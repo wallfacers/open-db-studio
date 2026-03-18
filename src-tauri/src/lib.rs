@@ -42,20 +42,10 @@ pub fn run() {
             crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
 
+            // MCP server 只绑 TCP 端口，速度极快，需要端口号写入 AppState
             let mcp_port = tauri::async_runtime::block_on(
                 crate::mcp::start_mcp_server(app.handle().clone())
             ).expect("Failed to start MCP server");
-
-            // 写入 MCP 配置（agent_dir/.opencode/config.json）
-            let agent_dir = app_data_dir.join("agent");
-            if let Err(e) = crate::agent::config::write_mcp_config(&agent_dir, mcp_port) {
-                log::warn!("Failed to write MCP config: {}", e);
-            }
-
-            // 写入 Agent 提示词文件
-            if let Err(e) = crate::agent::config::write_agent_prompts(&agent_dir) {
-                log::warn!("Failed to write agent prompts: {}", e);
-            }
 
             // 从 app_settings 读取 serve 基础端口（默认 6686），自动递增避免占用
             let base_port: u16 = crate::db::get_app_setting("serve_port")
@@ -81,27 +71,49 @@ pub fn run() {
                 pending_ui_actions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 pending_queries: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 auto_mode: tokio::sync::Mutex::new({
-                    // 从 app_settings 读取持久化的 auto_mode 值
                     crate::db::get_app_setting("auto_mode").unwrap_or_default()
                         .as_deref() == Some("true")
                 }),
             });
 
-            // 启动 opencode serve 进程（失败时仅 warn，不影响其他功能）
+            // ── 后台初始化（文件 I/O + 进程启动，避免阻塞主线程导致"未响应"）──────
             let handle = app.handle().clone();
-            let agent_dir_clone = agent_dir.clone();
-            if let Err(e) = tauri::async_runtime::block_on(
-                crate::agent::server::start_serve(handle, &agent_dir_clone, serve_port)
-            ) {
-                log::warn!(
-                    "opencode serve failed to start (port {}): {}. \
-                     Other features remain available.",
-                    serve_port, e
-                );
-            }
+            let data_dir_clone = app_data_dir.clone();
+            tauri::async_runtime::spawn(async move {
+                let opencode_dir = data_dir_clone.join("opencode");
 
-            // 同步 skills 到 opencode 可读取的目录
-            crate::skill_sync::sync_skills_on_startup(app.handle());
+                // 1. 写入 MCP 配置（opencode/opencode.json）
+                if let Err(e) = crate::agent::config::write_mcp_config(&opencode_dir, mcp_port) {
+                    log::warn!("Failed to write MCP config: {}", e);
+                }
+
+                // 1b. 将 DB 中所有 custom provider 的 models 列表同步到 opencode.json
+                match crate::db::list_llm_configs() {
+                    Ok(configs) => {
+                        if let Err(e) = crate::agent::config::sync_all_providers(&opencode_dir, &configs) {
+                            log::warn!("Failed to sync providers to opencode.json: {}", e);
+                        }
+                    }
+                    Err(e) => log::warn!("Failed to list llm_configs for sync: {}", e),
+                }
+
+                // 2. 写入 Agent 提示词文件（opencode/agents/）
+                if let Err(e) = crate::agent::config::write_agent_prompts(&opencode_dir) {
+                    log::warn!("Failed to write agent prompts: {}", e);
+                }
+
+                // 3. 启动 opencode serve 进程（健康检查最多等 10s）
+                if let Err(e) = crate::agent::server::start_serve(handle.clone(), &data_dir_clone, serve_port).await {
+                    log::warn!(
+                        "opencode serve failed to start (port {}): {}. \
+                         Other features remain available.",
+                        serve_port, e
+                    );
+                }
+
+                // 4. 同步 skills 到 opencode 可读取的目录（文件哈希比较 + 复制）
+                crate::skill_sync::sync_skills_on_startup(&handle);
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

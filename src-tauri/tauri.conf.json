@@ -17,7 +17,8 @@
         "resizable": true,
         "fullscreen": false,
         "maximized": true,
-        "decorations": false
+        "decorations": false,
+        "backgroundColor": "#080d12"
       }
     ],
     "security": {

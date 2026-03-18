@@ -1,64 +1,120 @@
-use crate::llm::{PermissionOption, StreamEvent};
+use crate::llm::StreamEvent;
 use crate::AppResult;
 use futures_util::StreamExt;
 use tauri::ipc::Channel;
 
-/// 消费 SSE 流，收集所有 ContentChunk 的文本内容，合并返回。
-///
-/// 遇到 `message.completed` 事件时提前返回；流结束时也返回已收集的内容。
-pub async fn collect_text_from_sse(response: reqwest::Response) -> AppResult<String> {
-    let mut stream = response.bytes_stream();
-    let mut current_event: Option<String> = None;
-    let mut current_data: Option<String> = None;
+// ── 公共辅助 ─────────────────────────────────────────────────────────────────
+
+/// 从 SSE 行 `data: {...}` 提取 JSON payload。
+/// opencode 事件格式：{ "directory": "...", "payload": { "type": "...", "properties": {...} } }
+/// 返回 payload 对象（内含 type 和 properties）。
+#[inline]
+fn parse_sse_payload(line: &str) -> Option<serde_json::Value> {
+    let data = line.trim().strip_prefix("data: ")?;
+    let envelope: serde_json::Value = serde_json::from_str(data).ok()?;
+    // payload 字段内含 type/properties；server.connected 等心跳事件无 directory
+    let payload = envelope.get("payload")?.clone();
+    Some(payload)
+}
+
+// ── 标题生成（阻塞式，不需要流式）────────────────────────────────────────────
+
+/// 通过 `GET /global/event` + `POST /session/:id/message` 收集完整回复文本。
+/// 用于 AI 标题生成等不需要流式显示的场景。
+pub async fn collect_text_via_global_events(
+    port: u16,
+    session_id: &str,
+    message_text: &str,
+    model_id: Option<&str>,
+    provider_id: Option<&str>,
+) -> AppResult<String> {
+    // 1. 先建立 SSE 连接
+    let sse_url = format!("http://127.0.0.1:{}/global/event", port);
+    let sse_resp = crate::agent::client::client()
+        .get(&sse_url)
+        .header("Accept", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("SSE connect: {}", e)))?;
+
+    // 2. 在后台发消息
+    let msg_url = format!("http://127.0.0.1:{}/session/{}/message", port, session_id);
+    let body = build_msg_body(message_text, model_id, provider_id, None);
+    tokio::spawn(async move {
+        let _ = crate::agent::client::client()
+            .post(&msg_url)
+            .json(&body)
+            .send()
+            .await;
+    });
+
+    // 3. 收集 SSE 中该 session 所有 text 块
     let mut line_buf = String::new();
+    // key: part_id → 已发送字节偏移（供 message.part.updated 快照回退用）
+    let mut part_offsets: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    // 本 session 的 part_id 集合（从 message.part.updated 注册）
+    let mut session_part_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut result = String::new();
 
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = match chunk_result {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("[sse] collect_text_from_sse stream error: {}", e);
-                break;
-            }
-        };
-        let text = match std::str::from_utf8(&chunk) {
-            Ok(s) => s,
-            Err(_) => {
-                log::warn!("[sse] collect_text_from_sse: non-UTF8 chunk, skipping");
-                continue;
-            }
-        };
-        line_buf.push_str(text);
+    let mut stream = sse_resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|e| crate::AppError::Other(format!("SSE read: {}", e)))?;
+        line_buf.push_str(&String::from_utf8_lossy(&chunk));
 
-        loop {
-            if let Some(pos) = line_buf.find('\n') {
-                let line = line_buf[..pos].trim_end_matches('\r').to_string();
-                line_buf = line_buf[pos + 1..].to_string();
+        while let Some(pos) = line_buf.find('\n') {
+            let line: String = line_buf.drain(..=pos).collect();
+            let payload = match parse_sse_payload(&line) {
+                Some(v) => v,
+                None => continue,
+            };
+            let event_type = payload["type"].as_str().unwrap_or("");
+            let props = &payload["properties"];
 
-                if line.is_empty() {
-                    if let (Some(ev), Some(data)) = (current_event.take(), current_data.take()) {
-                        if ev == "message.part.delta" {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
-                                if json["type"].as_str() == Some("text") {
-                                    if let Some(delta) = json["delta"].as_str() {
-                                        result.push_str(delta);
-                                    }
-                                }
+            match event_type {
+                // 注册本 session 的 part（message.part.updated 是快照事件）
+                "message.part.updated" => {
+                    let part = &props["part"];
+                    if part["sessionID"].as_str() == Some(session_id) {
+                        let part_id = part["id"].as_str().unwrap_or("").to_string();
+                        session_part_ids.insert(part_id.clone());
+
+                        // 快照回退：若没有收到 delta 事件，也能从快照中提取增量
+                        if part["type"].as_str() == Some("text") {
+                            let full = part["text"].as_str().unwrap_or("");
+                            let prev = *part_offsets.get(&part_id).unwrap_or(&0);
+                            if full.len() > prev {
+                                result.push_str(&full[prev..]);
+                                part_offsets.insert(part_id, full.len());
                             }
-                        } else if ev == "message.completed" {
-                            return Ok(result);
                         }
-                    } else {
-                        current_event.take();
-                        current_data.take();
                     }
-                } else if let Some(rest) = line.strip_prefix("event:") {
-                    current_event = Some(rest.trim().to_string());
-                } else if let Some(rest) = line.strip_prefix("data:") {
-                    current_data = Some(rest.trim().to_string());
                 }
-            } else {
-                break;
+                // message.part.delta：真正的 token 级流式增量
+                "message.part.delta" => {
+                    let part_id = props["partID"].as_str().unwrap_or("");
+                    if !session_part_ids.contains(part_id) {
+                        continue;
+                    }
+                    if props["field"].as_str() == Some("text") {
+                        let delta = props["delta"].as_str().unwrap_or("");
+                        if !delta.is_empty() {
+                            result.push_str(delta);
+                            // 更新偏移，避免快照事件重复发送
+                            let prev = *part_offsets.get(part_id).unwrap_or(&0);
+                            part_offsets.insert(part_id.to_string(), prev + delta.len());
+                        }
+                    }
+                }
+                "session.idle" | "session.error" => {
+                    if props["sessionID"].as_str() == Some(session_id) {
+                        return Ok(result);
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -66,217 +122,196 @@ pub async fn collect_text_from_sse(response: reqwest::Response) -> AppResult<Str
     Ok(result)
 }
 
-/// 解析 SSE 流并将事件通过 channel 发送到前端。
+// ── 主流式接口 ────────────────────────────────────────────────────────────────
+
+/// 订阅 `GET /global/event` SSE 并将该 session 的实时事件转发给前端 channel。
 ///
-/// SSE 格式（标准 text/event-stream）：
-/// ```
-/// event: message.part.delta
-/// data: {"type":"text","delta":"hello world"}
+/// opencode SSE 事件格式：
+/// `{ "directory": "...", "payload": { "type": "...", "properties": {...} } }`
 ///
-/// event: message.completed
-/// data: {}
-/// ```
-///
-/// 连接断开（无更多数据）视为正常结束，自动发送 Done。
-pub async fn consume_sse_stream(
-    response: reqwest::Response,
+/// 关键事件：
+/// - `message.part.delta`   → 真正的 token 级增量（主路径）
+/// - `message.part.updated` → 快照（回退路径，当 delta 不可用时）
+/// - `session.idle`         → Done，退出
+/// - `session.error`        → Error，退出
+pub async fn stream_global_events(
+    port: u16,
+    session_id: &str,
+    message_text: &str,
+    model_id: Option<&str>,
+    provider_id: Option<&str>,
+    agent: Option<&str>,
     channel: &Channel<StreamEvent>,
 ) -> AppResult<()> {
-    let mut stream = response.bytes_stream();
+    // 1. 先建立 SSE 连接，避免漏事件
+    let sse_url = format!("http://127.0.0.1:{}/global/event", port);
+    let sse_resp = crate::agent::client::client()
+        .get(&sse_url)
+        .header("Accept", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("SSE connect: {}", e)))?;
 
-    let mut current_event: Option<String> = None;
-    let mut current_data: Option<String> = None;
-    // 用于跨 chunk 拼接不完整行
-    let mut line_buf = String::new();
-
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = match chunk_result {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("[sse] Stream read error: {}", e);
-                break;
-            }
-        };
-
-        let text = match std::str::from_utf8(&chunk) {
-            Ok(s) => s,
-            Err(_) => {
-                log::warn!("[sse] Non-UTF8 chunk, skipping");
-                continue;
-            }
-        };
-
-        // 追加到 line_buf，然后按行处理
-        line_buf.push_str(text);
-
-        // 反复处理已有换行符的行
-        let mut stop = false;
-        loop {
-            if let Some(pos) = line_buf.find('\n') {
-                let line = line_buf[..pos].trim_end_matches('\r').to_string();
-                line_buf = line_buf[pos + 1..].to_string();
-
-                if process_sse_line(&line, &mut current_event, &mut current_data, channel) {
-                    stop = true;
-                    break;
-                }
-            } else {
-                break;
-            }
+    // 2. 后台发消息（fire-and-forget）
+    let msg_url = format!("http://127.0.0.1:{}/session/{}/message", port, session_id);
+    let body = build_msg_body(message_text, model_id, provider_id, agent);
+    tokio::spawn(async move {
+        if let Err(e) = crate::agent::client::client()
+            .post(&msg_url)
+            .json(&body)
+            .send()
+            .await
+        {
+            log::warn!("[stream] background message send failed: {}", e);
         }
-        if stop {
-            // message.completed 已在 dispatch 中发送 Done，提前退出
-            return Ok(());
+    });
+
+    // 3. 处理 SSE 事件
+    let mut line_buf = String::new();
+    // key: part_id → 已发送字节偏移（delta 事件和快照事件共用，防重复）
+    let mut part_offsets: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    // 本 session 的 part_id → part_type 映射（从 message.part.updated 注册）
+    let mut session_parts: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+
+    let mut stream = sse_resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|e| crate::AppError::Other(format!("SSE read: {}", e)))?;
+        line_buf.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(pos) = line_buf.find('\n') {
+            let line: String = line_buf.drain(..=pos).collect();
+            let payload = match parse_sse_payload(&line) {
+                Some(v) => v,
+                None => continue,
+            };
+            let event_type = payload["type"].as_str().unwrap_or("");
+            let props = &payload["properties"];
+
+            match event_type {
+                // 注册本 session 的 part，同时作为快照回退路径
+                "message.part.updated" => {
+                    let part = &props["part"];
+                    if part["sessionID"].as_str() != Some(session_id) {
+                        continue;
+                    }
+                    let part_id = part["id"].as_str().unwrap_or("").to_string();
+                    let part_type = part["type"].as_str().unwrap_or("").to_string();
+
+                    // 注册 part（供后续 delta 事件过滤使用）
+                    session_parts.insert(part_id.clone(), part_type.clone());
+
+                    // tool-use 没有 delta 事件，必须从快照读取
+                    // text/reasoning 由 message.part.delta 负责流式，这里不重复发送
+                    match part_type.as_str() {
+                        "tool-use" | "tool_use" => {
+                            let call_id = part["id"].as_str().unwrap_or("").to_string();
+                            let name = part["name"]
+                                .as_str()
+                                .or_else(|| part["tool"].as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let arguments = match &part["input"] {
+                                serde_json::Value::String(s) => s.clone(),
+                                v if !v.is_null() => v.to_string(),
+                                _ => String::new(),
+                            };
+                            let _ = channel.send(StreamEvent::ToolCallRequest {
+                                call_id,
+                                name,
+                                arguments,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                // message.part.delta：token 级真实增量（主路径）
+                "message.part.delta" => {
+                    let part_id = props["partID"].as_str().unwrap_or("");
+                    let part_type = match session_parts.get(part_id) {
+                        Some(t) => t.as_str(),
+                        None => continue, // 不属于本 session 的 part
+                    };
+                    let field = props["field"].as_str().unwrap_or("");
+                    let delta = props["delta"].as_str().unwrap_or("");
+                    if delta.is_empty() {
+                        continue;
+                    }
+
+                    match (part_type, field) {
+                        ("text", "text") => {
+                            let _ = channel.send(StreamEvent::ContentChunk {
+                                delta: delta.to_string(),
+                            });
+                            // 同步偏移，防止快照事件重复发送
+                            let prev = *part_offsets.get(part_id).unwrap_or(&0);
+                            part_offsets.insert(part_id.to_string(), prev + delta.len());
+                        }
+                        ("reasoning", "text") => {
+                            let _ = channel.send(StreamEvent::ThinkingChunk {
+                                delta: delta.to_string(),
+                            });
+                            let prev = *part_offsets.get(part_id).unwrap_or(&0);
+                            part_offsets.insert(part_id.to_string(), prev + delta.len());
+                        }
+                        _ => {}
+                    }
+                }
+
+                "session.error" => {
+                    if props["sessionID"].as_str() == Some(session_id) {
+                        let err_msg = props["error"]["data"]["message"]
+                            .as_str()
+                            .or_else(|| props["error"]["message"].as_str())
+                            .unwrap_or("Unknown error");
+                        let _ = channel.send(StreamEvent::Error {
+                            message: err_msg.to_string(),
+                        });
+                        return Ok(());
+                    }
+                }
+
+                "session.idle" => {
+                    if props["sessionID"].as_str() == Some(session_id) {
+                        let _ = channel.send(StreamEvent::Done);
+                        return Ok(());
+                    }
+                }
+
+                _ => {}
+            }
         }
     }
 
-    // 流结束兜底，发送 Done（message.completed 提前 return 时不会到达此处）
+    // SSE 连接意外断开
     let _ = channel.send(StreamEvent::Done);
     Ok(())
 }
 
-/// 处理一行 SSE 文本。返回 true 表示流应立即结束（message.completed 已收到）。
-fn process_sse_line(
-    line: &str,
-    current_event: &mut Option<String>,
-    current_data: &mut Option<String>,
-    channel: &Channel<StreamEvent>,
-) -> bool {
-    if line.is_empty() {
-        // 空行表示一个事件结束，触发处理
-        if let (Some(event_type), Some(data_str)) = (current_event.take(), current_data.take()) {
-            return dispatch_sse_event(&event_type, &data_str, channel);
-        } else {
-            // 只有 data 没有 event，或者只有 event 没有 data，跳过
-            current_event.take();
-            current_data.take();
-        }
-    } else if let Some(rest) = line.strip_prefix("event:") {
-        *current_event = Some(rest.trim().to_string());
-    } else if let Some(rest) = line.strip_prefix("data:") {
-        *current_data = Some(rest.trim().to_string());
-    } else if line.starts_with(':') {
-        // SSE comment，忽略
-    }
-    // 其余行（如 id: 或不认识的字段）也忽略
-    false
-}
+// ── 内部工具 ──────────────────────────────────────────────────────────────────
 
-/// 分发 SSE 事件。返回 true 表示流应立即结束（message.completed 已收到）。
-fn dispatch_sse_event(event_type: &str, data_str: &str, channel: &Channel<StreamEvent>) -> bool {
-    // 解析 JSON，失败时跳过不 panic
-    let json: serde_json::Value = match serde_json::from_str(data_str) {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!("[sse] Failed to parse data JSON for event '{}': {}", event_type, e);
-            return false;
-        }
-    };
-
-    match event_type {
-        "message.part.delta" => {
-            handle_part_delta(&json, channel);
-        }
-        "session.permission.requested" => {
-            handle_permission_requested(&json, channel);
-        }
-        "message.completed" => {
-            // 发送 Done 并通知调用方立即退出，避免流结束时重复发送
-            let _ = channel.send(StreamEvent::Done);
-            return true;
-        }
-        "error" => {
-            let message = json["message"]
-                .as_str()
-                .unwrap_or("Unknown error")
-                .to_string();
-            let _ = channel.send(StreamEvent::Error { message });
-        }
-        other => {
-            log::debug!("[sse] Unhandled event type: '{}'", other);
-        }
-    }
-    false
-}
-
-fn handle_part_delta(json: &serde_json::Value, channel: &Channel<StreamEvent>) {
-    let part_type = json["type"].as_str().unwrap_or("");
-    match part_type {
-        "text" => {
-            let delta = json["delta"].as_str().unwrap_or("").to_string();
-            let _ = channel.send(StreamEvent::ContentChunk { delta });
-        }
-        "thinking" => {
-            let delta = json["delta"].as_str().unwrap_or("").to_string();
-            let _ = channel.send(StreamEvent::ThinkingChunk { delta });
-        }
-        "tool_use" => {
-            let call_id = json["id"].as_str().unwrap_or("").to_string();
-            let name = json["name"].as_str().unwrap_or("").to_string();
-            let arguments = match &json["input"] {
-                serde_json::Value::String(s) => s.clone(),
-                v if !v.is_null() => v.to_string(),
-                _ => String::new(),
-            };
-            let _ = channel.send(StreamEvent::ToolCallRequest {
-                call_id,
-                name,
-                arguments,
-            });
-        }
-        other => {
-            log::debug!("[sse] Unhandled part delta type: '{}'", other);
-        }
-    }
-}
-
-fn handle_permission_requested(json: &serde_json::Value, channel: &Channel<StreamEvent>) {
-    let permission_id = json["permissionID"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let message = json["message"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-
-    let options: Vec<PermissionOption> = match json.get("options") {
-        Some(serde_json::Value::Array(arr)) => {
-            let mut parsed = Vec::with_capacity(arr.len());
-            let mut parse_ok = true;
-            for v in arr.iter() {
-                if let Some(s) = v.as_str() {
-                    // 字符串数组格式
-                    parsed.push(PermissionOption {
-                        option_id: s.to_string(),
-                        label: s.to_string(),
-                        kind: "allow".to_string(),
-                    });
-                } else if v.is_object() {
-                    // 对象数组格式：提取 id / label / kind 字段
-                    let option_id = v["id"].as_str().unwrap_or("").to_string();
-                    let label = v["label"].as_str().unwrap_or(&option_id).to_string();
-                    let kind = v["kind"].as_str().unwrap_or("allow").to_string();
-                    parsed.push(PermissionOption { option_id, label, kind });
-                } else {
-                    // 未知格式，记录警告并放弃整个 options
-                    log::warn!("[sse] permission options: unexpected element format: {:?}", v);
-                    parse_ok = false;
-                    break;
-                }
-            }
-            if parse_ok { parsed } else { vec![] }
-        }
-        Some(other) => {
-            log::warn!("[sse] permission options: unexpected type: {:?}", other);
-            vec![]
-        }
-        None => vec![],
-    };
-
-    let _ = channel.send(StreamEvent::PermissionRequest {
-        permission_id,
-        message,
-        options,
+fn build_msg_body(
+    text: &str,
+    model_id: Option<&str>,
+    provider_id: Option<&str>,
+    agent: Option<&str>,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "parts": [{ "type": "text", "text": text }]
     });
+    if let Some(m) = model_id {
+        let mut model_obj = serde_json::json!({ "modelID": m });
+        if let Some(p) = provider_id {
+            model_obj["providerID"] = serde_json::Value::String(p.to_string());
+        }
+        body["model"] = model_obj;
+    }
+    if let Some(a) = agent {
+        body["agent"] = serde_json::Value::String(a.to_string());
+    }
+    body
 }

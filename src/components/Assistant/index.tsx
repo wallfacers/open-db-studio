@@ -358,13 +358,18 @@ export const Assistant: React.FC<AssistantProps> = ({
                           ? `cursor-pointer hover:bg-[#1e2d42] ${isActive ? 'text-[#009e84]' : 'text-[#c8daea]'}`
                           : 'cursor-not-allowed opacity-40 text-[#7a9bb8]'
                       }`}
-                      onClick={() => {
+                      onClick={async () => {
                         if (!isConnected) return;
                         const hasHistory = (sessions.find(s => s.id === currentSessionId)?.messages.length ?? 0) > 0;
-                        setSessionConfigId(currentSessionId, c.id);
                         setIsModelMenuOpen(false);
                         if (hasHistory) {
-                          showToast('已切换模型，新消息将使用新模型，ACP 上下文已重置', 'info');
+                          // 有历史时：新建 session 真正重置上下文，再绑定新模型
+                          await newSession();
+                          const newSessionId = useAiStore.getState().currentSessionId;
+                          setSessionConfigId(newSessionId, c.id);
+                          showToast('已切换模型，上下文已重置', 'info');
+                        } else {
+                          setSessionConfigId(currentSessionId, c.id);
                         }
                       }}
                       title={!isConnected ? t('assistant.modelNotConnected') : undefined}

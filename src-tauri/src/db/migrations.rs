@@ -89,6 +89,30 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V6: llm_configs 新增 opencode_display_name / opencode_model_options / opencode_provider_name
+    let llm_v6_stmts = [
+        "ALTER TABLE llm_configs ADD COLUMN opencode_display_name  TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE llm_configs ADD COLUMN opencode_model_options TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE llm_configs ADD COLUMN opencode_provider_name TEXT NOT NULL DEFAULT ''",
+    ];
+    for stmt in &llm_v6_stmts {
+        if let Err(e) = conn.execute_batch(stmt) {
+            let is_duplicate = matches!(
+                &e,
+                RusqliteError::SqliteFailure(err, _) if err.extended_code == 1
+            );
+            if !is_duplicate {
+                return Err(crate::AppError::Other(format!("Migration failed: {}", e)));
+            }
+        }
+    }
+    // 预填 alicloud 预设的 provider 名称
+    let _ = conn.execute(
+        "UPDATE llm_configs SET opencode_provider_name = 'Model Studio Coding Plan'
+         WHERE preset = 'alicloud' AND opencode_provider_name = ''",
+        [],
+    );
+
     // V4: agent_sessions 表（opencode HTTP Serve 模式）
     // init.sql 使用 IF NOT EXISTS，新安装自动创建；存量数据库通过此处幂等建表
     let _ = conn.execute_batch(

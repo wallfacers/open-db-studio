@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS llm_configs (
     test_status TEXT NOT NULL DEFAULT 'untested' CHECK(test_status IN ('untested','testing','success','fail')),
     test_error  TEXT,
     tested_at   TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    opencode_display_name  TEXT NOT NULL DEFAULT '',  -- opencode 侧模型展示名（如 "Kimi K2.5"），空则回退到 name
+    opencode_model_options TEXT NOT NULL DEFAULT '',  -- JSON：modalities + options.thinking 等模型级配置
+    opencode_provider_name TEXT NOT NULL DEFAULT ''   -- opencode provider 展示名（如 "Model Studio Coding Plan"）
 );
 
 -- 任务记录表（导入导出、迁移等后台任务）

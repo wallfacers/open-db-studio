@@ -437,7 +437,7 @@ pub fn reorder_groups(items: &[models::ReorderItem]) -> AppResult<()> {
 
 // ============ LLM 配置 CRUD ============
 
-fn row_to_llm_config_raw(row: &rusqlite::Row) -> rusqlite::Result<(i64, String, String, String, String, String, Option<String>, bool, String, Option<String>, Option<String>, String, String, String)> {
+fn row_to_llm_config_raw(row: &rusqlite::Row) -> rusqlite::Result<(i64, String, String, String, String, String, Option<String>, bool, String, Option<String>, Option<String>, String, String, String, String, String, String)> {
     Ok((
         row.get(0)?,   // id
         row.get(1)?,   // name
@@ -453,10 +453,13 @@ fn row_to_llm_config_raw(row: &rusqlite::Row) -> rusqlite::Result<(i64, String, 
         row.get(11)?,  // created_at
         row.get(12)?,  // opencode_provider_id
         row.get(13)?,  // config_mode
+        row.get(14)?,  // opencode_display_name
+        row.get(15)?,  // opencode_model_options
+        row.get(16)?,  // opencode_provider_name
     ))
 }
 
-fn decrypt_llm_config(raw: (i64, String, String, String, String, String, Option<String>, bool, String, Option<String>, Option<String>, String, String, String)) -> AppResult<models::LlmConfig> {
+fn decrypt_llm_config(raw: (i64, String, String, String, String, String, Option<String>, bool, String, Option<String>, Option<String>, String, String, String, String, String, String)) -> AppResult<models::LlmConfig> {
     let api_key = if raw.2.is_empty() {
         String::new()
     } else {
@@ -477,13 +480,17 @@ fn decrypt_llm_config(raw: (i64, String, String, String, String, String, Option<
         created_at: raw.11,
         opencode_provider_id: raw.12,
         config_mode: raw.13,
+        opencode_display_name: raw.14,
+        opencode_model_options: raw.15,
+        opencode_provider_name: raw.16,
     })
 }
 
 const LLM_CONFIG_SELECT: &str =
     "SELECT id, name, api_key_enc, base_url, model, api_type, preset, is_default,
             test_status, test_error, tested_at, created_at,
-            opencode_provider_id, config_mode
+            opencode_provider_id, config_mode,
+            opencode_display_name, opencode_model_options, opencode_provider_name
      FROM llm_configs";
 
 pub fn list_llm_configs() -> AppResult<Vec<models::LlmConfig>> {
@@ -518,13 +525,18 @@ pub fn create_llm_config(input: &models::CreateLlmConfigInput) -> AppResult<mode
     let name = input.name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| {
         format!("{} · {}", input.model, provider_hint)
     });
+    let opencode_display_name = input.opencode_display_name.clone().unwrap_or_default();
+    let opencode_model_options = input.opencode_model_options.clone().unwrap_or_default();
+    let opencode_provider_name = input.opencode_provider_name.clone().unwrap_or_default();
     conn.execute(
         "INSERT INTO llm_configs (name, api_key_enc, base_url, model, api_type, preset, is_default,
-                                  opencode_provider_id, config_mode, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                                  opencode_provider_id, config_mode, created_at,
+                                  opencode_display_name, opencode_model_options, opencode_provider_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         rusqlite::params![
             name, api_key_enc, input.base_url, input.model, input.api_type, input.preset,
-            is_default, input.opencode_provider_id, input.config_mode, now
+            is_default, input.opencode_provider_id, input.config_mode, now,
+            opencode_display_name, opencode_model_options, opencode_provider_name
         ],
     )?;
     let id = conn.last_insert_rowid();
@@ -556,13 +568,19 @@ pub fn update_llm_config(id: i64, input: &models::UpdateLlmConfigInput) -> AppRe
     let new_preset = input.preset.clone().or(current.6.clone());
     let new_opencode_provider_id = input.opencode_provider_id.clone().unwrap_or(current.12.clone());
     let new_config_mode = input.config_mode.clone().unwrap_or(current.13.clone());
+    let new_opencode_display_name = input.opencode_display_name.clone().unwrap_or(current.14.clone());
+    let new_opencode_model_options = input.opencode_model_options.clone().unwrap_or(current.15.clone());
+    let new_opencode_provider_name = input.opencode_provider_name.clone().unwrap_or(current.16.clone());
 
     conn.execute(
         "UPDATE llm_configs SET name=?1, api_key_enc=?2, base_url=?3, model=?4, api_type=?5,
-                preset=?6, opencode_provider_id=?7, config_mode=?8 WHERE id=?9",
+                preset=?6, opencode_provider_id=?7, config_mode=?8,
+                opencode_display_name=?9, opencode_model_options=?10, opencode_provider_name=?11
+         WHERE id=?12",
         rusqlite::params![
             new_name, new_api_key_enc, new_base_url, new_model, new_api_type,
-            new_preset, new_opencode_provider_id, new_config_mode, id
+            new_preset, new_opencode_provider_id, new_config_mode,
+            new_opencode_display_name, new_opencode_model_options, new_opencode_provider_name, id
         ],
     )?;
     let raw = conn.query_row(

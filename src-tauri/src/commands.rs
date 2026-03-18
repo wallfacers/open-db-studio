@@ -2325,11 +2325,11 @@ pub async fn agent_create_session(
     if let Some(id) = config_id {
         let cfg = crate::db::get_llm_config_by_id(id)?
             .ok_or_else(|| AppError::Other(format!("LLM config {} not found", id)))?;
-        let agent_dir = state.app_data_dir.join("agent");
+        let opencode_dir = state.app_data_dir.join("opencode");
         // 自定义模式：写入 provider 配置
         if cfg.config_mode == "custom" && !cfg.opencode_provider_id.is_empty() {
             if let Err(e) = crate::agent::config::upsert_custom_provider(
-                &agent_dir,
+                &opencode_dir,
                 &cfg.opencode_provider_id,
                 &cfg.api_type,
                 &cfg.base_url,
@@ -2496,9 +2496,9 @@ async fn apply_llm_config_to_opencode(
     };
 
     if cfg.config_mode == "custom" && !effective_provider.is_empty() {
-        let agent_dir = state.app_data_dir.join("agent");
+        let opencode_dir = state.app_data_dir.join("opencode");
         if let Err(e) = crate::agent::config::upsert_custom_provider(
-            &agent_dir,
+            &opencode_dir,
             &effective_provider,
             &cfg.api_type,
             &cfg.base_url,
@@ -2567,21 +2567,19 @@ async fn agent_chat_inner(
         }
     };
 
-    // 4. 发送消息，获取 SSE 响应
+    // 4. 通过 /event SSE 实现真正流式（先订阅 SSE，再后台发消息）
     let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
     let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
-    let response = crate::agent::client::send_message(
+    crate::agent::stream::stream_global_events(
         state.serve_port,
         &session_id,
         &prompt_text,
         model_opt,
         provider_opt,
         None,
+        channel,
     )
-    .await?;
-
-    // 5. 解析 SSE 流 → channel
-    crate::agent::stream::consume_sse_stream(response, channel).await
+    .await
 }
 
 /// 请求 AI 生成标题（使用临时 session）
@@ -2608,29 +2606,16 @@ pub async fn agent_request_ai_title(
         context
     );
 
-    let response_result = crate::agent::client::send_message(
+    // 3. 通过 /event SSE 收集完整回复（标题生成，无需流式显示）
+    let title = crate::agent::stream::collect_text_via_global_events(
         state.serve_port,
         &temp_id,
         &prompt,
         None,
         None,
-        None,
     )
-    .await;
-
-    // 3. 收集 SSE 流（无论成功失败，finally 路径均清理）
-    let title = match response_result {
-        Ok(resp) => {
-            let title = crate::agent::stream::collect_text_from_sse(resp).await.unwrap_or_default();
-            title
-        }
-        Err(e) => {
-            // finally: 清理临时 session
-            let _ = crate::agent::client::delete_session(state.serve_port, &temp_id).await;
-            let _ = crate::db::delete_agent_session(&temp_id);
-            return Err(e);
-        }
-    };
+    .await
+    .unwrap_or_default();
 
     // 4. 清理临时 session（finally 路径）
     if let Err(e) = crate::agent::client::delete_session(state.serve_port, &temp_id).await {
@@ -2652,12 +2637,12 @@ pub async fn agent_apply_config(
     let cfg = crate::db::get_llm_config_by_id(config_id)?
         .ok_or_else(|| AppError::Other(format!("LLM config {} not found", config_id)))?;
 
-    let agent_dir = state.app_data_dir.join("agent");
+    let opencode_dir = state.app_data_dir.join("opencode");
 
     // 自定义模式：先写入 opencode.json 的 provider 配置
     if cfg.config_mode == "custom" && !cfg.opencode_provider_id.is_empty() {
         if let Err(e) = crate::agent::config::upsert_custom_provider(
-            &agent_dir,
+            &opencode_dir,
             &cfg.opencode_provider_id,
             &cfg.api_type,
             &cfg.base_url,
@@ -2835,25 +2820,20 @@ async fn agent_explain_sql_inner(
         *guard = Some(session_id.clone());
     }
 
-    // 6. 确保 opencode 配置正确，发送消息（SSE 流）
+    // 6. 通过 /event SSE 流式输出（先订阅 SSE，再后台发消息）
     let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
     let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
     let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
-    let send_result = crate::agent::client::send_message(
+    let stream_result = crate::agent::stream::stream_global_events(
         port,
         &session_id,
         &prompt_text,
         model_opt,
         provider_opt,
         Some("sql-explain"),
+        channel,
     )
     .await;
-
-    // 7. 消费 SSE 流
-    let stream_result = match send_result {
-        Ok(resp) => crate::agent::stream::consume_sse_stream(resp, channel).await,
-        Err(e) => Err(e),
-    };
 
     // 8. finally 路径：无论成功/失败，清理 session
     cleanup_temp_sql_session(port, &session_id).await;
@@ -2932,25 +2912,20 @@ async fn agent_optimize_sql_inner(
         *guard = Some(session_id.clone());
     }
 
-    // 6. 确保 opencode 配置正确，发送消息（SSE 流）
+    // 6. 通过 /event SSE 流式输出（先订阅 SSE，再后台发消息）
     let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
     let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
     let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
-    let send_result = crate::agent::client::send_message(
+    let stream_result = crate::agent::stream::stream_global_events(
         port,
         &session_id,
         &prompt_text,
         model_opt,
         provider_opt,
         Some("sql-optimize"),
+        channel,
     )
     .await;
-
-    // 7. 消费 SSE 流
-    let stream_result = match send_result {
-        Ok(resp) => crate::agent::stream::consume_sse_stream(resp, channel).await,
-        Err(e) => Err(e),
-    };
 
     // 8. finally 路径：无论成功/失败，清理 session
     cleanup_temp_sql_session(port, &session_id).await;

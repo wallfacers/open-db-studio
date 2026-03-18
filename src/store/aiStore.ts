@@ -52,6 +52,7 @@ interface SessionRuntimeState {
   pendingElicitation: ElicitationRequest | null;       // 文字检测路径
   pendingPermission: PermissionRequest | null;          // permission 路径（isChatting=true）
   streamingElicitationFired: boolean;                   // P0：mid-stream 已触发，防重复
+  pendingConfigId: number | null;                       // 切换模型时暂存（session 尚未进入 sessions 列表）
 }
 
 const defaultRuntimeState = (): SessionRuntimeState => ({
@@ -63,6 +64,7 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   pendingElicitation: null,
   pendingPermission: null,
   streamingElicitationFired: false,
+  pendingConfigId: null,
 });
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
@@ -152,11 +154,25 @@ export const useAiStore = create<AiState>()(
       setLinkedConnectionId: (id) => set({ linkedConnectionId: id }),
 
       setSessionConfigId: (sessionId, configId) => {
-        set((s) => ({
-          sessions: s.sessions.map((sess) =>
-            sess.id === sessionId ? { ...sess, configId } : sess
-          ),
-        }));
+        set((s) => {
+          const existsInSessions = s.sessions.some((sess) => sess.id === sessionId);
+          return {
+            // 若已在 sessions 中，更新持久化字段
+            sessions: existsInSessions
+              ? s.sessions.map((sess) =>
+                  sess.id === sessionId ? { ...sess, configId } : sess
+                )
+              : s.sessions,
+            // 同时写入 chatStates，用于尚未进入 sessions 的新 session
+            chatStates: {
+              ...s.chatStates,
+              [sessionId]: {
+                ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                pendingConfigId: configId,
+              },
+            },
+          };
+        });
       },
 
       // ── LLM 配置 CRUD ──
@@ -471,8 +487,11 @@ export const useAiStore = create<AiState>()(
           }
         }
 
-        // 从 sessions 读取该 session 的 configId（不从 chatStates 读）
-        const configId = get().sessions.find((s) => s.id === sessionId)?.configId ?? null;
+        // 读取 configId：优先 chatStates（切换后立即可用），fallback sessions（持久化）
+        const configId =
+          get().chatStates[sessionId]?.pendingConfigId ??
+          get().sessions.find((s) => s.id === sessionId)?.configId ??
+          null;
 
         // 并发上限检查
         const activeChatCount = Object.values(get().chatStates).filter((s) => s.isChatting).length;
@@ -519,7 +538,10 @@ export const useAiStore = create<AiState>()(
 
           set((s) => {
             const existing = s.sessions.find((sess) => sess.id === sessionId);
-            const baseMessages = existing ? existing.messages : s.chatHistory;
+            // 当前 session 用 chatHistory（已含最新用户消息），后台 session 用 sessions 快照
+            const baseMessages = existing && sessionId !== s.currentSessionId
+              ? existing.messages
+              : s.chatHistory;
             const updatedMessages = [...baseMessages, newMsg];
 
             const updatedSessions = existing

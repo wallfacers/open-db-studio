@@ -5,7 +5,7 @@ use crate::AppResult;
 
 static HTTP_CLIENT: OnceCell<Client> = OnceCell::new();
 
-fn client() -> &'static Client {
+pub(crate) fn client() -> &'static Client {
     HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .connect_timeout(Duration::from_secs(5))
@@ -207,14 +207,16 @@ pub async fn permission_respond(
 }
 
 /// 热更新模型配置
-/// PATCH /config { "model": { "modelID": "...", "providerID": "..." } }
+/// PATCH /config { "model": "providerID/modelID" }
 pub async fn patch_config(port: u16, model: &str, provider: &str) -> AppResult<()> {
     let url = format!("{}/config", base_url(port));
-    let mut model_obj = serde_json::json!({ "modelID": model });
-    if !provider.is_empty() {
-        model_obj["providerID"] = serde_json::Value::String(provider.to_string());
-    }
-    let body = serde_json::json!({ "model": model_obj });
+    // opencode PATCH /config 要求 model 为字符串 "providerID/modelID"
+    let model_str = if provider.is_empty() {
+        model.to_string()
+    } else {
+        format!("{}/{}", provider, model)
+    };
+    let body = serde_json::json!({ "model": model_str });
 
     let resp = client()
         .patch(&url)

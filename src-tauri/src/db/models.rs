@@ -71,6 +71,9 @@ pub struct LlmConfig {
     pub created_at: String,
     pub opencode_provider_id: String,
     pub config_mode: String,
+    pub opencode_display_name: String,   // opencode 侧展示名，如 "Kimi K2.5"，空则回退到 name
+    pub opencode_model_options: String,  // JSON 字符串，modalities / options.thinking 等
+    pub opencode_provider_name: String,  // provider 级展示名，如 "Model Studio Coding Plan"
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -81,8 +84,11 @@ pub struct CreateLlmConfigInput {
     pub model: String,
     pub api_type: String,
     pub preset: Option<String>,
-    pub opencode_provider_id: String,  // opencode 模式传实际 providerID；自定义模式传用户自定义 ID
-    pub config_mode: String,           // "opencode" | "custom"
+    pub opencode_provider_id: String,
+    pub config_mode: String,
+    pub opencode_display_name: Option<String>,
+    pub opencode_model_options: Option<String>,
+    pub opencode_provider_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -95,6 +101,9 @@ pub struct UpdateLlmConfigInput {
     pub preset: Option<String>,
     pub opencode_provider_id: Option<String>,
     pub config_mode: Option<String>,
+    pub opencode_display_name: Option<String>,
+    pub opencode_model_options: Option<String>,
+    pub opencode_provider_name: Option<String>,
 }
 
 // ============ 任务记录模型 ============

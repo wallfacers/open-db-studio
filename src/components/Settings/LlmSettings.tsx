@@ -354,6 +354,39 @@ function ConfigFormDialog({
                 placeholder="https://api.example.com/v1"
               />
             </div>
+
+            <div>
+              <label className={labelCls}>Provider 展示名</label>
+              <input
+                className={inputCls}
+                value={form.opencode_provider_name ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, opencode_provider_name: e.target.value }))}
+                placeholder="如：Model Studio Coding Plan"
+              />
+              <p className="text-[10px] text-[#4a6480] mt-1">写入 opencode.json provider.name 字段</p>
+            </div>
+
+            <div>
+              <label className={labelCls}>模型展示名</label>
+              <input
+                className={inputCls}
+                value={form.opencode_display_name ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, opencode_display_name: e.target.value }))}
+                placeholder="如：Kimi K2.5"
+              />
+              <p className="text-[10px] text-[#4a6480] mt-1">opencode 侧显示的模型名，空则使用配置名称</p>
+            </div>
+
+            <div>
+              <label className={labelCls}>模型扩展选项 (JSON)</label>
+              <textarea
+                className={`${inputCls} font-mono text-xs h-24 resize-none`}
+                value={form.opencode_model_options ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, opencode_model_options: e.target.value }))}
+                placeholder={'{"modalities":{"input":["text","image"],"output":["text"]},"options":{"thinking":{"type":"enabled","budgetTokens":10000}}}'}
+              />
+              <p className="text-[10px] text-[#4a6480] mt-1">modalities / options.thinking 等，写入 opencode.json models 字段</p>
+            </div>
           </div>
         )}
 
@@ -445,6 +478,9 @@ const EMPTY_FORM: CreateLlmConfigInput = {
   opencode_provider_id: '',
   config_mode: 'opencode',
   preset: null,
+  opencode_display_name: '',
+  opencode_model_options: '',
+  opencode_provider_name: '',
 };
 
 export function LlmSettingsPanel() {
@@ -503,6 +539,9 @@ export function LlmSettingsPanel() {
       preset: input.preset,
       opencode_provider_id: input.opencode_provider_id,
       config_mode: input.config_mode,
+      opencode_display_name: input.opencode_display_name,
+      opencode_model_options: input.opencode_model_options,
+      opencode_provider_name: input.opencode_provider_name,
     };
     await invoke('update_llm_config', { id: editTarget.id, input: updateInput });
     if (testPassed) {
@@ -633,6 +672,9 @@ export function LlmSettingsPanel() {
             opencode_provider_id: editTarget.opencode_provider_id,
             config_mode: editTarget.config_mode,
             preset: editTarget.preset,
+            opencode_display_name: editTarget.opencode_display_name,
+            opencode_model_options: editTarget.opencode_model_options,
+            opencode_provider_name: editTarget.opencode_provider_name,
           }}
           editId={editTarget.id}
           providers={providers}

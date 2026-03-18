@@ -19,6 +19,7 @@ import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
+import { TaskBar } from './components/TaskBar';
 
 export default function App() {
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
@@ -243,6 +244,7 @@ export default function App() {
           isResizing={isAssistantResizing}
         />
       )}
+      <TaskBar />
     </div>
   );
 }

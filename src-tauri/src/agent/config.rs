@@ -163,6 +163,74 @@ pub fn upsert_custom_provider(
     Ok(())
 }
 
+/// 将 provider 条目合并写入 opencode.json（不覆盖其他 provider）。
+/// entry 会与文件中已有的同名 provider 做 key 级浅合并（options/models 各自覆盖）。
+pub fn upsert_provider_entry(
+    opencode_dir: &std::path::Path,
+    provider_id: &str,
+    entry: &serde_json::Value,
+) -> AppResult<()> {
+    std::fs::create_dir_all(opencode_dir)
+        .map_err(|e| crate::AppError::Other(format!("Failed to create opencode dir: {}", e)))?;
+
+    let path = opencode_dir.join("opencode.json");
+
+    let mut root: serde_json::Value = if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| crate::AppError::Other(format!("Failed to read opencode.json: {}", e)))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if !root.get("provider").map(|v| v.is_object()).unwrap_or(false) {
+        root["provider"] = serde_json::json!({});
+    }
+
+    // 与已有条目浅合并：保留未出现在 entry 中的顶级字段（如 name），
+    // 但 options / models 以 entry 中的为准（整体替换）
+    if let Some(existing) = root["provider"][provider_id].as_object().cloned() {
+        let mut merged = serde_json::json!({});
+        for (k, v) in &existing {
+            merged[k] = v.clone();
+        }
+        if let Some(obj) = entry.as_object() {
+            for (k, v) in obj {
+                if k == "models" {
+                    // models：将 entry 中的 model 条目 merge 到已有 models 中（不删除其他 model）
+                    let mut existing_models = existing
+                        .get("models")
+                        .and_then(|m| m.as_object())
+                        .cloned()
+                        .unwrap_or_default();
+                    if let Some(new_models) = v.as_object() {
+                        for (mid, mval) in new_models {
+                            existing_models.insert(mid.clone(), mval.clone());
+                        }
+                    }
+                    merged["models"] = serde_json::Value::Object(existing_models);
+                } else {
+                    merged[k] = v.clone();
+                }
+            }
+        }
+        root["provider"][provider_id] = merged;
+    } else {
+        root["provider"][provider_id] = entry.clone();
+    }
+
+    let tmp_path = opencode_dir.join("opencode.json.tmp");
+    let json_str = serde_json::to_string_pretty(&root)
+        .map_err(|e| crate::AppError::Other(format!("Failed to serialize opencode.json: {}", e)))?;
+    std::fs::write(&tmp_path, &json_str)
+        .map_err(|e| crate::AppError::Other(format!("Failed to write opencode.json.tmp: {}", e)))?;
+    std::fs::rename(&tmp_path, &path)
+        .map_err(|e| crate::AppError::Other(format!("Failed to rename opencode.json.tmp: {}", e)))?;
+
+    log::info!("Upserted provider entry '{}' in opencode.json", provider_id);
+    Ok(())
+}
+
 /// 启动时将 DB 中所有 custom LlmConfig 同步到 opencode.json 的 provider.models。
 ///
 /// 策略：

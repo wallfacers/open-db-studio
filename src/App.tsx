@@ -201,24 +201,23 @@ export default function App() {
         />
       )}
 
-      {activeActivity !== 'settings' && (
-        <div
-          style={{
-            width: isAssistantOpen ? assistantWidth : 0,
-            overflow: 'hidden',
-            transition: isAssistantResizing ? 'none' : 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
-            flexShrink: 0,
-          }}
-        >
-          <Assistant
-            assistantWidth={assistantWidth}
-            handleAssistantResize={handleAssistantResize}
-            showToast={showToast}
-            activeConnectionId={activeConnectionId}
-            onOpenSettings={() => setActiveActivity('settings')}
-          />
-        </div>
-      )}
+      <div
+        style={{
+          display: activeActivity === 'settings' ? 'none' : undefined,
+          width: isAssistantOpen ? assistantWidth : 0,
+          overflow: 'hidden',
+          transition: isAssistantResizing ? 'none' : 'width 280ms cubic-bezier(0.32, 0.72, 0, 1)',
+          flexShrink: 0,
+        }}
+      >
+        <Assistant
+          assistantWidth={assistantWidth}
+          handleAssistantResize={handleAssistantResize}
+          showToast={showToast}
+          activeConnectionId={activeConnectionId}
+          onOpenSettings={() => setActiveActivity('settings')}
+        />
+      </div>
 
       <Toast
         message={toast?.message ?? null}

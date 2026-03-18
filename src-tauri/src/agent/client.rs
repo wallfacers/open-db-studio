@@ -76,50 +76,6 @@ pub async fn delete_session(port: u16, session_id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// 发送消息（返回 Response 供 stream.rs 使用 SSE 流）
-/// POST /session/:id/message { "parts": [...], "model": { "modelID": "...", "providerID": "..." }, "agent": "..." }
-pub async fn send_message(
-    port: u16,
-    session_id: &str,
-    text: &str,
-    model_id: Option<&str>,
-    provider_id: Option<&str>,
-    agent: Option<&str>,
-) -> AppResult<reqwest::Response> {
-    let url = format!("{}/session/{}/message", base_url(port), session_id);
-    let mut body = serde_json::json!({
-        "parts": [{ "type": "text", "text": text }]
-    });
-    if let Some(m) = model_id {
-        let mut model_obj = serde_json::json!({ "modelID": m });
-        if let Some(p) = provider_id {
-            model_obj["providerID"] = serde_json::Value::String(p.to_string());
-        }
-        body["model"] = model_obj;
-    }
-    if let Some(a) = agent {
-        body["agent"] = serde_json::Value::String(a.to_string());
-    }
-
-    let resp = client()
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| crate::AppError::Other(format!("send_message request failed: {}", e)))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(crate::AppError::Other(format!(
-            "send_message failed: {} — {}",
-            status, text
-        )));
-    }
-
-    Ok(resp)
-}
-
 /// 获取 session 消息历史
 /// GET /session/:id/message
 pub async fn get_messages(port: u16, session_id: &str) -> AppResult<serde_json::Value> {
@@ -289,6 +245,27 @@ pub async fn summarize_session(
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(crate::AppError::Other(format!("summarize_session failed: {} — {}", status, text)));
+    }
+    Ok(())
+}
+
+/// 热更新配置（接受完整 JSON body）
+/// PATCH /config { "provider": { ... } }
+pub async fn patch_config_json(port: u16, body: &serde_json::Value) -> AppResult<()> {
+    let url = format!("{}/config", base_url(port));
+    let resp = client()
+        .patch(&url)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("patch_config_json request failed: {}", e)))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!(
+            "patch_config_json failed: {} — {}",
+            status, text
+        )));
     }
     Ok(())
 }

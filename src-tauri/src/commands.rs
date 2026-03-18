@@ -2326,17 +2326,22 @@ pub async fn agent_create_session(
         let cfg = crate::db::get_llm_config_by_id(id)?
             .ok_or_else(|| AppError::Other(format!("LLM config {} not found", id)))?;
         let agent_dir = state.app_data_dir.join("agent");
-        if let Err(e) = crate::agent::config::write_opencode_json(
-            &agent_dir,
-            &cfg.model,
-            &cfg.api_type,
-            &cfg.api_key,
-            if cfg.base_url.is_empty() { None } else { Some(cfg.base_url.as_str()) },
-        ) {
-            log::warn!("[agent_create_session] Failed to write opencode.json: {}", e);
+        // 自定义模式：写入 provider 配置
+        if cfg.config_mode == "custom" && !cfg.opencode_provider_id.is_empty() {
+            if let Err(e) = crate::agent::config::upsert_custom_provider(
+                &agent_dir,
+                &cfg.opencode_provider_id,
+                &cfg.api_type,
+                &cfg.base_url,
+                &cfg.api_key,
+            ) {
+                log::warn!("[agent_create_session] upsert_custom_provider failed: {}", e);
+            }
         }
-        if let Err(e) = crate::agent::client::patch_config(state.serve_port, &cfg.model, &cfg.api_type).await {
-            log::warn!("[agent_create_session] Failed to patch_config: {}", e);
+        if let Err(e) = crate::agent::client::patch_config(
+            state.serve_port, &cfg.model, &cfg.opencode_provider_id,
+        ).await {
+            log::warn!("[agent_create_session] patch_config failed: {}", e);
         }
     }
 
@@ -2510,28 +2515,30 @@ async fn agent_chat_inner(
         }
     }
 
-    // 3. 获取 model 字段（从 config_id 或默认配置）
-    let model_str = match config_id {
+    // 3. 获取 model/provider 字段（从 config_id 或默认配置）
+    let (model_str, provider_str) = match config_id {
         Some(id) => {
             let cfg = crate::db::get_llm_config_by_id(id)?
                 .ok_or_else(|| AppError::Other(format!("LLM config {} not found", id)))?;
-            cfg.model
+            (cfg.model, cfg.opencode_provider_id)
         }
         None => {
             match crate::db::get_default_llm_config()? {
-                Some(cfg) => cfg.model,
-                None => String::new(),
+                Some(cfg) => (cfg.model, cfg.opencode_provider_id),
+                None => (String::new(), String::new()),
             }
         }
     };
 
     // 4. 发送消息，获取 SSE 响应
     let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
+    let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
     let response = crate::agent::client::send_message(
         state.serve_port,
         &session_id,
         &prompt_text,
         model_opt,
+        provider_opt,
         None,
     )
     .await?;
@@ -2570,6 +2577,7 @@ pub async fn agent_request_ai_title(
         &prompt,
         None,
         None,
+        None,
     )
     .await;
 
@@ -2599,9 +2607,6 @@ pub async fn agent_request_ai_title(
 
 
 /// 应用 LLM 配置到 opencode serve（写盘 + 热更新）
-/// 1. 从 SQLite 获取 LLM 配置（解密 apiKey）
-/// 2. 调用 write_opencode_json 写盘
-/// 3. 调用 patch_config 热更新（失败仅 warn）
 #[tauri::command]
 pub async fn agent_apply_config(
     config_id: i64,
@@ -2611,19 +2616,111 @@ pub async fn agent_apply_config(
         .ok_or_else(|| AppError::Other(format!("LLM config {} not found", config_id)))?;
 
     let agent_dir = state.app_data_dir.join("agent");
-    crate::agent::config::write_opencode_json(
-        &agent_dir,
-        &cfg.model,
-        &cfg.api_type,
-        &cfg.api_key,
-        if cfg.base_url.is_empty() { None } else { Some(cfg.base_url.as_str()) },
-    )?;
 
-    if let Err(e) = crate::agent::client::patch_config(state.serve_port, &cfg.model, &cfg.api_type).await {
+    // 自定义模式：先写入 opencode.json 的 provider 配置
+    if cfg.config_mode == "custom" && !cfg.opencode_provider_id.is_empty() {
+        if let Err(e) = crate::agent::config::upsert_custom_provider(
+            &agent_dir,
+            &cfg.opencode_provider_id,
+            &cfg.api_type,
+            &cfg.base_url,
+            &cfg.api_key,
+        ) {
+            log::warn!("[agent_apply_config] upsert_custom_provider failed: {}", e);
+        }
+    }
+
+    // 两种模式统一用 opencode_provider_id 热更新
+    if let Err(e) = crate::agent::client::patch_config(
+        state.serve_port, &cfg.model, &cfg.opencode_provider_id,
+    ).await {
         log::warn!("[agent_apply_config] patch_config failed (ignored): {}", e);
     }
 
     Ok(())
+}
+
+// ── OpenCode Provider 类型（用于 agent_list_providers 命令）──────────────
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OpenCodeProviderModel {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OpenCodeProvider {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    pub models: Vec<OpenCodeProviderModel>,
+}
+
+/// 从 opencode serve 获取可用供应商和模型列表。
+/// 失败时返回空列表（opencode 未运行时降级）。
+#[tauri::command]
+pub async fn agent_list_providers(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<Vec<OpenCodeProvider>> {
+    let port = state.serve_port;
+    let url = format!("http://127.0.0.1:{}/config/providers", port);
+    let client = reqwest::Client::new();
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[agent_list_providers] Request failed (opencode not running?): {}", e);
+            return Ok(vec![]);
+        }
+    };
+    let json: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("[agent_list_providers] Failed to parse response: {}", e);
+            return Ok(vec![]);
+        }
+    };
+    let arr = match json["providers"].as_array() {
+        Some(a) => a.clone(),
+        None => {
+            log::warn!("[agent_list_providers] Unexpected response format (no 'providers' array)");
+            return Ok(vec![]);
+        }
+    };
+    let providers = arr.into_iter().filter_map(|p| {
+        let id = p["id"].as_str()?.to_string();
+        let name = p["name"].as_str().unwrap_or(&id).to_string();
+        let source = p["source"].as_str().unwrap_or("").to_string();
+        let models = p["models"].as_object()
+            .map(|m| m.iter().map(|(k, v)| OpenCodeProviderModel {
+                id: k.clone(),
+                name: v["name"].as_str().unwrap_or(k).to_string(),
+            }).collect::<Vec<_>>())
+            .unwrap_or_default();
+        Some(OpenCodeProvider { id, name, source, models })
+    }).collect();
+    Ok(providers)
+}
+
+/// 无状态连接测试，直接接收配置参数，不写 DB。
+/// 仅适用于自定义模式（opencode 模式无需 api_key，opencode 自行管理认证）。
+#[tauri::command]
+pub async fn test_llm_config_inline(
+    model: String,
+    api_type: String,
+    base_url: String,
+    api_key: String,
+) -> AppResult<()> {
+    let parsed_api_type = parse_api_type(&api_type);
+    let client = crate::llm::client::LlmClient::new(
+        api_key,
+        Some(base_url),
+        Some(model),
+        Some(parsed_api_type),
+    );
+    let messages = vec![crate::llm::ChatMessage {
+        role: "user".into(),
+        content: "hi".into(),
+    }];
+    client.chat(messages).await.map(|_| ())
 }
 
 
@@ -2703,11 +2800,13 @@ async fn agent_explain_sql_inner(
 
     // 6. 发送消息（SSE 流）
     let model_opt = if config.model.is_empty() { None } else { Some(config.model.as_str()) };
+    let provider_opt = if config.opencode_provider_id.is_empty() { None } else { Some(config.opencode_provider_id.as_str()) };
     let send_result = crate::agent::client::send_message(
         port,
         &session_id,
         &prompt_text,
         model_opt,
+        provider_opt,
         Some("sql-explain"),
     )
     .await;
@@ -2797,11 +2896,13 @@ async fn agent_optimize_sql_inner(
 
     // 6. 发送消息（SSE 流）
     let model_opt = if config.model.is_empty() { None } else { Some(config.model.as_str()) };
+    let provider_opt = if config.opencode_provider_id.is_empty() { None } else { Some(config.opencode_provider_id.as_str()) };
     let send_result = crate::agent::client::send_message(
         port,
         &session_id,
         &prompt_text,
         model_opt,
+        provider_opt,
         Some("sql-optimize"),
     )
     .await;

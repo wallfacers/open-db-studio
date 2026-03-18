@@ -72,6 +72,23 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         [],
     );
 
+    // V5: llm_configs 新增 opencode_provider_id 和 config_mode
+    let llm_alter_stmts = [
+        "ALTER TABLE llm_configs ADD COLUMN opencode_provider_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE llm_configs ADD COLUMN config_mode TEXT NOT NULL DEFAULT 'custom'",
+    ];
+    for stmt in &llm_alter_stmts {
+        if let Err(e) = conn.execute_batch(stmt) {
+            let is_duplicate = matches!(
+                &e,
+                RusqliteError::SqliteFailure(err, _) if err.extended_code == 1
+            );
+            if !is_duplicate {
+                return Err(crate::AppError::Other(format!("Migration failed: {}", e)));
+            }
+        }
+    }
+
     // V4: agent_sessions 表（opencode HTTP Serve 模式）
     // init.sql 使用 IF NOT EXISTS，新安装自动创建；存量数据库通过此处幂等建表
     let _ = conn.execute_batch(

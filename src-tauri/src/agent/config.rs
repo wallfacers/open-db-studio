@@ -145,3 +145,60 @@ description: SQL 优化专家，提供 SQL 性能优化建议与改写
     log::info!("Wrote agent prompt files to {:?}", agents_dir);
     Ok(())
 }
+
+/// 将自定义供应商合并写入 agent/opencode.json，不覆盖其他已有 provider。
+/// 使用 tmp 文件 + rename 保证原子性。
+/// `npm_pkg`：`"openai"` → `"@ai-sdk/openai"`；`"anthropic"` → `"@ai-sdk/anthropic"`
+pub fn upsert_custom_provider(
+    agent_dir: &std::path::Path,
+    provider_id: &str,
+    api_type: &str,
+    base_url: &str,
+    api_key: &str,
+) -> AppResult<()> {
+    std::fs::create_dir_all(agent_dir)
+        .map_err(|e| crate::AppError::Other(format!("Failed to create agent dir: {}", e)))?;
+
+    let path = agent_dir.join("opencode.json");
+
+    // 读取已有 JSON（不存在则从空对象开始）
+    let mut root: serde_json::Value = if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| crate::AppError::Other(format!("Failed to read opencode.json: {}", e)))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // 确保 provider 字段存在
+    if !root.get("provider").map(|v| v.is_object()).unwrap_or(false) {
+        root["provider"] = serde_json::json!({});
+    }
+
+    let npm_pkg = match api_type {
+        "anthropic" => "@ai-sdk/anthropic",
+        _ => "@ai-sdk/openai",
+    };
+
+    let provider_entry = serde_json::json!({
+        "npm": npm_pkg,
+        "options": {
+            "apiKey": api_key,
+            "baseURL": base_url
+        }
+    });
+
+    root["provider"][provider_id] = provider_entry;
+
+    // 原子写入：先写 tmp 文件，再 rename
+    let tmp_path = agent_dir.join("opencode.json.tmp");
+    let json_str = serde_json::to_string_pretty(&root)
+        .map_err(|e| crate::AppError::Other(format!("Failed to serialize opencode.json: {}", e)))?;
+    std::fs::write(&tmp_path, &json_str)
+        .map_err(|e| crate::AppError::Other(format!("Failed to write opencode.json.tmp: {}", e)))?;
+    std::fs::rename(&tmp_path, &path)
+        .map_err(|e| crate::AppError::Other(format!("Failed to rename opencode.json.tmp: {}", e)))?;
+
+    log::info!("Upserted custom provider '{}' in opencode.json", provider_id);
+    Ok(())
+}

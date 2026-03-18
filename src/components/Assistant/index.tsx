@@ -6,6 +6,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { DiffPanel } from './DiffPanel';
 import ElicitationPanel from './ElicitationPanel';
+import { SlashCommandMenu } from './SlashCommandMenu';
 import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
@@ -106,8 +107,11 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
+  const lastUserMessageId = useAiStore((s) => s.chatStates[currentSessionId]?.lastUserMessageId ?? null);
+  const canRedo = useAiStore((s) => s.chatStates[currentSessionId]?.canRedo ?? false);
+  const isCompacting = useAiStore((s) => s.chatStates[currentSessionId]?.isCompacting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
   const pendingElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingElicitation ?? null);
@@ -135,6 +139,8 @@ export const Assistant: React.FC<AssistantProps> = ({
   const { connections, activeConnectionIds } = useConnectionStore();
 
   const [chatInput, setChatInput] = useState('');
+  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -268,15 +274,49 @@ export const Assistant: React.FC<AssistantProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 斜杠菜单打开时，Enter 由 SlashCommandMenu 处理，不触发 send
+    if (slashQuery !== null) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
   };
 
+  // 斜杠命令所需状态与上下文
+  const activeConfig = configs.find((c) => c.id === activeConfigId) ?? configs.find((c) => c.is_default) ?? configs[0] ?? null;
+  const commandState = {
+    hasHistory: chatHistory.length > 0,
+    isChatting,
+    canUndo: lastUserMessageId !== null,
+    canRedo,
+    isCompacting,
+    messageCount: chatHistory.length,
+  };
+  const commandContext = {
+    sessionId: currentSessionId,
+    modelId: activeConfig?.model ?? null,
+    providerId: activeConfig?.opencode_provider_id ?? null,
+    undoMessage,
+    redoMessage,
+    compactSession,
+    newSession,
+    clearHistory,
+    showToast,
+  };
+
   // 输入框 JSX，在空状态和正常状态中复用
   const renderInputBox = () => (
-    <div className="bg-[#111922] border border-[#2a3f5a] rounded-lg p-2 flex flex-col focus-within:border-[#00c9a7] transition-colors">
+    <div className="bg-[#111922] border border-[#2a3f5a] rounded-lg p-2 flex flex-col focus-within:border-[#00c9a7] transition-colors relative">
+      {slashQuery !== null && (
+        <SlashCommandMenu
+          query={slashQuery}
+          activeIndex={slashIndex}
+          commandState={commandState}
+          commandContext={commandContext}
+          onClose={() => { setSlashQuery(null); setChatInput(''); }}
+          onIndexChange={setSlashIndex}
+        />
+      )}
       <div className="relative mb-2 w-fit" ref={connectionMenuRef}>
         <div
           className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea]"
@@ -324,7 +364,16 @@ export const Assistant: React.FC<AssistantProps> = ({
         className="bg-transparent text-[13px] text-[#c8daea] outline-none resize-none h-16 w-full placeholder-[#7a9bb8]"
         placeholder={t('assistant.inputPlaceholder')}
         value={chatInput}
-        onChange={(e) => setChatInput(e.target.value)}
+        onChange={(e) => {
+          const val = e.target.value;
+          setChatInput(val);
+          if (val.startsWith('/') && !val.includes(' ')) {
+            setSlashQuery(val.slice(1));
+            setSlashIndex(0);
+          } else {
+            setSlashQuery(null);
+          }
+        }}
         onKeyDown={handleKeyDown}
         disabled={isChatting}
       />

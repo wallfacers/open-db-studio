@@ -244,6 +244,10 @@ pub fn run() {
             commands::agent_optimize_sql,
             commands::cancel_explain_sql,
             commands::cancel_optimize_sql,
+            commands::agent_revert_message,
+            commands::agent_unrevert_message,
+            commands::agent_summarize_session,
+            commands::agent_get_last_user_message_id,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

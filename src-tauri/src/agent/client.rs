@@ -232,6 +232,67 @@ pub async fn list_sessions(port: u16) -> AppResult<serde_json::Value> {
     Ok(json)
 }
 
+/// 撤销最后一轮对话
+/// POST /session/:id/revert { "messageID": "..." }
+pub async fn revert_message(port: u16, session_id: &str, message_id: &str) -> AppResult<()> {
+    let url = format!("{}/session/{}/revert", base_url(port), session_id);
+    let body = serde_json::json!({ "messageID": message_id });
+    let resp = client()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("revert_message request failed: {}", e)))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!("revert_message failed: {} — {}", status, text)));
+    }
+    Ok(())
+}
+
+/// 恢复被撤销的对话
+/// POST /session/:id/unrevert
+pub async fn unrevert_message(port: u16, session_id: &str) -> AppResult<()> {
+    let url = format!("{}/session/{}/unrevert", base_url(port), session_id);
+    let resp = client()
+        .post(&url)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("unrevert_message request failed: {}", e)))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!("unrevert_message failed: {} — {}", status, text)));
+    }
+    Ok(())
+}
+
+/// 压缩会话 context
+/// POST /session/:id/summarize { "providerID": "...", "modelID": "..." }
+pub async fn summarize_session(
+    port: u16,
+    session_id: &str,
+    provider_id: &str,
+    model_id: &str,
+) -> AppResult<()> {
+    let url = format!("{}/session/{}/summarize", base_url(port), session_id);
+    let body = serde_json::json!({ "providerID": provider_id, "modelID": model_id });
+    let resp = client()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("summarize_session request failed: {}", e)))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!("summarize_session failed: {} — {}", status, text)));
+    }
+    Ok(())
+}
+
 /// 热更新模型配置
 /// PATCH /config { "model": "providerID/modelID" }
 pub async fn patch_config(port: u16, model: &str, provider: &str) -> AppResult<()> {

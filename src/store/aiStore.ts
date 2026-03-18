@@ -286,7 +286,7 @@ export const useAiStore = create<AiState>()(
             const next = remaining[0];
             set({ currentSessionId: next.id, chatHistory: next.messages });
           } else {
-            const newId = uuid();
+            const newId = await invoke<string>('agent_create_session', {}).catch(() => uuid());
             set({ currentSessionId: newId, chatHistory: [] });
           }
         }
@@ -396,10 +396,14 @@ export const useAiStore = create<AiState>()(
           sessions: [],
           chatHistory: [],
           chatStates: {},
-          currentSessionId: uuid(),
+          currentSessionId: uuid(), // 临时占位，下方异步替换为服务端 ID
         });
-        // 删除所有后台 session（尽力，不阻塞）
-        invoke('agent_delete_all_sessions').catch(() => {});
+        // 删除所有后台 session，然后创建新 session（尽力，不阻塞）
+        invoke('agent_delete_all_sessions')
+          .catch(() => {})
+          .then(() => invoke<string>('agent_create_session', {}))
+          .then((newId) => set({ currentSessionId: newId as string }))
+          .catch(() => {});
       },
 
       clearHistory: async (sessionId) => {
@@ -456,8 +460,16 @@ export const useAiStore = create<AiState>()(
           ? queryStore.sqlContent[activeTabId] ?? null
           : null;
 
-        // 捕获发送时的 sessionId
-        const sessionId = get().currentSessionId;
+        // 捕获发送时的 sessionId；若不是有效的 opencode session（需以 'ses' 开头）则先创建
+        let sessionId = get().currentSessionId;
+        if (!sessionId.startsWith('ses')) {
+          try {
+            sessionId = await invoke<string>('agent_create_session', {});
+            set({ currentSessionId: sessionId });
+          } catch (_) {
+            // 创建失败继续执行，downstream 会报错
+          }
+        }
 
         // 从 sessions 读取该 session 的 configId（不从 chatStates 读）
         const configId = get().sessions.find((s) => s.id === sessionId)?.configId ?? null;
@@ -671,7 +683,10 @@ export const useAiStore = create<AiState>()(
               // 清空任何未完成的 pendingPermission（abort 场景兜底）
               setChatStateField({ pendingPermission: null });
               const state = get().chatStates[sessionId];
-              await commitAssistant(state?.streamingContent ?? '', state?.streamingThinkingContent ?? '');
+              const content = state?.streamingContent ?? '';
+              // 如果内容为空，说明 opencode/provider 未能返回任何内容，给出提示
+              const finalContent = content || 'AI 未返回内容，请检查 LLM 配置（供应商、模型、API Key）是否正确。';
+              await commitAssistant(finalContent, state?.streamingThinkingContent ?? '');
             } else if (event.type === 'Error') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;

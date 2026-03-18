@@ -4,5 +4,7 @@ export { useAiStore } from './aiStore';
 export { useTreeStore } from './treeStore';
 export { useTaskStore, initTaskProgressListener } from './taskStore';
 export type { Task, TaskType, TaskStatus, TaskProgressEvent } from './taskStore';
+export { useBgTaskStore, initBgTaskListeners } from './bgTaskStore';
+export type { BackgroundTask, TaskLog } from './bgTaskStore';
 export { useAppStore } from './appStore';
 export type { OperationContext } from './appStore';

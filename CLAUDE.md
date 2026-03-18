@@ -56,6 +56,17 @@ open-db-studio/
 | [docs/design-docs/ai-pipeline.md](./docs/design-docs/ai-pipeline.md) | AI SQL 生成流程 |
 | [docs/adr/](./docs/adr/) | 架构决策记录（ADR） |
 
+## Shell 环境约定
+
+本项目在 Windows 上开发，执行命令前需判断当前 shell：
+
+| Shell | 路径写法 |
+|-------|---------|
+| Git Bash / MSYS2 | `/d/project/java/source/open-db-studio/...` 或相对路径 |
+| PowerShell / CMD | `D:\project\java\source\open-db-studio\...` |
+
+在 Git Bash 中 `\` 是转义字符，`D:\project\...` 的反斜杠会被吞掉导致路径错误。优先使用**相对路径**可以规避 shell 差异。
+
 ## 开发命令
 
 ```bash

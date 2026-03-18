@@ -276,7 +276,7 @@ function ConfigFormDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
-      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4 min-h-[480px] max-h-[90vh] overflow-y-auto">
         {/* 标题 */}
         <div className="flex items-center justify-between">
           <h3 className="text-[#e8f4ff] font-semibold text-sm">{title}</h3>
@@ -354,21 +354,23 @@ function ConfigFormDialog({
                 placeholder="https://api.example.com/v1"
               />
             </div>
-
-            <div>
-              <label className={labelCls}>API Key</label>
-              <PasswordInput
-                className={inputCls}
-                value={form.api_key}
-                onChange={(v) => {
-                  setForm((f) => ({ ...f, api_key: v }));
-                  setApiKeyDirty(true);
-                }}
-                placeholder={editId ? '不修改则留空' : 'sk-…'}
-              />
-            </div>
           </div>
         )}
+
+        {/* API Key（两种模式均显示） */}
+        <div>
+          <label className={labelCls}>API Key</label>
+          <PasswordInput
+            className={inputCls}
+            value={form.api_key}
+            onChange={(v) => {
+              setForm((f) => ({ ...f, api_key: v }));
+              setApiKeyDirty(true);
+            }}
+            placeholder={editId ? '不修改则留空' : 'sk-…'}
+            onReveal={editId ? () => invoke<string>('get_llm_config_key', { id: editId }) : undefined}
+          />
+        </div>
 
         {/* 模型选择 */}
         <div>

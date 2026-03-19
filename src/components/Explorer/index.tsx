@@ -309,7 +309,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
 
       {showModal && (
         <ConnectionModal
-          onClose={() => { setShowModal(false); init(); }}
+          onClose={() => setShowModal(false)}
+          onSuccess={() => { setShowModal(false); refresh(); }}
         />
       )}
 

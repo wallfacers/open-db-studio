@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 // 任务类型
-export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel' | 'ai_generate_metrics';
+export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel' | 'ai_generate_metrics' | 'build_schema_graph';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 // 内存日志条目（不写 SQLite，重启清空）

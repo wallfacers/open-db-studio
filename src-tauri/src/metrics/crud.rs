@@ -216,16 +216,27 @@ pub fn search_metrics(connection_id: i64, keywords: &[String]) -> AppResult<Vec<
     if keywords.is_empty() {
         return Ok(vec![]);
     }
-    let conn = crate::db::get().lock().unwrap();
-    let pattern = format!("%{}%", keywords.join("%"));
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {} FROM metrics WHERE connection_id=?1 AND status='approved'
-           AND (name LIKE ?2 OR display_name LIKE ?2 OR description LIKE ?2)
-         ORDER BY name",
-        SELECT_COLS
-    ))?;
-    let rows = stmt.query_map(rusqlite::params![connection_id, pattern], row_to_metric)?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    let conn = crate::db::get().lock().map_err(|_| crate::AppError::Other("DB lock poisoned".into()))?;
+    let mut seen_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut results: Vec<Metric> = Vec::new();
+    // Run a separate LIKE query per keyword (OR semantics), dedup by id
+    for keyword in keywords {
+        let pattern = format!("%{}%", keyword);
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM metrics WHERE connection_id=?1 AND status='approved'
+               AND (name LIKE ?2 OR display_name LIKE ?2 OR description LIKE ?2)
+             ORDER BY name",
+            SELECT_COLS
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![connection_id, pattern], row_to_metric)?;
+        for row in rows {
+            let metric = row?;
+            if seen_ids.insert(metric.id) {
+                results.push(metric);
+            }
+        }
+    }
+    Ok(results)
 }
 
 pub fn get_metric_pub(id: i64) -> AppResult<Metric> {

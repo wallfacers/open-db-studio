@@ -143,13 +143,33 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     setShowTablePicker(false);
     setGenInfo(null);
     try {
-      await invoke<string>('ai_generate_metrics', {
+      const taskId = await invoke<string>('ai_generate_metrics', {
         connectionId: scope.connectionId,
         database: scope.database ?? null,
         schema: scope.schema ?? null,
         tableNames,
       });
-      // Rust 已将任务写入 SQLite，等待刷新完成后再接收后续事件（防止 log 事件丢失）
+      // 立即将 stub 放入 store，防止进度事件在 loadTasks 完成前到达时被静默丢弃
+      useTaskStore.getState()._addTaskStub({
+        id: taskId,
+        type: 'ai_generate_metrics',
+        status: 'running',
+        title: `AI 生成指标 · ${scope.database ?? 'default'}`,
+        progress: 0,
+        processedRows: 0,
+        totalRows: null,
+        currentTarget: '',
+        error: null,
+        errorDetails: [],
+        outputPath: null,
+        description: null,
+        startTime: new Date().toISOString(),
+        endTime: null,
+        connectionId: scope.connectionId,
+        database: scope.database,
+        schema: scope.schema,
+      });
+      // 再从 SQLite 同步完整信息（合并时会保留内存 progress）
       await useTaskStore.getState().loadTasks();
       if (goToTasks) {
         useTaskStore.getState().setVisible(true);

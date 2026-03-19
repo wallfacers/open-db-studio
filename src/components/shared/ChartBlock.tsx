@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, memo } from 'react';
+import React, { useState, useCallback, useMemo, memo, useRef, useEffect, useLayoutEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 // 重要：必须从 'echarts/core' 导入，与测试中 vi.mock('echarts/core') 路径一致
 // 不要改成 import * as echarts from 'echarts'（全包路径）
@@ -150,11 +150,51 @@ class ChartErrorBoundary extends React.Component<ErrorBoundaryProps, { hasError:
   }
 }
 
+// ── ChartRenderer：独立组件
+// 用 useLayoutEffect 同步读容器宽度，确保 ECharts 以正确尺寸初始化，避免 canvas 黑框。
+// ResizeObserver 负责后续宽度变化时 resize。
+const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+
+  // useLayoutEffect：DOM commit 后、paint 前同步读宽度，宽度有效才渲染 ECharts
+  useLayoutEffect(() => {
+    const w = containerRef.current?.clientWidth ?? 0;
+    if (w > 0) setWidth(w);
+  }, []);
+
+  // ResizeObserver：处理后续容器宽度变化（面板拉伸、布局变化等）
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setWidth(w);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ height: 280 }}>
+      {width !== null && (
+        <ReactECharts
+          option={option}
+          theme="ods-dark"
+          style={{ height: 280, width }}
+          notMerge={true}
+          opts={{ renderer: 'canvas' }}
+        />
+      )}
+    </div>
+  );
+};
+
 // ── ChartBlock ────────────────────────────────────────────────────────────────
 // 重要约定：此组件只负责渲染，不持有外部 state；所有状态均在组件内部管理。
 export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = memo(({ code, isStreaming = false }) => {
   const [copied, setCopied] = useState(false);
-  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { option, error } = useMemo(() => {
     try {
@@ -175,7 +215,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
     }
   }, [code]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -189,7 +229,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[#1e2d42]">
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
           <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-          <span className="text-xs text-[#5b8ab0]">AI 正在生成图表数据</span>
+          <span className="text-xs text-[#5b8ab0] animate-pulse">AI 正在生成图表数据</span>
         </div>
         <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: 280 }}>
           <div className="flex flex-col items-center gap-3">
@@ -198,7 +238,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
                 <div
                   key={i}
                   className="w-3 rounded-t bg-[#00c9a7]/70 chart-bar-anim"
-                  style={{ height: h, '--bar-delay': `${i * 0.22}s` } as React.CSSProperties}
+                  style={{ height: h, animationDelay: `-${(i * 0.22).toFixed(2)}s` }}
                 />
               ))}
             </div>
@@ -258,13 +298,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
           </div>
         }
       >
-        <ReactECharts
-          option={mergedOption}
-          theme="ods-dark"
-          style={{ height: 280 }}
-          notMerge={true}
-          opts={{ renderer: 'canvas' }}
-        />
+        <ChartRenderer option={mergedOption} />
       </ChartErrorBoundary>
     </div>
   );

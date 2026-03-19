@@ -144,8 +144,10 @@ body {
   50%       { transform: scaleY(1);   opacity: 1;    }
 }
 .chart-bar-anim {
-  /* delay 通过 CSS 变量注入，避免 inline style 覆盖 animation shorthand 失效 */
-  animation: chart-bar-pulse 1.4s cubic-bezier(0.37, 0, 0.63, 1) var(--bar-delay, 0s) infinite;
+  animation-name: chart-bar-pulse;
+  animation-duration: 1.4s;
+  animation-timing-function: cubic-bezier(0.37, 0, 0.63, 1);
+  animation-iteration-count: infinite;
   transform-origin: bottom;
 }
 

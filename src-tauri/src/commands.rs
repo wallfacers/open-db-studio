@@ -1062,12 +1062,57 @@ pub async fn get_task_by_id(id: String) -> AppResult<Option<crate::db::models::T
 // ============ 任务取消与重试 ============
 
 #[tauri::command]
-pub async fn cancel_task(task_id: String) -> AppResult<()> {
+pub async fn cancel_task(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, crate::state::AppState>,
+    task_id: String,
+) -> AppResult<()> {
+    // 真正中断后台 tokio 任务（若存在）
+    if let Some(abort_handle) = state.task_abort_handles.lock().unwrap().remove(&task_id) {
+        abort_handle.abort();
+    }
+    let now = chrono::Utc::now().to_rfc3339();
     crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
         status: Some("cancelled".to_string()),
-        completed_at: Some(chrono::Utc::now().to_rfc3339()),
+        completed_at: Some(now),
         ..Default::default()
-    })
+    })?;
+    // 通知前端任务已取消
+    use tauri::Emitter;
+    #[derive(serde::Serialize, Clone)]
+    struct CancelEvent {
+        task_id: String,
+        status: String,
+        progress: f32,
+        processed_rows: i64,
+        total_rows: Option<i64>,
+        current_target: String,
+        error: Option<String>,
+        output_path: Option<String>,
+        log_line: Option<()>,
+        connection_id: Option<i64>,
+        database: Option<String>,
+        schema: Option<String>,
+        metric_count: Option<i64>,
+        skipped_count: Option<i64>,
+    }
+    let _ = app_handle.emit("task-progress", CancelEvent {
+        task_id: task_id.clone(),
+        status: "cancelled".to_string(),
+        progress: 0.0,
+        processed_rows: 0,
+        total_rows: None,
+        current_target: String::new(),
+        error: None,
+        output_path: None,
+        log_line: None,
+        connection_id: None,
+        database: None,
+        schema: None,
+        metric_count: None,
+        skipped_count: None,
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -2085,6 +2130,7 @@ pub async fn get_migration_progress(
 #[tauri::command]
 pub async fn ai_generate_metrics(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, crate::state::AppState>,
     connection_id: i64,
     database: Option<String>,
     schema: Option<String>,
@@ -2112,7 +2158,8 @@ pub async fn ai_generate_metrics(
     })?;
     let task_id = task_record.id.clone();
     let task_id_clone = task_id.clone();
-    tokio::spawn(async move {
+    let task_id_reg = task_id.clone();
+    let handle = tokio::spawn(async move {
         crate::metrics::ai_draft::generate_metric_drafts(
             app_handle,
             task_id_clone,
@@ -2123,6 +2170,8 @@ pub async fn ai_generate_metrics(
         )
         .await;
     });
+    // 注册取消句柄，供 cancel_task 使用
+    state.task_abort_handles.lock().unwrap().insert(task_id_reg, handle.abort_handle());
     Ok(task_id)
 }
 

@@ -42,4 +42,7 @@ pub struct AppState {
     >,
     /// Auto 模式：true=自动执行写操作，false=需要确认
     pub auto_mode: tokio::sync::Mutex<bool>,
+
+    /// 运行中任务的取消句柄（task_id → AbortHandle），用于真正中断后台 tokio 任务
+    pub task_abort_handles: std::sync::Mutex<HashMap<String, tokio::task::AbortHandle>>,
 }

@@ -8,7 +8,8 @@ Your capabilities:
 
 Guidelines:
 - Use Markdown formatting in your responses for better readability
-- Format SQL code in ```sql code blocks
+- Format SQL code in ```sql code blocks (always on a new line, never inline after text)
+- Format charts in ```chart code blocks with ECharts option JSON (always on a new line)
 - Be concise but thorough; prefer examples over abstract explanations
 - When generating SQL, use proper formatting with indentation
 - If the user's question is ambiguous, ask for clarification before generating SQL

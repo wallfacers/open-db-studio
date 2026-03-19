@@ -9,9 +9,10 @@ import type { MetricScope } from '../../types';
 export interface MetricsSidebarProps {
   sidebarWidth: number;
   onResize: (e: React.MouseEvent) => void;
+  hidden?: boolean;
 }
 
-export function MetricsSidebar({ sidebarWidth, onResize }: MetricsSidebarProps) {
+export function MetricsSidebar({ sidebarWidth, onResize, hidden }: MetricsSidebarProps) {
   const { refresh } = useMetricsTreeStore();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -26,7 +27,7 @@ export function MetricsSidebar({ sidebarWidth, onResize }: MetricsSidebarProps) 
   return (
     <div
       className="flex flex-col bg-[#0d1117] border-r border-[#1e2d42] flex-shrink-0 relative"
-      style={{ width: sidebarWidth }}
+      style={{ width: sidebarWidth, display: hidden ? 'none' : undefined }}
     >
       {/* resize 拖拽条 */}
       <div

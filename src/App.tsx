@@ -175,9 +175,12 @@ export default function App() {
         showToast={showToast}
       />
 
-      {activeActivity === 'metrics' ? (
-        <MetricsSidebar sidebarWidth={sidebarWidth} onResize={handleSidebarResize} />
-      ) : (
+      <MetricsSidebar
+        sidebarWidth={sidebarWidth}
+        onResize={handleSidebarResize}
+        hidden={activeActivity !== 'metrics'}
+      />
+      {activeActivity !== 'metrics' && (
         activeActivity !== 'settings' && activeActivity !== 'tasks' &&
         activeActivity !== 'graph' && activeActivity !== 'migration' && (
           <Explorer

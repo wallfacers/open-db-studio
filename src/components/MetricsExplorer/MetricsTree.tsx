@@ -60,7 +60,7 @@ function computeVisible(
 
 export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricListTab }: TreeProps) {
   const {
-    nodes, expandedIds, selectedId, metricCounts, loadingIds,
+    nodes, expandedIds, selectedId, metricCounts, loadingIds, isInitializing,
     init, toggleExpand, selectNode, refreshNode, deleteMetric, search,
   } = useMetricsTreeStore();
   const confirm = useConfirmStore(s => s.confirm);
@@ -175,6 +175,19 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       visibleNodes.filter(n => n.parentId && resultIds.has(n.parentId)).map(n => n.parentId!)
     );
   }, [visibleNodes, searchQuery]);
+
+  if (isInitializing) {
+    return (
+      <div className="px-3 py-2 space-y-1">
+        {[80, 64, 72, 56].map((w, i) => (
+          <div key={i} className="flex items-center gap-2 h-7 px-1">
+            <div className="w-3 h-3 rounded bg-[#1e2d42] animate-pulse flex-shrink-0" />
+            <div className="h-2.5 rounded bg-[#1e2d42] animate-pulse" style={{ width: `${w}%` }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (visibleNodes.length === 0) {
     return (

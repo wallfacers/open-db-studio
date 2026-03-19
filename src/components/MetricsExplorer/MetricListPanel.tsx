@@ -149,8 +149,8 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         schema: scope.schema ?? null,
         tableNames,
       });
-      // Rust 已将任务写入 SQLite，立即刷新内存
-      useTaskStore.getState().loadTasks();
+      // Rust 已将任务写入 SQLite，等待刷新完成后再接收后续事件（防止 log 事件丢失）
+      await useTaskStore.getState().loadTasks();
       if (goToTasks) {
         useTaskStore.getState().setVisible(true);
       } else {

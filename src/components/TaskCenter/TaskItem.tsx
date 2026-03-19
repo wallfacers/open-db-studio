@@ -113,7 +113,15 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             )}
             {task.status === 'completed' && (
               <>
-                {t('taskCenter.completed', 'Completed')} · {(task.processedRows ?? 0).toLocaleString()} {t('taskCenter.rows', 'rows')}
+                {task.type === 'ai_generate_metrics' ? (
+                  <>
+                    {t('taskCenter.completed', 'Completed')}
+                    {task.metricCount != null && <> · <span className="text-[#00c9a7]">新增 {task.metricCount} 个</span></>}
+                    {task.skippedCount != null && <> · 跳过 {task.skippedCount} 个</>}
+                  </>
+                ) : (
+                  <>{t('taskCenter.completed', 'Completed')} · {(task.processedRows ?? 0).toLocaleString()} {t('taskCenter.rows', 'rows')}</>
+                )}
               </>
             )}
             {task.status === 'failed' && task.error && (

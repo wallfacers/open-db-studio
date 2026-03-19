@@ -25,7 +25,8 @@ fn load_existing_nodes(
         let mut stmt = conn.prepare(
             "SELECT name FROM graph_nodes
              WHERE connection_id=?1 AND node_type='table'
-               AND (source IS NULL OR source != 'user')",
+               AND (source IS NULL OR source != 'user')
+               AND is_deleted=0",
         )?;
         let table_names = stmt.query_map([connection_id], |row| {
             let name: String = row.get(0)?;
@@ -45,7 +46,8 @@ fn load_existing_nodes(
              JOIN graph_edges e ON e.to_node = c.id AND e.edge_type = 'has_column'
              JOIN graph_nodes t ON t.id = e.from_node
              WHERE c.connection_id=?1 AND c.node_type='column'
-               AND (c.source IS NULL OR c.source != 'user')",
+               AND (c.source IS NULL OR c.source != 'user')
+               AND c.is_deleted=0 AND t.is_deleted=0",
         )?;
         let pairs = stmt.query_map([connection_id], |row| {
             let table_name: String = row.get(0)?;
@@ -145,7 +147,7 @@ pub fn detect_and_log_changes(
 
     let existing_table_names: HashSet<String> = existing_tables.keys().cloned().collect();
 
-    // 3. 检测新增表（ADD_TABLE）
+    // 3. 检测新增表（ADD_TABLE）+ 顺带为该表所有列生成 ADD_COLUMN 事件
     for tname in current_table_names.difference(&existing_table_names) {
         // 附带 table_type 到 metadata
         let table_type = current_schema
@@ -165,6 +167,54 @@ pub fn detect_and_log_changes(
             &created_at,
         )?;
         event_count += 1;
+
+        // 新表的列：直接生成 ADD_COLUMN（无需等下一次构建）
+        if let Some(cols) = table_columns.get(tname) {
+            for col in cols {
+                let col_meta = serde_json::json!({
+                    "data_type": col.data_type,
+                    "is_nullable": col.is_nullable,
+                    "is_primary_key": col.is_primary_key,
+                    "column_default": col.column_default
+                })
+                .to_string();
+                insert_change_log(
+                    &db_conn,
+                    connection_id,
+                    "ADD_COLUMN",
+                    tname,
+                    Some(&col.name),
+                    Some(&col_meta),
+                    &created_at,
+                )?;
+                event_count += 1;
+            }
+        }
+
+        // 新表的外键：直接生成 ADD_FK
+        if let Some(fks) = table_fks.get(tname) {
+            for fk in fks {
+                if !existing_fk_constraints.contains(&fk.constraint_name) {
+                    let fk_meta = serde_json::json!({
+                        "constraint_name": fk.constraint_name,
+                        "column": fk.column,
+                        "referenced_table": fk.referenced_table,
+                        "referenced_column": fk.referenced_column
+                    })
+                    .to_string();
+                    insert_change_log(
+                        &db_conn,
+                        connection_id,
+                        "ADD_FK",
+                        tname,
+                        Some(&fk.column),
+                        Some(&fk_meta),
+                        &created_at,
+                    )?;
+                    event_count += 1;
+                }
+            }
+        }
     }
 
     // 4. 检测删除表（DROP_TABLE）
@@ -258,8 +308,10 @@ pub fn detect_and_log_changes(
     }
 
     log::info!(
-        "[change_detector] connection={} detected {} change events",
+        "[change_detector] connection={} existing_tables={} current_tables={} detected={} change events",
         connection_id,
+        existing_table_names.len(),
+        current_table_names.len(),
         event_count
     );
 

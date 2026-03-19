@@ -2062,11 +2062,30 @@ pub async fn approve_metric(id: i64, status: String) -> AppResult<crate::metrics
 pub async fn build_schema_graph(
     app_handle: tauri::AppHandle,
     connection_id: i64,
+    database: Option<String>,
 ) -> AppResult<String> {
-    let task_id = uuid::Uuid::new_v4().to_string();
+    // 先写 SQLite，让任务中心可以持久化显示
+    let task_record = crate::db::create_task(&crate::db::models::CreateTaskInput {
+        type_: "build_schema_graph".to_string(),
+        status: "running".to_string(),
+        title: format!("构建知识图谱 (连接 {})", connection_id),
+        params: None,
+        progress: Some(0),
+        processed_rows: Some(0),
+        total_rows: None,
+        current_target: None,
+        error: None,
+        error_details: None,
+        output_path: None,
+        description: None,
+        connection_id: Some(connection_id),
+        scope_database: database.clone(),
+        scope_schema: None,
+    })?;
+    let task_id = task_record.id.clone();
     let task_id_clone = task_id.clone();
     tokio::spawn(async move {
-        crate::graph::run_graph_build(app_handle, task_id_clone, connection_id).await;
+        crate::graph::run_graph_build(app_handle, task_id_clone, connection_id, database).await;
     });
     Ok(task_id)
 }
@@ -2153,7 +2172,7 @@ pub async fn update_node_alias(
     if let Some(r) = rowid {
         conn.execute("DELETE FROM graph_nodes_fts WHERE rowid = ?1", [r])?;
         conn.execute(
-            "INSERT INTO graph_nodes_fts(rowid, node_id, name, display_name, aliases)
+            "INSERT INTO graph_nodes_fts(rowid, id, name, display_name, aliases)
              SELECT rowid, id, name, display_name, aliases
              FROM graph_nodes WHERE rowid = ?1",
             [r],

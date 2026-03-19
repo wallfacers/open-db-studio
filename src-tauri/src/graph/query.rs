@@ -202,7 +202,7 @@ mod tests {
 
             CREATE VIRTUAL TABLE graph_nodes_fts
             USING fts5(
-                node_id UNINDEXED,
+                id UNINDEXED,
                 name,
                 display_name,
                 aliases,
@@ -237,7 +237,7 @@ mod tests {
 
         let rowid = conn.last_insert_rowid();
         conn.execute(
-            "INSERT INTO graph_nodes_fts (rowid, node_id, name, display_name, aliases)
+            "INSERT INTO graph_nodes_fts (rowid, id, name, display_name, aliases)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![rowid, id, name, display_name, aliases],
         )

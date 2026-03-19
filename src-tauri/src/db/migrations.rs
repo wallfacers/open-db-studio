@@ -213,6 +213,90 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("Migrated task_records: expanded type CHECK to include ai_generate_metrics");
     }
 
+    // V8: 扩展 task_records.type CHECK 约束，增加 'build_schema_graph'
+    let old_schema: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='task_records'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_default();
+    if !old_schema.contains("'build_schema_graph'") {
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             BEGIN;
+             CREATE TABLE task_records_new (
+                 id TEXT PRIMARY KEY,
+                 type TEXT NOT NULL CHECK(type IN ('export', 'import', 'migration', 'seatunnel', 'ai_generate_metrics', 'build_schema_graph')),
+                 status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+                 title TEXT NOT NULL,
+                 params TEXT,
+                 progress INTEGER DEFAULT 0,
+                 processed_rows INTEGER DEFAULT 0,
+                 total_rows INTEGER,
+                 current_target TEXT,
+                 error TEXT,
+                 error_details TEXT,
+                 output_path TEXT,
+                 description TEXT,
+                 connection_id INTEGER,
+                 scope_database TEXT,
+                 scope_schema TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 completed_at TEXT
+             );
+             INSERT INTO task_records_new SELECT
+                 id, type, status, title, params, progress, processed_rows, total_rows,
+                 current_target, error, error_details, output_path, description,
+                 connection_id, scope_database, scope_schema, created_at, updated_at, completed_at
+             FROM task_records;
+             DROP TABLE task_records;
+             ALTER TABLE task_records_new RENAME TO task_records;
+             CREATE INDEX IF NOT EXISTS idx_task_records_created ON task_records(created_at DESC);
+             CREATE INDEX IF NOT EXISTS idx_task_records_status ON task_records(status);
+             COMMIT;
+             PRAGMA foreign_keys = ON;",
+        )?;
+        log::info!("Migrated task_records: expanded type CHECK to include build_schema_graph");
+    }
+
+    // V9: 修复 graph_nodes_fts 列名（node_id → id）
+    // FTS5 content 模式要求列名与 content 表一致，旧表用 node_id 导致 DELETE 报错。
+    // 同时处理 FTS5 影子表损坏的情况：逐一强制删除影子表后再重建虚拟表。
+    let fts_needs_rebuild: bool = {
+        let fts_sql: String = conn
+            .query_row(
+                "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='table' AND name='graph_nodes_fts'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap_or_default();
+        fts_sql.contains("node_id")
+    };
+    if fts_needs_rebuild {
+        // 先强制删除 FTS5 影子表（损坏时虚拟表 DROP 可能失败）
+        for suffix in &["_data", "_idx", "_content", "_docsize", "_config"] {
+            let _ = conn.execute(
+                &format!("DROP TABLE IF EXISTS graph_nodes_fts{}", suffix),
+                [],
+            );
+        }
+        let _ = conn.execute_batch("DROP TABLE IF EXISTS graph_nodes_fts;");
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE graph_nodes_fts
+             USING fts5(
+               id         UNINDEXED,
+               name,
+               display_name,
+               aliases,
+               content='graph_nodes',
+               content_rowid='rowid'
+             );",
+        )?;
+        log::info!("Migrated graph_nodes_fts: renamed node_id -> id");
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

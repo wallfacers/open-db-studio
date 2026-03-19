@@ -72,8 +72,10 @@ pub async fn create_metric(_handle: Arc<tauri::AppHandle>, args: Value) -> crate
         .ok_or_else(|| crate::AppError::Other("missing display_name".into()))?;
     let table_name = args["table_name"].as_str().unwrap_or("");
     let description = args["description"].as_str().unwrap_or("");
+    let database = args["database"].as_str();
+    let schema = args["schema"].as_str();
 
-    let metric = crate::db::create_metric_from_mcp(connection_id, name, display_name, table_name, description)?;
+    let metric = crate::db::create_metric_from_mcp(connection_id, name, display_name, table_name, description, database, schema)?;
     Ok(serde_json::to_string_pretty(&metric).unwrap_or_default())
 }
 

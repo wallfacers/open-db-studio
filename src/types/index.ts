@@ -110,7 +110,8 @@ export type TabType =
   | 'er_diagram'
   | 'table_structure'   // 从 App.tsx TabData 迁移
   | 'metric'
-  | 'metric_list';
+  | 'metric_list'
+  | 'seatunnel_job';
 
 export interface MetricScope {
   connectionId: number;
@@ -129,6 +130,8 @@ export interface Tab {
   schema?: string;
   queryContext?: QueryContext;
   isNewTable?: boolean;        // table_structure Tab 专用
+  stJobId?: number;            // seatunnel_job Tab 专用
+  stConnectionId?: number;     // seatunnel_job Tab 专用
 }
 
 export interface ColumnMeta {

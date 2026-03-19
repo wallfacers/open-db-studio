@@ -149,9 +149,10 @@ interface EdgeTooltip {
 
 interface GraphExplorerInnerProps {
   connectionId: number | null;
+  database?: string | null;
 }
 
-function GraphExplorerInner({ connectionId }: GraphExplorerInnerProps) {
+function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps) {
   const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(connectionId);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
@@ -161,11 +162,12 @@ function GraphExplorerInner({ connectionId }: GraphExplorerInnerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [currentBuildTaskId, setCurrentBuildTaskId] = useState<string | null>(null);
   const [edgeTooltip, setEdgeTooltip] = useState<EdgeTooltip | null>(null);
   const [showAliasEditorForNode, setShowAliasEditorForNode] = useState<string | null>(null);
 
   const { fitView } = useReactFlow();
-  const { _addTaskStub, tasks: bgTasks } = useTaskStore();
+  const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
   const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clean up layout timer on unmount
@@ -233,7 +235,7 @@ function GraphExplorerInner({ connectionId }: GraphExplorerInnerProps) {
     if (connectionId === null) return;
     setIsBuilding(true);
     try {
-      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId });
+      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId, database: database ?? null });
 
       let taskId: string | null = null;
       if (result && typeof result === 'object' && 'task_id' in result) {
@@ -260,6 +262,9 @@ function GraphExplorerInner({ connectionId }: GraphExplorerInnerProps) {
           endTime: null,
           connectionId,
         });
+        setCurrentBuildTaskId(taskId);
+        // 从 SQLite 加载任务实际状态，处理快速完成的构建（事件可能早于 stub 到达）
+        loadTasks();
       }
       // Note: refetch is triggered by the useEffect that monitors bgTasks completion
     } catch (err) {
@@ -268,22 +273,18 @@ function GraphExplorerInner({ connectionId }: GraphExplorerInnerProps) {
       // Fallback: still try to refresh
       refetch();
     }
-  }, [connectionId, refetch, _addTaskStub]);
+  }, [connectionId, refetch, _addTaskStub, loadTasks]);
 
   // ── Watch bgTasks for build_schema_graph completion ──────────────────────────
   useEffect(() => {
-    let lastTask: typeof bgTasks[number] | undefined;
-    for (let i = bgTasks.length - 1; i >= 0; i--) {
-      if (bgTasks[i].type === 'build_schema_graph' && bgTasks[i].status === 'completed') {
-        lastTask = bgTasks[i];
-        break;
-      }
-    }
-    if (lastTask) {
+    if (!currentBuildTaskId) return;
+    const task = bgTasks.find((t) => t.id === currentBuildTaskId);
+    if (task && (task.status === 'completed' || task.status === 'failed')) {
       refetch();
       setIsBuilding(false);
+      setCurrentBuildTaskId(null);
     }
-  }, [bgTasks, refetch]);
+  }, [bgTasks, currentBuildTaskId, refetch]);
 
   // ── Alias updated callback ──────────────────────────────────────────────────
   const handleAliasUpdated = useCallback(() => {
@@ -514,10 +515,11 @@ function GraphExplorerInner({ connectionId }: GraphExplorerInnerProps) {
 
 interface GraphExplorerProps {
   connectionId: number | null;
+  database?: string | null;
 }
 
-export const GraphExplorer: React.FC<GraphExplorerProps> = ({ connectionId }) => (
+export const GraphExplorer: React.FC<GraphExplorerProps> = ({ connectionId, database }) => (
   <ReactFlowProvider>
-    <GraphExplorerInner connectionId={connectionId} />
+    <GraphExplorerInner connectionId={connectionId} database={database} />
   </ReactFlowProvider>
 );

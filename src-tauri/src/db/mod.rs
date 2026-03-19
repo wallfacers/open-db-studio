@@ -1171,6 +1171,8 @@ pub fn create_metric_from_mcp(
     display_name: &str,
     table_name: &str,
     description: &str,
+    database: Option<&str>,
+    schema: Option<&str>,
 ) -> crate::AppResult<crate::metrics::Metric> {
     let input = crate::metrics::CreateMetricInput {
         connection_id,
@@ -1188,8 +1190,8 @@ pub fn create_metric_from_mcp(
         category: None,
         data_caliber: None,
         version: None,
-        scope_database: None,
-        scope_schema: None,
+        scope_database: database.map(|s| s.to_string()),
+        scope_schema: schema.map(|s| s.to_string()),
     };
     crate::metrics::save_metric(&input)
 }

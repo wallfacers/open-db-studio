@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Database, ListTodo, Activity, Network, ArrowLeftRight, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { User, Database, ListTodo, Activity, Network, Workflow, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -97,16 +97,16 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? '数据迁移' : undefined}>
+        <Tooltip content={!isExpanded ? '迁移中心' : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'migration' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'seatunnel' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
             onClick={() => {
-              setActiveActivity('migration');
+              setActiveActivity('seatunnel');
               setIsSidebarOpen(true);
             }}
           >
-            <ArrowLeftRight size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">数据迁移</span>}
+            <Workflow size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">迁移中心</span>}
           </div>
         </Tooltip>
 

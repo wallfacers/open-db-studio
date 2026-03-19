@@ -60,7 +60,7 @@ pub(super) fn upsert_fts(conn: &rusqlite::Connection, rowid: i64) -> rusqlite::R
         [rowid],
     )?;
     conn.execute(
-        "INSERT INTO graph_nodes_fts(rowid, node_id, name, display_name, aliases)
+        "INSERT INTO graph_nodes_fts(rowid, id, name, display_name, aliases)
          SELECT rowid, id, name, display_name, aliases
          FROM graph_nodes WHERE rowid = ?1",
         [rowid],
@@ -196,9 +196,9 @@ pub async fn process_pending_events(
                             stats.skipped += 1;
                         }
                         _ => {
-                            // source='schema' 或 source='ai' → UPDATE
+                            // source='schema' 或 source='ai' → UPDATE（含软删除节点复活）
                             db_conn.execute(
-                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema'
+                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema', is_deleted = 0
                                  WHERE id = ?2",
                                 rusqlite::params![ev.metadata, node_id],
                             )?;
@@ -251,7 +251,7 @@ pub async fn process_pending_events(
                         }
                         _ => {
                             db_conn.execute(
-                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema'
+                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema', is_deleted = 0
                                  WHERE id = ?2",
                                 rusqlite::params![ev.metadata, col_node_id],
                             )?;
@@ -505,7 +505,7 @@ mod tests {
             );
             CREATE VIRTUAL TABLE graph_nodes_fts
             USING fts5(
-                node_id    UNINDEXED,
+                id    UNINDEXED,
                 name,
                 display_name,
                 aliases,

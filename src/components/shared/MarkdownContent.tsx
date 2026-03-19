@@ -117,12 +117,19 @@ function makeMdComponents(isStreaming: boolean) {
 }
 
 const staticMdComponents = makeMdComponents(false);
+const streamingMdComponents = makeMdComponents(true);
+
+/** 确保围栏代码块（```）总在行首，避免 AI 输出"文字。```chart" 导致图表无法渲染 */
+function ensureCodeFenceOnNewLine(content: string): string {
+  return content.replace(/([^\n])(```)/g, '$1\n$2');
+}
 
 export const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = memo(({ content, isStreaming = false }) => {
-  const components = isStreaming ? makeMdComponents(true) : staticMdComponents;
+  const components = isStreaming ? streamingMdComponents : staticMdComponents;
+  const processed = ensureCodeFenceOnNewLine(content);
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-      {content}
+      {processed}
     </ReactMarkdown>
   );
 });

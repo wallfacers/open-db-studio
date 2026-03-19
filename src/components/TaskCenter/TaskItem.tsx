@@ -147,7 +147,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
 
         {/* Actions */}
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {task.status === 'running' && task.type !== 'ai_generate_metrics' && (
+          {task.status === 'running' && (
             <button
               onClick={handleCancel}
               className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"

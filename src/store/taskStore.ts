@@ -73,6 +73,7 @@ interface TaskState {
 
   // 内部方法
   _handleProgressEvent: (event: TaskProgressEvent) => void;
+  _addTaskStub: (task: Task) => void;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
@@ -123,6 +124,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           if (existing.logs?.length) memExtras.logs = existing.logs;
           if (existing.metricCount != null) memExtras.metricCount = existing.metricCount;
           if (existing.skippedCount != null) memExtras.skippedCount = existing.skippedCount;
+          // 运行中任务保留内存实时进度（SQLite 只在完成时写入 progress，运行中始终为 0）
+          if (row.status === 'running' && existing.progress > (row.progress ?? 0)) {
+            memExtras.progress = existing.progress;
+            if (existing.currentTarget) memExtras.currentTarget = existing.currentTarget;
+          }
           return { ...row, progress, ...memExtras };
         }),
         isLoading: false,
@@ -224,6 +230,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     for (const id of completedIds) {
       await invoke('delete_task', { id }).catch(console.error);
     }
+  },
+
+  _addTaskStub: (task) => {
+    set((s) => {
+      if (s.tasks.some((t) => t.id === task.id)) return s;
+      return { tasks: [task, ...s.tasks] };
+    });
   },
 
   _handleProgressEvent: (event) => {

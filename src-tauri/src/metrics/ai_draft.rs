@@ -106,6 +106,11 @@ pub async fn generate_metric_drafts(
     schema: Option<String>,
     table_names: Vec<String>,
 ) {
+    let cleanup = || {
+        use tauri::Manager;
+        let state = app_handle.state::<crate::state::AppState>();
+        state.task_abort_handles.lock().unwrap().remove(&task_id);
+    };
     match do_generate(
         &app_handle,
         &task_id,
@@ -127,6 +132,7 @@ pub async fn generate_metric_drafts(
                 completed_at: Some(now),
                 ..Default::default()
             });
+            cleanup();
         }
         Err(e) => {
             let now = chrono::Utc::now().to_rfc3339();
@@ -155,6 +161,7 @@ pub async fn generate_metric_drafts(
                 metric_count: None,
                 skipped_count: None,
             });
+            cleanup();
         }
     }
 }

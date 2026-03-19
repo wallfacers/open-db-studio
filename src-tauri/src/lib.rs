@@ -74,6 +74,7 @@ pub fn run() {
                     crate::db::get_app_setting("auto_mode").unwrap_or_default()
                         .as_deref() == Some("true")
                 }),
+                task_abort_handles: std::sync::Mutex::new(std::collections::HashMap::new()),
             });
 
             // ── 后台初始化（文件 I/O + 进程启动，避免阻塞主线程导致"未响应"）──────

@@ -3,8 +3,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 // 任务类型
-export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel';
+export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel' | 'ai_generate_metrics';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+// 内存日志条目（不写 SQLite，重启清空）
+export interface TaskLog {
+  timestamp: number;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
 
 // 单个任务记录
 export interface Task {
@@ -22,6 +29,12 @@ export interface Task {
   description: string | null; // Markdown 格式任务描述
   startTime: string;          // ISO 8601
   endTime: string | null;
+  logs?: TaskLog[];          // 内存日志，不写 SQLite，重启清空
+  connectionId?: number;    // scope（ai_generate_metrics 专用）
+  database?: string;
+  schema?: string;
+  metricCount?: number;
+  skippedCount?: number;
 }
 
 // 进度更新事件
@@ -34,6 +47,12 @@ export interface TaskProgressEvent {
   current_target: string;
   error: string | null;
   output_path: string | null;
+  log_line?: { level: string; message: string; timestamp_ms: number };
+  connection_id?: number;
+  database?: string | null;
+  schema?: string | null;
+  metric_count?: number;
+  skipped_count?: number;
 }
 
 interface TaskState {
@@ -45,6 +64,7 @@ interface TaskState {
   setVisible: (visible: boolean) => void;
   loadTasks: () => Promise<void>;
   addTask: (task: Omit<Task, 'id' | 'startTime'>) => Promise<string>;
+  appendLog: (id: string, log: TaskLog) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   cancelTask: (id: string) => Promise<void>;
   retryTask: (id: string) => Promise<void>;
@@ -66,7 +86,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set({ isLoading: true });
     try {
       const raw = await invoke<any[]>('get_task_list', { limit: 100 });
-      const tasks: Task[] = (raw || []).map((r) => ({
+      const rows: Task[] = (raw || []).map((r) => ({
         id: r.id,
         type: r.type,
         status: r.status,
@@ -83,8 +103,18 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         description: r.description ?? null,
         startTime: r.created_at ?? r.start_time ?? r.startTime ?? new Date().toISOString(),
         endTime: r.completed_at ?? r.end_time ?? r.endTime ?? null,
+        connectionId: r.connection_id ?? r.connectionId ?? undefined,
+        database: r.scope_database ?? r.database ?? undefined,
+        schema: r.scope_schema ?? r.schema ?? undefined,
       }));
-      set({ tasks, isLoading: false });
+      set((state) => ({
+        tasks: rows.map((row) => {
+          const existing = state.tasks.find((t) => t.id === row.id);
+          // 保留内存日志（running 任务的 logs 字段来自 task-progress 事件，SQLite 不存）
+          return existing?.logs ? { ...row, logs: existing.logs } : row;
+        }),
+        isLoading: false,
+      }));
     } catch (e) {
       console.error('Failed to load tasks:', e);
       set({ isLoading: false });
@@ -105,6 +135,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         error: task.error,
         error_details: task.errorDetails ? JSON.stringify(task.errorDetails) : null,
         output_path: task.outputPath,
+        connection_id: (task as any).connectionId ?? null,
+        scope_database: (task as any).database ?? null,
+        scope_schema: (task as any).schema ?? null,
       }
     });
     const id = record.id;
@@ -118,6 +151,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((s) => ({ tasks: [newTask, ...s.tasks] }));
     return id;
   },
+
+  appendLog: (id, log) =>
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === id ? { ...t, logs: [...(t.logs ?? []), log] } : t
+      ),
+    })),
 
   updateTask: (id, updates) => {
     set((s) => ({
@@ -175,25 +215,39 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   _handleProgressEvent: (event) => {
-    set((s) => ({
-      tasks: s.tasks.map((t) => {
-        if (t.id !== event.task_id) return t;
+    // 日志事件：只追加日志，不更新进度字段
+    if (event.log_line) {
+      get().appendLog(event.task_id, {
+        timestamp: event.log_line.timestamp_ms,
+        level: event.log_line.level as TaskLog['level'],
+        message: event.log_line.message,
+      });
+      return;
+    }
 
-        return {
-          ...t,
-          status: event.status,
-          progress: event.progress,
-          processedRows: event.processed_rows,
-          totalRows: event.total_rows,
-          currentTarget: event.current_target,
-          error: event.error,
-          outputPath: event.output_path,
-          endTime: event.status === 'completed' || event.status === 'failed' || event.status === 'cancelled'
-            ? new Date().toISOString()
-            : null,
-        };
-      }),
-    }));
+    const updates: Partial<Task> = {
+      status: event.status,
+      progress: event.progress,
+      processedRows: event.processed_rows,
+      totalRows: event.total_rows,
+      currentTarget: event.current_target,
+      error: event.error,
+      outputPath: event.output_path,
+    };
+
+    if (event.status === 'completed' || event.status === 'failed') {
+      updates.endTime = new Date().toISOString();
+      if (event.metric_count != null) updates.metricCount = event.metric_count;
+      if (event.skipped_count != null) updates.skippedCount = event.skipped_count;
+    } else if (event.status !== 'cancelled') {
+      updates.endTime = null;
+    }
+
+    if (event.status === 'cancelled') {
+      updates.endTime = new Date().toISOString();
+    }
+
+    get().updateTask(event.task_id, updates);
   },
 }));
 

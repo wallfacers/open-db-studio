@@ -139,7 +139,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
 
         {/* Actions */}
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {task.status === 'running' && (
+          {task.status === 'running' && task.type !== 'ai_generate_metrics' && (
             <button
               onClick={handleCancel}
               className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
@@ -148,7 +148,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
               <Square size={14} />
             </button>
           )}
-          {(task.status === 'failed' || task.status === 'cancelled') && (
+          {(task.status === 'failed' || task.status === 'cancelled') && task.type !== 'ai_generate_metrics' && (
             <button
               onClick={handleRetry}
               className="p-1.5 text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
@@ -196,6 +196,14 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             )}
           </div>
 
+          {/* ai_generate_metrics 统计 */}
+          {task.type === 'ai_generate_metrics' && (task.metricCount != null || task.skippedCount != null) && (
+            <div className="mt-2 text-xs text-[#7a9bb8]">
+              {task.metricCount != null && <span>新增指标: <span className="text-[#00c9a7]">{task.metricCount}</span></span>}
+              {task.skippedCount != null && <span className="ml-3">跳过: <span className="text-[#ffcc00]">{task.skippedCount}</span></span>}
+            </div>
+          )}
+
           {/* Markdown 描述（连接/数据库/表清单信息） */}
           {task.description && (
             <div className="mt-3">
@@ -213,6 +221,24 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
               <div className="bg-[#0d1117] rounded p-2 max-h-32 overflow-y-auto font-mono text-[#f44747]">
                 {task.errorDetails.map((err, i) => (
                   <div key={i}>{err}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ai_generate_metrics 日志区域 */}
+          {task.type === 'ai_generate_metrics' && task.logs && task.logs.length > 0 && (
+            <div className="mt-3">
+              <div className="text-[#5a7a9a] mb-1">日志</div>
+              <div className="bg-[#0d1117] rounded p-2 max-h-48 overflow-y-auto font-mono text-xs leading-5">
+                {task.logs.map((log, i) => (
+                  <div key={i} className={
+                    log.level === 'error' ? 'text-[#f44747]' :
+                    log.level === 'warn' ? 'text-[#ffcc00]' :
+                    'text-[#8ab4d4]'
+                  }>
+                    [{new Date(log.timestamp).toLocaleTimeString()}] {log.level.toUpperCase()} {log.message}
+                  </div>
                 ))}
               </div>
             </div>

@@ -718,8 +718,8 @@ pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskReco
     let processed_rows = task.processed_rows.unwrap_or(0);
 
     conn.execute(
-        "INSERT INTO task_records (id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+        "INSERT INTO task_records (id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, connection_id, scope_database, scope_schema, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)",
         rusqlite::params![
             id,
             task.type_,
@@ -734,6 +734,9 @@ pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskReco
             task.error_details,
             task.output_path,
             task.description,
+            task.connection_id,
+            task.scope_database,
+            task.scope_schema,
             now,
         ],
     )?;
@@ -752,6 +755,9 @@ pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskReco
         error_details: task.error_details.clone(),
         output_path: task.output_path.clone(),
         description: task.description.clone(),
+        connection_id: task.connection_id,
+        scope_database: task.scope_database.clone(),
+        scope_schema: task.scope_schema.clone(),
         created_at: now.clone(),
         updated_at: now,
         completed_at: None,
@@ -762,7 +768,7 @@ pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskReco
 pub fn list_tasks(limit: i32) -> AppResult<Vec<models::TaskRecord>> {
     let conn = get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at
+        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at, connection_id, scope_database, scope_schema
          FROM task_records
          ORDER BY created_at DESC
          LIMIT ?1"
@@ -785,6 +791,9 @@ pub fn list_tasks(limit: i32) -> AppResult<Vec<models::TaskRecord>> {
             created_at: row.get(13)?,
             updated_at: row.get(14)?,
             completed_at: row.get(15)?,
+            connection_id: row.get(16)?,
+            scope_database: row.get(17)?,
+            scope_schema: row.get(18)?,
         })
     })?;
     let mut results = Vec::new();
@@ -893,7 +902,7 @@ pub fn set_app_setting(key: &str, value: &str) -> AppResult<()> {
 pub fn get_task_by_id(id: &str) -> AppResult<Option<models::TaskRecord>> {
     let conn = get().lock().unwrap();
     let task = conn.query_row(
-        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at
+        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at, connection_id, scope_database, scope_schema
          FROM task_records WHERE id = ?1",
         [id],
         |row| Ok(models::TaskRecord {
@@ -913,6 +922,9 @@ pub fn get_task_by_id(id: &str) -> AppResult<Option<models::TaskRecord>> {
             created_at: row.get(13)?,
             updated_at: row.get(14)?,
             completed_at: row.get(15)?,
+            connection_id: row.get(16)?,
+            scope_database: row.get(17)?,
+            scope_schema: row.get(18)?,
         }),
     ).optional()?;
     Ok(task)

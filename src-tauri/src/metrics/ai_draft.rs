@@ -4,37 +4,57 @@ use super::crud::{CreateMetricInput, save_metric};
 // ─── 事件结构 ───────────────────────────────────────────────────────────────
 
 #[derive(Serialize, Clone)]
-struct BgTaskLogEvent {
-    task_id: String,
-    level: String,       // "info" | "warn" | "error"
+struct TaskLogLine {
+    level: String,
     message: String,
-    timestamp_ms: u64,
+    timestamp_ms: i64,
 }
 
 #[derive(Serialize, Clone)]
-struct BgTaskDoneEvent {
+struct TaskProgressEvent {
     task_id: String,
-    success: bool,
+    status: String,           // "pending"/"running"/"completed"/"failed"/"cancelled"
+    progress: f32,
+    processed_rows: i64,
+    total_rows: Option<i64>,
+    current_target: String,
     error: Option<String>,
-    connection_id: i64,
+    output_path: Option<String>,
+    log_line: Option<TaskLogLine>,
+    connection_id: Option<i64>,
     database: Option<String>,
     schema: Option<String>,
-    metric_count: Option<usize>,
-    skipped_count: Option<usize>,
+    metric_count: Option<i64>,
+    skipped_count: Option<i64>,
 }
 
 // ─── 辅助：emit 日志 ─────────────────────────────────────────────────────────
 
 fn emit_log(app: &tauri::AppHandle, task_id: &str, level: &str, message: &str) {
     use tauri::Emitter;
-    let _ = app.emit("bg_task_log", BgTaskLogEvent {
+    let timestamp_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let _ = app.emit("task-progress", TaskProgressEvent {
         task_id: task_id.to_string(),
-        level: level.to_string(),
-        message: message.to_string(),
-        timestamp_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
+        status: "running".to_string(),
+        progress: 0.0,
+        processed_rows: 0,
+        total_rows: None,
+        current_target: String::new(),
+        error: None,
+        output_path: None,
+        log_line: Some(TaskLogLine {
+            level: level.to_string(),
+            message: message.to_string(),
+            timestamp_ms,
+        }),
+        connection_id: None,
+        database: None,
+        schema: None,
+        metric_count: None,
+        skipped_count: None,
     });
 }
 
@@ -75,21 +95,24 @@ pub async fn generate_metric_drafts(
     )
     .await
     {
-        use tauri::Emitter;
         emit_log(&app_handle, &task_id, "error", &format!("{}", e));
-        let _ = app_handle.emit(
-            "bg_task_done",
-            BgTaskDoneEvent {
-                task_id: task_id.clone(),
-                success: false,
-                error: Some(e.to_string()),
-                connection_id,
-                database,
-                schema,
-                metric_count: None,
-                skipped_count: None,
-            },
-        );
+        use tauri::Emitter;
+        let _ = app_handle.emit("task-progress", TaskProgressEvent {
+            task_id: task_id.clone(),
+            status: "failed".to_string(),
+            progress: 0.0,
+            processed_rows: 0,
+            total_rows: None,
+            current_target: String::new(),
+            error: Some(e.to_string()),
+            output_path: None,
+            log_line: None,
+            connection_id: Some(connection_id),
+            database: database.clone(),
+            schema: schema.clone(),
+            metric_count: None,
+            skipped_count: None,
+        });
     }
 }
 
@@ -346,19 +369,22 @@ Schema:
         &format!("✅ 完成，新增 {} 个，跳过 {} 个重复", saved_count, skipped_count),
     );
 
-    let _ = app.emit(
-        "bg_task_done",
-        BgTaskDoneEvent {
-            task_id: task_id.to_string(),
-            success: true,
-            error: None,
-            connection_id,
-            database,
-            schema,
-            metric_count: Some(saved_count),
-            skipped_count: Some(skipped_count),
-        },
-    );
+    let _ = app.emit("task-progress", TaskProgressEvent {
+        task_id: task_id.to_string(),
+        status: "completed".to_string(),
+        progress: 100.0,
+        processed_rows: saved_count as i64,
+        total_rows: Some(total as i64),
+        current_target: String::new(),
+        error: None,
+        output_path: None,
+        log_line: None,
+        connection_id: Some(connection_id),
+        database: database.clone(),
+        schema: schema.clone(),
+        metric_count: Some(saved_count as i64),
+        skipped_count: Some(skipped_count as i64),
+    });
 
     Ok(())
 }

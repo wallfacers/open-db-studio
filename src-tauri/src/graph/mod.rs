@@ -1,11 +1,9 @@
-pub mod builder;
 pub mod change_detector;
 pub mod event_processor;
 pub mod query;
 pub mod traversal;
 
 pub use query::{GraphNode, GraphEdge, search_graph};
-pub use builder::build_schema_graph_full;
 
 use std::collections::HashMap;
 use tauri::Emitter;

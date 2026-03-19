@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
+import { ChartBlock } from './ChartBlock';
 
 // ── 代码块 ──────────────────────────────────────────────────────────────────
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
@@ -50,6 +51,9 @@ const mdComponents = {
     const match = /language-(\w+)/.exec(className ?? '');
     const language = match ? match[1] : '';
     if (match) {
+      if (language === 'chart') {
+        return <ChartBlock code={String(children).replace(/\n$/, '')} />;
+      }
       return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
     }
     return (

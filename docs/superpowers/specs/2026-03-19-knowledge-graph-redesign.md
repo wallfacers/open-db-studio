@@ -20,7 +20,7 @@
 
 - 实现 **LightRAG 三步增量更新**（局部提取 → Set Union 合并 → 增量 FTS5 Upsert）
 - 构建 **Graph Explorer**（基于 @xyflow/react，已在项目中）可视化图谱浏览
-- 接入 **bgTaskStore** 任务进度体系，与指标 AI 生成交互体验一致
+- 接入 **task-progress 事件体系**，与指标 AI 生成交互体验一致（使用现有 `TaskProgressEvent` 结构，`log_line` 字段携带日志行）
 - 将图谱检索结果注入 **Text-to-SQL Prompt 上下文**，消除实体歧义
 
 ---
@@ -108,7 +108,9 @@ USING fts5(
 );
 ```
 
-替代现有 `search_graph` 的 LIKE 查询，支持中文别名模糊匹配，仅对变更节点增量更新，无需重建全量索引。
+替代现有 `search_graph` 的 LIKE 查询，支持中文别名模糊匹配。
+
+**FTS5 增量维护方式**：采用 Rust 代码手动维护（非 SQLite trigger），在 `event_processor.rs` 步骤3中直接执行 `DELETE` + `INSERT` SQL。原因：增量更新范围由 `schema_change_log` 精确控制，手动维护比 trigger 更易追踪和测试，不引入隐式数据库行为。
 
 ### 变更汇总
 
@@ -183,25 +185,32 @@ pub async fn process_pending_events(
 **步骤4：标记完成**
 - `UPDATE schema_change_log SET processed=1, processed_at=now() WHERE id IN (...)`
 
-### bgTaskStore 集成
+### task-progress 事件集成
 
-`build_schema_graph` 命令改造为异步返回 `task_id`，与指标 AI 生成完全相同的模式：
+`build_schema_graph` 命令改造为异步返回 `task_id`，与指标 AI 生成完全相同的模式。
+
+**命名约定**（消除现有 `builder::build_schema_graph` 与 Tauri command 同名冲突）：
+- 现有 `builder::build_schema_graph` → 重命名为 `builder::build_schema_graph_full`（内部全量构建函数）
+- 新增 `graph::run_graph_build`（在 `mod.rs` 中定义，协调 change_detector + event_processor）
+- Tauri command `build_schema_graph` 定义在 `commands.rs`，调用 `crate::graph::run_graph_build`
 
 ```rust
+// commands.rs 中的 Tauri command
 #[tauri::command]
 pub async fn build_schema_graph(
     app_handle: tauri::AppHandle,
     connection_id: i64,
 ) -> AppResult<String> {  // 返回 task_id
     let task_id = uuid::Uuid::new_v4().to_string();
+    let task_id_clone = task_id.clone();
     tokio::spawn(async move {
-        crate::graph::run_graph_build(app_handle, task_id, connection_id).await;
+        crate::graph::run_graph_build(app_handle, task_id_clone, connection_id).await;
     });
     Ok(task_id)
 }
 ```
 
-日志阶段示例（通过 `bg_task_log` 事件推送）：
+日志阶段通过现有 `task-progress` 事件推送（复用 `TaskProgressEvent` 的 `log_line` 字段），与 `ai_draft.rs` 完全一致：
 
 ```
 INFO  连接数据库 orders_db (MySQL)
@@ -212,12 +221,15 @@ INFO  更新 FTS5 索引（27 个节点）
 INFO  ✅ 完成，新增 27 节点，更新 3 节点，跳过 42 节点（未变更）
 ```
 
+> **注意**：`bgTaskStore` 是纯前端 Zustand store（不写 SQLite `task_records`），`build_schema_graph` 任务类型需在前端 `taskStore.ts` 的 `TaskType` 联合类型中新增 `'build_schema_graph'`。
+
 ### 新增 / 改造 Tauri Commands
 
 | Command | 类型 | 说明 |
 |---------|------|------|
-| `build_schema_graph` | 改造 | 返回 task_id，后台 emit bg_task_log/done |
+| `build_schema_graph` | 改造 | 返回 task_id，后台 emit task-progress 事件 |
 | `search_graph` | 改造 | 改用 FTS5 检索（原为 LIKE） |
+| `get_graph_nodes` | 改造 | 注册为 Tauri command（原为内部函数），供 Graph Explorer 调用 |
 | `get_graph_edges` | 新增 | 获取指定节点的关联边，供 Graph Explorer 渲染 |
 | `update_node_alias` | 新增 | 用户手动添加/编辑语义别名（source='user'） |
 
@@ -256,7 +268,9 @@ src/components/GraphExplorer/
 └─────────────────────────────────────────────────┘
 ```
 
-### 颜色规范（严格遵循 DESIGN.md）
+### 颜色规范
+
+> **说明**：项目实际使用蓝黑主题色（所有 V2 以来的设计规格均采用此色系），与 `DESIGN.md` 中记录的 VSCode Dark 初始值存在偏差。实际开发以下表为准，`DESIGN.md` 待后续统一更新。
 
 | 元素 | Tailwind 类 | 颜色值 |
 |------|------------|--------|
@@ -270,7 +284,18 @@ src/components/GraphExplorer/
 | 别名节点描边 | `stroke-[#a855f7]` | `#a855f7` |
 | 成功/完成 | `text-[#00c9a7]` | `#00c9a7` |
 
-> 所有样式通过 Tailwind 类名，禁止内联 style（遵循 DESIGN.md 约定）。React Flow 的 CSS 变量（`--xy-*`）通过全局 CSS 覆盖对齐主题色。
+所有样式通过 Tailwind 类名，禁止内联 style。React Flow 的 CSS 变量在 `src/index.css` 中覆盖，示例：
+
+```css
+/* src/index.css — React Flow 主题色覆盖 */
+.react-flow {
+  --xy-background-color: #0d1117;
+  --xy-edge-stroke: #1e3a5a;
+  --xy-edge-stroke-selected: #3794ff;
+  --xy-node-border-radius: 6px;
+  --xy-minimap-background-color: #111922;
+}
+```
 
 ### 节点交互
 
@@ -371,13 +396,14 @@ FTS5 检索返回多个候选节点时，按以下优先级选择：
   └── ActivityBar 新增图谱入口
 
 阶段 4 — AI Pipeline 增强（约 1 周）
+  ├── src-tauri/src/pipeline/mod.rs — 新增模块（同时在 lib.rs 中添加 mod pipeline）
   ├── pipeline/entity_extract.rs — LLM 实体提取
   ├── pipeline/context_builder.rs — 图谱上下文注入 Prompt
   └── ai_generate_sql_v2 接入图谱，展示折叠上下文块
 ```
 
 **依赖关系**：
-- 阶段3 可在阶段2 完成后立即并行启动
+- 阶段3 以命令接口契约（TypeScript 类型定义）为并行启动条件，前端可用 Mock 数据先开发，待阶段2完成后联调
 - 阶段4 依赖阶段2 的 `query.rs` FTS5 接口
 
 ---
@@ -401,11 +427,15 @@ FTS5 检索返回多个候选节点时，按以下优先级选择：
 | `src-tauri/src/graph/builder.rs` | 改动 |
 | `src-tauri/src/graph/query.rs` | 改动（FTS5） |
 | `src-tauri/src/graph/mod.rs` | 改动 |
-| `src-tauri/src/commands.rs` | 改动（build_schema_graph + 新增2命令） |
+| `src-tauri/src/commands.rs` | 改动（改造3命令：build_schema_graph、search_graph、get_graph_nodes；新增2命令：get_graph_edges、update_node_alias） |
 | `src-tauri/src/lib.rs` | 改动（注册新命令） |
 | `src/components/GraphExplorer/index.tsx` | 新增 |
 | `src/components/GraphExplorer/NodeDetail.tsx` | 新增 |
 | `src/components/GraphExplorer/AliasEditor.tsx` | 新增 |
 | `src/components/GraphExplorer/nodeTypes.ts` | 新增 |
 | `src/components/GraphExplorer/useGraphData.ts` | 新增 |
-| `src/store/bgTaskStore.ts` | 改动（新增 task type） |
+| `src/store/taskStore.ts` | 改动（TaskType 新增 `'build_schema_graph'`） |
+| `src-tauri/src/pipeline/mod.rs` | 新增（同步在 lib.rs 中添加 `mod pipeline`） |
+| `src-tauri/src/pipeline/entity_extract.rs` | 新增 |
+| `src-tauri/src/pipeline/context_builder.rs` | 新增 |
+| `src/index.css` | 改动（新增 React Flow CSS 变量覆盖） |

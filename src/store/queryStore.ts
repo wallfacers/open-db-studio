@@ -56,6 +56,8 @@ interface QueryState {
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
   openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
+  openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
+  closeSeaTunnelJobTab: (jobId: number) => void;
 
   closeTab: (tabId: string) => void;
   closeMetricTabById: (metricId: number) => void;
@@ -256,6 +258,28 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         isNewTable: isNew,
       };
       return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+
+  openSeaTunnelJobTab: (jobId, title, connectionId) => {
+    set(s => {
+      const existing = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
+      if (existing) return { activeTabId: existing.id };
+      const id = `st_job_${jobId}_${Date.now()}`;
+      const tab: Tab = { id, type: 'seatunnel_job', title, stJobId: jobId, stConnectionId: connectionId };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+
+  closeSeaTunnelJobTab: (jobId) => {
+    set(s => {
+      const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
+      if (!tab) return {};
+      const newTabs = s.tabs.filter(t => t.id !== tab.id);
+      const newActiveId = s.activeTabId === tab.id
+        ? (newTabs[newTabs.length - 1]?.id ?? '')
+        : s.activeTabId;
+      return { tabs: newTabs, activeTabId: newActiveId };
     });
   },
 

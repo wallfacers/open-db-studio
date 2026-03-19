@@ -63,6 +63,13 @@ fn emit_log(app: &tauri::AppHandle, task_id: &str, level: &str, message: &str) {
 }
 
 fn emit_completed(app: &tauri::AppHandle, task_id: &str) {
+    let now = chrono::Utc::now().to_rfc3339();
+    let _ = crate::db::update_task(task_id, &crate::db::models::UpdateTaskInput {
+        status: Some("completed".to_string()),
+        progress: Some(100),
+        completed_at: Some(now),
+        ..Default::default()
+    });
     let _ = app.emit("task-progress", TaskProgressEvent {
         task_id: task_id.to_string(),
         status: "completed".to_string(),
@@ -82,6 +89,13 @@ fn emit_completed(app: &tauri::AppHandle, task_id: &str) {
 }
 
 fn emit_failed(app: &tauri::AppHandle, task_id: &str, error: &str) {
+    let now = chrono::Utc::now().to_rfc3339();
+    let _ = crate::db::update_task(task_id, &crate::db::models::UpdateTaskInput {
+        status: Some("failed".to_string()),
+        error: Some(error.to_string()),
+        completed_at: Some(now),
+        ..Default::default()
+    });
     let _ = app.emit("task-progress", TaskProgressEvent {
         task_id: task_id.to_string(),
         status: "failed".to_string(),
@@ -105,11 +119,12 @@ pub async fn run_graph_build(
     app: tauri::AppHandle,
     task_id: String,
     connection_id: i64,
+    database: Option<String>,
 ) {
     emit_log(&app, &task_id, "INFO", "开始构建知识图谱...");
 
     // 1. 获取连接配置并连接外部数据源
-    let config = match crate::db::get_connection_config(connection_id) {
+    let mut config = match crate::db::get_connection_config(connection_id) {
         Ok(c) => c,
         Err(e) => {
             let msg = format!("获取连接配置失败: {}", e);
@@ -118,6 +133,10 @@ pub async fn run_graph_build(
             return;
         }
     };
+    // 若调用方指定了 database（如 MySQL 多库场景），覆盖连接配置中存储的默认库名
+    if let Some(db) = database.filter(|s| !s.is_empty()) {
+        config.database = db;
+    }
 
     let ds = match crate::datasource::create_datasource(&config).await {
         Ok(ds) => ds,
@@ -153,15 +172,22 @@ pub async fn run_graph_build(
     let mut table_columns = HashMap::new();
     let mut table_fks = HashMap::new();
 
+    log::info!(
+        "[run_graph_build] connection={} schema has {} tables: {:?}",
+        connection_id,
+        schema.tables.len(),
+        schema.tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>()
+    );
+
     for table in &schema.tables {
-        let cols = match ds.get_columns(&table.name, None).await {
+        let cols = match ds.get_columns(&table.name, table.schema.as_deref()).await {
             Ok(c) => c,
             Err(e) => {
                 emit_log(&app, &task_id, "WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
                 vec![]
             }
         };
-        let fks = match ds.get_foreign_keys(&table.name, None).await {
+        let fks = match ds.get_foreign_keys(&table.name, table.schema.as_deref()).await {
             Ok(f) => f,
             Err(e) => {
                 emit_log(&app, &task_id, "WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));

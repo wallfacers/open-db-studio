@@ -259,12 +259,12 @@ pub fn list_metrics_by_node(
     let mut idx = 2usize;
 
     if let Some(db) = database {
-        sql.push_str(&format!(" AND scope_database=?{}", idx));
+        sql.push_str(&format!(" AND (scope_database=?{} OR scope_database IS NULL)", idx));
         param_values.push(db.to_string());
         idx += 1;
     }
     if let Some(sc) = schema {
-        sql.push_str(&format!(" AND scope_schema=?{}", idx));
+        sql.push_str(&format!(" AND (scope_schema=?{} OR scope_schema IS NULL)", idx));
         param_values.push(sc.to_string());
         idx += 1;
     }
@@ -326,12 +326,12 @@ pub fn list_metrics_by_node_paged(
     let mut idx = 2usize;
 
     if let Some(db) = database {
-        sql.push_str(&format!(" AND scope_database=?{}", idx));
+        sql.push_str(&format!(" AND (scope_database=?{} OR scope_database IS NULL)", idx));
         param_values.push(db.to_string());
         idx += 1;
 
         if let Some(sc) = schema {
-            sql.push_str(&format!(" AND scope_schema=?{}", idx));
+            sql.push_str(&format!(" AND (scope_schema=?{} OR scope_schema IS NULL)", idx));
             param_values.push(sc.to_string());
             idx += 1;
         }

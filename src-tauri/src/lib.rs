@@ -10,6 +10,7 @@ mod mcp;
 mod metrics;
 mod migration;
 mod pipeline;
+mod seatunnel;
 mod skill_sync;
 mod state;
 
@@ -206,17 +207,9 @@ pub fn run() {
             commands::search_graph,
             commands::get_graph_edges,
             commands::update_node_alias,
-            commands::create_migration_task,
-            commands::list_migration_tasks,
-            commands::run_migration_precheck,
-            commands::get_precheck_report,
-            commands::pause_migration,
-            commands::get_migration_progress,
             commands::ai_generate_metrics,
             commands::list_tables_with_column_count,
             commands::ai_generate_sql_v2,
-            commands::start_migration,
-            commands::get_migration_task,
             commands::acp_permission_respond,
             commands::acp_elicitation_respond,
             commands::mcp_diff_respond,
@@ -253,6 +246,25 @@ pub fn run() {
             commands::agent_unrevert_message,
             commands::agent_summarize_session,
             commands::agent_get_last_user_message_id,
+            seatunnel::commands::list_st_connections,
+            seatunnel::commands::create_st_connection,
+            seatunnel::commands::update_st_connection,
+            seatunnel::commands::delete_st_connection,
+            seatunnel::commands::list_st_categories,
+            seatunnel::commands::create_st_category,
+            seatunnel::commands::rename_st_category,
+            seatunnel::commands::delete_st_category,
+            seatunnel::commands::move_st_category,
+            seatunnel::commands::list_st_jobs,
+            seatunnel::commands::create_st_job,
+            seatunnel::commands::update_st_job,
+            seatunnel::commands::delete_st_job,
+            seatunnel::commands::move_st_job,
+            seatunnel::commands::submit_st_job,
+            seatunnel::commands::stop_st_job,
+            seatunnel::commands::get_st_job_status,
+            seatunnel::commands::stream_st_job_logs,
+            seatunnel::commands::cancel_st_job_stream,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

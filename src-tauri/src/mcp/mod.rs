@@ -354,6 +354,20 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["connection_id", "keyword"]
                 }
+            }),
+            json!({
+                "name": "propose_seatunnel_job",
+                "description": "AI-generated SeaTunnel Job configuration proposal. Creates a Job config for data migration/sync and shows it to the user for confirmation. Use /gen-job style prompts to generate configs. If user accepts, the Job is created in the current category.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "job_name": { "type": "string", "description": "Name for the SeaTunnel Job" },
+                        "config_json": { "type": "string", "description": "SeaTunnel Job configuration JSON (env + source + sink sections)" },
+                        "category_id": { "type": "integer", "description": "Optional category ID to place the job in" },
+                        "description": { "type": "string", "description": "Brief description of what this job does" }
+                    },
+                    "required": ["job_name", "config_json"]
+                }
             })
         ]
     })
@@ -652,6 +666,9 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "undo_last_change" => {
             tools::history::undo_last_change(Arc::clone(&handle), args, session_id).await
+        }
+        "propose_seatunnel_job" => {
+            tools::seatunnel::propose_seatunnel_job(Arc::clone(&handle), args).await
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

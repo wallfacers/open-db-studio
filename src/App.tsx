@@ -16,7 +16,8 @@ import { TaskCenter } from './components/TaskCenter';
 import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
 import { flushMetricsPersist } from './store/metricsTreeStore';
 import { GraphExplorer } from './components/GraphExplorer';
-import { MigrationWizard } from './components/MigrationWizard';
+import { SeaTunnelSidebar } from './components/SeaTunnelExplorer';
+import { flushSeaTunnelPersist, useSeaTunnelStore } from './store/seaTunnelStore';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
@@ -41,6 +42,11 @@ export default function App() {
     activeTab?.metricScope?.connectionId ??
     activeTab?.connectionId ??
     null;
+  const activeDatabase =
+    activeTab?.queryContext?.database ??
+    activeTab?.metricScope?.database ??
+    activeTab?.db ??
+    null;
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP propose_sql_diff 事件监听器
   useToolBridge();
@@ -52,9 +58,13 @@ export default function App() {
   }, []);
   // app 关闭前立即 flush 防抖 persist，防止展开状态丢失
   useEffect(() => {
-    const handler = () => { flushMetricsPersist(); };
+    const handler = () => { flushMetricsPersist(); flushSeaTunnelPersist(); };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+  // 初始化 SeaTunnel store
+  useEffect(() => {
+    useSeaTunnelStore.getState().init();
   }, []);
   // 导入/导出完成后自动跳转到「我的任务」侧边栏
   useEffect(() => {
@@ -180,9 +190,14 @@ export default function App() {
         onResize={handleSidebarResize}
         hidden={activeActivity !== 'metrics'}
       />
-      {activeActivity !== 'metrics' && (
+      <SeaTunnelSidebar
+        sidebarWidth={sidebarWidth}
+        onResize={handleSidebarResize}
+        hidden={activeActivity !== 'seatunnel'}
+      />
+      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && (
         activeActivity !== 'settings' && activeActivity !== 'tasks' &&
-        activeActivity !== 'graph' && activeActivity !== 'migration' && (
+        activeActivity !== 'graph' && (
           <Explorer
             isSidebarOpen={isSidebarOpen}
             sidebarWidth={sidebarWidth}
@@ -203,9 +218,7 @@ export default function App() {
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
       ) : activeActivity === 'graph' ? (
-        <GraphExplorer connectionId={activeConnectionId} />
-      ) : activeActivity === 'migration' ? (
-        <MigrationWizard />
+        <GraphExplorer connectionId={activeConnectionId} database={activeDatabase} />
       ) : (
         <MainContent
           handleFormat={handleFormat}

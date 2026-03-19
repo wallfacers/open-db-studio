@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen } from 'lucide-react';
-import { BaseModal } from '../common/BaseModal';
+import { X } from 'lucide-react';
 
 interface Group {
   id: number;
@@ -19,9 +18,9 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
   const { t } = useTranslation();
   const isEdit = !!group;
 
-  const [name, setName]     = useState(group?.name ?? '');
+  const [name, setName] = useState(group?.name ?? '');
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [error, setError] = useState('');
 
   const handleSave = async () => {
     const trimmed = name.trim();
@@ -42,28 +41,45 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
     }
   };
 
+  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const labelClass = 'block text-xs text-gray-400 mb-1';
+
   return (
-    <BaseModal
-      title={<><FolderOpen size={16} className="text-[#00c9a7]" />{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</>}
-      onClose={onClose}
-      width={288}
-      footerButtons={[
-        { label: t('common.cancel'), onClick: onClose, variant: 'secondary' },
-        { label: saving ? t('groupModal.saving') : t('common.save'), onClick: handleSave, variant: 'primary', loading: saving },
-      ]}
-    >
-      <label className="block text-xs text-[#7a9bb8] mb-1">{t('groupModal.name')}</label>
-      <input
-        autoFocus
-        type="text"
-        value={name}
-        onChange={(e) => { setName(e.target.value); setError(''); }}
-        onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
-        placeholder={t('groupModal.namePlaceholder')}
-        className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm
-                   text-[#c8daea] outline-none focus:border-[#00c9a7] transition-colors"
-      />
-      {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
-    </BaseModal>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[480px] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-white font-semibold">{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</h2>
+          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className={labelClass}>{t('groupModal.name')}</label>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={(e) => { setName(e.target.value); setError(''); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+              placeholder={t('groupModal.namePlaceholder')}
+              className={inputClass}
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose}
+            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">
+            {t('common.cancel')}
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
+            {saving ? t('groupModal.saving') : t('common.save')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };

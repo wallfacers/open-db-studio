@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -62,6 +62,7 @@ import { CellEditorModal } from './CellEditorModal';
 import ERDiagram from '../ERDiagram';
 import { MetricTab } from '../MetricsExplorer/MetricTab';
 import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
+import SeaTunnelJobTab from '../SeaTunnelJobTab';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
 import type { ToastLevel } from '../Toast';
@@ -697,6 +698,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'table' ? (
               <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'seatunnel_job' ? (
+              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
@@ -754,6 +757,10 @@ export const MainContent: React.FC<MainContentProps> = ({
               scope={activeTabObj.metricScope}
               onOpenMetric={(id, title) => useQueryStore.getState().openMetricTab(id, title)}
             />
+          </div>
+        ) : activeTabObj.type === 'seatunnel_job' ? (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <SeaTunnelJobTab tab={activeTabObj} key={activeTabObj.id} />
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">

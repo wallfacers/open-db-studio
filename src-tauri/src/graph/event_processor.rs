@@ -53,19 +53,12 @@ pub(super) fn get_node_rowid(
     ).optional()
 }
 
-/// FTS5 增量 Upsert：先 DELETE 旧条目再 INSERT 新条目
-pub(super) fn upsert_fts(conn: &rusqlite::Connection, rowid: i64) -> rusqlite::Result<()> {
-    conn.execute(
-        "DELETE FROM graph_nodes_fts WHERE rowid = ?1",
-        [rowid],
-    )?;
-    conn.execute(
-        "INSERT INTO graph_nodes_fts(rowid, id, name, display_name, aliases)
-         SELECT rowid, id, name, display_name, aliases
-         FROM graph_nodes WHERE rowid = ?1",
-        [rowid],
-    )?;
-    Ok(())
+/// FTS5 全量重建：事务提交后调用，将 graph_nodes 全量同步到 FTS5 索引。
+/// 外部 content FTS5 表不能在同一事务内同时写 content 表和做 DELETE/INSERT，
+/// 否则 FTS5 读回倒排索引时会报 "database disk image is malformed"。
+/// 使用官方推荐的 rebuild 命令替代增量 upsert。
+pub(super) fn rebuild_fts(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')")
 }
 
 /// node_id 生成规则（与 builder.rs 保持一致）
@@ -155,7 +148,6 @@ pub async fn process_pending_events(
 
     let processed_at = Utc::now().to_rfc3339();
     let processed_ids: Vec<i64> = events.iter().map(|e| e.id).collect();
-    let mut changed_rowids: Vec<i64> = Vec::new();
 
     // Acquire the lock once and run steps 2-4 inside a single transaction.
     // On any error we ROLLBACK before propagating, ensuring atomicity.
@@ -187,9 +179,6 @@ pub async fn process_pending_events(
                                 ],
                             )?;
                             stats.inserted += 1;
-                            if let Some(rowid) = get_node_rowid(&db_conn, &node_id)? {
-                                changed_rowids.push(rowid);
-                            }
                         }
                         Some("user") => {
                             // 保护用户标注，跳过
@@ -203,9 +192,6 @@ pub async fn process_pending_events(
                                 rusqlite::params![ev.metadata, node_id],
                             )?;
                             stats.updated += 1;
-                            if let Some(rowid) = get_node_rowid(&db_conn, &node_id)? {
-                                changed_rowids.push(rowid);
-                            }
                         }
                     }
                 }
@@ -242,9 +228,6 @@ pub async fn process_pending_events(
                                 rusqlite::params![edge_id, table_node_id, col_node_id],
                             );
                             stats.inserted += 1;
-                            if let Some(rowid) = get_node_rowid(&db_conn, &col_node_id)? {
-                                changed_rowids.push(rowid);
-                            }
                         }
                         Some("user") => {
                             stats.skipped += 1;
@@ -256,9 +239,6 @@ pub async fn process_pending_events(
                                 rusqlite::params![ev.metadata, col_node_id],
                             )?;
                             stats.updated += 1;
-                            if let Some(rowid) = get_node_rowid(&db_conn, &col_node_id)? {
-                                changed_rowids.push(rowid);
-                            }
                         }
                     }
                 }
@@ -295,9 +275,6 @@ pub async fn process_pending_events(
                     }
 
                     stats.updated += 1;
-                    if let Some(rowid) = get_node_rowid(&db_conn, &node_id)? {
-                        changed_rowids.push(rowid);
-                    }
                 }
 
                 "DROP_COLUMN" => {
@@ -334,9 +311,6 @@ pub async fn process_pending_events(
                     }
 
                     stats.updated += 1;
-                    if let Some(rowid) = get_node_rowid(&db_conn, &col_node_id)? {
-                        changed_rowids.push(rowid);
-                    }
                 }
 
                 "ADD_FK" => {
@@ -377,25 +351,7 @@ pub async fn process_pending_events(
             }
         }
 
-        // ── 步骤3：增量 FTS5 Upsert ─────────────────────────────────────────
-
-        // 去重 rowid
-        changed_rowids.sort_unstable();
-        changed_rowids.dedup();
-
-        for rowid in &changed_rowids {
-            upsert_fts(&db_conn, *rowid)?;
-            stats.fts_updated += 1;
-        }
-
-        emit_log(
-            app,
-            task_id,
-            "INFO",
-            &format!("更新 FTS5 索引（{} 个节点）", stats.fts_updated),
-        );
-
-        // ── 步骤4：标记完成 ────────────────────────────────────────────────────
+        // ── 步骤3：标记完成 ────────────────────────────────────────────────────
 
         if !processed_ids.is_empty() {
             // 生成 IN 占位符
@@ -433,6 +389,15 @@ pub async fn process_pending_events(
         }
     };
     txn_result?;
+
+    // ── 步骤5：FTS5 全量重建（事务提交后执行，避免与 content 表同事务操作）──
+    {
+        let db_conn = crate::db::get().lock()
+            .map_err(|e| anyhow::anyhow!("DB mutex poisoned: {e}"))?;
+        rebuild_fts(&db_conn)?;
+        stats.fts_updated = stats.inserted + stats.updated;
+    }
+    emit_log(app, task_id, "INFO", "FTS5 索引已重建");
 
     emit_log(
         app,

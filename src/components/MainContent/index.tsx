@@ -51,7 +51,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
   });
 };
 import {
-  FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, Folder,
+  FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
   BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare,
 } from 'lucide-react';
@@ -237,6 +237,75 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [contextSchemas, setContextSchemas] = useState<Record<string, string[]>>({});
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const schemaRef = useRef<FullSchemaInfo | null>(null);
+
+  // ── NL→SQL (ai_generate_sql_v2) 状态 ───────────────────────────────────────
+  interface TextToSqlResult {
+    sql: string;
+    /** 图谱上下文；图谱为空或无命中时为 null */
+    graph_context: {
+      relevant_tables: string[];
+      join_paths: string[];
+      metrics: string[];
+      schema_ddl: string;
+    } | null;
+    validation_ok: boolean;
+    validation_warning: string | null;
+  }
+  const [nlInput, setNlInput] = useState('');
+  const [nlPanelOpen, setNlPanelOpen] = useState(false);
+  const [nlLoading, setNlLoading] = useState(false);
+  const [graphCtxExpanded, setGraphCtxExpanded] = useState(false);
+  // key = tabId, value = 图谱上下文摘要文本
+  const [graphCtxByTab, setGraphCtxByTab] = useState<Record<string, string>>({});
+  const nlInputRef = useRef<HTMLInputElement>(null);
+
+  const graphCtx = graphCtxByTab[activeTab] ?? null;
+
+  const handleGenerateSqlV2 = async () => {
+    const connId = activeTabObj?.queryContext?.connectionId ?? null;
+    if (!nlInput.trim()) return;
+    if (!connId) {
+      showToast(t('mainContent.selectConnectionAndDatabase'), 'warning');
+      return;
+    }
+    setNlLoading(true);
+    try {
+      const result = await invoke<TextToSqlResult>('ai_generate_sql_v2', {
+        question: nlInput.trim(),
+        connectionId: connId,
+        history: [],
+      });
+      setSql(activeTab, result.sql);
+      // 构建图谱上下文摘要文本（graph_context 为 null 时表示图谱未构建或无命中）
+      const ctxParts: string[] = [];
+      if (result.graph_context) {
+        if (result.graph_context.relevant_tables.length > 0) {
+          ctxParts.push(`相关表：${result.graph_context.relevant_tables.join('、')}`);
+        }
+        if (result.graph_context.join_paths.length > 0) {
+          ctxParts.push(`JOIN 路径：${result.graph_context.join_paths.join('；')}`);
+        }
+        if (result.graph_context.metrics.length > 0) {
+          ctxParts.push(`指标定义：\n${result.graph_context.metrics.map(m => `  • ${m}`).join('\n')}`);
+        }
+      }
+      if (ctxParts.length > 0) {
+        setGraphCtxByTab(prev => ({ ...prev, [activeTab]: ctxParts.join('\n') }));
+        setGraphCtxExpanded(false);
+      } else {
+        setGraphCtxByTab(prev => { const n = { ...prev }; delete n[activeTab]; return n; });
+      }
+      if (result.validation_warning) {
+        showToast(`SQL 校验警告：${result.validation_warning}`, 'warning');
+      }
+      setNlPanelOpen(false);
+      setNlInput('');
+    } catch (e) {
+      showToast(`AI 生成失败：${String(e)}`, 'error');
+    } finally {
+      setNlLoading(false);
+    }
+  };
 
   // Fetch full schema whenever the active connection changes
   useEffect(() => {
@@ -759,6 +828,43 @@ export const MainContent: React.FC<MainContentProps> = ({
                   </Tooltip>
                 )}
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
+                {/* NL→SQL 按钮 */}
+                <div className="relative">
+                  <Tooltip content="自然语言生成 SQL（图谱增强）">
+                    <button
+                      className={`p-1.5 rounded transition-colors ${nlPanelOpen ? 'bg-[#1e2d42] text-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      onClick={() => {
+                        setNlPanelOpen(v => !v);
+                        setTimeout(() => nlInputRef.current?.focus(), 50);
+                      }}
+                      disabled={!activeTabObj?.queryContext?.connectionId}
+                    >
+                      <Bot size={16} />
+                    </button>
+                  </Tooltip>
+                  {nlPanelOpen && (
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-xl w-72 p-2 flex flex-col gap-2">
+                      <div className="text-[10px] text-[#7a9bb8] px-1">用自然语言描述查询需求，AI 将结合知识图谱生成 SQL</div>
+                      <input
+                        ref={nlInputRef}
+                        className="bg-[#0d1117] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#00c9a7] placeholder:text-[#3a5070]"
+                        placeholder="例：查询上月各城市销售额排名前10"
+                        value={nlInput}
+                        onChange={e => setNlInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerateSqlV2(); } if (e.key === 'Escape') setNlPanelOpen(false); }}
+                        disabled={nlLoading}
+                      />
+                      <button
+                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-[#1e2d42] text-[#3a5070] cursor-not-allowed' : 'bg-[#00c9a7] text-white hover:bg-[#00a98f]'}`}
+                        onClick={handleGenerateSqlV2}
+                        disabled={nlLoading || !nlInput.trim()}
+                      >
+                        {nlLoading ? '生成中…' : '生成 SQL'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <Tooltip content={t('mainContent.saveSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={() => showToast(t('mainContent.sqlSaved'), 'info')}>
                     <Save size={16} />
@@ -821,6 +927,29 @@ export const MainContent: React.FC<MainContentProps> = ({
                 )}
               </div>
             </div>
+
+            {/* 图谱上下文折叠块（由 ai_generate_sql_v2 填充） */}
+            {graphCtx && (
+              <div className="flex-shrink-0 border-b border-[#1e2d42] bg-[#111922]">
+                <button
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#0e1e2e] transition-colors"
+                  onClick={() => setGraphCtxExpanded(v => !v)}
+                >
+                  {graphCtxExpanded
+                    ? <ChevronDown size={12} className="flex-shrink-0" />
+                    : <ChevronRight size={12} className="flex-shrink-0" />}
+                  <span className="text-[#4a8ab0]">▸ 参考了以下知识图谱上下文</span>
+                  <span className="text-[#3a5070] ml-1">（点击展开）</span>
+                </button>
+                {graphCtxExpanded && (
+                  <div className="px-3 pb-2">
+                    <pre className="text-[11px] text-[#7a9bb8] bg-[#0d1117] rounded p-2 whitespace-pre-wrap font-mono leading-5 border border-[#1e2d42]">
+                      {graphCtx}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Editor Content */}
             <div className="flex-1 relative bg-[#111922] min-h-0">

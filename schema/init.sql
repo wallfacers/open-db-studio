@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
     connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,
     display_name  TEXT,
+    aliases       TEXT,
+    source        TEXT DEFAULT 'schema',
+    is_deleted    INTEGER NOT NULL DEFAULT 0,
     metadata      TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -219,4 +222,40 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   is_temp     INTEGER DEFAULT 0,  -- 1 = SQL解释/优化临时session，不显示在历史
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
+);
+
+-- ============ V5: 知识图谱增量更新 ============
+
+-- 注意：graph_nodes 的 source / aliases 列迁移语句（ALTER TABLE）
+-- 不在此处执行，而是在 src-tauri/src/db/migrations.rs 中用 PRAGMA table_info
+-- 检查列是否存在后再执行，以保证幂等性（SQLite 不支持 ALTER TABLE IF NOT EXISTS）。
+
+-- Schema 变更日志（用于增量更新知识图谱）
+CREATE TABLE IF NOT EXISTS schema_change_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  connection_id INTEGER NOT NULL,
+  event_type    TEXT NOT NULL,
+  -- 'ADD_TABLE' | 'DROP_TABLE' | 'ADD_COLUMN' | 'DROP_COLUMN' | 'ADD_FK'
+  database      TEXT,
+  schema        TEXT,
+  table_name    TEXT NOT NULL,
+  column_name   TEXT,
+  metadata      TEXT,
+  processed     INTEGER DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  processed_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_change_log_pending
+  ON schema_change_log(connection_id, processed);
+
+-- FTS5 全文搜索虚拟表（对 graph_nodes 做内容表索引）
+CREATE VIRTUAL TABLE IF NOT EXISTS graph_nodes_fts
+USING fts5(
+  node_id    UNINDEXED,
+  name,
+  display_name,
+  aliases,
+  content='graph_nodes',
+  content_rowid='rowid'
 );

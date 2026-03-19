@@ -33,3 +33,7 @@ Thumbs.db
 
 .idea/
 .worktrees/
+
+# Claude Code & Superpowers
+.claude/
+.superpowers/

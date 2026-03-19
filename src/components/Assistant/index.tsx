@@ -193,7 +193,12 @@ export const Assistant: React.FC<AssistantProps> = ({
       return;
     }
 
-    const oldEffectiveId = linkedConnectionId ?? prev;
+    // 仅当用户手动锁定了连接时才需要确认切换；
+    // 跟随标签页模式下（linkedConnectionId === null）effectiveConnectionId 始终等于
+    // 当前 Tab 连接，弹框确认等于询问"切换到已选中的连接"——无意义，直接跟随即可。
+    if (linkedConnectionId === null) return;
+
+    const oldEffectiveId = linkedConnectionId;
     const newEffectiveId = activeConnectionId;
     if (oldEffectiveId === newEffectiveId) return;
 

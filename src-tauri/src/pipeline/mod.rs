@@ -45,7 +45,7 @@ fn graph_is_empty(connection_id: i64) -> bool {
 async fn generate_sql_legacy(
     question: &str,
     connection_id: i64,
-    history: &[crate::llm::ChatMessage],
+    _history: &[crate::llm::ChatMessage],
 ) -> crate::AppResult<TextToSqlResult> {
     let client = entity_extract::build_llm_client()?;
 

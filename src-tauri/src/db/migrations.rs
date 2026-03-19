@@ -129,6 +129,57 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         );"
     );
 
+    // V7: 扩展 task_records.type CHECK 约束，增加 'ai_generate_metrics'
+    // SQLite 不支持 ALTER TABLE 修改约束，需重建表
+    let old_schema: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='task_records'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_default();
+    let needs_rebuild = old_schema.contains("'seatunnel')")
+        && !old_schema.contains("'ai_generate_metrics'");
+    if needs_rebuild {
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             BEGIN;
+             CREATE TABLE task_records_new (
+                 id TEXT PRIMARY KEY,
+                 type TEXT NOT NULL CHECK(type IN ('export', 'import', 'migration', 'seatunnel', 'ai_generate_metrics')),
+                 status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+                 title TEXT NOT NULL,
+                 params TEXT,
+                 progress INTEGER DEFAULT 0,
+                 processed_rows INTEGER DEFAULT 0,
+                 total_rows INTEGER,
+                 current_target TEXT,
+                 error TEXT,
+                 error_details TEXT,
+                 output_path TEXT,
+                 description TEXT,
+                 connection_id INTEGER,
+                 scope_database TEXT,
+                 scope_schema TEXT,
+                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                 completed_at TEXT
+             );
+             INSERT INTO task_records_new SELECT
+                 id, type, status, title, params, progress, processed_rows, total_rows,
+                 current_target, error, error_details, output_path, description,
+                 connection_id, scope_database, scope_schema, created_at, updated_at, completed_at
+             FROM task_records;
+             DROP TABLE task_records;
+             ALTER TABLE task_records_new RENAME TO task_records;
+             CREATE INDEX IF NOT EXISTS idx_task_records_created ON task_records(created_at DESC);
+             CREATE INDEX IF NOT EXISTS idx_task_records_status ON task_records(status);
+             COMMIT;
+             PRAGMA foreign_keys = ON;",
+        )?;
+        log::info!("Migrated task_records: expanded type CHECK to include ai_generate_metrics");
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

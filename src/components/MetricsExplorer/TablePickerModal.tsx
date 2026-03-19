@@ -11,7 +11,7 @@ interface TablePickerModalProps {
   connectionId: number;
   database?: string;
   schema?: string;
-  onConfirm: (tableNames: string[]) => void;
+  onConfirm: (tableNames: string[], goToTasks: boolean) => void;
   onClose: () => void;
 }
 
@@ -26,6 +26,7 @@ export function TablePickerModal({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [goToTasks, setGoToTasks] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -135,37 +136,48 @@ export function TablePickerModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[#2a3f5a] px-4 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-[#7a9bb8]">已选 {selected.size} 张表</span>
-            <button
-              className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
-              onClick={selectAll}
-            >
-              全选
-            </button>
-            <button
-              className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
-              onClick={clearAll}
-            >
-              取消全选
-            </button>
+        <div className="border-t border-[#2a3f5a] px-4 py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-[#7a9bb8]">已选 {selected.size} 张表</span>
+              <button
+                className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
+                onClick={selectAll}
+              >
+                全选
+              </button>
+              <button
+                className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
+                onClick={clearAll}
+              >
+                取消全选
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="px-3 py-1.5 rounded text-xs bg-[#1a2a3a] text-[#7a9bb8] hover:bg-[#2a3a4a] transition-colors"
+                onClick={onClose}
+              >
+                取消
+              </button>
+              <button
+                className="px-3 py-1.5 rounded text-xs bg-[#00c9a7] text-black hover:bg-[#00b090] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={selected.size === 0}
+                onClick={() => onConfirm(Array.from(selected), goToTasks)}
+              >
+                开始生成
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="px-3 py-1.5 rounded text-xs bg-[#1a2a3a] text-[#7a9bb8] hover:bg-[#2a3a4a] transition-colors"
-              onClick={onClose}
-            >
-              取消
-            </button>
-            <button
-              className="px-3 py-1.5 rounded text-xs bg-[#00c9a7] text-black hover:bg-[#00b090] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              disabled={selected.size === 0}
-              onClick={() => onConfirm(Array.from(selected))}
-            >
-              开始生成
-            </button>
-          </div>
+          <label className="flex items-center gap-2 cursor-pointer self-end">
+            <input
+              type="checkbox"
+              checked={goToTasks}
+              onChange={(e) => setGoToTasks(e.target.checked)}
+              className="accent-[#00c9a7] cursor-pointer"
+            />
+            <span className="text-xs text-[#7a9bb8]">生成后跳转到我的任务</span>
+          </label>
         </div>
       </div>
     </div>

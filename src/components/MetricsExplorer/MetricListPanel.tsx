@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Trash2, Pencil, Plus, Sparkles } from 'lucide-react';
+import { Trash2, Pencil, Plus, Sparkles, ListTodo } from 'lucide-react';
 import type { Metric, MetricScope, MetricStatus } from '../../types';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
@@ -27,6 +27,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [genInfo, setGenInfo] = useState<string | null>(null);
 
   const deleteMetric = useMetricsTreeStore(s => s.deleteMetric);
   const confirm = useConfirmStore(s => s.confirm);
@@ -116,8 +117,9 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   const [showTablePicker, setShowTablePicker] = useState(false);
 
-  const handleAiConfirm = async (tableNames: string[]) => {
+  const handleAiConfirm = async (tableNames: string[], goToTasks: boolean) => {
     setShowTablePicker(false);
+    setGenInfo(null);
     try {
       await invoke<string>('ai_generate_metrics', {
         connectionId: scope.connectionId,
@@ -127,6 +129,11 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       });
       // Rust 已将任务写入 SQLite，立即刷新内存
       useTaskStore.getState().loadTasks();
+      if (goToTasks) {
+        useTaskStore.getState().setVisible(true);
+      } else {
+        setGenInfo('AI 生成任务已启动，完成后指标将自动刷新。');
+      }
     } catch (e: any) {
       setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
     }
@@ -205,6 +212,24 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       {/* 表格 */}
       <div className="flex-1 overflow-auto">
         {error && <div className="px-4 py-2 text-xs text-red-400">{error}</div>}
+        {genInfo && (
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-[#00c9a7] bg-[#0a1f18] border-b border-[#0d3d2e]">
+            <Sparkles size={12} className="flex-shrink-0" />
+            <span className="flex-1">{genInfo}</span>
+            <button
+              className="flex items-center gap-1 text-[#00c9a7] hover:text-[#00b090] underline underline-offset-2 flex-shrink-0"
+              onClick={() => { setGenInfo(null); useTaskStore.getState().setVisible(true); }}
+            >
+              <ListTodo size={12} />
+              查看任务
+            </button>
+            <button
+              className="text-[#7a9bb8] hover:text-white flex-shrink-0 ml-1"
+              onClick={() => setGenInfo(null)}
+              aria-label="关闭"
+            >×</button>
+          </div>
+        )}
         <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
           <thead className="sticky top-0 bg-[#0d1117] z-10">
             <tr>

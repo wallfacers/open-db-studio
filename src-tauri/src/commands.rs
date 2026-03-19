@@ -2618,13 +2618,17 @@ pub async fn agent_list_sessions(
                     _ => continue,
                 };
 
+                // SQLite 是 session 存在性的权威来源：不在 SQLite 中的 session（已删除）直接跳过
+                let db_record = match db_map.get(&id) {
+                    Some(r) => r,
+                    None => continue,
+                };
+
                 // title：优先 SQLite（用户/AI 已生成），其次 OpenCode 返回值
-                let title = db_map
-                    .get(&id)
-                    .and_then(|r| r.title.clone())
+                let title = db_record.title.clone()
                     .or_else(|| sess["title"].as_str().map(|s| s.to_string()));
 
-                let config_id = db_map.get(&id).and_then(|r| r.config_id);
+                let config_id = db_record.config_id;
 
                 // 时间戳：OpenCode 可能用 time.created / createdAt / created_at 等字段
                 let created_at = sess["time"]["created"]
@@ -2635,8 +2639,7 @@ pub async fn agent_list_sessions(
                     })
                     .or_else(|| sess["createdAt"].as_str().map(|s| s.to_string()))
                     .or_else(|| sess["created_at"].as_str().map(|s| s.to_string()))
-                    .or_else(|| db_map.get(&id).map(|r| r.created_at.clone()))
-                    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+                    .unwrap_or_else(|| db_record.created_at.clone());
 
                 let updated_at = sess["time"]["updated"]
                     .as_i64()
@@ -2646,11 +2649,7 @@ pub async fn agent_list_sessions(
                     })
                     .or_else(|| sess["updatedAt"].as_str().map(|s| s.to_string()))
                     .or_else(|| sess["updated_at"].as_str().map(|s| s.to_string()))
-                    .or_else(|| db_map.get(&id).map(|r| r.updated_at.clone()))
-                    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
-
-                // 同步 OpenCode session 到 SQLite（保持一致，config_id 保留已有值）
-                let _ = crate::db::insert_agent_session(&id, title.as_deref(), config_id, false);
+                    .unwrap_or_else(|| db_record.updated_at.clone());
 
                 result.push(AgentSessionRecord { id, title, config_id, created_at, updated_at });
             }

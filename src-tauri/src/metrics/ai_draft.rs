@@ -58,6 +58,27 @@ fn emit_log(app: &tauri::AppHandle, task_id: &str, level: &str, message: &str) {
     });
 }
 
+/// 发送纯进度事件（不含日志行，前端会更新进度条）
+fn emit_progress(app: &tauri::AppHandle, task_id: &str, progress: f32, current_target: &str) {
+    use tauri::Emitter;
+    let _ = app.emit("task-progress", TaskProgressEvent {
+        task_id: task_id.to_string(),
+        status: "running".to_string(),
+        progress,
+        processed_rows: 0,
+        total_rows: None,
+        current_target: current_target.to_string(),
+        error: None,
+        output_path: None,
+        log_line: None,
+        connection_id: None,
+        database: None,
+        schema: None,
+        metric_count: None,
+        skipped_count: None,
+    });
+}
+
 // ─── LLM client builder ──────────────────────────────────────────────────────
 
 fn build_llm_client() -> crate::AppResult<crate::llm::LlmClient> {
@@ -85,7 +106,8 @@ pub async fn generate_metric_drafts(
     schema: Option<String>,
     table_names: Vec<String>,
 ) {
-    if let Err(e) = do_generate(
+    let now = chrono::Utc::now().to_rfc3339();
+    match do_generate(
         &app_handle,
         &task_id,
         connection_id,
@@ -95,24 +117,42 @@ pub async fn generate_metric_drafts(
     )
     .await
     {
-        emit_log(&app_handle, &task_id, "error", &format!("{}", e));
-        use tauri::Emitter;
-        let _ = app_handle.emit("task-progress", TaskProgressEvent {
-            task_id: task_id.clone(),
-            status: "failed".to_string(),
-            progress: 0.0,
-            processed_rows: 0,
-            total_rows: None,
-            current_target: String::new(),
-            error: Some(e.to_string()),
-            output_path: None,
-            log_line: None,
-            connection_id: Some(connection_id),
-            database: database.clone(),
-            schema: schema.clone(),
-            metric_count: None,
-            skipped_count: None,
-        });
+        Ok(()) => {
+            // 写 SQLite：completed + progress=100（前端 loadTasks 依赖此数据）
+            let _ = crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
+                status: Some("completed".to_string()),
+                progress: Some(100),
+                completed_at: Some(now),
+                ..Default::default()
+            });
+        }
+        Err(e) => {
+            emit_log(&app_handle, &task_id, "error", &format!("{}", e));
+            // 写 SQLite：failed
+            let _ = crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
+                status: Some("failed".to_string()),
+                error: Some(e.to_string()),
+                completed_at: Some(now),
+                ..Default::default()
+            });
+            use tauri::Emitter;
+            let _ = app_handle.emit("task-progress", TaskProgressEvent {
+                task_id: task_id.clone(),
+                status: "failed".to_string(),
+                progress: 0.0,
+                processed_rows: 0,
+                total_rows: None,
+                current_target: String::new(),
+                error: Some(e.to_string()),
+                output_path: None,
+                log_line: None,
+                connection_id: Some(connection_id),
+                database: database.clone(),
+                schema: schema.clone(),
+                metric_count: None,
+                skipped_count: None,
+            });
+        }
     }
 }
 
@@ -129,6 +169,7 @@ async fn do_generate(
     use tauri::Emitter;
 
     // 1. 读取连接配置
+    emit_progress(app, task_id, 2.0, "连接数据库");
     let config = crate::db::get_connection_config(connection_id)?;
     emit_log(
         app,
@@ -144,6 +185,7 @@ async fn do_generate(
         schema.as_deref(),
     )
     .await?;
+    emit_progress(app, task_id, 5.0, "读取表结构");
 
     // 3. 确定要处理的表列表
     let tables_to_process: Vec<String> = if table_names.is_empty() {
@@ -154,11 +196,13 @@ async fn do_generate(
     };
 
     // 4. 串行拉取每张表的字段（datasource 不支持 Clone）
+    // 阶段权重：5% → 30%（读字段），每张表均分
     let mut schema_desc = String::new();
     let mut total_cols = 0usize;
+    let table_count = tables_to_process.len().max(1);
 
     let mut col_counts: Vec<(String, usize)> = Vec::new();
-    for table_name in &tables_to_process {
+    for (i, table_name) in tables_to_process.iter().enumerate() {
         let cols = ds
             .get_columns(table_name, schema.as_deref())
             .await
@@ -176,6 +220,10 @@ async fn do_generate(
                 if col.is_primary_key { "(PK)" } else { "" }
             ));
         }
+
+        // 5% + 25% * (i+1)/table_count
+        let pct = 5.0 + 25.0 * (i + 1) as f32 / table_count as f32;
+        emit_progress(app, task_id, pct, table_name);
     }
 
     // 构造日志：读取字段日志
@@ -192,6 +240,7 @@ async fn do_generate(
     );
 
     // 5. 构建 Prompt
+    emit_progress(app, task_id, 32.0, "构建 Prompt");
     let prompt = format!(
         r#"你是一个数据分析专家。根据以下数据库 Schema，推断出 3-8 个最有业务价值的指标。
 
@@ -226,6 +275,7 @@ Schema:
         .ok_or_else(|| crate::AppError::Other("No AI model configured".into()))?;
     let model_name = llm_config.model.clone();
 
+    emit_progress(app, task_id, 35.0, "等待 AI 响应");
     emit_log(
         app,
         task_id,
@@ -239,6 +289,7 @@ Schema:
         content: prompt,
     }];
     let response = client.chat(messages).await?;
+    emit_progress(app, task_id, 70.0, "解析响应");
 
     // 7. 解析 JSON 响应
     #[derive(serde::Deserialize)]
@@ -261,8 +312,10 @@ Schema:
         "info",
         &format!("解析到 {} 个指标草稿", items.len()),
     );
+    emit_progress(app, task_id, 72.0, "保存指标");
 
     // 8. 逐条去重后写入
+    // 阶段权重：72% → 100%（每条指标均分 28%）
     let total = items.len();
     let mut saved_count = 0usize;
     let mut skipped_count = 0usize;
@@ -359,6 +412,9 @@ Schema:
                 skipped_count += 1;
             }
         }
+        // 72% + 28% * pos/total
+        let pct = 72.0 + 28.0 * pos as f32 / total.max(1) as f32;
+        emit_progress(app, task_id, pct, &input.display_name);
     }
 
     // 9. 完成

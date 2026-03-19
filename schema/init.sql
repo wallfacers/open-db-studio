@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS llm_configs (
 -- 任务记录表（导入导出、迁移等后台任务）
 CREATE TABLE IF NOT EXISTS task_records (
     id TEXT PRIMARY KEY,
-    type TEXT NOT NULL CHECK(type IN ('export', 'import', 'migration', 'seatunnel')),
+    type TEXT NOT NULL CHECK(type IN ('export', 'import', 'migration', 'seatunnel', 'ai_generate_metrics')),
     status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
     title TEXT NOT NULL,
     params TEXT,                  -- JSON 序列化参数（用于重试）

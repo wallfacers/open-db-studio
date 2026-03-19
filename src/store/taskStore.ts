@@ -107,11 +107,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         database: r.scope_database ?? r.database ?? undefined,
         schema: r.scope_schema ?? r.schema ?? undefined,
       }));
+      const TERMINAL: TaskStatus[] = ['completed', 'failed', 'cancelled'];
       set((state) => ({
         tasks: rows.map((row) => {
           const existing = state.tasks.find((t) => t.id === row.id);
-          // 保留内存日志（running 任务的 logs 字段来自 task-progress 事件，SQLite 不存）
-          return existing?.logs ? { ...row, logs: existing.logs } : row;
+          if (!existing) return row;
+          // 内存已达终态但 SQLite 尚未落盘（异步写入窗口）→ 保留内存状态
+          if (TERMINAL.includes(existing.status) && !TERMINAL.includes(row.status as TaskStatus)) {
+            return existing;
+          }
+          // completed 但 SQLite progress 未及时更新 → 保证显示 100
+          const progress = row.status === 'completed' && !row.progress ? 100 : row.progress;
+          // 其余以 SQLite 为准，保留内存日志
+          return { ...row, progress, ...(existing.logs?.length ? { logs: existing.logs } : {}) };
         }),
         isLoading: false,
       }));

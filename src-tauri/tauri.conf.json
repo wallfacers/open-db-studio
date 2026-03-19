@@ -41,7 +41,11 @@
       "skills/metric-edit/SKILL.md",
       "skills/metric-read/SKILL.md",
       "skills/table-edit/SKILL.md",
-      "skills/history/SKILL.md"
+      "skills/history/SKILL.md",
+      "skills/echarts-ai-skill/SKILL.md",
+      "skills/echarts-ai-skill/manifest.yaml",
+      "skills/echarts-ai-skill/package.json",
+      "skills/echarts-ai-skill/dist/**/*"
     ]
   }
 }

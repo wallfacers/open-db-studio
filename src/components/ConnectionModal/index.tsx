@@ -17,11 +17,12 @@ const DRIVERS = [
 
 interface Props {
   onClose: () => void;
+  onSuccess?: () => void;
   connection?: import('../../types').Connection;
   defaultGroupId?: number | null;
 }
 
-export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) {
+export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId }: Props) {
   const { t } = useTranslation();
   const { createConnection, testConnection, updateConnection } = useConnectionStore();
   const isEdit = !!connection;
@@ -45,7 +46,6 @@ export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [passwordRevealed, setPasswordRevealed] = useState(false);
 
   const handleDriverChange = (driver: string) => {
     const d = DRIVERS.find((x) => x.value === driver);
@@ -74,7 +74,11 @@ export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) 
       } else {
         await createConnection(form);
       }
-      onClose();
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        onClose();
+      }
     } finally {
       setSaving(false);
     }
@@ -151,31 +155,13 @@ export function ConnectionModal({ onClose, connection, defaultGroupId }: Props) 
             </div>
             <div>
               <label className={labelClass}>{t('connectionModal.password')}</label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <PasswordInput
-                    className={inputClass}
-                    value={form.password ?? ''}
-                    onChange={(v) => setForm((f) => ({ ...f, password: v }))}
-                    placeholder={isEdit ? t('connectionModal.passwordPlaceholder') : ''}
-                  />
-                </div>
-                {isEdit && connection && !passwordRevealed && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const pwd = await invoke<string>('get_connection_password', { id: connection.id });
-                        setForm((f) => ({ ...f, password: pwd }));
-                        setPasswordRevealed(true);
-                      } catch {}
-                    }}
-                    className="text-xs px-2 py-1.5 border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] rounded whitespace-nowrap flex-shrink-0"
-                  >
-                    {t('connectionModal.revealPassword')}
-                  </button>
-                )}
-              </div>
+              <PasswordInput
+                className={inputClass}
+                value={form.password ?? ''}
+                onChange={(v) => setForm((f) => ({ ...f, password: v }))}
+                placeholder={isEdit ? t('connectionModal.passwordPlaceholder') : ''}
+                onReveal={isEdit && connection ? () => invoke<string>('get_connection_password', { id: connection.id }) : undefined}
+              />
             </div>
           </div>
         </div>

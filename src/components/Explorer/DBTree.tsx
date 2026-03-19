@@ -498,9 +498,10 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
       {editingConnId !== null && (
         <ConnectionModal
           connection={connections.find(c => c.id === editingConnId)}
-          onClose={() => {
+          onClose={() => setEditingConnId(null)}
+          onSuccess={() => {
             setEditingConnId(null);
-            useTreeStore.getState().init();
+            useTreeStore.getState().refresh();
           }}
         />
       )}
@@ -508,9 +509,10 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
       {newConnGroupId !== undefined && (
         <ConnectionModal
           defaultGroupId={newConnGroupId}
-          onClose={() => {
+          onClose={() => setNewConnGroupId(undefined)}
+          onSuccess={() => {
             setNewConnGroupId(undefined);
-            useTreeStore.getState().init();
+            useTreeStore.getState().refresh();
           }}
         />
       )}

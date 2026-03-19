@@ -4,10 +4,14 @@ import { Minus, Square, X, Maximize2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../common/Tooltip';
 import appIcon from '../../assets/icon.png';
+import { useAiStore } from '../../store/aiStore';
 
 export const TitleBar: React.FC = () => {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
+  const isAiChatting = useAiStore(
+    (s) => Object.values(s.chatStates).some((cs) => cs.isChatting)
+  );
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
@@ -25,7 +29,14 @@ export const TitleBar: React.FC = () => {
     >
       <div className="flex items-center px-3 gap-2" data-tauri-drag-region>
         <img src={appIcon} alt="Open DB Studio" className="w-4 h-4 rounded-sm" />
-        <span className="text-[#4a6480] text-[11px]">Open DB Studio</span>
+        {isAiChatting ? (
+          <>
+            <span className="ai-dot w-1 h-1 rounded-full bg-[#00c9a7] flex-shrink-0" />
+            <span className="text-[#00c9a7] text-[11px] animate-pulse">AI 正在响应...</span>
+          </>
+        ) : (
+          <span className="text-[#4a6480] text-[11px]">Open DB Studio</span>
+        )}
       </div>
 
       <div className="flex items-center h-full">

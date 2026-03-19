@@ -152,7 +152,7 @@ class ChartErrorBoundary extends React.Component<ErrorBoundaryProps, { hasError:
 
 // ── ChartBlock ────────────────────────────────────────────────────────────────
 // 重要约定：此组件只负责渲染，不持有外部 state；所有状态均在组件内部管理。
-export const ChartBlock: React.FC<{ code: string }> = memo(({ code }) => {
+export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = memo(({ code, isStreaming = false }) => {
   const [copied, setCopied] = useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -181,7 +181,34 @@ export const ChartBlock: React.FC<{ code: string }> = memo(({ code }) => {
     };
   }, []);
 
-  // ── 错误状态 ──
+  // ── 流式中 JSON 不完整：显示加载动画 ──
+  if (error && isStreaming) {
+    // 柱高序列：低→中→高→中→低，营造波形感
+    const barHeights = [20, 32, 44, 32, 20];
+    return (
+      <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[#1e2d42]">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
+          <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+          <span className="text-xs text-[#5b8ab0] animate-pulse">AI 正在生成图表数据</span>
+        </div>
+        <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: 280 }}>
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex gap-2 items-end">
+              {barHeights.map((h, i) => (
+                <div
+                  key={i}
+                  className="w-3 rounded-t bg-[#00c9a7]/70 chart-bar-anim"
+                  style={{ height: h }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 错误状态（非流式，JSON 确实有误）──
   if (error) {
     return (
       <div data-testid="chart-error" className="my-2 rounded overflow-hidden border border-red-800/40">

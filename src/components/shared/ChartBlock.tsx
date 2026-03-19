@@ -181,16 +181,6 @@ export const ChartBlock: React.FC<{ code: string }> = memo(({ code }) => {
     };
   }, []);
 
-  // 从 series[0].type 推断图表类型标签
-  const chartType = (
-    (option?.series as Array<{ type?: string }>)?.[0]?.type ?? 'chart'
-  );
-
-  // 背景色始终强制覆盖，其余字段尊重 AI 输出
-  const mergedOption = option
-    ? { backgroundColor: '#0d1117', ...option }
-    : null;
-
   // ── 错误状态 ──
   if (error) {
     return (
@@ -206,7 +196,13 @@ export const ChartBlock: React.FC<{ code: string }> = memo(({ code }) => {
     );
   }
 
-  if (!mergedOption) return null;
+  // 从 series[0].type 推断图表类型标签（option 在此处必然非 null）
+  const chartType = (
+    (option!.series as Array<{ type?: string }>)?.[0]?.type ?? 'chart'
+  );
+
+  // 背景色始终强制覆盖，其余字段尊重 AI 输出
+  const mergedOption = { backgroundColor: '#0d1117', ...option! };
 
   // ── 正常渲染 ──
   return (
@@ -246,3 +242,5 @@ export const ChartBlock: React.FC<{ code: string }> = memo(({ code }) => {
     </div>
   );
 });
+
+ChartBlock.displayName = 'ChartBlock';

@@ -127,4 +127,18 @@ describe('ChartBlock', () => {
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(code);
   });
+
+  it('点击复制后显示"已复制"文字', async () => {
+    const { ChartBlock } = await import('./ChartBlock');
+    const code = JSON.stringify({ series: [{ type: 'bar', data: [1] }] });
+
+    await act(async () => {
+      root.render(React.createElement(ChartBlock, { code }));
+    });
+
+    const copyBtn = container.querySelector('button') as HTMLButtonElement;
+    await act(async () => { copyBtn.click(); });
+
+    expect(container.textContent).toContain('已复制');
+  });
 });

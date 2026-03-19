@@ -9,11 +9,21 @@ import { ChartBlock } from './ChartBlock';
 // ── 代码块 ──────────────────────────────────────────────────────────────────
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
   const [copied, setCopied] = useState(false);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard 不可用时静默失败
+    }
   }, [code]);
 
   return (

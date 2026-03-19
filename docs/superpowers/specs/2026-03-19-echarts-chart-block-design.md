@@ -175,9 +175,61 @@ JSON.parse(code) → option 对象
 
 ---
 
+---
+
+## 依赖安装
+
+```bash
+npm install echarts@^5.6.0 echarts-for-react@^3.0.2
+```
+
+**Tree-shaking：** 不需要按需引入。`echarts-for-react` 在桌面 Tauri 应用中全量引入（gzip 后 ~300KB），包体积可接受，不配置 tree-shaking 以降低复杂度。
+
+---
+
+## ChartBlock 组件接口
+
+```tsx
+interface ChartBlockProps {
+  code: string; // AI 输出的原始 ECharts option JSON 字符串
+}
+```
+
+- 接收**原始 JSON 字符串**，在组件内部解析（与 CodeBlock 的 `code: string` 保持一致）
+- 图表默认高度：**280px**（硬编码在 `style={{ height: 280 }}`，`echarts-for-react` 必须有明确高度）
+- 图表类型标签：从 `option.series?.[0]?.type` 推断，读不到则显示 `"chart"`
+
+---
+
+## MarkdownContent.tsx 改动草稿
+
+在现有 `mdComponents.code` 函数中，`if (match)` 分支内最前面添加：
+
+```tsx
+code({ className, children, ...props }) {
+  const match = /language-(\w+)/.exec(className ?? '');
+  const language = match ? match[1] : '';
+  if (match) {
+    // ── 新增：chart 标记渲染为 ECharts 图表 ──
+    if (language === 'chart') {
+      return <ChartBlock code={String(children).replace(/\n$/, '')} />;
+    }
+    // ── 原有逻辑 ──
+    return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
+  }
+  return <code ...>{children}</code>;
+}
+```
+
+`ChartBlock` 是纯渲染组件（内部只用 `useMemo` + `useState`，无 context 依赖），可安全放在模块级 `mdComponents` 常量中。ErrorBoundary 包裹在 `ChartBlock` 内部实现（组件自己处理渲染异常），不影响 `mdComponents` 的结构。
+
+> **重要约定：** `mdComponents.code` 函数只负责分发（根据 `language` 决定渲染哪个组件），**不持有任何 state**。所有渲染状态（JSON 解析结果、错误状态、复制状态）必须放在 `ChartBlock` 组件内部，不得写在 `code` 函数的闭包中。
+
+---
+
 ## 实现步骤概览
 
-1. 安装依赖：`npm install echarts echarts-for-react`
-2. 新增 `ChartBlock.tsx`
-3. 修改 `MarkdownContent.tsx`（3行改动）
-4. 追加 SKILL.md 集成规则
+1. 安装依赖：`npm install echarts@^5.6.0 echarts-for-react@^3.0.2`
+2. 新增 `src/components/shared/ChartBlock.tsx`
+3. 修改 `src/components/shared/MarkdownContent.tsx`（在 `code` 组件 `if (match)` 分支开头加 `language === 'chart'` 判断）
+4. 追加 `src-tauri/skills/echarts-ai-skill/SKILL.md` 集成规则

@@ -55,14 +55,15 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   );
 });
 
-// ── Markdown 渲染器（已完成消息专用，用 memo 防止无关重渲染）───────────────
-const mdComponents = {
+// ── Markdown 渲染器组件工厂（根据 isStreaming 生成不同的 code 渲染器）─────────
+function makeMdComponents(isStreaming: boolean) {
+  return {
   code({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { className?: string }) {
     const match = /language-(\w+)/.exec(className ?? '');
     const language = match ? match[1] : '';
     if (match) {
       if (language === 'chart') {
-        return <ChartBlock code={String(children).replace(/\n$/, '')} />;
+        return <ChartBlock code={String(children).replace(/\n$/, '')} isStreaming={isStreaming} />;
       }
       return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
     }
@@ -112,10 +113,16 @@ const mdComponents = {
   td({ children }: React.ComponentPropsWithoutRef<'td'>) {
     return <td className="border border-[#1e2d42] px-2 py-1 text-[#c8daea]">{children}</td>;
   },
-};
+  };
+}
 
-export const MarkdownContent: React.FC<{ content: string }> = memo(({ content }) => (
-  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-    {content}
-  </ReactMarkdown>
-));
+const staticMdComponents = makeMdComponents(false);
+
+export const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = memo(({ content, isStreaming = false }) => {
+  const components = isStreaming ? makeMdComponents(true) : staticMdComponents;
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {content}
+    </ReactMarkdown>
+  );
+});

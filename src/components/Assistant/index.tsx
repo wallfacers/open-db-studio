@@ -64,7 +64,7 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     <div className="flex flex-col items-start">
       <div className="text-[#c8daea] text-[13px] w-full">
         {thinking && <ThinkingBlock content={thinking} isStreaming={true} />}
-        {content && <MarkdownContent content={content} />}
+        {content && <MarkdownContent content={content} isStreaming={true} />}
         {!hasFirstToken && (
           sessionStatus ? (
             <div className="flex items-center gap-2 py-1">

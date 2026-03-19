@@ -44,33 +44,6 @@
 
 | 功能 | 实现文件 | 备注 |
 |------|---------|------|
-<<<<<<< HEAD
-| 表管理 GUI（建表/改表） | `TableManageDialog/index.tsx` | 可视化列编辑器 |
-| 索引管理 | `IndexManager/index.tsx` | 创建/删除索引 |
-| ERD 可视化 | `ERDiagram.tsx` | 外键自动生成 ER 图 |
-| Schema-aware 自动补全 | `MainContent/index.tsx` | Monaco 集成表/字段提示 |
-| 一键格式化 SQL | 内置 Monaco | 基础格式化 |
-| 多结果集 Tab | `MainContent/index.tsx` | 多语句结果分组展示 |
-| 数据导出 | `ExportDialog/index.tsx` | CSV/JSON/SQL Dump |
-| AI 建表 | `AiCreateTableDialog/index.tsx` | 自然语言 → DDL |
-| AI SQL 优化 | `commands.rs:605-616` | `ai_optimize_sql` |
-| AI 错误诊断 | `commands.rs:624+` | `ai_diagnose_error` |
-| AI 多轮对话 | `Assistant/index.tsx` | AI 面板保留上下文 |
-| AI 模型配置列表 | `Settings/LlmSettings.tsx` | 完整 CRUD + 选择器 |
-| 视图/存储过程面板 | `ObjectPanel/index.tsx` | 对象管理面板 |
-| ACP + OpenCode 集成 | `src-tauri/src/acp/`, `mcp/` | 真正的工具调用支持 |
-| 智能错误上下文 | `src/store/appStore.ts`, `src/utils/errorContext.ts`, `src/utils/askAi.ts` | 操作前写入上下文快照；Toast/TaskCenter/查询区"问 AI"按钮 |
-| AI 助手全局常驻 Tab | `src/components/AssistantToggleTab/`, `App.tsx` | 右边缘浮动 Tab；拖拽定位；多会话历史 + AI 生成标题 |
-| DB 版本缓存 | `commands.rs (get_db_version)`, `connectionStore.ts` | 连接后缓存版本号，注入错误上下文 |
-
-### 待实现 ❌
-
-| 功能 | 优先级 | 依赖 |
-|------|--------|------|
-| 数据导入（CSV/JSON/Excel） | 中 | 需要导入对话框 + 字段映射 |
-| DML 结果报告增强 | 低 | 当前已有基础 row_count |
-| 表结构可视化编辑器（完整版） | 低 | ALTER SQL 预览已在 TableManageDialog |
-=======
 | 表管理 GUI（建表/改表/删表 + DDL 预览） | `TableManageDialog/index.tsx` | 可视化列编辑器 + ALTER SQL 预览 + 多方言 DDL |
 | 表结构可视化编辑器（完整版） | `TableManageDialog/index.tsx` | 列编辑器 + 约束/索引/默认值管理 |
 | 索引管理 | `IndexManager/index.tsx` | 创建/删除，唯一索引、复合索引 |
@@ -91,7 +64,9 @@
 | 安全修复：api_key 不暴露前端 | `commands.rs`（`list_llm_configs` 遮蔽, `get_llm_config_key`）| 按需获取 |
 | 安全修复：DB 密码按需获取 | `commands.rs`（`get_connection_password`）| 编辑弹窗 isDirty 机制防覆盖 |
 | ACP + OpenCode 集成 | `src-tauri/src/acp/`, `mcp/` | 真正的工具调用支持，替换自建 Agent Loop |
->>>>>>> d396f4effe4d1f306a4b93851f4bccd80ee579ae
+| 智能错误上下文 | `src/store/appStore.ts`, `src/utils/errorContext.ts`, `src/utils/askAi.ts` | 操作前写入上下文快照；Toast/TaskCenter/查询区"问 AI"按钮 |
+| AI 助手全局常驻 Tab | `src/components/AssistantToggleTab/`, `App.tsx` | 右边缘浮动 Tab；拖拽定位；多会话历史 + AI 生成标题 |
+| DB 版本缓存 | `commands.rs`（`get_db_version`）, `connectionStore.ts` | 连接后缓存版本号，注入错误上下文 |
 
 ---
 
@@ -119,14 +94,11 @@
 | `2026-03-11-multi-result-smart-grouping-impl-plan.md` | 2026-03-11 | 结果智能分组实现 |
 | `2026-v1-implementation-plan.md` | 2026-03-11 | V1 阶段功能 |
 | `2026-03-12-acp-opencode-integration-plan.md` | 2026-03-13 | acp/, mcp/, Agent 工具调用 |
-<<<<<<< HEAD
 | `docs/superpowers/plans/2026-03-13-smart-error-ai-context.md` | 2026-03-13 | appStore, errorContext, askAi, AssistantToggleTab, 多会话历史 |
-=======
 | `2026-03-11-table-data-view-row-operations-design.md` | 2026-03-16 | EditableCell, RowContextMenu, usePendingChanges, CellEditorModal |
 | `2026-03-11-table-data-view-row-operations-impl.md` | 2026-03-16 | 全部 Tasks 已完成 |
 | `2026-03-11-table-context-menu-and-visual-editor-design.md` | 2026-03-16 | Explorer/ContextMenu, DdlViewerDialog, TruncateConfirmDialog |
 | `2026-03-11-table-context-menu-and-visual-editor.md` | 2026-03-16 | 全部 7 个 Tasks 已完成 |
->>>>>>> d396f4effe4d1f306a4b93851f4bccd80ee579ae
 
 ### 进行中 🔄
 
@@ -198,10 +170,7 @@
 |------|---------|
 | 2026-03-11 | 创建本文档，整理 MVP 和 V1 实现状态 |
 | 2026-03-11 | 添加 insert_row 命令实现状态 |
-<<<<<<< HEAD
 | 2026-03-14 | 补充智能错误上下文、AI 助手全局 Tab、DB 版本缓存实现状态；标记计划文件完成 |
-=======
 | 2026-03-16 | 标记 TableDataView 行操作增强、表右键菜单扩展为已完成 |
 | 2026-03-16 | 全面代码评估：补录 Oracle/SQL Server 驱动、数据导入、DML 报告、可视化编辑器；MVP + V1 阶段 100% 完成；文档整体重整 |
 | 2026-03-16 | V2 阶段全部实现：图谱/指标/迁移/pipeline 模块 + 前端三大面板 + SQL ACP + propose_sql_diff；ActivityBar 重构；启动恢复连接 |
->>>>>>> d396f4effe4d1f306a4b93851f4bccd80ee579ae

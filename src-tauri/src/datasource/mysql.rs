@@ -83,7 +83,31 @@ impl DataSource for MySqlDataSource {
                         if let Ok(val) = row.try_get::<Option<String>, _>(i) {
                             val.map(serde_json::Value::String)
                                 .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<chrono::NaiveDateTime>, _>(i) {
+                            // DATETIME / TIMESTAMP
+                            val.map(|v| serde_json::Value::String(v.to_string()))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<chrono::NaiveDate>, _>(i) {
+                            // DATE
+                            val.map(|v| serde_json::Value::String(v.to_string()))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<chrono::NaiveTime>, _>(i) {
+                            // TIME
+                            val.map(|v| serde_json::Value::String(v.to_string()))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<rust_decimal::Decimal>, _>(i) {
+                            // DECIMAL / NUMERIC — 保留原始精度（如 10.90 不变为 10.9）
+                            val.map(|v| serde_json::Value::String(v.to_string()))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<u64>, _>(i) {
+                            // BIGINT UNSIGNED / BIT(n) — 必须在 i64 之前，避免大无符号值精度丢失
+                            val.map(|v| serde_json::json!(v))
+                                .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<i64>, _>(i) {
+                            val.map(|v| serde_json::json!(v))
+                                .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<u16>, _>(i) {
+                            // YEAR
                             val.map(|v| serde_json::json!(v))
                                 .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<f64>, _>(i) {
@@ -92,6 +116,9 @@ impl DataSource for MySqlDataSource {
                         } else if let Ok(val) = row.try_get::<Option<bool>, _>(i) {
                             val.map(|v| serde_json::json!(v))
                                 .unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<serde_json::Value>, _>(i) {
+                            // JSON 列
+                            val.unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(i) {
                             // VARBINARY / BLOB 列：转为 UTF-8 字符串展示，非 UTF-8 则显示为十六进制
                             val.map(|b| {

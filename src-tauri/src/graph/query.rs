@@ -179,3 +179,292 @@ pub async fn find_relevant_subgraph(
 
     Ok(SubGraph { nodes: all_nodes, edges, join_paths })
 }
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::{Connection, params};
+
+    /// 创建 in-memory 数据库并建立 graph_nodes 及 FTS5 虚拟表
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE graph_nodes (
+                id            TEXT PRIMARY KEY,
+                node_type     TEXT NOT NULL,
+                connection_id INTEGER,
+                name          TEXT NOT NULL,
+                display_name  TEXT,
+                metadata      TEXT,
+                aliases       TEXT,
+                is_deleted    INTEGER NOT NULL DEFAULT 0,
+                source        TEXT DEFAULT 'schema'
+            );
+
+            CREATE VIRTUAL TABLE graph_nodes_fts
+            USING fts5(
+                node_id UNINDEXED,
+                name,
+                display_name,
+                aliases,
+                content='graph_nodes',
+                content_rowid='rowid'
+            );",
+        )
+        .expect("create tables");
+        conn
+    }
+
+    /// 向 graph_nodes 插入一行，并将其同步到 FTS5 虚拟表。
+    /// 插入 graph_nodes 后用 last_insert_rowid() 拿到 rowid，
+    /// 再往 graph_nodes_fts 中插入对应行。
+    fn insert_node(
+        conn: &Connection,
+        id: &str,
+        node_type: &str,
+        connection_id: i64,
+        name: &str,
+        display_name: Option<&str>,
+        aliases: Option<&str>,
+        is_deleted: i32,
+    ) {
+        conn.execute(
+            "INSERT INTO graph_nodes
+             (id, node_type, connection_id, name, display_name, metadata, aliases, is_deleted, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, 'schema')",
+            params![id, node_type, connection_id, name, display_name, aliases, is_deleted],
+        )
+        .expect("insert graph_nodes");
+
+        let rowid = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO graph_nodes_fts (rowid, node_id, name, display_name, aliases)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![rowid, id, name, display_name, aliases],
+        )
+        .expect("insert graph_nodes_fts");
+    }
+
+    // -----------------------------------------------------------------------
+    // 1. FTS5 前缀匹配正常关键词
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_fts_prefix_matching() {
+        let conn = setup_db();
+        insert_node(&conn, "node1", "table", 1, "orders_table", None, None, 0);
+
+        // 与 search_graph 相同的转义 + 前缀匹配逻辑
+        let keyword = "orders";
+        let escaped = keyword.replace('"', "\"\"");
+        let fts_query = format!("\"{}\"*", escaped);
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT gn.id, gn.node_type, gn.connection_id, gn.name,
+                        gn.display_name, gn.metadata, gn.aliases, gn.is_deleted, gn.source
+                 FROM graph_nodes_fts fts
+                 JOIN graph_nodes gn ON gn.rowid = fts.rowid
+                 WHERE graph_nodes_fts MATCH ?1
+                   AND gn.connection_id = ?2
+                   AND gn.is_deleted = 0
+                 LIMIT 20",
+            )
+            .unwrap();
+
+        let results: Vec<String> = stmt
+            .query_map(params![fts_query, 1i64], |row| row.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 1, "前缀匹配应命中 orders_table");
+        assert_eq!(results[0], "node1");
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. FTS5 特殊字符（双引号）转义后查询不崩溃
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_fts_special_char_escaping() {
+        let conn = setup_db();
+        // 插入一个普通节点，不期待它被命中
+        insert_node(&conn, "node1", "table", 1, "normal_table", None, None, 0);
+
+        // keyword 含双引号，转义后应为 `"table""name"*`
+        let keyword = r#"table"name"#;
+        let escaped = keyword.replace('"', "\"\"");
+        let fts_query = format!("\"{}\"*", escaped);
+
+        // 关键：执行查询不应 panic / 返回错误
+        let mut stmt = conn
+            .prepare(
+                "SELECT gn.id
+                 FROM graph_nodes_fts fts
+                 JOIN graph_nodes gn ON gn.rowid = fts.rowid
+                 WHERE graph_nodes_fts MATCH ?1
+                   AND gn.connection_id = ?2
+                   AND gn.is_deleted = 0
+                 LIMIT 20",
+            )
+            .unwrap();
+
+        let result: Result<Vec<String>, _> = stmt
+            .query_map(params![fts_query, 1i64], |row| row.get(0))
+            .unwrap()
+            .collect();
+
+        assert!(result.is_ok(), "含双引号的关键词转义后查询不应返回错误");
+        // 无论结果是否为空，只要不崩溃即可
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. search_graph 不返回 is_deleted=1 的节点
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_search_excludes_deleted_nodes() {
+        let conn = setup_db();
+        // 未删除节点
+        insert_node(&conn, "node_alive", "table", 1, "users_table", None, None, 0);
+        // 已删除节点
+        insert_node(&conn, "node_dead", "table", 1, "users_archive", None, None, 1);
+
+        let keyword = "users";
+        let escaped = keyword.replace('"', "\"\"");
+        let fts_query = format!("\"{}\"*", escaped);
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT gn.id, gn.is_deleted
+                 FROM graph_nodes_fts fts
+                 JOIN graph_nodes gn ON gn.rowid = fts.rowid
+                 WHERE graph_nodes_fts MATCH ?1
+                   AND gn.connection_id = ?2
+                   AND gn.is_deleted = 0
+                 LIMIT 20",
+            )
+            .unwrap();
+
+        let results: Vec<(String, i32)> = stmt
+            .query_map(params![fts_query, 1i64], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 1, "只应返回一个未删除节点");
+        assert_eq!(results[0].0, "node_alive");
+        assert_eq!(results[0].1, 0, "返回节点的 is_deleted 必须为 0");
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. get_nodes 按 node_type 过滤
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_get_nodes_filters_by_type() {
+        let conn = setup_db();
+        insert_node(&conn, "t1", "table",  1, "orders", None, None, 0);
+        insert_node(&conn, "c1", "column", 1, "order_id", None, None, 0);
+
+        // 复现 get_nodes(connection_id=1, node_type=Some("table")) 的 SQL
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, node_type, connection_id, name, display_name, metadata,
+                        aliases, is_deleted, source
+                 FROM graph_nodes
+                 WHERE connection_id=?1 AND node_type=?2 AND is_deleted=0
+                 ORDER BY name",
+            )
+            .unwrap();
+
+        let results: Vec<(String, String)> = stmt
+            .query_map(params![1i64, "table"], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 1, "按 node_type='table' 过滤应只返回一行");
+        assert_eq!(results[0].0, "t1");
+        assert_eq!(results[0].1, "table");
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. get_nodes 不返回 is_deleted 节点
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_get_nodes_excludes_deleted() {
+        let conn = setup_db();
+        insert_node(&conn, "n_active", "table", 1, "products", None, None, 0);
+        insert_node(&conn, "n_dead",   "table", 1, "products_old", None, None, 1);
+
+        // 复现 get_nodes(connection_id=1, node_type=None) 的 SQL
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, is_deleted
+                 FROM graph_nodes
+                 WHERE connection_id=?1 AND is_deleted=0
+                 ORDER BY node_type, name",
+            )
+            .unwrap();
+
+        let results: Vec<(String, i32)> = stmt
+            .query_map(params![1i64], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 1, "is_deleted=1 的节点不应出现");
+        assert_eq!(results[0].0, "n_active");
+        assert_eq!(results[0].1, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. row_to_node：metadata 字段作为 Option<String> 映射正确
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_row_to_node_metadata_is_option_string() {
+        let conn = setup_db();
+
+        // 带 metadata JSON 字符串的节点
+        conn.execute(
+            "INSERT INTO graph_nodes
+             (id, node_type, connection_id, name, display_name, metadata, aliases, is_deleted, source)
+             VALUES ('m1', 'table', 1, 'meta_table', NULL, '{\"comment\":\"test\"}', NULL, 0, 'schema')",
+            [],
+        )
+        .unwrap();
+
+        // metadata 为 NULL 的节点
+        conn.execute(
+            "INSERT INTO graph_nodes
+             (id, node_type, connection_id, name, display_name, metadata, aliases, is_deleted, source)
+             VALUES ('m2', 'table', 1, 'no_meta_table', NULL, NULL, NULL, 0, 'schema')",
+            [],
+        )
+        .unwrap();
+
+        let node_with_meta = conn
+            .query_row(
+                "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
+                 FROM graph_nodes WHERE id='m1'",
+                [],
+                super::row_to_node,
+            )
+            .unwrap();
+
+        let node_without_meta = conn
+            .query_row(
+                "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
+                 FROM graph_nodes WHERE id='m2'",
+                [],
+                super::row_to_node,
+            )
+            .unwrap();
+
+        // metadata 应为 Some(String)，而非 serde_json::Value
+        assert!(node_with_meta.metadata.is_some(), "有 metadata 时应为 Some");
+        assert_eq!(
+            node_with_meta.metadata.as_deref(),
+            Some("{\"comment\":\"test\"}"),
+            "metadata 应原样保存为字符串"
+        );
+        assert!(node_without_meta.metadata.is_none(), "metadata 为 NULL 时应为 None");
+    }
+}

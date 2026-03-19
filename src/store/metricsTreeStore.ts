@@ -42,6 +42,7 @@ interface MetricsTreeState {
   selectedId: string | null;
   metricCounts: Map<string, number>;
   loadingIds: Set<string>;
+  isInitializing: boolean;
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -61,8 +62,10 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
   selectedId: null,
   metricCounts: new Map(),
   loadingIds: new Set(),
+  isInitializing: false,
 
   init: async () => {
+    set({ isInitializing: true });
     const [groups, conns] = await Promise.all([
       invoke<{ id: number; name: string; color: string | null; sort_order: number }[]>('list_groups'),
       invoke<{ id: number; name: string; group_id: number | null; driver: string; sort_order: number }[]>('list_connections'),
@@ -99,7 +102,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
       });
     }
 
-    set({ nodes });
+    set({ nodes, isInitializing: false });
   },
 
   refresh: async () => {

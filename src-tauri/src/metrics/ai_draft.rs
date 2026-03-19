@@ -106,7 +106,6 @@ pub async fn generate_metric_drafts(
     schema: Option<String>,
     table_names: Vec<String>,
 ) {
-    let now = chrono::Utc::now().to_rfc3339();
     match do_generate(
         &app_handle,
         &task_id,
@@ -117,16 +116,20 @@ pub async fn generate_metric_drafts(
     )
     .await
     {
-        Ok(()) => {
-            // 写 SQLite：completed + progress=100（前端 loadTasks 依赖此数据）
+        Ok((saved_count, total)) => {
+            let now = chrono::Utc::now().to_rfc3339();
+            // 写 SQLite：completed + 统计数据（前端 loadTasks 依赖此数据）
             let _ = crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
                 status: Some("completed".to_string()),
                 progress: Some(100),
+                processed_rows: Some(saved_count as i64),
+                total_rows: Some(total as i64),
                 completed_at: Some(now),
                 ..Default::default()
             });
         }
         Err(e) => {
+            let now = chrono::Utc::now().to_rfc3339();
             emit_log(&app_handle, &task_id, "error", &format!("{}", e));
             // 写 SQLite：failed
             let _ = crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
@@ -158,6 +161,7 @@ pub async fn generate_metric_drafts(
 
 // ─── 主逻辑 ──────────────────────────────────────────────────────────────────
 
+/// 返回 (saved_count, total) 供外层写入 SQLite
 async fn do_generate(
     app: &tauri::AppHandle,
     task_id: &str,
@@ -165,7 +169,7 @@ async fn do_generate(
     database: Option<String>,
     schema: Option<String>,
     table_names: Vec<String>,
-) -> crate::AppResult<()> {
+) -> crate::AppResult<(usize, usize)> {
     use tauri::Emitter;
 
     // 1. 读取连接配置
@@ -442,7 +446,7 @@ Schema:
         skipped_count: Some(skipped_count as i64),
     });
 
-    Ok(())
+    Ok((saved_count, total))
 }
 
 // ─── JSON 提取工具函数 ────────────────────────────────────────────────────────

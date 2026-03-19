@@ -118,8 +118,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           }
           // completed 但 SQLite progress 未及时更新 → 保证显示 100
           const progress = row.status === 'completed' && !row.progress ? 100 : row.progress;
-          // 其余以 SQLite 为准，保留内存日志
-          return { ...row, progress, ...(existing.logs?.length ? { logs: existing.logs } : {}) };
+          // 其余以 SQLite 为准，保留内存日志和指标统计（metricCount/skippedCount 不存 SQLite）
+          const memExtras: Partial<Task> = {};
+          if (existing.logs?.length) memExtras.logs = existing.logs;
+          if (existing.metricCount != null) memExtras.metricCount = existing.metricCount;
+          if (existing.skippedCount != null) memExtras.skippedCount = existing.skippedCount;
+          return { ...row, progress, ...memExtras };
         }),
         isLoading: false,
       }));

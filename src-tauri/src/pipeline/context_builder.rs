@@ -101,3 +101,69 @@ pub async fn build_sql_context(
         schema_ddl,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::SqlContext;
+
+    /// SqlContext 所有字段为空时，各字段的空状态断言
+    #[test]
+    fn test_sql_context_empty_when_all_fields_empty() {
+        let ctx = SqlContext {
+            relevant_tables: vec![],
+            join_paths: vec![],
+            metrics: vec![],
+            schema_ddl: String::new(),
+        };
+        assert!(ctx.relevant_tables.is_empty());
+        assert!(ctx.join_paths.is_empty());
+        assert!(ctx.metrics.is_empty());
+        assert!(ctx.schema_ddl.is_empty());
+    }
+
+    /// SqlContext 有数据时，各字段不为空
+    #[test]
+    fn test_sql_context_non_empty_fields() {
+        let ctx = SqlContext {
+            relevant_tables: vec!["orders".to_string()],
+            join_paths: vec!["orders → users".to_string()],
+            metrics: vec!["GMV = SUM(orders.amount): 总成交额".to_string()],
+            schema_ddl: "-- 表: orders\n".to_string(),
+        };
+        assert!(!ctx.relevant_tables.is_empty());
+        assert!(!ctx.join_paths.is_empty());
+        assert!(!ctx.metrics.is_empty());
+        assert!(!ctx.schema_ddl.is_empty());
+    }
+
+    /// graph_context 判断逻辑（复刻 generate_sql_v2 中的条件）：
+    /// relevant_tables / join_paths / metrics 均为空时视为无命中
+    #[test]
+    fn test_graph_context_none_condition_all_empty() {
+        let ctx = SqlContext {
+            relevant_tables: vec![],
+            join_paths: vec![],
+            metrics: vec![],
+            schema_ddl: "-- fallback\n".to_string(),
+        };
+        let is_no_hit = ctx.relevant_tables.is_empty()
+            && ctx.join_paths.is_empty()
+            && ctx.metrics.is_empty();
+        assert!(is_no_hit, "三个检索字段均为空时应判定为无命中");
+    }
+
+    /// 只要有任意一个非空字段，就不应视为无命中
+    #[test]
+    fn test_graph_context_some_condition_partial_hit() {
+        let ctx = SqlContext {
+            relevant_tables: vec!["orders".to_string()],
+            join_paths: vec![],
+            metrics: vec![],
+            schema_ddl: String::new(),
+        };
+        let is_no_hit = ctx.relevant_tables.is_empty()
+            && ctx.join_paths.is_empty()
+            && ctx.metrics.is_empty();
+        assert!(!is_no_hit, "relevant_tables 非空时应判定为有命中");
+    }
+}

@@ -125,9 +125,10 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         let mut stmt = conn.prepare(
             "SELECT name FROM pragma_table_info('graph_nodes')",
         )?;
-        stmt.query_map([], |row| row.get::<_, String>(0))?
+        let cols: HashSet<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
             .filter_map(|r| r.ok())
-            .collect()
+            .collect();
+        cols
     };
     if !graph_nodes_columns.contains("source") {
         conn.execute_batch(

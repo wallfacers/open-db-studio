@@ -175,7 +175,7 @@ fn build_system_prompt(ctx: &SqlContext) -> String {
     prompt
 }
 
-fn extract_sql_from_response(response: &str) -> String {
+pub(crate) fn extract_sql_from_response(response: &str) -> String {
     if let Some(start_marker) = response.find("```sql") {
         let after_marker = &response[start_marker + 6..];
         let content_start = after_marker
@@ -197,4 +197,50 @@ fn extract_sql_from_response(response: &str) -> String {
         }
     }
     response.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_sql_from_response;
+
+    /// 标准 ```sql ... ``` 代码块，前面带说明文字
+    #[test]
+    fn test_extract_sql_normal_code_block() {
+        let input = "这里是说明\n```sql\nSELECT * FROM orders\n```";
+        let result = extract_sql_from_response(input);
+        assert_eq!(result, "SELECT * FROM orders");
+    }
+
+    /// 无代码块时返回 trim 后的原文
+    #[test]
+    fn test_extract_sql_no_code_block_returns_trimmed() {
+        let input = "  SELECT * FROM orders WHERE id=1  ";
+        let result = extract_sql_from_response(input);
+        assert_eq!(result, "SELECT * FROM orders WHERE id=1");
+    }
+
+    /// 含中文注释的 SQL 块，验证非 ASCII 内容不 panic
+    #[test]
+    fn test_extract_sql_with_non_ascii_content() {
+        let input = "```sql\nSELECT * FROM 订单表\n```";
+        let result = extract_sql_from_response(input);
+        assert_eq!(result, "SELECT * FROM 订单表");
+    }
+
+    /// 空代码块 ```sql\n\n``` 应返回空字符串
+    #[test]
+    fn test_extract_sql_empty_code_block() {
+        let input = "```sql\n\n```";
+        let result = extract_sql_from_response(input);
+        assert_eq!(result, "");
+    }
+
+    /// 无 sql 标签的代码块 ``` ... ``` 走 fallback 分支，返回块内内容
+    #[test]
+    fn test_extract_sql_code_block_without_sql_label() {
+        let input = "```\nSELECT 1\n```";
+        // 实现中：先找 ```sql（未找到），再找 ```（命中），提取块内文本
+        let result = extract_sql_from_response(input);
+        assert_eq!(result, "SELECT 1");
+    }
 }

@@ -5,7 +5,7 @@ import {
   Eye, RefreshCw, Trash2, List, Plus,
 } from 'lucide-react';
 import { DbDriverIcon } from '../Explorer/DbDriverIcon';
-import { useMetricsTreeStore, MetricsTreeNode, loadPersistedMetricsExpandedIds } from '../../store/metricsTreeStore';
+import { useMetricsTreeStore, MetricsTreeNode, loadPersistedMetricsExpandedIds, flushMetricsPersist } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
 import { useQueryStore } from '../../store/queryStore';
 
@@ -78,6 +78,14 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         const savedExpandedIds = await loadPersistedMetricsExpandedIds();
         if (savedExpandedIds.size === 0) return;
 
+        // 恢复期间直接更新 expandedIds，不经过 toggleExpand，
+        // 避免每次展开都触发防抖 persist 写入中间状态。
+        const expandNode = (nodeId: string) => {
+          useMetricsTreeStore.setState(s => ({
+            expandedIds: new Set([...s.expandedIds, nodeId]),
+          }));
+        };
+
         const restoreNode = async (nodeId: string): Promise<void> => {
           if (!savedExpandedIds.has(nodeId)) return;
           const store = useMetricsTreeStore.getState();
@@ -88,7 +96,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
             await store.loadChildren(nodeId);
           }
           if (!useMetricsTreeStore.getState().expandedIds.has(nodeId)) {
-            useMetricsTreeStore.getState().toggleExpand(nodeId);
+            expandNode(nodeId);
           }
           const children = [...useMetricsTreeStore.getState().nodes.values()].filter(
             (n) => n.parentId === nodeId
@@ -104,6 +112,9 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         for (const node of rootNodes) {
           await restoreNode(node.id);
         }
+
+        // 恢复完成后一次性持久化最终状态
+        flushMetricsPersist();
       };
       restoreState();
     }

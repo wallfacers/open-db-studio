@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Trash2, Pencil, Plus, Sparkles, ListTodo } from 'lucide-react';
-import type { Metric, MetricScope, MetricStatus } from '../../types';
+import { Trash2, Pencil, Plus, Sparkles, ListTodo, ChevronFirst, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import type { Metric, MetricPageResult, MetricScope, MetricStatus } from '../../types';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
 import { useQueryStore } from '../../store/queryStore';
@@ -28,6 +28,10 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [genInfo, setGenInfo] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(100);
+  const [rowCount, setRowCount] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
 
   const deleteMetric = useMetricsTreeStore(s => s.deleteMetric);
   const confirm = useConfirmStore(s => s.confirm);
@@ -40,25 +44,43 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       ? `db_${scope.connectionId}_${scope.database}`
       : null;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await invoke<Metric[]>('list_metrics_by_node', {
+      const data = await invoke<MetricPageResult>('list_metrics_paged', {
         connectionId: scope.connectionId,
         database: scope.database ?? null,
         schema: scope.schema ?? null,
         status: filterTab === 'all' ? null : filterTab,
+        page,
+        pageSize,
       });
-      setMetrics(data);
+      setMetrics(data.items);
+      setRowCount(data.row_count);
+      setDurationMs(data.duration_ms);
+
+      // 空页回退：若拿到空列表且当前不是第一页，自动回退
+      if (data.items.length === 0 && page > 1) {
+        setPage(p => p - 1);
+        return;
+      }
     } catch (e: any) {
       setError(e?.message ?? '加载失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [scope.connectionId, scope.database, scope.schema, filterTab, page, pageSize]);
 
-  useEffect(() => { load(); }, [filterTab, scope.connectionId, scope.database, scope.schema]);
+  // filterTab / scope 变化时重置 page=1
+  useEffect(() => {
+    setPage(1);
+  }, [filterTab, scope.connectionId, scope.database, scope.schema]);
+
+  // load 引用变化时触发加载（load 的 useCallback 已包含所有相关依赖）
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const filtered = metrics.filter(m =>
     !search || m.display_name.includes(search) || m.name.includes(search)
@@ -156,7 +178,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         if (parentNodeId) useMetricsTreeStore.getState().refreshNode(parentNodeId);
       }
     });
-  }, [scope.connectionId, scope.database, scope.schema]);
+  }, [scope.connectionId, scope.database, scope.schema, load]);
 
   const statusBadge = (status: MetricStatus) => {
     const map: Record<MetricStatus, { cls: string; label: string }> = {
@@ -179,6 +201,33 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     <div className="flex flex-col h-full bg-[#080d12] text-white">
       {/* 过滤栏 */}
       <div className="flex items-center gap-2 px-4 h-10 border-b border-[#1e2d42] flex-wrap flex-shrink-0">
+        {/* 分页控件 */}
+        <button
+          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={() => setPage(1)}
+          disabled={page <= 1}
+          title="首页"
+        ><ChevronFirst size={13} /></button>
+        <button
+          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={() => setPage(p => p - 1)}
+          disabled={page <= 1}
+          title="上一页"
+        ><ChevronLeft size={13} /></button>
+        <span className="text-xs text-[#a0b4c8] px-1">{page}</span>
+        <button
+          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={() => setPage(p => p + 1)}
+          disabled={rowCount < pageSize}
+          title="下一页"
+        ><ChevronRight size={13} /></button>
+        <span className="text-xs text-[#4a6a8a]">{pageSize}行/页</span>
+        <button
+          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white"
+          onClick={load}
+          title="刷新"
+        ><RefreshCw size={12} /></button>
+        <div className="w-px h-4 bg-[#1e2d42] mx-1" />
         <div className="flex gap-1">
           {TABS.map(t => (
             <button
@@ -195,7 +244,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                      text-white placeholder-[#4a6a8a] focus:outline-none focus:border-[#00c9a7]"
           placeholder="搜索指标名称..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
         />
         <button
           className="flex items-center gap-1 px-2 py-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
@@ -294,6 +343,13 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* 状态栏 */}
+      <div className="flex items-center px-4 h-7 bg-[#080d12] border-t border-[#1e2d42] flex-shrink-0">
+        <span className="text-xs text-[#7a9bb8]">
+          {search ? filtered.length : rowCount} 行 · {durationMs}ms
+        </span>
       </div>
 
       {/* 批量操作栏 */}

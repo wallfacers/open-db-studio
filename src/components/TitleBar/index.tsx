@@ -31,8 +31,16 @@ export const TitleBar: React.FC = () => {
         <img src={appIcon} alt="Open DB Studio" className="w-4 h-4 rounded-sm" />
         {isAiChatting ? (
           <>
-            <span className="ai-dot w-1 h-1 rounded-full bg-[#00c9a7] flex-shrink-0" />
-            <span className="text-[#00c9a7] text-[11px] animate-pulse">AI 正在响应...</span>
+            <span className="flex items-center gap-[3px]">
+              {[0, 0.2, 0.4].map((delay) => (
+                <span
+                  key={delay}
+                  className="ai-dot w-1 h-1 rounded-full bg-[#00c9a7] flex-shrink-0"
+                  style={{ animationDelay: `${delay}s` }}
+                />
+              ))}
+            </span>
+            <span className="text-[#00c9a7] text-[11px]">AI 正在响应</span>
           </>
         ) : (
           <span className="text-[#4a6480] text-[11px]">Open DB Studio</span>

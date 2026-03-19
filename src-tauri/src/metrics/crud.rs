@@ -298,6 +298,54 @@ pub fn list_metrics_by_node(
     }
 }
 
+pub fn list_metrics_by_node_paged(
+    connection_id: i64,
+    database: Option<&str>,
+    schema: Option<&str>,
+    status: Option<&str>,
+    page: u32,
+    page_size: u32,
+) -> AppResult<(Vec<Metric>, usize)> {
+    let conn = crate::db::get().lock().unwrap();
+    let mut sql = format!(
+        "SELECT {} FROM metrics WHERE connection_id=?1",
+        SELECT_COLS
+    );
+    let mut param_values: Vec<String> = vec![connection_id.to_string()];
+    let mut idx = 2usize;
+
+    if let Some(db) = database {
+        sql.push_str(&format!(" AND scope_database=?{}", idx));
+        param_values.push(db.to_string());
+        idx += 1;
+
+        if let Some(sc) = schema {
+            sql.push_str(&format!(" AND scope_schema=?{}", idx));
+            param_values.push(sc.to_string());
+            idx += 1;
+        }
+    }
+    if let Some(st) = status {
+        sql.push_str(&format!(" AND status=?{}", idx));
+        param_values.push(st.to_string());
+        idx += 1;
+    }
+
+    let offset = (page.saturating_sub(1)) as u64 * page_size as u64;
+    sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}", idx, idx + 1));
+    param_values.push(page_size.to_string());
+    param_values.push(offset.to_string());
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(param_values.iter().map(|s| s.as_str())),
+        row_to_metric,
+    )?;
+    let items: Vec<Metric> = rows.collect::<Result<Vec<_>, _>>()?;
+    let row_count = items.len();
+    Ok((items, row_count))
+}
+
 pub fn count_metrics_batch(
     connection_id: i64,
     database: Option<&str>,

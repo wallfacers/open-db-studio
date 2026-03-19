@@ -189,7 +189,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[#1e2d42]">
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
           <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-          <span className="text-xs text-[#5b8ab0] animate-pulse">AI 正在生成图表数据</span>
+          <span className="text-xs text-[#5b8ab0]">AI 正在生成图表数据</span>
         </div>
         <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: 280 }}>
           <div className="flex flex-col items-center gap-3">
@@ -198,7 +198,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
                 <div
                   key={i}
                   className="w-3 rounded-t bg-[#00c9a7]/70 chart-bar-anim"
-                  style={{ height: h }}
+                  style={{ height: h, '--bar-delay': `${i * 0.22}s` } as React.CSSProperties}
                 />
               ))}
             </div>

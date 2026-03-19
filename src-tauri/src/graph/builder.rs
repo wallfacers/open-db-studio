@@ -23,11 +23,12 @@ fn upsert_node(
     metadata: Option<&str>,
 ) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO graph_nodes (id, node_type, connection_id, name, display_name, metadata)
-         VALUES (?1,?2,?3,?4,?5,?6)
+        "INSERT INTO graph_nodes (id, node_type, connection_id, name, display_name, metadata, source)
+         VALUES (?1,?2,?3,?4,?5,?6,'schema')
          ON CONFLICT(id) DO UPDATE SET
            name=excluded.name, display_name=excluded.display_name,
-           metadata=excluded.metadata",
+           metadata=excluded.metadata,
+           source=CASE WHEN source='user' THEN 'user' ELSE 'schema' END",
         rusqlite::params![id, node_type, connection_id, name, display_name, metadata],
     )?;
     Ok(())
@@ -50,7 +51,7 @@ fn upsert_edge(
     Ok(())
 }
 
-pub async fn build_schema_graph(
+pub async fn build_schema_graph_full(
     connection_id: i64,
     app_handle: tauri::AppHandle,
 ) -> AppResult<usize> {

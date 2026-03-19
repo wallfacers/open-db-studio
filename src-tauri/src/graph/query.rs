@@ -8,7 +8,10 @@ pub struct GraphNode {
     pub connection_id: Option<i64>,
     pub name: String,
     pub display_name: Option<String>,
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<String>,
+    pub aliases: Option<String>,
+    pub is_deleted: Option<i32>,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,14 +32,16 @@ pub struct SubGraph {
 }
 
 fn row_to_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
-    let meta_str: Option<String> = row.get(5)?;
     Ok(GraphNode {
         id: row.get(0)?,
         node_type: row.get(1)?,
         connection_id: row.get(2)?,
         name: row.get(3)?,
         display_name: row.get(4)?,
-        metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
+        metadata: row.get::<_, Option<String>>(5)?,
+        aliases: row.get::<_, Option<String>>(6)?,
+        is_deleted: row.get::<_, Option<i32>>(7)?,
+        source: row.get::<_, Option<String>>(8)?,
     })
 }
 
@@ -44,13 +49,13 @@ pub fn get_nodes(connection_id: i64, node_type: Option<&str>) -> AppResult<Vec<G
     let conn = crate::db::get().lock().unwrap();
     let (sql, p): (String, Vec<Box<dyn rusqlite::ToSql>>) = match node_type {
         Some(t) => (
-            "SELECT id,node_type,connection_id,name,display_name,metadata
-             FROM graph_nodes WHERE connection_id=?1 AND node_type=?2 ORDER BY name".to_string(),
+            "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
+             FROM graph_nodes WHERE connection_id=?1 AND node_type=?2 AND is_deleted=0 ORDER BY name".to_string(),
             vec![Box::new(connection_id), Box::new(t.to_string())],
         ),
         None => (
-            "SELECT id,node_type,connection_id,name,display_name,metadata
-             FROM graph_nodes WHERE connection_id=?1 ORDER BY node_type,name".to_string(),
+            "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
+             FROM graph_nodes WHERE connection_id=?1 AND is_deleted=0 ORDER BY node_type,name".to_string(),
             vec![Box::new(connection_id)],
         ),
     };
@@ -59,24 +64,23 @@ pub fn get_nodes(connection_id: i64, node_type: Option<&str>) -> AppResult<Vec<G
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
-/// 三路 UNION LIKE 搜索：name + display_name + semantic_aliases.alias
+/// FTS5 全文检索：通过 graph_nodes_fts 虚拟表进行前缀匹配
 pub fn search_graph(connection_id: i64, keyword: &str) -> AppResult<Vec<GraphNode>> {
     let conn = crate::db::get().lock().unwrap();
-    let pattern = format!("%{}%", keyword);
+    // FTS5 前缀匹配：转义关键词中的双引号后包裹在引号内并加 * 前缀匹配
+    let escaped = keyword.replace('"', "\"\"");
+    let fts_query = format!("\"{}\"*", escaped);
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT n.id,n.node_type,n.connection_id,n.name,n.display_name,n.metadata
-         FROM graph_nodes n
-         WHERE n.connection_id=?1 AND (
-             n.name LIKE ?2 OR n.display_name LIKE ?2
-             OR EXISTS (
-                 SELECT 1 FROM semantic_aliases a
-                 WHERE a.node_id=n.id AND a.alias LIKE ?2
-             )
-         )
-         ORDER BY n.node_type, n.name
-         LIMIT 50"
+        "SELECT gn.id, gn.node_type, gn.connection_id, gn.name, gn.display_name, gn.metadata,
+                gn.aliases, gn.is_deleted, gn.source
+         FROM graph_nodes_fts fts
+         JOIN graph_nodes gn ON gn.rowid = fts.rowid
+         WHERE graph_nodes_fts MATCH ?1
+           AND gn.connection_id = ?2
+           AND gn.is_deleted = 0
+         LIMIT 20"
     )?;
-    let rows = stmt.query_map(rusqlite::params![connection_id, pattern], row_to_node)?;
+    let rows = stmt.query_map(rusqlite::params![fts_query, connection_id], row_to_node)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -96,7 +100,7 @@ pub async fn find_relevant_subgraph(
     let ph1 = (2..=n+1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
     let ph2 = (n+2..=2*n+1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
     let sql = format!(
-        "SELECT id,node_type,connection_id,name,display_name,metadata
+        "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
          FROM graph_nodes
          WHERE connection_id=?1 AND node_type='table'
            AND (name IN ({ph1}) OR id IN (
@@ -139,7 +143,7 @@ pub async fn find_relevant_subgraph(
     let mut all_nodes = Vec::new();
     for node_id in &all_node_ids {
         if let Ok(n) = conn.query_row(
-            "SELECT id,node_type,connection_id,name,display_name,metadata
+            "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
              FROM graph_nodes WHERE id=?1",
             [node_id], row_to_node
         ) {

@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Error as RusqliteError};
+use std::collections::HashSet;
 use crate::AppResult;
 
 pub fn run_migrations(conn: &Connection) -> AppResult<()> {
@@ -115,6 +116,37 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
          WHERE preset = 'alicloud' AND opencode_provider_name = ''",
         [],
     );
+
+    // V5: graph_nodes 新增 source / aliases 列（存量数据库迁移）
+    // SQLite 不支持 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，
+    // 故用 PRAGMA table_info 检查列是否存在后再执行，保证幂等性。
+    // 新安装时 init.sql 的 CREATE TABLE 已包含这两列，此处仅处理存量数据库。
+    let graph_nodes_columns: HashSet<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT name FROM pragma_table_info('graph_nodes')",
+        )?;
+        stmt.query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect()
+    };
+    if !graph_nodes_columns.contains("source") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN source TEXT DEFAULT 'schema'",
+        )?;
+        log::info!("Migrated graph_nodes: added source column");
+    }
+    if !graph_nodes_columns.contains("aliases") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN aliases TEXT",
+        )?;
+        log::info!("Migrated graph_nodes: added aliases column");
+    }
+    if !graph_nodes_columns.contains("is_deleted") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+        )?;
+        log::info!("Migrated graph_nodes: added is_deleted column");
+    }
 
     // V4: agent_sessions 表（opencode HTTP Serve 模式）
     // init.sql 使用 IF NOT EXISTS，新安装自动创建；存量数据库通过此处幂等建表

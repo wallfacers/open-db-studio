@@ -76,3 +76,31 @@ pub async fn create_metric(_handle: Arc<tauri::AppHandle>, args: Value) -> crate
     let metric = crate::db::create_metric_from_mcp(connection_id, name, display_name, table_name, description)?;
     Ok(serde_json::to_string_pretty(&metric).unwrap_or_default())
 }
+
+pub async fn list_metrics(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
+    let connection_id = args["connection_id"].as_i64()
+        .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
+    let status = args["status"].as_str();
+    let database = args["database"].as_str();
+    let schema = args["schema"].as_str();
+    let limit = args["limit"].as_u64().unwrap_or(50).min(200) as usize;
+
+    let mut metrics = if database.is_some() || schema.is_some() {
+        crate::metrics::list_metrics_by_node(connection_id, database, schema, status)?
+    } else {
+        crate::metrics::list_metrics(connection_id, status)?
+    };
+    metrics.truncate(limit);
+    Ok(serde_json::to_string_pretty(&metrics).unwrap_or_default())
+}
+
+pub async fn search_metrics(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
+    let connection_id = args["connection_id"].as_i64()
+        .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
+    let keyword = args["keyword"].as_str()
+        .ok_or_else(|| crate::AppError::Other("missing keyword".into()))?;
+
+    let keywords: Vec<String> = keyword.split_whitespace().map(|s| s.to_string()).collect();
+    let metrics = crate::metrics::search_metrics(connection_id, &keywords)?;
+    Ok(serde_json::to_string_pretty(&metrics).unwrap_or_default())
+}

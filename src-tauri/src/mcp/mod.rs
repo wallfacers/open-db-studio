@@ -323,6 +323,37 @@ fn tool_definitions() -> Value {
                     "properties": {},
                     "required": []
                 }
+            }),
+            json!({
+                "name": "list_metrics",
+                "description": "List metric definitions for a connection. Supports filtering by status (draft/approved/rejected) and scoping by database/schema.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer", "description": "Connection ID" },
+                        "status": {
+                            "type": "string",
+                            "description": "Filter by status. Omit to return all.",
+                            "enum": ["draft", "approved", "rejected"]
+                        },
+                        "database": { "type": "string", "description": "Filter by scope_database" },
+                        "schema": { "type": "string", "description": "Filter by scope_schema" },
+                        "limit": { "type": "integer", "description": "Max records to return (default 50, max 200)" }
+                    },
+                    "required": ["connection_id"]
+                }
+            }),
+            json!({
+                "name": "search_metrics",
+                "description": "Search approved metric definitions by keyword (matches name, display_name, or description).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer", "description": "Connection ID" },
+                        "keyword": { "type": "string", "description": "Search keyword (space-separated terms are ANDed)" }
+                    },
+                    "required": ["connection_id", "keyword"]
+                }
             })
         ]
     })
@@ -603,6 +634,12 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "create_metric" => {
             tools::metric_edit::create_metric(Arc::clone(&handle), args).await
+        }
+        "list_metrics" => {
+            tools::metric_edit::list_metrics(Arc::clone(&handle), args).await
+        }
+        "search_metrics" => {
+            tools::metric_edit::search_metrics(Arc::clone(&handle), args).await
         }
         "get_column_meta" => {
             tools::table_edit::get_column_meta(Arc::clone(&handle), args).await

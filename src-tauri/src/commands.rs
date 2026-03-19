@@ -2057,12 +2057,18 @@ pub async fn approve_metric(id: i64, status: String) -> AppResult<crate::metrics
 
 // ============ 知识图谱 ============
 
+/// 异步构建知识图谱，返回 task_id；前端通过 task-progress 事件监听进度
 #[tauri::command]
 pub async fn build_schema_graph(
-    connection_id: i64,
     app_handle: tauri::AppHandle,
-) -> AppResult<usize> {
-    crate::graph::build_schema_graph(connection_id, app_handle).await
+    connection_id: i64,
+) -> AppResult<String> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let task_id_clone = task_id.clone();
+    tokio::spawn(async move {
+        crate::graph::run_graph_build(app_handle, task_id_clone, connection_id).await;
+    });
+    Ok(task_id)
 }
 
 #[tauri::command]
@@ -2079,6 +2085,81 @@ pub async fn search_graph(
     keyword: String,
 ) -> AppResult<Vec<crate::graph::GraphNode>> {
     crate::graph::search_graph(connection_id, &keyword)
+}
+
+/// 查询指定节点集合的关联边
+#[tauri::command]
+pub async fn get_graph_edges(
+    connection_id: i64,
+    node_ids: Vec<String>,
+) -> AppResult<Vec<crate::graph::GraphEdge>> {
+    let _ = connection_id; // 边的过滤通过 node_ids 中的节点 ID（已含 connection_id 前缀）实现
+    if node_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let conn = crate::db::get().lock().unwrap();
+    // 构建 IN 占位符（?1 .. ?N），from_node 和 to_node 各自独立绑定相同 ID 集合
+    let n = node_ids.len();
+    let ph1: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+    let ph2: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata
+         FROM graph_edges e
+         WHERE e.from_node IN ({ph1}) OR e.to_node IN ({ph2})",
+        ph1 = ph1,
+        ph2 = ph2
+    );
+    // 参数绑定：node_ids 出现两次（from_node IN + to_node IN）
+    let params: Vec<Box<dyn rusqlite::ToSql>> = node_ids
+        .iter()
+        .chain(node_ids.iter())
+        .map(|id| Box::new(id.clone()) as Box<dyn rusqlite::ToSql>)
+        .collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+        let meta_str: Option<String> = row.get(5)?;
+        Ok(crate::graph::GraphEdge {
+            id: row.get(0)?,
+            from_node: row.get(1)?,
+            to_node: row.get(2)?,
+            edge_type: row.get(3)?,
+            weight: row.get(4)?,
+            metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
+        })
+    })?;
+    let mut edges: Vec<crate::graph::GraphEdge> = rows.collect::<Result<Vec<_>, _>>()?;
+    edges.sort_by(|a, b| a.id.cmp(&b.id));
+    edges.dedup_by_key(|e| e.id.clone());
+    Ok(edges)
+}
+
+/// 更新节点别名，并将 source 改为 'user'，同步更新 FTS5 索引
+#[tauri::command]
+pub async fn update_node_alias(
+    node_id: String,
+    aliases: String,
+) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "UPDATE graph_nodes SET aliases = ?1, source = 'user' WHERE id = ?2",
+        rusqlite::params![aliases, node_id],
+    )?;
+    // 同步更新 FTS5
+    let rowid: Option<i64> = conn.query_row(
+        "SELECT rowid FROM graph_nodes WHERE id = ?1",
+        [&node_id],
+        |row| row.get(0),
+    ).optional()?;
+    if let Some(r) = rowid {
+        conn.execute("DELETE FROM graph_nodes_fts WHERE rowid = ?1", [r])?;
+        conn.execute(
+            "INSERT INTO graph_nodes_fts(rowid, node_id, name, display_name, aliases)
+             SELECT rowid, id, name, display_name, aliases
+             FROM graph_nodes WHERE rowid = ?1",
+            [r],
+        )?;
+    }
+    Ok(())
 }
 
 // ============ 跨数据源迁移 ============

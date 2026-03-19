@@ -204,6 +204,8 @@ pub fn run() {
             commands::build_schema_graph,
             commands::get_graph_nodes,
             commands::search_graph,
+            commands::get_graph_edges,
+            commands::update_node_alias,
             commands::create_migration_task,
             commands::list_migration_tasks,
             commands::run_migration_precheck,

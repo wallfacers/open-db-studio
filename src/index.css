@@ -159,3 +159,20 @@ body {
 .tooltip-fade-in {
   animation: tooltip-fade-in 0.12s ease-out forwards;
 }
+
+/* ============================================================
+   Graph Explorer — React Flow CSS 变量覆盖 (Abyss Theme)
+   ============================================================ */
+.react-flow {
+  --xy-background-color: #0d1117;
+  --xy-edge-stroke: #1e3a5a;
+  --xy-edge-stroke-selected: #3794ff;
+  --xy-node-border-radius: 6px;
+  --xy-minimap-background-color: #111922;
+}
+
+/* Graph canvas container fills parent */
+.graph-canvas-container {
+  width: 100%;
+  height: 100%;
+}

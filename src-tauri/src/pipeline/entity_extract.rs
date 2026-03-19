@@ -1,6 +1,6 @@
 use crate::AppResult;
 
-fn build_llm_client() -> AppResult<crate::llm::LlmClient> {
+pub(super) fn build_llm_client() -> AppResult<crate::llm::LlmClient> {
     let config = crate::db::get_default_llm_config()?
         .ok_or_else(|| crate::AppError::Other("No AI model configured".into()))?;
     let api_type = match config.api_type.as_str() {
@@ -18,9 +18,9 @@ fn build_llm_client() -> AppResult<crate::llm::LlmClient> {
 pub async fn extract_entities(question: &str, connection_id: i64) -> AppResult<Vec<String>> {
     // 从图谱获取已知表名
     let table_names: Vec<String> = {
-        let conn = crate::db::get().lock().unwrap();
+        let conn = crate::db::get().lock().map_err(|_| crate::AppError::Other("DB lock poisoned".into()))?;
         let mut stmt = conn.prepare(
-            "SELECT name FROM graph_nodes WHERE connection_id=?1 AND node_type='table'"
+            "SELECT name FROM graph_nodes WHERE connection_id=?1 AND node_type='table' AND (is_deleted IS NULL OR is_deleted=0)"
         )?;
         let result = stmt.query_map([connection_id], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -43,7 +43,15 @@ pub async fn extract_entities(question: &str, connection_id: i64) -> AppResult<V
         crate::llm::ChatMessage { role: "user".into(), content: format!("用户问题: {}", question) },
     ];
 
-    let response = client.chat(messages).await.unwrap_or_default();
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        client.chat(messages),
+    )
+    .await
+    .map_err(|_| log::warn!("[entity_extract] LLM request timeout"))
+    .ok()
+    .and_then(|r| r.map_err(|e| log::warn!("[entity_extract] LLM call failed: {}", e)).ok())
+    .unwrap_or_default();
 
     let json_str = if let Some(s) = response.find('[') {
         if let Some(e) = response.rfind(']') {

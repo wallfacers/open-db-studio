@@ -1274,6 +1274,9 @@ pub async fn export_tables(
         error_details: None,
         output_path: Some(params.output_dir.clone()),
         description: Some(description),
+        connection_id: None,
+        scope_database: None,
+        scope_schema: None,
     })?;
 
     let task_id = task.id.clone();
@@ -1625,6 +1628,9 @@ pub async fn import_to_table(
         error_details: None,
         output_path: Some(params.file_path.clone()),
         description: Some(description),
+        connection_id: None,
+        scope_database: None,
+        scope_schema: None,
     })?;
     let task_id = task.id.clone();
     let task_id_clone = task_id.clone();
@@ -2055,7 +2061,27 @@ pub async fn ai_generate_metrics(
     schema: Option<String>,
     table_names: Vec<String>,
 ) -> AppResult<String> {
-    let task_id = uuid::Uuid::new_v4().to_string();
+    // 先写 SQLite，让 taskStore 可以持久化
+    let db_name = database.clone().unwrap_or_else(|| "default".to_string());
+    let title = format!("AI 生成指标 · {}", db_name);
+    let task_record = crate::db::create_task(&crate::db::models::CreateTaskInput {
+        type_: "ai_generate_metrics".to_string(),
+        status: "running".to_string(),
+        title,
+        params: None,
+        progress: Some(0),
+        processed_rows: Some(0),
+        total_rows: None,
+        current_target: None,
+        error: None,
+        error_details: None,
+        output_path: None,
+        description: None,
+        connection_id: Some(connection_id),
+        scope_database: database.clone(),
+        scope_schema: schema.clone(),
+    })?;
+    let task_id = task_record.id.clone();
     let task_id_clone = task_id.clone();
     tokio::spawn(async move {
         crate::metrics::ai_draft::generate_metric_drafts(

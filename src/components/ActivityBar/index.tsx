@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Database, ListTodo, BarChart2, Network, ArrowLeftRight, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { User, Database, ListTodo, Activity, Network, ArrowLeftRight, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -79,7 +79,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               setIsSidebarOpen(true);
             }}
           >
-            <BarChart2 size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            <Activity size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             {isExpanded && <span className="text-[13px] truncate">业务指标</span>}
           </div>
         </Tooltip>

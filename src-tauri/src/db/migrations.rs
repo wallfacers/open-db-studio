@@ -11,6 +11,9 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         "ALTER TABLE connection_groups ADD COLUMN sort_order INTEGER DEFAULT 0",
         "ALTER TABLE connections ADD COLUMN sort_order INTEGER DEFAULT 0",
         "ALTER TABLE task_records ADD COLUMN description TEXT",
+        "ALTER TABLE task_records ADD COLUMN connection_id INTEGER",
+        "ALTER TABLE task_records ADD COLUMN scope_database TEXT",
+        "ALTER TABLE task_records ADD COLUMN scope_schema TEXT",
     ];
     for stmt in &alter_stmts {
         if let Err(e) = conn.execute_batch(stmt) {

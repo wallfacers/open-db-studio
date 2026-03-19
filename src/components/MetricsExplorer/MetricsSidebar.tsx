@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BarChart2, X, RefreshCw, Search } from 'lucide-react';
+import { Activity, X, RefreshCw, Search } from 'lucide-react';
 import { Tooltip } from '../common/Tooltip';
 import { MetricsTree } from './MetricsTree';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
@@ -37,7 +37,7 @@ export function MetricsSidebar({ sidebarWidth, onResize }: MetricsSidebarProps) 
       {/* 标题栏 */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] flex-shrink-0">
         <div className="flex items-center gap-2">
-          <BarChart2 size={14} className="text-[#00c9a7]" />
+          <Activity size={14} className="text-[#00c9a7]" />
           <span className="font-medium text-[#c8daea]">业务指标</span>
         </div>
         <div className="flex items-center space-x-2 text-[#7a9bb8]">

@@ -125,6 +125,9 @@ pub struct TaskRecord {
     pub error_details: Option<String>,
     pub output_path: Option<String>,
     pub description: Option<String>,
+    pub connection_id: Option<i64>,
+    pub scope_database: Option<String>,
+    pub scope_schema: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -146,6 +149,9 @@ pub struct CreateTaskInput {
     pub error_details: Option<String>,
     pub output_path: Option<String>,
     pub description: Option<String>,
+    pub connection_id: Option<i64>,
+    pub scope_database: Option<String>,
+    pub scope_schema: Option<String>,
 }
 
 /// 更新任务输入

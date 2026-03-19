@@ -5,7 +5,7 @@ import type { Metric, MetricScope, MetricStatus } from '../../types';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
 import { useQueryStore } from '../../store/queryStore';
-import { useBgTaskStore } from '../../store';
+import { useTaskStore } from '../../store/taskStore';
 import { TablePickerModal } from './TablePickerModal';
 
 interface Props {
@@ -118,19 +118,15 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   const handleAiConfirm = async (tableNames: string[]) => {
     setShowTablePicker(false);
-    const title = `AI 生成指标 · ${scope.database ?? 'default'}`;
     try {
-      const taskId = await invoke<string>('ai_generate_metrics', {
+      await invoke<string>('ai_generate_metrics', {
         connectionId: scope.connectionId,
         database: scope.database ?? null,
         schema: scope.schema ?? null,
         tableNames,
       });
-      useBgTaskStore.getState().addTask(taskId, 'ai_generate_metrics', title, {
-        connectionId: scope.connectionId,
-        database: scope.database,
-        schema: scope.schema,
-      });
+      // Rust 已将任务写入 SQLite，立即刷新内存
+      useTaskStore.getState().loadTasks();
     } catch (e: any) {
       setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
     }
@@ -138,9 +134,10 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   useEffect(() => {
     const respondedIds = new Set<string>();
-    return useBgTaskStore.subscribe((state) => {
+    return useTaskStore.subscribe((state) => {
       const relevant = state.tasks.find(t =>
-        t.status !== 'running' &&
+        t.type === 'ai_generate_metrics' &&
+        (t.status === 'completed' || t.status === 'failed') &&
         !respondedIds.has(t.id) &&
         t.connectionId === scope.connectionId &&
         (t.database ?? undefined) === (scope.database ?? undefined) &&

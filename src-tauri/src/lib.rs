@@ -168,6 +168,7 @@ pub fn run() {
             commands::list_schemas_for_metrics,
             commands::get_metric,
             commands::list_metrics_by_node,
+            commands::list_metrics_paged,
             commands::count_metrics_batch,
             commands::list_schemas,
             commands::list_objects,

@@ -410,3 +410,9 @@ export interface OpenCodeProvider {
   source: string;  // "api" | "config" | "custom"
   models: OpenCodeProviderModel[];
 }
+
+export interface MetricPageResult {
+  items: Metric[];
+  row_count: number;   // 本页实际行数（items.length），非总记录数
+  duration_ms: number;
+}

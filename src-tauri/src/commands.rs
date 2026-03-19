@@ -867,6 +867,35 @@ pub async fn list_metrics_by_node(
     )
 }
 
+#[derive(serde::Serialize)]
+pub struct MetricPageResult {
+    pub items: Vec<crate::metrics::Metric>,
+    pub row_count: usize,   // 本页实际行数（items.len()），非总记录数
+    pub duration_ms: u64,
+}
+
+#[tauri::command]
+pub async fn list_metrics_paged(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+    status: Option<String>,
+    page: u32,
+    page_size: u32,
+) -> Result<MetricPageResult, String> {
+    let start = std::time::Instant::now();
+    let (items, row_count) = crate::metrics::crud::list_metrics_by_node_paged(
+        connection_id,
+        database.as_deref(),
+        schema.as_deref(),
+        status.as_deref(),
+        page,
+        page_size,
+    ).map_err(|e| e.to_string())?;
+    let duration_ms = start.elapsed().as_millis() as u64;
+    Ok(MetricPageResult { items, row_count, duration_ms })
+}
+
 #[tauri::command]
 pub async fn count_metrics_batch(
     connection_id: i64,

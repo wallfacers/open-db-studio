@@ -414,3 +414,15 @@ export async function loadPersistedMetricsExpandedIds(): Promise<Set<string>> {
     return new Set();
   }
 }
+
+/** app 关闭前立即 flush，防止防抖计时器未触发导致状态丢失 */
+export function flushMetricsPersist(): void {
+  if (_persistMetricsTimer) {
+    clearTimeout(_persistMetricsTimer);
+    _persistMetricsTimer = null;
+    invoke('set_ui_state', {
+      key: 'metrics_tree_expanded_ids',
+      value: JSON.stringify([...useMetricsTreeStore.getState().expandedIds]),
+    }).catch(() => {});
+  }
+}

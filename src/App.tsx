@@ -14,6 +14,7 @@ import { useToolBridge } from './hooks/useToolBridge';
 import { useMcpBridge } from './hooks/useMcpBridge';
 import { TaskCenter } from './components/TaskCenter';
 import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
+import { flushMetricsPersist } from './store/metricsTreeStore';
 import { GraphExplorer } from './components/GraphExplorer';
 import { MigrationWizard } from './components/MigrationWizard';
 import { initTaskProgressListener, useTaskStore } from './store';
@@ -48,6 +49,12 @@ export default function App() {
   // 初始化任务进度监听器
   useEffect(() => {
     initTaskProgressListener();
+  }, []);
+  // app 关闭前立即 flush 防抖 persist，防止展开状态丢失
+  useEffect(() => {
+    const handler = () => { flushMetricsPersist(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
   }, []);
   // 导入/导出完成后自动跳转到「我的任务」侧边栏
   useEffect(() => {

@@ -92,6 +92,10 @@ interface QueryState {
   appendExplanationContent: (tabId: string, delta: string) => void;
   clearExplanation: (tabId: string) => void;
   startExplanation: (tabId: string) => void;
+
+  // Auto 模式自动应用 Banner（短暂显示后清除）
+  autoApplyBanner: { reason: string } | null;
+  setAutoApplyBanner: (banner: { reason: string } | null) => void;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -168,6 +172,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   error: null,
   diagnosis: null,
   pendingDiff: null,
+  autoApplyBanner: null,
+  setAutoApplyBanner: (banner) => set({ autoApplyBanner: banner }),
   editorInfo: {},
   explanationContent: {},
   explanationStreaming: {},

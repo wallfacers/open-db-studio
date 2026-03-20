@@ -311,9 +311,29 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         || !graph_edges_sql.contains("source");
 
     if needs_edge_rebuild {
-        conn.execute_batch(
-            "PRAGMA foreign_keys = OFF;
-             BEGIN;
+        // 检查旧表是否有 metadata 列
+        let has_metadata: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('graph_edges') WHERE name='metadata'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        let insert_select = if has_metadata {
+            "INSERT INTO graph_edges_new (id, from_node, to_node, edge_type, weight, metadata, source)
+             SELECT id, from_node, to_node, edge_type, weight, metadata, 'schema' FROM graph_edges;"
+        } else {
+            "INSERT INTO graph_edges_new (id, from_node, to_node, edge_type, weight, metadata, source)
+             SELECT id, from_node, to_node, edge_type, weight, NULL, 'schema' FROM graph_edges;"
+        };
+
+        // 先关外键约束
+        let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
+
+        let rebuild_sql = format!(
+            "BEGIN;
              CREATE TABLE graph_edges_new (
                  id        TEXT PRIMARY KEY,
                  from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
@@ -323,17 +343,22 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                  metadata  TEXT,
                  source    TEXT NOT NULL DEFAULT 'schema'
              );
-             INSERT INTO graph_edges_new (id, from_node, to_node, edge_type, weight, metadata, source)
-             SELECT id, from_node, to_node, edge_type, weight, metadata, 'schema'
-             FROM graph_edges;
+             {}
              DROP TABLE graph_edges;
              ALTER TABLE graph_edges_new RENAME TO graph_edges;
              CREATE INDEX IF NOT EXISTS idx_graph_edges_from   ON graph_edges(from_node);
              CREATE INDEX IF NOT EXISTS idx_graph_edges_to     ON graph_edges(to_node);
              CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source);
-             COMMIT;
-             PRAGMA foreign_keys = ON;",
-        )?;
+             COMMIT;",
+            insert_select
+        );
+
+        let rebuild_result = conn.execute_batch(&rebuild_sql);
+
+        // 无论是否成功，都恢复外键约束
+        let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+
+        rebuild_result?;
         log::info!("Migrated graph_edges: added source column, removed edge_type CHECK constraint");
     }
 

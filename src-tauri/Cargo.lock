@@ -3283,6 +3283,7 @@ dependencies = [
  "once_cell",
  "oracle",
  "rand 0.8.5",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "rust_decimal",

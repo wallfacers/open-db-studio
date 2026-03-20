@@ -154,13 +154,81 @@
 
 ---
 
+---
+
+## V2 后期增强（2026-03-17 ~ 2026-03-20）— 已完成 ✅
+
+> 这些功能在 V2 阶段基础上陆续完成，对应 docs/superpowers/plans/ 和 docs/plans/ 中的后期计划文档。
+
+| 功能 | 实现文件 | 对应计划文档 |
+|------|---------|------------|
+| AI 流式输出 + 思考模型（DeepSeek-R1/Claude Extended Thinking） | `src-tauri/src/agent/stream.rs`, `commands.rs:ai_chat_stream`, `Assistant/ThinkingBlock.tsx` | `docs/plans/2026-03-11-ai-streaming-thinking-impl-plan.md` |
+| 多 session 后台流式输出（切换不中断） | `Assistant/index.tsx` + `sessionStore` | `docs/superpowers/plans/2026-03-14-multi-session.md` |
+| 业务指标树重构（树形导航 + Tab 编辑器） | `MetricsExplorer/MetricsTree.tsx`, `MetricsSidebar.tsx`, `MetricTab.tsx`, `MetricListPanel.tsx` | `docs/superpowers/plans/2026-03-16-metrics-tree-redesign.md` |
+| Unified Tab 内容区（DB 模式/指标模式共用右侧 Tab） | `App.tsx` (`activeActivity` + `unified_tabs_state`)、`queryStore.ts` | `docs/superpowers/plans/2026-03-17-unified-tab.md` |
+| ACP Elicitation 结构化 UI（request_permission → 按钮面板） | `Assistant/ElicitationPanel.tsx` | `docs/superpowers/plans/2026-03-17-acp-elicitation.md` |
+| AI 建表增强（TableManageDialog 集成 AI 流式建表） | `AiCreateTableDialog/index.tsx`（流式版） | `docs/superpowers/plans/2026-03-17-ai-table-generation.md` |
+| Slash 命令菜单（/ 触发快捷命令） | `Assistant/SlashCommandMenu.tsx`, `slashCommands.ts` | `docs/superpowers/specs/2026-03-18-slash-commands-design.md` |
+| ECharts chart 代码块（```chart 内联交互图表） | `shared/ChartBlock.tsx`, `shared/MarkdownContent.tsx` | `docs/superpowers/plans/2026-03-19-echarts-chart-block.md` |
+| 图表放大弹窗 | `shared/MarkdownContent.tsx` (`CodeExpandModal`) | commit `28ad82e` |
+| AI 助手删除/清空确认框 + 代码块放大弹框 | `common/ConfirmDialog.tsx`, `shared/MarkdownContent.tsx` (`CodeExpandModal`) | `docs/superpowers/plans/2026-03-20-ai-assistant-confirm-and-code-expand.md` |
+| Auto 模式直接应用 SQL Diff（跳过 DiffPanel，显示 Banner） | `Assistant/AutoApplyBanner.tsx`, `hooks/useToolBridge.ts`, `store/appStore.ts` | `docs/superpowers/plans/2026-03-20-auto-mode-direct-apply.md` |
+| Knowledge Graph Palantir Ontology 改造（Link Node + Object Type） | `GraphExplorer/index.tsx`, `graph/builder.rs`, `graph/traversal.rs`, FK→LinkNode | `docs/superpowers/plans/2026-03-20-knowledge-graph-palantir-redesign.md` |
+| GraphCacheStore + JoinPath 内存图缓存（BFS 多跳缓存） | `src-tauri/src/graph/cache.rs` | `docs/superpowers/specs/2026-03-20-graph-virtual-relation-design.md` |
+| 5 个 graph_* MCP 工具注册（Phase 1） | `src-tauri/src/mcp/mod.rs`（`graph_get_node_list` 等） | `docs/superpowers/specs/2026-03-20-graph-mcp-skill-design.md` |
+| find_join_paths_structured + link 节点过滤（规则 1+2） | `src-tauri/src/graph/traversal.rs` | commit `36563e2` |
+| 全局连接池缓存（消除树导航重复握手） | `src-tauri/src/datasource/pool.rs` 或 `mod.rs` | commit `bb1e492` |
+| SeaTunnel 前端集成（连接配置 + Job 状态展示） | `SeaTunnelExplorer/index.tsx`, `SeaTunnelJobTab/index.tsx` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
+| i18n 全量国际化（Assistant/GraphExplorer/MetricsExplorer/SeaTunnel） | `src/i18n/` | commits `7eccf9d`, `0baae87` |
+
+### 废弃/超时计划 ⚠️
+
+| 计划文档 | 状态 | 说明 |
+|---------|------|------|
+| `docs/plans/2026-03-12-agent-phase2-tool-loop.md` | ⚠️ 部分废弃 | Rust 侧（Tasks 1-5）已实现；前端 Agent Loop 不执行，已由 ACP 接管 |
+| `docs/superpowers/plans/2026-03-12-ai-agent-sql-chat.md` | ⚠️ 已超时 | Page Agent 架构已移除，功能由 ACP + propose_sql_diff 实现 |
+
+### docs/superpowers/plans/ 新增已完成文档清单
+
+| 文档 | 状态 |
+|------|------|
+| `2026-03-14-multi-session.md` | ✅ 已实现 |
+| `2026-03-16-metrics-tree-redesign.md` | ✅ 已实现 |
+| `2026-03-17-unified-tab.md` | ✅ 已实现 |
+| `2026-03-17-acp-elicitation.md` | ✅ 已实现 |
+| `2026-03-17-ai-table-generation.md` | ✅ 已实现 |
+| `2026-03-19-echarts-chart-block.md` | ✅ 已实现 |
+| `2026-03-20-ai-assistant-confirm-and-code-expand.md` | ✅ 已实现 |
+| `2026-03-20-auto-mode-direct-apply.md` | ✅ 已实现 |
+| `2026-03-20-knowledge-graph-palantir-redesign.md` | ✅ 已实现（commit 6d694db） |
+
+### docs/plans/ 新增已完成文档清单
+
+| 文档 | 状态 |
+|------|------|
+| `2026-03-11-ai-streaming-thinking-design.md` | ✅ 已实现 |
+| `2026-03-11-ai-streaming-thinking-impl-plan.md` | ✅ 已实现 |
+
+---
+
+## 未实现计划（待开始）❌
+
+| 计划文档 | 目标 | 备注 |
+|---------|------|------|
+| `docs/plans/2026-03-12-sql-editor-ai-ghost-text-*` | Monaco 内联 AI Ghost Text 补全（Tab 接受/Esc 拒绝） | Rust 命令 `ai_inline_complete` 未实现 |
+| `docs/superpowers/plans/2026-03-12-acp-persistent-session.md` | 复用 opencode-cli 进程，消除冷启动延迟 | 未实现 |
+| `docs/superpowers/plans/2026-03-18-llm-config-provider-first.md` | 从 opencode `/config/providers` 动态加载供应商和模型 | 未实现，修复 `ProviderModelNotFoundError` |
+| `docs/superpowers/plans/2026-03-17-ui-state-persistence.md` | UI 状态全量迁移到 SQLite（树展开/标签页/SQL 文件化） | ⚠️ 部分实现：Rust 侧 `get_ui_state` 已有，前端标签页仍用 localStorage |
+
+---
+
 ## 下一步：V3 阶段（2027）
 
 1. **Milvus 向量库集成**（本地 + 独立部署两种模式）
 2. **完整 RAG 管道**（向量 + 指标 + GraphRAG 三路融合）
 3. **插件系统**（数据源/AI 提供商/导出格式）
 4. **团队协作**（SQL 片段共享、指标库导出/导入）
-5. **SeaTunnel 外部引擎接入**
+5. **SeaTunnel 外部引擎接入**（基础 UI 已就绪，REST API 提交待实现）
 
 ---
 
@@ -174,3 +242,4 @@
 | 2026-03-16 | 标记 TableDataView 行操作增强、表右键菜单扩展为已完成 |
 | 2026-03-16 | 全面代码评估：补录 Oracle/SQL Server 驱动、数据导入、DML 报告、可视化编辑器；MVP + V1 阶段 100% 完成；文档整体重整 |
 | 2026-03-16 | V2 阶段全部实现：图谱/指标/迁移/pipeline 模块 + 前端三大面板 + SQL ACP + propose_sql_diff；ActivityBar 重构；启动恢复连接 |
+| 2026-03-20 | V2 后期增强全面追踪：AI 流式/思考模型、Palantir 图改造、MCP graph 工具、GraphCacheStore、Unified Tab、ACP Elicitation、Auto 模式、ECharts chart、SeaTunnel 前端、i18n 全量化；标记 4 个未实现计划 |

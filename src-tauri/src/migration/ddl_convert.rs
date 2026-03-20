@@ -160,9 +160,9 @@ mod tests {
         use crate::datasource::ColumnMeta;
         let cols = vec![
             ColumnMeta { name: "id".into(), data_type: "INT".into(), is_nullable: false,
-                         column_default: None, is_primary_key: true, extra: None },
+                         column_default: None, is_primary_key: true, extra: None, comment: None },
             ColumnMeta { name: "name".into(), data_type: "VARCHAR(255)".into(), is_nullable: true,
-                         column_default: None, is_primary_key: false, extra: None },
+                         column_default: None, is_primary_key: false, extra: None, comment: None },
         ];
         let ddl = generate_create_table_ddl(
             "mysql", "postgres", "users", &cols, &Default::default()

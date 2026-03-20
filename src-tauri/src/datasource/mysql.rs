@@ -165,7 +165,7 @@ impl DataSource for MySqlDataSource {
 
     async fn get_columns(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<ColumnMeta>> {
         let rows = sqlx::query(
-            "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA
+            "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA, COLUMN_COMMENT
              FROM information_schema.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
              ORDER BY ORDINAL_POSITION"
@@ -180,6 +180,10 @@ impl DataSource for MySqlDataSource {
             column_default: get_opt_str(r, 3),
             is_primary_key: get_str(r, 4) == "PRI",
             extra: get_opt_str(r, 5).filter(|s| !s.is_empty()),
+            comment: {
+                let v = get_str(r, 6);
+                if v.is_empty() { None } else { Some(v) }
+            },
         }).collect())
     }
 

@@ -124,8 +124,17 @@ impl DataSource for PostgresDataSource {
                            AND kcu.column_name = c.column_name
                          LIMIT 1),
                         false
-                    ) AS is_pk
+                    ) AS is_pk,
+                    pg_desc.description
              FROM information_schema.columns c
+             LEFT JOIN (
+                 SELECT a.attname AS col_name, d.description
+                 FROM pg_description d
+                 JOIN pg_attribute a ON a.attrelid = d.objoid AND a.attnum = d.objsubid
+                 JOIN pg_class cls ON cls.oid = d.objoid
+                 JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+                 WHERE cls.relname = $1 AND ns.nspname = $2
+             ) pg_desc ON pg_desc.col_name = c.column_name
              WHERE c.table_schema = $2 AND c.table_name = $1
              ORDER BY c.ordinal_position"
         )
@@ -140,6 +149,7 @@ impl DataSource for PostgresDataSource {
             column_default: r.try_get::<Option<String>, _>(3).ok().flatten(),
             is_primary_key: r.try_get::<bool, _>(4).unwrap_or(false),
             extra: None,
+            comment: r.try_get::<Option<String>, _>(5).ok().flatten(),
         }).collect())
     }
 

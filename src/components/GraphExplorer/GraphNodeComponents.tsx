@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
-import { Handle, Position } from '@xyflow/react';
-import type { NodeProps } from '@xyflow/react';
+import { Handle, Position, BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
+import type { NodeProps, EdgeProps } from '@xyflow/react';
 import { Plus, Database, BarChart2, Hash, ArrowLeftRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -236,3 +236,61 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
   );
 });
 LinkNodeComponent.displayName = 'LinkNodeComponent';
+
+// ── Relation Edge ──────────────────────────────────────────────────────────────
+
+const EDGE_COLOR: Record<string, string> = {
+  fk:         '#3794ff',
+  references: '#f59e0b',
+  alias_of:   '#a855f7',
+  inferred:   '#00c9a7',
+};
+
+function edgeStroke(edgeType: string): string {
+  return EDGE_COLOR[edgeType] ?? '#4a6380';
+}
+
+export const RelationEdge = memo(({
+  sourceX, sourceY, targetX, targetY,
+  sourcePosition, targetPosition,
+  data,
+  markerEnd,
+}: EdgeProps) => {
+  const edgeType = String((data as Record<string, unknown>)?.edge_type ?? 'fk');
+  const stroke = edgeStroke(edgeType);
+
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX, sourceY, sourcePosition,
+    targetX, targetY, targetPosition,
+    borderRadius: 8,
+  });
+
+  return (
+    <>
+      <BaseEdge
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{ stroke, strokeWidth: 1.5, opacity: 0.75 }}
+      />
+      <EdgeLabelRenderer>
+        <div
+          className="nodrag nopan absolute pointer-events-none"
+          style={{ transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)` }}
+        >
+          <span
+            className="text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none"
+            style={{
+              color: stroke,
+              borderColor: `${stroke}55`,
+              background: '#0d1117cc',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            {edgeType}
+          </span>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+});
+RelationEdge.displayName = 'RelationEdge';

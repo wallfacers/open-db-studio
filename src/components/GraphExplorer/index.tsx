@@ -27,6 +27,7 @@ import {
 import dagre from 'dagre';
 import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store';
+import { useConnectionStore } from '../../store/connectionStore';
 import { useGraphData } from './useGraphData';
 import { nodeTypes, edgeTypes } from './nodeTypes';
 import { getEdgeStyleBySource } from './graphUtils';
@@ -176,7 +177,34 @@ interface GraphExplorerInnerProps {
 
 function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps) {
   const { t } = useTranslation();
-  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(connectionId);
+
+  // ── Independent connection / database selection ────────────────────────────
+  const { connections, loadConnections } = useConnectionStore();
+  const [internalConnId, setInternalConnId] = useState<number | null>(() => connectionId);
+  const [internalDb, setInternalDb] = useState<string | null>(() => database ?? null);
+  const [databases, setDatabases] = useState<string[]>([]);
+  const [dbLoading, setDbLoading] = useState(false);
+
+  // Ensure connections are loaded
+  useEffect(() => {
+    if (connections.length === 0) loadConnections();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load database list when connection changes
+  useEffect(() => {
+    if (internalConnId === null) {
+      setDatabases([]);
+      return;
+    }
+    setDbLoading(true);
+    invoke<string[]>('list_databases', { connectionId: internalConnId })
+      .then(dbs => setDatabases(dbs))
+      .catch(() => setDatabases([]))
+      .finally(() => setDbLoading(false));
+  }, [internalConnId]);
+
+  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -201,10 +229,10 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const handleAddVirtualNode = useCallback(async () => {
     // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
     const name = window.prompt('输入虚拟节点名称');
-    if (!name || !connectionId) return;
+    if (!name || !internalConnId) return;
     try {
       await invoke('add_user_node', {
-        connectionId,
+        connectionId: internalConnId,
         name,
         displayName: name,
         nodeType: 'table',
@@ -214,7 +242,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       console.error('添加虚拟节点失败', e);
       alert(`添加节点失败: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [connectionId, refetch]);
+  }, [internalConnId, refetch]);
 
   // ── Edit mode: manual connect ───────────────────────────────────────────────
   const onConnect = useCallback(async (params: Connection) => {
@@ -385,10 +413,10 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── Build schema graph (with TaskBar integration) ───────────────────────────
   const handleBuildGraph = useCallback(async () => {
-    if (connectionId === null) return;
+    if (internalConnId === null) return;
     setIsBuilding(true);
     try {
-      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId, database: database ?? null });
+      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId: internalConnId, database: internalDb ?? null });
 
       let taskId: string | null = null;
       if (result && typeof result === 'object' && 'task_id' in result) {
@@ -402,7 +430,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           id: taskId,
           type: 'build_schema_graph',
           status: 'running',
-          title: `构建知识图谱 (连接 ${connectionId})`,
+          title: `构建知识图谱 (连接 ${internalConnId})`,
           progress: 0,
           processedRows: 0,
           totalRows: null,
@@ -413,7 +441,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           description: null,
           startTime: new Date().toISOString(),
           endTime: null,
-          connectionId,
+          connectionId: internalConnId,
         });
         setCurrentBuildTaskId(taskId);
         // 从 SQLite 加载任务实际状态，处理快速完成的构建（事件可能早于 stub 到达）
@@ -486,16 +514,6 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     );
   };
 
-  // ── No connection state ─────────────────────────────────────────────────────
-  if (connectionId === null) {
-    return (
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] items-center justify-center">
-        <GitBranch size={40} className="text-[#253347] mb-3" />
-        <p className="text-[#7a9bb8] text-sm">{t('graphExplorer.selectConnection')}</p>
-      </div>
-    );
-  }
-
   const typeButtons = [
     { type: 'table', label: t('graphExplorer.typeTable'), activeClass: 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/50' },
     { type: 'metric', label: t('graphExplorer.typeMetric'), activeClass: 'bg-[#2d1e0d] text-[#f59e0b] border-[#f59e0b]/50' },
@@ -509,6 +527,37 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#1e2d42] flex-shrink-0 bg-[#0d1117]">
         <GitBranch size={16} className="text-[#00c9a7] flex-shrink-0" />
         <span className="text-[#c8daea] text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
+
+        {/* Connection selector */}
+        <select
+          value={internalConnId ?? ''}
+          onChange={(e) => {
+            const newId = e.target.value ? Number(e.target.value) : null;
+            setInternalConnId(newId);
+            setInternalDb(null);
+          }}
+          className="px-2 py-1 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] focus:outline-none focus:border-[#00c9a7]/50 transition-colors max-w-[140px] truncate"
+        >
+          <option value="">{t('graphExplorer.selectConnection')}</option>
+          {connections.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+
+        {/* Database selector (optional, shown when databases are available) */}
+        {internalConnId !== null && databases.length > 0 && (
+          <select
+            value={internalDb ?? ''}
+            onChange={(e) => setInternalDb(e.target.value || null)}
+            disabled={dbLoading}
+            className="px-2 py-1 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] focus:outline-none focus:border-[#00c9a7]/50 transition-colors max-w-[120px] truncate disabled:opacity-50"
+          >
+            <option value="">{t('graphExplorer.allDatabases', '全部数据库')}</option>
+            {databases.map(db => (
+              <option key={db} value={db}>{db}</option>
+            ))}
+          </select>
+        )}
 
         {/* Type filter */}
         <div className="flex items-center gap-1">
@@ -609,11 +658,15 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative graph-canvas-container" onMouseMove={onEdgeMouseMove}>
           {/* Empty state overlay */}
-          {!loading && rfNodes.length === 0 && (
+          {!loading && (internalConnId === null || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
               <GitBranch size={36} className="text-[#253347] mb-3" />
               <p className="text-[#7a9bb8] text-sm">
-                {rawNodes.length === 0 ? t('graphExplorer.noData') : t('graphExplorer.noMatchingNodes')}
+                {internalConnId === null
+                  ? t('graphExplorer.selectConnection')
+                  : rawNodes.length === 0
+                    ? t('graphExplorer.noData')
+                    : t('graphExplorer.noMatchingNodes')}
               </p>
             </div>
           )}

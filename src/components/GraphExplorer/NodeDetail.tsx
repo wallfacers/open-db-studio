@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Tag, Table2, BarChart2, Hash, Plus, ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
 import { AliasEditor } from './AliasEditor';
 import type { GraphNode, GraphEdge } from './useGraphData';
 import { parseAliases } from './graphUtils';
@@ -10,6 +11,137 @@ interface NodeDetailProps {
   edges: GraphEdge[];
   onClose: () => void;
   onAliasUpdated: () => void;
+}
+
+interface LinkMeta {
+  edge_type?: string;
+  cardinality?: string;
+  via?: string;
+  on_delete?: string;
+  description?: string;
+  weight?: number;
+  is_inferred?: boolean;
+  source_table?: string;
+  target_table?: string;
+}
+
+function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: () => void }) {
+  const { t } = useTranslation();
+  const [description, setDescription] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  let meta: LinkMeta = {};
+  try { meta = JSON.parse(node.metadata || '{}'); } catch { /* ignore */ }
+
+  // 同步初始 description
+  React.useEffect(() => {
+    setDescription(meta.description ?? '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated = { ...meta, description };
+      await invoke('update_graph_node_metadata', {
+        nodeId: node.id,
+        metadata: JSON.stringify(updated),
+      });
+      setEditing(false);
+      onMetaUpdated();
+    } catch (err) {
+      console.warn('[LinkDetail] save failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const rows: { label: string; value: string; color?: string }[] = [
+    { label: t('graphExplorer.nodeDetail.linkDirection'), value: `${meta.source_table ?? ''} → ${meta.target_table ?? ''}` },
+    { label: t('graphExplorer.nodeDetail.linkCardinality'), value: meta.cardinality ?? '-', color: '#f59e0b' },
+    { label: t('graphExplorer.nodeDetail.linkVia'), value: meta.via ?? '-', color: '#3794ff' },
+    { label: t('graphExplorer.nodeDetail.linkOnDelete'), value: meta.on_delete ?? '-' },
+    { label: 'Weight', value: meta.weight?.toFixed(2) ?? '-' },
+  ];
+
+  return (
+    <div className="px-4 py-3 flex-1 overflow-y-auto">
+      <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">
+        {t('graphExplorer.nodeDetail.linkProps')}
+      </p>
+
+      {/* 推断标记 */}
+      <div className="mb-3">
+        <span className={`text-[9px] px-2 py-0.5 rounded border ${
+          meta.is_inferred !== false
+            ? 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/30'
+            : 'bg-[#1e2d42] text-[#7a9bb8] border-[#253347]'
+        }`}>
+          {meta.is_inferred !== false
+            ? t('graphExplorer.nodeDetail.inferredBadge')
+            : t('graphExplorer.nodeDetail.manualBadge')}
+        </span>
+      </div>
+
+      {/* 属性行 */}
+      <div className="space-y-1.5 mb-4">
+        {rows.map(r => (
+          <div key={r.label} className="flex items-center justify-between py-1 px-2 rounded hover:bg-[#0d1117]">
+            <span className="text-[#7a9bb8] text-[10px]">{r.label}</span>
+            <span className="text-[10px] font-mono text-[#c8daea]" style={r.color ? { color: r.color } : undefined}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Description 编辑 */}
+      <div className="border-t border-[#1e2d42] pt-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">
+            {t('graphExplorer.nodeDetail.linkDescription')}
+          </span>
+          {!editing && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-[10px] text-[#7a9bb8] hover:text-[#c8daea] px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
+            >
+              {t('graphExplorer.nodeDetail.editBtn')}
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <div>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              className="w-full text-xs bg-[#0d1117] border border-[#2a3f5a] rounded p-2 text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00c9a7]/50 resize-none"
+              rows={3}
+              placeholder={t('graphExplorer.nodeDetail.descriptionPlaceholder')}
+            />
+            <div className="flex gap-2 mt-1.5">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 text-[10px] py-1 bg-[#00c9a7] text-[#0d1117] rounded font-medium hover:bg-[#00c9a7]/80 disabled:opacity-50"
+              >
+                {saving ? t('graphExplorer.nodeDetail.saving') : t('graphExplorer.nodeDetail.save')}
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                className="flex-1 text-[10px] py-1 bg-[#1e2d42] text-[#7a9bb8] rounded hover:bg-[#253347]"
+              >
+                {t('graphExplorer.nodeDetail.cancel')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[#c8daea] text-xs italic">
+            {description || <span className="text-[#3d5470]">{t('graphExplorer.nodeDetail.noDescription')}</span>}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface ParsedField {
@@ -133,84 +265,89 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           )}
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Fields section */}
-          {fields.length > 0 && (
-            <div className="px-4 py-3 border-b border-[#1e2d42]">
-              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
-              <div className="space-y-1">
-                {fields.map((field, idx) => (
-                  <div
-                    key={`${field.name}-${idx}`}
-                    className="flex items-center justify-between py-1 px-2 rounded hover:bg-[#0d1117] transition-colors"
-                  >
-                    <span className="text-[#c8daea] text-xs font-mono truncate flex-1">
-                      {field.name}
-                    </span>
-                    {field.type && (
-                      <span className="text-[#7a9bb8] text-[10px] font-mono ml-2 flex-shrink-0">
-                        {field.type}
+        {/* 主体内容：Link Node 走独立路径 */}
+        {node.node_type === 'link' ? (
+          <LinkDetail node={node} onMetaUpdated={onAliasUpdated} />
+        ) : (
+          /* 现有的 Fields / Aliases / Related Edges 区块，保持不变 */
+          <div className="flex-1 overflow-y-auto">
+            {/* Fields section */}
+            {fields.length > 0 && (
+              <div className="px-4 py-3 border-b border-[#1e2d42]">
+                <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
+                <div className="space-y-1">
+                  {fields.map((field, idx) => (
+                    <div
+                      key={`${field.name}-${idx}`}
+                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-[#0d1117] transition-colors"
+                    >
+                      <span className="text-[#c8daea] text-xs font-mono truncate flex-1">
+                        {field.name}
                       </span>
-                    )}
-                  </div>
-                ))}
+                      {field.type && (
+                        <span className="text-[#7a9bb8] text-[10px] font-mono ml-2 flex-shrink-0">
+                          {field.type}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Aliases section */}
-          <div className="px-4 py-3 border-b border-[#1e2d42]">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
-              <button
-                onClick={() => setShowAliasEditor(true)}
-                className="flex items-center gap-0.5 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
-              >
-                <Plus size={11} />
-                {t('graphExplorer.aliasEditor.add')}
-              </button>
+            {/* Aliases section */}
+            <div className="px-4 py-3 border-b border-[#1e2d42]">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
+                <button
+                  onClick={() => setShowAliasEditor(true)}
+                  className="flex items-center gap-0.5 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
+                >
+                  <Plus size={11} />
+                  {t('graphExplorer.aliasEditor.add')}
+                </button>
+              </div>
+              {aliases.length === 0 ? (
+                <p className="text-[#7a9bb8] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {aliases.map((alias) => (
+                    <span
+                      key={alias}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#0d1117] border border-[#1e2d42] rounded text-[#c8daea] text-xs"
+                    >
+                      <Hash size={10} className="text-[#7a9bb8]" />
+                      {alias}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            {aliases.length === 0 ? (
-              <p className="text-[#7a9bb8] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {aliases.map((alias) => (
-                  <span
-                    key={alias}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#0d1117] border border-[#1e2d42] rounded text-[#c8daea] text-xs"
-                  >
-                    <Hash size={10} className="text-[#7a9bb8]" />
-                    {alias}
-                  </span>
-                ))}
+
+            {/* Related edges */}
+            {relatedEdges.length > 0 && (
+              <div className="px-4 py-3">
+                <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
+                <div className="space-y-1">
+                  {relatedEdges.map((edge) => (
+                    <div
+                      key={edge.id}
+                      className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors"
+                    >
+                      <ArrowRight size={11} className={edgeTypeColor(edge.edge_type)} />
+                      <span className={`text-[10px] font-medium ${edgeTypeColor(edge.edge_type)}`}>
+                        {edge.edge_type}
+                      </span>
+                      <span className="text-[#7a9bb8] text-[10px] ml-auto flex-shrink-0">
+                        w: {edge.weight.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
-
-          {/* Related edges */}
-          {relatedEdges.length > 0 && (
-            <div className="px-4 py-3">
-              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
-              <div className="space-y-1">
-                {relatedEdges.map((edge) => (
-                  <div
-                    key={edge.id}
-                    className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors"
-                  >
-                    <ArrowRight size={11} className={edgeTypeColor(edge.edge_type)} />
-                    <span className={`text-[10px] font-medium ${edgeTypeColor(edge.edge_type)}`}>
-                      {edge.edge_type}
-                    </span>
-                    <span className="text-[#7a9bb8] text-[10px] ml-auto flex-shrink-0">
-                      w: {edge.weight.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {showAliasEditor && (

@@ -3476,3 +3476,145 @@ pub async fn agent_get_last_user_message_id(
         .to_string();
     Ok(last_user_id)
 }
+
+// ─── 虚拟关系手动编辑命令 ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn add_user_node(
+    connection_id: i64,
+    name: String,
+    display_name: Option<String>,
+    node_type: String,
+) -> AppResult<String> {
+    let allowed_types = ["table", "metric", "alias"];
+    if !allowed_types.contains(&node_type.as_str()) {
+        return Err(crate::AppError::Other(format!(
+            "node_type '{}' 不允许手动创建，仅支持: table, metric, alias", node_type
+        )));
+    }
+    let node_id = format!("{}:user:{}:{}", connection_id, node_type, name);
+    let disp = display_name.unwrap_or_else(|| name.clone());
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "INSERT INTO graph_nodes (id, node_type, connection_id, name, display_name, source, is_deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'user', 0)
+         ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, is_deleted = 0",
+        rusqlite::params![node_id, node_type, connection_id, name, disp],
+    )?;
+    Ok(node_id)
+}
+
+#[tauri::command]
+pub async fn delete_graph_node(node_id: String) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    let source: Option<String> = conn.query_row(
+        "SELECT source FROM graph_nodes WHERE id = ?1",
+        [&node_id],
+        |r| r.get(0),
+    ).ok();
+    match source.as_deref() {
+        Some("user") => {
+            conn.execute(
+                "UPDATE graph_nodes SET is_deleted = 1 WHERE id = ?1",
+                [&node_id],
+            )?;
+            Ok(())
+        }
+        Some(s) => Err(crate::AppError::Other(format!(
+            "节点 source='{}' 不允许删除，仅允许删除 source='user' 节点", s
+        ))),
+        None => Err(crate::AppError::Other(format!("节点 '{}' 不存在", node_id))),
+    }
+}
+
+#[tauri::command]
+pub async fn add_user_edge(
+    from_node: String,
+    to_node: String,
+    edge_type: String,
+    weight: Option<f64>,
+) -> AppResult<String> {
+    let allowed_edge_types = ["foreign_key", "join_path", "user_defined"];
+    if !allowed_edge_types.contains(&edge_type.as_str()) {
+        return Err(crate::AppError::Other(format!(
+            "edge_type '{}' 不合法，允许值: foreign_key, join_path, user_defined", edge_type
+        )));
+    }
+    let w = weight.unwrap_or(1.0);
+    let edge_id = format!("{}=>{}:user", from_node, to_node);
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "INSERT INTO graph_edges (id, from_node, to_node, edge_type, weight, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'user')
+         ON CONFLICT(id) DO UPDATE SET edge_type = excluded.edge_type, weight = excluded.weight",
+        rusqlite::params![edge_id, from_node, to_node, edge_type, w],
+    )?;
+    Ok(edge_id)
+}
+
+#[tauri::command]
+pub async fn delete_graph_edge(edge_id: String) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    let source: Option<String> = conn.query_row(
+        "SELECT source FROM graph_edges WHERE id = ?1",
+        [&edge_id],
+        |r| r.get(0),
+    ).ok();
+    match source.as_deref() {
+        Some("user") | Some("comment") => {
+            conn.execute("DELETE FROM graph_edges WHERE id = ?1", [&edge_id])?;
+            Ok(())
+        }
+        Some(s) => Err(crate::AppError::Other(format!(
+            "边 source='{}' 不允许删除，仅允许 source='user' 或 'comment'", s
+        ))),
+        None => Err(crate::AppError::Other(format!("边 '{}' 不存在", edge_id))),
+    }
+}
+
+#[tauri::command]
+pub async fn update_graph_edge(
+    edge_id: String,
+    edge_type: Option<String>,
+    weight: Option<f64>,
+) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    let source: Option<String> = conn.query_row(
+        "SELECT source FROM graph_edges WHERE id = ?1",
+        [&edge_id],
+        |r| r.get(0),
+    ).ok();
+    match source.as_deref() {
+        Some("user") | Some("comment") => {
+            let is_comment = source.as_deref() == Some("comment");
+            if is_comment && edge_type.is_some() {
+                return Err(crate::AppError::Other(
+                    "comment 来源的边不允许修改 edge_type".to_string()
+                ));
+            }
+            if let Some(ref et) = edge_type {
+                let allowed = ["foreign_key", "join_path", "user_defined"];
+                if !allowed.contains(&et.as_str()) {
+                    return Err(crate::AppError::Other(format!(
+                        "edge_type '{}' 不合法", et
+                    )));
+                }
+                conn.execute(
+                    "UPDATE graph_edges SET edge_type = ?1 WHERE id = ?2",
+                    rusqlite::params![et, edge_id],
+                )?;
+            }
+            if let Some(w) = weight {
+                conn.execute(
+                    "UPDATE graph_edges SET weight = ?1 WHERE id = ?2",
+                    rusqlite::params![w, edge_id],
+                )?;
+            }
+            Ok(())
+        }
+        Some(s) => Err(crate::AppError::Other(format!(
+            "边 source='{}' 不允许修改", s
+        ))),
+        None => Err(crate::AppError::Other(format!("边 '{}' 不存在", edge_id))),
+    }
+}

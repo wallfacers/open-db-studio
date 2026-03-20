@@ -262,6 +262,11 @@ pub fn run() {
             seatunnel::commands::get_st_job_status,
             seatunnel::commands::stream_st_job_logs,
             seatunnel::commands::cancel_st_job_stream,
+            commands::add_user_node,
+            commands::delete_graph_node,
+            commands::add_user_edge,
+            commands::delete_graph_edge,
+            commands::update_graph_edge,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

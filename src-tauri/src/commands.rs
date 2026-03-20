@@ -2186,7 +2186,6 @@ pub async fn update_node_alias(
 
 /// 更新图谱节点的 metadata（用于 Link Node description 编辑）
 #[tauri::command]
-/// 更新图谱节点的 metadata（用于 Link Node description 编辑）
 pub async fn update_graph_node_metadata(
     node_id: String,
     metadata: String,

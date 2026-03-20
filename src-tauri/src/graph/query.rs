@@ -138,13 +138,13 @@ pub async fn find_relevant_subgraph(
         .chain(matched_ids.iter().cloned())
         .collect();
 
-    // 4. 查询节点详情
+    // 4. 查询节点详情（规则1：过滤掉 link 节点）
     let conn = crate::db::get().lock().unwrap();
     let mut all_nodes = Vec::new();
     for node_id in &all_node_ids {
         if let Ok(n) = conn.query_row(
             "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
-             FROM graph_nodes WHERE id=?1",
+             FROM graph_nodes WHERE id=?1 AND node_type != 'link'",
             [node_id], row_to_node
         ) {
             all_nodes.push(n);

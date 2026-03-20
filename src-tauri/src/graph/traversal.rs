@@ -66,6 +66,21 @@ pub fn find_join_paths(
     Ok(bfs_paths(from_node_ids, &fk_edges, max_hops))
 }
 
+/// 新增函数：返回结构化 JOIN 路径（用于 MCP 工具）
+pub async fn find_join_paths_structured(
+    connection_id: i64,
+    from_table: &str,
+    to_table: &str,
+    max_depth: usize,
+    app_handle: &tauri::AppHandle,
+) -> AppResult<Vec<crate::graph::JoinPath>> {
+    use tauri::Manager;
+    let app_state = app_handle.state::<crate::AppState>();
+    let cache_arc = app_state.graph_cache.get_or_load(connection_id).await?;
+    let mut graph = cache_arc.lock().await;
+    Ok(crate::graph::cache::bfs_find_paths(&mut graph, from_table, to_table, max_depth))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

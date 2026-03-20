@@ -368,6 +368,68 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["job_name", "config_json"]
                 }
+            }),
+            json!({
+                "name": "graph_query_context",
+                "description": "当问题涉及多表关联、字段歧义或不确定表名时优先调用。基于 GraphExplorer 知识图谱，返回相关表列表、推断的 JOIN 路径、精简 DDL 和业务指标。获得结果后再按需调用细粒度工具深挖。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "question": { "type": "string", "description": "用户原始问题（用于实体提取）" },
+                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                    },
+                    "required": ["question", "connection_id"]
+                }
+            }),
+            json!({
+                "name": "graph_search_tables",
+                "description": "在知识图谱中按关键词模糊搜索表名、别名、display_name，返回匹配的表列表。与 list_tables 的区别：本工具搜索用户定义的业务别名，list_tables 返回数据库实际表名。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "question": { "type": "string", "description": "搜索关键词" },
+                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                    },
+                    "required": ["question", "connection_id"]
+                }
+            }),
+            json!({
+                "name": "graph_find_join_paths",
+                "description": "给定起点表和终点表，在知识图谱中查找通过 Link Node（两跳结构：table→link→table）连接的最短 JOIN 路径，支持多跳中间表穿越。返回包含 cardinality、via 字段、语义描述的结构化路径列表。首次调用有约 10ms 图加载耗时，后续调用 < 1ms。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "from_table": { "type": "string", "description": "起点表名" },
+                        "to_table": { "type": "string", "description": "终点表名" },
+                        "connection_id": { "type": "integer", "description": "数据库连接 ID" },
+                        "max_depth": { "type": "integer", "description": "最大跳数，默认 4，最大 6" }
+                    },
+                    "required": ["from_table", "to_table", "connection_id"]
+                }
+            }),
+            json!({
+                "name": "graph_get_ddl",
+                "description": "获取指定表的精简 DDL（仅包含字段名、类型、注释、外键），用于了解字段详情。与 get_table_schema 的区别：本工具输出 CREATE TABLE 文本，更适合直接插入 SQL 生成 prompt。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": { "type": "string", "description": "表名" },
+                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                    },
+                    "required": ["table_name", "connection_id"]
+                }
+            }),
+            json!({
+                "name": "graph_search_metrics",
+                "description": "在知识图谱中搜索业务指标节点，返回指标名称和计算逻辑定义。与 search_metrics 的区别：本工具搜索图谱节点（node_type=metric），search_metrics 搜索 MetricsExplorer 中 approved 的指标记录。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keyword": { "type": "string", "description": "搜索关键词" },
+                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                    },
+                    "required": ["keyword", "connection_id"]
+                }
             })
         ]
     })
@@ -669,6 +731,21 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "propose_seatunnel_job" => {
             tools::seatunnel::propose_seatunnel_job(Arc::clone(&handle), args).await
+        }
+        "graph_query_context" => {
+            tools::graph::query_context::handle(Arc::clone(&handle), args).await
+        }
+        "graph_search_tables" => {
+            tools::graph::search_tables::handle(Arc::clone(&handle), args).await
+        }
+        "graph_find_join_paths" => {
+            tools::graph::find_join_paths::handle(Arc::clone(&handle), args).await
+        }
+        "graph_get_ddl" => {
+            tools::graph::get_ddl::handle(Arc::clone(&handle), args).await
+        }
+        "graph_search_metrics" => {
+            tools::graph::search_metrics::handle(Arc::clone(&handle), args).await
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

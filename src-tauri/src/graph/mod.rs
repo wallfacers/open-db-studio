@@ -5,7 +5,7 @@ pub mod query;
 pub mod traversal;
 
 pub use cache::{JoinPath, GraphCacheStore};
-pub use query::{GraphNode, GraphEdge, search_graph};
+pub use query::{GraphNode, GraphEdge, search_graph, SubGraph};
 
 use std::collections::HashMap;
 use tauri::Emitter;

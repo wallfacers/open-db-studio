@@ -1,0 +1,144 @@
+use std::collections::HashSet;
+
+/// 列注释中提取的虚拟关系引用
+#[derive(Debug, PartialEq, Clone)]
+pub struct CommentRef {
+    pub target_table: String,
+    pub target_column: String,
+    pub relation_type: String,  // 默认 "fk"
+}
+
+/// 解析列注释中的关系标记，返回去重后的引用列表
+/// 支持格式：
+///   @ref:table.col
+///   @fk(table=orders,col=id,type=one_to_many)
+///   [ref:table.col]
+///   $$ref(table.col)$$
+pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut result = Vec::new();
+
+    // 模式1: @ref:table.col
+    let re1 = regex::Regex::new(r"@ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)").unwrap();
+    for cap in re1.captures_iter(comment) {
+        let table = cap[1].to_string();
+        let col = cap[2].to_string();
+        if seen.insert((table.clone(), col.clone())) {
+            result.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
+        }
+    }
+
+    // 模式2: @fk(table=X,col=Y,type=Z) — type 可选
+    let re2 = regex::Regex::new(r"@fk\(([^)]+)\)").unwrap();
+    for cap in re2.captures_iter(comment) {
+        let inner = &cap[1];
+        let mut table = String::new();
+        let mut col = String::new();
+        let mut rel_type = "fk".to_string();
+        for part in inner.split(',') {
+            let kv: Vec<&str> = part.splitn(2, '=').collect();
+            if kv.len() == 2 {
+                match kv[0].trim() {
+                    "table" => table = kv[1].trim().to_string(),
+                    "col"   => col   = kv[1].trim().to_string(),
+                    "type"  => rel_type = kv[1].trim().to_string(),
+                    _ => {}
+                }
+            }
+        }
+        if !table.is_empty() && !col.is_empty() && seen.insert((table.clone(), col.clone())) {
+            result.push(CommentRef { target_table: table, target_column: col, relation_type: rel_type });
+        }
+    }
+
+    // 模式3: [ref:table.col]
+    let re3 = regex::Regex::new(r"\[ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\]").unwrap();
+    for cap in re3.captures_iter(comment) {
+        let table = cap[1].to_string();
+        let col = cap[2].to_string();
+        if seen.insert((table.clone(), col.clone())) {
+            result.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
+        }
+    }
+
+    // 模式4: $$ref(table.col)$$
+    let re4 = regex::Regex::new(r"\$\$ref\(([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\)\$\$").unwrap();
+    for cap in re4.captures_iter(comment) {
+        let table = cap[1].to_string();
+        let col = cap[2].to_string();
+        if seen.insert((table.clone(), col.clone())) {
+            result.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_at_ref_simple() {
+        let refs = parse_comment_refs("关联用户 @ref:users.id");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].target_table, "users");
+        assert_eq!(refs[0].target_column, "id");
+        assert_eq!(refs[0].relation_type, "fk");
+    }
+
+    #[test]
+    fn test_at_fk_explicit() {
+        let refs = parse_comment_refs("@fk(table=orders,col=order_id,type=one_to_many)");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].target_table, "orders");
+        assert_eq!(refs[0].target_column, "order_id");
+        assert_eq!(refs[0].relation_type, "one_to_many");
+    }
+
+    #[test]
+    fn test_bracket_ref() {
+        let refs = parse_comment_refs("外键 [ref:products.id] 备注");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].target_table, "products");
+        assert_eq!(refs[0].target_column, "id");
+    }
+
+    #[test]
+    fn test_dollar_ref() {
+        let refs = parse_comment_refs("$$ref(orders.id)$$ 订单外键");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].target_table, "orders");
+        assert_eq!(refs[0].target_column, "id");
+    }
+
+    #[test]
+    fn test_multiple_refs_dedup() {
+        let refs = parse_comment_refs("@ref:users.id [ref:users.id]");
+        assert_eq!(refs.len(), 1, "同目标去重");
+    }
+
+    #[test]
+    fn test_multiple_different_refs() {
+        let refs = parse_comment_refs("@ref:users.id @ref:orders.order_id");
+        assert_eq!(refs.len(), 2);
+    }
+
+    #[test]
+    fn test_no_marker_returns_empty() {
+        let refs = parse_comment_refs("普通注释，无标记");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn test_empty_comment() {
+        let refs = parse_comment_refs("");
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn test_at_fk_default_type() {
+        let refs = parse_comment_refs("@fk(table=users,col=id)");
+        assert_eq!(refs[0].relation_type, "fk");
+    }
+}

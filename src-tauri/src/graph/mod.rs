@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod change_detector;
+pub mod comment_parser;
 pub mod event_processor;
 pub mod query;
 pub mod traversal;

@@ -12,6 +12,30 @@ interface NodeDetailProps {
   nodeNameMap: Record<string, string>;
   onClose: () => void;
   onAliasUpdated: () => void;
+  onRefresh?: () => void;
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const badges: Record<string, { label: string; color: string }> = {
+    comment: { label: '注释推断', color: '#f59e0b' },
+    user:    { label: '✏️ 用户自定义', color: '#a855f7' },
+    schema:  { label: '数据库外键', color: '#3794ff' },
+  };
+  const badge = badges[source] ?? badges.schema;
+  return (
+    <span style={{
+      display: 'inline-block',
+      padding: '2px 8px',
+      borderRadius: 4,
+      fontSize: 11,
+      border: `1px solid ${badge.color}`,
+      color: badge.color,
+      backgroundColor: badge.color + '22',
+      marginBottom: 8,
+    }}>
+      {badge.label}
+    </span>
+  );
 }
 
 interface LinkMeta {
@@ -214,6 +238,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
   nodeNameMap,
   onClose,
   onAliasUpdated,
+  onRefresh,
 }) => {
   const { t } = useTranslation();
   const [showAliasEditor, setShowAliasEditor] = useState(false);
@@ -258,14 +283,42 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           </button>
         </div>
 
-        {/* Type badge */}
-        <div className="px-4 py-2 border-b border-[#1e2d42] flex-shrink-0 flex items-center">
-          <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-medium ${nodeTypeBadgeClass(node.node_type)}`}>
-            {nodeTypeIcon(node.node_type)}
-            {node.node_type}
-          </span>
-          {node.source && (
-            <span className="ml-2 text-[10px] text-[#7a9bb8]">{t('graphExplorer.nodeDetail.source')}: {node.source}</span>
+        {/* Type badge + source badge */}
+        <div className="px-4 py-2 border-b border-[#1e2d42] flex-shrink-0">
+          <div className="flex items-center mb-1.5">
+            <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-medium ${nodeTypeBadgeClass(node.node_type)}`}>
+              {nodeTypeIcon(node.node_type)}
+              {node.node_type}
+            </span>
+          </div>
+          <div>
+            <SourceBadge source={node.source ?? 'schema'} />
+          </div>
+          {node.source === 'user' && (
+            <button
+              onClick={async () => {
+                if (!confirm('确认删除此用户节点？该节点相关的自定义边也将删除。')) return;
+                try {
+                  await invoke('delete_graph_node', { nodeId: node.id });
+                  onClose();
+                  onRefresh?.();
+                } catch (e) {
+                  console.error('删除节点失败', e);
+                }
+              }}
+              style={{
+                marginTop: 8,
+                padding: '4px 12px',
+                border: '1px solid #ef4444',
+                borderRadius: 4,
+                color: '#ef4444',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              删除此节点
+            </button>
           )}
         </div>
 
@@ -340,7 +393,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                     return (
                       <div
                         key={edge.id}
-                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors"
+                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors flex-wrap"
                       >
                         <ArrowRight
                           size={11}
@@ -353,6 +406,9 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                         <span className="text-[#c8daea] text-[10px] font-mono truncate flex-1" title={peerName}>
                           {peerName}
                         </span>
+                        {edge.source && edge.source !== 'schema' && (
+                          <SourceBadge source={edge.source} />
+                        )}
                       </div>
                     );
                   })}

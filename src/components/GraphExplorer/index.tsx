@@ -468,6 +468,14 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     }
   }, [bgTasks, currentBuildTaskId, refetch]);
 
+  // ── Polling fallback: 若 emit_completed 在 _addTaskStub 前到达则任务会丢失，
+  //    每 2s 轮询一次 loadTasks 确保状态最终同步 ──────────────────────────────
+  useEffect(() => {
+    if (!currentBuildTaskId) return undefined;
+    const timer = setInterval(loadTasks, 2000);
+    return () => clearInterval(timer);
+  }, [currentBuildTaskId, loadTasks]);
+
   // ── Alias updated callback ──────────────────────────────────────────────────
   const handleAliasUpdated = useCallback(() => {
     refetch();

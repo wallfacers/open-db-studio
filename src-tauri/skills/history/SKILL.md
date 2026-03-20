@@ -1,7 +1,7 @@
 ---
 description: Change history and undo tools for the current session
 triggers:
-  - when user message contains 撤销/undo/恢复/回滚
+  - when user message contains undo/restore/rollback
 ---
 
 # history Skill

@@ -18,7 +18,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { invoke } from '@tauri-apps/api/core';
 import {
-  GitBranch,
+  Network,
   Search,
   Loader2,
   RefreshCw,
@@ -538,7 +538,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#1e2d42] flex-shrink-0 bg-[#0d1117]">
-        <GitBranch size={16} className="text-[#00c9a7] flex-shrink-0" />
+        <Network size={16} className="text-[#00c9a7] flex-shrink-0" />
         <span className="text-[#c8daea] text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 
         {/* Connection selector */}
@@ -688,7 +688,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           {/* Empty state overlay */}
           {!loading && (internalConnId === null || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
-              <GitBranch size={36} className="text-[#253347] mb-3" />
+              <Network size={36} className="text-[#253347] mb-3" />
               <p className="text-[#7a9bb8] text-sm">
                 {internalConnId === null
                   ? t('graphExplorer.selectConnection')

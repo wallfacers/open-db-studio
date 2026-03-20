@@ -241,8 +241,7 @@
     "executeSelected": "Execute Selected",
     "toggleComment": "Toggle Comment",
     "findReplace": "Find & Replace",
-    "explainSql": "Explain SQL",
-    "optimizeSql": "Optimize SQL"
+    "explainSql": "Explain SQL"
   },
   "mainContent": {
     "selectConnectionFirst": "Please select a database connection on the left",
@@ -264,15 +263,10 @@
     "rows": "Rows",
     "executionOverviewInfo": "Execution overview info",
     "aiExplanation": "AI Explanation",
-    "optimizeSql": "⚡ Optimize SQL",
-    "stopOptimizing": "Stop Optimizing",
     "sqlExplanation": "SQL Explain",
     "stopExplaining": "Stop Explaining",
     "clickToExplain": "Click 💡 to explain SQL",
     "analyzing": "AI is analyzing...",
-    "optimizing": "Optimizing...",
-    "aiOptimizeFailed": "AI optimize failed, please check LLM config",
-    "aiOptimization": "AI Optimization Suggestions",
     "aiDiagnosis": "AI Diagnosis: ",
     "noActiveEditor": "No active editor",
     "selectItemToView": "Select a table or query to view",

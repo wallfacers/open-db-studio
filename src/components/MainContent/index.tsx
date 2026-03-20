@@ -52,7 +52,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 };
 import {
   FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
-  RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Zap, Bot, Maximize2,
+  RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
   BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
@@ -214,10 +214,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
   const { nodes } = useTreeStore();
-  const { explainSql, isExplaining: isExplainingMap, optimizeSql, isOptimizing: isOptimizingMap, cancelOptimizeSql, cancelExplainSql } = useAiStore();
+  const { explainSql, isExplaining: isExplainingMap, cancelExplainSql } = useAiStore();
   const isExecuting = isExecutingMap[activeTab] ?? false;
   const isExplaining = isExplainingMap[activeTab] ?? false;
-  const isOptimizing = isOptimizingMap[activeTab] ?? false;
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   const [explanationContextMenu, setExplanationContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -555,42 +554,6 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
   };
 
-  const handleOptimize = async (options?: { sqlOverride: string; range?: MonacoIRange | null }) => {
-    const connId = activeTabObj?.queryContext?.connectionId ?? null;
-    if (!currentSql.trim() || !connId) {
-      showToast(t('mainContent.inputSqlAndSelectConnection'), 'warning');
-      return;
-    }
-    let sqlToOptimize: string;
-    let rangeToReplace: MonacoIRange | null = null;
-    const editor = editorRef.current;
-    if (options?.sqlOverride !== undefined) {
-      sqlToOptimize = options.sqlOverride;
-      rangeToReplace = options.range ?? null;
-    } else {
-      const selection = editor?.getSelection();
-      const selectedSql =
-        selection && !selection.isEmpty()
-          ? editor!.getModel()?.getValueInRange(selection) ?? ''
-          : '';
-      sqlToOptimize = selectedSql.trim() ? selectedSql : currentSql;
-      rangeToReplace = (selectedSql.trim() && selection) ? selection : null;
-    }
-    try {
-      const result = await optimizeSql(sqlToOptimize, connId, activeTabObj?.queryContext?.database ?? null, activeTab);
-      if (rangeToReplace && editor) {
-        editor.executeEdits('optimize', [{ range: rangeToReplace, text: result }]);
-        editor.focus();
-      } else {
-        setSql(activeTab, result);
-      }
-    } catch (e) {
-      const ctx = buildErrorContext('ai_request', { rawError: String(e) });
-      if (showError) showError(ctx.userMessage, ctx.markdownContext);
-      else showToast(ctx.userMessage, 'error');
-    }
-  };
-
   // 关闭右键菜单
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -802,35 +765,6 @@ export const MainContent: React.FC<MainContentProps> = ({
                       disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
                     >
                       <Lightbulb size={16} />
-                    </button>
-                  </Tooltip>
-                )}
-                {isOptimizing ? (
-                  <Tooltip content={t('mainContent.stopOptimizing')}>
-                    <button
-                      className="p-1.5 rounded transition-colors text-[#f59e0b] hover:text-red-400 hover:bg-[#1e2d42] group"
-                      onClick={() => cancelOptimizeSql(activeTab)}
-                    >
-                      <span className="block group-hover:hidden">
-                        <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                        </svg>
-                      </span>
-                      <span className="hidden group-hover:block">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </span>
-                    </button>
-                  </Tooltip>
-                ) : (
-                  <Tooltip content={!currentSql.trim() ? '' : t('mainContent.optimizeSql')}>
-                    <button
-                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
-                      onClick={() => handleOptimize()}
-                      disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
-                    >
-                      <Zap size={16} />
                     </button>
                   </Tooltip>
                 )}
@@ -1529,22 +1463,6 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             <Lightbulb size={13} color={activeTabObj?.queryContext?.connectionId ? '#5eb2f7' : '#3a5070'} />
             <span className="flex-1">{t('editorContextMenu.explainSql')}</span>
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: activeTabObj?.queryContext?.connectionId ? '#c8daea' : '#3a5070' }}
-            disabled={!activeTabObj?.queryContext?.connectionId}
-            onClick={() => {
-              const menu = editorContextMenu!;
-              const sql = menu.selectedSql.trim()
-                ? menu.selectedSql
-                : getSqlAtCursor(currentSql, menu.cursorOffset);
-              setEditorContextMenu(null);
-              handleOptimize({ sqlOverride: sql, range: menu.selectionRange });
-            }}
-          >
-            <Zap size={13} color={activeTabObj?.queryContext?.connectionId ? '#5eb2f7' : '#3a5070'} />
-            <span className="flex-1">{t('editorContextMenu.optimizeSql')}</span>
           </button>
         </div>
       )}

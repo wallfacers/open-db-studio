@@ -121,7 +121,6 @@ interface AiState {
 
   // ── AI 功能 ──
   isExplaining: Record<string, boolean>;
-  isOptimizing: Record<string, boolean>;
   isDiagnosing: boolean;
   isCreatingTable: boolean;
   error: string | null;
@@ -137,8 +136,6 @@ interface AiState {
     onError: (err: string) => void,
   ) => Promise<void>;
   cancelExplainSql: (tabId: string) => Promise<void>;
-  optimizeSql: (sql: string, connectionId: number | null, database: string | null | undefined, tabId: string) => Promise<string>;
-  cancelOptimizeSql: (tabId: string) => Promise<void>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
 }
@@ -155,7 +152,6 @@ export const useAiStore = create<AiState>()(
       chatHistory: [],
       chatStates: {},
       isExplaining: {},
-      isOptimizing: {},
       isDiagnosing: false,
       isCreatingTable: false,
       error: null,
@@ -955,55 +951,6 @@ export const useAiStore = create<AiState>()(
       cancelExplainSql: async (tabId) => {
         await invoke('cancel_explain_sql').catch(() => {});
         set(s => ({ isExplaining: { ...s.isExplaining, [tabId]: false } }));
-      },
-
-      optimizeSql: async (sql, connectionId, database, tabId) => {
-        set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: true }, error: null }));
-        return new Promise<string>(async (resolve, reject) => {
-          try {
-            const { Channel } = await import('@tauri-apps/api/core');
-            const channel = new Channel<{
-              type: 'ContentChunk' | 'ThinkingChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
-              data?: { delta?: string; message?: string };
-            }>();
-
-            let resultBuf = '';
-
-            channel.onmessage = (event) => {
-              // 已取消则忽略后续所有事件
-              if (!get().isOptimizing[tabId]) return;
-              if (event.type === 'ContentChunk' && event.data?.delta) {
-                resultBuf += event.data.delta;
-              } else if (event.type === 'Done') {
-                set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
-                resolve(resultBuf.trim());
-              } else if (event.type === 'Error') {
-                set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false }, error: event.data?.message ?? 'Unknown error' }));
-                reject(new Error(event.data?.message ?? 'Unknown error'));
-              }
-            };
-
-            await invoke('agent_optimize_sql', {
-              sql,
-              connectionId,
-              database: database ?? null,
-              channel,
-            });
-          } catch (e) {
-            set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
-            // 用户主动取消时 backend 会 drop done_tx，产生特定错误信息，静默处理不弹 toast
-            const isCancelledError = String(e).includes('thread dropped') || String(e).includes('cancelled');
-            if (!isCancelledError) {
-              set(s => ({ ...s, error: String(e) }));
-              reject(e);
-            }
-          }
-        });
-      },
-
-      cancelOptimizeSql: async (tabId) => {
-        await invoke('cancel_optimize_sql').catch(() => {});
-        set(s => ({ isOptimizing: { ...s.isOptimizing, [tabId]: false } }));
       },
 
       createTable: async (description, connectionId) => {

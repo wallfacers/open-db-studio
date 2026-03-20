@@ -357,8 +357,8 @@ pub async fn process_pending_events(
 
                             let display_name = format!("{} → {}", ev.table_name, ref_table);
 
-                            // name = display_name (not "fk") so FTS5 indexing makes each link searchable by label
                             // 插入 Link Node（INSERT OR IGNORE 保证幂等）
+                            // name = "fk"（edge_type 标识符）; display_name = "table → ref_table"（可读标签）
                             let inserted = db_conn.execute(
                                 "INSERT OR IGNORE INTO graph_nodes
                                    (id, node_type, connection_id, name, display_name, metadata, source)
@@ -366,7 +366,7 @@ pub async fn process_pending_events(
                                 rusqlite::params![
                                     link_id,
                                     conn_id,
-                                    &display_name,
+                                    "fk",
                                     display_name,
                                     link_metadata.to_string(),
                                 ],

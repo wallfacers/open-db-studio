@@ -201,6 +201,15 @@ pub async fn run_graph_build(
         table_fks.insert(table.name.clone(), fks);
     }
 
+    // 步骤 3.5：解析列注释生成虚拟关系 Link Node（先于 change_detector）
+    emit_log(&app, &task_id, "INFO", "正在解析列注释虚拟关系...");
+    let known_tables: std::collections::HashSet<String> =
+        schema.tables.iter().map(|t| t.name.clone()).collect();
+    match build_comment_links(connection_id, &table_columns, &known_tables) {
+        Ok(n) => emit_log(&app, &task_id, "INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
+        Err(e) => emit_log(&app, &task_id, "WARN", &format!("注释关系解析失败（不影响主流程）: {}", e)),
+    }
+
     // 4. 检测变更并写入 schema_change_log
     emit_log(&app, &task_id, "INFO", "正在检测 Schema 变更...");
     match crate::graph::change_detector::detect_and_log_changes(
@@ -426,6 +435,132 @@ pub fn sync_aliases_to_graph(connection_id: i64) -> crate::AppResult<usize> {
     }
 
     conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')")?;
+
+    Ok(count)
+}
+
+/// 步骤 3.5：从列注释解析虚拟关系 Link Node
+/// 幂等：先清除旧 source='comment' 的节点和边，再重新生成
+fn build_comment_links(
+    connection_id: i64,
+    table_columns: &std::collections::HashMap<String, Vec<crate::datasource::ColumnMeta>>,
+    known_tables: &std::collections::HashSet<String>,
+) -> crate::AppResult<usize> {
+    let conn = crate::db::get().lock().unwrap();
+
+    // 1. 清除旧 source='comment' 的边
+    conn.execute(
+        "DELETE FROM graph_edges
+         WHERE source = 'comment'
+           AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1)
+                OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1))",
+        [connection_id],
+    )?;
+    // 清除旧 source='comment' 的 link 节点
+    conn.execute(
+        "DELETE FROM graph_nodes
+         WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link'",
+        [connection_id],
+    )?;
+
+    let mut count = 0;
+
+    for (table_name, columns) in table_columns {
+        let table_node_id = format!("{}:table:{}", connection_id, table_name);
+
+        for col in columns {
+            let comment = match &col.comment {
+                Some(c) if !c.is_empty() => c,
+                _ => continue,
+            };
+
+            let refs = crate::graph::comment_parser::parse_comment_refs(comment);
+
+            for r in &refs {
+                // 目标表不存在于当前 Schema → 跳过
+                if !known_tables.contains(&r.target_table) {
+                    log::warn!(
+                        "[comment_links] 目标表 '{}' 不存在，跳过注释引用 ({}.{})",
+                        r.target_table, table_name, col.name
+                    );
+                    continue;
+                }
+
+                let target_node_id = format!("{}:table:{}", connection_id, r.target_table);
+
+                // 检查是否已有 source='schema' 的 Link Node 连接这两张表
+                let schema_link_exists: bool = conn.query_row(
+                    "SELECT COUNT(*)
+                     FROM graph_nodes ln
+                     JOIN graph_edges e1 ON e1.to_node = ln.id
+                     JOIN graph_edges e2 ON e2.from_node = ln.id
+                     WHERE ln.node_type = 'link'
+                       AND ln.connection_id = ?1
+                       AND ln.source = 'schema'
+                       AND e1.from_node = ?2
+                       AND e2.to_node = ?3",
+                    rusqlite::params![connection_id, table_node_id, target_node_id],
+                    |row| row.get::<_, i64>(0),
+                ).unwrap_or(0) > 0;
+
+                if schema_link_exists {
+                    continue;
+                }
+
+                // 生成 comment 来源的 Link Node ID
+                let link_node_id = format!(
+                    "{}:link:comment_{}_{}_{}",
+                    connection_id, table_name, r.target_table, col.name
+                );
+
+                let metadata = serde_json::json!({
+                    "source_table": table_name,
+                    "target_table": r.target_table,
+                    "via": col.name,
+                    "cardinality": "N:1",
+                    "on_delete": "NO ACTION",
+                    "description": format!("{}.{} → {}.{} (注释推断)", table_name, col.name, r.target_table, r.target_column),
+                    "relation_type": r.relation_type,
+                    "source_column": col.name,
+                    "target_column": r.target_column,
+                }).to_string();
+
+                // 插入 Link Node
+                conn.execute(
+                    "INSERT OR REPLACE INTO graph_nodes
+                       (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
+                     VALUES (?1, 'link', ?2, ?3, ?4, ?5, 'comment', 0)",
+                    rusqlite::params![
+                        link_node_id,
+                        connection_id,
+                        link_node_id,
+                        format!("{}.{} → {}.{}", table_name, col.name, r.target_table, r.target_column),
+                        metadata,
+                    ],
+                )?;
+
+                // 两条边: table → link_node, link_node → target_table
+                let edge_to_link = format!("{}=>{}", table_node_id, link_node_id);
+                let edge_from_link = format!("{}=>{}", link_node_id, target_node_id);
+
+                conn.execute(
+                    "INSERT OR IGNORE INTO graph_edges
+                       (id, from_node, to_node, edge_type, weight, source)
+                     VALUES (?1, ?2, ?3, 'to_link', 1.0, 'comment')",
+                    rusqlite::params![edge_to_link, table_node_id, link_node_id],
+                )?;
+
+                conn.execute(
+                    "INSERT OR IGNORE INTO graph_edges
+                       (id, from_node, to_node, edge_type, weight, source)
+                     VALUES (?1, ?2, ?3, 'from_link', 1.0, 'comment')",
+                    rusqlite::params![edge_from_link, link_node_id, target_node_id],
+                )?;
+
+                count += 1;
+            }
+        }
+    }
 
     Ok(count)
 }

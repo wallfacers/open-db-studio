@@ -2101,7 +2101,7 @@ pub async fn get_graph_edges(
     let ph1: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
     let ph2: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
     let sql = format!(
-        "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata
+        "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata, e.source
          FROM graph_edges e
          WHERE e.from_node IN ({ph1}) OR e.to_node IN ({ph2})",
         ph1 = ph1,
@@ -2123,6 +2123,7 @@ pub async fn get_graph_edges(
             edge_type: row.get(3)?,
             weight: row.get(4)?,
             metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
+            source: row.get(6)?,
         })
     })?;
     let mut edges: Vec<crate::graph::GraphEdge> = rows.collect::<Result<Vec<_>, _>>()?;

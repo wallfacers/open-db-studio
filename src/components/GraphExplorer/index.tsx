@@ -674,6 +674,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             nodeNameMap={nodeNameMap}
             onClose={() => setSelectedNode(null)}
             onAliasUpdated={handleAliasUpdated}
+            onRefresh={refetch}
           />
         )}
       </div>

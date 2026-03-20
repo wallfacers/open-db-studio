@@ -171,7 +171,7 @@ const ChartExpandModal: React.FC<{
           <ReactECharts
             option={option}
             theme="ods-dark"
-            style={{ height: '70vh', width: '100%' }}
+            style={{ height: '30vh', width: '100%' }}
             notMerge={true}
             opts={{ renderer: 'canvas' }}
           />
@@ -321,6 +321,7 @@ const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }
 export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = memo(({ code, isStreaming = false }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { option, error } = useMemo(() => {
@@ -404,16 +405,25 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       {/* 工具栏（与 CodeBlock 风格一致） */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
         <span className="text-xs text-[#7a9bb8] font-mono">{chartType}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-        >
-          {copied ? (
-            <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.chartBlock.copied')}</span></>
-          ) : (
-            <><Copy size={12} /><span>{t('commonComponents.chartBlock.copy')}</span></>
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setExpanded(true)}
+            className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            title="放大查看"
+          >
+            <Maximize2 size={12} />
+          </button>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+          >
+            {copied ? (
+              <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.chartBlock.copied')}</span></>
+            ) : (
+              <><Copy size={12} /><span>{t('commonComponents.chartBlock.copy')}</span></>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* ECharts 渲染区，ErrorBoundary 捕获渲染异常 */}
@@ -427,6 +437,14 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       >
         <ChartRenderer option={mergedOption} />
       </ChartErrorBoundary>
+
+      {expanded && (
+        <ChartExpandModal
+          option={mergedOption}
+          chartType={chartType}
+          onClose={() => setExpanded(false)}
+        />
+      )}
     </div>
   );
 });

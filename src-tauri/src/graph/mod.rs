@@ -448,6 +448,10 @@ fn build_comment_links(
 ) -> crate::AppResult<usize> {
     let conn = crate::db::get().lock().unwrap();
 
+    // 开启事务：批量写入减少锁竞争，同时保证原子性
+    conn.execute_batch("BEGIN")?;
+
+    let result = (|| -> crate::AppResult<usize> {
     // 1. 清除旧 source='comment' 的边
     conn.execute(
         "DELETE FROM graph_edges
@@ -489,7 +493,7 @@ fn build_comment_links(
                 let target_node_id = format!("{}:table:{}", connection_id, r.target_table);
 
                 // 检查是否已有 source='schema' 的 Link Node 连接这两张表
-                let schema_link_exists: bool = conn.query_row(
+                let schema_link_exists: bool = match conn.query_row(
                     "SELECT COUNT(*)
                      FROM graph_nodes ln
                      JOIN graph_edges e1 ON e1.to_node = ln.id
@@ -501,7 +505,16 @@ fn build_comment_links(
                        AND e2.to_node = ?3",
                     rusqlite::params![connection_id, table_node_id, target_node_id],
                     |row| row.get::<_, i64>(0),
-                ).unwrap_or(0) > 0;
+                ) {
+                    Ok(n) => n > 0,
+                    Err(e) => {
+                        log::warn!(
+                            "[comment_links] 检查 schema link 失败，跳过 {}.{}: {}",
+                            table_name, col.name, e
+                        );
+                        continue;
+                    }
+                };
 
                 if schema_link_exists {
                     continue;
@@ -563,4 +576,12 @@ fn build_comment_links(
     }
 
     Ok(count)
+    })();
+
+    match &result {
+        Ok(_) => { let _ = conn.execute_batch("COMMIT"); }
+        Err(_) => { let _ = conn.execute_batch("ROLLBACK"); }
+    }
+
+    result
 }

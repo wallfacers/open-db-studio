@@ -808,5 +808,126 @@
       "startGenerate": "开始生成",
       "goToTasks": "生成后跳转到我的任务"
     }
+  },
+  "commonComponents": {
+    "toast": {
+      "copied": "已复制",
+      "copy": "复制",
+      "askAi": "问 AI"
+    },
+    "baseModal": {
+      "processing": "处理中..."
+    },
+    "chartBlock": {
+      "generatingChart": "AI 正在生成图表数据",
+      "chartDataError": "图表数据格式有误",
+      "copied": "已复制",
+      "copy": "复制",
+      "renderFailed": "图表渲染失败"
+    },
+    "markdownContent": {
+      "copied": "已复制",
+      "copy": "复制",
+      "expandView": "放大查看",
+      "close": "关闭"
+    }
+  },
+  "seaTunnelJob": {
+    "jobLogPanel": {
+      "title": "运行日志",
+      "clear": "清空",
+      "clearLog": "清空日志",
+      "scrollToBottom": "滚动到底部",
+      "waitingForLogs": "等待日志输出...",
+      "logsWillAppear": "提交 Job 后将显示运行日志",
+      "jobCompleted": "[INFO] Job 已完成",
+      "logStreamInterrupted": "[WARN] 日志流中断（{{reason}}），切换为状态轮询...",
+      "pollingResult": "[INFO] 状态轮询结果: {{status}}",
+      "pollingFailed": "[ERROR] 状态轮询失败: {{error}}"
+    },
+    "visualBuilder": {
+      "type": "类型",
+      "username": "用户名",
+      "password": "密码",
+      "filePath": "文件路径",
+      "delimiter": "分隔符",
+      "hasHeader": "包含表头",
+      "pleaseSelect": "-- 请选择 --",
+      "noTransformSteps": "无转换步骤（可选）",
+      "add": "+ 添加",
+      "remove": "删除",
+      "noExtraConfig": "无需额外配置",
+      "jobName": "Job 名称",
+      "parallelism": "并行度",
+      "required": "（必填）",
+      "keepFields": "保留字段 (逗号分隔)"
+    },
+    "toolbar": {
+      "jobNamePlaceholder": "Job 名称",
+      "clusterConnection": "-- 集群连接 --",
+      "stop": "停止",
+      "submit": "提交",
+      "save": "保存"
+    },
+    "mode": {
+      "visual": "可视化模式",
+      "script": "脚本模式",
+      "switchTitle": "切换模式",
+      "switchMessage": "存在高级配置，切换后将丢失自定义字段，确认继续？",
+      "continueSwitch": "继续切换",
+      "cancel": "取消"
+    }
+  },
+  "seaTunnel": {
+    "title": "迁移中心",
+    "searchPlaceholder": "搜索 Job / 分类...",
+    "refresh": "刷新",
+    "newConnection": "新建连接",
+    "newCategory": "新建分类",
+    "connection": "连接",
+    "noResults": "无匹配结果",
+    "noJobs": "暂无分类或 Job",
+    "connectionModal": {
+      "newTitle": "新建集群连接",
+      "editTitle": "编辑集群连接",
+      "connectionName": "连接名称",
+      "clusterUrl": "集群地址",
+      "authToken": "Auth Token",
+      "optional": "可选",
+      "namePlaceholder": "例如：生产集群",
+      "urlPlaceholder": "http://host:5801",
+      "tokenPlaceholder": "Bearer token 或留空",
+      "nameRequired": "连接名称不能为空",
+      "urlRequired": "集群地址不能为空",
+      "saveFailed": "保存失败"
+    },
+    "categoryModal": {
+      "newTitle": "新建分类",
+      "renameTitle": "重命名分类",
+      "categoryName": "分类名称",
+      "namePlaceholder": "请输入分类名称",
+      "nameRequired": "分类名称不能为空",
+      "parentCategory": "父分类",
+      "depthError": "最多支持 3 层分类嵌套，无法在此处新建子分类",
+      "saveFailed": "保存失败"
+    },
+    "jobTree": {
+      "newSubCategory": "新建子分类",
+      "newJob": "新建 Job",
+      "deleteCategory": "删除分类",
+      "deleteJob": "删除 Job",
+      "open": "打开",
+      "moveToCategory": "移动到分类",
+      "confirmDeleteCategory": "确定要删除分类「{{name}}」吗？其下所有子分类和 Job 也将被删除，此操作不可撤销。",
+      "confirmDeleteJob": "确定要删除 Job「{{name}}」吗？此操作不可撤销。",
+      "deleteCategoryTitle": "删除分类",
+      "deleteJobTitle": "删除 Job",
+      "deleteCategoryFailed": "删除分类失败",
+      "deleteJobFailed": "删除 Job 失败",
+      "createCategoryFailed": "创建分类失败",
+      "createJobFailed": "创建 Job 失败",
+      "newCategory": "新分类",
+      "newJobName": "新 Job"
+    }
   }
 }

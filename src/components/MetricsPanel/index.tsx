@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { BarChart2, Plus, Check, X, Trash2, Loader2, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Metric {
   id: number;
@@ -35,15 +36,8 @@ const statusBadge = (status: string) => {
   }
 };
 
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'approved': return '已通过';
-    case 'rejected': return '已拒绝';
-    default: return '草稿';
-  }
-};
-
 export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [isLoading, setIsLoading] = useState(false);
@@ -118,10 +112,19 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-[#111922] items-center justify-center">
         <BarChart2 size={40} className="text-[#253347] mb-3" />
-        <p className="text-[#7a9bb8] text-sm">请先选择数据库连接</p>
+        <p className="text-[#7a9bb8] text-sm">{t('metricsExplorer.noConnections')}</p>
       </div>
     );
   }
+
+  // Status label helper
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case 'approved': return t('metricsExplorer.metricList.statusApproved');
+      case 'rejected': return t('metricsExplorer.metricList.statusRejected');
+      default: return t('metricsExplorer.metricList.statusDraft');
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#111922] overflow-hidden">
@@ -129,7 +132,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
       <div className="flex items-center justify-between px-6 py-4 border-b border-[#1e2d42] flex-shrink-0">
         <div className="flex items-center gap-2">
           <BarChart2 size={18} className="text-[#00c9a7]" />
-          <h2 className="text-white font-semibold text-base">业务指标</h2>
+          <h2 className="text-white font-semibold text-base">{t('metricsExplorer.title')}</h2>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -141,14 +144,14 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
               ? <Loader2 size={13} className="animate-spin" />
               : <Sparkles size={13} />
             }
-            AI 生成指标
+            {t('metricsExplorer.metricList.aiGenerate')}
           </button>
           <button
             onClick={() => {/* TODO: open create dialog */}}
             className="flex items-center gap-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-3 py-1.5 bg-[#1a2639] hover:bg-[#253347] rounded border border-[#253347]"
           >
             <Plus size={13} />
-            新增指标
+            {t('metricsExplorer.metricList.add')}
           </button>
         </div>
       </div>
@@ -157,10 +160,10 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
       <div className="flex border-b border-[#1e2d42] flex-shrink-0 px-6">
         {(['all', 'draft', 'approved', 'rejected'] as const).map((tab) => {
           const labelMap: Record<StatusFilter, string> = {
-            all: '全部',
-            draft: '草稿',
-            approved: '已通过',
-            rejected: '已拒绝',
+            all: t('metricsExplorer.metricList.all'),
+            draft: t('metricsExplorer.metricList.draft'),
+            approved: t('metricsExplorer.metricList.approved'),
+            rejected: t('metricsExplorer.metricList.rejected'),
           };
           return (
             <button
@@ -187,7 +190,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
         ) : filteredMetrics.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-[#7a9bb8] text-sm">
             <BarChart2 size={28} className="mb-2 text-[#253347]" />
-            暂无指标
+            {t('metricsExplorer.metricList.noMetrics')}
           </div>
         ) : (
           <div className="divide-y divide-[#1e2d42]">
@@ -233,14 +236,14 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                     <>
                       <button
                         onClick={() => handleApprove(metric.id)}
-                        title="审批通过"
+                        title={t('metricsExplorer.metricsTree.open')}
                         className="p-1.5 rounded text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#0d3d2e] transition-colors"
                       >
                         <Check size={14} />
                       </button>
                       <button
                         onClick={() => handleReject(metric.id)}
-                        title="拒绝"
+                        title={t('metricsExplorer.metricList.rejected')}
                         className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
                       >
                         <X size={14} />
@@ -249,7 +252,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                   )}
                   <button
                     onClick={() => handleDelete(metric.id)}
-                    title="删除"
+                    title={t('metricsExplorer.metricList.delete')}
                     className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
                   >
                     <Trash2 size={14} />

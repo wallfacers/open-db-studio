@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bell, CheckCircle, AlertTriangle, XCircle, Info, Copy, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export type ToastLevel = 'success' | 'warning' | 'error' | 'info' | 'default';
 
@@ -58,6 +59,7 @@ export const Toast: React.FC<ToastProps> = ({
   markdownContext,
   onAskAi,
 }) => {
+  const { t } = useTranslation();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -112,7 +114,7 @@ export const Toast: React.FC<ToastProps> = ({
       <button
         onClick={handleCopy}
         className="ml-1 p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-white/10 transition-all"
-        title={copied ? '已复制' : '复制'}
+        title={copied ? t('commonComponents.toast.copied') : t('commonComponents.toast.copy')}
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
       </button>
@@ -120,9 +122,9 @@ export const Toast: React.FC<ToastProps> = ({
         <button
           onClick={() => { onAskAi(); }}
           className="ml-1 px-1.5 py-0.5 rounded text-xs opacity-80 hover:opacity-100 hover:bg-white/10 transition-all flex items-center gap-1"
-          title="问 AI"
+          title={t('commonComponents.toast.askAi')}
         >
-          🤖 问 AI
+          🤖 {t('commonComponents.toast.askAi')}
         </button>
       )}
     </div>

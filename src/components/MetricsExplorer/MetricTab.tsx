@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Save, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { Metric, UpdateMetricPayload, ColumnMeta, MetricScope } from '../../types';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
@@ -13,7 +14,7 @@ const PRESET_CATEGORIES = [
 ];
 
 // -------- Tag 输入组件 --------
-function TagInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function TagInput({ value, onChange, t }: { value: string; onChange: (v: string) => void; t: (key: string) => string }) {
   const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : [];
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +62,7 @@ function TagInput({ value, onChange }: { value: string; onChange: (v: string) =>
         <input
           ref={inputRef}
           className="flex-1 min-w-[80px] bg-transparent text-xs text-white outline-none placeholder-[#4a6a8a]"
-          placeholder={tags.length === 0 ? '输入分类，回车或逗号确认...' : ''}
+          placeholder={tags.length === 0 ? t('metricsExplorer.metricTab.categoryPlaceholder') : ''}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -96,6 +97,7 @@ const inputCls = 'w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.
 const labelCls = 'block text-xs text-[#7a9bb8] mb-1';
 
 export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props) {
+  const { t } = useTranslation();
   const isCreateMode = !metricId && !!newMetricScope;
 
   const [metric, setMetric] = useState<Metric | null>(null);
@@ -141,7 +143,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
           });
           setTables(names);
         } catch (e: any) {
-          setError(`加载表列表失败: ${e?.message ?? e}`);
+          setError(`${t('metricsExplorer.metricTab.loadTablesFailed')}: ${e?.message ?? e}`);
         }
       }
       if (m.table_name) {
@@ -154,11 +156,11 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
           });
           setColumns(detail.columns);
         } catch (e: any) {
-          setError(`加载列失败: ${e?.message ?? e}`);
+          setError(`${t('metricsExplorer.metricTab.loadColumnsFailed')}: ${e?.message ?? e}`);
         }
       }
     } catch (e: any) {
-      setError(e?.message ?? '加载失败');
+      setError(e?.message ?? t('metricsExplorer.metricTab.loadFailed'));
     }
   };
 
@@ -212,7 +214,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
       await invoke('update_metric', { id: metricId, input: form });
       await loadMetric();
     } catch (e: any) {
-      setError(e?.message ?? '保存失败');
+      setError(e?.message ?? t('metricsExplorer.metricTab.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -224,7 +226,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
     setSaving(true);
     setError(null);
     try {
-      const displayName = (form.display_name as string | undefined)?.trim() || '新指标';
+      const displayName = (form.display_name as string | undefined)?.trim() || t('metricsExplorer.newMetric');
       const m = await invoke<Metric>('save_metric', {
         input: {
           connection_id: newMetricScope.connectionId,
@@ -252,7 +254,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
       if (parentNodeId) await notifyMetricAdded(parentNodeId);
       onSaved?.(m.id, m.display_name);
     } catch (e: any) {
-      setError(e?.message ?? '创建失败');
+      setError(e?.message ?? t('metricsExplorer.metricTab.createFailed'));
     } finally {
       setSaving(false);
     }
@@ -260,13 +262,13 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
   const handleDelete = async () => {
     if (!metric || !metricId) return;
-    const isBlank = metric.display_name === '新指标' && !metric.table_name && !metric.description;
+    const isBlank = metric.display_name === t('metricsExplorer.newMetric') && !metric.table_name && !metric.description;
     if (!isBlank) {
       const ok = await confirm({
-        title: '删除指标',
-        message: `确定要删除指标「${metric.display_name}」吗？此操作不可撤销。`,
+        title: t('metricsExplorer.metricTab.deleteTitle'),
+        message: t('metricsExplorer.metricTab.confirmDelete', { name: metric.display_name }),
         variant: 'danger',
-        confirmLabel: '删除',
+        confirmLabel: t('metricsExplorer.metricTab.delete'),
       });
       if (!ok) return;
     }
@@ -282,7 +284,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
       if (parentNodeId) await refreshNode(parentNodeId);
       onDelete?.();
     } catch (e: any) {
-      setError(e?.message ?? '删除失败');
+      setError(e?.message ?? t('metricsExplorer.metricTab.deleteFailed'));
       setDeleting(false);
     }
   };
@@ -292,14 +294,14 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
   // 编辑模式加载中
   if (!isCreateMode && !metric && !error) {
-    return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">加载中...</div>;
+    return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('metricsExplorer.loading')}</div>;
   }
   if (!isCreateMode && error && !metric) {
     return <div className="flex items-center justify-center h-full text-red-400 text-sm">{error}</div>;
   }
 
   const currentType = form.metric_type ?? metric?.metric_type ?? 'atomic';
-  const headerTitle = isCreateMode ? '新建指标' : (metric?.display_name ?? '');
+  const headerTitle = isCreateMode ? t('metricsExplorer.metricTab.newMetric') : (metric?.display_name ?? '');
 
   return (
     <div className="flex flex-col h-full bg-[#111922] text-white overflow-hidden">
@@ -315,10 +317,10 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
                          hover:border-red-500 hover:text-red-300 disabled:opacity-50"
               onClick={handleDelete}
               disabled={deleting || saving}
-              title="删除指标"
+              title={t('metricsExplorer.metricTab.deleteTitle')}
             >
               <Trash2 size={12} />
-              {deleting ? '删除中...' : '删除'}
+              {deleting ? t('metricsExplorer.metricTab.deleting') : t('metricsExplorer.metricTab.delete')}
             </button>
           )}
           <button
@@ -328,7 +330,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
             disabled={saving || deleting}
           >
             <Save size={12} />
-            {saving ? (isCreateMode ? '创建中...' : '保存中...') : (isCreateMode ? '保存' : '保存')}
+            {saving ? (isCreateMode ? t('metricsExplorer.metricTab.creating') : t('metricsExplorer.metricTab.saving')) : t('metricsExplorer.metricTab.save')}
           </button>
         </div>
       </div>
@@ -339,19 +341,19 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {/* 指标类型切换 */}
           <div>
-            <label className={labelCls}>指标类型</label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.metricType')}</label>
             <div className="flex gap-4">
-              {(['atomic', 'composite'] as const).map(t => (
-                <label key={t} className="flex items-center gap-1.5 cursor-pointer">
+              {(['atomic', 'composite'] as const).map(mt => (
+                <label key={mt} className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="radio"
-                    value={t}
-                    checked={currentType === t}
-                    onChange={() => setForm(f => ({ ...f, metric_type: t }))}
+                    value={mt}
+                    checked={currentType === mt}
+                    onChange={() => setForm(f => ({ ...f, metric_type: mt }))}
                     className="accent-[#00c9a7]"
                   />
                   <span className="text-xs text-[#a0b4c8]">
-                    {t === 'atomic' ? '原子指标' : '复合指标'}
+                    {mt === 'atomic' ? t('metricsExplorer.metricTab.atomicMetric') : t('metricsExplorer.metricTab.compositeMetric')}
                   </span>
                 </label>
               ))}
@@ -360,7 +362,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {/* 显示名称 */}
           <div>
-            <label className={labelCls}>显示名称 <span className="text-red-400">*</span></label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.displayName')} <span className="text-red-400">*</span></label>
             <input
               className={inputCls}
               value={(form.display_name as string | undefined) ?? ''}
@@ -370,7 +372,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {/* 英文标识 */}
           <div>
-            <label className={labelCls}>英文标识 <span className="text-red-400">*</span></label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.englishName')} <span className="text-red-400">*</span></label>
             <input
               className={inputCls}
               value={(form.name as string | undefined) ?? ''}
@@ -380,16 +382,17 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {/* 分类标签 */}
           <div>
-            <label className={labelCls}>分类标签</label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.categoryTags')}</label>
             <TagInput
               value={(form.category as string | undefined) ?? ''}
               onChange={v => setForm(f => ({ ...f, category: v || undefined }))}
+              t={t}
             />
           </div>
 
           {/* 版本号 */}
           <div>
-            <label className={labelCls}>版本号</label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.version')}</label>
             <input
               className={inputCls}
               value={(form.version as string | undefined) ?? ''}
@@ -401,33 +404,33 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
           {currentType === 'atomic' && (
             <>
               <div>
-                <label className={labelCls}>关联表 <span className="text-red-400">*</span></label>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.relatedTable')} <span className="text-red-400">*</span></label>
                 <DropdownSelect
                   className="w-full"
                   value={form.table_name ?? ''}
-                  placeholder={tables.length === 0 ? '无可用表' : '请选择表...'}
-                  options={tables.map(t => ({ value: t, label: t }))}
+                  placeholder={tables.length === 0 ? t('metricsExplorer.metricTab.noTables') : t('metricsExplorer.metricTab.selectTable')}
+                  options={tables.map(tbl => ({ value: tbl, label: tbl }))}
                   onChange={handleTableChange}
                 />
               </div>
 
               <div>
-                <label className={labelCls}>关联列</label>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.relatedColumn')}</label>
                 <DropdownSelect
                   className="w-full"
                   value={form.column_name ?? ''}
-                  placeholder={columns.length === 0 ? '先选择关联表' : '请选择列...'}
+                  placeholder={columns.length === 0 ? t('metricsExplorer.metricTab.selectColumnFirst') : t('metricsExplorer.metricTab.selectColumn')}
                   options={columns.map(c => ({ value: c.name, label: `${c.name} (${c.data_type})` }))}
                   onChange={v => setValue('column_name', v)}
                 />
               </div>
 
               <div>
-                <label className={labelCls}>聚合方式</label>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.aggregationMethod')}</label>
                 <DropdownSelect
                   className="w-full"
                   value={form.aggregation ?? metric?.aggregation ?? ''}
-                  placeholder="不设置"
+                  placeholder={t('metricsExplorer.metricTab.noAggregation')}
                   options={['SUM', 'COUNT', 'AVG', 'MAX', 'MIN', 'COUNT_DISTINCT'].map(a => ({ value: a, label: a }))}
                   onChange={v => setForm(f => ({ ...f, aggregation: v || undefined }))}
                 />
@@ -437,7 +440,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {/* 描述 */}
           <div>
-            <label className={labelCls}>描述</label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.description')}</label>
             <textarea
               className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
                          text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
@@ -448,7 +451,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {/* 数据口径说明 */}
           <div>
-            <label className={labelCls}>数据口径说明</label>
+            <label className={labelCls}>{t('metricsExplorer.metricTab.dataCaliber')}</label>
             <textarea
               className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
                          text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
@@ -461,7 +464,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
           {currentType === 'atomic' && (
             <div className="border border-[#2a3f5a] rounded overflow-hidden">
               <div className="px-3 py-1.5 bg-[#1a2a3a] border-b border-[#2a3f5a] text-xs text-[#7a9bb8]">
-                filter_sql（WHERE 条件，不含 WHERE 关键字）
+                {t('metricsExplorer.metricTab.filterSql')}
               </div>
               <textarea
                 className="w-full bg-[#0d1821] px-3 py-2 text-xs text-white font-mono
@@ -475,7 +478,7 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
 
           {currentType === 'composite' && (
             <div className="p-3 bg-[#1a2a3a] border border-[#2a3f5a] rounded text-xs text-[#7a9bb8]">
-              复合指标组合器（P2 功能，即将支持）
+              {t('metricsExplorer.metricTab.compositeComingSoon')}
             </div>
           )}
         </div>

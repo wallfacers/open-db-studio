@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Play, Square, Save, ChevronDown, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useConfirmStore } from '../../store/confirmStore';
 import { useSeaTunnelStore } from '../../store/seaTunnelStore';
 import type { Tab } from '../../types';
@@ -91,6 +92,7 @@ interface SeaTunnelJobTabProps {
 }
 
 const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
+  const { t } = useTranslation();
   const jobId = tab.stJobId;
   const { confirm } = useConfirmStore();
   const { updateJobStatus } = useSeaTunnelStore();
@@ -170,11 +172,11 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
           const hasUnknown = Object.keys(obj).some((k) => !knownTopKeys.has(k));
           if (hasUnknown) {
             const ok = await confirm({
-              title: '切换模式',
-              message: '存在高级配置，切换后将丢失自定义字段，确认继续？',
+              title: t('seaTunnelJob.mode.switchTitle'),
+              message: t('seaTunnelJob.mode.switchMessage'),
               variant: 'danger',
-              confirmLabel: '继续切换',
-              cancelLabel: '取消',
+              confirmLabel: t('seaTunnelJob.mode.continueSwitch'),
+              cancelLabel: t('seaTunnelJob.mode.cancel'),
             });
             if (!ok) return;
           }
@@ -189,7 +191,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
       }
       setMode(next);
     },
-    [mode, configJson, builderState, confirm]
+    [mode, configJson, builderState, confirm, t]
   );
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -282,7 +284,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
           type="text"
           value={jobName}
           onChange={(e) => setJobName(e.target.value)}
-          placeholder="Job 名称"
+          placeholder={t('seaTunnelJob.toolbar.jobNamePlaceholder')}
           className="bg-[#0d1117] border border-[#253347] rounded px-2.5 py-1 text-xs text-[#c8daea] placeholder-[#7a9bb8]/50 focus:outline-none focus:border-[#00c9a7]/60 transition-colors w-40"
         />
 
@@ -295,7 +297,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
             }
             className="bg-[#0d1117] border border-[#253347] rounded px-2.5 py-1 text-xs text-[#c8daea] appearance-none pr-7 focus:outline-none focus:border-[#00c9a7]/60 transition-colors cursor-pointer"
           >
-            <option value="">-- 集群连接 --</option>
+            <option value="">{t('seaTunnelJob.toolbar.clusterConnection')}</option>
             {connections.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -329,7 +331,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
             className="flex items-center gap-1.5 px-3 py-1 text-xs text-white bg-red-600/80 hover:bg-red-600 rounded transition-colors"
           >
             <Square size={12} />
-            停止
+            {t('seaTunnelJob.toolbar.stop')}
           </button>
         ) : (
           <button
@@ -342,7 +344,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
             ) : (
               <Play size={12} />
             )}
-            提交
+            {t('seaTunnelJob.toolbar.submit')}
           </button>
         )}
 
@@ -353,7 +355,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
           className="flex items-center gap-1.5 px-3 py-1 text-xs text-[#c8daea] border border-[#253347] hover:border-[#00c9a7]/60 hover:text-[#00c9a7] disabled:opacity-50 rounded transition-colors"
         >
           {saving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
-          保存
+          {t('seaTunnelJob.toolbar.save')}
         </button>
       </div>
 
@@ -367,7 +369,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
               : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
           }`}
         >
-          可视化模式
+          {t('seaTunnelJob.mode.visual')}
         </button>
         <button
           onClick={() => switchMode('script')}
@@ -377,7 +379,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
               : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
           }`}
         >
-          脚本模式
+          {t('seaTunnelJob.mode.script')}
         </button>
       </div>
 

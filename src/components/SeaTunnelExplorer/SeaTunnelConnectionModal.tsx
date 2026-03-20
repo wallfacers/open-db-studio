@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Eye, EyeOff } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 
 interface ConnectionData {
   id: number;
@@ -21,6 +22,7 @@ export function SeaTunnelConnectionModal({
   onClose,
   onSave,
 }: SeaTunnelConnectionModalProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(connection?.name ?? '');
   const [url, setUrl] = useState(connection?.url ?? '');
   const [authToken, setAuthToken] = useState('');
@@ -38,11 +40,11 @@ export function SeaTunnelConnectionModal({
     const trimmedName = name.trim();
     const trimmedUrl = url.trim();
     if (!trimmedName) {
-      setError('连接名称不能为空');
+      setError(t('seaTunnel.connectionModal.nameRequired'));
       return;
     }
     if (!trimmedUrl) {
-      setError('集群地址不能为空');
+      setError(t('seaTunnel.connectionModal.urlRequired'));
       return;
     }
     setSaving(true);
@@ -65,7 +67,7 @@ export function SeaTunnelConnectionModal({
       onSave();
       onClose();
     } catch (err: any) {
-      setError(err?.message ?? '保存失败');
+      setError(err?.message ?? t('seaTunnel.connectionModal.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -75,7 +77,7 @@ export function SeaTunnelConnectionModal({
     if (e.key === 'Escape') onClose();
   };
 
-  const title = mode === 'create' ? '新建集群连接' : '编辑集群连接';
+  const title = t(mode === 'create' ? 'seaTunnel.connectionModal.newTitle' : 'seaTunnel.connectionModal.editTitle');
 
   return (
     <div
@@ -102,14 +104,14 @@ export function SeaTunnelConnectionModal({
           {/* 名称 */}
           <div>
             <label className="block text-xs text-[#7a9bb8] mb-1">
-              连接名称 <span className="text-red-400">*</span>
+              {t('seaTunnel.connectionModal.connectionName')} <span className="text-red-400">*</span>
             </label>
             <input
               ref={nameRef}
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="例如：生产集群"
+              placeholder={t('seaTunnel.connectionModal.namePlaceholder')}
               className="w-full bg-[#0d1117] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#7a9bb8] outline-none focus:border-[#00c9a7] transition-colors"
             />
           </div>
@@ -117,13 +119,13 @@ export function SeaTunnelConnectionModal({
           {/* 集群地址 */}
           <div>
             <label className="block text-xs text-[#7a9bb8] mb-1">
-              集群地址 <span className="text-red-400">*</span>
+              {t('seaTunnel.connectionModal.clusterUrl')} <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
               value={url}
               onChange={e => setUrl(e.target.value)}
-              placeholder="http://host:5801"
+              placeholder={t('seaTunnel.connectionModal.urlPlaceholder')}
               className="w-full bg-[#0d1117] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#7a9bb8] outline-none focus:border-[#00c9a7] transition-colors"
             />
           </div>
@@ -131,14 +133,14 @@ export function SeaTunnelConnectionModal({
           {/* Auth Token（可选） */}
           <div>
             <label className="block text-xs text-[#7a9bb8] mb-1">
-              Auth Token <span className="text-[#7a9bb8]">（可选）</span>
+              Auth Token <span className="text-[#7a9bb8]">({t('seaTunnel.connectionModal.optional')})</span>
             </label>
             <div className="relative">
               <input
                 type={showToken ? 'text' : 'password'}
                 value={authToken}
                 onChange={e => setAuthToken(e.target.value)}
-                placeholder="Bearer token 或留空"
+                placeholder={t('seaTunnel.connectionModal.tokenPlaceholder')}
                 className="w-full bg-[#0d1117] border border-[#253347] rounded px-3 py-1.5 pr-9 text-sm text-[#c8daea] placeholder-[#7a9bb8] outline-none focus:border-[#00c9a7] transition-colors"
               />
               <button
@@ -164,14 +166,14 @@ export function SeaTunnelConnectionModal({
               onClick={onClose}
               className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="px-3 py-1.5 text-xs text-[#0d1117] bg-[#00c9a7] hover:bg-[#00a98f] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? '保存中...' : '保存'}
+              {saving ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

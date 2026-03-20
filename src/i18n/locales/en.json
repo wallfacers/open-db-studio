@@ -808,5 +808,126 @@
       "startGenerate": "Start Generate",
       "goToTasks": "Go to Tasks after generation"
     }
+  },
+  "commonComponents": {
+    "toast": {
+      "copied": "Copied",
+      "copy": "Copy",
+      "askAi": "Ask AI"
+    },
+    "baseModal": {
+      "processing": "Processing..."
+    },
+    "chartBlock": {
+      "generatingChart": "AI is generating chart data",
+      "chartDataError": "Invalid chart data format",
+      "copied": "Copied",
+      "copy": "Copy",
+      "renderFailed": "Chart rendering failed"
+    },
+    "markdownContent": {
+      "copied": "Copied",
+      "copy": "Copy",
+      "expandView": "Expand View",
+      "close": "Close"
+    }
+  },
+  "seaTunnelJob": {
+    "jobLogPanel": {
+      "title": "Run Logs",
+      "clear": "Clear",
+      "clearLog": "Clear Logs",
+      "scrollToBottom": "Scroll to Bottom",
+      "waitingForLogs": "Waiting for logs...",
+      "logsWillAppear": "Run logs will appear after submitting a Job",
+      "jobCompleted": "[INFO] Job completed",
+      "logStreamInterrupted": "[WARN] Log stream interrupted ({{reason}}), switching to status polling...",
+      "pollingResult": "[INFO] Polling result: {{status}}",
+      "pollingFailed": "[ERROR] Polling failed: {{error}}"
+    },
+    "visualBuilder": {
+      "type": "Type",
+      "username": "Username",
+      "password": "Password",
+      "filePath": "File Path",
+      "delimiter": "Delimiter",
+      "hasHeader": "Include Header",
+      "pleaseSelect": "-- Select --",
+      "noTransformSteps": "No transform steps (optional)",
+      "add": "+ Add",
+      "remove": "Remove",
+      "noExtraConfig": "No extra configuration needed",
+      "jobName": "Job Name",
+      "parallelism": "Parallelism",
+      "required": "(required)",
+      "keepFields": "Keep Fields (comma-separated)"
+    },
+    "toolbar": {
+      "jobNamePlaceholder": "Job Name",
+      "clusterConnection": "-- Cluster Connection --",
+      "stop": "Stop",
+      "submit": "Submit",
+      "save": "Save"
+    },
+    "mode": {
+      "visual": "Visual Mode",
+      "script": "Script Mode",
+      "switchTitle": "Switch Mode",
+      "switchMessage": "Advanced configuration detected. Custom fields will be lost after switching. Continue?",
+      "continueSwitch": "Continue",
+      "cancel": "Cancel"
+    }
+  },
+  "seaTunnel": {
+    "title": "Migration Center",
+    "searchPlaceholder": "Search Jobs / Categories...",
+    "refresh": "Refresh",
+    "newConnection": "New Connection",
+    "newCategory": "New Category",
+    "connection": "Connection",
+    "noResults": "No matching results",
+    "noJobs": "No categories or jobs",
+    "connectionModal": {
+      "newTitle": "New Cluster Connection",
+      "editTitle": "Edit Cluster Connection",
+      "connectionName": "Connection Name",
+      "clusterUrl": "Cluster URL",
+      "authToken": "Auth Token",
+      "optional": "optional",
+      "namePlaceholder": "e.g. Production Cluster",
+      "urlPlaceholder": "http://host:5801",
+      "tokenPlaceholder": "Bearer token or leave empty",
+      "nameRequired": "Connection name cannot be empty",
+      "urlRequired": "Cluster URL cannot be empty",
+      "saveFailed": "Save failed"
+    },
+    "categoryModal": {
+      "newTitle": "New Category",
+      "renameTitle": "Rename Category",
+      "categoryName": "Category Name",
+      "namePlaceholder": "Enter category name",
+      "nameRequired": "Category name cannot be empty",
+      "parentCategory": "Parent Category",
+      "depthError": "Maximum 3 levels of nesting supported. Cannot create subcategory here.",
+      "saveFailed": "Save failed"
+    },
+    "jobTree": {
+      "newSubCategory": "New Subcategory",
+      "newJob": "New Job",
+      "deleteCategory": "Delete Category",
+      "deleteJob": "Delete Job",
+      "open": "Open",
+      "moveToCategory": "Move to Category",
+      "confirmDeleteCategory": "Are you sure you want to delete category \"{{name}}\"? All subcategories and jobs will also be deleted. This action cannot be undone.",
+      "confirmDeleteJob": "Are you sure you want to delete Job \"{{name}}\"? This action cannot be undone.",
+      "deleteCategoryTitle": "Delete Category",
+      "deleteJobTitle": "Delete Job",
+      "deleteCategoryFailed": "Failed to delete category",
+      "deleteJobFailed": "Failed to delete job",
+      "createCategoryFailed": "Failed to create category",
+      "createJobFailed": "Failed to create job",
+      "newCategory": "New Category",
+      "newJobName": "New Job"
+    }
   }
 }

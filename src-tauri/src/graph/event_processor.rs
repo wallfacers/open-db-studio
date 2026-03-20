@@ -365,7 +365,7 @@ pub async fn process_pending_events(
                                 rusqlite::params![
                                     link_id,
                                     conn_id,
-                                    "fk",
+                                    &display_name,
                                     display_name,
                                     link_metadata.to_string(),
                                 ],

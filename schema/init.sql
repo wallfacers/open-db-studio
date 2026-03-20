@@ -98,7 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_task_records_status ON task_records(status);
 -- 图谱节点（三层统一建模）
 CREATE TABLE IF NOT EXISTS graph_nodes (
     id            TEXT PRIMARY KEY,
-    node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias')),
+    node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias','link')),
     connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,
     display_name  TEXT,
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     id         TEXT PRIMARY KEY,
     from_node  TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
     to_node    TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
-    edge_type  TEXT NOT NULL CHECK(edge_type IN ('has_column','foreign_key','metric_ref','alias_of','join_path')),
+    edge_type  TEXT NOT NULL CHECK(edge_type IN ('has_column','foreign_key','metric_ref','alias_of','join_path','to_link','from_link')),
     weight     REAL NOT NULL DEFAULT 1.0,
     metadata   TEXT
 );

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Workflow, RefreshCw, Plus, FolderPlus, Search, X } from 'lucide-react';
 import { Tooltip } from '../common/Tooltip';
 import { SeaTunnelJobTree } from './SeaTunnelJobTree';
@@ -13,6 +14,7 @@ export interface SeaTunnelSidebarProps {
 }
 
 export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSidebarProps) {
+  const { t } = useTranslation();
   const { init, createCategory } = useSeaTunnelStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [showConnectionModal, setShowConnectionModal] = useState(false);
@@ -42,26 +44,26 @@ export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSi
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] flex-shrink-0">
         <div className="flex items-center gap-2">
           <Workflow size={14} className="text-[#00c9a7]" />
-          <span className="font-medium text-[#c8daea]">迁移中心</span>
+          <span className="font-medium text-[#c8daea]">{t('seaTunnel.title')}</span>
         </div>
         <div className="flex items-center space-x-2 text-[#7a9bb8]">
-          <Tooltip content="刷新">
+          <Tooltip content={t('seaTunnel.refresh')}>
             <RefreshCw
               size={16}
               className="cursor-pointer hover:text-[#c8daea] transition-colors"
               onClick={() => init()}
             />
           </Tooltip>
-          <Tooltip content="新建连接">
+          <Tooltip content={t('seaTunnel.newConnection')}>
             <div
               className="flex items-center gap-0.5 cursor-pointer hover:text-[#c8daea] transition-colors"
               onClick={() => setShowConnectionModal(true)}
             >
               <Plus size={14} />
-              <span className="text-xs">连接</span>
+              <span className="text-xs">{t('seaTunnel.connection')}</span>
             </div>
           </Tooltip>
-          <Tooltip content="新建分类">
+          <Tooltip content={t('seaTunnel.newCategory')}>
             <div
               className="flex items-center gap-0.5 cursor-pointer hover:text-[#c8daea] transition-colors"
               onClick={() => setShowCategoryModal(true)}
@@ -78,7 +80,7 @@ export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSi
           <Search size={14} className="text-[#7a9bb8] mr-1 flex-shrink-0" />
           <input
             type="text"
-            placeholder="搜索 Job / 分类..."
+            placeholder={t('seaTunnel.searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"

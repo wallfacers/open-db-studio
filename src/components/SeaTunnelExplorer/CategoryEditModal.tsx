@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { STTreeNode } from '../../store/seaTunnelStore';
 
 interface CategoryEditModalProps {
@@ -17,6 +18,7 @@ export function CategoryEditModal({
   onClose,
   onSave,
 }: CategoryEditModalProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(existingName ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -30,7 +32,7 @@ export function CategoryEditModal({
   // 检查深度限制（最多3层，depth 0-based，最大 depth=2）
   const depthError =
     mode === 'create' && parentNode && (parentNode.meta.depth ?? 0) >= 2
-      ? '最多支持 3 层分类嵌套，无法在此处新建子分类'
+      ? t('seaTunnel.categoryModal.depthError')
       : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,7 +40,7 @@ export function CategoryEditModal({
     if (depthError) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('分类名称不能为空');
+      setError(t('seaTunnel.categoryModal.nameRequired'));
       return;
     }
     setSaving(true);
@@ -47,7 +49,7 @@ export function CategoryEditModal({
       await onSave(trimmed);
       onClose();
     } catch (err: any) {
-      setError(err?.message ?? '保存失败');
+      setError(err?.message ?? t('seaTunnel.categoryModal.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -57,8 +59,8 @@ export function CategoryEditModal({
     if (e.key === 'Escape') onClose();
   };
 
-  const title = mode === 'create' ? '新建分类' : '重命名分类';
-  const submitLabel = mode === 'create' ? '创建' : '保存';
+  const title = mode === 'create' ? t('seaTunnel.categoryModal.newTitle') : t('seaTunnel.categoryModal.renameTitle');
+  const submitLabel = mode === 'create' ? t('common.create') : t('common.save');
 
   return (
     <div
@@ -90,18 +92,18 @@ export function CategoryEditModal({
 
           {mode === 'create' && parentNode && !depthError && (
             <div className="text-xs text-[#7a9bb8]">
-              父分类：<span className="text-[#c8daea]">{parentNode.label}</span>
+              {t('seaTunnel.categoryModal.parentCategory')}：<span className="text-[#c8daea]">{parentNode.label}</span>
             </div>
           )}
 
           <div>
-            <label className="block text-xs text-[#7a9bb8] mb-1">分类名称</label>
+            <label className="block text-xs text-[#7a9bb8] mb-1">{t('seaTunnel.categoryModal.categoryName')}</label>
             <input
               ref={inputRef}
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="请输入分类名称"
+              placeholder={t('seaTunnel.categoryModal.namePlaceholder')}
               disabled={!!depthError}
               className="w-full bg-[#0d1117] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#7a9bb8] outline-none focus:border-[#00c9a7] transition-colors disabled:opacity-50"
             />
@@ -118,14 +120,14 @@ export function CategoryEditModal({
               onClick={onClose}
               className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving || !!depthError}
               className="px-3 py-1.5 text-xs text-[#0d1117] bg-[#00c9a7] hover:bg-[#00a98f] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? '保存中...' : submitLabel}
+              {saving ? t('common.saving') : submitLabel}
             </button>
           </div>
         </form>

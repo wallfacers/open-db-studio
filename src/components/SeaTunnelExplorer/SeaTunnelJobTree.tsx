@@ -5,6 +5,7 @@ import {
   Play, CircleStop,
   Trash2, FolderPlus, FilePlus, Eye, MoveRight,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSeaTunnelStore, type STTreeNode } from '../../store/seaTunnelStore';
 import { useConfirmStore } from '../../store/confirmStore';
 
@@ -83,6 +84,7 @@ function getDepth(node: STTreeNode, nodes: Map<string, STTreeNode>): number {
 }
 
 export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTreeProps) {
+  const { t } = useTranslation();
   const {
     nodes, expandedIds, selectedId, isInitializing,
     toggleExpand, selectNode,
@@ -121,16 +123,16 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     const { categoryId } = node.meta;
     if (!categoryId) return;
     const ok = await confirm({
-      title: '删除分类',
-      message: `确定要删除分类「${node.label}」吗？其下所有子分类和 Job 也将被删除，此操作不可撤销。`,
+      title: t('seaTunnel.jobTree.deleteCategoryTitle'),
+      message: t('seaTunnel.jobTree.confirmDeleteCategory', { name: node.label }),
       variant: 'danger',
-      confirmLabel: '删除',
+      confirmLabel: t('common.confirm'),
     });
     if (!ok) return;
     try {
       await deleteCategory(categoryId);
     } catch (e: any) {
-      setError(e?.message ?? '删除分类失败');
+      setError(e?.message ?? t('seaTunnel.jobTree.deleteCategoryFailed'));
     }
   };
 
@@ -138,16 +140,16 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     const { jobId } = node.meta;
     if (!jobId) return;
     const ok = await confirm({
-      title: '删除 Job',
-      message: `确定要删除 Job「${node.label}」吗？此操作不可撤销。`,
+      title: t('seaTunnel.jobTree.deleteJobTitle'),
+      message: t('seaTunnel.jobTree.confirmDeleteJob', { name: node.label }),
       variant: 'danger',
-      confirmLabel: '删除',
+      confirmLabel: t('common.confirm'),
     });
     if (!ok) return;
     try {
       await deleteJob(jobId);
     } catch (e: any) {
-      setError(e?.message ?? '删除 Job 失败');
+      setError(e?.message ?? t('seaTunnel.jobTree.deleteJobFailed'));
     }
   };
 
@@ -155,9 +157,9 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     setContextMenu(null);
     const { categoryId } = parentNode.meta;
     try {
-      await createCategory('新分类', categoryId);
+      await createCategory(t('seaTunnel.jobTree.newCategory'), categoryId);
     } catch (e: any) {
-      setError(e?.message ?? '创建分类失败');
+      setError(e?.message ?? t('seaTunnel.jobTree.createCategoryFailed'));
     }
   };
 
@@ -165,9 +167,9 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     setContextMenu(null);
     const { categoryId } = parentNode.meta;
     try {
-      await createJob('新 Job', categoryId);
+      await createJob(t('seaTunnel.jobTree.newJobName'), categoryId);
     } catch (e: any) {
-      setError(e?.message ?? '创建 Job 失败');
+      setError(e?.message ?? t('seaTunnel.jobTree.createJobFailed'));
     }
   };
 
@@ -187,7 +189,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
   if (visibleNodes.length === 0) {
     return (
       <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
-        {searchQuery.trim() ? '无匹配结果' : '暂无分类或 Job'}
+        {searchQuery.trim() ? t('seaTunnel.noResults') : t('seaTunnel.noJobs')}
       </div>
     );
   }
@@ -291,13 +293,13 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
                 onClick={() => handleNewSubCategory(contextMenu.node)}
               >
-                <FolderPlus size={13} />新建子分类
+                <FolderPlus size={13} />{t('seaTunnel.jobTree.newSubCategory')}
               </button>
               <button
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
                 onClick={() => handleNewJob(contextMenu.node)}
               >
-                <FilePlus size={13} />新建 Job
+                <FilePlus size={13} />{t('seaTunnel.jobTree.newJob')}
               </button>
               <div className="h-px bg-[#253347] my-1" />
               <button
@@ -308,7 +310,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                   await handleDeleteCategory(node);
                 }}
               >
-                <Trash2 size={13} />删除分类
+                <Trash2 size={13} />{t('seaTunnel.jobTree.deleteCategory')}
               </button>
             </>
           ) : (
@@ -321,7 +323,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                   setContextMenu(null);
                 }}
               >
-                <Eye size={13} />打开
+                <Eye size={13} />{t('seaTunnel.jobTree.open')}
               </button>
               <div className="h-px bg-[#253347] my-1" />
               <button
@@ -331,7 +333,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                   setContextMenu(null);
                 }}
               >
-                <MoveRight size={13} />移动到分类
+                <MoveRight size={13} />{t('seaTunnel.jobTree.moveToCategory')}
               </button>
               <div className="h-px bg-[#253347] my-1" />
               <button
@@ -342,7 +344,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                   await handleDeleteJob(node);
                 }}
               >
-                <Trash2 size={13} />删除 Job
+                <Trash2 size={13} />{t('seaTunnel.jobTree.deleteJob')}
               </button>
             </>
           )}

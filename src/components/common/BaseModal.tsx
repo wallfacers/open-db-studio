@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface FooterButton {
   label: string;
@@ -41,6 +42,8 @@ export const BaseModal: React.FC<BaseModalProps> = ({
   className = '',
   closeOnBackdrop = true,
 }) => {
+  const { t } = useTranslation();
+
   // Escape 键关闭
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -87,7 +90,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
                   disabled={btn.disabled || btn.loading}
                   className={VARIANT_CLASS[btn.variant ?? 'secondary']}
                 >
-                  {btn.loading ? '处理中...' : btn.label}
+                  {btn.loading ? t('commonComponents.baseModal.processing') : btn.label}
                 </button>
               ))}
             </div>

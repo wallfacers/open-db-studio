@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Trash2, Pencil, Plus, Sparkles, ListTodo, ChevronFirst, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { Metric, MetricPageResult, MetricScope, MetricStatus } from '../../types';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
@@ -16,11 +17,12 @@ interface Props {
 type FilterTab = 'all' | MetricStatus;
 
 /** 判断是否为从未填写过内容的空白指标 */
-function isBlankMetric(m: Metric): boolean {
-  return m.display_name === '新指标' && !m.table_name && !m.description;
+function isBlankMetric(m: Metric, t: (key: string) => string): boolean {
+  return m.display_name === t('metricsExplorer.newMetric') && !m.table_name && !m.description;
 }
 
 export function MetricListPanel({ scope, onOpenMetric }: Props) {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -66,7 +68,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         return;
       }
     } catch (e: any) {
-      setError(e?.message ?? '加载失败');
+      setError(e?.message ?? t('metricsExplorer.metricTab.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -94,17 +96,17 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   const doDelete = async (ids: number[]) => {
     const toDelete = metrics.filter(m => ids.includes(m.id));
-    const skipConfirm = toDelete.length === 1 && isBlankMetric(toDelete[0]);
+    const skipConfirm = toDelete.length === 1 && isBlankMetric(toDelete[0], t);
 
     if (!skipConfirm) {
       const msg = ids.length === 1
-        ? `确定要删除指标「${toDelete[0]?.display_name}」吗？此操作不可撤销。`
-        : `确定要删除选中的 ${ids.length} 个指标吗？此操作不可撤销。`;
+        ? t('metricsExplorer.metricList.confirmDelete', { name: toDelete[0]?.display_name })
+        : t('metricsExplorer.metricList.confirmDeleteMulti', { count: ids.length });
       const ok = await confirm({
-        title: '删除指标',
+        title: t('metricsExplorer.metricList.deleteTitle'),
         message: msg,
         variant: 'danger',
-        confirmLabel: '删除',
+        confirmLabel: t('metricsExplorer.metricList.delete'),
       });
       if (!ok) return;
     }
@@ -114,7 +116,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         await deleteMetric(id, `metric_${id}`, parentNodeId ?? undefined);
         closeMetricTabById(id);
       } catch (e: any) {
-        setError(e?.message ?? '删除失败');
+        setError(e?.message ?? t('metricsExplorer.metricList.deleteFailed'));
         return;
       }
     }
@@ -133,7 +135,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const doCreate = () => {
     const scopeTitle = scope.schema && scope.database
       ? `${scope.database}.${scope.schema}`
-      : scope.database ?? '新指标';
+      : scope.database ?? t('metricsExplorer.newMetric');
     openNewMetricTab(scope, scopeTitle);
   };
 
@@ -174,7 +176,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       if (goToTasks) {
         useTaskStore.getState().setVisible(true);
       } else {
-        setGenInfo('AI 生成任务已启动，完成后指标将自动刷新。');
+        setGenInfo(t('metricsExplorer.metricList.aiTaskStarted'));
       }
     } catch (e: any) {
       setError(typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e)));
@@ -202,19 +204,19 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   const statusBadge = (status: MetricStatus) => {
     const map: Record<MetricStatus, { cls: string; label: string }> = {
-      approved: { cls: 'bg-[#0d3d2e] text-[#00c9a7]', label: '✅ 已通过' },
-      rejected: { cls: 'bg-[#3d1a1a] text-[#f87171]', label: '❌ 已拒绝' },
-      draft:    { cls: 'bg-[#1e2d42] text-[#7a9bb8]',  label: '📝 草稿' },
+      approved: { cls: 'bg-[#0d3d2e] text-[#00c9a7]', label: `✅ ${t('metricsExplorer.metricList.statusApproved')}` },
+      rejected: { cls: 'bg-[#3d1a1a] text-[#f87171]', label: `❌ ${t('metricsExplorer.metricList.statusRejected')}` },
+      draft:    { cls: 'bg-[#1e2d42] text-[#7a9bb8]',  label: `📝 ${t('metricsExplorer.metricList.statusDraft')}` },
     };
     const s = map[status];
     return <span className={`px-1.5 py-0.5 rounded text-[10px] ${s.cls}`}>{s.label}</span>;
   };
 
   const TABS: { key: FilterTab; label: string }[] = [
-    { key: 'all', label: '全部' },
-    { key: 'draft', label: '草稿' },
-    { key: 'approved', label: '已通过' },
-    { key: 'rejected', label: '已拒绝' },
+    { key: 'all', label: t('metricsExplorer.metricList.all') },
+    { key: 'draft', label: t('metricsExplorer.metricList.draft') },
+    { key: 'approved', label: t('metricsExplorer.metricList.approved') },
+    { key: 'rejected', label: t('metricsExplorer.metricList.rejected') },
   ];
 
   return (
@@ -226,26 +228,26 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => setPage(1)}
           disabled={page <= 1}
-          title="首页"
+          title={t('metricsExplorer.metricList.firstPage')}
         ><ChevronFirst size={13} /></button>
         <button
           className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => setPage(p => p - 1)}
           disabled={page <= 1}
-          title="上一页"
+          title={t('metricsExplorer.metricList.prevPage')}
         ><ChevronLeft size={13} /></button>
         <span className="text-xs text-[#a0b4c8] px-1">{page}</span>
         <button
           className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => setPage(p => p + 1)}
           disabled={rowCount < pageSize}
-          title="下一页"
+          title={t('metricsExplorer.metricList.nextPage')}
         ><ChevronRight size={13} /></button>
-        <span className="text-xs text-[#4a6a8a]">{pageSize}行/页</span>
+        <span className="text-xs text-[#4a6a8a]">{pageSize}{t('metricsExplorer.metricList.rowsPerPage')}</span>
         <button
           className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white"
           onClick={load}
-          title="刷新"
+          title={t('metricsExplorer.refresh')}
         ><RefreshCw size={12} /></button>
         <div className="w-px h-4 bg-[#1e2d42] mx-1" />
         <div className="flex gap-1">
@@ -262,7 +264,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
         <input
           className="w-40 bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1 text-xs
                      text-white placeholder-[#4a6a8a] focus:outline-none focus:border-[#00c9a7]"
-          placeholder="搜索指标名称..."
+          placeholder={t('metricsExplorer.metricList.searchPlaceholder')}
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
         />
@@ -270,12 +272,12 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           className="flex items-center gap-1 px-2 py-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
                      text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7]"
           onClick={doCreate}
-        ><Plus size={12} /> 新增</button>
+        ><Plus size={12} /> {t('metricsExplorer.metricList.add')}</button>
         <button
           className="flex items-center gap-1 px-2 py-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
                      text-xs text-[#a0b4c8] hover:border-[#00c9a7] hover:text-[#00c9a7]"
           onClick={() => setShowTablePicker(true)}
-        ><Sparkles size={12} /> AI 生成</button>
+        ><Sparkles size={12} /> {t('metricsExplorer.metricList.aiGenerate')}</button>
       </div>
 
       {/* 表格 */}
@@ -290,7 +292,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
               onClick={() => { setGenInfo(null); useTaskStore.getState().setVisible(true); }}
             >
               <ListTodo size={12} />
-              查看任务
+              {t('metricsExplorer.metricList.viewTasks')}
             </button>
             <button
               className="text-[#7a9bb8] hover:text-white flex-shrink-0 ml-1"
@@ -307,21 +309,21 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-[#00c9a7] block" />
                 </div>
               </th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">显示名称</th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">关联表</th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">关联字段</th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">聚合</th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">类型</th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">状态</th>
-              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal text-right">操作</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{t('metricsExplorer.metricList.displayName')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{t('metricsExplorer.metricList.relatedTable')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{t('metricsExplorer.metricList.relatedColumn')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{t('metricsExplorer.metricList.aggregation')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{t('metricsExplorer.metricList.type')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{t('metricsExplorer.metricList.status')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal text-right">{t('metricsExplorer.metricList.actions')}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={8} className="text-center py-8 text-[#7a9bb8]">加载中...</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-[#7a9bb8]">{t('metricsExplorer.loading')}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-8 text-[#4a6a8a]">暂无指标</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-[#4a6a8a]">{t('metricsExplorer.metricList.noMetrics')}</td></tr>
             )}
             {filtered.map(m => (
               <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
@@ -339,7 +341,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                   <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                     m.metric_type === 'composite' ? 'bg-[#2d1a4a] text-[#c084fc]' : 'bg-[#1a2a3a] text-[#7a9bb8]'
                   }`}>
-                    {m.metric_type === 'composite' ? '复合' : '原子'}
+                    {m.metric_type === 'composite' ? t('metricsExplorer.metricList.typeComposite') : t('metricsExplorer.metricList.typeAtomic')}
                   </span>
                 </td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]">{statusBadge(m.status)}</td>
@@ -348,14 +350,14 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                     <button
                       className="flex items-center justify-center text-[#7a9bb8] hover:text-white"
                       onClick={() => onOpenMetric?.(m.id, m.display_name)}
-                      title="编辑"
+                      title={t('metricsExplorer.metricList.edit')}
                     >
                       <Pencil size={12} />
                     </button>
                     <button
                       className="flex items-center justify-center text-red-400 hover:text-red-300"
                       onClick={() => doDelete([m.id])}
-                      title="删除"
+                      title={t('metricsExplorer.metricList.delete')}
                     >
                       <Trash2 size={12} />
                     </button>
@@ -370,17 +372,17 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       {/* 状态栏 */}
       <div className="flex items-center px-4 h-7 bg-[#080d12] border-t border-[#1e2d42] flex-shrink-0">
         <span className="text-xs text-[#7a9bb8]">
-          {search ? filtered.length : rowCount} 行 · {durationMs}ms
+          {search ? filtered.length : rowCount} {t('metricsExplorer.metricList.rows')} · {durationMs}ms
         </span>
       </div>
 
       {/* 批量操作栏 */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-2 bg-[#1a2a3a] border-t border-[#2a3f5a] text-xs flex-shrink-0">
-          <span className="text-[#7a9bb8]">已选 {selected.size} 项</span>
-          <button className="text-red-400 hover:text-red-300" onClick={() => doDelete([...selected])}>批量删除</button>
-          <button className="text-[#00c9a7] hover:text-[#00b090]" onClick={() => doSetStatus([...selected], 'approved')}>批量通过</button>
-          <button className="text-[#f87171] hover:text-red-300" onClick={() => doSetStatus([...selected], 'rejected')}>批量拒绝</button>
+          <span className="text-[#7a9bb8]">{t('metricsExplorer.metricList.selected', { count: selected.size })}</span>
+          <button className="text-red-400 hover:text-red-300" onClick={() => doDelete([...selected])}>{t('metricsExplorer.metricList.batchDelete')}</button>
+          <button className="text-[#00c9a7] hover:text-[#00b090]" onClick={() => doSetStatus([...selected], 'approved')}>{t('metricsExplorer.metricList.batchApprove')}</button>
+          <button className="text-[#f87171] hover:text-red-300" onClick={() => doSetStatus([...selected], 'rejected')}>{t('metricsExplorer.metricList.batchReject')}</button>
         </div>
       )}
 

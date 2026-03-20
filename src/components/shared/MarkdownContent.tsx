@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check, Maximize2, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ChartBlock } from './ChartBlock';
 
 // ── 代码放大弹框 ─────────────────────────────────────────────────────────────
@@ -13,6 +14,7 @@ const CodeExpandModal: React.FC<{
   code: string;
   onClose: () => void;
 }> = memo(({ language, code, onClose }) => {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -54,15 +56,15 @@ const CodeExpandModal: React.FC<{
               className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
             >
               {copied ? (
-                <><Check size={13} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
+                <><Check size={13} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
-                <><Copy size={13} /><span>复制</span></>
+                <><Copy size={13} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
             </button>
             <button
               onClick={onClose}
               className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-              title="关闭"
+              title={t('commonComponents.markdownContent.close')}
             >
               <X size={16} />
             </button>
@@ -73,9 +75,9 @@ const CodeExpandModal: React.FC<{
           <SyntaxHighlighter
             style={oneDark}
             language={language || 'plaintext'}
-            useInlineStyles={false}
+            useInlineStyles={true}
             PreTag="div"
-            customStyle={{ margin: 0, borderRadius: 0, fontSize: '13px', background: '#0d1117', padding: '16px', minHeight: '100%', overflowX: 'auto' }}
+            customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', minHeight: '100%', overflowX: 'auto' }}
             codeTagProps={{ style: { background: 'transparent' } }}
           >
             {code}
@@ -89,6 +91,7 @@ const CodeExpandModal: React.FC<{
 
 // ── 代码块 ───────────────────────────────────────────────────────────────────
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,7 +122,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
             <button
               onClick={() => setExpanded(true)}
               className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-              title="放大查看"
+              title={t('commonComponents.markdownContent.expandView')}
             >
               <Maximize2 size={12} />
             </button>
@@ -128,9 +131,9 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
               className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
             >
               {copied ? (
-                <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
+                <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
-                <><Copy size={12} /><span>复制</span></>
+                <><Copy size={12} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
             </button>
           </div>
@@ -138,7 +141,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
         <SyntaxHighlighter
           style={oneDark}
           language={language || 'plaintext'}
-          useInlineStyles={false}
+          useInlineStyles={true}
           PreTag="div"
           customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', overflowX: 'auto' }}
           codeTagProps={{ style: { background: 'transparent' } }}

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { ChevronDown, Trash2, ArrowDownToLine } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface LogLine {
   ts: string;
@@ -15,6 +16,7 @@ interface JobLogPanelProps {
 }
 
 const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClear }) => {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -48,14 +50,14 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
       // Job finished
       listen<{ job_id: string }>('st_job_finished', ({ payload }) => {
         if (payload.job_id !== jobId) return;
-        appendLog('[INFO] Job 已完成');
+        appendLog(t('seaTunnelJob.jobLogPanel.jobCompleted'));
         onStatusChange('FINISHED');
       }),
 
       // Stream error → fallback polling
       listen<{ job_id: string; reason: string }>('st_job_stream_error', ({ payload }) => {
         if (payload.job_id !== jobId) return;
-        appendLog(`[WARN] 日志流中断（${payload.reason}），切换为状态轮询...`);
+        appendLog(t('seaTunnelJob.jobLogPanel.logStreamInterrupted', { reason: payload.reason }));
 
         if (pollingTimer) clearInterval(pollingTimer);
         pollingTimer = setInterval(async () => {
@@ -64,11 +66,11 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
             if (['FINISHED', 'FAILED', 'CANCELLED'].includes(status)) {
               if (pollingTimer) clearInterval(pollingTimer);
               pollingTimer = null;
-              appendLog(`[INFO] 状态轮询结果: ${status}`);
+              appendLog(t('seaTunnelJob.jobLogPanel.pollingResult', { status }));
               onStatusChange(status);
             }
           } catch (e) {
-            appendLog(`[ERROR] 状态轮询失败: ${String(e)}`);
+            appendLog(t('seaTunnelJob.jobLogPanel.pollingFailed', { error: String(e) }));
           }
         }, 10_000);
       }),
@@ -80,7 +82,7 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
         unlisteners.forEach((fn) => fn());
       });
     };
-  }, [jobId, appendLog, onStatusChange]);
+  }, [jobId, appendLog, onStatusChange, t]);
 
   const handleClear = () => {
     setLogs([]);
@@ -102,7 +104,7 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
             size={13}
             className={`transition-transform ${collapsed ? '-rotate-90' : ''}`}
           />
-          运行日志
+          {t('seaTunnelJob.jobLogPanel.title')}
           {logs.length > 0 && (
             <span className="text-[10px] bg-[#1a2639] text-[#7a9bb8] px-1.5 py-0.5 rounded-full">
               {logs.length}
@@ -113,18 +115,18 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
         <div className="flex items-center gap-1">
           <button
             onClick={handleClear}
-            title="清空日志"
+            title={t('seaTunnelJob.jobLogPanel.clearLog')}
             className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded transition-colors"
           >
             <Trash2 size={11} />
-            清空
+            {t('seaTunnelJob.jobLogPanel.clear')}
           </button>
           <button
             onClick={() => {
               setAutoScroll(true);
               bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
             }}
-            title="滚动到底部"
+            title={t('seaTunnelJob.jobLogPanel.scrollToBottom')}
             className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${
               autoScroll
                 ? 'text-[#00c9a7] bg-[#00c9a7]/10'
@@ -148,7 +150,7 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
         >
           {logs.length === 0 ? (
             <p className="text-[11px] text-[#7a9bb8]/60 italic px-1 py-1">
-              {jobId ? '等待日志输出...' : '提交 Job 后将显示运行日志'}
+              {jobId ? t('seaTunnelJob.jobLogPanel.waitingForLogs') : t('seaTunnelJob.jobLogPanel.logsWillAppear')}
             </p>
           ) : (
             <div className="font-mono text-[11px] leading-relaxed space-y-0.5">

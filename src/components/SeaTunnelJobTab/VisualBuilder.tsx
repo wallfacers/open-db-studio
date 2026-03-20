@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,8 +24,8 @@ export interface ConnectorField {
 const DB_FIELDS: ConnectorField[] = [
   { key: 'url',      label: 'JDBC URL', required: true,  type: 'text' },
   { key: 'driver',   label: 'Driver',   required: true,  type: 'text' },
-  { key: 'user',     label: '用户名',   required: true,  type: 'text' },
-  { key: 'password', label: '密码',     required: false, type: 'password' },
+  { key: 'user',     label: 'username', required: true,  type: 'text' },
+  { key: 'password', label: 'password', required: false, type: 'password' },
   { key: 'query',    label: 'SQL Query',required: false, type: 'text' },
   { key: 'database', label: 'Database', required: false, type: 'text' },
   { key: 'table',    label: 'Table',    required: false, type: 'text' },
@@ -36,12 +37,12 @@ export const CONNECTOR_FIELDS: Record<ConnectorType, ConnectorField[]> = {
   SQLServer:  DB_FIELDS,
   Oracle:     DB_FIELDS,
   FileCSV: [
-    { key: 'path',       label: '文件路径', required: true,  type: 'text' },
-    { key: 'delimiter',  label: '分隔符',   required: false, type: 'text' },
-    { key: 'has_header', label: '包含表头', required: false, type: 'select', options: ['true', 'false'] },
+    { key: 'path',       label: 'filePath',  required: true,  type: 'text' },
+    { key: 'delimiter',  label: 'delimiter', required: false, type: 'text' },
+    { key: 'has_header', label: 'hasHeader', required: false, type: 'select', options: ['true', 'false'] },
   ],
   FileJSON: [
-    { key: 'path', label: '文件路径', required: true, type: 'text' },
+    { key: 'path', label: 'filePath', required: true, type: 'text' },
   ],
   Console: [],
 };
@@ -57,7 +58,7 @@ const TRANSFORM_FIELDS: Record<TransformType, ConnectorField[]> = {
     { key: 'field_mapper', label: 'Field Mapper (JSON)', required: false, type: 'text' },
   ],
   Filter: [
-    { key: 'fields', label: '保留字段 (逗号分隔)', required: false, type: 'text' },
+    { key: 'fields', label: 'keepFields', required: false, type: 'text' },
   ],
   ReplaceString: [
     { key: 'replace_string', label: 'Replace String (JSON)', required: false, type: 'text' },
@@ -175,9 +176,18 @@ interface FieldInputProps {
   field: ConnectorField;
   value: string;
   onChange: (v: string) => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }
 
-const FieldInput: React.FC<FieldInputProps> = ({ field, value, onChange }) => {
+const FieldInput: React.FC<FieldInputProps> = ({ field, value, onChange, t }) => {
+  // Get translated label
+  const getLabel = (labelKey: string): string => {
+    const key = `seaTunnelJob.visualBuilder.${labelKey}`;
+    const translated = t(key);
+    // If translation doesn't exist, return the original label
+    return translated === key ? labelKey : translated;
+  };
+
   if (field.type === 'select' && field.options) {
     return (
       <div className="relative">
@@ -186,7 +196,7 @@ const FieldInput: React.FC<FieldInputProps> = ({ field, value, onChange }) => {
           onChange={(e) => onChange(e.target.value)}
           className={`${inputCls} appearance-none pr-7 cursor-pointer`}
         >
-          <option value="">-- 请选择 --</option>
+          <option value="">{t('seaTunnelJob.visualBuilder.pleaseSelect')}</option>
           {field.options.map((opt) => (
             <option key={opt} value={opt}>{opt}</option>
           ))}
@@ -196,12 +206,14 @@ const FieldInput: React.FC<FieldInputProps> = ({ field, value, onChange }) => {
     );
   }
 
+  const label = getLabel(field.label);
+
   return (
     <input
       type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder={field.required ? `${field.label} (必填)` : field.label}
+      placeholder={field.required ? `${label} ${t('seaTunnelJob.visualBuilder.required')}` : label}
       className={inputCls}
     />
   );
@@ -211,9 +223,17 @@ interface ConnectorPanelProps {
   title: string;
   config: ConnectorConfig;
   onChange: (config: ConnectorConfig) => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }
 
-const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange }) => {
+// Helper to translate label keys
+const getTranslatedLabel = (labelKey: string, t: (key: string) => string): string => {
+  const key = `seaTunnelJob.visualBuilder.${labelKey}`;
+  const translated = t(key);
+  return translated === key ? labelKey : translated;
+};
+
+const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange, t }) => {
   const fields = CONNECTOR_FIELDS[config.type] ?? [];
 
   const handleTypeChange = (type: ConnectorType) => {
@@ -232,15 +252,15 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
 
       {/* Connector type selector */}
       <div className="flex flex-col gap-1">
-        <span className={labelCls}>类型</span>
+        <span className={labelCls}>{t('seaTunnelJob.visualBuilder.type')}</span>
         <div className="relative">
           <select
             value={config.type}
             onChange={(e) => handleTypeChange(e.target.value as ConnectorType)}
             className={`${inputCls} appearance-none pr-7 cursor-pointer`}
           >
-            {CONNECTOR_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
+            {CONNECTOR_TYPES.map((ct) => (
+              <option key={ct} value={ct}>{ct}</option>
             ))}
           </select>
           <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] pointer-events-none" />
@@ -250,18 +270,19 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
       {/* Dynamic fields */}
       <div className="flex flex-col gap-2.5 overflow-y-auto flex-1 pr-0.5">
         {fields.length === 0 && (
-          <p className="text-xs text-[#7a9bb8] italic mt-2">无需额外配置</p>
+          <p className="text-xs text-[#7a9bb8] italic mt-2">{t('seaTunnelJob.visualBuilder.noExtraConfig')}</p>
         )}
         {fields.map((field) => (
           <div key={field.key} className="flex flex-col gap-1">
             <span className={labelCls}>
-              {field.label}
+              {getTranslatedLabel(field.label, t)}
               {field.required && <span className="text-red-400 ml-0.5">*</span>}
             </span>
             <FieldInput
               field={field}
               value={config.fields[field.key] ?? ''}
               onChange={(v) => handleFieldChange(field.key, v)}
+              t={t}
             />
           </div>
         ))}
@@ -273,9 +294,10 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
 interface TransformPanelProps {
   transforms: TransformConfig[];
   onChange: (transforms: TransformConfig[]) => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
 }
 
-const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange }) => {
+const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange, t }) => {
   const addTransform = () => {
     onChange([...transforms, { type: 'FieldMapper', fields: {} }]);
   };
@@ -284,9 +306,9 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange })
     onChange(transforms.filter((_, i) => i !== idx));
   };
 
-  const updateTransform = (idx: number, t: TransformConfig) => {
+  const updateTransform = (idx: number, tc: TransformConfig) => {
     const next = [...transforms];
-    next[idx] = t;
+    next[idx] = tc;
     onChange(next);
   };
 
@@ -300,22 +322,22 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange })
           onClick={addTransform}
           className="text-[10px] text-[#00c9a7] hover:text-white px-2 py-0.5 rounded border border-[#253347] hover:border-[#00c9a7]/60 transition-colors"
         >
-          + 添加
+          {t('seaTunnelJob.visualBuilder.add')}
         </button>
       </div>
 
       <div className="flex flex-col gap-3 overflow-y-auto flex-1 pr-0.5">
         {transforms.length === 0 && (
-          <p className="text-xs text-[#7a9bb8] italic mt-2">无转换步骤（可选）</p>
+          <p className="text-xs text-[#7a9bb8] italic mt-2">{t('seaTunnelJob.visualBuilder.noTransformSteps')}</p>
         )}
-        {transforms.map((t, idx) => {
-          const fields = TRANSFORM_FIELDS[t.type] ?? [];
+        {transforms.map((tr, idx) => {
+          const fields = TRANSFORM_FIELDS[tr.type] ?? [];
           return (
             <div key={idx} className="bg-[#0d1117] border border-[#253347] rounded p-2.5 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="relative flex-1 mr-2">
                   <select
-                    value={t.type}
+                    value={tr.type}
                     onChange={(e) =>
                       updateTransform(idx, { type: e.target.value as TransformType, fields: {} })
                     }
@@ -330,20 +352,21 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange })
                 <button
                   onClick={() => removeTransform(idx)}
                   className="text-[#7a9bb8] hover:text-red-400 transition-colors text-xs px-1"
-                  title="删除"
+                  title={t('seaTunnelJob.visualBuilder.remove')}
                 >
                   ✕
                 </button>
               </div>
               {fields.map((f) => (
                 <div key={f.key} className="flex flex-col gap-1">
-                  <span className={labelCls}>{f.label}</span>
+                  <span className={labelCls}>{getTranslatedLabel(f.label, t)}</span>
                   <FieldInput
                     field={f}
-                    value={t.fields[f.key] ?? ''}
+                    value={tr.fields[f.key] ?? ''}
                     onChange={(v) =>
-                      updateTransform(idx, { ...t, fields: { ...t.fields, [f.key]: v } })
+                      updateTransform(idx, { ...tr, fields: { ...tr.fields, [f.key]: v } })
                     }
+                    t={t}
                   />
                 </div>
               ))}
@@ -363,11 +386,13 @@ interface VisualBuilderProps {
 }
 
 const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-col h-full gap-0">
       {/* Env bar */}
       <div className="flex items-center gap-4 px-3 py-2 bg-[#0d1117] border-b border-[#253347] flex-shrink-0">
-        <span className={`${labelCls} whitespace-nowrap`}>Job 名称</span>
+        <span className={`${labelCls} whitespace-nowrap`}>{t('seaTunnelJob.visualBuilder.jobName')}</span>
         <input
           type="text"
           value={value.env.jobName}
@@ -375,7 +400,7 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
           placeholder="unnamed-job"
           className={`${inputCls} flex-1`}
         />
-        <span className={`${labelCls} whitespace-nowrap`}>并行度</span>
+        <span className={`${labelCls} whitespace-nowrap`}>{t('seaTunnelJob.visualBuilder.parallelism')}</span>
         <input
           type="number"
           min={1}
@@ -395,6 +420,7 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
             title="Source"
             config={value.source}
             onChange={(source) => onChange({ ...value, source })}
+            t={t}
           />
         </div>
 
@@ -403,6 +429,7 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
           <TransformPanel
             transforms={value.transforms}
             onChange={(transforms) => onChange({ ...value, transforms })}
+            t={t}
           />
         </div>
 
@@ -412,6 +439,7 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
             title="Sink"
             config={value.sink}
             onChange={(sink) => onChange({ ...value, sink })}
+            t={t}
           />
         </div>
       </div>

@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useMemo, memo, useRef, useEffect, useLayoutEffect } from 'react';
+import ReactDOM from 'react-dom';
 import ReactECharts from 'echarts-for-react';
 // 重要：必须从 'echarts/core' 导入，与测试中 vi.mock('echarts/core') 路径一致
 // 不要改成 import * as echarts from 'echarts'（全包路径）
 import * as echarts from 'echarts/core';
-import { Copy, Check, AlertTriangle } from 'lucide-react';
+import { Copy, Check, AlertTriangle, Maximize2, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // ── ODS 暗色主题（与项目色系一致）────────────────────────────────────────────
 const COLOR_PALETTE = [
@@ -137,6 +139,49 @@ const ODS_CHART_THEME = {
 // 模块加载时注册一次，之后所有 ReactECharts theme="ods-dark" 均使用此主题
 echarts.registerTheme('ods-dark', ODS_CHART_THEME);
 
+// ── 图表放大弹框 ──────────────────────────────────────────────────────────────
+const ChartExpandModal: React.FC<{
+  option: Record<string, unknown>;
+  chartType: string;
+  onClose: () => void;
+}> = memo(({ option, chartType, onClose }) => {
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return ReactDOM.createPortal(
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#1e2d42] flex-shrink-0">
+          <span className="text-xs text-[#7a9bb8] font-mono">{chartType}</span>
+          <button
+            onClick={onClose}
+            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            title="关闭"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 p-2">
+          <ReactECharts
+            option={option}
+            theme="ods-dark"
+            style={{ height: '70vh', width: '100%' }}
+            notMerge={true}
+            opts={{ renderer: 'canvas' }}
+          />
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+});
+
 // ── ErrorBoundary（捕获 ECharts 渲染异常，降级为文字提示）────────────────────
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -217,6 +262,16 @@ function injectOptionFix(option: Record<string, unknown>): Record<string, unknow
     }
   }
 
+  // ── fix title backgroundColor：AI 可能带自定义背景色，统一透明避免色块异常 ──
+  if (result.title) {
+    const normalizeTitle = (t: Record<string, unknown>) => ({ ...t, backgroundColor: 'transparent' });
+    if (Array.isArray(result.title)) {
+      result = { ...result, title: (result.title as Record<string, unknown>[]).map(normalizeTitle) };
+    } else {
+      result = { ...result, title: normalizeTitle(result.title as Record<string, unknown>) };
+    }
+  }
+
   return result;
 }
 
@@ -264,6 +319,7 @@ const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }
 // ── ChartBlock ────────────────────────────────────────────────────────────────
 // 重要约定：此组件只负责渲染，不持有外部 state；所有状态均在组件内部管理。
 export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = memo(({ code, isStreaming = false }) => {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -300,7 +356,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[#1e2d42]">
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
           <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-          <span className="text-xs text-[#5b8ab0] animate-pulse">AI 正在生成图表数据</span>
+          <span className="text-xs text-[#5b8ab0] animate-pulse">{t('commonComponents.chartBlock.generatingChart')}</span>
         </div>
         <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
           <div className="flex flex-col items-center gap-3">
@@ -325,7 +381,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <div data-testid="chart-error" className="my-2 rounded overflow-hidden border border-red-800/40">
         <div className="flex items-center gap-2 px-3 py-2 bg-red-900/20 border-b border-red-800/40">
           <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
-          <span className="text-xs text-red-400">图表数据格式有误</span>
+          <span className="text-xs text-red-400">{t('commonComponents.chartBlock.chartDataError')}</span>
         </div>
         <pre className="bg-[#0d1117] text-[#f87171] text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
           {code}
@@ -339,8 +395,8 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
     (option!.series as Array<{ type?: string }>)?.[0]?.type ?? 'chart'
   );
 
-  // 背景色始终强制覆盖，其余字段尊重 AI 输出
-  const mergedOption = { backgroundColor: '#0d1117', ...option! };
+  // 背景色始终强制覆盖（放在 spread 后，防止 AI 输出把它覆盖掉）
+  const mergedOption = { ...option!, backgroundColor: '#0d1117' };
 
   // ── 正常渲染 ──
   return (
@@ -353,9 +409,9 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
           className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
         >
           {copied ? (
-            <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
+            <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.chartBlock.copied')}</span></>
           ) : (
-            <><Copy size={12} /><span>复制</span></>
+            <><Copy size={12} /><span>{t('commonComponents.chartBlock.copy')}</span></>
           )}
         </button>
       </div>
@@ -365,7 +421,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
         key={code}
         fallback={
           <div className="bg-[#0d1117] text-[#7a9bb8] text-xs p-4 text-center">
-            图表渲染失败
+            {t('commonComponents.chartBlock.renderFailed')}
           </div>
         }
       >

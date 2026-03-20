@@ -28,13 +28,13 @@ impl SeaTunnelClient {
         }
     }
 
-    /// 提交 Job，POST /api/v1/job/submit，返回 jobId 字符串
+    /// 提交 Job，POST /hazelcast/rest/maps/submit-job，返回 jobId 字符串
     pub async fn submit_job(&self, config_json: &str) -> Result<String, String> {
         let body: serde_json::Value = serde_json::from_str(config_json)
             .map_err(|e| format!("Invalid config JSON: {}", e))?;
 
         let resp = self
-            .request(reqwest::Method::POST, "/api/v1/job/submit")
+            .request(reqwest::Method::POST, "/hazelcast/rest/maps/submit-job")
             .json(&body)
             .send()
             .await
@@ -64,8 +64,61 @@ impl SeaTunnelClient {
         Ok(job_id)
     }
 
-    /// 查询 Job 状态，GET /api/v1/job/detail/{jobId}，返回 status 字符串
+    /// 查询 Job 状态，GET /hazelcast/rest/maps/running-jobs 或 finished-jobs
     pub async fn get_job_status(&self, job_id: &str) -> Result<String, String> {
+        // 先检查运行中的作业
+        let running_resp = self
+            .request(reqwest::Method::GET, "/hazelcast/rest/maps/running-jobs")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to get running jobs: {}", e))?;
+
+        let running_text = running_resp.text().await.unwrap_or_default();
+        if running_text.contains(job_id) {
+            return Ok("RUNNING".to_string());
+        }
+
+        // 检查已完成的作业
+        let finished_resp = self
+            .request(reqwest::Method::GET, "/hazelcast/rest/maps/finished-jobs/FINISHED")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to get finished jobs: {}", e))?;
+
+        let finished_text = finished_resp.text().await.unwrap_or_default();
+        if finished_text.contains(job_id) {
+            return Ok("FINISHED".to_string());
+        }
+
+        // 检查失败的作业
+        let failed_resp = self
+            .request(reqwest::Method::GET, "/hazelcast/rest/maps/finished-jobs/FAILED")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to get failed jobs: {}", e))?;
+
+        let failed_text = failed_resp.text().await.unwrap_or_default();
+        if failed_text.contains(job_id) {
+            return Ok("FAILED".to_string());
+        }
+
+        Ok("UNKNOWN".to_string())
+    }
+
+    /// 列出所有运行中的作业
+    pub async fn list_running_jobs(&self) -> Result<serde_json::Value, String> {
+        let resp = self
+            .request(reqwest::Method::GET, "/hazelcast/rest/maps/running-jobs")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to list running jobs: {}", e))?;
+
+        let text = resp.text().await.unwrap_or_default();
+        serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {}", e))
+    }
+
+    /// 旧版 get_job_status 保留兼容
+    pub async fn get_job_status_legacy(&self, job_id: &str) -> Result<String, String> {
         let path = format!("/api/v1/job/detail/{}", job_id);
         let resp = self
             .request(reqwest::Method::GET, &path)
@@ -97,11 +150,11 @@ impl SeaTunnelClient {
         Ok(job_status)
     }
 
-    /// 停止 Job，POST /api/v1/job/stop
+    /// 停止 Job，POST /hazelcast/rest/maps/stop-job
     pub async fn stop_job(&self, job_id: &str) -> Result<(), String> {
         let body = serde_json::json!({ "jobId": job_id });
         let resp = self
-            .request(reqwest::Method::POST, "/api/v1/job/stop")
+            .request(reqwest::Method::POST, "/hazelcast/rest/maps/stop-job")
             .json(&body)
             .send()
             .await
@@ -119,8 +172,8 @@ impl SeaTunnelClient {
         Ok(())
     }
 
-    /// 流式读取日志，GET /api/v1/job/logging/{jobId}，通过 callback 逐行回调
-    /// 返回 Ok(()) 表示流结束，Err 表示出错
+    /// 流式读取日志，GET /hazelcast/rest/maps/job-logs/{jobId}
+    /// 注意：SeaTunnel 可能不支持流式日志，此接口待验证
     pub async fn stream_logs_with_callback<F>(
         &self,
         job_id: &str,
@@ -129,7 +182,7 @@ impl SeaTunnelClient {
     where
         F: FnMut(String),
     {
-        let path = format!("/api/v1/job/logging/{}", job_id);
+        let path = format!("/hazelcast/rest/maps/job-logs/{}", job_id);
         let resp = self
             .request(reqwest::Method::GET, &path)
             .send()

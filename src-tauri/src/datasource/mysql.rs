@@ -204,9 +204,16 @@ impl DataSource for MySqlDataSource {
 
     async fn get_foreign_keys(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<ForeignKeyMeta>> {
         let rows = sqlx::query(
-            "SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
-             FROM information_schema.KEY_COLUMN_USAGE
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL"
+            "SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                    kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                    rc.DELETE_RULE
+             FROM information_schema.KEY_COLUMN_USAGE kcu
+             LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+                 ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                 AND rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+             WHERE kcu.TABLE_SCHEMA = DATABASE()
+               AND kcu.TABLE_NAME = ?
+               AND kcu.REFERENCED_TABLE_NAME IS NOT NULL"
         )
         .bind(table)
         .fetch_all(&self.pool)
@@ -216,6 +223,10 @@ impl DataSource for MySqlDataSource {
             column: get_str(r, 1),
             referenced_table: get_str(r, 2),
             referenced_column: get_str(r, 3),
+            on_delete: {
+                let v = get_str(r, 4);
+                if v.is_empty() { None } else { Some(v) }
+            },
         }).collect())
     }
 

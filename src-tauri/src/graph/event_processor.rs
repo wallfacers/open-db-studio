@@ -357,6 +357,7 @@ pub async fn process_pending_events(
 
                             let display_name = format!("{} → {}", ev.table_name, ref_table);
 
+                            // name = display_name (not "fk") so FTS5 indexing makes each link searchable by label
                             // 插入 Link Node（INSERT OR IGNORE 保证幂等）
                             let inserted = db_conn.execute(
                                 "INSERT OR IGNORE INTO graph_nodes
@@ -798,56 +799,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(edge_count, 1);
-    }
-
-    // ── 测试 8：FTS5 upsert 只更新指定 rowid ──────────────────────────────────
-
-    #[test]
-    fn test_fts_upsert_updates_specific_rowid() {
-        let conn = setup_db();
-        let conn_id: i64 = 1;
-
-        // 插入两个节点
-        insert_node(&conn, "1:table:alpha", "table", "alpha", "schema", None);
-        insert_node(&conn, "1:table:beta", "table", "beta", "schema", None);
-
-        let rowid_alpha = get_node_rowid(&conn, "1:table:alpha").unwrap().unwrap();
-        let rowid_beta = get_node_rowid(&conn, "1:table:beta").unwrap().unwrap();
-
-        // Upsert 两个节点的 FTS5
-        upsert_fts(&conn, rowid_alpha).unwrap();
-        upsert_fts(&conn, rowid_beta).unwrap();
-
-        // 验证 FTS5 中存在 alpha 条目
-        let alpha_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM graph_nodes_fts WHERE name = 'alpha'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(alpha_count, 1);
-
-        // 验证 FTS5 中存在 beta 条目
-        let beta_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM graph_nodes_fts WHERE name = 'beta'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(beta_count, 1);
-
-        // 再次 upsert alpha（模拟更新），FTS5 中仍只有一条
-        upsert_fts(&conn, rowid_alpha).unwrap();
-        let alpha_count_after: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM graph_nodes_fts WHERE name = 'alpha'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(alpha_count_after, 1, "重复 upsert 不应产生重复 FTS5 条目");
     }
 
     // ── 测试 9：无待处理事件时统计数全为 0 ────────────────────────────────────

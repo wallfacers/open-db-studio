@@ -85,21 +85,24 @@ impl GraphCacheStore {
                 return Ok(Arc::clone(graph));
             }
         }
-        // 未命中：加载图并写入
-        let graph = load_connection_graph(connection_id)?;
-        let arc = Arc::new(tokio::sync::Mutex::new(graph));
-        {
-            let mut map = self.inner.write().await;
-            // 双重检查（防止并发重复加载）
-            map.entry(connection_id).or_insert_with(|| Arc::clone(&arc));
+        // 未命中：进入写锁，再次检查（防止并发重复加载）
+        let mut map = self.inner.write().await;
+        if let Some(graph) = map.get(&connection_id) {
+            return Ok(Arc::clone(graph)); // 另一个并发调用已经加载完成
         }
+        // 确认未加载，在写锁内加载（注意：此处持有写锁，load 必须不阻塞 Tokio）
+        let graph = tokio::task::spawn_blocking(move || load_connection_graph(connection_id))
+            .await
+            .map_err(|e| crate::AppError::Other(format!("spawn_blocking failed: {}", e)))??;
+        let arc = Arc::new(tokio::sync::Mutex::new(graph));
+        map.insert(connection_id, Arc::clone(&arc));
         Ok(arc)
     }
 }
 
 /// 从 SQLite 全量加载 connection 的图（仅 Link Node + 两跳边）
 fn load_connection_graph(connection_id: i64) -> AppResult<ConnectionGraph> {
-    let conn = crate::db::get().lock().unwrap();
+    let conn = crate::db::get().lock().map_err(|e| crate::AppError::Other(format!("DB mutex poisoned: {}", e)))?;
 
     // 查询所有 link 节点及其 metadata
     let mut stmt = conn.prepare(
@@ -221,10 +224,6 @@ pub fn bfs_find_paths(
             }
         }
 
-        if depth >= max_depth {
-            continue;
-        }
-
         let neighbors = match graph.adj.get(&state.current) {
             Some(n) => n.clone(),
             None => continue,
@@ -243,7 +242,8 @@ pub fn bfs_find_paths(
                 shortest_depth = Some(new_edges.len());
                 let join_path = build_join_path(from, to, &new_edges);
                 results.push(join_path);
-            } else {
+            } else if new_edges.len() < max_depth {
+                // 只有未到上限才继续入队
                 let mut new_visited = state.visited.clone();
                 new_visited.insert(edge.target_table.clone());
                 queue.push_back(State {

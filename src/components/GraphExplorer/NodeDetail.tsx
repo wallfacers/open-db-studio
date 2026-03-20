@@ -300,11 +300,15 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                 if (!confirm('确认删除此用户节点？该节点相关的自定义边也将删除。')) return;
                 try {
                   await invoke('delete_graph_node', { nodeId: node.id });
-                  onClose();
-                  onRefresh?.();
                 } catch (e) {
                   console.error('删除节点失败', e);
+                  alert(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
+                  // 失败时不关闭面板，让用户知道操作未成功
+                  return;
                 }
+                // 只在成功时执行 onClose 和 onRefresh
+                onClose();
+                onRefresh?.();
               }}
               style={{
                 marginTop: 8,

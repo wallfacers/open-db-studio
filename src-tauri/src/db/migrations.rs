@@ -3,6 +3,36 @@ use std::collections::HashSet;
 use crate::AppResult;
 
 pub fn run_migrations(conn: &Connection) -> AppResult<()> {
+    // ── 前置修复：init.sql 包含 CREATE INDEX idx_graph_edges_source ON graph_edges(source)，
+    // 而存量数据库的 graph_edges 可能没有 source 列（V10 migration 添加该列）。
+    // 若 execute_batch(schema) 先执行，会因列不存在而失败，且 V10 永远无法运行。
+    // 解决：在 execute_batch 之前先检查并补充 source 列，打破鸡蛋循环。
+    let graph_edges_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='graph_edges'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if graph_edges_exists {
+        let has_source: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('graph_edges') WHERE name='source'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_source {
+            // 先加列（允许 NULL 以兼容现有行），V10 之后会通过重建表转为 NOT NULL DEFAULT 'schema'
+            let _ = conn.execute_batch(
+                "ALTER TABLE graph_edges ADD COLUMN source TEXT NOT NULL DEFAULT 'schema'",
+            );
+            log::info!("Pre-migration: added graph_edges.source column before execute_batch(schema)");
+        }
+    }
+
     let schema = include_str!("../../../schema/init.sql");
     conn.execute_batch(schema)?;
 
@@ -162,6 +192,37 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         );"
     );
 
+    // 查询 task_records 当前实际存在的列（用于 V7/V8 重建时兼容老数据库）
+    let tr_existing_cols: HashSet<String> = {
+        let mut s = conn.prepare(
+            "SELECT name FROM pragma_table_info('task_records')",
+        )?;
+        let cols: HashSet<String> = s.query_map([], |r| r.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        cols
+    };
+    // 对于老数据库中可能缺失的列，INSERT SELECT 时用 NULL 填充，保证兼容性
+    macro_rules! col_or_null {
+        ($name:expr) => {
+            if tr_existing_cols.contains($name) { $name } else { "NULL" }
+        };
+    }
+    let tr_insert_select_v7 = format!(
+        "INSERT INTO task_records_new SELECT \
+             id, type, status, title, params, progress, processed_rows, total_rows, \
+             current_target, error, {ed}, {op}, {desc}, {cid}, {sd}, {ss}, \
+             created_at, updated_at, {ca} \
+         FROM task_records;",
+        ed   = col_or_null!("error_details"),
+        op   = col_or_null!("output_path"),
+        desc = col_or_null!("description"),
+        cid  = col_or_null!("connection_id"),
+        sd   = col_or_null!("scope_database"),
+        ss   = col_or_null!("scope_schema"),
+        ca   = col_or_null!("completed_at"),
+    );
+
     // V7: 扩展 task_records.type CHECK 约束，增加 'ai_generate_metrics'
     // SQLite 不支持 ALTER TABLE 修改约束，需重建表
     let old_schema: String = conn
@@ -174,7 +235,7 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
     let needs_rebuild = old_schema.contains("'seatunnel')")
         && !old_schema.contains("'ai_generate_metrics'");
     if needs_rebuild {
-        conn.execute_batch(
+        conn.execute_batch(&format!(
             "PRAGMA foreign_keys = OFF;
              BEGIN;
              CREATE TABLE task_records_new (
@@ -198,22 +259,20 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                  completed_at TEXT
              );
-             INSERT INTO task_records_new SELECT
-                 id, type, status, title, params, progress, processed_rows, total_rows,
-                 current_target, error, error_details, output_path, description,
-                 connection_id, scope_database, scope_schema, created_at, updated_at, completed_at
-             FROM task_records;
+             {insert}
              DROP TABLE task_records;
              ALTER TABLE task_records_new RENAME TO task_records;
              CREATE INDEX IF NOT EXISTS idx_task_records_created ON task_records(created_at DESC);
              CREATE INDEX IF NOT EXISTS idx_task_records_status ON task_records(status);
              COMMIT;
              PRAGMA foreign_keys = ON;",
-        )?;
+            insert = tr_insert_select_v7,
+        ))?;
         log::info!("Migrated task_records: expanded type CHECK to include ai_generate_metrics");
     }
 
     // V8: 扩展 task_records.type CHECK 约束，增加 'build_schema_graph'
+    // 重新查询 schema（V7 可能刚重建了表）
     let old_schema: String = conn
         .query_row(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='task_records'",
@@ -222,7 +281,32 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         )
         .unwrap_or_default();
     if !old_schema.contains("'build_schema_graph'") {
-        conn.execute_batch(
+        // V8 在 V7 之后运行，task_records 的完整列集已由 V7 保证；
+        // 但若 V7 未触发（old_schema 里没有 'seatunnel'），仍需兼容老列
+        let tr_cols_v8: HashSet<String> = {
+            let mut s = conn.prepare(
+                "SELECT name FROM pragma_table_info('task_records')",
+            )?;
+            let cols: HashSet<String> = s.query_map([], |r| r.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols
+        };
+        let tr_insert_select_v8 = format!(
+            "INSERT INTO task_records_new SELECT \
+                 id, type, status, title, params, progress, processed_rows, total_rows, \
+                 current_target, error, {ed}, {op}, {desc}, {cid}, {sd}, {ss}, \
+                 created_at, updated_at, {ca} \
+             FROM task_records;",
+            ed   = if tr_cols_v8.contains("error_details") { "error_details" } else { "NULL" },
+            op   = if tr_cols_v8.contains("output_path")   { "output_path"   } else { "NULL" },
+            desc = if tr_cols_v8.contains("description")   { "description"   } else { "NULL" },
+            cid  = if tr_cols_v8.contains("connection_id") { "connection_id" } else { "NULL" },
+            sd   = if tr_cols_v8.contains("scope_database"){ "scope_database"} else { "NULL" },
+            ss   = if tr_cols_v8.contains("scope_schema")  { "scope_schema"  } else { "NULL" },
+            ca   = if tr_cols_v8.contains("completed_at")  { "completed_at"  } else { "NULL" },
+        );
+        conn.execute_batch(&format!(
             "PRAGMA foreign_keys = OFF;
              BEGIN;
              CREATE TABLE task_records_new (
@@ -246,18 +330,15 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                  completed_at TEXT
              );
-             INSERT INTO task_records_new SELECT
-                 id, type, status, title, params, progress, processed_rows, total_rows,
-                 current_target, error, error_details, output_path, description,
-                 connection_id, scope_database, scope_schema, created_at, updated_at, completed_at
-             FROM task_records;
+             {insert}
              DROP TABLE task_records;
              ALTER TABLE task_records_new RENAME TO task_records;
              CREATE INDEX IF NOT EXISTS idx_task_records_created ON task_records(created_at DESC);
              CREATE INDEX IF NOT EXISTS idx_task_records_status ON task_records(status);
              COMMIT;
              PRAGMA foreign_keys = ON;",
-        )?;
+            insert = tr_insert_select_v8,
+        ))?;
         log::info!("Migrated task_records: expanded type CHECK to include build_schema_graph");
     }
 

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use serde_json::{json, Value};
-use tauri::Manager;
 
 pub async fn handle(
     handle: Arc<tauri::AppHandle>,

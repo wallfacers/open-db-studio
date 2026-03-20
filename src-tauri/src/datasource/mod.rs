@@ -40,6 +40,7 @@ pub struct ColumnMeta {
     pub column_default: Option<String>,
     pub is_primary_key: bool,
     pub extra: Option<String>, // e.g. "auto_increment"
+    pub comment: Option<String>, // 列注释原文
 }
 
 /// 索引元数据

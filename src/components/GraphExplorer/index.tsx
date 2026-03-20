@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store';
 import { useGraphData } from './useGraphData';
 import { nodeTypes, edgeTypes } from './nodeTypes';
+import { getEdgeStyleBySource } from './graphUtils';
 import { NodeDetail } from './NodeDetail';
 import { AliasEditor } from './AliasEditor';
 import type { GraphNode } from './useGraphData';
@@ -143,7 +144,7 @@ function toFlowNodes(
   }));
 }
 
-function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string; edge_type: string; weight: number }[]): Edge[] {
+function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string; edge_type: string; weight: number; source?: string }[]): Edge[] {
   return rawEdges.map((e) => ({
     id: e.id,
     source: e.from_node,
@@ -151,6 +152,7 @@ function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string;
     type: 'relation',
     animated: false,
     markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
+    style: getEdgeStyleBySource(e.source ?? 'schema'),
     data: { edge_type: e.edge_type, weight: e.weight },
   }));
 }

@@ -26,11 +26,13 @@ pub async fn test_connection(config: ConnectionConfig) -> AppResult<bool> {
 
 #[tauri::command]
 pub async fn delete_connection(id: i64) -> AppResult<()> {
+    crate::datasource::pool_cache::invalidate(id).await;
     crate::db::delete_connection(id)
 }
 
 #[tauri::command]
 pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest) -> AppResult<crate::db::models::Connection> {
+    crate::datasource::pool_cache::invalidate(id).await;
     crate::db::update_connection(id, &req)
 }
 
@@ -812,14 +814,14 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Op
 #[tauri::command]
 pub async fn list_databases(connection_id: i64) -> AppResult<Vec<String>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
     ds.list_databases().await
 }
 
 #[tauri::command]
 pub async fn list_schemas(connection_id: i64, database: String) -> AppResult<Vec<String>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, &database, "").await?;
     ds.list_schemas(&database).await
 }
 
@@ -831,7 +833,7 @@ const SYSTEM_SCHEMAS: &[&str] = &[
 #[tauri::command]
 pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
     let dbs = ds.list_databases().await?;
     Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect())
 }
@@ -842,7 +844,7 @@ pub async fn list_schemas_for_metrics(
     database: String,
 ) -> AppResult<Vec<String>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, &database, "").await?;
     let schemas = ds.list_schemas(&database).await?;
     Ok(schemas.into_iter().filter(|s| !SYSTEM_SCHEMAS.contains(&s.as_str())).collect())
 }
@@ -912,7 +914,8 @@ pub async fn list_objects(
     category: String,
 ) -> AppResult<Vec<String>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    let schema_str = schema.as_deref().unwrap_or("");
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, &database, schema_str).await?;
     ds.list_objects(&database, schema.as_deref(), &category).await
 }
 
@@ -2183,15 +2186,24 @@ pub async fn update_node_alias(
 
 /// 更新图谱节点的 metadata（用于 Link Node description 编辑）
 #[tauri::command]
+/// 更新图谱节点的 metadata（用于 Link Node description 编辑）
 pub async fn update_graph_node_metadata(
     node_id: String,
     metadata: String,
 ) -> AppResult<()> {
+    if node_id.is_empty() {
+        return Err(crate::AppError::Other("node_id cannot be empty".into()));
+    }
     let conn = crate::db::get().lock().unwrap();
-    conn.execute(
+    let rows_affected = conn.execute(
         "UPDATE graph_nodes SET metadata = ?1 WHERE id = ?2",
         rusqlite::params![metadata, node_id],
     )?;
+    if rows_affected == 0 {
+        return Err(crate::AppError::Other(
+            format!("Node with id '{}' not found", node_id),
+        ));
+    }
     Ok(())
 }
 

@@ -231,16 +231,17 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
 
   return (
     <>
-      <div className="w-72 flex-shrink-0 flex flex-col bg-[#111922] border-l border-[#1e2d42] overflow-hidden">
+      <div className="w-72 flex-shrink-0 h-full flex flex-col bg-[#111922] border-l border-[#1e2d42] overflow-hidden">
         {/* Header */}
         <div className="flex items-start justify-between px-4 py-3 border-b border-[#1e2d42] flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {nodeTypeIcon(node.node_type)}
             <div className="min-w-0">
-              <p className="text-[#c8daea] text-sm font-semibold truncate" title={node.name}>
-                {node.name}
+              <p className="text-[#c8daea] text-sm font-semibold truncate"
+                title={node.node_type === 'link' ? (node.display_name || node.name) : node.name}>
+                {node.node_type === 'link' ? (node.display_name || node.name) : node.name}
               </p>
-              {node.display_name && node.display_name !== node.name && (
+              {node.node_type !== 'link' && node.display_name && node.display_name !== node.name && (
                 <p className="text-[#7a9bb8] text-xs truncate mt-0.5" title={node.display_name}>
                   {node.display_name}
                 </p>

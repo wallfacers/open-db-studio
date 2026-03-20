@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  MarkerType,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -26,7 +27,7 @@ import dagre from 'dagre';
 import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store';
 import { useGraphData } from './useGraphData';
-import { nodeTypes } from './nodeTypes';
+import { nodeTypes, edgeTypes } from './nodeTypes';
 import { NodeDetail } from './NodeDetail';
 import { AliasEditor } from './AliasEditor';
 import type { GraphNode } from './useGraphData';
@@ -145,9 +146,9 @@ function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string;
     id: e.id,
     source: e.from_node,
     target: e.to_node,
-    label: e.edge_type,
-    type: 'smoothstep',
+    type: 'relation',
     animated: false,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
     data: { edge_type: e.edge_type, weight: e.weight },
   }));
 }
@@ -507,10 +508,11 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             onEdgeMouseEnter={onEdgeMouseEnter}
             onEdgeMouseLeave={onEdgeMouseLeave}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
             defaultEdgeOptions={{
-              type: 'smoothstep',
+              type: 'relation',
               animated: false,
             }}
             proOptions={{ hideAttribution: true }}

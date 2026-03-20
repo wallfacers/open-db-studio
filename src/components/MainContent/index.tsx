@@ -321,6 +321,8 @@ export const MainContent: React.FC<MainContentProps> = ({
 
   // Register Monaco completion provider once (module-level guard)
   const completionProviderRegistered = useRef(false);
+  const inlineProviderRegistered = useRef(false);
+  const inlineDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
@@ -415,6 +417,129 @@ export const MainContent: React.FC<MainContentProps> = ({
         return { suggestions };
       },
     });
+
+    // ─── AI Ghost Text Inline Completion Provider ───────────────────────────
+    if (!inlineProviderRegistered.current) {
+      inlineProviderRegistered.current = true;
+
+      // Schema 上下文构建
+      function buildSchemaContext(): string {
+        const schema = schemaRef.current;
+        if (!schema) return '';
+        return schema.tables
+          .map(t =>
+            `Table ${t.name}(${t.columns.map(c => `${c.name} ${c.data_type}`).join(', ')})`
+          )
+          .join('\n');
+      }
+
+      monaco.languages.registerInlineCompletionsProvider('sql', {
+        provideInlineCompletions: (
+          model: Parameters<MonacoLanguages.InlineCompletionsProvider['provideInlineCompletions']>[0],
+          position: Parameters<MonacoLanguages.InlineCompletionsProvider['provideInlineCompletions']>[1],
+          _context: Parameters<MonacoLanguages.InlineCompletionsProvider['provideInlineCompletions']>[2],
+          token: Parameters<MonacoLanguages.InlineCompletionsProvider['provideInlineCompletions']>[3],
+        ) => {
+          return new Promise((resolve) => {
+            if (inlineDebounceTimer.current) clearTimeout(inlineDebounceTimer.current);
+
+            inlineDebounceTimer.current = setTimeout(async () => {
+              try {
+                // ── 1. 取当前 Tab（每次从 store 实时读取，避免闭包陈旧）
+                const storeState = useQueryStore.getState();
+                const currentActiveTabId = storeState.activeTabId;
+                const currentTab = storeState.tabs.find(t => t.id === currentActiveTabId);
+
+                // ── 2. 检查开关
+                if (!(currentTab?.ghostTextEnabled ?? true)) {
+                  resolve({ items: [] });
+                  return;
+                }
+
+                // ── 3. 检查连接
+                const tabConnectionId = currentTab?.queryContext?.connectionId;
+                if (!tabConnectionId) {
+                  resolve({ items: [] });
+                  return;
+                }
+
+                // ── 4. 检查无选中
+                const selection = editorRef.current?.getSelection();
+                if (selection && !selection.isEmpty()) {
+                  resolve({ items: [] });
+                  return;
+                }
+
+                // ── 5. 检查光标前字符数（≥ 2 非空白）
+                const offset = model.getOffsetAt(position);
+                const fullText = model.getValue();
+                const textBefore = fullText.slice(0, offset);
+                if (textBefore.replace(/\s/g, '').length < 2) {
+                  resolve({ items: [] });
+                  return;
+                }
+
+                // ── 6. cancellation 检查（前置）
+                if (token.isCancellationRequested) {
+                  resolve({ items: [] });
+                  return;
+                }
+
+                // ── 7. 构建上下文
+                const sqlBefore = textBefore.slice(-4000); // 传前 4000 字节，Rust 再截 2000 字符
+                const sqlAfter = fullText.slice(offset, offset + 1000);
+
+                const lineBeforeCursor = model
+                  .getLineContent(position.lineNumber)
+                  .slice(0, position.column - 1);
+                const hint = lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
+
+                const schemaContext = buildSchemaContext();
+                const historyContext = storeState.queryHistory
+                  .slice(0, 5)
+                  .map(h => h.sql)
+                  .join('\n---\n');
+
+                // ── 8. 调用 Rust
+                const result = await invoke<string>('ai_inline_complete', {
+                  connectionId: tabConnectionId,
+                  sqlBefore,
+                  sqlAfter,
+                  schemaContext,
+                  historyContext,
+                  hint,
+                });
+
+                // ── 9. cancellation 检查（后置）
+                if (token.isCancellationRequested || !result) {
+                  resolve({ items: [] });
+                  return;
+                }
+
+                // ── 10. 返回补全项
+                resolve({
+                  items: [
+                    {
+                      insertText: result,
+                      range: {
+                        startLineNumber: position.lineNumber,
+                        startColumn: position.column,
+                        endLineNumber: position.lineNumber,
+                        endColumn: position.column,
+                      },
+                    },
+                  ],
+                });
+              } catch {
+                // 静默降级
+                resolve({ items: [] });
+              }
+            }, 600);
+          });
+        },
+        freeInlineCompletions: () => {},
+      });
+    }
   };
 
   const activeTabObj = tabs.find(t => t.id === activeTab);

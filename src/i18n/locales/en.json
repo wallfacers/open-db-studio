@@ -684,6 +684,7 @@
     "typeTable": "Table",
     "typeMetric": "Metric",
     "typeAlias": "Alias",
+    "typeLink": "Link",
     "edgeTooltipType": "Type",
     "edgeTooltipWeight": "Weight",
     "addAlias": "Add Alias",
@@ -701,7 +702,21 @@
       "source": "Source",
       "fields": "Fields",
       "semanticAliases": "Semantic Aliases",
-      "relatedEdges": "Related Edges"
+      "relatedEdges": "Related Edges",
+      "linkProps": "Link Properties",
+      "linkDirection": "Direction",
+      "linkCardinality": "Cardinality",
+      "linkVia": "Via",
+      "linkOnDelete": "On Delete",
+      "linkDescription": "Description",
+      "inferredBadge": "AI Inferred",
+      "manualBadge": "Manual",
+      "editBtn": "Edit",
+      "saving": "Saving...",
+      "save": "Save",
+      "cancel": "Cancel",
+      "noDescription": "No description",
+      "descriptionPlaceholder": "Describe the business meaning of this relationship..."
     }
   },
   "metricsExplorer": {

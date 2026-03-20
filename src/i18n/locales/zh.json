@@ -684,6 +684,7 @@
     "typeTable": "表",
     "typeMetric": "指标",
     "typeAlias": "别名",
+    "typeLink": "关联",
     "edgeTooltipType": "类型",
     "edgeTooltipWeight": "权重",
     "addAlias": "添加别名",
@@ -699,9 +700,23 @@
     },
     "nodeDetail": {
       "source": "来源",
-      "fields": "字段列表",
+      "fields": "字段",
       "semanticAliases": "语义别名",
-      "relatedEdges": "关联边"
+      "relatedEdges": "关联边",
+      "linkProps": "关联属性",
+      "linkDirection": "关联方向",
+      "linkCardinality": "基数关系",
+      "linkVia": "关联字段",
+      "linkOnDelete": "删除行为",
+      "linkDescription": "语义描述",
+      "inferredBadge": "AI 推断",
+      "manualBadge": "手动创建",
+      "editBtn": "编辑",
+      "saving": "保存中...",
+      "save": "保存",
+      "cancel": "取消",
+      "noDescription": "暂无描述",
+      "descriptionPlaceholder": "描述关联的业务含义..."
     }
   },
   "metricsExplorer": {

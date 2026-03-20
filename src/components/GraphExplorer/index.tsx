@@ -13,6 +13,7 @@ import {
   type Edge,
   type NodeMouseHandler,
   type EdgeMouseHandler,
+  type Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { invoke } from '@tauri-apps/api/core';
@@ -188,11 +189,56 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const [edgeTooltip, setEdgeTooltip] = useState<EdgeTooltip | null>(null);
   const [showAliasEditorForNode, setShowAliasEditorForNode] = useState<string | null>(null);
 
+  const [editMode, setEditMode] = useState(false);
+
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
 
   const handleHighlightLinks = useCallback((nodeId: string) => {
     setHighlightedNodeId(prev => prev === nodeId ? null : nodeId);
   }, []);
+
+  // ── Edit mode: add virtual node ─────────────────────────────────────────────
+  const handleAddVirtualNode = useCallback(async () => {
+    const name = window.prompt('输入虚拟节点名称');
+    if (!name || !connectionId) return;
+    try {
+      await invoke('add_user_node', {
+        connectionId,
+        name,
+        displayName: name,
+        nodeType: 'table',
+      });
+      refetch();
+    } catch (e) {
+      console.error('添加虚拟节点失败', e);
+    }
+  }, [connectionId, refetch]);
+
+  // ── Edit mode: manual connect ───────────────────────────────────────────────
+  const onConnect = useCallback(async (params: Connection) => {
+    if (!editMode || !params.source || !params.target) return;
+    const choice = window.prompt(
+      '选择边类型（输入数字）:\n1. user_defined（用户自定义）\n2. foreign_key（外键关系）\n3. join_path（连接路径）',
+      '1'
+    );
+    const edgeTypeMap: Record<string, string> = {
+      '1': 'user_defined',
+      '2': 'foreign_key',
+      '3': 'join_path',
+    };
+    const edgeType = edgeTypeMap[choice ?? '1'] ?? 'user_defined';
+    try {
+      await invoke('add_user_edge', {
+        fromNode: params.source,
+        toNode: params.target,
+        edgeType,
+        weight: 1.0,
+      });
+      refetch();
+    } catch (e) {
+      console.error('添加边失败', e);
+    }
+  }, [editMode, refetch]);
 
   const { fitView } = useReactFlow();
   const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
@@ -489,6 +535,40 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Edit mode toggle */}
+          <button
+            onClick={() => setEditMode(v => !v)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 4,
+              border: editMode ? '1px solid #f59e0b' : '1px solid #374151',
+              color: editMode ? '#f59e0b' : '#9ca3af',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            {editMode ? '✏️ 编辑中' : '编辑模式'}
+          </button>
+
+          {/* Add virtual node (only in edit mode) */}
+          {editMode && (
+            <button
+              onClick={handleAddVirtualNode}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 4,
+                border: '1px solid #a855f7',
+                color: '#a855f7',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              + 节点
+            </button>
+          )}
+
           {/* Auto layout */}
           <button
             onClick={handleAutoLayout}
@@ -542,6 +622,8 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             onPaneClick={onPaneClick}
             onEdgeMouseEnter={onEdgeMouseEnter}
             onEdgeMouseLeave={onEdgeMouseLeave}
+            onConnect={onConnect}
+            nodesConnectable={editMode}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView

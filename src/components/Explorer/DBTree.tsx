@@ -127,19 +127,27 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
   // 分组选择器点击外部关闭
   useClickOutside(groupPickerRef, () => setMoveToGroupPicker(null), !!moveToGroupPicker);
 
-  const visibleNodes = useMemo(() => {
-    if (searchQuery.trim()) return search(searchQuery);
-    return computeVisibleNodes(nodes, expandedIds);
-  }, [nodes, expandedIds, searchQuery, search]);
+  // 搜索模式下被手动折叠的节点（初始全部展开，点击后折叠/展开）
+  const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
 
-  // 搜索模式下：有子节点出现在结果里的节点视为"已展开"
-  const searchExpandedIds = useMemo(() => {
-    if (!searchQuery.trim()) return null;
-    const resultIds = new Set(visibleNodes.map(n => n.id));
-    return new Set(
-      visibleNodes.filter(n => n.parentId && resultIds.has(n.parentId)).map(n => n.parentId!)
-    );
-  }, [visibleNodes, searchQuery]);
+  // 搜索词变化时清空折叠状态（恢复默认全展开）
+  useEffect(() => {
+    setCollapsedInSearch(new Set());
+  }, [searchQuery]);
+
+  const visibleNodes = useMemo(() => {
+    if (!searchQuery.trim()) return computeVisibleNodes(nodes, expandedIds);
+    const allSearchNodes = search(searchQuery);
+    // 过滤掉父节点被手动折叠的节点
+    return allSearchNodes.filter(node => {
+      let curParentId: string | null = node.parentId;
+      while (curParentId !== null) {
+        if (collapsedInSearch.has(curParentId)) return false;
+        curParentId = nodes.get(curParentId)?.parentId ?? null;
+      }
+      return true;
+    });
+  }, [nodes, expandedIds, searchQuery, search, collapsedInSearch]);
 
   // 所有分组节点，用于分组选择器
   const groupNodes = useMemo(() =>
@@ -150,6 +158,17 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
   const handleNodeClick = (node: TreeNodeType) => {
     selectNode(node.id);
     if (!node.hasChildren) return;
+
+    if (searchQuery.trim()) {
+      // 搜索模式：折叠/展开节点（不影响 store 的 expandedIds）
+      setCollapsedInSearch(prev => {
+        const next = new Set(prev);
+        if (next.has(node.id)) next.delete(node.id);
+        else next.add(node.id);
+        return next;
+      });
+      return;
+    }
 
     if (node.nodeType === 'connection') {
       if (nodes.get(node.id)?.loaded) {
@@ -240,7 +259,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           key={node.id}
           node={node}
           indent={getIndentLevel(node, nodes)}
-          isExpanded={searchExpandedIds ? searchExpandedIds.has(node.id) : expandedIds.has(node.id)}
+          isExpanded={searchQuery.trim() ? !collapsedInSearch.has(node.id) : expandedIds.has(node.id)}
           isSelected={selectedId === node.id}
           isLoading={loadingIds.has(node.id)}
           onClick={() => handleNodeClick(node)}

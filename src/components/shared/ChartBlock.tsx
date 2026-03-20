@@ -150,12 +150,85 @@ class ChartErrorBoundary extends React.Component<ErrorBoundaryProps, { hasError:
   }
 }
 
+// ── 根据图表数据估算合适高度 ─────────────────────────────────────────────────
+const CHART_MIN_HEIGHT = 240;
+const CHART_MAX_HEIGHT = 480;
+const CHART_DEFAULT_HEIGHT = 320;
+
+function calcChartHeight(option: Record<string, unknown>): number {
+  const series = (option.series as Array<{ type?: string }> | undefined) ?? [];
+  const chartType = series[0]?.type ?? '';
+  const yAxis = option.yAxis as { data?: unknown[] } | undefined;
+
+  // 水平条形图：Y 轴为分类，行数多则需要更高的容器
+  if (chartType === 'bar' && yAxis && Array.isArray(yAxis.data)) {
+    const rows = yAxis.data.length;
+    return Math.min(Math.max(rows * 28 + 100, CHART_MIN_HEIGHT), CHART_MAX_HEIGHT);
+  }
+
+  return CHART_DEFAULT_HEIGHT;
+}
+
+// ── 修复 grid / 轴标签，避免与绘图区或标题重叠 ──────────────────────────────
+// 1. grid.containLabel: true  — 将轴刻度标签纳入 grid 计算，自动留出空间
+// 2. yAxis.nameLocation/nameRotate — Y 轴 name 默认顶端会压住标题/图例，改为居中旋转
+function injectOptionFix(option: Record<string, unknown>): Record<string, unknown> {
+  // ── fix grid ──
+  let result: Record<string, unknown>;
+  if (!option.grid) {
+    result = { ...option, grid: { containLabel: true } };
+  } else if (Array.isArray(option.grid)) {
+    result = {
+      ...option,
+      grid: (option.grid as object[]).map((g) => ({ containLabel: true, ...g })),
+    };
+  } else {
+    result = { ...option, grid: { containLabel: true, ...(option.grid as object) } };
+  }
+
+  // ── fix yAxis name：保持顶端显示，但确保 grid.top 足够大避免与标题/图例重叠 ──
+  // yAxis.name 默认 nameLocation='end'（轴顶端），ECharts 将其渲染在 grid 顶边附近。
+  // title + legend 位于 grid 上方，若 grid.top 太小则三者重叠。
+  // 方案：检测到 yAxis 有 name 时，将 grid.top 撑到至少 80px，给标题+图例留出空间。
+  const hasYAxisName = (() => {
+    if (!result.yAxis) return false;
+    if (Array.isArray(result.yAxis)) return (result.yAxis as Record<string, unknown>[]).some((a) => !!a.name);
+    return !!(result.yAxis as Record<string, unknown>).name;
+  })();
+
+  if (hasYAxisName) {
+    const MIN_TOP = 80;
+    const currentGrid = result.grid as Record<string, unknown>;
+    const currentTop = typeof currentGrid?.top === 'number' ? currentGrid.top : 0;
+    if (currentTop < MIN_TOP) {
+      result = { ...result, grid: { ...currentGrid, top: MIN_TOP } };
+    }
+
+    // nameTextStyle.align:'right' 使文字从 Y 轴顶端锚点向左延伸，整体视觉偏左
+    const shiftYAxisNameLeft = (axis: Record<string, unknown>) => {
+      if (!axis.name) return axis;
+      const existing = (axis.nameTextStyle ?? {}) as Record<string, unknown>;
+      return { ...axis, nameTextStyle: { align: 'right', ...existing } };
+    };
+    if (Array.isArray(result.yAxis)) {
+      result = { ...result, yAxis: (result.yAxis as Record<string, unknown>[]).map(shiftYAxisNameLeft) };
+    } else {
+      result = { ...result, yAxis: shiftYAxisNameLeft(result.yAxis as Record<string, unknown>) };
+    }
+  }
+
+  return result;
+}
+
 // ── ChartRenderer：独立组件
 // 用 useLayoutEffect 同步读容器宽度，确保 ECharts 以正确尺寸初始化，避免 canvas 黑框。
 // ResizeObserver 负责后续宽度变化时 resize。
 const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
+
+  const height = calcChartHeight(option);
+  const fixedOption = injectOptionFix(option);
 
   // useLayoutEffect：DOM commit 后、paint 前同步读宽度，宽度有效才渲染 ECharts
   useLayoutEffect(() => {
@@ -176,12 +249,12 @@ const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }
   }, []);
 
   return (
-    <div ref={containerRef} style={{ height: 280 }}>
+    <div ref={containerRef} style={{ height }}>
       {width !== null && (
         <ReactECharts
-          option={option}
+          option={fixedOption}
           theme="ods-dark"
-          style={{ height: 280, width }}
+          style={{ height, width }}
           notMerge={true}
           opts={{ renderer: 'canvas' }}
         />
@@ -231,7 +304,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
           <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
           <span className="text-xs text-[#5b8ab0] animate-pulse">AI 正在生成图表数据</span>
         </div>
-        <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: 280 }}>
+        <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
           <div className="flex flex-col items-center gap-3">
             <div className="flex gap-2 items-end">
               {barHeights.map((h, i) => (

@@ -56,6 +56,7 @@ pub struct ForeignKeyMeta {
     pub column: String,
     pub referenced_table: String,
     pub referenced_column: String,
+    pub on_delete: Option<String>,  // CASCADE / SET NULL / RESTRICT / NO ACTION
 }
 
 /// 视图元数据

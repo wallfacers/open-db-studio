@@ -127,6 +127,7 @@ function toFlowNodes(
   onAddAlias: (nodeId: string) => void,
   onHighlightLinks: (nodeId: string) => void,
   linkCountMap: Record<string, number>,
+  columnMap: Record<string, import('./GraphNodeComponents').ColumnInfo[]>,
 ): Node[] {
   return rawNodes.map((n) => ({
     id: n.id,
@@ -137,6 +138,7 @@ function toFlowNodes(
       onAddAlias,
       onHighlightLinks,
       linkCount: linkCountMap[n.id] ?? 0,
+      tableColumns: n.node_type === 'table' ? (columnMap[n.id] ?? []) : undefined,
     },
   }));
 }
@@ -229,7 +231,37 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     return map;
   }, [filteredRaw]);
 
+  // ── 列节点映射：tableNodeId → ColumnInfo[] ───────────────────────────────────
+  const columnMap = useMemo<Record<string, import('./GraphNodeComponents').ColumnInfo[]>>(() => {
+    const map: Record<string, import('./GraphNodeComponents').ColumnInfo[]> = {};
+    rawNodes
+      .filter(n => n.node_type === 'column')
+      .forEach(n => {
+        // 列节点 ID 格式: "{conn_id}:column:{table_name}:{col_name}"
+        // 目标表节点 ID: "{conn_id}:table:{table_name}"
+        const match = n.id.match(/^(\d+):column:(.+):.+$/);
+        if (!match) return;
+        const tableId = `${match[1]}:table:${match[2]}`;
+        let meta: Record<string, unknown> = {};
+        try { meta = JSON.parse(n.metadata || '{}'); } catch { /* ignore */ }
+        if (!map[tableId]) map[tableId] = [];
+        map[tableId].push({
+          name: n.name,
+          data_type: meta.data_type as string | undefined,
+          is_primary_key: Boolean(meta.is_primary_key),
+          is_nullable: Boolean(meta.is_nullable),
+        });
+      });
+    return map;
+  }, [rawNodes]);
+
   const clustered = useMemo(() => clusterByConnection(filteredRaw), [filteredRaw]);
+
+  const nodeNameMap = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    rawNodes.forEach(n => { map[n.id] = n.display_name || n.name; });
+    return map;
+  }, [rawNodes]);
   const visibleNodeIds = useMemo(() => new Set(clustered.map((n) => n.id)), [clustered]);
 
   const filteredEdges = useMemo(() => {
@@ -273,7 +305,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── Sync to React Flow whenever filtered data changes ───────────────────────
   useEffect(() => {
-    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap);
+    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap);
     const flowEdges = toFlowEdges(filteredEdges);
     const { nodes: laid, edges: laidEdges } = buildLayout(flowNodes, flowEdges);
     setRfNodes(laid);
@@ -553,7 +585,8 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
-            edges={rawEdges}
+            edges={filteredEdges}
+            nodeNameMap={nodeNameMap}
             onClose={() => setSelectedNode(null)}
             onAliasUpdated={handleAliasUpdated}
           />

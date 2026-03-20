@@ -234,12 +234,195 @@ pub async fn run_graph_build(
                 stats.skipped,
                 stats.fts_updated
             );
-            emit_completed(&app, &task_id);
         }
         Err(e) => {
             let msg = format!("增量更新失败: {}", e);
             emit_log(&app, &task_id, "ERROR", &msg);
             emit_failed(&app, &task_id, &msg);
+            return;
         }
     }
+
+    // 6. 同步指标节点
+    emit_log(&app, &task_id, "INFO", "同步指标节点到图谱...");
+    match sync_metrics_to_graph(connection_id) {
+        Ok(n) => emit_log(&app, &task_id, "INFO", &format!("指标节点同步完成，共 {} 个", n)),
+        Err(e) => emit_log(&app, &task_id, "WARN", &format!("指标同步失败（不影响主流程）: {}", e)),
+    }
+
+    // 7. 同步语义别名节点
+    emit_log(&app, &task_id, "INFO", "同步语义别名节点到图谱...");
+    match sync_aliases_to_graph(connection_id) {
+        Ok(n) => emit_log(&app, &task_id, "INFO", &format!("别名节点同步完成，共 {} 个", n)),
+        Err(e) => emit_log(&app, &task_id, "WARN", &format!("别名同步失败（不影响主流程）: {}", e)),
+    }
+
+    emit_completed(&app, &task_id);
+}
+
+/// 将 metrics 表中的活跃指标同步到 graph_nodes，并建立 metric_ref 边
+pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
+    let conn = crate::db::get().lock().unwrap();
+
+    // 查询所有未拒绝的指标
+    let mut stmt = conn.prepare(
+        "SELECT id, name, display_name, table_name, aggregation, description, status
+         FROM metrics
+         WHERE connection_id = ?1 AND status != 'rejected'",
+    )?;
+    struct MetricRow {
+        id: i64,
+        name: String,
+        display_name: String,
+        table_name: String,
+        aggregation: Option<String>,
+        description: Option<String>,
+        status: String,
+    }
+    let metrics: Vec<MetricRow> = stmt
+        .query_map([connection_id], |row| {
+            Ok(MetricRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                display_name: row.get(2)?,
+                table_name: row.get(3)?,
+                aggregation: row.get(4)?,
+                description: row.get(5)?,
+                status: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let count = metrics.len();
+    let active_node_ids: Vec<String> = metrics
+        .iter()
+        .map(|m| format!("{}:metric:{}", connection_id, m.id))
+        .collect();
+
+    for m in &metrics {
+        let node_id = format!("{}:metric:{}", connection_id, m.id);
+        let table_node_id = format!("{}:table:{}", connection_id, m.table_name);
+
+        let metadata = serde_json::json!({
+            "metric_id": m.id,
+            "table_name": m.table_name,
+            "aggregation": m.aggregation,
+            "description": m.description,
+            "status": m.status,
+        })
+        .to_string();
+
+        conn.execute(
+            "INSERT INTO graph_nodes
+               (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
+             VALUES (?1, 'metric', ?2, ?3, ?4, ?5, 'schema', 0)
+             ON CONFLICT(id) DO UPDATE SET
+               name        = excluded.name,
+               display_name = excluded.display_name,
+               metadata    = excluded.metadata,
+               is_deleted  = 0",
+            rusqlite::params![node_id, connection_id, m.name, m.display_name, metadata],
+        )?;
+
+        if !m.table_name.is_empty() {
+            let edge_id = format!("{}=>{}", node_id, table_node_id);
+            conn.execute(
+                "INSERT OR IGNORE INTO graph_edges (id, from_node, to_node, edge_type, weight)
+                 VALUES (?1, ?2, ?3, 'metric_ref', 0.9)",
+                rusqlite::params![edge_id, node_id, table_node_id],
+            )?;
+        }
+    }
+
+    // 软删除已不存在于 metrics 表的旧节点
+    if active_node_ids.is_empty() {
+        conn.execute(
+            "UPDATE graph_nodes SET is_deleted=1
+             WHERE connection_id=?1 AND node_type='metric'",
+            [connection_id],
+        )?;
+    } else {
+        let n = active_node_ids.len();
+        let ph: String = (2..=n + 1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "UPDATE graph_nodes SET is_deleted=1
+             WHERE connection_id=?1 AND node_type='metric' AND id NOT IN ({ph})"
+        );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(connection_id)];
+        for id in &active_node_ids {
+            params.push(Box::new(id.clone()));
+        }
+        conn.execute(&sql, rusqlite::params_from_iter(params.iter()))?;
+    }
+
+    // 刷新 FTS5 索引
+    conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')")?;
+
+    Ok(count)
+}
+
+/// 将 semantic_aliases 中的别名同步到 graph_nodes，并建立 alias_of 边
+pub fn sync_aliases_to_graph(connection_id: i64) -> crate::AppResult<usize> {
+    let conn = crate::db::get().lock().unwrap();
+
+    let mut stmt = conn.prepare(
+        "SELECT id, alias, node_id FROM semantic_aliases WHERE connection_id = ?1",
+    )?;
+    let aliases: Vec<(i64, String, String)> = stmt
+        .query_map([connection_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let count = aliases.len();
+    let active_node_ids: Vec<String> = aliases
+        .iter()
+        .map(|(id, ..)| format!("{}:alias:{}", connection_id, id))
+        .collect();
+
+    for (alias_id, alias_text, source_node_id) in &aliases {
+        let node_id = format!("{}:alias:{}", connection_id, alias_id);
+
+        conn.execute(
+            "INSERT INTO graph_nodes
+               (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
+             VALUES (?1, 'alias', ?2, ?3, ?3, NULL, 'user', 0)
+             ON CONFLICT(id) DO UPDATE SET
+               name         = excluded.name,
+               display_name = excluded.display_name,
+               is_deleted   = 0",
+            rusqlite::params![node_id, connection_id, alias_text],
+        )?;
+
+        let edge_id = format!("{}=>{}", node_id, source_node_id);
+        conn.execute(
+            "INSERT OR IGNORE INTO graph_edges (id, from_node, to_node, edge_type, weight)
+             VALUES (?1, ?2, ?3, 'alias_of', 0.8)",
+            rusqlite::params![edge_id, node_id, source_node_id],
+        )?;
+    }
+
+    // 软删除已不存在的别名节点
+    if active_node_ids.is_empty() {
+        conn.execute(
+            "UPDATE graph_nodes SET is_deleted=1
+             WHERE connection_id=?1 AND node_type='alias'",
+            [connection_id],
+        )?;
+    } else {
+        let n = active_node_ids.len();
+        let ph: String = (2..=n + 1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "UPDATE graph_nodes SET is_deleted=1
+             WHERE connection_id=?1 AND node_type='alias' AND id NOT IN ({ph})"
+        );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(connection_id)];
+        for id in &active_node_ids {
+            params.push(Box::new(id.clone()));
+        }
+        conn.execute(&sql, rusqlite::params_from_iter(params.iter()))?;
+    }
+
+    conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')")?;
+
+    Ok(count)
 }

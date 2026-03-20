@@ -1,8 +1,15 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Handle, Position, BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
 import type { NodeProps, EdgeProps } from '@xyflow/react';
 import { Plus, Database, BarChart2, Hash, ArrowLeftRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+
+export interface ColumnInfo {
+  name: string;
+  data_type?: string;
+  is_primary_key?: boolean;
+  is_nullable?: boolean;
+}
 
 export interface GraphNodeData extends Record<string, unknown> {
   id: string;
@@ -15,8 +22,9 @@ export interface GraphNodeData extends Record<string, unknown> {
   is_deleted: number | null;
   source: string | null;
   onAddAlias?: (nodeId: string) => void;
-  onHighlightLinks?: (nodeId: string) => void;  // 新增：点击 linkCount 徽章时触发
-  linkCount?: number;                            // 新增：与该节点关联的 Link Node 数量
+  onHighlightLinks?: (nodeId: string) => void;
+  linkCount?: number;
+  tableColumns?: ColumnInfo[];
 }
 
 interface NodeField { name: string; type?: string; is_primary_key?: boolean; }
@@ -129,15 +137,103 @@ function BaseNode({
   );
 }
 
-export const TableNodeComponent = memo(({ data }: NodeProps) => (
-  <BaseNode
-    data={data as GraphNodeData}
-    borderClass="border-[#3794ff]"
-    badgeBgClass="bg-[#0d2a3d] text-[#3794ff]"
-    badgeLabel="table"
-    icon={Database}
-  />
-));
+const COLS_PREVIEW = 4;
+
+export const TableNodeComponent = memo(({ data }: NodeProps) => {
+  const nodeData = data as GraphNodeData;
+  const tableColumns = (nodeData.tableColumns as ColumnInfo[] | undefined) ?? [];
+  const [colsExpanded, setColsExpanded] = useState(false);
+
+  const shownCols = colsExpanded ? tableColumns : tableColumns.slice(0, COLS_PREVIEW);
+  const hiddenCount = tableColumns.length - COLS_PREVIEW;
+
+  return (
+    <div className="w-60 rounded-md border border-[#3794ff] bg-[#111922] shadow-lg group">
+      <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-[#1e2d42] flex items-center gap-2">
+        <div className="flex-shrink-0 bg-[#0d2a3d] text-[#3794ff] p-1 rounded">
+          <Database size={13} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[#c8daea] text-xs font-semibold truncate" title={nodeData.name}>{nodeData.name}</p>
+          <p className="text-[#3d5470] text-[9px]">Object Type · TABLE</p>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {tableColumns.length > 0 && (
+            <span className="text-[9px] text-[#7a9bb8] bg-[#0d1117] px-1 rounded">
+              {tableColumns.length}✦
+            </span>
+          )}
+          {(nodeData.linkCount as number ?? 0) > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); nodeData.onHighlightLinks?.(nodeData.id); }}
+              className="text-[9px] text-[#00c9a7] bg-[#0d1f1a] px-1 rounded hover:bg-[#00c9a722] transition-colors"
+            >
+              {nodeData.linkCount as number}⇌
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); nodeData.onAddAlias?.(nodeData.id); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea]"
+          >
+            <Plus size={11} />
+          </button>
+        </div>
+      </div>
+
+      {/* Columns */}
+      {tableColumns.length > 0 && (
+        <div className="border-b border-[#1e2d42]">
+          <div className="px-3 py-1.5">
+            {shownCols.map((col, i) => (
+              <div key={i} className="flex items-center justify-between py-0.5">
+                <span className="text-[#c8daea] text-[10px] font-mono truncate flex-1">
+                  {col.is_primary_key && <span className="text-[#f59e0b] mr-1">⬡</span>}
+                  {col.name}
+                </span>
+                {col.data_type && (
+                  <span className="text-[#7a9bb8] text-[9px] font-mono ml-2 flex-shrink-0">
+                    {col.data_type}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          {tableColumns.length > COLS_PREVIEW && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setColsExpanded(v => !v); }}
+              className="w-full px-3 py-1 text-[9px] text-[#3794ff] hover:bg-[#0d1117] transition-colors text-left border-t border-[#1e2d42]"
+            >
+              {colsExpanded
+                ? '▲ 收起'
+                : `▼ 还有 ${hiddenCount} 列...`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Aliases */}
+      {(() => {
+        const aliases = (nodeData.aliases as string | null)
+          ? (nodeData.aliases as string).split(/[,，\s]+/).map(s => s.trim()).filter(Boolean)
+          : [];
+        return aliases.length > 0 ? (
+          <div className="px-3 py-1.5 flex flex-wrap gap-1">
+            {aliases.slice(0, 3).map(a => (
+              <span key={a} className="text-[9px] text-[#a855f7] bg-[#1e0d2d] border border-[#a855f744] rounded px-1">
+                #{a}
+              </span>
+            ))}
+          </div>
+        ) : null;
+      })()}
+
+      <Handle type="source" position={Position.Right} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+    </div>
+  );
+});
 TableNodeComponent.displayName = 'TableNodeComponent';
 
 export const MetricNodeComponent = memo(({ data }: NodeProps) => (

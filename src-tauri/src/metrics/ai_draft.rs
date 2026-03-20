@@ -374,6 +374,8 @@ Schema:
                 ),
             );
             skipped_count += 1;
+            let pct = 72.0 + 28.0 * pos as f32 / total.max(1) as f32;
+            emit_progress(app, task_id, pct, &item.display_name);
             continue;
         }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, CheckCircle, XCircle, Square, RotateCcw, Trash2, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Task, useTaskStore } from '../../store/taskStore';
@@ -29,6 +29,13 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
   const confirm = useConfirm();
   const { cancelTask, retryTask, removeTask } = useTaskStore();
   const [isExpanded, setIsExpanded] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isExpanded && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [task.logs, isExpanded]);
 
   const config = statusConfig[task.status];
   const StatusIcon = config.icon;
@@ -91,12 +98,12 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           </div>
 
           {/* Progress Bar */}
-          {(task.status === 'running' || task.status === 'pending') && (
+          {(task.status === 'running' || task.status === 'pending' || task.status === 'completed') && (
             <div className="relative h-1.5 bg-[#1a2639] rounded-full overflow-hidden">
               <div
                 className="absolute inset-y-0 left-0 transition-all duration-300"
                 style={{
-                  width: `${task.progress}%`,
+                  width: `${task.status === 'completed' ? 100 : task.progress}%`,
                   backgroundColor: progressBarColor[task.status],
                 }}
               />
@@ -248,6 +255,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
                     [{new Date(log.timestamp).toLocaleTimeString()}] {log.level.toUpperCase()} {log.message}
                   </div>
                 ))}
+                <div ref={logEndRef} />
               </div>
             </div>
           )}

@@ -667,7 +667,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             {chatHistory.map((msg, idx) =>
               msg.role === 'user' ? (
                 <div key={idx} className="flex flex-col items-end">
-                  <div className="bg-[#1e2d42] text-[#c8daea] px-3 py-2 rounded-lg max-w-[90%] text-[13px] leading-relaxed">
+                  <div className="bg-[#1e2d42] text-[#c8daea] px-3 py-2 rounded-lg max-w-[90%] text-[13px] leading-relaxed break-words">
                     {msg.content}
                   </div>
                 </div>

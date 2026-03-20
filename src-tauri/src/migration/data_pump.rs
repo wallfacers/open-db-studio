@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::AppResult;
 use super::task_mgr::MigrationProgress;
 use tauri::Emitter;

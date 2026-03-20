@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::datasource::ColumnMeta;
 
 /// 将 src_driver 的类型名转换为 dst_driver 的类型名

@@ -22,8 +22,9 @@ interface AppState {
   autoMode: boolean;
   setAutoMode: (enabled: boolean) => void;
   initAutoMode: () => Promise<void>;
-  ghostTextDefault: boolean;  // Ghost Text 全局默认开关（Task 6 完整实现持久化）
-  setGhostTextDefault: (enabled: boolean) => void;
+  ghostTextDefault: boolean;
+  setGhostTextDefault: (enabled: boolean) => Promise<void>;
+  initGhostTextDefault: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -49,5 +50,23 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
   ghostTextDefault: true,
-  setGhostTextDefault: (enabled) => set({ ghostTextDefault: enabled }),
+  setGhostTextDefault: async (enabled: boolean) => {
+    set({ ghostTextDefault: enabled });
+    try {
+      await invoke('set_ui_state', { key: 'ghost_text_default', value: JSON.stringify(enabled) });
+    } catch (e) {
+      console.error('Failed to set ghost_text_default:', e);
+    }
+  },
+  initGhostTextDefault: async () => {
+    try {
+      const raw = await invoke<string | null>('get_ui_state', { key: 'ghost_text_default' });
+      if (raw !== null) {
+        set({ ghostTextDefault: JSON.parse(raw) === true });
+      }
+      // raw 为 null 时保持默认值 true（首次启动）
+    } catch (e) {
+      console.error('Failed to get ghost_text_default:', e);
+    }
+  },
 }));

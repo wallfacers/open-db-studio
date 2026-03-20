@@ -107,6 +107,7 @@ export const Assistant: React.FC<AssistantProps> = ({
 
   useEffect(() => {
     initAutoMode();
+    useAppStore.getState().initGhostTextDefault();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);

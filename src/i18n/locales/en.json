@@ -670,6 +670,8 @@
     "autoLayout": "Auto Layout",
     "building": "Building...",
     "buildGraph": "Build Graph",
+    "taskStarted": "Graph build task started. The graph will refresh automatically when complete.",
+    "viewTasks": "View Tasks",
     "noData": "No graph data, click \"Build Graph\"",
     "noMatchingNodes": "No matching nodes",
     "clusterFolded": "[Connection {{cid}}: {{count}} nodes folded]",

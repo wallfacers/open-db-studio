@@ -670,6 +670,8 @@
     "autoLayout": "自动布局",
     "building": "构建中...",
     "buildGraph": "构建图谱",
+    "taskStarted": "图谱构建任务已启动，完成后图谱将自动刷新。",
+    "viewTasks": "查看任务",
     "noData": "暂无图谱数据，请点击「构建图谱」",
     "noMatchingNodes": "没有匹配的节点",
     "clusterFolded": "[连接 {{cid}}：{{count}} 个节点已折叠]",

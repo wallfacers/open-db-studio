@@ -23,6 +23,8 @@ import {
   Loader2,
   RefreshCw,
   LayoutTemplate,
+  Sparkles,
+  ListTodo,
 } from 'lucide-react';
 import dagre from 'dagre';
 import { useTranslation } from 'react-i18next';
@@ -215,6 +217,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
   const [currentBuildTaskId, setCurrentBuildTaskId] = useState<string | null>(null);
+  const [buildInfo, setBuildInfo] = useState<string | null>(null);
   const [edgeTooltip, setEdgeTooltip] = useState<EdgeTooltip | null>(null);
   const [showAliasEditorForNode, setShowAliasEditorForNode] = useState<string | null>(null);
 
@@ -445,6 +448,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           connectionId: internalConnId,
         });
         setCurrentBuildTaskId(taskId);
+        setBuildInfo(t('graphExplorer.taskStarted'));
         // 从 SQLite 加载任务实际状态，处理快速完成的构建（事件可能早于 stub 到达）
         loadTasks();
       }
@@ -655,6 +659,26 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       {error && (
         <div className="px-4 py-2 bg-[#2d1216] border-b border-[#f43f5e]/30 text-[#f43f5e] text-xs flex-shrink-0">
           {error}
+        </div>
+      )}
+
+      {/* Build task info banner */}
+      {buildInfo && (
+        <div className="flex items-center gap-2 px-4 py-2 text-xs text-[#00c9a7] bg-[#0a1f18] border-b border-[#0d3d2e] flex-shrink-0">
+          <Sparkles size={12} className="flex-shrink-0" />
+          <span className="flex-1">{buildInfo}</span>
+          <button
+            className="flex items-center gap-1 text-[#00c9a7] hover:text-[#00b090] underline underline-offset-2 flex-shrink-0"
+            onClick={() => { setBuildInfo(null); useTaskStore.getState().setVisible(true); }}
+          >
+            <ListTodo size={12} />
+            {t('graphExplorer.viewTasks')}
+          </button>
+          <button
+            className="text-[#7a9bb8] hover:text-white flex-shrink-0 ml-1"
+            onClick={() => setBuildInfo(null)}
+            aria-label="关闭"
+          >×</button>
         </div>
       )}
 

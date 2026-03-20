@@ -2,7 +2,7 @@ import React from 'react';
 import { Check } from 'lucide-react';
 
 interface AutoApplyBannerProps {
-  reason: string;
+  reason?: string;
 }
 
 export const AutoApplyBanner: React.FC<AutoApplyBannerProps> = ({ reason }) => (

@@ -3,6 +3,7 @@ import { Bot, Keyboard, Palette, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import { LlmSettingsPanel } from './LlmSettings';
+import { useAppStore } from '../../store/appStore';
 
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState('ai');
@@ -51,6 +52,7 @@ export function SettingsPage() {
 
 function AppearanceSection({ t }: { t: any }) {
   const [currentLang, setCurrentLang] = useState(i18n.language?.startsWith('zh') ? 'zh' : 'en');
+  const { ghostTextDefault, setGhostTextDefault } = useAppStore();
 
   const handleLanguageChange = (lang: string) => {
     setCurrentLang(lang);
@@ -74,6 +76,28 @@ function AppearanceSection({ t }: { t: any }) {
                 onClick={() => handleLanguageChange(value)}
                 className={`px-4 py-1.5 text-xs rounded transition-colors ${
                   currentLang === value
+                    ? 'bg-[#003d2f] text-white border border-[#00c9a7]'
+                    : 'text-[#7a9bb8] border border-[#2a3f5a] hover:text-[#c8daea] hover:border-[#2a3f5a]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-[#c8daea] mb-1">AI Ghost Text 补全</p>
+          <p className="text-xs text-[#7a9bb8] mb-3">在 SQL 编辑器中自动提示 AI 补全内容（新建查询 Tab 的默认开关状态）</p>
+          <div className="flex gap-2">
+            {[
+              { value: true, label: '开启' },
+              { value: false, label: '关闭' },
+            ].map(({ value, label }) => (
+              <button
+                key={String(value)}
+                onClick={() => setGhostTextDefault(value)}
+                className={`px-4 py-1.5 text-xs rounded transition-colors ${
+                  ghostTextDefault === value
                     ? 'bg-[#003d2f] text-white border border-[#00c9a7]'
                     : 'text-[#7a9bb8] border border-[#2a3f5a] hover:text-[#c8daea] hover:border-[#2a3f5a]'
                 }`}

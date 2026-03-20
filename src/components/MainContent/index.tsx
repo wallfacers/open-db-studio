@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Sparkles,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -211,7 +211,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results, error, diagnosis,
           removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults,
           explanationContent, explanationStreaming,
-          appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
+          appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation,
+          toggleGhostText } = useQueryStore();
   const { activeConnectionId } = useConnectionStore();
   const { nodes } = useTreeStore();
   const { explainSql, isExplaining: isExplainingMap, cancelExplainSql } = useAiStore();
@@ -809,6 +810,18 @@ export const MainContent: React.FC<MainContentProps> = ({
                 <Tooltip content={t('mainContent.formatSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
                     <FileEdit size={16} />
+                  </button>
+                </Tooltip>
+                <Tooltip content={(activeTabObj?.ghostTextEnabled ?? true) ? 'AI Ghost Text 补全（已开启）' : 'AI Ghost Text 补全（已关闭）'}>
+                  <button
+                    className={`p-1.5 rounded transition-colors ${
+                      (activeTabObj?.ghostTextEnabled ?? true)
+                        ? 'text-[#00c9a7] hover:text-[#00e4c0] hover:bg-[#1e2d42]'
+                        : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'
+                    }`}
+                    onClick={() => toggleGhostText(activeTab)}
+                  >
+                    <Sparkles size={16} />
                   </button>
                 </Tooltip>
               </div>

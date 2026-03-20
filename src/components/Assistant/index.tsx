@@ -11,6 +11,7 @@ import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
 import { useAppStore } from '../../store/appStore';
+import { useConfirmStore } from '../../store/confirmStore';
 import { Tooltip } from '../common/Tooltip';
 import type { ToastLevel } from '../Toast';
 
@@ -97,6 +98,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   onOpenSettings,
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirmStore((s) => s.confirm);
   const setIsAssistantOpen = useAppStore((s) => s.setAssistantOpen);
   const autoMode = useAppStore((s) => s.autoMode);
   const setAutoMode = useAppStore((s) => s.setAutoMode);
@@ -239,7 +241,6 @@ export const Assistant: React.FC<AssistantProps> = ({
     return () => window.removeEventListener('mousedown', handler);
   }, [isConnectionMenuOpen]);
   const [showHistory, setShowHistory] = useState(false);
-  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const draftMessage = useAiStore((s) => s.draftMessage);
@@ -500,7 +501,20 @@ export const Assistant: React.FC<AssistantProps> = ({
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
         <div className="flex items-center space-x-3 text-[#7a9bb8]">
           {!showHistory && chatHistory.length > 0 && (
-            <span title={t('assistant.clearHistory')} className="flex items-center cursor-pointer hover:text-red-400" onClick={() => { clearHistory(currentSessionId); showToast(t('assistant.historyCleared'), 'info'); }}>
+            <span
+              title={t('assistant.clearHistory')}
+              className="flex items-center cursor-pointer hover:text-red-400"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: '清空对话',
+                  message: '确定清空当前对话记录？此操作不可恢复。',
+                  variant: 'danger',
+                });
+                if (!ok) return;
+                clearHistory(currentSessionId);
+                showToast(t('assistant.historyCleared'), 'info');
+              }}
+            >
               <Trash2 size={16} />
             </span>
           )}
@@ -517,7 +531,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
             <button
               className="flex items-center gap-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-              onClick={() => { setShowHistory(false); setConfirmDeleteAll(false); }}
+              onClick={() => { setShowHistory(false); }}
             >
               <ChevronLeft size={14} />
               <span>{t('assistant.backToChat')}</span>
@@ -574,7 +588,16 @@ export const Assistant: React.FC<AssistantProps> = ({
                       <button
                         className="opacity-0 group-hover:opacity-100 p-0.5 text-[#4a6a8a] hover:text-red-400 transition-all flex-shrink-0"
                         title={t('assistant.deleteSession')}
-                        onClick={(e) => { e.stopPropagation(); deleteSession(sess.id); }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const ok = await confirm({
+                            title: '删除会话',
+                            message: '确定删除该会话？此操作不可恢复。',
+                            variant: 'danger',
+                          });
+                          if (!ok) return;
+                          deleteSession(sess.id);
+                        }}
                       >
                         <Trash2 size={12} />
                       </button>
@@ -587,33 +610,23 @@ export const Assistant: React.FC<AssistantProps> = ({
           {/* 清除所有会话按钮 */}
           {sessions.length > 0 && (
             <div className="px-3 py-2 border-t border-[#1e2d42] flex-shrink-0">
-              {confirmDeleteAll ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-[#c8daea]">{t('assistant.confirmDeleteAll')}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="px-2.5 py-1 text-xs rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-                      onClick={() => { setConfirmDeleteAll(false); deleteAllSessions(); setShowHistory(false); showToast(t('assistant.allSessionsDeleted'), 'info'); }}
-                    >
-                      {t('assistant.confirmYes')}
-                    </button>
-                    <button
-                      className="px-2.5 py-1 text-xs rounded bg-[#1e2d42] text-[#7a9bb8] hover:bg-[#2a3f5a] transition-colors"
-                      onClick={() => setConfirmDeleteAll(false)}
-                    >
-                      {t('assistant.confirmNo')}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[#7a9bb8] hover:text-red-400 hover:bg-[#1e2d42] rounded transition-colors"
-                  onClick={() => setConfirmDeleteAll(true)}
-                >
-                  <Trash2 size={13} />
-                  <span>{t('assistant.deleteAllSessions')}</span>
-                </button>
-              )}
+              <button
+                className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[#7a9bb8] hover:text-red-400 hover:bg-[#1e2d42] rounded transition-colors"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: '删除所有会话',
+                    message: '确定删除全部会话记录？此操作不可恢复。',
+                    variant: 'danger',
+                  });
+                  if (!ok) return;
+                  deleteAllSessions();
+                  setShowHistory(false);
+                  showToast(t('assistant.allSessionsDeleted'), 'info');
+                }}
+              >
+                <Trash2 size={13} />
+                <span>{t('assistant.deleteAllSessions')}</span>
+              </button>
             </div>
           )}
         </div>

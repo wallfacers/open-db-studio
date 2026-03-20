@@ -199,6 +199,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── Edit mode: add virtual node ─────────────────────────────────────────────
   const handleAddVirtualNode = useCallback(async () => {
+    // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
     const name = window.prompt('输入虚拟节点名称');
     if (!name || !connectionId) return;
     try {
@@ -211,22 +212,25 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       refetch();
     } catch (e) {
       console.error('添加虚拟节点失败', e);
+      alert(`添加节点失败: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [connectionId, refetch]);
 
   // ── Edit mode: manual connect ───────────────────────────────────────────────
   const onConnect = useCallback(async (params: Connection) => {
     if (!editMode || !params.source || !params.target) return;
+    // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
     const choice = window.prompt(
       '选择边类型（输入数字）:\n1. user_defined（用户自定义）\n2. foreign_key（外键关系）\n3. join_path（连接路径）',
       '1'
     );
+    if (choice === null) return; // 用户取消，不创建边
     const edgeTypeMap: Record<string, string> = {
       '1': 'user_defined',
       '2': 'foreign_key',
       '3': 'join_path',
     };
-    const edgeType = edgeTypeMap[choice ?? '1'] ?? 'user_defined';
+    const edgeType = edgeTypeMap[choice] ?? 'user_defined';
     try {
       await invoke('add_user_edge', {
         fromNode: params.source,
@@ -237,6 +241,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       refetch();
     } catch (e) {
       console.error('添加边失败', e);
+      alert(`添加边失败: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [editMode, refetch]);
 

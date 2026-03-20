@@ -4,3 +4,4 @@ pub mod metric_edit;
 pub mod table_edit;
 pub mod history;
 pub mod seatunnel;
+pub mod graph;

@@ -2183,6 +2183,7 @@ pub async fn update_node_alias(
 
 // ============ 跨数据源迁移 ============
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn create_migration_task(
     name: String,
@@ -2193,11 +2194,13 @@ pub async fn create_migration_task(
     crate::migration::create_task(&name, src_connection_id, dst_connection_id, &config)
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationTask>> {
     crate::migration::list_tasks()
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn run_migration_precheck(
     task_id: i64,
@@ -2205,6 +2208,7 @@ pub async fn run_migration_precheck(
     crate::migration::precheck::run_precheck(task_id).await
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn get_precheck_report(
     task_id: i64,
@@ -2212,11 +2216,13 @@ pub async fn get_precheck_report(
     crate::migration::precheck::get_precheck_result(task_id)
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn pause_migration(task_id: i64) -> AppResult<()> {
     crate::migration::pause_migration(task_id)
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn get_migration_progress(
     task_id: i64,
@@ -2336,6 +2342,7 @@ pub async fn ai_generate_sql_v2(
 
 // ============ 数据迁移 — 启动 & 查询 ============
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn start_migration(
     task_id: i64,
@@ -2344,6 +2351,7 @@ pub async fn start_migration(
     crate::migration::start_migration(task_id, app_handle).await
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
     crate::migration::get_task(task_id)

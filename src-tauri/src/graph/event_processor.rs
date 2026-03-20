@@ -42,6 +42,7 @@ pub(super) fn get_node_source(
 }
 
 /// 获取节点的 rowid（用于 FTS5 更新）
+#[cfg(test)]
 pub(super) fn get_node_rowid(
     conn: &rusqlite::Connection,
     node_id: &str,

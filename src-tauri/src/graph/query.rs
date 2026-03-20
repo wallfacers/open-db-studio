@@ -22,7 +22,7 @@ pub struct GraphEdge {
     pub edge_type: String,
     pub weight: f64,
     pub metadata: Option<serde_json::Value>,
-    pub source: Option<String>,
+    pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

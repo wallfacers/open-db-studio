@@ -116,12 +116,14 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     id         TEXT PRIMARY KEY,
     from_node  TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
     to_node    TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
-    edge_type  TEXT NOT NULL CHECK(edge_type IN ('has_column','foreign_key','metric_ref','alias_of','join_path','to_link','from_link')),
+    edge_type  TEXT NOT NULL,
     weight     REAL NOT NULL DEFAULT 1.0,
-    metadata   TEXT
+    metadata   TEXT,
+    source     TEXT NOT NULL DEFAULT 'schema'
 );
-CREATE INDEX IF NOT EXISTS idx_graph_edges_from ON graph_edges(from_node);
-CREATE INDEX IF NOT EXISTS idx_graph_edges_to ON graph_edges(to_node);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_from   ON graph_edges(from_node);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_to     ON graph_edges(to_node);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source);
 
 -- ============ V2: 业务指标 ============
 

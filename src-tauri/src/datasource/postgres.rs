@@ -172,12 +172,15 @@ impl DataSource for PostgresDataSource {
         let schema = schema.unwrap_or("public");
         let rows = sqlx::query(
             "SELECT tc.constraint_name, kcu.column_name,
-                    ccu.table_name AS referenced_table, ccu.column_name AS referenced_column
+                    ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
+                    rc.delete_rule
              FROM information_schema.table_constraints tc
              JOIN information_schema.key_column_usage kcu
                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
              JOIN information_schema.constraint_column_usage ccu
                  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+             LEFT JOIN information_schema.referential_constraints rc
+                 ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
              WHERE tc.constraint_type = 'FOREIGN KEY'
                AND tc.table_schema = $2
                AND tc.table_name = $1"
@@ -191,6 +194,7 @@ impl DataSource for PostgresDataSource {
             column: r.try_get::<String, _>(1).unwrap_or_default(),
             referenced_table: r.try_get::<String, _>(2).unwrap_or_default(),
             referenced_column: r.try_get::<String, _>(3).unwrap_or_default(),
+            on_delete: r.try_get::<Option<String>, _>(4).ok().flatten(),
         }).collect())
     }
 

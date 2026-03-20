@@ -9,6 +9,7 @@ import { parseAliases } from './graphUtils';
 interface NodeDetailProps {
   node: GraphNode;
   edges: GraphEdge[];
+  nodeNameMap: Record<string, string>;
   onClose: () => void;
   onAliasUpdated: () => void;
 }
@@ -210,6 +211,7 @@ function edgeTypeColor(edgeType: string): string {
 export const NodeDetail: React.FC<NodeDetailProps> = ({
   node,
   edges,
+  nodeNameMap,
   onClose,
   onAliasUpdated,
 }) => {
@@ -257,7 +259,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
         </div>
 
         {/* Type badge */}
-        <div className="px-4 py-2 border-b border-[#1e2d42] flex-shrink-0">
+        <div className="px-4 py-2 border-b border-[#1e2d42] flex-shrink-0 flex items-center">
           <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-medium ${nodeTypeBadgeClass(node.node_type)}`}>
             {nodeTypeIcon(node.node_type)}
             {node.node_type}
@@ -331,20 +333,29 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
               <div className="px-4 py-3">
                 <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
                 <div className="space-y-1">
-                  {relatedEdges.map((edge) => (
-                    <div
-                      key={edge.id}
-                      className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors"
-                    >
-                      <ArrowRight size={11} className={edgeTypeColor(edge.edge_type)} />
-                      <span className={`text-[10px] font-medium ${edgeTypeColor(edge.edge_type)}`}>
-                        {edge.edge_type}
-                      </span>
-                      <span className="text-[#7a9bb8] text-[10px] ml-auto flex-shrink-0">
-                        w: {edge.weight.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
+                  {relatedEdges.map((edge) => {
+                    const isOutgoing = edge.from_node === node.id;
+                    const peerId = isOutgoing ? edge.to_node : edge.from_node;
+                    const peerName = nodeNameMap[peerId] ?? peerId.split(':').slice(-1)[0];
+                    return (
+                      <div
+                        key={edge.id}
+                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors"
+                      >
+                        <ArrowRight
+                          size={11}
+                          className={`flex-shrink-0 ${edgeTypeColor(edge.edge_type)}`}
+                          style={isOutgoing ? undefined : { transform: 'rotate(180deg)' }}
+                        />
+                        <span className={`text-[10px] font-medium flex-shrink-0 ${edgeTypeColor(edge.edge_type)}`}>
+                          {edge.edge_type}
+                        </span>
+                        <span className="text-[#c8daea] text-[10px] font-mono truncate flex-1" title={peerName}>
+                          {peerName}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

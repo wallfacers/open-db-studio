@@ -20,6 +20,10 @@ interface DiffProposalPayload {
  *
  * 需在 App.tsx 根组件中调用，确保全局唯一且生命周期与应用一致。
  * autoApplyTimerRef 依赖本 hook 的全局唯一生命周期。
+ *
+ * cleanup 说明：hook 卸载时会 clearTimeout 定时器，但不会调用 setAutoApplyBanner(null)。
+ * 若 hook 卸载时 banner 仍显示，store 状态不会自动清除
+ * （可接受：hook 全局唯一，不会在 banner 显示期卸载）。
  */
 export function useToolBridge() {
   const autoApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -326,11 +326,11 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
               <tr><td colSpan={8} className="text-center py-8 text-[#4a6a8a]">{t('metricsExplorer.metricList.noMetrics')}</td></tr>
             )}
             {filtered.map(m => (
-              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
+              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group cursor-pointer select-none" onClick={() => toggleSelect(m.id)}>
                 <td className="border-r border-[#1e2d42]">
                   <div className="flex items-center justify-center py-1.5">
                     <input type="checkbox" checked={selected.has(m.id)}
-                      onChange={() => toggleSelect(m.id)} className="accent-[#00c9a7] block" />
+                      onChange={() => toggleSelect(m.id)} onClick={e => e.stopPropagation()} className="accent-[#00c9a7] block" />
                   </div>
                 </td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42] text-white font-medium">{m.display_name}</td>
@@ -345,7 +345,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                   </span>
                 </td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]">{statusBadge(m.status)}</td>
-                <td className="px-3 py-1.5 border-r border-[#1e2d42]">
+                <td className="px-3 py-1.5 border-r border-[#1e2d42]" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center gap-2 justify-end">
                     <button
                       className="flex items-center justify-center text-[#7a9bb8] hover:text-white"

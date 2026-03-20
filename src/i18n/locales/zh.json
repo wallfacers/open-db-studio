@@ -717,7 +717,8 @@
       "save": "保存",
       "cancel": "取消",
       "noDescription": "暂无描述",
-      "descriptionPlaceholder": "描述关联的业务含义..."
+      "descriptionPlaceholder": "描述关联的业务含义...",
+      "linkWeight": "关联权重"
     }
   },
   "metricsExplorer": {

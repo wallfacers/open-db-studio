@@ -717,7 +717,8 @@
       "save": "Save",
       "cancel": "Cancel",
       "noDescription": "No description",
-      "descriptionPlaceholder": "Describe the business meaning of this relationship..."
+      "descriptionPlaceholder": "Describe the business meaning of this relationship...",
+      "linkWeight": "Weight"
     }
   },
   "metricsExplorer": {

@@ -33,6 +33,7 @@ import { nodeTypes, edgeTypes } from './nodeTypes';
 import { getEdgeStyleBySource } from './graphUtils';
 import { NodeDetail } from './NodeDetail';
 import { AliasEditor } from './AliasEditor';
+import { DropdownSelect } from '../common/DropdownSelect';
 import type { GraphNode } from './useGraphData';
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -291,9 +292,9 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       if (!typeFilter.includes(n.node_type)) return false;
       if (!kw) return true;
       return (
-        n.name.toLowerCase().includes(kw) ||
-        n.display_name.toLowerCase().includes(kw) ||
-        n.aliases.toLowerCase().includes(kw)
+        n.name?.toLowerCase().includes(kw) ||
+        n.display_name?.toLowerCase().includes(kw) ||
+        (n.aliases ?? '').toLowerCase().includes(kw)
       );
     });
   }, [rawNodes, typeFilter, searchQuery]);
@@ -529,34 +530,29 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         <span className="text-[#c8daea] text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 
         {/* Connection selector */}
-        <select
-          value={internalConnId ?? ''}
-          onChange={(e) => {
-            const newId = e.target.value ? Number(e.target.value) : null;
-            setInternalConnId(newId);
+        <DropdownSelect
+          value={internalConnId !== null ? String(internalConnId) : ''}
+          options={connections.map(c => ({ value: String(c.id), label: c.name }))}
+          placeholder={t('graphExplorer.selectConnection')}
+          onChange={(v) => {
+            setInternalConnId(v ? Number(v) : null);
             setInternalDb(null);
           }}
-          className="px-2 py-1 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] focus:outline-none focus:border-[#00c9a7]/50 transition-colors max-w-[140px] truncate"
-        >
-          <option value="">{t('graphExplorer.selectConnection')}</option>
-          {connections.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+          className="w-36"
+        />
 
         {/* Database selector (optional, shown when databases are available) */}
-        {internalConnId !== null && databases.length > 0 && (
-          <select
+        {internalConnId !== null && databases.length > 0 && !dbLoading && (
+          <DropdownSelect
             value={internalDb ?? ''}
-            onChange={(e) => setInternalDb(e.target.value || null)}
-            disabled={dbLoading}
-            className="px-2 py-1 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] focus:outline-none focus:border-[#00c9a7]/50 transition-colors max-w-[120px] truncate disabled:opacity-50"
-          >
-            <option value="">{t('graphExplorer.allDatabases', '全部数据库')}</option>
-            {databases.map(db => (
-              <option key={db} value={db}>{db}</option>
-            ))}
-          </select>
+            options={databases.map(db => ({ value: db, label: db }))}
+            placeholder={t('graphExplorer.allDatabases', '全部数据库')}
+            onChange={(v) => setInternalDb(v || null)}
+            className="w-32"
+          />
+        )}
+        {internalConnId !== null && dbLoading && (
+          <Loader2 size={14} className="animate-spin text-[#7a9bb8]" />
         )}
 
         {/* Type filter */}

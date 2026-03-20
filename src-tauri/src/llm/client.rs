@@ -245,6 +245,33 @@ impl LlmClient {
         }
     }
 
+    /// SQL 编辑器内联 Ghost Text 补全
+    pub async fn inline_complete(
+        &self,
+        sql_before: &str,
+        sql_after: &str,
+        schema_context: &str,
+        history_context: &str,
+        mode_instruction: &str,
+        dialect: &str,
+    ) -> AppResult<String> {
+        let prompt = include_str!("../../../prompts/sql_inline_complete.txt")
+            .replace("{{DIALECT}}", dialect)
+            .replace(
+                "{{SCHEMA}}",
+                if schema_context.is_empty() { "(none)" } else { schema_context },
+            )
+            .replace(
+                "{{HISTORY}}",
+                if history_context.is_empty() { "(none)" } else { history_context },
+            )
+            .replace("{{SQL_BEFORE}}", sql_before)
+            .replace("{{SQL_AFTER}}", sql_after)
+            .replace("{{MODE_INSTRUCTION}}", mode_instruction);
+        let messages = vec![ChatMessage { role: "user".into(), content: prompt }];
+        self.chat(messages).await
+    }
+
     /// 自然语言 → SQL
     pub async fn generate_sql(
         &self,

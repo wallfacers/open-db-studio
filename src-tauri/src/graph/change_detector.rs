@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 ///
 /// 返回两级映射：
 ///   table_name -> column_names (空集合表示仅有表节点，无列节点)
-/// 以及外键集合：
-///   (from_table, constraint_name)
+/// 以及 Link 节点 ID 集合（用于 ADD_FK 去重）：
+///   HashSet<link_node_id>
 fn load_existing_nodes(
     conn: &rusqlite::Connection,
     connection_id: i64,
@@ -60,31 +60,22 @@ fn load_existing_nodes(
         }
     }
 
-    // 读取已有外键边的 constraint_name（存储在 metadata JSON 中）
-    let mut fk_constraints: HashSet<String> = HashSet::new();
+    // 读取已有 Link 节点的 ID（source != 'user'，未软删除）
+    let mut existing_link_ids: HashSet<String> = HashSet::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT e.metadata
-             FROM graph_edges e
-             JOIN graph_nodes t ON t.id = e.from_node
-             WHERE t.connection_id=?1 AND e.edge_type='foreign_key'",
+            "SELECT id FROM graph_nodes
+             WHERE connection_id=?1 AND node_type='link'
+               AND (source IS NULL OR source != 'user')
+               AND is_deleted=0",
         )?;
-        let metas = stmt.query_map([connection_id], |row| {
-            let meta: Option<String> = row.get(0)?;
-            Ok(meta)
-        })?;
-        for m in metas {
-            if let Some(meta_str) = m? {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&meta_str) {
-                    if let Some(name) = val.get("constraint_name").and_then(|v| v.as_str()) {
-                        fk_constraints.insert(name.to_string());
-                    }
-                }
-            }
+        let ids = stmt.query_map([connection_id], |row| row.get::<_, String>(0))?;
+        for id in ids {
+            existing_link_ids.insert(id?);
         }
     }
 
-    Ok((tables, fk_constraints))
+    Ok((tables, existing_link_ids))
 }
 
 /// 向 schema_change_log 插入一条变更记录。
@@ -136,7 +127,7 @@ pub fn detect_and_log_changes(
     let created_at = Utc::now().to_rfc3339();
 
     // 1. 加载已有节点
-    let (existing_tables, existing_fk_constraints) =
+    let (existing_tables, existing_link_ids) =
         load_existing_nodes(&db_conn, connection_id)?;
 
     let mut event_count = 0usize;
@@ -194,12 +185,17 @@ pub fn detect_and_log_changes(
         // 新表的外键：直接生成 ADD_FK
         if let Some(fks) = table_fks.get(tname) {
             for fk in fks {
-                if !existing_fk_constraints.contains(&fk.constraint_name) {
+                let would_be_link_id = format!(
+                    "link:{}:{}:{}:{}",
+                    connection_id, tname, fk.referenced_table, fk.column
+                );
+                if !existing_link_ids.contains(&would_be_link_id) {
                     let fk_meta = serde_json::json!({
                         "constraint_name": fk.constraint_name,
                         "column": fk.column,
                         "referenced_table": fk.referenced_table,
-                        "referenced_column": fk.referenced_column
+                        "referenced_column": fk.referenced_column,
+                        "on_delete": fk.on_delete
                     })
                     .to_string();
                     insert_change_log(
@@ -284,12 +280,17 @@ pub fn detect_and_log_changes(
         // --- 外键对比（ADD_FK，不检测删除）---
         if let Some(fks) = table_fks.get(tname) {
             for fk in fks {
-                if !existing_fk_constraints.contains(&fk.constraint_name) {
+                let would_be_link_id = format!(
+                    "link:{}:{}:{}:{}",
+                    connection_id, tname, fk.referenced_table, fk.column
+                );
+                if !existing_link_ids.contains(&would_be_link_id) {
                     let meta = serde_json::json!({
                         "constraint_name": fk.constraint_name,
                         "column": fk.column,
                         "referenced_table": fk.referenced_table,
-                        "referenced_column": fk.referenced_column
+                        "referenced_column": fk.referenced_column,
+                        "on_delete": fk.on_delete
                     })
                     .to_string();
                     insert_change_log(

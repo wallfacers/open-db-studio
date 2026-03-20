@@ -297,6 +297,46 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("Migrated graph_nodes_fts: renamed node_id -> id");
     }
 
+    // V10: graph_edges 新增 source 列 + 重建表移除 edge_type CHECK 约束
+    // SQLite 不支持 ALTER TABLE DROP CONSTRAINT，需重建表
+    let graph_edges_sql: String = conn
+        .query_row(
+            "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='table' AND name='graph_edges'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_default();
+
+    let needs_edge_rebuild = graph_edges_sql.contains("CHECK(edge_type IN")
+        || !graph_edges_sql.contains("source");
+
+    if needs_edge_rebuild {
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             BEGIN;
+             CREATE TABLE graph_edges_new (
+                 id        TEXT PRIMARY KEY,
+                 from_node TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+                 to_node   TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+                 edge_type TEXT NOT NULL,
+                 weight    REAL NOT NULL DEFAULT 1.0,
+                 metadata  TEXT,
+                 source    TEXT NOT NULL DEFAULT 'schema'
+             );
+             INSERT INTO graph_edges_new (id, from_node, to_node, edge_type, weight, metadata, source)
+             SELECT id, from_node, to_node, edge_type, weight, metadata, 'schema'
+             FROM graph_edges;
+             DROP TABLE graph_edges;
+             ALTER TABLE graph_edges_new RENAME TO graph_edges;
+             CREATE INDEX IF NOT EXISTS idx_graph_edges_from   ON graph_edges(from_node);
+             CREATE INDEX IF NOT EXISTS idx_graph_edges_to     ON graph_edges(to_node);
+             CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source);
+             COMMIT;
+             PRAGMA foreign_keys = ON;",
+        )?;
+        log::info!("Migrated graph_edges: added source column, removed edge_type CHECK constraint");
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

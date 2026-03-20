@@ -313,11 +313,12 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
 
     for m in &metrics {
         let node_id = format!("{}:metric:{}", connection_id, m.id);
-        let table_node_id = format!("{}:table:{}", connection_id, m.table_name);
+        // 去除 AI 返回的 table_name 可能携带的前后空白
+        let table_name = m.table_name.trim();
 
         let metadata = serde_json::json!({
             "metric_id": m.id,
-            "table_name": m.table_name,
+            "table_name": table_name,
             "aggregation": m.aggregation,
             "description": m.description,
             "status": m.status,
@@ -336,13 +337,34 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
             rusqlite::params![node_id, connection_id, m.name, m.display_name, metadata],
         )?;
 
-        if !m.table_name.is_empty() {
-            let edge_id = format!("{}=>{}", node_id, table_node_id);
-            conn.execute(
-                "INSERT OR IGNORE INTO graph_edges (id, from_node, to_node, edge_type, weight)
-                 VALUES (?1, ?2, ?3, 'metric_ref', 0.9)",
-                rusqlite::params![edge_id, node_id, table_node_id],
-            )?;
+        // 先删除该指标的旧 metric_ref 边，避免 table_name 变更后留下死链
+        conn.execute(
+            "DELETE FROM graph_edges WHERE from_node = ?1 AND edge_type = 'metric_ref'",
+            [&node_id],
+        )?;
+
+        // 仅在目标表节点存在（is_deleted=0）时建立边，防止死链
+        if !table_name.is_empty() {
+            let table_node_id = format!("{}:table:{}", connection_id, table_name);
+            let table_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM graph_nodes WHERE id = ?1 AND is_deleted = 0",
+                [&table_node_id],
+                |row| row.get::<_, i64>(0),
+            ).unwrap_or(0) > 0;
+
+            if table_exists {
+                let edge_id = format!("{}=>{}", node_id, table_node_id);
+                conn.execute(
+                    "INSERT OR IGNORE INTO graph_edges (id, from_node, to_node, edge_type, weight)
+                     VALUES (?1, ?2, ?3, 'metric_ref', 0.9)",
+                    rusqlite::params![edge_id, node_id, table_node_id],
+                )?;
+            } else {
+                log::warn!(
+                    "[sync_metrics] 指标 {} 的目标表节点 {} 不存在或已被软删除，跳过建边",
+                    m.name, table_node_id
+                );
+            }
         }
     }
 

@@ -132,6 +132,7 @@ export interface Tab {
   isNewTable?: boolean;        // table_structure Tab 专用
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
+  ghostTextEnabled?: boolean;  // 新增：Ghost Text 开关，undefined 时由 queryStore 兜底为全局默认值
 }
 
 export interface ColumnMeta {

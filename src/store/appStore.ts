@@ -22,6 +22,8 @@ interface AppState {
   autoMode: boolean;
   setAutoMode: (enabled: boolean) => void;
   initAutoMode: () => Promise<void>;
+  ghostTextDefault: boolean;  // Ghost Text 全局默认开关（Task 6 完整实现持久化）
+  setGhostTextDefault: (enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -46,4 +48,6 @@ export const useAppStore = create<AppState>((set) => ({
       console.error('Failed to get auto mode:', e);
     }
   },
+  ghostTextDefault: true,
+  setGhostTextDefault: (enabled) => set({ ghostTextDefault: enabled }),
 }));

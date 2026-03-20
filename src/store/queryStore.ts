@@ -93,6 +93,8 @@ interface QueryState {
   clearExplanation: (tabId: string) => void;
   startExplanation: (tabId: string) => void;
 
+  toggleGhostText: (tabId: string) => void;
+
   // Auto 模式自动应用 Banner（短暂显示后清除）
   autoApplyBanner: { reason: string } | null;
   setAutoApplyBanner: (banner: { reason: string } | null) => void;
@@ -156,6 +158,14 @@ export async function loadTabsFromStorage(): Promise<{
       }
     }
 
+    // 反序列化兜底：旧 Tab（或 localStorage 迁移路径的 Tab）无 ghostTextEnabled 字段时，填入全局默认值
+    // 注意：此处必须在 return 之前，以覆盖所有赋值路径（SQLite 路径 + localStorage 迁移路径）
+    const ghostDefault = useAppStore.getState().ghostTextDefault ?? true;
+    tabs = tabs.map(t => ({
+      ...t,
+      ghostTextEnabled: t.ghostTextEnabled ?? ghostDefault,
+    }));
+
     return { tabs, activeTabId: rawActiveId ?? '', sqlContent };
   } catch {
     return { tabs: [], activeTabId: '', sqlContent: {} };
@@ -183,6 +193,14 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     persistSqlContent(tabId, sql);
   },
   setActiveTabId: (tabId) => set({ activeTabId: tabId }),
+
+  toggleGhostText: (tabId) => {
+    set(s => ({
+      tabs: s.tabs.map(t =>
+        t.id === tabId ? { ...t, ghostTextEnabled: !(t.ghostTextEnabled ?? true) } : t
+      ),
+    }));
+  },
 
   openMetricTab: (metricId, title, connectionId) => {
     set(s => {
@@ -232,6 +250,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         title: `查询${queryCount}`,
         db: connName,
         queryContext: { connectionId: connId, database: database ?? null, schema: schema ?? null },
+        ghostTextEnabled: useAppStore.getState().ghostTextDefault ?? true,
       };
       newTabId = id;
       return { tabs: [...s.tabs, tab], activeTabId: id };

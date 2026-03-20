@@ -12,7 +12,10 @@
     "refresh": "Refresh",
     "notifications": "Notifications",
     "openNotifications": "Opening Notifications",
-    "settings": "Settings"
+    "settings": "Settings",
+    "metrics": "Metrics",
+    "knowledgeGraph": "Knowledge Graph",
+    "migrationCenter": "Migration Center"
   },
   "assistant": {
     "selectConnectionFirst": "Please select a database connection on the left",

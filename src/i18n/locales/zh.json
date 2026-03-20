@@ -12,7 +12,10 @@
     "refresh": "刷新",
     "notifications": "通知",
     "openNotifications": "打开消息通知",
-    "settings": "设置"
+    "settings": "设置",
+    "metrics": "业务指标",
+    "knowledgeGraph": "知识图谱",
+    "migrationCenter": "迁移中心"
   },
   "assistant": {
     "selectConnectionFirst": "请先在左侧选择一个数据库连接",

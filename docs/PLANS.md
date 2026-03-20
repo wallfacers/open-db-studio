@@ -110,6 +110,43 @@
 
 ---
 
+## V2 后期增强（2026-03-17 ~ 2026-03-20）—— 已完成 ✅
+
+### AI 能力深化
+- [x] AI 流式输出 + 思考模型（DeepSeek-R1、Qwen-thinking、Claude Extended Thinking 折叠块）
+- [x] 多 session 后台流式输出（切换 session 不中断流）
+- [x] ACP Elicitation UI（`request_permission` → 结构化按钮面板）
+- [x] Auto 模式直接应用 SQL Diff（跳过 DiffPanel，AutoApplyBanner 闪现）
+- [x] AI 建表增强（TableManageDialog 集成 AI 流式填充字段）
+- [x] AI 助手删除/清空全局确认框
+- [x] Slash 命令菜单（`/` 触发快捷命令面板）
+
+### 图谱引擎升级
+- [x] Knowledge Graph Palantir Ontology 改造（FK 升级为独立 Link Node，Object Type 样式）
+- [x] GraphCacheStore + JoinPath 内存缓存（BFS 多跳路径缓存）
+- [x] 5 个 graph_* MCP 工具注册到 MCP Server（Phase 1）
+- [x] find_join_paths_structured + link 节点过滤规则（规则 1+2）
+- [x] 图谱虚拟关系层设计（`RelationEdge` 合成边）
+
+### 指标 & 编辑器增强
+- [x] 业务指标树重构（树形导航 + 原子/复合指标分类 + Tab 编辑器）
+- [x] Unified Tab 内容区（DB 模式与指标模式共用右侧 Tab，切换不重置）
+- [x] ECharts chart 代码块（AI 回答内联 ` ```chart ` 渲染交互图表 + 放大弹窗）
+- [x] 代码块放大弹框（MarkdownContent 内 CodeExpandModal）
+
+### 基础设施
+- [x] 全局连接池缓存（消除树导航重复握手开销）
+- [x] SeaTunnel 前端集成（连接配置 + Job 状态展示面板，基础 UI 就绪）
+- [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / SeaTunnel）
+
+### 未实现（有设计文档，待开始）
+- [ ] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）
+- [ ] LLM 配置供应商优先重设计（从 opencode `/config/providers` 动态加载）
+- [ ] ACP 持久化 Session（复用 opencode-cli 进程，消除冷启动）
+- [ ] UI 状态全量持久化至 SQLite（⚠️ 部分：Rust 侧已有 `get_ui_state`，前端标签页仍用 localStorage）
+
+---
+
 ## V3 阶段（2027）—— 生态版
 
 ### Milvus 向量库集成

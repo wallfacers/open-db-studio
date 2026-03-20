@@ -163,18 +163,26 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
     setContextMenu(null);
   };
 
-  const visibleNodes = useMemo(
-    () => searchQuery.trim() ? search(searchQuery) : computeVisible(nodes, expandedIds),
-    [nodes, expandedIds, searchQuery, search]
-  );
+  // 搜索模式下被手动折叠的节点（初始全部展开，点击后折叠/展开）
+  const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
 
-  const searchExpandedIds = useMemo(() => {
-    if (!searchQuery.trim()) return null;
-    const resultIds = new Set(visibleNodes.map(n => n.id));
-    return new Set(
-      visibleNodes.filter(n => n.parentId && resultIds.has(n.parentId)).map(n => n.parentId!)
-    );
-  }, [visibleNodes, searchQuery]);
+  // 搜索词变化时清空折叠状态
+  useEffect(() => {
+    setCollapsedInSearch(new Set());
+  }, [searchQuery]);
+
+  const visibleNodes = useMemo(() => {
+    if (!searchQuery.trim()) return computeVisible(nodes, expandedIds);
+    const allSearchNodes = search(searchQuery);
+    return allSearchNodes.filter(node => {
+      let curParentId: string | null = node.parentId;
+      while (curParentId !== null) {
+        if (collapsedInSearch.has(curParentId)) return false;
+        curParentId = nodes.get(curParentId)?.parentId ?? null;
+      }
+      return true;
+    });
+  }, [nodes, expandedIds, searchQuery, search, collapsedInSearch]);
 
   if (isInitializing) {
     return (
@@ -207,7 +215,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       )}
       {visibleNodes.map(node => {
         const indent = getIndentLevel(node, nodes);
-        const isExpanded = searchExpandedIds ? searchExpandedIds.has(node.id) : expandedIds.has(node.id);
+        const isExpanded = searchQuery.trim() ? !collapsedInSearch.has(node.id) : expandedIds.has(node.id);
         const isSelected = selectedId === node.id;
         const isLoading = loadingIds.has(node.id);
         const count = metricCounts.get(node.id);
@@ -234,7 +242,18 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
             tabIndex={0}
             onClick={() => {
               selectNode(node.id);
-              if (node.nodeType !== 'metric') toggleExpand(node.id);
+              if (node.nodeType === 'metric') return;
+              if (searchQuery.trim()) {
+                // 搜索模式：折叠/展开节点
+                setCollapsedInSearch(prev => {
+                  const next = new Set(prev);
+                  if (next.has(node.id)) next.delete(node.id);
+                  else next.add(node.id);
+                  return next;
+                });
+              } else {
+                toggleExpand(node.id);
+              }
             }}
             onDoubleClick={() => {
               if (node.nodeType === 'metric' && node.meta.metricId) {

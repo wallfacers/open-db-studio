@@ -121,27 +121,34 @@ pub async fn generate_metric_drafts(
     )
     .await
     {
-        Ok((saved_count, total)) => {
+        Ok((saved_count, skipped, total, logs)) => {
             let now = chrono::Utc::now().to_rfc3339();
-            // 写 SQLite：completed + 统计数据（前端 loadTasks 依赖此数据）
+            let logs_json = serde_json::to_string(&logs).unwrap_or_default();
+            // 写 SQLite：completed + 统计数据 + 日志（前端重启后可恢复）
             let _ = crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
                 status: Some("completed".to_string()),
                 progress: Some(100),
                 processed_rows: Some(saved_count as i64),
                 total_rows: Some(total as i64),
                 completed_at: Some(now),
+                metric_count: Some(saved_count as i64),
+                skipped_count: Some(skipped as i64),
+                logs: Some(logs_json),
                 ..Default::default()
             });
             cleanup();
         }
-        Err(e) => {
+        Err((e, logs)) => {
             let now = chrono::Utc::now().to_rfc3339();
-            emit_log(&app_handle, &task_id, "error", &format!("{}", e));
-            // 写 SQLite：failed
+            let err_msg = e.to_string();
+            emit_log(&app_handle, &task_id, "error", &err_msg);
+            let logs_json = serde_json::to_string(&logs).unwrap_or_default();
+            // 写 SQLite：failed + 已收集的日志
             let _ = crate::db::update_task(&task_id, &crate::db::models::UpdateTaskInput {
                 status: Some("failed".to_string()),
-                error: Some(e.to_string()),
+                error: Some(err_msg.clone()),
                 completed_at: Some(now),
+                logs: Some(logs_json),
                 ..Default::default()
             });
             use tauri::Emitter;
@@ -152,7 +159,7 @@ pub async fn generate_metric_drafts(
                 processed_rows: 0,
                 total_rows: None,
                 current_target: String::new(),
-                error: Some(e.to_string()),
+                error: Some(err_msg),
                 output_path: None,
                 log_line: None,
                 connection_id: Some(connection_id),
@@ -168,7 +175,8 @@ pub async fn generate_metric_drafts(
 
 // ─── 主逻辑 ──────────────────────────────────────────────────────────────────
 
-/// 返回 (saved_count, total) 供外层写入 SQLite
+/// 返回 (saved_count, skipped_count, total, logs) 供外层写入 SQLite
+/// 错误时同样携带已收集的日志，保证即使中途失败也能持久化已有日志
 async fn do_generate(
     app: &tauri::AppHandle,
     task_id: &str,
@@ -176,32 +184,60 @@ async fn do_generate(
     database: Option<String>,
     schema: Option<String>,
     table_names: Vec<String>,
-) -> crate::AppResult<(usize, usize)> {
+) -> Result<(usize, usize, usize, Vec<TaskLogLine>), (crate::AppError, Vec<TaskLogLine>)> {
     use tauri::Emitter;
+
+    // 日志收集器（同时 emit 到前端 + 写入本地 Vec，重启后可从 SQLite 恢复）
+    let mut logs: Vec<TaskLogLine> = Vec::new();
+    macro_rules! log_emit {
+        ($level:expr, $msg:expr) => {{
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            logs.push(TaskLogLine {
+                level: $level.to_string(),
+                message: $msg.to_string(),
+                timestamp_ms: ts,
+            });
+            emit_log(app, task_id, $level, $msg);
+        }};
+    }
+    macro_rules! bail {
+        ($e:expr) => {{
+            return Err(($e, logs));
+        }};
+    }
 
     // 1. 读取连接配置
     emit_progress(app, task_id, 2.0, "连接数据库");
-    let config = crate::db::get_connection_config(connection_id)?;
-    emit_log(
-        app,
-        task_id,
+    let config = match crate::db::get_connection_config(connection_id) {
+        Ok(c) => c,
+        Err(e) => bail!(e),
+    };
+    log_emit!(
         "info",
-        &format!("连接数据库 {} ({})", config.database, config.driver),
+        &format!("连接数据库 {} ({})", config.database, config.driver)
     );
 
     // 2. 创建数据源
-    let ds = crate::datasource::create_datasource_with_context(
+    let ds = match crate::datasource::create_datasource_with_context(
         &config,
         database.as_deref(),
         schema.as_deref(),
     )
-    .await?;
+    .await {
+        Ok(d) => d,
+        Err(e) => bail!(e),
+    };
     emit_progress(app, task_id, 5.0, "读取表结构");
 
     // 3. 确定要处理的表列表
     let tables_to_process: Vec<String> = if table_names.is_empty() {
-        let schema_info = ds.get_schema().await?;
-        schema_info.tables.into_iter().map(|t| t.name).collect()
+        match ds.get_schema().await {
+            Ok(si) => si.tables.into_iter().map(|t| t.name).collect(),
+            Err(e) => bail!(e),
+        }
     } else {
         table_names
     };
@@ -243,12 +279,7 @@ async fn do_generate(
         .map(|(n, c)| format!("{} ({}列)", n, c))
         .collect::<Vec<_>>()
         .join(", ");
-    emit_log(
-        app,
-        task_id,
-        "info",
-        &format!("读取字段：{}", col_summary),
-    );
+    log_emit!("info", &format!("读取字段：{}", col_summary));
 
     // 5. 构建 Prompt
     emit_progress(app, task_id, 32.0, "构建 Prompt");
@@ -270,36 +301,38 @@ Schema:
         schema_desc
     );
 
-    emit_log(
-        app,
-        task_id,
+    log_emit!(
         "info",
         &format!(
             "Prompt 构建完成（共 {} 张表，{} 个字段）",
             tables_to_process.len(),
             total_cols
-        ),
+        )
     );
 
     // 6. 调用 LLM
-    let llm_config = crate::db::get_default_llm_config()?
-        .ok_or_else(|| crate::AppError::Other("No AI model configured".into()))?;
+    let llm_config = match crate::db::get_default_llm_config() {
+        Ok(Some(c)) => c,
+        Ok(None) => bail!(crate::AppError::Other("No AI model configured".into())),
+        Err(e) => bail!(e),
+    };
     let model_name = llm_config.model.clone();
 
     emit_progress(app, task_id, 35.0, "等待 AI 响应");
-    emit_log(
-        app,
-        task_id,
-        "info",
-        &format!("调用 AI 模型 {}，等待响应...", model_name),
-    );
+    log_emit!("info", &format!("调用 AI 模型 {}，等待响应...", model_name));
 
-    let client = build_llm_client()?;
+    let client = match build_llm_client() {
+        Ok(c) => c,
+        Err(e) => bail!(e),
+    };
     let messages = vec![crate::llm::ChatMessage {
         role: "user".into(),
         content: prompt,
     }];
-    let response = client.chat(messages).await?;
+    let response = match client.chat(messages).await {
+        Ok(r) => r,
+        Err(e) => bail!(e),
+    };
     emit_progress(app, task_id, 70.0, "解析响应");
 
     // 7. 解析 JSON 响应
@@ -314,15 +347,12 @@ Schema:
     }
 
     let json_str = extract_json(&response);
-    let items: Vec<DraftItem> = serde_json::from_str(&json_str)
-        .map_err(|e| crate::AppError::Other(format!("LLM 返回格式错误: {}", e)))?;
+    let items: Vec<DraftItem> = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(e) => bail!(crate::AppError::Other(format!("LLM 返回格式错误: {}", e))),
+    };
 
-    emit_log(
-        app,
-        task_id,
-        "info",
-        &format!("解析到 {} 个指标草稿", items.len()),
-    );
+    log_emit!("info", &format!("解析到 {} 个指标草稿", items.len()));
     emit_progress(app, task_id, 72.0, "保存指标");
 
     // 8. 逐条去重后写入
@@ -364,14 +394,9 @@ Schema:
         };
 
         if exists {
-            emit_log(
-                app,
-                task_id,
+            log_emit!(
                 "warn",
-                &format!(
-                    "跳过 {}/{}：{} — 已存在相同指标",
-                    pos, total, item.display_name
-                ),
+                &format!("跳过 {}/{}：{} — 已存在相同指标", pos, total, item.display_name)
             );
             skipped_count += 1;
             let pct = 72.0 + 28.0 * pos as f32 / total.max(1) as f32;
@@ -401,26 +426,16 @@ Schema:
 
         match save_metric(&input) {
             Ok(_) => {
-                emit_log(
-                    app,
-                    task_id,
+                log_emit!(
                     "info",
-                    &format!(
-                        "保存 {}/{}：{} ({})",
-                        pos, total, item.display_name, item.name
-                    ),
+                    &format!("保存 {}/{}：{} ({})", pos, total, item.display_name, item.name)
                 );
                 saved_count += 1;
             }
             Err(e) => {
-                emit_log(
-                    app,
-                    task_id,
+                log_emit!(
                     "warn",
-                    &format!(
-                        "保存 {}/{} 失败：{} — {}",
-                        pos, total, item.display_name, e
-                    ),
+                    &format!("保存 {}/{} 失败：{} — {}", pos, total, item.display_name, e)
                 );
                 skipped_count += 1;
             }
@@ -431,11 +446,9 @@ Schema:
     }
 
     // 9. 完成
-    emit_log(
-        app,
-        task_id,
+    log_emit!(
         "info",
-        &format!("✅ 完成，新增 {} 个，跳过 {} 个重复", saved_count, skipped_count),
+        &format!("✅ 完成，新增 {} 个，跳过 {} 个重复", saved_count, skipped_count)
     );
 
     let _ = app.emit("task-progress", TaskProgressEvent {
@@ -455,7 +468,7 @@ Schema:
         skipped_count: Some(skipped_count as i64),
     });
 
-    Ok((saved_count, total))
+    Ok((saved_count, skipped_count, total, logs))
 }
 
 // ─── JSON 提取工具函数 ────────────────────────────────────────────────────────

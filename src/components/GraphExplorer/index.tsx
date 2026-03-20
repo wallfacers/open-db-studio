@@ -201,7 +201,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       return;
     }
     setDbLoading(true);
-    invoke<string[]>('list_databases', { connectionId: internalConnId })
+    invoke<string[]>('list_databases_for_metrics', { connectionId: internalConnId })
       .then(dbs => setDatabases(dbs))
       .catch(() => setDatabases([]))
       .finally(() => setDbLoading(false));

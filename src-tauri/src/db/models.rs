@@ -128,6 +128,9 @@ pub struct TaskRecord {
     pub connection_id: Option<i64>,
     pub scope_database: Option<String>,
     pub scope_schema: Option<String>,
+    pub metric_count: Option<i64>,
+    pub skipped_count: Option<i64>,
+    pub logs: Option<String>,     // JSON 数组 [{level,message,timestamp_ms}]
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -166,4 +169,7 @@ pub struct UpdateTaskInput {
     pub error_details: Option<String>,
     pub output_path: Option<String>,
     pub completed_at: Option<String>,
+    pub metric_count: Option<i64>,
+    pub skipped_count: Option<i64>,
+    pub logs: Option<String>,     // JSON 数组 [{level,message,timestamp_ms}]
 }

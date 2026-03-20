@@ -758,6 +758,9 @@ pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskReco
         connection_id: task.connection_id,
         scope_database: task.scope_database.clone(),
         scope_schema: task.scope_schema.clone(),
+        metric_count: None,
+        skipped_count: None,
+        logs: None,
         created_at: now.clone(),
         updated_at: now,
         completed_at: None,
@@ -768,7 +771,7 @@ pub fn create_task(task: &models::CreateTaskInput) -> AppResult<models::TaskReco
 pub fn list_tasks(limit: i32) -> AppResult<Vec<models::TaskRecord>> {
     let conn = get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at, connection_id, scope_database, scope_schema
+        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at, connection_id, scope_database, scope_schema, metric_count, skipped_count, logs
          FROM task_records
          ORDER BY created_at DESC
          LIMIT ?1"
@@ -794,6 +797,9 @@ pub fn list_tasks(limit: i32) -> AppResult<Vec<models::TaskRecord>> {
             connection_id: row.get(16)?,
             scope_database: row.get(17)?,
             scope_schema: row.get(18)?,
+            metric_count: row.get(19)?,
+            skipped_count: row.get(20)?,
+            logs: row.get(21)?,
         })
     })?;
     let mut results = Vec::new();
@@ -845,6 +851,18 @@ pub fn update_task(id: &str, updates: &models::UpdateTaskInput) -> AppResult<()>
     }
     if let Some(v) = &updates.completed_at {
         set_clauses.push("completed_at = ?");
+        params.push(Box::new(v.clone()));
+    }
+    if let Some(v) = updates.metric_count {
+        set_clauses.push("metric_count = ?");
+        params.push(Box::new(v));
+    }
+    if let Some(v) = updates.skipped_count {
+        set_clauses.push("skipped_count = ?");
+        params.push(Box::new(v));
+    }
+    if let Some(v) = &updates.logs {
+        set_clauses.push("logs = ?");
         params.push(Box::new(v.clone()));
     }
 
@@ -902,7 +920,7 @@ pub fn set_app_setting(key: &str, value: &str) -> AppResult<()> {
 pub fn get_task_by_id(id: &str) -> AppResult<Option<models::TaskRecord>> {
     let conn = get().lock().unwrap();
     let task = conn.query_row(
-        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at, connection_id, scope_database, scope_schema
+        "SELECT id, type, status, title, params, progress, processed_rows, total_rows, current_target, error, error_details, output_path, description, created_at, updated_at, completed_at, connection_id, scope_database, scope_schema, metric_count, skipped_count, logs
          FROM task_records WHERE id = ?1",
         [id],
         |row| Ok(models::TaskRecord {
@@ -925,6 +943,9 @@ pub fn get_task_by_id(id: &str) -> AppResult<Option<models::TaskRecord>> {
             connection_id: row.get(16)?,
             scope_database: row.get(17)?,
             scope_schema: row.get(18)?,
+            metric_count: row.get(19)?,
+            skipped_count: row.get(20)?,
+            logs: row.get(21)?,
         }),
     ).optional()?;
     Ok(task)

@@ -6,6 +6,7 @@ import { SeaTunnelJobTree } from './SeaTunnelJobTree';
 import { SeaTunnelConnectionModal } from './SeaTunnelConnectionModal';
 import { CategoryEditModal } from './CategoryEditModal';
 import { useSeaTunnelStore } from '../../store/seaTunnelStore';
+import { useQueryStore } from '../../store/queryStore';
 
 export interface SeaTunnelSidebarProps {
   sidebarWidth: number;
@@ -16,6 +17,7 @@ export interface SeaTunnelSidebarProps {
 export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSidebarProps) {
   const { t } = useTranslation();
   const { init, createCategory } = useSeaTunnelStore();
+  const openSeaTunnelJobTab = useQueryStore(s => s.openSeaTunnelJobTab);
   const [searchQuery, setSearchQuery] = useState('');
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -25,8 +27,7 @@ export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSi
   }, []);
 
   const handleOpenJob = (jobId: number, title: string, connectionId?: number) => {
-    // TODO: 通知父组件打开 SeaTunnelJobTab
-    console.log('open job', jobId, title, connectionId);
+    openSeaTunnelJobTab(jobId, title, connectionId);
   };
 
   return (

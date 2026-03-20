@@ -443,6 +443,24 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("Migrated graph_edges: added source column, removed edge_type CHECK constraint");
     }
 
+    // V11: task_records 新增 metric_count / skipped_count / logs 列（存量数据库迁移）
+    let v11_stmts = [
+        "ALTER TABLE task_records ADD COLUMN metric_count INTEGER",
+        "ALTER TABLE task_records ADD COLUMN skipped_count INTEGER",
+        "ALTER TABLE task_records ADD COLUMN logs TEXT",
+    ];
+    for stmt in &v11_stmts {
+        if let Err(e) = conn.execute_batch(stmt) {
+            let is_duplicate = matches!(
+                &e,
+                RusqliteError::SqliteFailure(err, _) if err.extended_code == 1
+            );
+            if !is_duplicate {
+                return Err(crate::AppError::Other(format!("Migration V11 failed: {}", e)));
+            }
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

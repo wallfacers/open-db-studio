@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS task_records (
     error_details TEXT,           -- JSON 数组，错误行详情
     output_path TEXT,
     description TEXT,             -- Markdown 格式的任务描述（连接信息、表清单等，供 LLM/MCP 读取）
+    metric_count INTEGER,         -- ai_generate_metrics：新增指标数
+    skipped_count INTEGER,        -- ai_generate_metrics：跳过（重复）指标数
+    logs TEXT,                    -- JSON 数组，任务运行日志（{level,message,timestamp_ms}[]）
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT

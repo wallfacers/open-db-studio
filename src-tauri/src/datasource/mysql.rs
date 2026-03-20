@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use sqlx::mysql::MySqlPool;
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use sqlx::Row;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, TableStatInfo, ViewMeta};
 use crate::AppResult;
@@ -50,7 +50,12 @@ impl MySqlDataSource {
             "mysql://{}:{}@{}:{}/{}",
             config.username, config.password, config.host, config.port, config.database
         );
-        let pool = MySqlPool::connect(&url).await?;
+        let pool = MySqlPoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(Duration::from_secs(30))
+            .idle_timeout(Duration::from_secs(300))
+            .connect(&url)
+            .await?;
         Ok(Self { pool })
     }
 }

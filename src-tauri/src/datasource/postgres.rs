@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use sqlx::postgres::{PgConnectOptions, PgPool, PgSslMode};
-use std::time::Instant;
+use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
+use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, TableStatInfo, ViewMeta};
 use crate::AppResult;
@@ -29,7 +29,12 @@ impl PostgresDataSource {
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");
         opts = opts.options([("search_path", search_path)]);
-        let pool = PgPool::connect_with(opts).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(Duration::from_secs(30))
+            .idle_timeout(Duration::from_secs(300))
+            .connect_with(opts)
+            .await?;
         Ok(Self { pool })
     }
 }

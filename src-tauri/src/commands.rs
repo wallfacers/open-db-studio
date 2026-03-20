@@ -785,6 +785,71 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Op
     client.diagnose_error(&sql, &error_msg, &schema_context, &driver).await
 }
 
+#[tauri::command]
+pub async fn ai_inline_complete(
+    connection_id: Option<i64>,
+    sql_before: String,
+    sql_after: String,
+    schema_context: String,
+    history_context: String,
+    hint: String,  // "single_line" | "multi_line"
+) -> AppResult<String> {
+    // 无可用配置 → 静默返回空（不报错）
+    let config = match crate::db::get_best_llm_config()? {
+        Some(c) => c,
+        None => return Ok(String::new()),
+    };
+
+    // dialect 从连接配置查询，无连接时降级为 "sql"
+    let dialect = connection_id
+        .and_then(|id| crate::db::get_connection_config(id).ok())
+        .map(|c| c.driver)
+        .unwrap_or_else(|| "sql".to_string());
+
+    let mode_instruction = if hint == "single_line" {
+        "Complete the current line only. Do not add a newline."
+    } else {
+        "Complete the full SQL statement from the cursor position."
+    };
+
+    let api_type = parse_api_type(&config.api_type);
+    let client = crate::llm::client::LlmClient::new(
+        config.api_key,
+        Some(config.base_url),
+        Some(config.model),
+        Some(api_type),
+    );
+
+    // UTF-8 安全截断
+    let sql_before_trunc = sql_before
+        .chars()
+        .rev()
+        .take(2000)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    let sql_after_trunc = sql_after.chars().take(500).collect::<String>();
+
+    // 5s 超时，超时返回空串
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client.inline_complete(
+            &sql_before_trunc,
+            &sql_after_trunc,
+            &schema_context,
+            &history_context,
+            mode_instruction,
+            &dialect,
+        ),
+    )
+    .await
+    {
+        Ok(Ok(text)) => Ok(text.trim().to_string()),
+        _ => Ok(String::new()),
+    }
+}
+
 // ============ 导航树查询命令 ============
 
 #[tauri::command]

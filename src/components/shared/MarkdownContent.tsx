@@ -1,14 +1,97 @@
 import React, { useState, useCallback, memo } from 'react';
+import ReactDOM from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Maximize2, X } from 'lucide-react';
 import { ChartBlock } from './ChartBlock';
 
-// ── 代码块 ──────────────────────────────────────────────────────────────────
+// ── 代码放大弹框 ─────────────────────────────────────────────────────────────
+const CodeExpandModal: React.FC<{
+  language: string;
+  code: string;
+  onClose: () => void;
+}> = ({ language, code, onClose }) => {
+  const [copied, setCopied] = useState(false);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 全文统一使用 React.useEffect 命名空间风格（与 CodeBlock 保持一致）
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => {
+      document.removeEventListener('keydown', handler);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [onClose]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // 静默失败
+    }
+  }, [code]);
+
+  return ReactDOM.createPortal(
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+        {/* 弹框头部 */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#1e2d42] flex-shrink-0">
+          <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            >
+              {copied ? (
+                <><Check size={13} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
+              ) : (
+                <><Copy size={13} /><span>复制</span></>
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              title="关闭"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        {/* 代码区域：overflow-auto 覆盖横纵两个方向 */}
+        <div className="flex-1 overflow-auto">
+          <SyntaxHighlighter
+            style={oneDark}
+            language={language || 'plaintext'}
+            useInlineStyles={false}
+            PreTag="div"
+            customStyle={{ margin: 0, borderRadius: 0, fontSize: '13px', background: '#0d1117', padding: '16px', minHeight: '100%', overflowX: 'auto' }}
+            codeTagProps={{ style: { background: 'transparent' } }}
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+// ── 代码块 ───────────────────────────────────────────────────────────────────
+// 原 CodeBlock（保留复制逻辑，新增 expanded state 和放大按钮）：
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -27,31 +110,49 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   }, [code]);
 
   return (
-    <div className="my-2 rounded overflow-hidden border border-[#1e2d42]">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
-        <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+    <>
+      <div className="my-2 rounded overflow-hidden border border-[#1e2d42]">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
+          <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setExpanded(true)}
+              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              title="放大查看"
+            >
+              <Maximize2 size={12} />
+            </button>
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            >
+              {copied ? (
+                <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
+              ) : (
+                <><Copy size={12} /><span>复制</span></>
+              )}
+            </button>
+          </div>
+        </div>
+        <SyntaxHighlighter
+          style={oneDark}
+          language={language || 'plaintext'}
+          useInlineStyles={false}
+          PreTag="div"
+          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', overflowX: 'auto' }}
+          codeTagProps={{ style: { background: 'transparent' } }}
         >
-          {copied ? (
-            <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">已复制</span></>
-          ) : (
-            <><Copy size={12} /><span>复制</span></>
-          )}
-        </button>
+          {code}
+        </SyntaxHighlighter>
       </div>
-      <SyntaxHighlighter
-        style={oneDark}
-        language={language || 'plaintext'}
-        useInlineStyles={false}
-        PreTag="div"
-        customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', overflowX: 'auto' }}
-        codeTagProps={{ style: { background: 'transparent' } }}
-      >
-        {code}
-      </SyntaxHighlighter>
-    </div>
+      {expanded && (
+        <CodeExpandModal
+          language={language}
+          code={code}
+          onClose={() => setExpanded(false)}
+        />
+      )}
+    </>
   );
 });
 

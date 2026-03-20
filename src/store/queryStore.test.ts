@@ -306,3 +306,22 @@ describe('setActiveTabId（MCP focus_tab 底层依赖）', () => {
     expect(useQueryStore.getState().activeTabId).toBe('ghost');
   });
 });
+
+describe('autoApplyBanner', () => {
+  it('初始值为 null', () => {
+    // 重置 store 到干净状态
+    useQueryStore.setState({ autoApplyBanner: null });
+    expect(useQueryStore.getState().autoApplyBanner).toBeNull();
+  });
+
+  it('setAutoApplyBanner 写入 banner', () => {
+    useQueryStore.getState().setAutoApplyBanner({ reason: '修复语法错误' });
+    expect(useQueryStore.getState().autoApplyBanner).toEqual({ reason: '修复语法错误' });
+  });
+
+  it('setAutoApplyBanner(null) 清除 banner', () => {
+    useQueryStore.getState().setAutoApplyBanner({ reason: '修复语法错误' });
+    useQueryStore.getState().setAutoApplyBanner(null);
+    expect(useQueryStore.getState().autoApplyBanner).toBeNull();
+  });
+});

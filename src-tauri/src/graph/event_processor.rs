@@ -315,35 +315,85 @@ pub async fn process_pending_events(
                 }
 
                 "ADD_FK" => {
-                    // FK 边不对应 node，只需更新 graph_edges，
-                    // metadata 中含 constraint_name/column/referenced_table/referenced_column
                     if let Some(meta_str) = &ev.metadata {
                         if let Ok(meta_val) = serde_json::from_str::<serde_json::Value>(meta_str) {
-                            let constraint_name = meta_val
-                                .get("constraint_name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown");
                             let ref_table = meta_val
                                 .get("referenced_table")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
+                            let via_col = meta_val
+                                .get("column")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let on_delete = meta_val
+                                .get("on_delete")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("NO ACTION");
+
                             let table_node_id = make_node_id(conn_id, "table", &[&ev.table_name]);
                             let ref_table_node_id = make_node_id(conn_id, "table", &[ref_table]);
-                            let edge_id = format!("fk:{}", constraint_name);
+                            let link_id = format!(
+                                "link:{}:{}:{}:{}",
+                                conn_id, ev.table_name, ref_table, via_col
+                            );
+
+                            // 推断 cardinality（简化：固定 N:1）
+                            let cardinality = "N:1";
+
+                            // Link Node metadata
+                            let link_metadata = serde_json::json!({
+                                "edge_type": "fk",
+                                "cardinality": cardinality,
+                                "via": via_col,
+                                "on_delete": on_delete,
+                                "description": "",
+                                "weight": 0.95,
+                                "is_inferred": true,
+                                "source_table": ev.table_name,
+                                "target_table": ref_table,
+                                "source_node_id": table_node_id,
+                                "target_node_id": ref_table_node_id,
+                            });
+
+                            let display_name = format!("{} → {}", ev.table_name, ref_table);
+
+                            // 插入 Link Node（INSERT OR IGNORE 保证幂等）
+                            let inserted = db_conn.execute(
+                                "INSERT OR IGNORE INTO graph_nodes
+                                   (id, node_type, connection_id, name, display_name, metadata, source)
+                                 VALUES (?1, 'link', ?2, ?3, ?4, ?5, 'schema')",
+                                rusqlite::params![
+                                    link_id,
+                                    conn_id,
+                                    "fk",
+                                    display_name,
+                                    link_metadata.to_string(),
+                                ],
+                            ).unwrap_or(0);
+
+                            // 插入两条边（INSERT OR IGNORE 保证幂等）
+                            let edge1_id = format!("{}=>{}", table_node_id, link_id);
                             let _ = db_conn.execute(
                                 "INSERT OR IGNORE INTO graph_edges
-                                   (id, from_node, to_node, edge_type, metadata)
-                                 VALUES (?1, ?2, ?3, 'foreign_key', ?4)",
-                                rusqlite::params![
-                                    edge_id,
-                                    table_node_id,
-                                    ref_table_node_id,
-                                    meta_str,
-                                ],
+                                   (id, from_node, to_node, edge_type)
+                                 VALUES (?1, ?2, ?3, 'to_link')",
+                                rusqlite::params![edge1_id, table_node_id, link_id],
                             );
+
+                            let edge2_id = format!("{}=>{}", link_id, ref_table_node_id);
+                            let _ = db_conn.execute(
+                                "INSERT OR IGNORE INTO graph_edges
+                                   (id, from_node, to_node, edge_type)
+                                 VALUES (?1, ?2, ?3, 'from_link')",
+                                rusqlite::params![edge2_id, link_id, ref_table_node_id],
+                            );
+
+                            // 仅真正插入时计数（IGNORE 时 inserted == 0）
+                            if inserted > 0 {
+                                stats.inserted += 1;
+                            }
                         }
                     }
-                    // FK 不影响 FTS5
                 }
 
                 other => {

@@ -1,8 +1,12 @@
 # 设计文档：图关系消歧 MCP Skill 统一架构
 
 **日期**：2026-03-20
-**状态**：已批准（v2，经 spec-reviewer 修正）
+**状态**：已批准（v3，兼容 Palantir 图改造）
 **作者**：Claude Code + 用户协作
+
+> **执行顺序依赖**：本设计必须在
+> [`2026-03-20-knowledge-graph-palantir-redesign.md`](./2026-03-20-knowledge-graph-palantir-redesign.md)
+> 完成并上线后方可实施。Palantir 改造变更了图的核心数据结构，本设计的图遍历逻辑依赖新结构。
 
 ---
 
@@ -18,6 +22,30 @@
 | `agent_optimize_sql` | 否 | 仅传入 SQL + 驱动类型 |
 
 这导致 `agent_chat`（AI 助手对话框）在处理复杂关联查询时无法利用 GraphExplorer 中已构建的表关系、外键路径、业务指标等信息，无法有效消除字段/表名歧义。
+
+---
+
+## Palantir 改造兼容性说明
+
+Palantir 图改造将 FK 关系从**直连边**升级为**Link Node + 两段式边**，本设计必须适配新结构：
+
+### 数据结构变化对比
+
+| 维度 | 改造前 | 改造后（本设计依赖的结构） |
+|------|--------|--------------------------|
+| FK 关系存储 | `graph_edges`: A → B（单跳直连） | `graph_nodes`（node_type=`'link'`）+ `graph_edges`: A → link → B（两段式） |
+| 关系语义信息 | `edge_type` + `weight` | Link Node metadata：`cardinality / via / on_delete / description / is_inferred` |
+| 节点类型 | table / metric / alias | table / metric / alias / **link（新增）** |
+
+### 四条兼容规则（所有 graph_* 工具必须遵守）
+
+**规则 1 — 节点过滤**：所有返回"表列表"的查询必须加 `WHERE node_type IN ('table', 'metric', 'alias')`，排除 Link Node，防止 LLM 将 `link_1_orders_users_user_id` 当作真实表名使用。
+
+**规则 2 — 两跳遍历**：`find_join_paths()` 改为两跳模式：`Table → Link Node → Table`，不再查直连边（改造后直连边已不存在）。Link Node 的 id 格式为 `link_{conn}_{from}_{to}_{via_field}`，可从 metadata 的 `source_table / target_table` 获取端点表名。
+
+**规则 3 — 富化 join_paths 输出**：从 Link Node metadata 中读取 `cardinality / via / on_delete / description`，将 join_paths 从纯字符串升级为结构化对象（见下方输出结构），使 LLM 能选择正确的 JOIN 类型并利用用户编写的语义描述消歧。
+
+**规则 4 — description 语义利用**：用户在 NodeDetail 面板为 Link Node 编写的 `description`（如"每笔订单归属一个用户"）必须包含在 `graph_query_context` 输出中，作为业务语义消歧的关键信号。
 
 ---
 
@@ -140,17 +168,28 @@ src-tauri/src/mcp/
 }
 ```
 
-输出结构：
+输出结构（利用 Palantir Link Node 的富属性）：
 
 ```json
 {
   "relevant_tables": ["orders", "users"],
-  "join_paths": ["orders → users via orders.user_id = users.id"],
+  "join_paths": [
+    {
+      "path": "orders → users",
+      "via": "orders.user_id = users.id",
+      "cardinality": "N:1",
+      "on_delete": "CASCADE",
+      "description": "每笔订单归属一个用户",
+      "sql_hint": "JOIN users u ON o.user_id = u.id"
+    }
+  ],
   "schema_ddl": "CREATE TABLE orders (...); CREATE TABLE users (...);",
   "metrics": ["monthly_revenue: SUM(orders.amount) WHERE ..."],
   "context_quality": "graph_hit"
 }
 ```
+
+`join_paths` 从字符串数组升级为对象数组，`cardinality` 帮助 LLM 选择正确 JOIN 类型，`description` 传递用户编写的业务语义。
 
 `context_quality` 枚举（替代模糊的 `fallback: bool`）：
 
@@ -169,7 +208,7 @@ src-tauri/src/mcp/
   "inputSchema": { "question": "string", "connection_id": "integer" } }
 
 { "name": "graph_find_join_paths",
-  "description": "给定起点表和终点表，在知识图谱边中查找通过外键关系连接的最短 JOIN 路径，返回路径描述列表。",
+  "description": "给定起点表和终点表，在知识图谱中查找通过 Link Node（两跳结构：table→link→table）连接的最短 JOIN 路径，返回包含 cardinality、via 字段、语义描述的结构化路径列表。",
   "inputSchema": { "from_table": "string", "to_table": "string", "connection_id": "integer" } }
 
 { "name": "graph_get_ddl",
@@ -196,9 +235,11 @@ src-tauri/src/mcp/
   ├─ [歧义检测] LLM 认为涉及多表关联 → tool_call
   │     graph_query_context(question="每个用户的总订单金额", connection_id=1)
   │     ↓ mcp_port /mcp
-  │     → graph::query::find_relevant_subgraph()
-  │     → graph::traversal::find_join_paths()
-  │     ← { relevant_tables: ["users","orders"], join_paths: [...], context_quality: "graph_hit" }
+  │     → graph::query::find_relevant_subgraph()      // 过滤 node_type='link'
+  │     → graph::traversal::find_join_paths()         // 两跳遍历 table→link→table
+  │     ← { relevant_tables: ["users","orders"],
+  │          join_paths: [{ path, via, cardinality, on_delete, description, sql_hint }],
+  │          context_quality: "graph_hit" }
   │
   ├─ LLM 读取上下文，生成正确 SQL
   │     SELECT u.id, SUM(o.amount) FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.id
@@ -213,8 +254,8 @@ invoke('ai_generate_sql_v2', { question, connectionId })
   ↓
 pipeline::generate_sql_v2()
   ↓
-graph::query::find_relevant_subgraph()   ← 与 MCP skill 调用相同函数
-graph::traversal::find_join_paths()
+graph::query::find_relevant_subgraph()   ← 同函数，过滤 node_type='link'
+graph::traversal::find_join_paths()     ← 同函数，两跳遍历 Link Node
 metrics::search_metrics()
   ↓
 build system prompt（内联注入上下文）
@@ -275,9 +316,23 @@ Phase 2 中 `build_sql_context()` 内联逻辑迁移到 `graph/tools/query_conte
 
 ---
 
+## graph::query / graph::traversal 函数的必要变更
+
+Palantir 改造后，以下 Rust 函数需在本项目实施前同步更新（Palantir 实施阶段负责，本设计仅列出接口要求）：
+
+| 函数 | 变更内容 |
+|------|---------|
+| `find_relevant_subgraph()` | 查询 `graph_nodes` 时追加 `AND node_type != 'link'`，仅返回实体节点 |
+| `find_join_paths()` | 遍历逻辑改为两跳：`SELECT e1.from_node, e2.to_node, n.metadata FROM graph_edges e1 JOIN graph_nodes n ON e1.to_node = n.id AND n.node_type = 'link' JOIN graph_edges e2 ON e2.from_node = n.id`；从 metadata 解析 `cardinality / via / on_delete / description` 返回结构化路径 |
+
+如 Palantir 实施团队未同步更新上述函数，本设计的 graph_* 工具将回退至 `context_quality: "schema_only"`（降级策略兜底）。
+
+---
+
 ## 不在本次范围内
 
 - MCP Server 对外部工具（Claude Desktop、Cursor）的直接暴露
 - `agent_explain_sql` / `agent_optimize_sql` 接入图关系（可后续迭代）
 - 图谱构建（`build_schema_graph`）本身的改动
 - `agent_chat` 的 connection_id 传递机制改动（已通过 system prompt 注入，现有机制有效）
+- Link Node 人工新建 UI（Palantir 设计范围，不在本设计内）

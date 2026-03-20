@@ -71,7 +71,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? '业务指标' : undefined}>
+        <Tooltip content={!isExpanded ? t('activity.metrics') : undefined}>
           <div
             className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
             onClick={() => {
@@ -80,11 +80,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             }}
           >
             <Activity size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">业务指标</span>}
+            {isExpanded && <span className="text-[13px] truncate">{t('activity.metrics')}</span>}
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? '知识图谱' : undefined}>
+        <Tooltip content={!isExpanded ? t('activity.knowledgeGraph') : undefined}>
           <div
             className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'graph' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
             onClick={() => {
@@ -93,11 +93,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             }}
           >
             <Network size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">知识图谱</span>}
+            {isExpanded && <span className="text-[13px] truncate">{t('activity.knowledgeGraph')}</span>}
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? '迁移中心' : undefined}>
+        <Tooltip content={!isExpanded ? t('activity.migrationCenter') : undefined}>
           <div
             className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'seatunnel' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
             onClick={() => {
@@ -106,7 +106,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             }}
           >
             <Workflow size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">迁移中心</span>}
+            {isExpanded && <span className="text-[13px] truncate">{t('activity.migrationCenter')}</span>}
           </div>
         </Tooltip>
 

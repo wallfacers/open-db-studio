@@ -178,7 +178,7 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
   let meta: LinkMetadata = {};
   try { meta = JSON.parse((nodeData.metadata as string) || '{}'); } catch { /* ignore */ }
 
-  const isInferred = meta.is_inferred !== false;
+  const isInferred = Boolean(meta.is_inferred);
   const borderClass = isInferred
     ? 'border-dashed border-[#00c9a7]'
     : 'border-[#00c9a7]';
@@ -198,19 +198,21 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
         )}
       </div>
 
-      {/* Row 2: via + on_delete */}
-      <div className="px-3 py-1 border-b border-[#1e2d42] flex items-center gap-1.5">
-        {meta.via && (
-          <span className="text-[#7a9bb8] text-[9px]">
-            via: <span className="text-[#c8daea] font-mono">{meta.via}</span>
-          </span>
-        )}
-        {meta.on_delete && (
-          <span className="text-[#7a9bb8] text-[9px] ml-1">
-            · <span className="text-[#f59e0b]">{meta.on_delete}</span>
-          </span>
-        )}
-      </div>
+      {/* Row 2: via + on_delete（条件渲染，无内容时不显示） */}
+      {(meta.via || meta.on_delete) && (
+        <div className="px-3 py-1 border-b border-[#1e2d42] flex items-center gap-1.5">
+          {meta.via && (
+            <span className="text-[#7a9bb8] text-[9px]">
+              via: <span className="text-[#c8daea] font-mono">{meta.via}</span>
+            </span>
+          )}
+          {meta.on_delete && (
+            <span className="text-[#7a9bb8] text-[9px] ml-1">
+              · <span className="text-[#f59e0b]">{meta.on_delete}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Row 3: direction */}
       <div className="px-3 py-1 flex items-center">

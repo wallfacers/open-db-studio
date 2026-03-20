@@ -234,8 +234,8 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             </div>
           )}
 
-          {/* ai_generate_metrics 日志区域 */}
-          {task.type === 'ai_generate_metrics' && task.logs && task.logs.length > 0 && (
+          {/* 任务日志区域 */}
+          {(task.type === 'ai_generate_metrics' || task.type === 'build_schema_graph') && task.logs && task.logs.length > 0 && (
             <div className="mt-3">
               <div className="text-[#5a7a9a] mb-1">日志</div>
               <div className="bg-[#0d1117] rounded p-2 max-h-48 overflow-y-auto font-mono text-xs leading-5">

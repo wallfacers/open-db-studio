@@ -12,7 +12,7 @@ const CodeExpandModal: React.FC<{
   language: string;
   code: string;
   onClose: () => void;
-}> = ({ language, code, onClose }) => {
+}> = memo(({ language, code, onClose }) => {
   const [copied, setCopied] = useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -85,10 +85,9 @@ const CodeExpandModal: React.FC<{
     </div>,
     document.body
   );
-};
+});
 
 // ── 代码块 ───────────────────────────────────────────────────────────────────
-// 原 CodeBlock（保留复制逻辑，新增 expanded state 和放大按钮）：
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -108,6 +107,8 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
       // clipboard 不可用时静默失败
     }
   }, [code]);
+
+  const handleClose = useCallback(() => setExpanded(false), []);
 
   return (
     <>
@@ -149,7 +150,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
         <CodeExpandModal
           language={language}
           code={code}
-          onClose={() => setExpanded(false)}
+          onClose={handleClose}
         />
       )}
     </>

@@ -323,9 +323,130 @@ Palantir 改造后，以下 Rust 函数需在本项目实施前同步更新（Pa
 | 函数 | 变更内容 |
 |------|---------|
 | `find_relevant_subgraph()` | 查询 `graph_nodes` 时追加 `AND node_type != 'link'`，仅返回实体节点 |
-| `find_join_paths()` | 遍历逻辑改为两跳：`SELECT e1.from_node, e2.to_node, n.metadata FROM graph_edges e1 JOIN graph_nodes n ON e1.to_node = n.id AND n.node_type = 'link' JOIN graph_edges e2 ON e2.from_node = n.id`；从 metadata 解析 `cardinality / via / on_delete / description` 返回结构化路径 |
+| `find_join_paths()` | **废弃原两跳固定 SQL，改为调用内存 BFS**（见下方性能设计章节）；从 Link Node metadata 解析 `cardinality / via / on_delete / description` 返回结构化路径 |
 
 如 Palantir 实施团队未同步更新上述函数，本设计的 graph_* 工具将回退至 `context_quality: "schema_only"`（降级策略兜底）。
+
+---
+
+## 性能设计：内存缓存 + BFS 路径搜索
+
+### 问题背景
+
+`graph_find_join_paths` 需要支持多跳路径（类 Neo4j `shortestPath`），用于找到无直连 FK 但通过中间表相连的两个节点。原始 SQLite 递归 CTE 方案在每次调用时均执行全图扫描，性能不可接受。
+
+### 数据规模估算
+
+| 指标 | 典型业务库 | 大型业务库 |
+|------|----------|----------|
+| 表数量（V） | 50–200 | 500–2000 |
+| Link Node 数（E） | 100–500 | 1000–5000 |
+| adjacency list 内存占用 | ~1MB | ~10MB |
+
+结论：图谱规模极小，全量装入内存无压力。
+
+### 三方案性能对比
+
+| 方案 | 首次查询 | 后续查询 | 内存 | 复杂度 |
+|------|---------|---------|------|-------|
+| SQLite 递归 CTE（无缓存） | 50–200ms | 50–200ms | 0 | 低 |
+| Rust 内存 BFS（无路径缓存） | 10ms 热身 + 0.5ms | 0.5ms | ~5MB | 中 |
+| **Rust 内存 BFS + 路径缓存（推荐）** | **10ms 热身 + 0.5ms** | **0.01ms** | ~6MB | 中 |
+
+**采用方案三**。
+
+### 缓存数据结构
+
+```rust
+// src-tauri/src/graph/cache.rs
+
+/// 邻接表中的一条逻辑边（两跳 table→link→table 压缩为一条）
+struct GraphEdge {
+    link_node_id: String,
+    target_table:  String,
+    metadata:      LinkMetadata,  // cardinality, via, on_delete, description
+}
+
+/// 单个 connection 的内存图
+struct ConnectionGraph {
+    /// table_id → 可达逻辑边列表（adjacency list）
+    adj: HashMap<String, Vec<GraphEdge>>,
+    /// BFS 路径缓存（LRU，上限 500 条）
+    /// key: (from_table, to_table)  value: 所有最短等长路径（空 Vec = 无路径）
+    path_cache: lru::LruCache<(String, String), Vec<JoinPath>>,
+    /// 图装载时间（用于 TTL 或调试）
+    built_at: std::time::Instant,
+}
+
+/// 挂在 AppState 上的全局缓存
+pub struct GraphCacheStore {
+    inner: Arc<RwLock<HashMap<i64, ConnectionGraph>>>,  // key: connection_id
+}
+```
+
+内存上限估算（最坏情况）：
+
+```
+adjacency list：2000 表 × 5 边 × ~280 bytes/边 ≈ 2.8MB
+路径缓存（LRU 500 条）：500 × 3跳平均 × ~300 bytes ≈ 450KB
+总计：< 4MB
+```
+
+### 缓存生命周期
+
+```
+加载时机（Lazy）                       失效触发点
+──────────────────────────────         ──────────────────────────────
+首次 graph_* 工具调用时                 build_schema_graph 命令完成后
+  → 从 SQLite 全量读取                  → 删除 HashMap[connection_id]
+    graph_nodes（排除 link）            → 下次调用自动重新加载
+    + graph_edges
+    + link node metadata
+  → 构建 adj HashMap
+  → 耗时 ~10ms（仅一次）
+```
+
+**不在启动时预加载**：用户可能持有多个 connection，只热身实际被查询的。
+
+### BFS 路径搜索规则
+
+```rust
+fn bfs_find_paths(
+    graph: &ConnectionGraph,
+    from:      &str,
+    to:        &str,
+    max_depth: usize,   // 默认 4（等价于原始边 8 跳）
+) -> Vec<JoinPath> {
+    // 1. 标准 BFS，队列元素 = (当前节点, 已走路径)
+    // 2. 找到第一批最短路径后，继续遍历同层节点，收集所有等长路径
+    //    （多条等长路径交由 LLM 选择最优 JOIN 方式）
+    // 3. 超过 max_depth 剪枝，防止笛卡尔积爆炸
+    // 4. 结果写入 path_cache，后续相同 (from, to) 直接命中
+}
+```
+
+### `graph_find_join_paths` 工具接口更新
+
+新增 `max_depth` 参数：
+
+```json
+{
+  "name": "graph_find_join_paths",
+  "description": "给定起点表和终点表，在知识图谱中查找通过 Link Node（两跳结构：table→link→table）连接的最短 JOIN 路径，支持多跳中间表穿越。返回包含 cardinality、via 字段、语义描述的结构化路径列表。首次调用有约 10ms 图加载耗时，后续调用 < 1ms。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "from_table":    { "type": "string",  "description": "起点表名" },
+      "to_table":      { "type": "string",  "description": "终点表名" },
+      "connection_id": { "type": "integer", "description": "数据库连接 ID" },
+      "max_depth":     { "type": "integer", "description": "最大跳数，默认 4，最大 6", "default": 4 }
+    },
+    "required": ["from_table", "to_table", "connection_id"]
+  }
+}
+```
+
+当 `from_table` 与 `to_table` 之间无路径时，返回空数组并附加 `"no_path": true`，LLM 据此判断是否需要向用户澄清表关系。
 
 ---
 

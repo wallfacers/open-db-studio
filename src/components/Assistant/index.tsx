@@ -5,6 +5,7 @@ import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, 
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { DiffPanel } from './DiffPanel';
+import { AutoApplyBanner } from './AutoApplyBanner';
 import ElicitationPanel from './ElicitationPanel';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { useAiStore } from '../../store';
@@ -137,7 +138,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     sessions.find((s) => s.id === currentSessionId)?.configId ??
     null;
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
-  const { pendingDiff, applyDiff, cancelDiff } = useQueryStore();
+  const { pendingDiff, applyDiff, cancelDiff, autoApplyBanner } = useQueryStore();
   const { connections, activeConnectionIds } = useConnectionStore();
 
   const [chatInput, setChatInput] = useState('');
@@ -655,6 +656,7 @@ export const Assistant: React.FC<AssistantProps> = ({
               </>
             )}
           </div>
+          {autoApplyBanner && <AutoApplyBanner reason={autoApplyBanner.reason} />}
           {/* 输入框紧跟在提示文字下方 */}
           <div className="w-full">{renderInputBox()}</div>
         </div>
@@ -711,6 +713,8 @@ export const Assistant: React.FC<AssistantProps> = ({
               onCancel={() => { cancelDiff(); invoke('mcp_diff_respond', { confirmed: false }).catch(() => {}); }}
             />
           )}
+          {/* Auto 模式自动应用 Banner */}
+          {autoApplyBanner && <AutoApplyBanner reason={autoApplyBanner.reason} />}
 
           {/* 连接切换确认 banner */}
           {pendingConnectionSwitch && (

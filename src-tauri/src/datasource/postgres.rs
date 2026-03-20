@@ -133,7 +133,7 @@ impl DataSource for PostgresDataSource {
                  JOIN pg_attribute a ON a.attrelid = d.objoid AND a.attnum = d.objsubid
                  JOIN pg_class cls ON cls.oid = d.objoid
                  JOIN pg_namespace ns ON ns.oid = cls.relnamespace
-                 WHERE cls.relname = $1 AND ns.nspname = $2
+                 WHERE cls.relname = $1 AND ns.nspname = $2 AND d.objsubid > 0
              ) pg_desc ON pg_desc.col_name = c.column_name
              WHERE c.table_schema = $2 AND c.table_name = $1
              ORDER BY c.ordinal_position"

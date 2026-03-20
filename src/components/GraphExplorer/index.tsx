@@ -291,6 +291,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
                 to_node: meta.target_node_id,
                 edge_type: meta.edge_type ?? 'fk',
                 weight: meta.weight ?? 0.95,
+                source: 'schema',
               }];
             } catch { return []; }
           });

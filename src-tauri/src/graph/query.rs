@@ -22,6 +22,7 @@ pub struct GraphEdge {
     pub edge_type: String,
     pub weight: f64,
     pub metadata: Option<serde_json::Value>,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -153,7 +154,7 @@ pub async fn find_relevant_subgraph(
 
     // 5. 收集相关边
     let mut stmt = conn.prepare(
-        "SELECT id,from_node,to_node,edge_type,weight,metadata
+        "SELECT id,from_node,to_node,edge_type,weight,metadata,source
          FROM graph_edges WHERE from_node=?1 OR to_node=?1"
     )?;
     let mut edges = Vec::new();
@@ -167,6 +168,7 @@ pub async fn find_relevant_subgraph(
                 edge_type: row.get(3)?,
                 weight: row.get(4)?,
                 metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
+                source: row.get(6)?,
             })
         })?;
         for r in rows {

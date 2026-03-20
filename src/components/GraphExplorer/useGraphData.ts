@@ -19,6 +19,7 @@ export interface GraphEdge {
   to_node: string;
   edge_type: string;
   weight: number;
+  source: string;
 }
 
 interface UseGraphDataResult {

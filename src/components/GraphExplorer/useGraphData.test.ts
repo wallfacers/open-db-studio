@@ -34,6 +34,7 @@ function makeEdge(overrides: Partial<GraphEdge> = {}): GraphEdge {
     to_node: 'node-2',
     edge_type: 'FOREIGN_KEY',
     weight: 1,
+    source: 'schema',
     ...overrides,
   };
 }

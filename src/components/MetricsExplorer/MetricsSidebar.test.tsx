@@ -34,6 +34,22 @@ vi.mock('../common/Tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// react-i18next 未初始化时会返回 key 本身，导致断言失败
+// mock t() 返回与 MetricsSidebar 实际使用的中文翻译文本
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const map: Record<string, string> = {
+        'metricsExplorer.metricsSidebar.title': '业务指标',
+        'metricsExplorer.refresh': '刷新',
+        'metricsExplorer.searchPlaceholder': '搜索指标...',
+      };
+      return map[key] ?? key;
+    },
+    i18n: { language: 'zh' },
+  }),
+}));
+
 describe('MetricsSidebar', () => {
   let container: HTMLDivElement;
 

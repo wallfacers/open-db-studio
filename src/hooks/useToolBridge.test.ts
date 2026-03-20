@@ -124,12 +124,26 @@ describe('autoMode=true + 找到匹配', () => {
     expect(useAppStore.getState().isAssistantOpen).toBe(true);
   });
 
-  it('分号消费：modified 带分号不产生双分号', async () => {
-    // full = 'SELECT 1;'，endOffset=8（'SELECT 1' 末尾），full[8]=';'
-    mountBridge();
+  it('分号消费：原文有分号时不产生双分号，原文无分号时不额外消费', async () => {
+    // Scenario A：原文有分号（full='SELECT 1;'），modified 带分号 → 结果单分号
+    const bridge = mountBridge();
     await emitDiffProposal({ original: 'SELECT 1', modified: 'SELECT 2;', reason: '' });
-
     expect(useQueryStore.getState().sqlContent['tab-1']).toBe('SELECT 2;');
+
+    // Scenario B：原文无分号（full='SELECT 1'），modified 带分号 → 结果保留 modified 的分号
+    useQueryStore.setState({ sqlContent: { 'tab-1': 'SELECT 1' } });
+    await emitDiffProposal({ original: 'SELECT 1', modified: 'SELECT 2;', reason: '' });
+    expect(useQueryStore.getState().sqlContent['tab-1']).toBe('SELECT 2;');
+
+    bridge.unmount();
+  });
+
+  it('1500ms 后 autoApplyBanner 自动清除', async () => {
+    mountBridge();
+    await emitDiffProposal({ original: 'SELECT 1', modified: 'SELECT 2;', reason: '优化' });
+    expect(useQueryStore.getState().autoApplyBanner).not.toBeNull();
+    vi.advanceTimersByTime(1500);
+    expect(useQueryStore.getState().autoApplyBanner).toBeNull();
   });
 });
 

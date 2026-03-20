@@ -72,6 +72,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 # 其他
+lru = "0.12"
 once_cell = "1"
 uuid = { version = "1", features = ["v4"] }
 hex = "0.4"

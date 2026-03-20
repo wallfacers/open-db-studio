@@ -43,4 +43,7 @@ pub struct AppState {
 
     /// 运行中任务的取消句柄（task_id → AbortHandle），用于真正中断后台 tokio 任务
     pub task_abort_handles: std::sync::Mutex<HashMap<String, tokio::task::AbortHandle>>,
+
+    /// 图谱内存缓存（懒加载，按 connection_id 键）
+    pub graph_cache: crate::graph::GraphCacheStore,
 }

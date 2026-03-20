@@ -75,6 +75,7 @@ pub fn run() {
                         .as_deref() == Some("true")
                 }),
                 task_abort_handles: std::sync::Mutex::new(std::collections::HashMap::new()),
+                graph_cache: crate::graph::GraphCacheStore::new(),
             });
 
             // ── 后台初始化（文件 I/O + 进程启动，避免阻塞主线程导致"未响应"）──────

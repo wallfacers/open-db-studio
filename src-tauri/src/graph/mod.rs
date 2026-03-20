@@ -1,8 +1,10 @@
+pub mod cache;
 pub mod change_detector;
 pub mod event_processor;
 pub mod query;
 pub mod traversal;
 
+pub use cache::{JoinPath, GraphCacheStore};
 pub use query::{GraphNode, GraphEdge, search_graph};
 
 use std::collections::HashMap;

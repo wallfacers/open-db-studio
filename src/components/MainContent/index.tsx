@@ -51,7 +51,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
   });
 };
 import {
-  FileCode2, X, Play, Square, Save, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
+  FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
   BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
 } from 'lucide-react';
@@ -806,11 +806,6 @@ export const MainContent: React.FC<MainContentProps> = ({
                   )}
                 </div>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
-                <Tooltip content={t('mainContent.saveSql')}>
-                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={() => showToast(t('mainContent.sqlSaved'), 'info')}>
-                    <Save size={16} />
-                  </button>
-                </Tooltip>
                 <Tooltip content={t('mainContent.formatSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
                     <FileEdit size={16} />

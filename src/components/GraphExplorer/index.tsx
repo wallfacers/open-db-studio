@@ -33,8 +33,10 @@ import type { GraphNode } from './useGraphData';
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-const NODE_W = 200;
-const NODE_H = 80;
+const NODE_W = 240;
+const NODE_H = 100;
+const LINK_NODE_W = 260;
+const LINK_NODE_H = 70;
 const CLUSTER_THRESHOLD = 200;
 
 function buildLayout(
@@ -44,10 +46,11 @@ function buildLayout(
 ): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: direction, ranksep: 160, nodesep: 60 });
+  g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
 
   nodes.forEach((n) => {
-    g.setNode(n.id, { width: NODE_W, height: NODE_H });
+    const isLink = n.type === 'link';
+    g.setNode(n.id, { width: isLink ? LINK_NODE_W : NODE_W, height: isLink ? LINK_NODE_H : NODE_H });
   });
   edges.forEach((e) => {
     if (e.source && e.target) g.setEdge(e.source, e.target);
@@ -57,11 +60,14 @@ function buildLayout(
 
   const laid = nodes.map((n) => {
     const pos = g.node(n.id);
+    const isLink = n.type === 'link';
+    const w = isLink ? LINK_NODE_W : NODE_W;
+    const h = isLink ? LINK_NODE_H : NODE_H;
     return {
       ...n,
       position: {
-        x: pos ? pos.x - NODE_W / 2 : 0,
-        y: pos ? pos.y - NODE_H / 2 : 0,
+        x: pos ? pos.x - w / 2 : 0,
+        y: pos ? pos.y - h / 2 : 0,
       },
     };
   });
@@ -73,23 +79,27 @@ function buildLayout(
 function clusterByConnection(rawNodes: GraphNode[]): GraphNode[] {
   if (rawNodes.length <= CLUSTER_THRESHOLD) return rawNodes;
 
-  const byConn: Record<number, GraphNode[]> = {};
-  rawNodes.forEach((n) => {
+  const result: GraphNode[] = [];
+  const byConn: Record<number, { links: GraphNode[]; objects: GraphNode[] }> = {};
+
+  rawNodes.forEach(n => {
     const cid = n.connection_id ?? 0;
-    if (!byConn[cid]) byConn[cid] = [];
-    byConn[cid].push(n);
+    if (!byConn[cid]) byConn[cid] = { links: [], objects: [] };
+    if (n.node_type === 'link') byConn[cid].links.push(n);
+    else byConn[cid].objects.push(n);
   });
 
-  const result: GraphNode[] = [];
-  Object.entries(byConn).forEach(([cid, group]) => {
-    // Keep first 50 nodes per connection as representatives; replace rest with a cluster proxy
-    const keep = group.slice(0, 50);
-    keep.forEach((n) => result.push(n));
-    if (group.length > 50) {
+  Object.entries(byConn).forEach(([cid, { links, objects }]) => {
+    const linkQuota = Math.min(links.length, 50);
+    const objectQuota = Math.max(0, 50 - linkQuota);
+    links.slice(0, linkQuota).forEach(n => result.push(n));
+    objects.slice(0, objectQuota).forEach(n => result.push(n));
+    const collapsed = objects.length - objectQuota;
+    if (collapsed > 0) {
       result.push({
         id: `cluster_${cid}`,
         node_type: 'alias',
-        name: `[连接 ${cid}：${group.length - 50} 个节点已折叠]`,
+        name: `[连接 ${cid}：${collapsed} 个节点已折叠]`,
         display_name: '',
         aliases: '',
         metadata: '',
@@ -108,11 +118,14 @@ const NODE_TYPE_MAP: Record<string, string> = {
   table: 'table',
   metric: 'metric',
   alias: 'alias',
+  link: 'link',   // 新增
 };
 
 function toFlowNodes(
   rawNodes: GraphNode[],
   onAddAlias: (nodeId: string) => void,
+  onHighlightLinks: (nodeId: string) => void,
+  linkCountMap: Record<string, number>,
 ): Node[] {
   return rawNodes.map((n) => ({
     id: n.id,
@@ -121,6 +134,8 @@ function toFlowNodes(
     data: {
       ...n,
       onAddAlias,
+      onHighlightLinks,
+      linkCount: linkCountMap[n.id] ?? 0,
     },
   }));
 }
@@ -160,13 +175,19 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  const [typeFilter, setTypeFilter] = useState<string[]>(['table', 'metric', 'alias']);
+  const [typeFilter, setTypeFilter] = useState<string[]>(['table', 'metric', 'alias', 'link']);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
   const [currentBuildTaskId, setCurrentBuildTaskId] = useState<string | null>(null);
   const [edgeTooltip, setEdgeTooltip] = useState<EdgeTooltip | null>(null);
   const [showAliasEditorForNode, setShowAliasEditorForNode] = useState<string | null>(null);
+
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+
+  const handleHighlightLinks = useCallback((nodeId: string) => {
+    setHighlightedNodeId(prev => prev === nodeId ? null : nodeId);
+  }, []);
 
   const { fitView } = useReactFlow();
   const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
@@ -193,13 +214,56 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     });
   }, [rawNodes, typeFilter, searchQuery]);
 
+  const linkCountMap = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    filteredRaw
+      .filter(n => n.node_type === 'link')
+      .forEach(n => {
+        try {
+          const meta = JSON.parse(n.metadata || '{}') as { source_node_id?: string; target_node_id?: string };
+          if (meta.source_node_id) map[meta.source_node_id] = (map[meta.source_node_id] ?? 0) + 1;
+          if (meta.target_node_id) map[meta.target_node_id] = (map[meta.target_node_id] ?? 0) + 1;
+        } catch { /* ignore */ }
+      });
+    return map;
+  }, [filteredRaw]);
+
   const clustered = useMemo(() => clusterByConnection(filteredRaw), [filteredRaw]);
   const visibleNodeIds = useMemo(() => new Set(clustered.map((n) => n.id)), [clustered]);
 
-  const filteredEdges = useMemo(
-    () => rawEdges.filter((e) => visibleNodeIds.has(e.from_node) && visibleNodeIds.has(e.to_node)),
-    [rawEdges, visibleNodeIds],
-  );
+  const filteredEdges = useMemo(() => {
+    // 正常两段式边（Link Node 开启时）
+    const normal = rawEdges.filter(
+      (e) => visibleNodeIds.has(e.from_node) && visibleNodeIds.has(e.to_node)
+    );
+
+    // 合成直连边（Link Node 关闭时，从 Link Node metadata 重建）
+    const synthetic: typeof rawEdges = typeFilter.includes('link')
+      ? []
+      : filteredRaw
+          .filter(n => n.node_type === 'link')
+          .flatMap(n => {
+            try {
+              const meta = JSON.parse(n.metadata || '{}') as {
+                source_node_id?: string;
+                target_node_id?: string;
+                edge_type?: string;
+                weight?: number;
+              };
+              if (!meta.source_node_id || !meta.target_node_id) return [];
+              if (!visibleNodeIds.has(meta.source_node_id) || !visibleNodeIds.has(meta.target_node_id)) return [];
+              return [{
+                id: `synthetic_${n.id}`,
+                from_node: meta.source_node_id,
+                to_node: meta.target_node_id,
+                edge_type: meta.edge_type ?? 'fk',
+                weight: meta.weight ?? 0.95,
+              }];
+            } catch { return []; }
+          });
+
+    return [...normal, ...synthetic];
+  }, [rawEdges, visibleNodeIds, typeFilter, filteredRaw]);
 
   // ── Alias editor handler (passed into node data) ────────────────────────────
   const handleAddAlias = useCallback((nodeId: string) => {
@@ -208,7 +272,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── Sync to React Flow whenever filtered data changes ───────────────────────
   useEffect(() => {
-    const flowNodes = toFlowNodes(clustered, handleAddAlias);
+    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap);
     const flowEdges = toFlowEdges(filteredEdges);
     const { nodes: laid, edges: laidEdges } = buildLayout(flowNodes, flowEdges);
     setRfNodes(laid);
@@ -218,7 +282,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
     }, 80);
     return () => clearTimeout(timerId);
-  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, fitView]);
+  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView]);
 
   // ── Auto-layout button ──────────────────────────────────────────────────────
   const handleAutoLayout = useCallback(() => {
@@ -349,6 +413,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     { type: 'table', label: t('graphExplorer.typeTable'), activeClass: 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/50' },
     { type: 'metric', label: t('graphExplorer.typeMetric'), activeClass: 'bg-[#2d1e0d] text-[#f59e0b] border-[#f59e0b]/50' },
     { type: 'alias', label: t('graphExplorer.typeAlias'), activeClass: 'bg-[#1e0d2d] text-[#a855f7] border-[#a855f7]/50' },
+    { type: 'link', label: t('graphExplorer.typeLink'), activeClass: 'bg-[#0d1f1a] text-[#00c9a7] border-[#00c9a7]/50' },
   ];
 
   return (
@@ -461,6 +526,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
                 if (t === 'table') return '#3794ff';
                 if (t === 'metric') return '#f59e0b';
                 if (t === 'alias') return '#a855f7';
+                if (t === 'link') return '#00c9a7';   // 新增
                 return '#1e2d42';
               }}
               maskColor="rgba(13, 17, 23, 0.7)"

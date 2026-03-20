@@ -65,12 +65,14 @@ fn emit_log(app: &tauri::AppHandle, task_id: &str, level: &str, message: &str) {
     });
 }
 
-fn emit_completed(app: &tauri::AppHandle, task_id: &str) {
+fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine]) {
     let now = chrono::Utc::now().to_rfc3339();
+    let logs_json = serde_json::to_string(logs).unwrap_or_default();
     let _ = crate::db::update_task(task_id, &crate::db::models::UpdateTaskInput {
         status: Some("completed".to_string()),
         progress: Some(100),
         completed_at: Some(now),
+        logs: Some(logs_json),
         ..Default::default()
     });
     let _ = app.emit("task-progress", TaskProgressEvent {
@@ -91,12 +93,14 @@ fn emit_completed(app: &tauri::AppHandle, task_id: &str) {
     });
 }
 
-fn emit_failed(app: &tauri::AppHandle, task_id: &str, error: &str) {
+fn emit_failed(app: &tauri::AppHandle, task_id: &str, error: &str, logs: &[TaskLogLine]) {
     let now = chrono::Utc::now().to_rfc3339();
+    let logs_json = serde_json::to_string(logs).unwrap_or_default();
     let _ = crate::db::update_task(task_id, &crate::db::models::UpdateTaskInput {
         status: Some("failed".to_string()),
         error: Some(error.to_string()),
         completed_at: Some(now),
+        logs: Some(logs_json),
         ..Default::default()
     });
     let _ = app.emit("task-progress", TaskProgressEvent {
@@ -124,15 +128,33 @@ pub async fn run_graph_build(
     connection_id: i64,
     database: Option<String>,
 ) {
-    emit_log(&app, &task_id, "INFO", "开始构建知识图谱...");
+    let mut logs: Vec<TaskLogLine> = Vec::new();
+
+    // 同时 emit 事件到前端 + 追加到 logs Vec（完成后持久化）
+    macro_rules! log_emit {
+        ($level:expr, $msg:expr) => {{
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            logs.push(TaskLogLine {
+                level: $level.to_string(),
+                message: $msg.to_string(),
+                timestamp_ms: ts,
+            });
+            emit_log(&app, &task_id, $level, $msg);
+        }};
+    }
+
+    log_emit!("INFO", "开始构建知识图谱...");
 
     // 1. 获取连接配置并连接外部数据源
     let mut config = match crate::db::get_connection_config(connection_id) {
         Ok(c) => c,
         Err(e) => {
             let msg = format!("获取连接配置失败: {}", e);
-            emit_log(&app, &task_id, "ERROR", &msg);
-            emit_failed(&app, &task_id, &msg);
+            log_emit!("ERROR", &msg);
+            emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
     };
@@ -145,31 +167,26 @@ pub async fn run_graph_build(
         Ok(ds) => ds,
         Err(e) => {
             let msg = format!("连接数据源失败: {}", e);
-            emit_log(&app, &task_id, "ERROR", &msg);
-            emit_failed(&app, &task_id, &msg);
+            log_emit!("ERROR", &msg);
+            emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
     };
 
-    emit_log(&app, &task_id, "INFO", "已连接数据源，正在获取 Schema...");
+    log_emit!("INFO", "已连接数据源，正在获取 Schema...");
 
     // 2. 获取 SchemaInfo
     let schema = match ds.get_schema().await {
         Ok(s) => s,
         Err(e) => {
             let msg = format!("获取 Schema 失败: {}", e);
-            emit_log(&app, &task_id, "ERROR", &msg);
-            emit_failed(&app, &task_id, &msg);
+            log_emit!("ERROR", &msg);
+            emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
     };
 
-    emit_log(
-        &app,
-        &task_id,
-        "INFO",
-        &format!("Schema 获取完成，共 {} 张表", schema.tables.len()),
-    );
+    log_emit!("INFO", &format!("Schema 获取完成，共 {} 张表", schema.tables.len()));
 
     // 3. 拉取各表的列和外键信息（await 在锁外完成）
     let mut table_columns = HashMap::new();
@@ -186,14 +203,14 @@ pub async fn run_graph_build(
         let cols = match ds.get_columns(&table.name, table.schema.as_deref()).await {
             Ok(c) => c,
             Err(e) => {
-                emit_log(&app, &task_id, "WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
+                log_emit!("WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
                 vec![]
             }
         };
         let fks = match ds.get_foreign_keys(&table.name, table.schema.as_deref()).await {
             Ok(f) => f,
             Err(e) => {
-                emit_log(&app, &task_id, "WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));
+                log_emit!("WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));
                 vec![]
             }
         };
@@ -202,16 +219,16 @@ pub async fn run_graph_build(
     }
 
     // 步骤 3.5：解析列注释生成虚拟关系 Link Node（先于 change_detector）
-    emit_log(&app, &task_id, "INFO", "正在解析列注释虚拟关系...");
+    log_emit!("INFO", "正在解析列注释虚拟关系...");
     let known_tables: std::collections::HashSet<String> =
         schema.tables.iter().map(|t| t.name.clone()).collect();
     match build_comment_links(connection_id, &table_columns, &known_tables) {
-        Ok(n) => emit_log(&app, &task_id, "INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
-        Err(e) => emit_log(&app, &task_id, "WARN", &format!("注释关系解析失败（不影响主流程）: {}", e)),
+        Ok(n) => log_emit!("INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
+        Err(e) => log_emit!("WARN", &format!("注释关系解析失败（不影响主流程）: {}", e)),
     }
 
     // 4. 检测变更并写入 schema_change_log
-    emit_log(&app, &task_id, "INFO", "正在检测 Schema 变更...");
+    log_emit!("INFO", "正在检测 Schema 变更...");
     match crate::graph::change_detector::detect_and_log_changes(
         connection_id,
         &schema,
@@ -219,23 +236,18 @@ pub async fn run_graph_build(
         &table_fks,
     ) {
         Ok(n) => {
-            emit_log(
-                &app,
-                &task_id,
-                "INFO",
-                &format!("变更检测完成，共 {} 条变更事件", n),
-            );
+            log_emit!("INFO", &format!("变更检测完成，共 {} 条变更事件", n));
         }
         Err(e) => {
             let msg = format!("变更检测失败: {}", e);
-            emit_log(&app, &task_id, "ERROR", &msg);
-            emit_failed(&app, &task_id, &msg);
+            log_emit!("ERROR", &msg);
+            emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
     }
 
     // 5. 处理待消费事件（增量更新 graph_nodes + FTS5）
-    emit_log(&app, &task_id, "INFO", "正在增量更新图谱节点...");
+    log_emit!("INFO", "正在增量更新图谱节点...");
     match event_processor::process_pending_events(&app, connection_id, &task_id).await {
         Ok(stats) => {
             log::info!(
@@ -249,27 +261,27 @@ pub async fn run_graph_build(
         }
         Err(e) => {
             let msg = format!("增量更新失败: {}", e);
-            emit_log(&app, &task_id, "ERROR", &msg);
-            emit_failed(&app, &task_id, &msg);
+            log_emit!("ERROR", &msg);
+            emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
     }
 
     // 6. 同步指标节点
-    emit_log(&app, &task_id, "INFO", "同步指标节点到图谱...");
+    log_emit!("INFO", "同步指标节点到图谱...");
     match sync_metrics_to_graph(connection_id) {
-        Ok(n) => emit_log(&app, &task_id, "INFO", &format!("指标节点同步完成，共 {} 个", n)),
-        Err(e) => emit_log(&app, &task_id, "WARN", &format!("指标同步失败（不影响主流程）: {}", e)),
+        Ok(n) => log_emit!("INFO", &format!("指标节点同步完成，共 {} 个", n)),
+        Err(e) => log_emit!("WARN", &format!("指标同步失败（不影响主流程）: {}", e)),
     }
 
     // 7. 同步语义别名节点
-    emit_log(&app, &task_id, "INFO", "同步语义别名节点到图谱...");
+    log_emit!("INFO", "同步语义别名节点到图谱...");
     match sync_aliases_to_graph(connection_id) {
-        Ok(n) => emit_log(&app, &task_id, "INFO", &format!("别名节点同步完成，共 {} 个", n)),
-        Err(e) => emit_log(&app, &task_id, "WARN", &format!("别名同步失败（不影响主流程）: {}", e)),
+        Ok(n) => log_emit!("INFO", &format!("别名节点同步完成，共 {} 个", n)),
+        Err(e) => log_emit!("WARN", &format!("别名同步失败（不影响主流程）: {}", e)),
     }
 
-    emit_completed(&app, &task_id);
+    emit_completed(&app, &task_id, &logs);
 }
 
 /// 将 metrics 表中的活跃指标同步到 graph_nodes，并建立 metric_ref 边

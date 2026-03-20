@@ -6,7 +6,6 @@ import { listen } from '@tauri-apps/api/event';
 export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel' | 'ai_generate_metrics' | 'build_schema_graph';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-// 内存日志条目（不写 SQLite，重启清空）
 export interface TaskLog {
   timestamp: number;
   level: 'info' | 'warn' | 'error';
@@ -29,7 +28,7 @@ export interface Task {
   description: string | null; // Markdown 格式任务描述
   startTime: string;          // ISO 8601
   endTime: string | null;
-  logs?: TaskLog[];          // 内存日志，不写 SQLite，重启清空
+  logs?: TaskLog[];          // 运行时追加到内存，完成后持久化到 SQLite
   connectionId?: number;    // scope（ai_generate_metrics 专用）
   database?: string;
   schema?: string;
@@ -59,6 +58,8 @@ interface TaskState {
   tasks: Task[];
   visible: boolean;
   isLoading: boolean;
+  // 缓冲在任务 stub 加入 store 之前到达的事件，防止早期事件丢失
+  _eventBuffer: Record<string, TaskProgressEvent[]>;
 
   // Actions
   setVisible: (visible: boolean) => void;
@@ -80,6 +81,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   visible: false,
   isLoading: false,
+  _eventBuffer: {},
 
   setVisible: (visible) => set({ visible }),
 
@@ -87,27 +89,46 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set({ isLoading: true });
     try {
       const raw = await invoke<any[]>('get_task_list', { limit: 100 });
-      const rows: Task[] = (raw || []).map((r) => ({
-        id: r.id,
-        type: r.type,
-        status: r.status,
-        title: r.title,
-        progress: r.progress ?? 0,
-        processedRows: r.processed_rows ?? r.processedRows ?? 0,
-        totalRows: r.total_rows ?? r.totalRows ?? null,
-        currentTarget: r.current_target ?? r.currentTarget ?? '',
-        error: r.error ?? null,
-        errorDetails: r.error_details
-          ? (typeof r.error_details === 'string' ? JSON.parse(r.error_details) : r.error_details)
-          : (r.errorDetails ?? []),
-        outputPath: r.output_path ?? r.outputPath ?? null,
-        description: r.description ?? null,
-        startTime: r.created_at ?? r.start_time ?? r.startTime ?? new Date().toISOString(),
-        endTime: r.completed_at ?? r.end_time ?? r.endTime ?? null,
-        connectionId: r.connection_id ?? r.connectionId ?? undefined,
-        database: r.scope_database ?? r.database ?? undefined,
-        schema: r.scope_schema ?? r.schema ?? undefined,
-      }));
+      const rows: Task[] = (raw || []).map((r) => {
+        // 从 SQLite 恢复日志（JSON 数组字符串 → TaskLog[]）
+        let persistedLogs: TaskLog[] | undefined;
+        if (r.logs) {
+          try {
+            const parsed = typeof r.logs === 'string' ? JSON.parse(r.logs) : r.logs;
+            if (Array.isArray(parsed)) {
+              persistedLogs = parsed.map((l: any) => ({
+                timestamp: l.timestamp_ms ?? l.timestamp ?? Date.now(),
+                level: l.level ?? 'info',
+                message: l.message ?? '',
+              }));
+            }
+          } catch { /* 解析失败忽略 */ }
+        }
+        return {
+          id: r.id,
+          type: r.type,
+          status: r.status,
+          title: r.title,
+          progress: r.progress ?? 0,
+          processedRows: r.processed_rows ?? r.processedRows ?? 0,
+          totalRows: r.total_rows ?? r.totalRows ?? null,
+          currentTarget: r.current_target ?? r.currentTarget ?? '',
+          error: r.error ?? null,
+          errorDetails: r.error_details
+            ? (typeof r.error_details === 'string' ? JSON.parse(r.error_details) : r.error_details)
+            : (r.errorDetails ?? []),
+          outputPath: r.output_path ?? r.outputPath ?? null,
+          description: r.description ?? null,
+          startTime: r.created_at ?? r.start_time ?? r.startTime ?? new Date().toISOString(),
+          endTime: r.completed_at ?? r.end_time ?? r.endTime ?? null,
+          connectionId: r.connection_id ?? r.connectionId ?? undefined,
+          database: r.scope_database ?? r.database ?? undefined,
+          schema: r.scope_schema ?? r.schema ?? undefined,
+          metricCount: r.metric_count ?? r.metricCount ?? undefined,
+          skippedCount: r.skipped_count ?? r.skippedCount ?? undefined,
+          logs: persistedLogs,
+        };
+      });
       const TERMINAL: TaskStatus[] = ['completed', 'failed', 'cancelled'];
       set((state) => ({
         tasks: rows.map((row) => {
@@ -119,15 +140,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           }
           // completed 但 SQLite progress 未及时更新 → 保证显示 100
           const progress = row.status === 'completed' && !row.progress ? 100 : row.progress;
-          // 其余以 SQLite 为准，保留内存日志和指标统计（metricCount/skippedCount 不存 SQLite）
           const memExtras: Partial<Task> = {};
-          if (existing.logs?.length) memExtras.logs = existing.logs;
-          if (existing.metricCount != null) memExtras.metricCount = existing.metricCount;
-          if (existing.skippedCount != null) memExtras.skippedCount = existing.skippedCount;
-          // 运行中任务保留内存实时进度（SQLite 只在完成时写入 progress，运行中始终为 0）
-          if (row.status === 'running' && existing.progress > (row.progress ?? 0)) {
-            memExtras.progress = existing.progress;
-            if (existing.currentTarget) memExtras.currentTarget = existing.currentTarget;
+          // 运行中任务：保留内存实时进度和日志（SQLite 只在完成时写入）
+          if (row.status === 'running') {
+            if (existing.progress > (row.progress ?? 0)) {
+              memExtras.progress = existing.progress;
+              if (existing.currentTarget) memExtras.currentTarget = existing.currentTarget;
+            }
+            if (existing.logs?.length) memExtras.logs = existing.logs;
           }
           return { ...row, progress, ...memExtras };
         }),
@@ -237,9 +257,26 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       if (s.tasks.some((t) => t.id === task.id)) return s;
       return { tasks: [task, ...s.tasks] };
     });
+    // 回放因任务尚未进入 store 而被缓冲的早期事件
+    const buffered = get()._eventBuffer[task.id];
+    if (buffered?.length) {
+      set((s) => ({ _eventBuffer: { ...s._eventBuffer, [task.id]: [] } }));
+      buffered.forEach((e) => get()._handleProgressEvent(e));
+    }
   },
 
   _handleProgressEvent: (event) => {
+    // 任务 stub 尚未进入 store（invoke 返回前后端已开始 emit）→ 缓冲，等 _addTaskStub 回放
+    if (!get().tasks.some((t) => t.id === event.task_id)) {
+      set((s) => ({
+        _eventBuffer: {
+          ...s._eventBuffer,
+          [event.task_id]: [...(s._eventBuffer[event.task_id] ?? []), event],
+        },
+      }));
+      return;
+    }
+
     // 日志事件：只追加日志，不更新进度字段
     if (event.log_line) {
       get().appendLog(event.task_id, {

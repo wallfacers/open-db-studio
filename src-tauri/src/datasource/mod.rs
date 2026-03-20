@@ -1,5 +1,6 @@
 pub mod mysql;
 pub mod oracle;
+pub mod pool_cache;
 pub mod postgres;
 pub mod sqlserver;
 

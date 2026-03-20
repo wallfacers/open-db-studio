@@ -272,6 +272,9 @@ pub fn run() {
                 use tauri::Manager;
                 let handle = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
+                    // 先关闭数据库连接池，再停止 serve 进程
+                    // 此时 Tokio 运行时仍存活，可以正常发送关闭包给 MySQL/Postgres
+                    crate::datasource::pool_cache::close_all().await;
                     crate::agent::server::stop_serve(&handle).await;
                 });
             }

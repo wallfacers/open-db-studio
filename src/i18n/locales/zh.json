@@ -67,7 +67,58 @@
     "connectionSwitchTitle": "标签页已切换，是否更新连接？",
     "connectionSwitchDesc": "AI 当前使用 {{old}}，新标签页关联 {{new}}",
     "keepLastConnection": "继续用 {{name}}",
-    "switchToNewConnection": "切换到 {{name}}"
+    "switchToNewConnection": "切换到 {{name}}",
+    "collapseAssistant": "收起 AI 助手",
+    "expandAssistant": "展开 AI 助手",
+    "autoApplied": "AI 已自动应用修改",
+    "diffPanel": {
+      "title": "修改建议",
+      "apply": "应用"
+    },
+    "elicitation": {
+      "permissionTitle": "工具执行确认"
+    },
+    "thinking": {
+      "thinking": "思考中",
+      "thought": "已深度思考"
+    },
+    "slashCommands": {
+      "undo": {
+        "label": "/undo",
+        "description": "撤销最后一轮对话",
+        "disabledChatting": "正在回复中，请等待完成",
+        "disabledCompacting": "正在压缩中，请等待完成",
+        "disabledNoHistory": "暂无可撤销的对话",
+        "done": "已撤销最后一轮对话"
+      },
+      "redo": {
+        "label": "/redo",
+        "description": "恢复被撤销的对话",
+        "disabledNoHistory": "暂无可恢复的对话",
+        "done": "已恢复对话"
+      },
+      "compact": {
+        "label": "/compact",
+        "description": "压缩会话 context",
+        "disabledChatting": "正在回复中，请等待完成",
+        "disabledCompacting": "正在压缩中，请等待完成",
+        "disabledNotEnough": "消息不足 4 条，无需压缩",
+        "disabledNoModel": "未配置模型，无法压缩",
+        "done": "会话已压缩"
+      },
+      "new": {
+        "label": "/new",
+        "description": "新建会话",
+        "done": "新会话已创建"
+      },
+      "clear": {
+        "label": "/clear",
+        "description": "清空当前会话",
+        "disabledNoHistory": "当前会话无历史消息",
+        "done": "会话已清空"
+      },
+      "executeFailed": "{{cmd}} 执行失败: {{error}}"
+    }
   },
   "connectionModal": {
     "editConnection": "编辑连接",
@@ -616,5 +667,146 @@
     "askAi": "问 AI",
     "askAiAnalyze": "问 AI 分析失败原因",
     "copyError": "复制错误"
+  },
+  "graphExplorer": {
+    "title": "知识图谱",
+    "selectConnection": "请先选择数据库连接",
+    "searchPlaceholder": "搜索节点...",
+    "autoLayout": "自动布局",
+    "building": "构建中...",
+    "buildGraph": "构建图谱",
+    "noData": "暂无图谱数据，请点击「构建图谱」",
+    "noMatchingNodes": "没有匹配的节点",
+    "clusterFolded": "[连接 {{cid}}：{{count}} 个节点已折叠]",
+    "typeTable": "表",
+    "typeMetric": "指标",
+    "typeAlias": "别名",
+    "edgeTooltipType": "类型",
+    "edgeTooltipWeight": "权重",
+    "addAlias": "添加别名",
+    "aliasEditor": {
+      "title": "编辑语义别名",
+      "currentAliases": "当前别名",
+      "noAliases": "暂无别名",
+      "addNewAlias": "添加新别名",
+      "placeholder": "输入别名，回车确认...",
+      "add": "添加",
+      "aliasExists": "别名已存在",
+      "saveFailed": "保存失败"
+    },
+    "nodeDetail": {
+      "source": "来源",
+      "fields": "字段列表",
+      "semanticAliases": "语义别名",
+      "relatedEdges": "关联边"
+    }
+  },
+  "metricsExplorer": {
+    "title": "业务指标",
+    "searchPlaceholder": "搜索指标...",
+    "noConnections": "暂无数据库连接",
+    "noResults": "无匹配结果",
+    "refresh": "刷新",
+    "loading": "加载中...",
+    "newMetric": "新指标",
+    "metricsSidebar": {
+      "title": "业务指标"
+    },
+    "metricList": {
+      "all": "全部",
+      "draft": "草稿",
+      "approved": "已通过",
+      "rejected": "已拒绝",
+      "searchPlaceholder": "搜索指标名称...",
+      "add": "新增",
+      "aiGenerate": "AI 生成",
+      "noMetrics": "暂无指标",
+      "rowsPerPage": "行/页",
+      "firstPage": "首页",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "displayName": "显示名称",
+      "relatedTable": "关联表",
+      "relatedColumn": "关联字段",
+      "aggregation": "聚合",
+      "type": "类型",
+      "status": "状态",
+      "actions": "操作",
+      "edit": "编辑",
+      "delete": "删除",
+      "batchDelete": "批量删除",
+      "batchApprove": "批量通过",
+      "batchReject": "批量拒绝",
+      "selected": "已选 {{count}} 项",
+      "confirmDelete": "确定要删除指标「{{name}}」吗？此操作不可撤销。",
+      "confirmDeleteMulti": "确定要删除选中的 {{count}} 个指标吗？此操作不可撤销。",
+      "deleteTitle": "删除指标",
+      "statusApproved": "已通过",
+      "statusRejected": "已拒绝",
+      "statusDraft": "草稿",
+      "typeComposite": "复合",
+      "typeAtomic": "原子",
+      "aiTaskStarted": "AI 生成任务已启动，完成后指标将自动刷新。",
+      "viewTasks": "查看任务",
+      "rows": "行"
+    },
+    "metricTab": {
+      "newMetric": "新建指标",
+      "metricType": "指标类型",
+      "atomicMetric": "原子指标",
+      "compositeMetric": "复合指标",
+      "displayName": "显示名称",
+      "englishName": "英文标识",
+      "categoryTags": "分类标签",
+      "categoryPlaceholder": "输入分类，回车或逗号确认...",
+      "version": "版本号",
+      "relatedTable": "关联表",
+      "relatedColumn": "关联列",
+      "aggregationMethod": "聚合方式",
+      "noAggregation": "不设置",
+      "noTables": "无可用表",
+      "selectTable": "请选择表...",
+      "selectColumnFirst": "先选择关联表",
+      "selectColumn": "请选择列...",
+      "description": "描述",
+      "dataCaliber": "数据口径说明",
+      "filterSql": "filter_sql（WHERE 条件，不含 WHERE 关键字）",
+      "compositeComingSoon": "复合指标组合器（P2 功能，即将支持）",
+      "save": "保存",
+      "saving": "保存中...",
+      "creating": "创建中...",
+      "delete": "删除",
+      "deleting": "删除中...",
+      "confirmDelete": "确定要删除指标「{{name}}」吗？此操作不可撤销。",
+      "deleteTitle": "删除指标",
+      "loadTablesFailed": "加载表列表失败",
+      "loadColumnsFailed": "加载列失败",
+      "saveFailed": "保存失败",
+      "createFailed": "创建失败",
+      "deleteFailed": "删除失败",
+      "loadFailed": "加载失败"
+    },
+    "metricsTree": {
+      "open": "打开",
+      "delete": "删除",
+      "openMetricList": "打开指标列表",
+      "addMetric": "新增指标",
+      "refresh": "刷新",
+      "confirmDelete": "确定要删除指标「{{name}}」吗？此操作不可撤销。",
+      "deleteTitle": "删除指标",
+      "deleteFailed": "删除失败"
+    },
+    "tablePicker": {
+      "title": "选择要分析的表",
+      "loading": "加载中...",
+      "noTables": "暂无表",
+      "selected": "已选 {{count}} 张表",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "columns": "列",
+      "cancel": "取消",
+      "startGenerate": "开始生成",
+      "goToTasks": "生成后跳转到我的任务"
+    }
   }
 }

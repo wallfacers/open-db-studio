@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ElicitationRequest, PermissionRequest } from '../../types'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ const PermissionPanel: React.FC<PermissionPanelProps> = ({ request, onRespond })
 // ── Elicitation Select Panel（文字检测路径） ──────────────────────────────────
 
 const ElicitationSelectPanel: React.FC<ElicitationPanelProps> = ({ request, onSelect, onCancel }) => {
+  const { t } = useTranslation()
   return (
     <div className="mx-3 mb-3 rounded-lg border border-[#1e3a5f] bg-[#0d2137] p-3">
       <div className="mb-2 flex items-center gap-1.5">
@@ -92,7 +94,7 @@ const ElicitationSelectPanel: React.FC<ElicitationPanelProps> = ({ request, onSe
           onClick={onCancel}
           className="rounded border border-[#2a3a4a] bg-transparent px-3 py-1 text-[11px] text-[#5b8ab0] transition-colors hover:text-[#8ab0cc]"
         >
-          取消
+          {t('common.cancel')}
         </button>
       </div>
     </div>

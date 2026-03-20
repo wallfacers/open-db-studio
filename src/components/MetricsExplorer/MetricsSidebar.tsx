@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Activity, X, RefreshCw, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../common/Tooltip';
 import { MetricsTree } from './MetricsTree';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
@@ -13,6 +14,7 @@ export interface MetricsSidebarProps {
 }
 
 export function MetricsSidebar({ sidebarWidth, onResize, hidden }: MetricsSidebarProps) {
+  const { t } = useTranslation();
   const { refresh } = useMetricsTreeStore();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -39,10 +41,10 @@ export function MetricsSidebar({ sidebarWidth, onResize, hidden }: MetricsSideba
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] flex-shrink-0">
         <div className="flex items-center gap-2">
           <Activity size={14} className="text-[#00c9a7]" />
-          <span className="font-medium text-[#c8daea]">业务指标</span>
+          <span className="font-medium text-[#c8daea]">{t('metricsExplorer.metricsSidebar.title')}</span>
         </div>
         <div className="flex items-center space-x-2 text-[#7a9bb8]">
-          <Tooltip content="刷新">
+          <Tooltip content={t('metricsExplorer.refresh')}>
             <RefreshCw
               size={16}
               className="cursor-pointer hover:text-[#c8daea]"
@@ -58,7 +60,7 @@ export function MetricsSidebar({ sidebarWidth, onResize, hidden }: MetricsSideba
           <Search size={14} className="text-[#7a9bb8] mr-1 flex-shrink-0" />
           <input
             type="text"
-            placeholder="搜索指标..."
+            placeholder={t('metricsExplorer.searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface TableWithColumnCount {
   name: string;
@@ -22,6 +23,7 @@ export function TablePickerModal({
   onConfirm,
   onClose,
 }: TablePickerModalProps) {
+  const { t } = useTranslation();
   const [tables, setTables] = useState<TableWithColumnCount[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,7 @@ export function TablePickerModal({
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
-        setError(msg || '加载失败');
+        setError(msg || t('metricsExplorer.metricTab.loadFailed'));
       })
       .finally(() => {
         setLoading(false);
@@ -85,7 +87,7 @@ export function TablePickerModal({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a3f5a]">
-          <span className="text-sm font-medium text-[#c8daea]">选择要分析的表</span>
+          <span className="text-sm font-medium text-[#c8daea]">{t('metricsExplorer.tablePicker.title')}</span>
           <button
             className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
             onClick={onClose}
@@ -103,13 +105,13 @@ export function TablePickerModal({
         {/* Table list */}
         <div className="flex-1 overflow-y-auto px-2 py-1" style={{ maxHeight: 320 }}>
           {loading && (
-            <div className="py-6 text-center text-sm text-[#7a9bb8]">加载中...</div>
+            <div className="py-6 text-center text-sm text-[#7a9bb8]">{t('metricsExplorer.loading')}</div>
           )}
           {!loading && error && (
             <div className="py-4 px-3 text-sm text-red-400">{error}</div>
           )}
           {!loading && !error && tables.length === 0 && (
-            <div className="py-6 text-center text-sm text-[#7a9bb8]">暂无表</div>
+            <div className="py-6 text-center text-sm text-[#7a9bb8]">{t('metricsExplorer.tablePicker.noTables')}</div>
           )}
           {!loading && !error && tables.map((table) => {
             const isChecked = selected.has(table.name);
@@ -128,7 +130,7 @@ export function TablePickerModal({
                 />
                 <span className="flex-1 text-sm text-[#c8daea] truncate">{table.name}</span>
                 <span className="text-xs text-[#7a9bb8] flex-shrink-0">
-                  ({table.column_count}列)
+                  ({t('metricsExplorer.tablePicker.columns', { count: table.column_count })})
                 </span>
               </div>
             );
@@ -139,18 +141,18 @@ export function TablePickerModal({
         <div className="border-t border-[#2a3f5a] px-4 py-3 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-[#7a9bb8]">已选 {selected.size} 张表</span>
+              <span className="text-xs text-[#7a9bb8]">{t('metricsExplorer.tablePicker.selected', { count: selected.size })}</span>
               <button
                 className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
                 onClick={selectAll}
               >
-                全选
+                {t('metricsExplorer.tablePicker.selectAll')}
               </button>
               <button
                 className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
                 onClick={clearAll}
               >
-                取消全选
+                {t('metricsExplorer.tablePicker.deselectAll')}
               </button>
             </div>
             <div className="flex items-center gap-2">
@@ -158,14 +160,14 @@ export function TablePickerModal({
                 className="px-3 py-1.5 rounded text-xs bg-[#1a2a3a] text-[#7a9bb8] hover:bg-[#2a3a4a] transition-colors"
                 onClick={onClose}
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 className="px-3 py-1.5 rounded text-xs bg-[#00c9a7] text-black hover:bg-[#00b090] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 disabled={selected.size === 0}
                 onClick={() => onConfirm(Array.from(selected), goToTasks)}
               >
-                开始生成
+                {t('metricsExplorer.tablePicker.startGenerate')}
               </button>
             </div>
           </div>
@@ -176,7 +178,7 @@ export function TablePickerModal({
               onChange={(e) => setGoToTasks(e.target.checked)}
               className="accent-[#00c9a7] cursor-pointer"
             />
-            <span className="text-xs text-[#7a9bb8]">生成后跳转到我的任务</span>
+            <span className="text-xs text-[#7a9bb8]">{t('metricsExplorer.tablePicker.goToTasks')}</span>
           </label>
         </div>
       </div>

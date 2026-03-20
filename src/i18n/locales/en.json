@@ -688,6 +688,7 @@
     "edgeTooltipType": "Type",
     "edgeTooltipWeight": "Weight",
     "addAlias": "Add Alias",
+    "highlightLinks": "Highlight related links",
     "aliasEditor": {
       "title": "Edit Semantic Aliases",
       "currentAliases": "Current Aliases",

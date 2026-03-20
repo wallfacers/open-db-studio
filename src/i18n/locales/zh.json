@@ -688,6 +688,7 @@
     "edgeTooltipType": "类型",
     "edgeTooltipWeight": "权重",
     "addAlias": "添加别名",
+    "highlightLinks": "高亮关联的链接",
     "aliasEditor": {
       "title": "编辑语义别名",
       "currentAliases": "当前别名",

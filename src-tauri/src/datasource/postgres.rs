@@ -285,17 +285,15 @@ impl DataSource for PostgresDataSource {
 
     async fn list_schemas(&self, _database: &str) -> AppResult<Vec<String>> {
         // _database 参数忽略：已通过 create_datasource_with_db 连接到目标库
-        // 只过滤真正的内部 schema（pg_toast、临时 schema），保留 pg_catalog / information_schema
+        // 过滤系统 schema：pg_catalog、information_schema、pg_toast 及临时 schema
         let rows: Vec<(String,)> = sqlx::query_as(
             "SELECT nspname FROM pg_namespace
-             WHERE nspname NOT IN ('pg_toast')
+             WHERE nspname NOT IN ('pg_toast', 'pg_catalog', 'information_schema')
                AND nspname NOT LIKE 'pg_temp_%'
                AND nspname NOT LIKE 'pg_toast_temp_%'
              ORDER BY
                CASE nspname
-                 WHEN 'public'             THEN 0
-                 WHEN 'information_schema' THEN 2
-                 WHEN 'pg_catalog'         THEN 3
+                 WHEN 'public' THEN 0
                  ELSE 1
                END,
                nspname"

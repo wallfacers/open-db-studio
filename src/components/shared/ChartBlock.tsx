@@ -221,16 +221,16 @@ function injectOptionFix(option: Record<string, unknown>): Record<string, unknow
 }
 
 // ── ChartRenderer：独立组件
-// 用 useLayoutEffect 同步读容器宽度，确保 ECharts 以正确尺寸初始化，避免 canvas 黑框。
-// ResizeObserver 负责后续宽度变化时 resize。
+// 初始以 '100%' 宽度渲染 ECharts，避免 jsdom / SSR 等无布局环境下 canvas 不渲染。
+// useLayoutEffect 同步读取真实像素宽度后更新，ResizeObserver 处理后续面板拉伸。
 const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState<number | null>(null);
+  const [width, setWidth] = useState<number | string>('100%');
 
   const height = calcChartHeight(option);
   const fixedOption = injectOptionFix(option);
 
-  // useLayoutEffect：DOM commit 后、paint 前同步读宽度，宽度有效才渲染 ECharts
+  // useLayoutEffect：DOM commit 后、paint 前同步读宽度，有效时替换 '100%'
   useLayoutEffect(() => {
     const w = containerRef.current?.clientWidth ?? 0;
     if (w > 0) setWidth(w);
@@ -250,15 +250,13 @@ const ChartRenderer: React.FC<{ option: Record<string, unknown> }> = ({ option }
 
   return (
     <div ref={containerRef} style={{ height }}>
-      {width !== null && (
-        <ReactECharts
-          option={fixedOption}
-          theme="ods-dark"
-          style={{ height, width }}
-          notMerge={true}
-          opts={{ renderer: 'canvas' }}
-        />
-      )}
+      <ReactECharts
+        option={fixedOption}
+        theme="ods-dark"
+        style={{ height, width }}
+        notMerge={true}
+        opts={{ renderer: 'canvas' }}
+      />
     </div>
   );
 };

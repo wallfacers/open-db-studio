@@ -67,7 +67,58 @@
     "connectionSwitchTitle": "Tab switched — update connection?",
     "connectionSwitchDesc": "AI is using {{old}}, new tab uses {{new}}",
     "keepLastConnection": "Keep {{name}}",
-    "switchToNewConnection": "Switch to {{name}}"
+    "switchToNewConnection": "Switch to {{name}}",
+    "collapseAssistant": "Collapse AI Assistant",
+    "expandAssistant": "Expand AI Assistant",
+    "autoApplied": "AI has auto-applied changes",
+    "diffPanel": {
+      "title": "Change Proposal",
+      "apply": "Apply"
+    },
+    "elicitation": {
+      "permissionTitle": "Tool Execution Confirmation"
+    },
+    "thinking": {
+      "thinking": "Thinking",
+      "thought": "Deep thought completed"
+    },
+    "slashCommands": {
+      "undo": {
+        "label": "/undo",
+        "description": "Undo last conversation",
+        "disabledChatting": "AI is responding, please wait",
+        "disabledCompacting": "Compacting in progress, please wait",
+        "disabledNoHistory": "No conversation to undo",
+        "done": "Last conversation undone"
+      },
+      "redo": {
+        "label": "/redo",
+        "description": "Redo undone conversation",
+        "disabledNoHistory": "No conversation to redo",
+        "done": "Conversation restored"
+      },
+      "compact": {
+        "label": "/compact",
+        "description": "Compact session context",
+        "disabledChatting": "AI is responding, please wait",
+        "disabledCompacting": "Compacting in progress, please wait",
+        "disabledNotEnough": "Less than 4 messages, no need to compact",
+        "disabledNoModel": "No model configured, cannot compact",
+        "done": "Session compacted"
+      },
+      "new": {
+        "label": "/new",
+        "description": "New session",
+        "done": "New session created"
+      },
+      "clear": {
+        "label": "/clear",
+        "description": "Clear current session",
+        "disabledNoHistory": "No history in current session",
+        "done": "Session cleared"
+      },
+      "executeFailed": "{{cmd}} failed: {{error}}"
+    }
   },
   "connectionModal": {
     "editConnection": "Edit Connection",
@@ -616,5 +667,146 @@
     "askAi": "Ask AI",
     "askAiAnalyze": "Ask AI to analyze failure",
     "copyError": "Copy error"
+  },
+  "graphExplorer": {
+    "title": "Knowledge Graph",
+    "selectConnection": "Please select a database connection first",
+    "searchPlaceholder": "Search nodes...",
+    "autoLayout": "Auto Layout",
+    "building": "Building...",
+    "buildGraph": "Build Graph",
+    "noData": "No graph data, click \"Build Graph\"",
+    "noMatchingNodes": "No matching nodes",
+    "clusterFolded": "[Connection {{cid}}: {{count}} nodes folded]",
+    "typeTable": "Table",
+    "typeMetric": "Metric",
+    "typeAlias": "Alias",
+    "edgeTooltipType": "Type",
+    "edgeTooltipWeight": "Weight",
+    "addAlias": "Add Alias",
+    "aliasEditor": {
+      "title": "Edit Semantic Aliases",
+      "currentAliases": "Current Aliases",
+      "noAliases": "No aliases",
+      "addNewAlias": "Add New Alias",
+      "placeholder": "Enter alias, press Enter to confirm...",
+      "add": "Add",
+      "aliasExists": "Alias already exists",
+      "saveFailed": "Save failed"
+    },
+    "nodeDetail": {
+      "source": "Source",
+      "fields": "Fields",
+      "semanticAliases": "Semantic Aliases",
+      "relatedEdges": "Related Edges"
+    }
+  },
+  "metricsExplorer": {
+    "title": "Business Metrics",
+    "searchPlaceholder": "Search metrics...",
+    "noConnections": "No database connections",
+    "noResults": "No matching results",
+    "refresh": "Refresh",
+    "loading": "Loading...",
+    "newMetric": "New Metric",
+    "metricsSidebar": {
+      "title": "Business Metrics"
+    },
+    "metricList": {
+      "all": "All",
+      "draft": "Draft",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "searchPlaceholder": "Search metric names...",
+      "add": "Add",
+      "aiGenerate": "AI Generate",
+      "noMetrics": "No metrics",
+      "rowsPerPage": "rows/page",
+      "firstPage": "First",
+      "prevPage": "Previous",
+      "nextPage": "Next",
+      "displayName": "Display Name",
+      "relatedTable": "Related Table",
+      "relatedColumn": "Related Column",
+      "aggregation": "Aggregation",
+      "type": "Type",
+      "status": "Status",
+      "actions": "Actions",
+      "edit": "Edit",
+      "delete": "Delete",
+      "batchDelete": "Batch Delete",
+      "batchApprove": "Batch Approve",
+      "batchReject": "Batch Reject",
+      "selected": "{{count}} selected",
+      "confirmDelete": "Are you sure you want to delete metric \"{{name}}\"? This action cannot be undone.",
+      "confirmDeleteMulti": "Are you sure you want to delete {{count}} selected metrics? This action cannot be undone.",
+      "deleteTitle": "Delete Metric",
+      "statusApproved": "Approved",
+      "statusRejected": "Rejected",
+      "statusDraft": "Draft",
+      "typeComposite": "Composite",
+      "typeAtomic": "Atomic",
+      "aiTaskStarted": "AI generation task started. Metrics will refresh automatically when complete.",
+      "viewTasks": "View Tasks",
+      "rows": "rows"
+    },
+    "metricTab": {
+      "newMetric": "New Metric",
+      "metricType": "Metric Type",
+      "atomicMetric": "Atomic Metric",
+      "compositeMetric": "Composite Metric",
+      "displayName": "Display Name",
+      "englishName": "English Name",
+      "categoryTags": "Category Tags",
+      "categoryPlaceholder": "Enter category, press Enter or comma to confirm...",
+      "version": "Version",
+      "relatedTable": "Related Table",
+      "relatedColumn": "Related Column",
+      "aggregationMethod": "Aggregation Method",
+      "noAggregation": "No aggregation",
+      "noTables": "No tables available",
+      "selectTable": "Select table...",
+      "selectColumnFirst": "Select a table first",
+      "selectColumn": "Select column...",
+      "description": "Description",
+      "dataCaliber": "Data Caliber Description",
+      "filterSql": "filter_sql (WHERE clause without WHERE keyword)",
+      "compositeComingSoon": "Composite Metric Builder (P2 feature, coming soon)",
+      "save": "Save",
+      "saving": "Saving...",
+      "creating": "Creating...",
+      "delete": "Delete",
+      "deleting": "Deleting...",
+      "confirmDelete": "Are you sure you want to delete metric \"{{name}}\"? This action cannot be undone.",
+      "deleteTitle": "Delete Metric",
+      "loadTablesFailed": "Failed to load table list",
+      "loadColumnsFailed": "Failed to load columns",
+      "saveFailed": "Save failed",
+      "createFailed": "Create failed",
+      "deleteFailed": "Delete failed",
+      "loadFailed": "Load failed"
+    },
+    "metricsTree": {
+      "open": "Open",
+      "delete": "Delete",
+      "openMetricList": "Open Metric List",
+      "addMetric": "Add Metric",
+      "refresh": "Refresh",
+      "confirmDelete": "Are you sure you want to delete metric \"{{name}}\"? This action cannot be undone.",
+      "deleteTitle": "Delete Metric",
+      "deleteFailed": "Delete failed"
+    },
+    "tablePicker": {
+      "title": "Select Tables to Analyze",
+      "loading": "Loading...",
+      "noTables": "No tables",
+      "selected": "{{count}} tables selected",
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All",
+      "columns": "columns",
+      "cancel": "Cancel",
+      "startGenerate": "Start Generate",
+      "goToTasks": "Go to Tasks after generation"
+    }
   }
 }

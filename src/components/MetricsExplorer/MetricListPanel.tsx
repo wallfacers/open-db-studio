@@ -309,6 +309,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
               </th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">显示名称</th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">关联表</th>
+              <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">关联字段</th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">聚合</th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">类型</th>
               <th className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">状态</th>
@@ -317,10 +318,10 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7} className="text-center py-8 text-[#7a9bb8]">加载中...</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-[#7a9bb8]">加载中...</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-8 text-[#4a6a8a]">暂无指标</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-[#4a6a8a]">暂无指标</td></tr>
             )}
             {filtered.map(m => (
               <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group">
@@ -332,6 +333,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                 </td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42] text-white font-medium">{m.display_name}</td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#a0b4c8]">{m.table_name || '-'}</td>
+                <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#a0b4c8]">{m.column_name || '-'}</td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42] text-[#a0b4c8]">{m.aggregation ?? '-'}</td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] ${

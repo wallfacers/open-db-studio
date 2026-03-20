@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { X, Plus, Save, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { parseAliases } from './graphUtils';
 
 interface AliasEditorProps {
@@ -18,6 +19,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
   onSave,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [aliases, setAliases] = useState<string[]>(parseAliases(currentAliases));
   const [inputValue, setInputValue] = useState('');
   const [saving, setSaving] = useState(false);
@@ -32,7 +34,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     if (aliases.includes(trimmed)) {
-      setError('别名已存在');
+      setError(t('graphExplorer.aliasEditor.aliasExists'));
       return;
     }
     setAliases((prev) => [...prev, trimmed]);
@@ -61,7 +63,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
       await invoke('update_node_alias', { nodeId, aliases: aliasesJson });
       onSave();
     } catch (err) {
-      const msg = typeof err === 'string' ? err : (err as Error)?.message ?? '保存失败';
+      const msg = typeof err === 'string' ? err : (err as Error)?.message ?? t('graphExplorer.aliasEditor.saveFailed');
       setError(msg);
     } finally {
       setSaving(false);
@@ -74,7 +76,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e2d42]">
           <div>
-            <h3 className="text-[#c8daea] text-sm font-semibold">编辑语义别名</h3>
+            <h3 className="text-[#c8daea] text-sm font-semibold">{t('graphExplorer.aliasEditor.title')}</h3>
             <p className="text-[#7a9bb8] text-xs mt-0.5 truncate max-w-[300px]">{nodeName}</p>
           </div>
           <button
@@ -89,9 +91,9 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
         <div className="px-4 py-4 space-y-3">
           {/* Current aliases */}
           <div className="space-y-1.5">
-            <p className="text-[#7a9bb8] text-xs">当前别名</p>
+            <p className="text-[#7a9bb8] text-xs">{t('graphExplorer.aliasEditor.currentAliases')}</p>
             {aliases.length === 0 ? (
-              <p className="text-[#7a9bb8] text-xs italic">暂无别名</p>
+              <p className="text-[#7a9bb8] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {aliases.map((alias) => (
@@ -114,7 +116,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
 
           {/* Add alias input */}
           <div className="space-y-1.5">
-            <p className="text-[#7a9bb8] text-xs">添加新别名</p>
+            <p className="text-[#7a9bb8] text-xs">{t('graphExplorer.aliasEditor.addNewAlias')}</p>
             <div className="flex gap-2">
               <input
                 ref={inputRef}
@@ -125,7 +127,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
                   setError(null);
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="输入别名，回车确认..."
+                placeholder={t('graphExplorer.aliasEditor.placeholder')}
                 className="flex-1 px-3 py-1.5 text-sm bg-[#0d1117] border border-[#1e2d42] rounded text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00c9a7]/50 transition-colors"
               />
               <button
@@ -134,7 +136,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded text-[#c8daea] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <Plus size={13} />
-                添加
+                {t('graphExplorer.aliasEditor.add')}
               </button>
             </div>
             {error && (
@@ -149,7 +151,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
             onClick={onClose}
             className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors"
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
@@ -157,7 +159,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#00c9a7]/10 hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 rounded text-[#00c9a7] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            保存
+            {t('common.save')}
           </button>
         </div>
       </div>

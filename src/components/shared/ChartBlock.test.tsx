@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+
 // echarts-for-react 依赖 canvas API，jsdom 环境中不可用，需要 mock
 vi.mock('echarts-for-react', () => ({
   default: ({ option }: { option: Record<string, unknown> }) =>
@@ -28,6 +29,20 @@ vi.mock('lucide-react', () => ({
 Object.assign(navigator, {
   clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
 });
+
+// React 18 需要此标志才能在 act() 中正确冲刷 useLayoutEffect / useEffect
+// 参见：https://reactjs.org/blog/2022/03/29/react-v18.html#configuring-your-testing-environment
+// @ts-expect-error global IS_REACT_ACT_ENVIRONMENT
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+// jsdom 没有 ResizeObserver，ChartRenderer 的 useEffect 会抛 ReferenceError
+// 导致 ChartErrorBoundary 捕获错误并渲染降级 UI；用 class 语法 mock（arrow fn 不能作为构造器）
+vi.stubGlobal('ResizeObserver', class {
+  observe = vi.fn();
+  disconnect = vi.fn();
+  unobserve = vi.fn();
+});
+
 
 describe('ChartBlock', () => {
   let container: HTMLDivElement;

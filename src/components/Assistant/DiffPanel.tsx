@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Check, X } from 'lucide-react';
 import { diffLines } from 'diff';
+import { useTranslation } from 'react-i18next';
 import type { SqlDiffProposal } from '../../types';
 
 interface DiffPanelProps {
@@ -10,6 +11,7 @@ interface DiffPanelProps {
 }
 
 export const DiffPanel: React.FC<DiffPanelProps> = ({ proposal, onApply, onCancel }) => {
+  const { t } = useTranslation();
   // diffLines 使用 LCS 算法，正确处理重复行和多行变更
   const parts = useMemo(
     () => diffLines(proposal.original, proposal.modified),
@@ -20,11 +22,11 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({ proposal, onApply, onCance
     <div className="border-t border-[#1e2d42] bg-[#0d1117]">
       {/* 标题栏 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42]">
-        <span className="text-xs font-medium text-[#c8daea]">修改建议</span>
+        <span className="text-xs font-medium text-[#c8daea]">{t('assistant.diffPanel.title')}</span>
         <button
           onClick={onCancel}
           className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-          title="取消"
+          title={t('common.cancel')}
         >
           <X size={14} />
         </button>
@@ -70,14 +72,14 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({ proposal, onApply, onCance
           onClick={onCancel}
           className="text-xs px-3 py-1 rounded border border-[#2a3f5a] text-[#7a9bb8] hover:text-[#c8daea] hover:border-[#7a9bb8] transition-colors"
         >
-          取消
+          {t('common.cancel')}
         </button>
         <button
           onClick={onApply}
           className="text-xs px-3 py-1 rounded bg-[#00c9a7] text-white hover:bg-[#00a98f] transition-colors flex items-center gap-1"
         >
           <Check size={12} />
-          应用
+          {t('assistant.diffPanel.apply')}
         </button>
       </div>
     </div>

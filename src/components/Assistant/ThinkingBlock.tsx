@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ThinkingBlockProps {
   content: string;
@@ -7,6 +8,7 @@ interface ThinkingBlockProps {
 }
 
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreaming }) => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [doneDuration, setDoneDuration] = useState<number | null>(null);
@@ -53,8 +55,8 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
         />
         <span>
           {isStreaming
-            ? `思考中${elapsedSeconds > 0 ? `（${elapsedSeconds}s）` : '...'}`
-            : `已深度思考${doneDuration !== null && doneDuration > 0 ? `（${doneDuration}s）` : ''}`
+            ? `${t('assistant.thinking.thinking')}${elapsedSeconds > 0 ? `（${elapsedSeconds}s）` : '...'}`
+            : `${t('assistant.thinking.thought')}${doneDuration !== null && doneDuration > 0 ? `（${doneDuration}s）` : ''}`
           }
         </span>
         {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}

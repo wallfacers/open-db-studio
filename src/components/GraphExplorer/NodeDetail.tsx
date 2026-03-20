@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Tag, Table2, BarChart2, Hash, Plus, ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { AliasEditor } from './AliasEditor';
 import type { GraphNode, GraphEdge } from './useGraphData';
 import { parseAliases } from './graphUtils';
@@ -79,6 +80,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
   onClose,
   onAliasUpdated,
 }) => {
+  const { t } = useTranslation();
   const [showAliasEditor, setShowAliasEditor] = useState(false);
 
   const fields = parseMetadata(node.metadata);
@@ -127,7 +129,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
             {node.node_type}
           </span>
           {node.source && (
-            <span className="ml-2 text-[10px] text-[#7a9bb8]">来源: {node.source}</span>
+            <span className="ml-2 text-[10px] text-[#7a9bb8]">{t('graphExplorer.nodeDetail.source')}: {node.source}</span>
           )}
         </div>
 
@@ -136,7 +138,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           {/* Fields section */}
           {fields.length > 0 && (
             <div className="px-4 py-3 border-b border-[#1e2d42]">
-              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">字段列表</p>
+              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
               <div className="space-y-1">
                 {fields.map((field, idx) => (
                   <div
@@ -160,17 +162,17 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           {/* Aliases section */}
           <div className="px-4 py-3 border-b border-[#1e2d42]">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">语义别名</p>
+              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
               <button
                 onClick={() => setShowAliasEditor(true)}
                 className="flex items-center gap-0.5 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
               >
                 <Plus size={11} />
-                添加
+                {t('graphExplorer.aliasEditor.add')}
               </button>
             </div>
             {aliases.length === 0 ? (
-              <p className="text-[#7a9bb8] text-xs italic">暂无别名</p>
+              <p className="text-[#7a9bb8] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {aliases.map((alias) => (
@@ -189,7 +191,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           {/* Related edges */}
           {relatedEdges.length > 0 && (
             <div className="px-4 py-3">
-              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">关联边</p>
+              <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
               <div className="space-y-1">
                 {relatedEdges.map((edge) => (
                   <div

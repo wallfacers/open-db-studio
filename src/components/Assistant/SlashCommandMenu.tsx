@@ -1,90 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { CornerDownLeft, CornerUpRight, Zap, Plus, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { SlashCommand, ChatCommandState, CommandContext } from './slashCommands';
-
-// ── 命令注册表 ────────────────────────────────────────────────────────────────
-
-const COMMANDS: SlashCommand[] = [
-  {
-    name: 'undo',
-    label: '/undo',
-    description: '撤销最后一轮对话',
-    icon: CornerDownLeft,
-    isAvailable: (s) => s.canUndo && !s.isChatting && !s.isCompacting,
-    disabledReason: (s) => {
-      if (s.isChatting) return '正在回复中，请等待完成';
-      if (s.isCompacting) return '正在压缩中，请等待完成';
-      return '暂无可撤销的对话';
-    },
-    execute: async (ctx) => {
-      await ctx.undoMessage(ctx.sessionId);
-      ctx.showToast('已撤销最后一轮对话', 'info');
-    },
-  },
-  {
-    name: 'redo',
-    label: '/redo',
-    description: '恢复被撤销的对话',
-    icon: CornerUpRight,
-    isAvailable: (s) => s.canRedo,
-    disabledReason: () => '暂无可恢复的对话',
-    execute: async (ctx) => {
-      await ctx.redoMessage(ctx.sessionId);
-      ctx.showToast('已恢复对话', 'info');
-    },
-  },
-  {
-    name: 'compact',
-    label: '/compact',
-    description: '压缩会话 context',
-    icon: Zap,
-    isAvailable: (s) => s.messageCount >= 4 && !s.isChatting && !s.isCompacting,
-    disabledReason: (s) => {
-      if (s.isChatting) return '正在回复中，请等待完成';
-      if (s.isCompacting) return '正在压缩中，请等待完成';
-      return '消息不足 4 条，无需压缩';
-    },
-    execute: async (ctx) => {
-      if (!ctx.modelId || !ctx.providerId) {
-        ctx.showToast('未配置模型，无法压缩', 'warning');
-        return;
-      }
-      await ctx.compactSession(ctx.sessionId, ctx.modelId, ctx.providerId);
-      ctx.showToast('会话已压缩', 'info');
-    },
-  },
-  {
-    name: 'new',
-    label: '/new',
-    description: '新建会话',
-    icon: Plus,
-    isAvailable: () => true,
-    execute: async (ctx) => {
-      await ctx.newSession();
-      ctx.showToast('新会话已创建', 'info');
-    },
-  },
-  {
-    name: 'clear',
-    label: '/clear',
-    description: '清空当前会话',
-    icon: Trash2,
-    isAvailable: (s) => s.hasHistory,
-    disabledReason: () => '当前会话无历史消息',
-    execute: async (ctx) => {
-      await ctx.clearHistory(ctx.sessionId);
-      ctx.showToast('会话已清空', 'info');
-    },
-  },
-];
-
-// ── 过滤辅助 ──────────────────────────────────────────────────────────────────
-
-function filterCommands(query: string): SlashCommand[] {
-  if (!query) return COMMANDS;
-  const q = query.toLowerCase();
-  return COMMANDS.filter((c) => c.name.startsWith(q));
-}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -107,8 +24,90 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
   onClose,
   onIndexChange,
 }) => {
-  const filtered = filterCommands(query);
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 动态生成命令列表，包含国际化文本
+  const commands = useMemo<SlashCommand[]>(() => [
+    {
+      name: 'undo',
+      label: '/undo',
+      description: t('assistant.slashCommands.undo.description'),
+      icon: CornerDownLeft,
+      isAvailable: (s) => s.canUndo && !s.isChatting && !s.isCompacting,
+      disabledReason: (s) => {
+        if (s.isChatting) return t('assistant.slashCommands.undo.disabledChatting');
+        if (s.isCompacting) return t('assistant.slashCommands.undo.disabledCompacting');
+        return t('assistant.slashCommands.undo.disabledNoHistory');
+      },
+      execute: async (ctx) => {
+        await ctx.undoMessage(ctx.sessionId);
+        ctx.showToast(t('assistant.slashCommands.undo.done'), 'info');
+      },
+    },
+    {
+      name: 'redo',
+      label: '/redo',
+      description: t('assistant.slashCommands.redo.description'),
+      icon: CornerUpRight,
+      isAvailable: (s) => s.canRedo,
+      disabledReason: () => t('assistant.slashCommands.redo.disabledNoHistory'),
+      execute: async (ctx) => {
+        await ctx.redoMessage(ctx.sessionId);
+        ctx.showToast(t('assistant.slashCommands.redo.done'), 'info');
+      },
+    },
+    {
+      name: 'compact',
+      label: '/compact',
+      description: t('assistant.slashCommands.compact.description'),
+      icon: Zap,
+      isAvailable: (s) => s.messageCount >= 4 && !s.isChatting && !s.isCompacting,
+      disabledReason: (s) => {
+        if (s.isChatting) return t('assistant.slashCommands.compact.disabledChatting');
+        if (s.isCompacting) return t('assistant.slashCommands.compact.disabledCompacting');
+        return t('assistant.slashCommands.compact.disabledNotEnough');
+      },
+      execute: async (ctx) => {
+        if (!ctx.modelId || !ctx.providerId) {
+          ctx.showToast(t('assistant.slashCommands.compact.disabledNoModel'), 'warning');
+          return;
+        }
+        await ctx.compactSession(ctx.sessionId, ctx.modelId, ctx.providerId);
+        ctx.showToast(t('assistant.slashCommands.compact.done'), 'info');
+      },
+    },
+    {
+      name: 'new',
+      label: '/new',
+      description: t('assistant.slashCommands.new.description'),
+      icon: Plus,
+      isAvailable: () => true,
+      execute: async (ctx) => {
+        await ctx.newSession();
+        ctx.showToast(t('assistant.slashCommands.new.done'), 'info');
+      },
+    },
+    {
+      name: 'clear',
+      label: '/clear',
+      description: t('assistant.slashCommands.clear.description'),
+      icon: Trash2,
+      isAvailable: (s) => s.hasHistory,
+      disabledReason: () => t('assistant.slashCommands.clear.disabledNoHistory'),
+      execute: async (ctx) => {
+        await ctx.clearHistory(ctx.sessionId);
+        ctx.showToast(t('assistant.slashCommands.clear.done'), 'info');
+      },
+    },
+  ], [t]);
+
+  // 过滤命令
+  const filtered = useMemo(() => {
+    if (!query) return commands;
+    const q = query.toLowerCase();
+    return commands.filter((c) => c.name.startsWith(q));
+  }, [query, commands]);
 
   // 点击区域外关闭
   useEffect(() => {
@@ -149,7 +148,7 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
     try {
       await cmd.execute(commandContext);
     } catch (e) {
-      commandContext.showToast(`${cmd.label} 执行失败: ${String(e)}`, 'error');
+      commandContext.showToast(t('assistant.slashCommands.executeFailed', { cmd: cmd.label, error: String(e) }), 'error');
     }
   };
 

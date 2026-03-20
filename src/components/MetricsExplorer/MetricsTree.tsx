@@ -4,6 +4,7 @@ import {
   Folder, FolderOpen, Database, Layers, BarChart2, GitMerge,
   Eye, RefreshCw, Trash2, List, Plus,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { DbDriverIcon } from '../Explorer/DbDriverIcon';
 import { useMetricsTreeStore, MetricsTreeNode, loadPersistedMetricsExpandedIds, flushMetricsPersist } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
@@ -59,6 +60,7 @@ function computeVisible(
 }
 
 export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricListTab }: TreeProps) {
+  const { t } = useTranslation();
   const {
     nodes, expandedIds, selectedId, metricCounts, loadingIds, isInitializing,
     init, toggleExpand, selectNode, refreshNode, deleteMetric, search,
@@ -135,13 +137,13 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
   const handleDeleteMetric = async (node: MetricsTreeNode) => {
     const { metricId } = node.meta;
     if (!metricId) return;
-    const isBlank = node.label === '新指标';
+    const isBlank = node.label === t('metricsExplorer.newMetric');
     if (!isBlank) {
       const ok = await confirm({
-        title: '删除指标',
-        message: `确定要删除指标「${node.label}」吗？此操作不可撤销。`,
+        title: t('metricsExplorer.metricsTree.deleteTitle'),
+        message: t('metricsExplorer.metricsTree.confirmDelete', { name: node.label }),
         variant: 'danger',
-        confirmLabel: '删除',
+        confirmLabel: t('metricsExplorer.metricsTree.delete'),
       });
       if (!ok) return;
     }
@@ -149,7 +151,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       await deleteMetric(metricId, node.id);
       closeMetricTabById(metricId);
     } catch (e: any) {
-      setDeleteError(e?.message ?? '删除失败');
+      setDeleteError(e?.message ?? t('metricsExplorer.metricsTree.deleteFailed'));
     }
   };
 
@@ -158,7 +160,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
     if (!connectionId) return;
     const scopeTitle = schema && database
       ? `${database}.${schema}`
-      : database ?? '新指标';
+      : database ?? t('metricsExplorer.newMetric');
     openNewMetricTab({ connectionId, database, schema }, scopeTitle);
     setContextMenu(null);
   };
@@ -200,7 +202,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
   if (visibleNodes.length === 0) {
     return (
       <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
-        {searchQuery.trim() ? '无匹配结果' : '暂无数据库连接'}
+        {searchQuery.trim() ? t('metricsExplorer.noResults') : t('metricsExplorer.noConnections')}
       </div>
     );
   }
@@ -311,7 +313,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                   }
                   setContextMenu(null);
                 }}
-              ><Eye size={13} />打开</button>
+              ><Eye size={13} />{t('metricsExplorer.metricsTree.open')}</button>
               <div className="h-px bg-[#253347] my-1" />
               <button
                 className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[#1a2639] hover:text-red-300"
@@ -320,7 +322,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                   setContextMenu(null);
                   await handleDeleteMetric(node);
                 }}
-              ><Trash2 size={13} />删除</button>
+              ><Trash2 size={13} />{t('metricsExplorer.metricsTree.delete')}</button>
             </>
           ) : (
             <>
@@ -338,11 +340,11 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                       }
                       setContextMenu(null);
                     }}
-                  ><List size={13} />打开指标列表</button>
+                  ><List size={13} />{t('metricsExplorer.metricsTree.openMetricList')}</button>
                   <button
                     className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
                     onClick={() => handleNewMetric(contextMenu.node)}
-                  ><Plus size={13} />新增指标</button>
+                  ><Plus size={13} />{t('metricsExplorer.metricsTree.addMetric')}</button>
                   <div className="h-px bg-[#253347] my-1" />
                 </>
               )}
@@ -352,7 +354,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                   refreshNode(contextMenu.node.id);
                   setContextMenu(null);
                 }}
-              ><RefreshCw size={13} />刷新</button>
+              ><RefreshCw size={13} />{t('metricsExplorer.metricsTree.refresh')}</button>
             </>
           )}
         </div>

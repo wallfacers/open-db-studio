@@ -1,6 +1,7 @@
 // src/components/Assistant/AssistantToggleTab.tsx
 import React, { useState, useRef } from 'react';
 import { ChevronRight, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/appStore';
 
 interface AssistantToggleTabProps {
@@ -14,6 +15,7 @@ export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
   assistantWidth,
   isResizing,
 }) => {
+  const { t } = useTranslation();
   const isOpen = useAppStore((s) => s.isAssistantOpen);
   const setOpen = useAppStore((s) => s.setAssistantOpen);
 
@@ -64,8 +66,8 @@ export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
       }}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
-      title={isOpen ? '收起 AI 助手' : '展开 AI 助手'}
-      aria-label={isOpen ? '收起 AI 助手' : '展开 AI 助手'}
+      title={isOpen ? t('assistant.collapseAssistant') : t('assistant.expandAssistant')}
+      aria-label={isOpen ? t('assistant.collapseAssistant') : t('assistant.expandAssistant')}
       className={[
         'group flex flex-col items-center justify-center gap-0.5',
         'w-5 py-3.5 rounded-l-lg',

@@ -23,6 +23,7 @@ import {
   LayoutTemplate,
 } from 'lucide-react';
 import dagre from 'dagre';
+import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store';
 import { useGraphData } from './useGraphData';
 import { nodeTypes } from './nodeTypes';
@@ -153,6 +154,7 @@ interface GraphExplorerInnerProps {
 }
 
 function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps) {
+  const { t } = useTranslation();
   const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(connectionId);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
@@ -338,15 +340,15 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     return (
       <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] items-center justify-center">
         <GitBranch size={40} className="text-[#253347] mb-3" />
-        <p className="text-[#7a9bb8] text-sm">请先选择数据库连接</p>
+        <p className="text-[#7a9bb8] text-sm">{t('graphExplorer.selectConnection')}</p>
       </div>
     );
   }
 
   const typeButtons = [
-    { type: 'table', label: '表', activeClass: 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/50' },
-    { type: 'metric', label: '指标', activeClass: 'bg-[#2d1e0d] text-[#f59e0b] border-[#f59e0b]/50' },
-    { type: 'alias', label: '别名', activeClass: 'bg-[#1e0d2d] text-[#a855f7] border-[#a855f7]/50' },
+    { type: 'table', label: t('graphExplorer.typeTable'), activeClass: 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/50' },
+    { type: 'metric', label: t('graphExplorer.typeMetric'), activeClass: 'bg-[#2d1e0d] text-[#f59e0b] border-[#f59e0b]/50' },
+    { type: 'alias', label: t('graphExplorer.typeAlias'), activeClass: 'bg-[#1e0d2d] text-[#a855f7] border-[#a855f7]/50' },
   ];
 
   return (
@@ -354,7 +356,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#1e2d42] flex-shrink-0 bg-[#0d1117]">
         <GitBranch size={16} className="text-[#00c9a7] flex-shrink-0" />
-        <span className="text-[#c8daea] text-sm font-semibold mr-2">知识图谱</span>
+        <span className="text-[#c8daea] text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 
         {/* Type filter */}
         <div className="flex items-center gap-1">
@@ -380,7 +382,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索节点..."
+            placeholder={t('graphExplorer.searchPlaceholder')}
             className="w-full pl-7 pr-3 py-1 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00c9a7]/50 transition-colors"
           />
         </div>
@@ -390,7 +392,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           <button
             onClick={handleAutoLayout}
             disabled={rfNodes.length === 0}
-            title="自动布局"
+            title={t('graphExplorer.autoLayout')}
             className="flex items-center gap-1 px-2 py-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] bg-[#111922] hover:bg-[#1e2d42] border border-[#1e2d42] rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <LayoutTemplate size={13} />
@@ -405,7 +407,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             {isBuilding || loading
               ? <Loader2 size={13} className="animate-spin" />
               : <RefreshCw size={13} />}
-            {isBuilding ? '构建中...' : '构建图谱'}
+            {isBuilding ? t('graphExplorer.building') : t('graphExplorer.buildGraph')}
           </button>
         </div>
       </div>
@@ -425,7 +427,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
               <GitBranch size={36} className="text-[#253347] mb-3" />
               <p className="text-[#7a9bb8] text-sm">
-                {rawNodes.length === 0 ? '暂无图谱数据，请点击「构建图谱」' : '没有匹配的节点'}
+                {rawNodes.length === 0 ? t('graphExplorer.noData') : t('graphExplorer.noMatchingNodes')}
               </p>
             </div>
           )}
@@ -472,9 +474,9 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
               className="fixed z-[9998] pointer-events-none px-2.5 py-1.5 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg text-[#c8daea] text-xs"
               style={{ left: edgeTooltip.x + 12, top: edgeTooltip.y - 36 }}
             >
-              <span className="text-[#7a9bb8]">类型: </span>{edgeTooltip.edge_type}
+              <span className="text-[#7a9bb8]">{t('graphExplorer.edgeTooltipType')}: </span>{edgeTooltip.edge_type}
               <span className="mx-2 text-[#1e2d42]">|</span>
-              <span className="text-[#7a9bb8]">权重: </span>{edgeTooltip.weight.toFixed(2)}
+              <span className="text-[#7a9bb8]">{t('graphExplorer.edgeTooltipWeight')}: </span>{edgeTooltip.weight.toFixed(2)}
             </div>
           )}
         </div>

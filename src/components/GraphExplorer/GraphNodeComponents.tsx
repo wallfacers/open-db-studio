@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface GraphNodeData extends Record<string, unknown> {
   id: string;
@@ -27,6 +28,7 @@ function BaseNode({
   badgeClass: string;
   badgeLabel: string;
 }) {
+  const { t } = useTranslation();
   const displayName = data.display_name && data.display_name !== data.name
     ? data.display_name
     : null;
@@ -54,7 +56,7 @@ function BaseNode({
           {badgeLabel}
         </span>
         <button
-          title="添加别名"
+          title={t('graphExplorer.addAlias')}
           onClick={handleAddAlias}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] flex-shrink-0"
         >

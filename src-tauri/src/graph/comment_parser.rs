@@ -1,4 +1,11 @@
 use std::collections::HashSet;
+use std::sync::OnceLock;
+use regex::Regex;
+
+static RE1: OnceLock<Regex> = OnceLock::new();
+static RE2: OnceLock<Regex> = OnceLock::new();
+static RE3: OnceLock<Regex> = OnceLock::new();
+static RE4: OnceLock<Regex> = OnceLock::new();
 
 /// 列注释中提取的虚拟关系引用
 #[derive(Debug, PartialEq, Clone)]
@@ -18,8 +25,12 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
     let mut seen: HashSet<(String, String)> = HashSet::new();
     let mut result = Vec::new();
 
+    let re1 = RE1.get_or_init(|| Regex::new(r"@ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+    let re2 = RE2.get_or_init(|| Regex::new(r"@fk\(([^)]+)\)").unwrap());
+    let re3 = RE3.get_or_init(|| Regex::new(r"\[ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\]").unwrap());
+    let re4 = RE4.get_or_init(|| Regex::new(r"\$\$ref\(([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\)\$\$").unwrap());
+
     // 模式1: @ref:table.col
-    let re1 = regex::Regex::new(r"@ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)").unwrap();
     for cap in re1.captures_iter(comment) {
         let table = cap[1].to_string();
         let col = cap[2].to_string();
@@ -29,7 +40,6 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
     }
 
     // 模式2: @fk(table=X,col=Y,type=Z) — type 可选
-    let re2 = regex::Regex::new(r"@fk\(([^)]+)\)").unwrap();
     for cap in re2.captures_iter(comment) {
         let inner = &cap[1];
         let mut table = String::new();
@@ -52,7 +62,6 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
     }
 
     // 模式3: [ref:table.col]
-    let re3 = regex::Regex::new(r"\[ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\]").unwrap();
     for cap in re3.captures_iter(comment) {
         let table = cap[1].to_string();
         let col = cap[2].to_string();
@@ -62,7 +71,6 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
     }
 
     // 模式4: $$ref(table.col)$$
-    let re4 = regex::Regex::new(r"\$\$ref\(([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\)\$\$").unwrap();
     for cap in re4.captures_iter(comment) {
         let table = cap[1].to_string();
         let col = cap[2].to_string();
@@ -140,5 +148,15 @@ mod tests {
     fn test_at_fk_default_type() {
         let refs = parse_comment_refs("@fk(table=users,col=id)");
         assert_eq!(refs[0].relation_type, "fk");
+    }
+
+    #[test]
+    fn test_mixed_formats() {
+        let refs = parse_comment_refs("@ref:users.id @fk(table=orders,col=order_id) [ref:products.sku]");
+        assert_eq!(refs.len(), 3, "混合格式应正确解析");
+        let tables: Vec<&str> = refs.iter().map(|r| r.target_table.as_str()).collect();
+        assert!(tables.contains(&"users"));
+        assert!(tables.contains(&"orders"));
+        assert!(tables.contains(&"products"));
     }
 }

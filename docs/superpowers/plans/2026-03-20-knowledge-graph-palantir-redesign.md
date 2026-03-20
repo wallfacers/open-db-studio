@@ -1176,7 +1176,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
               onClick={() => setEditing(true)}
               className="text-[10px] text-[#7a9bb8] hover:text-[#c8daea] px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
             >
-              编辑
+              {t('graphExplorer.nodeDetail.editBtn')}
             </button>
           )}
         </div>
@@ -1187,7 +1187,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
               onChange={e => setDescription(e.target.value)}
               className="w-full text-xs bg-[#0d1117] border border-[#2a3f5a] rounded p-2 text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00c9a7]/50 resize-none"
               rows={3}
-              placeholder="描述关联的业务含义..."
+              placeholder={t('graphExplorer.nodeDetail.descriptionPlaceholder')}
             />
             <div className="flex gap-2 mt-1.5">
               <button
@@ -1195,19 +1195,19 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
                 disabled={saving}
                 className="flex-1 text-[10px] py-1 bg-[#00c9a7] text-[#0d1117] rounded font-medium hover:bg-[#00c9a7]/80 disabled:opacity-50"
               >
-                {saving ? '保存中...' : '保存'}
+                {saving ? t('graphExplorer.nodeDetail.saving') : t('graphExplorer.nodeDetail.save')}
               </button>
               <button
                 onClick={() => setEditing(false)}
                 className="flex-1 text-[10px] py-1 bg-[#1e2d42] text-[#7a9bb8] rounded hover:bg-[#253347]"
               >
-                取消
+                {t('graphExplorer.nodeDetail.cancel')}
               </button>
             </div>
           </div>
         ) : (
           <p className="text-[#c8daea] text-xs italic">
-            {description || <span className="text-[#3d5470]">暂无描述</span>}
+            {description || <span className="text-[#3d5470]">{t('graphExplorer.nodeDetail.noDescription')}</span>}
           </p>
         )}
       </div>

@@ -88,26 +88,26 @@ Default output filenames:
 - If the user only gave natural language, construct the smallest valid `ChartRequest` before calling scripts.
 - If the user needs a report artifact, render `html` first and `svg` second.
 
-## open-db-studio 集成输出规则
+## open-db-studio Integration Output Rules
 
-在 open-db-studio 中使用此 skill 时，将最终 ECharts option 输出为 `chart` 代码块：
+When using this skill inside open-db-studio, output the final ECharts option as a `chart` code block:
 
 ```chart
 {
-  "title": { "text": "图表标题" },
+  "title": { "text": "Chart Title" },
   "xAxis": { "type": "category", "data": ["A", "B", "C"] },
   "yAxis": { "type": "value" },
   "series": [{ "type": "bar", "data": [120, 200, 150] }]
 }
 ```
 
-**规则：**
-- 必须使用 ` ```chart ` 标记，不得使用 ` ```json ` 或 ` ```javascript `
-- 内容必须是合法 JSON（双引号字符串，无尾随逗号，无注释）
-- `series` 数组必须存在且至少包含一个元素，`type` 字段必填
-- 图表标题、坐标轴标签等文字使用用户的实际数据，不要使用占位符
-- 调色板由主题自动提供，无需在 option 中手动指定 `color` 字段
+**Rules:**
+- Always use the ` ```chart ` marker — do not use ` ```json ` or ` ```javascript `
+- Content must be valid JSON (double-quoted strings, no trailing commas, no comments)
+- The `series` array must exist with at least one element; the `type` field is required
+- Use actual user data for chart titles, axis labels, etc. — do not use placeholders
+- The color palette is provided automatically by the theme; do not manually specify a `color` field in the option
 
-**支持的图表类型（series[0].type）：**
+**Supported chart types (series[0].type):**
 `line` | `bar` | `pie` | `scatter` | `radar` | `funnel` | `gauge` | `heatmap` | `treemap` | `candlestick` | `boxplot` | `sankey` | `graph`
 

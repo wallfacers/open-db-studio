@@ -1,3 +1,0 @@
-[DEPRECATED] This file is no longer used.
-SQL optimization now uses the ACP agent session with AGENTS_OPTIMIZE.md.
-See src-tauri/assets/AGENTS_OPTIMIZE.md for the current prompt.

@@ -32,5 +32,5 @@ create_metric(connection_id: integer, name: string, display_name: string, table_
 ## Write Operation Guidelines
 
 - All writes are recorded in `change_history` for undo support
-- After a successful write, inform the user they can type "撤销" to undo
+- After a successful write, inform the user they can type "undo" to revert
 - In Auto OFF mode, the tool will return an error — route through ACP `request_permission` instead

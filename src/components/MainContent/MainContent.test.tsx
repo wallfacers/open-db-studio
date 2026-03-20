@@ -36,9 +36,6 @@ vi.mock('../../store', async () => {
     useAiStore: () => ({
       explainSql: vi.fn(),
       isExplaining: {},
-      optimizeSql: vi.fn(),
-      isOptimizing: {},
-      cancelOptimizeSql: vi.fn(),
       cancelExplainSql: vi.fn(),
     }),
   };

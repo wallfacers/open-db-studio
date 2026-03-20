@@ -241,8 +241,7 @@
     "executeSelected": "执行选中",
     "toggleComment": "注释/取消注释",
     "findReplace": "查找/替换",
-    "explainSql": "解释 SQL",
-    "optimizeSql": "优化 SQL"
+    "explainSql": "解释 SQL"
   },
   "mainContent": {
     "selectConnectionFirst": "请先在左侧选择一个数据库连接",
@@ -264,15 +263,10 @@
     "rows": "行",
     "executionOverviewInfo": "执行概览信息",
     "aiExplanation": "AI 解释",
-    "optimizeSql": "⚡ 优化 SQL",
-    "stopOptimizing": "停止优化",
     "sqlExplanation": "SQL 解释",
     "stopExplaining": "停止解释",
     "clickToExplain": "点击 💡 开始解释 SQL",
     "analyzing": "AI 正在分析...",
-    "optimizing": "优化中...",
-    "aiOptimizeFailed": "AI 优化失败，请检查 LLM 配置",
-    "aiOptimization": "AI 优化建议",
     "aiDiagnosis": "AI 诊断：",
     "noActiveEditor": "没有活动的编辑器",
     "selectItemToView": "选择一个表或查询来查看",

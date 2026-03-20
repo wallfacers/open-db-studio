@@ -91,7 +91,7 @@ export function buildErrorContext(
         : configs.find((c: any) => c.is_default);
       const reqType = lastOperationContext?.aiRequestType ?? 'chat';
       const reqTypeLabel: Record<string, string> = {
-        generate: '生成 SQL', explain: '解释 SQL', optimize: '优化 SQL',
+        generate: '生成 SQL', explain: '解释 SQL',
         create_table: 'AI 建表', chat: '对话',
       };
 

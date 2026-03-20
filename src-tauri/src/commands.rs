@@ -693,30 +693,6 @@ pub async fn reorder_groups(items: Vec<crate::db::models::ReorderItem>) -> AppRe
 
 // ============ AI 高级命令 ============
 
-/// SQL 优化（旧 ACP 版本）：已迁移到 agent_optimize_sql，此桩函数保留兼容性。
-#[tauri::command]
-pub async fn ai_optimize_sql(
-    _sql: String,
-    _connection_id: Option<i64>,
-    _database: Option<String>,
-    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
-    _state: tauri::State<'_, crate::AppState>,
-) -> AppResult<()> {
-    let _ = channel.send(crate::llm::StreamEvent::Error {
-        message: "ACP mode is deprecated. Please use serve mode (agent_optimize_sql).".into(),
-    });
-    let _ = channel.send(crate::llm::StreamEvent::Done);
-    Ok(())
-}
-
-/// 取消 SQL 优化 ACP session（旧版，已废弃）
-#[tauri::command]
-pub async fn cancel_optimize_acp_session(
-    _state: tauri::State<'_, crate::AppState>,
-) -> AppResult<()> {
-    Ok(())
-}
-
 /// SQL 解释（旧 ACP 版本）：已迁移到 agent_explain_sql，此桩函数保留兼容性。
 #[tauri::command]
 pub async fn ai_explain_sql_acp(
@@ -3432,98 +3408,6 @@ async fn agent_explain_sql_inner(
 }
 
 #[tauri::command]
-pub async fn agent_optimize_sql(
-    sql: String,
-    connection_id: Option<i64>,
-    database: Option<String>,
-    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
-    state: tauri::State<'_, crate::AppState>,
-) -> AppResult<()> {
-    let result = agent_optimize_sql_inner(sql, connection_id, database, &channel, &state).await;
-    if let Err(ref e) = result {
-        let _ = channel.send(crate::llm::StreamEvent::Error { message: e.to_string() });
-    }
-    result
-}
-
-async fn agent_optimize_sql_inner(
-    sql: String,
-    connection_id: Option<i64>,
-    database: Option<String>,
-    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
-    state: &tauri::State<'_, crate::AppState>,
-) -> AppResult<()> {
-    let port = state.serve_port;
-
-    // 1. 并发处理：若上次请求仍在进行，先 abort 旧 session
-    {
-        let mut guard = state.current_optimize_session_id.lock().await;
-        if let Some(old_id) = guard.take() {
-            log::info!("[agent_optimize_sql] Aborting previous optimize session: {}", old_id);
-            cleanup_temp_sql_session(port, &old_id).await;
-        }
-    }
-
-    // 2. 获取当前 LLM 配置
-    let config = crate::db::get_default_llm_config()?
-        .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
-
-    // 3. 构建 prompt_text（与旧版格式相同）
-    let conn_context = if let Some(conn_id) = connection_id {
-        let driver = crate::db::get_connection_config(conn_id)
-            .map(|c| c.driver)
-            .unwrap_or_else(|_| "mysql".to_string());
-        let db_line = match &database {
-            Some(db) if !db.is_empty() => format!("当前数据库: {}\n", db),
-            _ => String::new(),
-        };
-        format!("当前数据库连接 ID: {}\n数据库类型: {}\n{}\n", conn_id, driver, db_line)
-    } else {
-        String::new()
-    };
-    let prompt_text = format!("{}优化以下 SQL：\n\n{}", conn_context, sql);
-
-    // 4. 创建临时 session，写入 agent_sessions(is_temp=1)
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let title = format!("sql-optimize-{}", ts);
-    let session_id = crate::agent::client::create_session(port, Some(&title)).await?;
-    crate::db::insert_agent_session(&session_id, Some(&title), None, true)?;
-
-    // 5. 存入 AppState
-    {
-        let mut guard = state.current_optimize_session_id.lock().await;
-        *guard = Some(session_id.clone());
-    }
-
-    // 6. 通过 /event SSE 流式输出（先订阅 SSE，再后台发消息）
-    let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
-    let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
-    let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
-    let stream_result = crate::agent::stream::stream_global_events(
-        port,
-        &session_id,
-        &prompt_text,
-        model_opt,
-        provider_opt,
-        Some("sql-optimize"),
-        channel,
-    )
-    .await;
-
-    // 8. finally 路径：无论成功/失败，清理 session
-    cleanup_temp_sql_session(port, &session_id).await;
-    {
-        let mut guard = state.current_optimize_session_id.lock().await;
-        if guard.as_deref() == Some(&session_id) {
-            *guard = None;
-        }
-    }
-
-    stream_result
-}
-
-#[tauri::command]
 pub async fn cancel_explain_sql(
     state: tauri::State<'_, crate::AppState>,
 ) -> AppResult<()> {
@@ -3533,22 +3417,6 @@ pub async fn cancel_explain_sql(
     };
     if let Some(id) = session_id {
         log::info!("[cancel_explain_sql] Cancelling explain session: {}", id);
-        // 忽略错误：取消操作失败不影响后续使用
-        cleanup_temp_sql_session(state.serve_port, &id).await;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn cancel_optimize_sql(
-    state: tauri::State<'_, crate::AppState>,
-) -> AppResult<()> {
-    let session_id = {
-        let mut guard = state.current_optimize_session_id.lock().await;
-        guard.take()
-    };
-    if let Some(id) = session_id {
-        log::info!("[cancel_optimize_sql] Cancelling optimize session: {}", id);
         // 忽略错误：取消操作失败不影响后续使用
         cleanup_temp_sql_session(state.serve_port, &id).await;
     }

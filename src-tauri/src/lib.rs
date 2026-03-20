@@ -207,6 +207,7 @@ pub fn run() {
             commands::search_graph,
             commands::get_graph_edges,
             commands::update_node_alias,
+            commands::update_graph_node_metadata,
             commands::ai_generate_metrics,
             commands::list_tables_with_column_count,
             commands::ai_generate_sql_v2,

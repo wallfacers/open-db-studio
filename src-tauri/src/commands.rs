@@ -2181,6 +2181,20 @@ pub async fn update_node_alias(
     Ok(())
 }
 
+/// 更新图谱节点的 metadata（用于 Link Node description 编辑）
+#[tauri::command]
+pub async fn update_graph_node_metadata(
+    node_id: String,
+    metadata: String,
+) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "UPDATE graph_nodes SET metadata = ?1 WHERE id = ?2",
+        rusqlite::params![metadata, node_id],
+    )?;
+    Ok(())
+}
+
 // ============ 跨数据源迁移 ============
 
 #[allow(dead_code)]

@@ -36,9 +36,10 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
 
   // 同步初始 description
   React.useEffect(() => {
-    setDescription(meta.description ?? '');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id]);
+    let m: LinkMeta = {};
+    try { m = JSON.parse(node.metadata || '{}'); } catch { /* ignore */ }
+    setDescription(m.description ?? '');
+  }, [node.metadata]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -62,7 +63,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
     { label: t('graphExplorer.nodeDetail.linkCardinality'), value: meta.cardinality ?? '-', color: '#f59e0b' },
     { label: t('graphExplorer.nodeDetail.linkVia'), value: meta.via ?? '-', color: '#3794ff' },
     { label: t('graphExplorer.nodeDetail.linkOnDelete'), value: meta.on_delete ?? '-' },
-    { label: 'Weight', value: meta.weight?.toFixed(2) ?? '-' },
+    { label: t('graphExplorer.nodeDetail.linkWeight'), value: meta.weight?.toFixed(2) ?? '-' },
   ];
 
   return (

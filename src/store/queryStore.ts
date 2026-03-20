@@ -195,9 +195,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   setActiveTabId: (tabId) => set({ activeTabId: tabId }),
 
   toggleGhostText: (tabId) => {
+    const globalDefault = useAppStore.getState().ghostTextDefault ?? true;
     set(s => ({
       tabs: s.tabs.map(t =>
-        t.id === tabId ? { ...t, ghostTextEnabled: !(t.ghostTextEnabled ?? true) } : t
+        t.id === tabId ? { ...t, ghostTextEnabled: !(t.ghostTextEnabled ?? globalDefault) } : t
       ),
     }));
   },

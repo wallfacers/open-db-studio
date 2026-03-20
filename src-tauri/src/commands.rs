@@ -3514,8 +3514,16 @@ pub async fn delete_graph_node(node_id: String) -> AppResult<()> {
     ).ok();
     match source.as_deref() {
         Some("user") => {
+            // 软删除节点
             conn.execute(
                 "UPDATE graph_nodes SET is_deleted = 1 WHERE id = ?1",
+                [&node_id],
+            )?;
+            // 物理删除该节点相关的 user/comment 边（避免悬空边）
+            conn.execute(
+                "DELETE FROM graph_edges
+                 WHERE (from_node = ?1 OR to_node = ?1)
+                   AND source IN ('user', 'comment')",
                 [&node_id],
             )?;
             Ok(())
@@ -3599,18 +3607,29 @@ pub async fn update_graph_edge(
                         "edge_type '{}' 不合法", et
                     )));
                 }
-                conn.execute(
-                    "UPDATE graph_edges SET edge_type = ?1 WHERE id = ?2",
-                    rusqlite::params![et, edge_id],
-                )?;
             }
-            if let Some(w) = weight {
-                conn.execute(
-                    "UPDATE graph_edges SET weight = ?1 WHERE id = ?2",
-                    rusqlite::params![w, edge_id],
-                )?;
+            // 使用事务确保两次 UPDATE 的原子性
+            conn.execute_batch("BEGIN")?;
+            let result = (|| -> AppResult<()> {
+                if let Some(ref et) = edge_type {
+                    conn.execute(
+                        "UPDATE graph_edges SET edge_type = ?1 WHERE id = ?2",
+                        rusqlite::params![et, edge_id],
+                    )?;
+                }
+                if let Some(w) = weight {
+                    conn.execute(
+                        "UPDATE graph_edges SET weight = ?1 WHERE id = ?2",
+                        rusqlite::params![w, edge_id],
+                    )?;
+                }
+                Ok(())
+            })();
+            match &result {
+                Ok(_)  => { let _ = conn.execute_batch("COMMIT"); }
+                Err(_) => { let _ = conn.execute_batch("ROLLBACK"); }
             }
-            Ok(())
+            result
         }
         Some(s) => Err(crate::AppError::Other(format!(
             "边 source='{}' 不允许修改", s

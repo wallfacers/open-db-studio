@@ -143,13 +143,16 @@ jobs:
 
       # ── macOS 签名（可选，secrets 未设置时跳过）──
       - name: Import macOS signing certificate
-        if: |
-          (matrix.platform == 'macos-latest' || matrix.platform == 'macos-13') &&
-          secrets.APPLE_CERTIFICATE != ''
+        if: matrix.platform == 'macos-latest' || matrix.platform == 'macos-13'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "APPLE_CERTIFICATE not configured, skipping signing setup."
+            exit 0
+          fi
+
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 

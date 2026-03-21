@@ -50,6 +50,7 @@ open-db-studio/
 | [docs/DESIGN.md](./docs/DESIGN.md) | UI/UX 设计规范 |
 | [docs/FRONTEND.md](./docs/FRONTEND.md) | 前端开发规范与组件说明 |
 | [docs/PLANS.md](./docs/PLANS.md) | 当前开发计划与路线图 |
+| [docs/BRANCH_STRATEGY.md](./docs/BRANCH_STRATEGY.md) | 分支策略与发版规范 |
 | [docs/QUALITY_SCORE.md](./docs/QUALITY_SCORE.md) | 代码质量标准 |
 | [docs/SECURITY.md](./docs/SECURITY.md) | 安全策略（API Key、连接凭证） |
 | [docs/design-docs/datasource-arch.md](./docs/design-docs/datasource-arch.md) | 多数据源架构设计 |
@@ -96,6 +97,8 @@ await invoke('ai_generate_sql', { prompt: '查询用户表前10条', connectionI
 - 时间戳使用 ISO 8601 字符串存储
 - 新增 Rust 命令后必须在 `lib.rs` 的 `generate_handler![]` 中注册
 - 修改代码后检查 [docs/PLANS.md](./docs/PLANS.md) 中的文档新鲜度触发表
+- 分支策略：日常开发在 `dev` 分支，`master` 仅用于发版，详见 [docs/BRANCH_STRATEGY.md](./docs/BRANCH_STRATEGY.md)
+- 发版流程：合并 `dev` → `master` 触发 CI 自动构建三平台安装包并打 tag，详见 `.github/workflows/release.yml`
 
 ## 任务开始前检查清单
 

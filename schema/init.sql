@@ -276,13 +276,14 @@ CREATE TABLE IF NOT EXISTS seatunnel_connections (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
--- 用户自定义分类（最大嵌套深度 3 层，由前端 CategoryEditModal 校验）
+-- 用户自定义分类（支持无限嵌套；根目录必须有 connection_id 归属集群）
 CREATE TABLE IF NOT EXISTS seatunnel_categories (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  parent_id  INTEGER REFERENCES seatunnel_categories(id) ON DELETE CASCADE,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL,
+  parent_id     INTEGER REFERENCES seatunnel_categories(id) ON DELETE CASCADE,
+  connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE CASCADE,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 -- SeaTunnel Job 定义

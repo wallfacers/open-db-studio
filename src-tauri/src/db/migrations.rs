@@ -461,6 +461,24 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V12: st_categories 新增 connection_id（与 seatunnel_connections 关联）
+    {
+        let has_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('seatunnel_categories') WHERE name = 'connection_id'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_col {
+            conn.execute_batch(
+                "ALTER TABLE seatunnel_categories ADD COLUMN connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE CASCADE;"
+            )?;
+            log::info!("V12: added seatunnel_categories.connection_id column");
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

@@ -106,24 +106,37 @@ pub fn run() {
                 }
 
                 // 3. 解析 opencode-cli sidecar 路径并启动 serve 进程
-                // Tauri 2.x sidecar 命名规范：binaries/opencode-cli-{target_triple}
+                // Tauri 2.x sidecar 命名规范：binaries/opencode-cli-{target_triple}[.exe]
                 // target_triple 格式: {arch}-{vendor}-{os}
                 let target_triple = tauri::utils::platform::target_triple()
                     .expect("Failed to get target triple");
+                let exe_suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+                let binary_name = format!("opencode-cli-{}{}", target_triple, exe_suffix);
+
                 let cli_path = match handle.path().resource_dir() {
                     Ok(resource_dir) => {
-                        resource_dir.join("binaries").join(format!("opencode-cli-{}", target_triple))
+                        let release_path = resource_dir.join("binaries").join(&binary_name);
+                        if release_path.exists() {
+                            release_path
+                        } else {
+                            // dev 模式: resource_dir = target/debug/
+                            // 上移两级到 src-tauri/，再加 binaries/
+                            resource_dir
+                                .parent()
+                                .and_then(|p| p.parent())
+                                .map(|p| p.join("binaries").join(&binary_name))
+                                .unwrap_or(release_path)
+                        }
                     }
                     Err(e) => {
                         log::warn!("Failed to get resource dir for opencode-cli sidecar: {}", e);
-                        // 降级：尝试当前目录（兼容 dev 模式）
+                        // 降级：从当前可执行文件上移三级到 src-tauri/
                         std::env::current_exe()
                             .expect("Failed to get current exe path")
-                            .parent()
-                            .expect("Failed to get parent directory")
-                            .join("src-tauri")
+                            .parent().and_then(|p| p.parent()).and_then(|p| p.parent())
+                            .expect("Failed to resolve src-tauri directory")
                             .join("binaries")
-                            .join(format!("opencode-cli-{}", target_triple))
+                            .join(&binary_name)
                     }
                 };
 

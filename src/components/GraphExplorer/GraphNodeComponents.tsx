@@ -25,6 +25,10 @@ export interface GraphNodeData extends Record<string, unknown> {
   onHighlightLinks?: (nodeId: string) => void;
   linkCount?: number;
   tableColumns?: ColumnInfo[];
+  isHighlighted?: boolean;
+  isDimmed?: boolean;
+  isPathFrom?: boolean;
+  isPathTo?: boolean;
 }
 
 interface NodeField { name: string; type?: string; is_primary_key?: boolean; }
@@ -42,6 +46,18 @@ function parseNodeFields(metadata: string | null): NodeField[] {
     }
   } catch { /* ignore */ }
   return [];
+}
+
+function NodeRoleBadge({ isPathFrom, isPathTo }: { isPathFrom?: boolean; isPathTo?: boolean }) {
+  if (!isPathFrom && !isPathTo) return null;
+  return (
+    <div
+      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold z-10"
+      style={{ background: isPathFrom ? '#4ade80' : '#5eb2f7', color: '#0d1117' }}
+    >
+      {isPathFrom ? 'S' : 'T'}
+    </div>
+  );
 }
 
 function BaseNode({
@@ -71,7 +87,12 @@ function BaseNode({
   };
 
   return (
-    <div className={`w-60 rounded-md border bg-[#111922] shadow-lg ${borderClass} group`}>
+    <div
+      className={`w-60 rounded-md border bg-[#111922] shadow-lg ${borderClass} group relative transition-opacity ${
+        data.isDimmed ? 'opacity-30' : ''
+      } ${data.isHighlighted ? 'accent-glow' : ''}`}
+    >
+      <NodeRoleBadge isPathFrom={data.isPathFrom as boolean | undefined} isPathTo={data.isPathTo as boolean | undefined} />
       <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
 
       {/* Header: icon + name + counts */}
@@ -148,7 +169,12 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
   const hiddenCount = tableColumns.length - COLS_PREVIEW;
 
   return (
-    <div className="w-60 rounded-md border border-[#3794ff] bg-[#111922] shadow-lg group">
+    <div
+      className={`w-60 rounded-md border border-[#3794ff] bg-[#111922] shadow-lg group relative transition-opacity ${
+        nodeData.isDimmed ? 'opacity-30' : ''
+      } ${nodeData.isHighlighted ? 'accent-glow' : ''}`}
+    >
+      <NodeRoleBadge isPathFrom={nodeData.isPathFrom as boolean | undefined} isPathTo={nodeData.isPathTo as boolean | undefined} />
       <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
 
       {/* Header */}

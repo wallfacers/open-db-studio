@@ -37,6 +37,7 @@ import { NodeDetail } from './NodeDetail';
 import { AliasEditor } from './AliasEditor';
 import { DropdownSelect } from '../common/DropdownSelect';
 import type { GraphNode } from './useGraphData';
+import { GraphSearchPanel } from './GraphSearchPanel';
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
@@ -221,6 +222,15 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const [edgeTooltip, setEdgeTooltip] = useState<EdgeTooltip | null>(null);
   const [showAliasEditorForNode, setShowAliasEditorForNode] = useState<string | null>(null);
 
+  // ── Search panel & path query state ────────────────────────────────────────
+  const [activePanel, setActivePanel] = useState<'detail' | 'search' | null>(null);
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
+  const [highlightedEdgeIds, setHighlightedEdgeIds] = useState<Set<string>>(new Set());
+  const [pathFrom, setPathFrom] = useState<GraphNode | null>(null);
+  const [pathTo, setPathTo] = useState<GraphNode | null>(null);
+  const [subgraphMode, setSubgraphMode] = useState(false);
+  const [subgraphNodeIds, setSubgraphNodeIds] = useState<Set<string>>(new Set());
+
   const [editMode, setEditMode] = useState(false);
 
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
@@ -340,7 +350,11 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     return map;
   }, [rawNodes]);
 
-  const clustered = useMemo(() => clusterByConnection(filteredRaw), [filteredRaw]);
+  const sourceNodes = useMemo(
+    () => subgraphMode ? filteredRaw.filter(n => subgraphNodeIds.has(n.id)) : filteredRaw,
+    [filteredRaw, subgraphMode, subgraphNodeIds],
+  );
+  const clustered = useMemo(() => clusterByConnection(sourceNodes), [sourceNodes]);
 
   const nodeNameMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
@@ -391,8 +405,25 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── Sync to React Flow whenever filtered data changes ───────────────────────
   useEffect(() => {
-    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap);
-    const flowEdges = toFlowEdges(filteredEdges);
+    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap).map(n => ({
+      ...n,
+      data: {
+        ...n.data,
+        isHighlighted: highlightedNodeIds.has(n.id),
+        isDimmed: highlightedNodeIds.size > 0 && !highlightedNodeIds.has(n.id),
+        isPathFrom: pathFrom?.id === n.id,
+        isPathTo: pathTo?.id === n.id,
+      },
+    }));
+    const flowEdges = toFlowEdges(filteredEdges).map(e => {
+      if (highlightedEdgeIds.has(e.id)) {
+        return { ...e, style: { ...e.style, stroke: '#00c9a7', strokeWidth: 3 }, animated: true };
+      }
+      if (highlightedEdgeIds.size > 0) {
+        return { ...e, style: { ...e.style, opacity: 0.2 } };
+      }
+      return e;
+    });
     const { nodes: laid, edges: laidEdges } = buildLayout(flowNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
@@ -401,7 +432,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
     }, 80);
     return () => clearTimeout(timerId);
-  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView]);
+  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo]);
 
   // ── Auto-layout button ──────────────────────────────────────────────────────
   const handleAutoLayout = useCallback(() => {
@@ -486,11 +517,39 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     setSelectedNode(null);
   }, [refetch]);
 
+  // ── Search panel handlers ───────────────────────────────────────────────────
+
+  const handleHighlightNode = useCallback((nodeId: string) => {
+    setHighlightedNodeIds(new Set([nodeId]));
+    setHighlightedEdgeIds(new Set());
+    setTimeout(() => setHighlightedNodeIds(new Set()), 2000);
+  }, []);
+
+  const handleHighlightPath = useCallback((nodeIds: Set<string>, edgeIds: Set<string>) => {
+    setHighlightedNodeIds(new Set(nodeIds));
+    setHighlightedEdgeIds(new Set(edgeIds));
+  }, []);
+
+  const handleEnterSubgraph = useCallback((nodeIds: Set<string>) => {
+    setSubgraphNodeIds(nodeIds);
+    setSubgraphMode(true);
+  }, []);
+
+  const handleExitSubgraph = useCallback(() => {
+    setSubgraphMode(false);
+    setSubgraphNodeIds(new Set());
+    setHighlightedNodeIds(new Set());
+    setHighlightedEdgeIds(new Set());
+  }, []);
+
   // ── Node click ──────────────────────────────────────────────────────────────
   const onNodeClick: NodeMouseHandler = useCallback(
     (_evt, node) => {
       const raw = rawNodes.find((n) => n.id === node.id);
-      if (raw) setSelectedNode(raw);
+      if (raw) {
+        setSelectedNode(raw);
+        setActivePanel('detail');
+      }
     },
     [rawNodes],
   );
@@ -499,6 +558,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const onPaneClick = useCallback((event: React.MouseEvent) => {
     if (event.detail >= 2) {
       setSelectedNode(null);
+      setActivePanel(null);
     }
   }, []);
 
@@ -597,6 +657,26 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Search panel toggle */}
+          <button
+            onClick={() => {
+              if (activePanel === 'search') {
+                setActivePanel(null);
+              } else {
+                setSelectedNode(null);
+                setActivePanel('search');
+              }
+            }}
+            title="实体搜索 / 路径查询"
+            className={`flex items-center gap-1 px-2 py-1 text-xs border rounded transition-colors ${
+              activePanel === 'search'
+                ? 'text-[#00c9a7] bg-[#0a1f18] border-[#00a98f55]'
+                : 'text-[#7a9bb8] hover:text-[#c8daea] bg-[#111922] hover:bg-[#1e2d42] border-[#1e2d42]'
+            }`}
+          >
+            <Search size={13} />
+          </button>
+
           {/* Edit mode toggle */}
           <button
             onClick={() => setEditMode(v => !v)}
@@ -753,14 +833,34 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         </div>
 
         {/* Node detail panel */}
-        {selectedNode && (
+        {activePanel === 'detail' && selectedNode && (
           <NodeDetail
             node={selectedNode}
             edges={filteredEdges}
             nodeNameMap={nodeNameMap}
-            onClose={() => setSelectedNode(null)}
+            onClose={() => { setSelectedNode(null); setActivePanel(null); }}
             onAliasUpdated={handleAliasUpdated}
             onRefresh={refetch}
+          />
+        )}
+
+        {/* Search / Path panel */}
+        {activePanel === 'search' && (
+          <GraphSearchPanel
+            connectionId={internalConnId}
+            visibleNodeIds={visibleNodeIds}
+            pathFrom={pathFrom}
+            pathTo={pathTo}
+            subgraphMode={subgraphMode}
+            onClose={() => setActivePanel(null)}
+            onSetPathFrom={setPathFrom}
+            onSetPathTo={setPathTo}
+            onClearPathFrom={() => setPathFrom(null)}
+            onClearPathTo={() => setPathTo(null)}
+            onHighlightNode={handleHighlightNode}
+            onHighlightPath={handleHighlightPath}
+            onEnterSubgraph={handleEnterSubgraph}
+            onExitSubgraph={handleExitSubgraph}
           />
         )}
       </div>

@@ -47,11 +47,12 @@ async fn wait_for_health(client: &reqwest::Client, port: u16) -> bool {
 /// provider, mcp, and model config.  `OPENCODE_CONFIG_DIR` points to the
 /// app data `opencode/` directory so that `opencode/agents/` is picked up.
 fn spawn_child(
+    cli_path: &std::path::Path,
     opencode_dir: &std::path::Path,
     port: u16,
 ) -> std::io::Result<tokio::process::Child> {
     let config_file = opencode_dir.join("opencode.json");
-    tokio::process::Command::new("opencode-cli")
+    tokio::process::Command::new(cli_path)
         .args(["serve", "--port", &port.to_string()])
         .current_dir(opencode_dir)
         .env("OPENCODE_CONFIG", &config_file)
@@ -60,6 +61,10 @@ fn spawn_child(
         .env("OPENCODE_DISABLE_AUTOUPDATE", "true")
         .kill_on_drop(false) // we manage lifecycle explicitly
         .spawn()
+        .map_err(|e| std::io::Error::new(
+            e.kind(),
+            format!("Failed to spawn opencode-cli at {}: {}", cli_path.display(), e)
+        ))
 }
 
 /// Core logic: attempt to start serve once.
@@ -67,6 +72,7 @@ fn spawn_child(
 /// Ok(None) when opencode is already running externally,
 /// Err on failure.
 async fn try_start(
+    cli_path: &std::path::Path,
     opencode_dir: &std::path::Path,
     port: u16,
 ) -> AppResult<Option<tokio::process::Child>> {
@@ -86,15 +92,25 @@ async fn try_start(
     std::fs::create_dir_all(opencode_dir)
         .map_err(|e| crate::AppError::Other(format!("Failed to create agent dir: {}", e)))?;
 
-    let child = spawn_child(opencode_dir, port)
-        .map_err(|e| crate::AppError::Other(format!("Failed to spawn opencode-cli: {}", e)))?;
+    // 存在性检查：二进制不存在说明打包有问题
+    if !cli_path.exists() {
+        return Err(crate::AppError::Other(format!(
+            "opencode-cli sidecar not found at expected path: {}. \
+             This is a packaging error — please reinstall the application.",
+            cli_path.display()
+        )));
+    }
+
+    let child = spawn_child(cli_path, opencode_dir, port)
+        .map_err(|e| crate::AppError::Other(e.to_string()))?;
 
     if !wait_for_health(&client, port).await {
-        return Err(crate::AppError::Other(
+        return Err(crate::AppError::Other(format!(
             "opencode serve did not become healthy within 10s. \
-             Please check that opencode-cli is installed and accessible in PATH."
-                .to_string(),
-        ));
+             Bundled opencode-cli may be corrupted or incompatible with this system. \
+             Binary path: {}",
+            cli_path.display()
+        )));
     }
 
     log::info!("opencode serve started successfully on port {}", port);
@@ -102,7 +118,12 @@ async fn try_start(
 }
 
 /// Background task that monitors the serve child process and restarts it on crash.
-async fn crash_monitor(app_handle: tauri::AppHandle, opencode_dir: std::path::PathBuf, port: u16) {
+async fn crash_monitor(
+    app_handle: tauri::AppHandle,
+    opencode_dir: std::path::PathBuf,
+    port: u16,
+    cli_path: std::path::PathBuf,
+) {
     let mut retry_count: u32 = 0;
 
     loop {
@@ -140,7 +161,7 @@ async fn crash_monitor(app_handle: tauri::AppHandle, opencode_dir: std::path::Pa
         );
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-        match try_start(&opencode_dir, port).await {
+        match try_start(&cli_path, &opencode_dir, port).await {
             Ok(new_child_opt) => {
                 let state = app_handle.state::<crate::AppState>();
                 let mut guard = state.serve_child.lock().await;
@@ -173,10 +194,11 @@ pub async fn start_serve(
     app_handle: tauri::AppHandle,
     app_data_dir: &std::path::Path,
     port: u16,
+    cli_path: std::path::PathBuf,
 ) -> AppResult<()> {
     let opencode_dir = app_data_dir.join("opencode");
 
-    match try_start(&opencode_dir, port).await {
+    match try_start(&cli_path, &opencode_dir, port).await {
         Ok(child_opt) => {
             {
                 let state = app_handle.state::<crate::AppState>();
@@ -187,8 +209,9 @@ pub async fn start_serve(
             // Spawn crash monitor in background.
             let handle_clone = app_handle.clone();
             let dir_clone = opencode_dir.clone();
+            let path_clone = cli_path.clone();
             tauri::async_runtime::spawn(async move {
-                crash_monitor(handle_clone, dir_clone, port).await;
+                crash_monitor(handle_clone, dir_clone, port, path_clone).await;
             });
 
             Ok(())

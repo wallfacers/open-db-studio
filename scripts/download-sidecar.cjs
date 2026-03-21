@@ -24,22 +24,22 @@ const PLATFORMS = {
   'win32-x64': {
     archive: 'opencode-windows-x64.zip',
     exeName: 'opencode.exe',
-    targetName: 'opencode-cli-x86_64-pc-windows-msvc.exe'
+    targetName: 'opencode-cli.exe'
   },
   'darwin-x64': {
     archive: 'opencode-darwin-x64.zip',
     exeName: 'opencode',
-    targetName: 'opencode-cli-x86_64-apple-darwin'
+    targetName: 'opencode-cli'
   },
   'darwin-arm64': {
     archive: 'opencode-darwin-arm64.zip',
     exeName: 'opencode',
-    targetName: 'opencode-cli-aarch64-apple-darwin'
+    targetName: 'opencode-cli'
   },
   'linux-x64': {
     archive: 'opencode-linux-x64.tar.gz',
     exeName: 'opencode',
-    targetName: 'opencode-cli-x86_64-unknown-linux-gnu'
+    targetName: 'opencode-cli'
   }
 };
 

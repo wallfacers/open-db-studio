@@ -29,6 +29,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
   const confirm = useConfirm();
   const { cancelTask, retryTask, removeTask } = useTaskStore();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +37,13 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
       logEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [task.logs, isExpanded]);
+
+  useEffect(() => {
+    const isActive = task.status === 'running' || task.status === 'pending';
+    if (!isActive) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [task.status]);
 
   const config = statusConfig[task.status];
   const StatusIcon = config.icon;
@@ -45,7 +53,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
     const isFinished = task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled';
     const end = task.endTime
       ? new Date(task.endTime).getTime()
-      : isFinished ? start : Date.now();
+      : isFinished ? start : now;
     const seconds = Math.floor((end - start) / 1000);
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);

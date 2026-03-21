@@ -76,10 +76,14 @@ export const TaskCenter: React.FC = () => {
             {t('taskCenter.empty')}
           </div>
         ) : (
-          <div className="columns-2 gap-3" style={{ columnFill: 'balance' }}>
-            {filteredTasks.map((task) => (
-              <div key={task.id} className="break-inside-avoid mb-3">
-                <TaskItem task={task} />
+          <div className="flex gap-3">
+            {[0, 1].map((colIndex) => (
+              <div key={colIndex} className="flex-1 flex flex-col gap-3">
+                {filteredTasks
+                  .filter((_, i) => i % 2 === colIndex)
+                  .map((task) => (
+                    <TaskItem key={task.id} task={task} />
+                  ))}
               </div>
             ))}
           </div>

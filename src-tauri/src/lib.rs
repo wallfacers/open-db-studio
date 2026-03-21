@@ -267,6 +267,7 @@ pub fn run() {
             commands::add_user_edge,
             commands::delete_graph_edge,
             commands::update_graph_edge,
+            commands::find_subgraph,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

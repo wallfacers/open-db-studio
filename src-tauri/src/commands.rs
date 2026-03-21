@@ -3637,3 +3637,47 @@ pub async fn update_graph_edge(
         None => Err(crate::AppError::Other(format!("边 '{}' 不存在", edge_id))),
     }
 }
+
+// ============ 图谱路径查询 ============
+
+#[tauri::command]
+pub async fn find_subgraph(
+    _app: tauri::AppHandle,
+    connection_id: i64,
+    from_node_id: String,
+    to_node_id: String,
+    max_hops: u8,
+) -> AppResult<crate::graph::query::SubGraph> {
+    // 1. 查询起点节点
+    let (from_type, from_name): (String, String) = {
+        let conn = crate::db::get().lock().unwrap();
+        conn.query_row(
+            "SELECT node_type, name FROM graph_nodes WHERE id=?1 AND is_deleted=0",
+            [&from_node_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| AppError::Other(format!("节点 {} 不存在", from_node_id)))?
+    };
+
+    // 2. 查询终点节点
+    let (to_type, to_name): (String, String) = {
+        let conn = crate::db::get().lock().unwrap();
+        conn.query_row(
+            "SELECT node_type, name FROM graph_nodes WHERE id=?1 AND is_deleted=0",
+            [&to_node_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| AppError::Other(format!("节点 {} 不存在", to_node_id)))?
+    };
+
+    // 3. 限制：仅支持 table 节点
+    if from_type != "table" || to_type != "table" {
+        return Err(AppError::Other(
+            "路径查询仅支持表节点（node_type='table'）".to_string(),
+        ));
+    }
+
+    // 4. 复用现有 BFS + LRU 缓存
+    let entities = vec![from_name, to_name];
+    crate::graph::query::find_relevant_subgraph(connection_id, &entities, max_hops).await
+}

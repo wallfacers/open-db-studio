@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force rebuild even if tag already exists"
+        required: false
+        default: "false"
 
 permissions:
   contents: write
@@ -48,7 +54,11 @@ jobs:
         id: check_tag
         run: |
           VERSION="${{ steps.read_version.outputs.version }}"
-          if git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q "refs/tags/v${VERSION}"; then
+          FORCE="${{ github.event.inputs.force }}"
+          if [ "$FORCE" = "true" ]; then
+            echo "Force mode enabled — skipping tag existence check."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q "refs/tags/v${VERSION}"; then
             echo "::warning::Tag v${VERSION} already exists — skipping build."
             echo "skip=true" >> $GITHUB_OUTPUT
           else

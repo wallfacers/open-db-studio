@@ -901,6 +901,7 @@
     "connection": "Connection",
     "noResults": "No matching results",
     "noJobs": "No categories or jobs",
+    "noConnections": "No cluster connections. Click '+ Connection' to add one.",
     "connectionModal": {
       "newTitle": "New Cluster Connection",
       "editTitle": "Edit Cluster Connection",
@@ -941,7 +942,14 @@
       "createCategoryFailed": "Failed to create category",
       "createJobFailed": "Failed to create job",
       "newCategory": "New Category",
-      "newJobName": "New Job"
+      "newJobName": "New Job",
+      "rename": "Rename",
+      "editConnection": "Edit Cluster Config",
+      "deleteConnection": "Delete Cluster",
+      "deleteConnectionTitle": "Delete Cluster",
+      "confirmDeleteConnection": "Are you sure you want to delete cluster \"{{name}}\"? All directories and jobs under it will also be deleted. This action cannot be undone.",
+      "deleteConnectionFailed": "Failed to delete cluster",
+      "renameFailed": "Rename failed"
     }
   }
 }

@@ -901,6 +901,7 @@
     "connection": "连接",
     "noResults": "无匹配结果",
     "noJobs": "暂无分类或 Job",
+    "noConnections": "暂无集群连接，点击「+ 连接」添加",
     "connectionModal": {
       "newTitle": "新建集群连接",
       "editTitle": "编辑集群连接",
@@ -941,7 +942,14 @@
       "createCategoryFailed": "创建分类失败",
       "createJobFailed": "创建 Job 失败",
       "newCategory": "新分类",
-      "newJobName": "新 Job"
+      "newJobName": "新 Job",
+      "rename": "重命名",
+      "editConnection": "编辑集群配置",
+      "deleteConnection": "删除集群",
+      "deleteConnectionTitle": "删除集群",
+      "confirmDeleteConnection": "确定要删除集群「{{name}}」吗？其下所有目录和 Job 也将被删除，此操作不可撤销。",
+      "deleteConnectionFailed": "删除集群失败",
+      "renameFailed": "重命名失败"
     }
   }
 }

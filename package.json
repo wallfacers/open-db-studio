@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "download:sidecar": "node scripts/download-sidecar.js",
+    "download:sidecar": "node scripts/download-sidecar.cjs",
     "build:skills": "cd src-tauri/skills/echarts-ai-skill && npm install && npm run build",
     "tauri:dev": "npm run download:sidecar && npm run build:skills && tauri dev",
     "tauri:build": "npm run download:sidecar && npm run build:skills && tauri build",

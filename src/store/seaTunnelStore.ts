@@ -103,12 +103,16 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
       // 2. 构建 category 节点（depth 相对 category 层，0-based）
       const catDepthMap = new Map<number, number>();
+      const catDepthVisiting = new Set<number>();
       function getCatDepth(catId: number): number {
         if (catDepthMap.has(catId)) return catDepthMap.get(catId)!;
+        if (catDepthVisiting.has(catId)) { catDepthMap.set(catId, 0); return 0; } // 循环引用检测，中断递归
+        catDepthVisiting.add(catId);
         const cat = categories.find(c => c.id === catId);
-        if (!cat || cat.parent_id === null) { catDepthMap.set(catId, 0); return 0; }
+        if (!cat || cat.parent_id === null) { catDepthMap.set(catId, 0); catDepthVisiting.delete(catId); return 0; }
         const d = getCatDepth(cat.parent_id) + 1;
         catDepthMap.set(catId, d);
+        catDepthVisiting.delete(catId);
         return d;
       }
 

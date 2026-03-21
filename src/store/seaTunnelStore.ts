@@ -28,17 +28,18 @@ export function flushSeaTunnelPersist(): void {
 }
 
 export interface STTreeNode {
-  id: string                      // "cat_1" | "job_5"
-  nodeType: 'category' | 'job'
+  id: string                      // "conn_1" | "cat_5" | "job_10"
+  nodeType: 'connection' | 'category' | 'job'
   label: string
   parentId: string | null
   meta: {
+    connectionId?: number
+    connectionUrl?: string
     categoryId?: number
     jobId?: number
-    connectionId?: number
     status?: string
     sortOrder?: number
-    depth?: number                // 嵌套深度（0-based），最大 2（3层）
+    depth?: number
   }
   hasChildren: boolean
   loaded: boolean
@@ -54,11 +55,14 @@ interface SeaTunnelStore {
   init: () => Promise<void>
   toggleExpand: (id: string) => void
   selectNode: (id: string | null) => void
-  createCategory: (name: string, parentId?: number) => Promise<void>
+  editConnection: (id: number, name: string, url: string, authToken?: string) => Promise<void>
+  deleteConnection: (id: number) => Promise<void>
+  createCategory: (name: string, parentCategoryId?: number, connectionId?: number) => Promise<void>
   renameCategory: (id: number, name: string) => Promise<void>
   deleteCategory: (id: number) => Promise<void>
-  createJob: (name: string, categoryId?: number) => Promise<number>
+  createJob: (name: string, categoryId?: number, connectionId?: number) => Promise<number>
   deleteJob: (id: number) => Promise<void>
+  renameJob: (id: number, name: string) => Promise<void>
   moveJob: (jobId: number, categoryId: number | null) => Promise<void>
   updateJobStatus: (jobId: number, status: string) => void
 }
@@ -73,68 +77,92 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
   init: async () => {
     set({ isInitializing: true, error: null });
     try {
-      // 加载持久化的展开状态
       const savedIds = await invoke<string | null>('get_ui_state', { key: 'seatunnel_tree_expanded_ids' });
       const expandedIds = new Set<string>(savedIds ? JSON.parse(savedIds) : []);
 
-      // 并行加载分类和 Job
-      const [categories, jobs] = await Promise.all([
-        invoke<Array<{id: number, name: string, parent_id: number | null, sort_order: number}>>('list_st_categories'),
-        invoke<Array<{id: number, name: string, category_id: number | null, connection_id: number | null, last_status: string | null}>>('list_st_jobs'),
+      const [connections, categories, jobs] = await Promise.all([
+        invoke<Array<{ id: number; name: string; url: string }>>('list_st_connections'),
+        invoke<Array<{ id: number; name: string; parent_id: number | null; connection_id: number | null; sort_order: number }>>('list_st_categories'),
+        invoke<Array<{ id: number; name: string; category_id: number | null; connection_id: number | null; last_status: string | null }>>('list_st_jobs'),
       ]);
 
       const nodes = new Map<string, STTreeNode>();
 
-      // 计算分类深度（辅助函数）
-      const depthMap = new Map<number, number>();
-      function getDepth(catId: number): number {
-        if (depthMap.has(catId)) return depthMap.get(catId)!;
+      // 1. 生成 connection 根节点
+      for (const c of connections) {
+        nodes.set(`conn_${c.id}`, {
+          id: `conn_${c.id}`,
+          nodeType: 'connection',
+          label: c.name,
+          parentId: null,
+          hasChildren: false,
+          loaded: true,
+          meta: { connectionId: c.id, connectionUrl: c.url },
+        });
+      }
+
+      // 2. 构建 category 节点（depth 相对 category 层，0-based）
+      const catDepthMap = new Map<number, number>();
+      function getCatDepth(catId: number): number {
+        if (catDepthMap.has(catId)) return catDepthMap.get(catId)!;
         const cat = categories.find(c => c.id === catId);
-        if (!cat || cat.parent_id === null) {
-          depthMap.set(catId, 0);
-          return 0;
-        }
-        const d = getDepth(cat.parent_id) + 1;
-        depthMap.set(catId, d);
+        if (!cat || cat.parent_id === null) { catDepthMap.set(catId, 0); return 0; }
+        const d = getCatDepth(cat.parent_id) + 1;
+        catDepthMap.set(catId, d);
         return d;
       }
 
-      // 构建分类节点
       for (const cat of categories) {
         const id = `cat_${cat.id}`;
-        const hasChildCategories = categories.some(c => c.parent_id === cat.id);
-        const hasChildJobs = jobs.some(j => j.category_id === cat.id);
+        let parentId: string | null = null;
+        if (cat.parent_id !== null) {
+          parentId = `cat_${cat.parent_id}`;
+        } else if (cat.connection_id !== null) {
+          parentId = `conn_${cat.connection_id}`;
+        } else {
+          continue; // 无归属的根目录，隐藏
+        }
         nodes.set(id, {
           id,
           nodeType: 'category',
           label: cat.name,
-          parentId: cat.parent_id ? `cat_${cat.parent_id}` : null,
-          hasChildren: hasChildCategories || hasChildJobs,
+          parentId,
+          hasChildren: false,
           loaded: true,
-          meta: {
-            categoryId: cat.id,
-            sortOrder: cat.sort_order,
-            depth: getDepth(cat.id),
-          },
+          meta: { categoryId: cat.id, sortOrder: cat.sort_order, depth: getCatDepth(cat.id) },
         });
       }
 
-      // 构建 Job 节点
+      // 3. 构建 Job 节点
       for (const job of jobs) {
         const id = `job_${job.id}`;
+        let parentId: string | null = null;
+        if (job.category_id !== null) {
+          parentId = `cat_${job.category_id}`;
+        } else if (job.connection_id !== null) {
+          parentId = `conn_${job.connection_id}`;
+        } else {
+          continue; // 孤儿 Job，隐藏
+        }
         nodes.set(id, {
           id,
           nodeType: 'job',
           label: job.name,
-          parentId: job.category_id ? `cat_${job.category_id}` : null,
+          parentId,
           hasChildren: false,
           loaded: true,
-          meta: {
-            jobId: job.id,
-            connectionId: job.connection_id ?? undefined,
-            status: job.last_status ?? undefined,
-          },
+          meta: { jobId: job.id, connectionId: job.connection_id ?? undefined, status: job.last_status ?? undefined },
         });
+      }
+
+      // 4. 更新 hasChildren
+      for (const node of nodes.values()) {
+        if (node.parentId) {
+          const parent = nodes.get(node.parentId);
+          if (parent) {
+            nodes.set(node.parentId, { ...parent, hasChildren: true });
+          }
+        }
       }
 
       set({ nodes, expandedIds, isInitializing: false });
@@ -155,14 +183,28 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
   selectNode: (id) => set({ selectedId: id }),
 
-  createCategory: async (name, parentId) => {
-    const newId = await invoke<number>('create_st_category', { name, parentId: parentId ?? null });
-    await get().init(); // 重新加载树
+  editConnection: async (id, name, url, authToken) => {
+    await invoke('update_st_connection', { id, name, url, authToken: authToken ?? null });
+    await get().init();
+  },
+
+  deleteConnection: async (id) => {
+    await invoke('delete_st_connection', { id });
+    await get().init();
+  },
+
+  createCategory: async (name, parentCategoryId, connectionId) => {
+    const newId = await invoke<number>('create_st_category', {
+      name,
+      parentId: parentCategoryId ?? null,
+      connectionId: connectionId ?? null,
+    });
+    await get().init();
     // 展开父节点（如有）
-    if (parentId) {
+    if (parentCategoryId) {
       set(s => {
         const next = new Set(s.expandedIds);
-        next.add(`cat_${parentId}`);
+        next.add(`cat_${parentCategoryId}`);
         persistSTExpandedIds(next);
         return { expandedIds: next };
       });
@@ -185,8 +227,12 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
     await get().init();
   },
 
-  createJob: async (name, categoryId) => {
-    const newId = await invoke<number>('create_st_job', { name, categoryId: categoryId ?? null });
+  createJob: async (name, categoryId, connectionId) => {
+    const newId = await invoke<number>('create_st_job', {
+      name,
+      categoryId: categoryId ?? null,
+      connectionId: connectionId ?? null,
+    });
     await get().init();
     set({ selectedId: `job_${newId}` });
     return newId;
@@ -197,6 +243,18 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
     set(s => {
       const next = new Map(s.nodes);
       next.delete(`job_${id}`);
+      return { nodes: next };
+    });
+  },
+
+  renameJob: async (id, name) => {
+    await invoke('rename_st_job', { id, name });
+    set(s => {
+      const key = `job_${id}`;
+      const node = s.nodes.get(key);
+      if (!node) return {};
+      const next = new Map(s.nodes);
+      next.set(key, { ...node, label: name });
       return { nodes: next };
     });
   },

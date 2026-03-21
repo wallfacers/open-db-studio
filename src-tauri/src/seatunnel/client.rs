@@ -123,6 +123,7 @@ impl SeaTunnelClient {
     }
 
     /// 列出所有运行中的作业
+    #[allow(dead_code)]
     pub async fn list_running_jobs(&self) -> Result<serde_json::Value, String> {
         let resp = self
             .request(reqwest::Method::GET, "/hazelcast/rest/maps/running-jobs")
@@ -135,6 +136,7 @@ impl SeaTunnelClient {
     }
 
     /// 旧版 get_job_status 保留兼容
+    #[allow(dead_code)]
     pub async fn get_job_status_legacy(&self, job_id: &str) -> Result<String, String> {
         let path = format!("/api/v1/job/detail/{}", job_id);
         let resp = self

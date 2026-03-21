@@ -105,8 +105,35 @@ pub fn run() {
                     log::warn!("Failed to write agent prompts: {}", e);
                 }
 
-                // 3. 启动 opencode serve 进程（健康检查最多等 10s）
-                if let Err(e) = crate::agent::server::start_serve(handle.clone(), &data_dir_clone, serve_port).await {
+                // 3. 解析 opencode-cli sidecar 路径并启动 serve 进程
+                // Tauri 2.x API: handle.path().resource_dir() 返回 Result<PathBuf>
+                // 运行时 sidecar binary 不含 triple 后缀，仅需区分 .exe
+                let cli_path = match handle.path().resource_dir() {
+                    Ok(resource_dir) => {
+                        let filename = if cfg!(target_os = "windows") {
+                            "opencode-cli.exe"
+                        } else {
+                            "opencode-cli"
+                        };
+                        resource_dir.join(filename)
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to get resource dir for opencode-cli sidecar: {}", e);
+                        // 降级：尝试从 PATH 查找（兼容 dev 模式下未打包场景）
+                        std::path::PathBuf::from(if cfg!(target_os = "windows") {
+                            "opencode-cli.exe"
+                        } else {
+                            "opencode-cli"
+                        })
+                    }
+                };
+
+                if let Err(e) = crate::agent::server::start_serve(
+                    handle.clone(),
+                    &data_dir_clone,
+                    serve_port,
+                    cli_path,
+                ).await {
                     log::warn!(
                         "opencode serve failed to start (port {}): {}. \
                          Other features remain available.",

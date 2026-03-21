@@ -108,7 +108,8 @@ pub fn run() {
                 // 3. 解析 opencode-cli sidecar 路径并启动 serve 进程
                 // Tauri 2.x sidecar 命名规范：binaries/opencode-cli-{target_triple}
                 // target_triple 格式: {arch}-{vendor}-{os}
-                let target_triple = tauri::utils::platform::Target::triple::const();
+                let target_triple = tauri::utils::platform::target_triple()
+                    .expect("Failed to get target triple");
                 let cli_path = match handle.path().resource_dir() {
                     Ok(resource_dir) => {
                         resource_dir.join("binaries").join(format!("opencode-cli-{}", target_triple))
@@ -117,8 +118,9 @@ pub fn run() {
                         log::warn!("Failed to get resource dir for opencode-cli sidecar: {}", e);
                         // 降级：尝试当前目录（兼容 dev 模式）
                         std::env::current_exe()
+                            .expect("Failed to get current exe path")
                             .parent()
-                            .unwrap()
+                            .expect("Failed to get parent directory")
                             .join("src-tauri")
                             .join("binaries")
                             .join(format!("opencode-cli-{}", target_triple))

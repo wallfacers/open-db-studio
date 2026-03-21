@@ -138,6 +138,13 @@ pub async fn delete_st_connection(
     id: i64,
 ) -> Result<(), String> {
     let conn = crate::db::get().lock().unwrap();
+    // 先删除直属集群且无 category 的孤儿 Job，再删连接（DDL CASCADE 会删根目录及子目录）
+    // 使用 execute_batch 将两条语句合并，SQLite 自动在隐式事务中执行
+    conn.execute(
+        "DELETE FROM seatunnel_jobs WHERE connection_id = ?1 AND category_id IS NULL",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute(
         "DELETE FROM seatunnel_connections WHERE id = ?1",
         rusqlite::params![id],
@@ -156,7 +163,7 @@ pub async fn list_st_categories(
     let conn = crate::db::get().lock().unwrap();
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, parent_id, sort_order, created_at FROM seatunnel_categories ORDER BY sort_order, name",
+            "SELECT id, name, parent_id, connection_id, sort_order FROM seatunnel_categories ORDER BY sort_order, name",
         )
         .map_err(|e| e.to_string())?;
 
@@ -166,8 +173,8 @@ pub async fn list_st_categories(
                 "id": row.get::<_, i64>(0)?,
                 "name": row.get::<_, String>(1)?,
                 "parent_id": row.get::<_, Option<i64>>(2)?,
-                "sort_order": row.get::<_, i64>(3)?,
-                "created_at": row.get::<_, String>(4)?,
+                "connection_id": row.get::<_, Option<i64>>(3)?,
+                "sort_order": row.get::<_, i64>(4)?,
             }))
         })
         .map_err(|e| e.to_string())?;
@@ -185,11 +192,11 @@ pub async fn create_st_category(
     _state: tauri::State<'_, AppState>,
     name: String,
     parent_id: Option<i64>,
+    connection_id: Option<i64>,
 ) -> Result<i64, String> {
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
 
-    // 计算 sort_order（插入到同级最后）
     let sort_order: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM seatunnel_categories WHERE parent_id IS ?1",
@@ -199,8 +206,8 @@ pub async fn create_st_category(
         .unwrap_or(1);
 
     conn.execute(
-        "INSERT INTO seatunnel_categories (name, parent_id, sort_order, created_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![name, parent_id, sort_order, now],
+        "INSERT INTO seatunnel_categories (name, parent_id, connection_id, sort_order, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![name, parent_id, connection_id, sort_order, now],
     )
     .map_err(|e| e.to_string())?;
 
@@ -300,12 +307,13 @@ pub async fn create_st_job(
     _state: tauri::State<'_, AppState>,
     name: String,
     category_id: Option<i64>,
+    connection_id: Option<i64>,
 ) -> Result<i64, String> {
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO seatunnel_jobs (name, category_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![name, category_id, now, now],
+        "INSERT INTO seatunnel_jobs (name, category_id, connection_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![name, category_id, connection_id, now, now],
     )
     .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
@@ -362,6 +370,23 @@ pub async fn delete_st_job(
     conn.execute(
         "DELETE FROM seatunnel_jobs WHERE id = ?1",
         rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 重命名 Job
+#[tauri::command]
+pub async fn rename_st_job(
+    _state: tauri::State<'_, AppState>,
+    id: i64,
+    name: String,
+) -> Result<(), String> {
+    let conn = crate::db::get().lock().unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE seatunnel_jobs SET name = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![name, now, id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

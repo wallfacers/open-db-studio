@@ -256,6 +256,7 @@ pub fn run() {
             seatunnel::commands::create_st_job,
             seatunnel::commands::update_st_job,
             seatunnel::commands::delete_st_job,
+            seatunnel::commands::rename_st_job,
             seatunnel::commands::move_st_job,
             seatunnel::commands::submit_st_job,
             seatunnel::commands::stop_st_job,

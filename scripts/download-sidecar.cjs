@@ -14,13 +14,12 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawnSync } = require('child_process');
+const AdmZip = require('adm-zip');
 
 const VERSION = process.env.SIDECAR_VERSION || '1.2.27';
 const REPO = 'anomalyco/opencode';
 const BINARIES_DIR = path.join(__dirname, '..', 'src-tauri', 'binaries');
 
-// 平台映射：下载的 zip 文件名 -> zip 内的可执行文件名 -> Tauri 期望的文件名
 const PLATFORMS = {
   'win32-x64': {
     archive: 'opencode-windows-x64.zip',
@@ -60,8 +59,6 @@ function downloadFile(url, dest) {
 
     const file = fs.createWriteStream(dest);
     let redirectCount = 0;
-    let totalSize = 0;
-    let downloaded = 0;
 
     const request = (urlStr) => {
       redirectCount++;
@@ -78,11 +75,13 @@ function downloadFile(url, dest) {
         }
 
         if (response.statusCode !== 200) {
+          fs.unlink(dest, () => {});
           reject(new Error(`HTTP ${response.statusCode}: ${urlStr}`));
           return;
         }
 
-        totalSize = parseInt(response.headers['content-length'], 10) || 0;
+        const totalSize = parseInt(response.headers['content-length'], 10) || 0;
+        let downloaded = 0;
 
         response.on('data', (chunk) => {
           downloaded += chunk.length;
@@ -112,142 +111,59 @@ function downloadFile(url, dest) {
 }
 
 /**
- * 跨平台解压函数
- * 支持：unzip, tar, PowerShell Expand-Archive, 7z
+ * 使用 adm-zip 解压（纯 Node.js，跨平台）
  */
 function extractArchive(archivePath, targetDir, exeName, targetName) {
   console.log(`Extracting ${exeName} from archive...`);
 
-  const isZip = archivePath.endsWith('.zip');
-  const isTarGz = archivePath.endsWith('.tar.gz');
   const targetPath = path.join(targetDir, targetName);
 
-  // 方法1：尝试使用系统命令
-  const extractMethods = [];
-
-  if (isTarGz) {
-    // tar.gz 文件用 tar 命令
-    extractMethods.push({
-      name: 'tar',
-      cmd: () => {
-        execSync(`tar -xzf "${archivePath}" -C "${targetDir}"`, { stdio: 'inherit' });
-        return true;
-      }
-    });
-  }
-
-  if (isZip) {
-    // zip 文件优先用 unzip（Git Bash 自带）
-    extractMethods.push({
-      name: 'unzip',
-      cmd: () => {
-        const result = spawnSync('unzip', ['-o', archivePath, '-d', targetDir], {
-          stdio: 'inherit',
-          shell: process.platform === 'win32'
-        });
-        return result.status === 0;
-      }
-    });
-
-    // Windows 下尝试 PowerShell
-    if (process.platform === 'win32') {
-      extractMethods.push({
-        name: 'PowerShell',
-        cmd: () => {
-          const psCmd = `Expand-Archive -Path '${archivePath.replace(/'/g, "''")}' -DestinationPath '${targetDir.replace(/'/g, "''")}' -Force`;
-          const result = spawnSync('powershell', ['-Command', psCmd], {
-            stdio: 'inherit',
-            shell: true
-          });
-          return result.status === 0;
-        }
-      });
-
-      // 尝试 7z
-      extractMethods.push({
-        name: '7z',
-        cmd: () => {
-          const result = spawnSync('7z', ['x', archivePath, `-o${targetDir}`, '-y'], {
-            stdio: 'inherit',
-            shell: true
-          });
-          return result.status === 0;
-        }
-      });
+  // 检查文件是否已存在
+  if (fs.existsSync(targetPath)) {
+    const stat = fs.statSync(targetPath);
+    if (stat.size > 0) {
+      console.log(`Sidecar already exists: ${targetPath}`);
+      return targetPath;
     }
+    fs.unlinkSync(targetPath);
   }
 
-  // 尝试各种解压方法
-  let extracted = false;
-  for (const method of extractMethods) {
-    try {
-      console.log(`Trying ${method.name}...`);
-      if (method.cmd()) {
-        extracted = true;
-        console.log(`Extracted using ${method.name}`);
-        break;
+  try {
+    const zip = new AdmZip(archivePath);
+    zip.extractAllTo(targetDir, true); // overwrite
+
+    // 查找可执行文件
+    let extractedPath = path.join(targetDir, exeName);
+    if (!fs.existsSync(extractedPath)) {
+      // 可能在子目录中，      const entries = zip.getEntries();
+      for (const entry of entries) {
+        if (entry.entryName.endsWith(exeName) || entry.entryName === exeName) {
+          extractedPath = path.join(targetDir, entry.entryName);
+          break;
+        }
       }
-    } catch (e) {
-      console.log(`${method.name} failed: ${e.message}`);
+
+      if (!fs.existsSync(extractedPath)) {
+        throw new Error(`Could not find ${exeName} in archive`);
+      }
     }
-  }
 
-  if (!extracted) {
-    throw new Error('No suitable extraction tool found. Please install unzip, tar, or 7z.');
-  }
-
-  // 查找并重命名可执行文件
-  const extractedPath = path.join(targetDir, exeName);
-  if (fs.existsSync(extractedPath)) {
+    // 重命名到目标文件名
     fs.renameSync(extractedPath, targetPath);
-  } else {
-    // 可能在子目录中，递归查找
-    const findAndMove = (dir) => {
-      const files = fs.readdirSync(dir);
-      for (const file of files) {
-        const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
 
-        if (stat.isDirectory()) {
-          findAndMove(filePath);
-        } else if (file === exeName) {
-          fs.renameSync(filePath, targetPath);
-          return true;
-        }
-      }
-      return false;
-    };
+    // 删除压缩包
+    fs.unlinkSync(archivePath);
 
-    if (!findAndMove(targetDir)) {
-      throw new Error(`Could not find ${exeName} in extracted archive`);
+    // Unix 系统添加执行权限
+    if (process.platform !== 'win32') {
+      fs.chmodSync(targetPath, 0o755);
     }
+
+    console.log(`Extracted to: ${targetPath}`);
+    return targetPath;
+  } catch (error) {
+    throw new Error(`Failed to extract archive: ${error.message}`);
   }
-
-  // 清理压缩包
-  fs.unlinkSync(archivePath);
-
-  // 清理可能的空目录
-  const cleanupEmptyDirs = (dir) => {
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
-      const filePath = path.join(dir, file);
-      if (fs.statSync(filePath).isDirectory()) {
-        cleanupEmptyDirs(filePath);
-        if (fs.readdirSync(filePath).length === 0 && filePath !== targetDir) {
-          fs.rmdirSync(filePath);
-        }
-      }
-    }
-  };
-  cleanupEmptyDirs(targetDir);
-
-  // Unix 系统添加执行权限
-  if (process.platform !== 'win32') {
-    fs.chmodSync(targetPath, 0o755);
-  }
-
-  console.log(`Extracted to: ${targetPath}`);
-  return targetPath;
 }
 
 async function main() {
@@ -268,8 +184,7 @@ async function main() {
       console.log('Delete the file to re-download.');
       return;
     }
-    // 空文件，删除重新下载
-    fs.unlinkSync(targetPath);
+    // 空文件，    fs.unlinkSync(targetPath);
   }
 
   const archiveUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${archive}`;
@@ -278,6 +193,7 @@ async function main() {
   try {
     await downloadFile(archiveUrl, archivePath);
     extractArchive(archivePath, BINARIES_DIR, exeName, targetName);
+
     console.log(`\n✅ Sidecar ready: ${targetPath}`);
   } catch (error) {
     console.error(`\n❌ Failed: ${error.message}`);

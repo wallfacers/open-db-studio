@@ -139,17 +139,18 @@ pub async fn delete_st_connection(
 ) -> Result<(), String> {
     let conn = crate::db::get().lock().unwrap();
     // 先删除直属集群且无 category 的孤儿 Job，再删连接（DDL CASCADE 会删根目录及子目录）
-    // 使用 execute_batch 将两条语句合并，SQLite 自动在隐式事务中执行
-    conn.execute(
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
         "DELETE FROM seatunnel_jobs WHERE connection_id = ?1 AND category_id IS NULL",
         rusqlite::params![id],
     )
     .map_err(|e| e.to_string())?;
-    conn.execute(
+    tx.execute(
         "DELETE FROM seatunnel_connections WHERE id = ?1",
         rusqlite::params![id],
     )
     .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -384,11 +385,15 @@ pub async fn rename_st_job(
 ) -> Result<(), String> {
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
-    conn.execute(
-        "UPDATE seatunnel_jobs SET name = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![name, now, id],
-    )
-    .map_err(|e| e.to_string())?;
+    let affected = conn
+        .execute(
+            "UPDATE seatunnel_jobs SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![name, now, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err(format!("Job {} not found", id));
+    }
     Ok(())
 }
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { useQueryStore } from './queryStore';
 
 // 防抖持久化（对齐 metricsTreeStore 模式）
 let _persistSTTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +64,7 @@ interface SeaTunnelStore {
   createJob: (name: string, categoryId?: number, connectionId?: number) => Promise<number>
   deleteJob: (id: number) => Promise<void>
   renameJob: (id: number, name: string) => Promise<void>
+  updateJobLabel: (id: number, name: string) => void
   moveJob: (jobId: number, categoryId: number | null) => Promise<void>
   updateJobStatus: (jobId: number, status: string) => void
 }
@@ -253,6 +255,12 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
   renameJob: async (id, name) => {
     await invoke('rename_st_job', { id, name });
+    get().updateJobLabel(id, name);
+    // 同步更新已打开的 tab 标题
+    useQueryStore.getState().updateSeaTunnelJobTabTitle(id, name);
+  },
+
+  updateJobLabel: (id, name) => {
     set(s => {
       const key = `job_${id}`;
       const node = s.nodes.get(key);

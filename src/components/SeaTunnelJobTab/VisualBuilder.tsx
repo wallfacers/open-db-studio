@@ -203,9 +203,34 @@ const FieldInput: React.FC<FieldInputProps> = ({ field, value, onChange, t }) =>
 
   const label = getLabel(field.label);
 
+  if (field.type === 'number') {
+    const numVal = parseInt(value, 10) || 0;
+    return (
+      <div className="flex items-stretch border border-[#253347] rounded overflow-hidden focus-within:border-[#00c9a7]/60 transition-colors">
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.required ? `${label} ${t('seaTunnelJob.visualBuilder.required')}` : label}
+          className="flex-1 min-w-0 bg-[#0d1117] px-2.5 py-1.5 text-xs text-[#c8daea] placeholder-[#7a9bb8]/50 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <div className="flex flex-col border-l border-[#253347] bg-[#0d1117]">
+          <button type="button" onClick={() => onChange(String(numVal + 1))}
+            className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors border-b border-[#253347]">
+            <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
+          </button>
+          <button type="button" onClick={() => onChange(String(Math.max(0, numVal - 1)))}
+            className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors">
+            <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <input
-      type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
+      type={field.type === 'password' ? 'password' : 'text'}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={field.required ? `${label} ${t('seaTunnelJob.visualBuilder.required')}` : label}
@@ -374,16 +399,34 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
       {/* Env bar */}
       <div className="flex items-center gap-3 px-3 py-2 bg-[#0d1117] border-b border-[#253347] flex-shrink-0">
         <span className={`${labelCls} whitespace-nowrap`}>{t('seaTunnelJob.visualBuilder.parallelism')}</span>
-        <input
-          type="number"
-          min={1}
-          value={value.env.parallelism}
-          onChange={(e) =>
-            onChange({ ...value, env: { ...value.env, parallelism: parseInt(e.target.value, 10) || 1 } })
-          }
-          className={`${inputCls}`}
-          style={{ width: '100px' }}
-        />
+        {/* 自定义数字步进器，避免原生 spinner 样式问题 */}
+        <div className="flex items-stretch border border-[#253347] rounded overflow-hidden focus-within:border-[#00c9a7]/60 transition-colors" style={{ width: '80px' }}>
+          <input
+            type="number"
+            min={1}
+            value={value.env.parallelism}
+            onChange={(e) =>
+              onChange({ ...value, env: { ...value.env, parallelism: parseInt(e.target.value, 10) || 1 } })
+            }
+            className="flex-1 min-w-0 bg-[#0d1117] px-2 py-1.5 text-xs text-[#c8daea] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          <div className="flex flex-col border-l border-[#253347] bg-[#0d1117]">
+            <button
+              type="button"
+              onClick={() => onChange({ ...value, env: { ...value.env, parallelism: value.env.parallelism + 1 } })}
+              className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors border-b border-[#253347]"
+            >
+              <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange({ ...value, env: { ...value.env, parallelism: Math.max(1, value.env.parallelism - 1) } })}
+              className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors"
+            >
+              <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Three-column layout */}

@@ -58,6 +58,7 @@ interface QueryState {
   openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
   openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
   closeSeaTunnelJobTab: (jobId: number) => void;
+  updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
 
   closeTab: (tabId: string) => void;
   closeMetricTabById: (metricId: number) => void;
@@ -274,6 +275,14 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       const id = `st_job_${jobId}_${Date.now()}`;
       const tab: Tab = { id, type: 'seatunnel_job', title, stJobId: jobId, stConnectionId: connectionId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+
+  updateSeaTunnelJobTabTitle: (jobId, title) => {
+    set(s => {
+      const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
+      if (!tab) return {};
+      return { tabs: s.tabs.map(t => t.id === tab.id ? { ...t, title } : t) };
     });
   },
 

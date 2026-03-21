@@ -582,6 +582,17 @@ pub async fn stream_st_job_logs(
     Ok(())
 }
 
+/// 测试 SeaTunnel 连接（使用运行中任务列表接口验证连通性）
+#[tauri::command]
+pub async fn test_st_connection(
+    _state: tauri::State<'_, AppState>,
+    url: String,
+    auth_token: Option<String>,
+) -> Result<(), String> {
+    let client = super::client::SeaTunnelClient::new(url, auth_token);
+    client.test_connection().await
+}
+
 /// 取消日志流
 #[tauri::command]
 pub async fn cancel_st_job_stream(

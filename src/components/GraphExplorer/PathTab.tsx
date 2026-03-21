@@ -114,13 +114,25 @@ export function PathTab({
 
         <div className="flex items-center gap-2 pt-1">
           <label className="text-[#7a9bb8] text-xs flex-shrink-0">最大跳数</label>
-          <input
-            type="number"
-            min={1}
-            value={maxHops}
-            onChange={e => setMaxHops(Math.max(1, Number(e.target.value) || 1))}
-            className="w-14 px-2 py-1 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] focus:outline-none focus:border-[#00a98f]"
-          />
+          <div className="flex items-stretch border border-[#1e2d42] rounded overflow-hidden focus-within:border-[#00a98f] transition-colors" style={{ width: '56px' }}>
+            <input
+              type="number"
+              min={1}
+              value={maxHops}
+              onChange={e => setMaxHops(Math.max(1, Number(e.target.value) || 1))}
+              className="flex-1 min-w-0 bg-[#111922] px-2 py-1 text-xs text-[#c8daea] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+            <div className="flex flex-col border-l border-[#1e2d42] bg-[#111922]">
+              <button type="button" onClick={() => setMaxHops(v => v + 1)}
+                className="flex-1 flex items-center justify-center px-1 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors border-b border-[#1e2d42]">
+                <svg width="7" height="4" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
+              </button>
+              <button type="button" onClick={() => setMaxHops(v => Math.max(1, v - 1))}
+                className="flex-1 flex items-center justify-center px-1 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors">
+                <svg width="7" height="4" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
+              </button>
+            </div>
+          </div>
           <button
             onClick={handleFindPath}
             disabled={!canQuery || loading}

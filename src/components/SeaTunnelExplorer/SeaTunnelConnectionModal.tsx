@@ -29,6 +29,8 @@ export function SeaTunnelConnectionModal({
   const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [testing, setTesting] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,6 +72,29 @@ export function SeaTunnelConnectionModal({
       setError(err?.message ?? t('seaTunnel.connectionModal.saveFailed'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setTestResult({ ok: false, msg: t('seaTunnel.connectionModal.urlRequired') });
+      return;
+    }
+    setTesting(true);
+    try {
+      await invoke('test_st_connection', {
+        url: trimmedUrl,
+        authToken: authToken.trim() || null,
+      });
+      setTestResult({ ok: true, msg: t('seaTunnel.connectionModal.testSuccess') });
+    } catch (err: any) {
+      setTestResult({
+        ok: false,
+        msg: t('seaTunnel.connectionModal.testFailed', { error: err?.message ?? String(err) }),
+      });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -159,22 +184,38 @@ export function SeaTunnelConnectionModal({
             </div>
           )}
 
+          {testResult && (
+            <div className={`text-xs rounded px-3 py-2 ${testResult.ok ? 'text-[#00c9a7] bg-[#00c9a7]/10 border border-[#00c9a7]/30' : 'text-red-400 bg-red-900/20 border border-red-900/40'}`}>
+              {testResult.msg}
+            </div>
+          )}
+
           {/* 操作按钮 */}
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex justify-between gap-2 pt-1">
             <button
               type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors"
+              onClick={handleTest}
+              disabled={testing}
+              className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t('common.cancel')}
+              {testing ? t('seaTunnel.connectionModal.testing') : t('seaTunnel.connectionModal.testConnection')}
             </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-3 py-1.5 text-xs text-[#0d1117] bg-[#00c9a7] hover:bg-[#00a98f] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? t('common.saving') : t('common.save')}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-3 py-1.5 text-xs text-[#0d1117] bg-[#00c9a7] hover:bg-[#00a98f] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? t('common.saving') : t('common.save')}
+              </button>
+            </div>
           </div>
         </form>
       </div>

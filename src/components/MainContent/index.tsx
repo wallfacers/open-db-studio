@@ -723,7 +723,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </div>
         ) : activeTabObj.type === 'seatunnel_job' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <SeaTunnelJobTab tab={activeTabObj} key={activeTabObj.id} />
+            <SeaTunnelJobTab tab={activeTabObj} key={activeTabObj.id} showToast={showToast} />
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">

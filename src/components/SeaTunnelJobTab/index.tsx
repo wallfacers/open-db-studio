@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Play, Square, Save, ChevronDown, RefreshCw } from 'lucide-react';
+import { Play, Square, Save, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfirmStore } from '../../store/confirmStore';
 import { useSeaTunnelStore } from '../../store/seaTunnelStore';
+import { useQueryStore } from '../../store/queryStore';
 import type { Tab } from '../../types';
+import type { ToastLevel } from '../Toast';
 import VisualBuilder, {
   type BuilderState,
   builderStateToConfig,
@@ -89,13 +91,17 @@ function statusLabel(status: RunStatus): string {
 
 interface SeaTunnelJobTabProps {
   tab: Tab;
+  showToast?: (msg: string, level?: ToastLevel) => void;
 }
 
-const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
+const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => {
   const { t } = useTranslation();
   const jobId = tab.stJobId;
   const { confirm } = useConfirmStore();
-  const { updateJobStatus } = useSeaTunnelStore();
+  const { updateJobStatus, updateJobLabel } = useSeaTunnelStore();
+  const updateSeaTunnelJobTabTitle = useQueryStore(s => s.updateSeaTunnelJobTabTitle);
+  // 订阅树节点 label，响应从树侧发起的重命名
+  const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(`job_${jobId}`)?.label : undefined);
 
   // Job metadata
   const [jobName, setJobName] = useState('');
@@ -138,14 +144,37 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
         if (job.last_status) setRunningStatus(job.last_status as RunStatus);
 
         const json = job.config_json ?? DEFAULT_CONFIG_JSON;
-        setConfigJson(json);
-        const parsed = configToBuilderState(json);
-        if (parsed) setBuilderState(parsed);
+        const parsed = configToBuilderState(json) ?? { ...DEFAULT_BUILDER_STATE };
+        // 统一用树节点名称作为 env.job.name
+        parsed.env.jobName = job.name;
+        setBuilderState(parsed);
+        setConfigJson(builderStateToConfig(parsed));
       } catch (e) {
         setError(String(e));
       }
     })();
   }, [jobId]);
+
+  // ── 响应树侧重命名（inline edit）→ 同步 toolbar 输入框 ──────────────────
+  useEffect(() => {
+    if (!nodeLabel || nodeLabel === jobName) return;
+    setJobName(nodeLabel);
+    setBuilderState(prev => {
+      const next = { ...prev, env: { ...prev.env, jobName: nodeLabel } };
+      setConfigJson(builderStateToConfig(next));
+      return next;
+    });
+  }, [nodeLabel]);
+
+  // ── Job name change：同步写入 builderState.env.jobName ───────────────────
+  const handleJobNameChange = useCallback((name: string) => {
+    setJobName(name);
+    setBuilderState(prev => {
+      const next = { ...prev, env: { ...prev.env, jobName: name } };
+      setConfigJson(builderStateToConfig(next));
+      return next;
+    });
+  }, []);
 
   // ── Sync builder ↔ JSON ───────────────────────────────────────────────────
   const handleBuilderChange = useCallback((state: BuilderState) => {
@@ -207,12 +236,16 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
         connectionId: selectedConnectionId,
         configJson,
       });
+      // 同步树节点 label 和 tab 标题
+      updateJobLabel(jobId, jobName);
+      updateSeaTunnelJobTabTitle(jobId, jobName);
+      showToast?.(t('seaTunnelJob.toolbar.saveSuccess'), 'success');
     } catch (e) {
       setError(String(e));
     } finally {
       setSaving(false);
     }
-  }, [jobId, jobName, selectedConnectionId, configJson]);
+  }, [jobId, jobName, selectedConnectionId, configJson, updateJobLabel, updateSeaTunnelJobTabTitle]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
@@ -283,28 +316,17 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab }) => {
         <input
           type="text"
           value={jobName}
-          onChange={(e) => setJobName(e.target.value)}
+          onChange={(e) => handleJobNameChange(e.target.value)}
           placeholder={t('seaTunnelJob.toolbar.jobNamePlaceholder')}
-          className="bg-[#0d1117] border border-[#253347] rounded px-2.5 py-1 text-xs text-[#c8daea] placeholder-[#7a9bb8]/50 focus:outline-none focus:border-[#00c9a7]/60 transition-colors w-40"
+          className="bg-[#0d1117] border border-[#253347] rounded px-2.5 py-1 text-xs text-[#c8daea] placeholder-[#7a9bb8]/50 focus:outline-none focus:border-[#00c9a7]/60 transition-colors w-52"
         />
 
-        {/* Connection selector */}
-        <div className="relative">
-          <select
-            value={selectedConnectionId ?? ''}
-            onChange={(e) =>
-              setSelectedConnectionId(e.target.value ? Number(e.target.value) : null)
-            }
-            className="bg-[#0d1117] border border-[#253347] rounded px-2.5 py-1 text-xs text-[#c8daea] appearance-none pr-7 focus:outline-none focus:border-[#00c9a7]/60 transition-colors cursor-pointer"
-          >
-            <option value="">{t('seaTunnelJob.toolbar.clusterConnection')}</option>
-            {connections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] pointer-events-none" />
+        {/* Connection - read only */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0d1117] border border-[#253347] rounded text-xs text-[#7a9bb8] select-none">
+          <span className="text-[#7a9bb8]">{t('seaTunnelJob.toolbar.clusterConnection').replace('-- ', '').replace(' --', '')}:</span>
+          <span className="text-[#c8daea]">
+            {connections.find(c => c.id === selectedConnectionId)?.name ?? '—'}
+          </span>
         </div>
 
         {/* Status badge */}

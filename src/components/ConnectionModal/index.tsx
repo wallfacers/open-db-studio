@@ -136,8 +136,24 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
             </div>
             <div>
               <label className={labelClass}>{t('connectionModal.port')}</label>
-              <input className={inputClass} type="number" value={form.port ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) }))} />
+              <div className="flex items-stretch w-full border border-[#253347] rounded overflow-hidden focus-within:border-[#009e84] transition-colors">
+                <input
+                  type="number"
+                  value={form.port ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) }))}
+                  className="flex-1 min-w-0 bg-[#1a2639] px-3 py-1.5 text-sm text-white focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <div className="flex flex-col border-l border-[#253347] bg-[#1a2639]">
+                  <button type="button" onClick={() => setForm(f => ({ ...f, port: Math.min(65535, (f.port ?? 0) + 1) }))}
+                    className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#1e2d42] transition-colors border-b border-[#253347]">
+                    <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
+                  </button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, port: Math.max(1, (f.port ?? 1) - 1) }))}
+                    className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#1e2d42] transition-colors">
+                    <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

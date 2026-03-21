@@ -116,6 +116,11 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     return expandedIds.has(node.id);
   };
 
+  // ─── 辅助：确保节点处于展开状态（若已展开则不切换）────────────────────────
+  const ensureExpanded = (nodeId: string) => {
+    if (!expandedIds.has(nodeId)) toggleExpand(nodeId);
+  };
+
   // ─── 辅助：从节点向上找最近的 connectionId ────────────────────────────────
   function resolveConnectionId(node: STTreeNode): number | undefined {
     if (node.meta.connectionId) return node.meta.connectionId;
@@ -196,6 +201,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     setContextMenu(null);
     const connId = resolveConnectionId(parentNode);
     if (!connId) return;
+    ensureExpanded(parentNode.id);
     setShowCategoryModal({ parentNode, connectionId: connId });
   };
 
@@ -203,8 +209,24 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
     setContextMenu(null);
     const connId = resolveConnectionId(parentNode);
     const catId = parentNode.nodeType === 'category' ? parentNode.meta.categoryId : undefined;
-    try { await createJob(t('seaTunnel.jobTree.newJobName'), catId, connId); }
-    catch (e: any) { setError(e?.message ?? t('seaTunnel.jobTree.createJobFailed')); }
+    // 生成不重复的任务名
+    const siblings = Array.from(nodes.values()).filter(
+      n => n.parentId === parentNode.id && n.nodeType === 'job'
+    );
+    const existingNames = new Set(siblings.map(n => n.label));
+    const baseName = t('seaTunnel.jobTree.newJobName');
+    let name = baseName;
+    let counter = 1;
+    while (existingNames.has(name)) {
+      counter++;
+      name = `${baseName} (${counter})`;
+    }
+    try {
+      await createJob(name, catId, connId);
+      ensureExpanded(parentNode.id);
+    } catch (e: any) {
+      setError(e?.message ?? t('seaTunnel.jobTree.createJobFailed'));
+    }
   };
 
   // ─── 渲染 ─────────────────────────────────────────────────────────────────
@@ -250,7 +272,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
         let iconClass = 'text-[#7a9bb8]';
         if (node.nodeType === 'connection') {
           Icon = Server;
-          iconClass = 'text-[#00c9a7]';
+          if (expanded) iconClass = 'text-[#00c9a7]';
         } else if (node.nodeType === 'category') {
           Icon = expanded ? FolderOpen : Folder;
           if (expanded) iconClass = 'text-[#00c9a7]';
@@ -269,10 +291,9 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
             tabIndex={0}
             onClick={() => {
               selectNode(node.id);
-              if (isExpandable) toggleExpand(node.id);
-            }}
-            onDoubleClick={() => {
-              if (node.nodeType === 'job' && node.meta.jobId) {
+              if (isExpandable) {
+                toggleExpand(node.id);
+              } else if (node.nodeType === 'job' && node.meta.jobId) {
                 onOpenJob?.(node.meta.jobId, node.label, node.meta.connectionId);
               }
             }}

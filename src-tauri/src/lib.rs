@@ -263,6 +263,7 @@ pub fn run() {
             seatunnel::commands::get_st_job_status,
             seatunnel::commands::stream_st_job_logs,
             seatunnel::commands::cancel_st_job_stream,
+            seatunnel::commands::test_st_connection,
             commands::add_user_node,
             commands::delete_graph_node,
             commands::add_user_edge,

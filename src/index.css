@@ -161,6 +161,20 @@ body {
 }
 
 /* ============================================================
+   数字输入框 — 隐藏原生 spinner，使用自定义步进按钮
+   ============================================================ */
+input[type="number"] {
+  -webkit-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ============================================================
    Graph Explorer — React Flow CSS 变量覆盖 (Abyss Theme)
    ============================================================ */
 .react-flow {

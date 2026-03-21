@@ -105,6 +105,23 @@ impl SeaTunnelClient {
         Ok("UNKNOWN".to_string())
     }
 
+    /// 测试连接（请求当前版本任务列表接口）
+    pub async fn test_connection(&self) -> Result<(), String> {
+        let resp = self
+            .request(reqwest::Method::GET, "/hazelcast/rest/maps/running-jobs")
+            .send()
+            .await
+            .map_err(|e| format!("无法连接到集群: {}", e))?;
+
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            Err(format!("集群返回错误 ({}): {}", status, text))
+        }
+    }
+
     /// 列出所有运行中的作业
     pub async fn list_running_jobs(&self) -> Result<serde_json::Value, String> {
         let resp = self

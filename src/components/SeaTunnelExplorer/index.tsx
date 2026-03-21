@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Workflow, RefreshCw, Plus, FolderPlus, Search, X } from 'lucide-react';
+import { Workflow, RefreshCw, Plus, Search, X } from 'lucide-react';
 import { Tooltip } from '../common/Tooltip';
 import { SeaTunnelJobTree } from './SeaTunnelJobTree';
 import { SeaTunnelConnectionModal } from './SeaTunnelConnectionModal';
-import { CategoryEditModal } from './CategoryEditModal';
 import { useSeaTunnelStore } from '../../store/seaTunnelStore';
 import { useQueryStore } from '../../store/queryStore';
 
@@ -16,11 +15,10 @@ export interface SeaTunnelSidebarProps {
 
 export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSidebarProps) {
   const { t } = useTranslation();
-  const { init, createCategory } = useSeaTunnelStore();
+  const { init } = useSeaTunnelStore();
   const openSeaTunnelJobTab = useQueryStore(s => s.openSeaTunnelJobTab);
   const [searchQuery, setSearchQuery] = useState('');
   const [showConnectionModal, setShowConnectionModal] = useState(false);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   useEffect(() => {
     init();
@@ -64,14 +62,6 @@ export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSi
               <span className="text-xs">{t('seaTunnel.connection')}</span>
             </div>
           </Tooltip>
-          <Tooltip content={t('seaTunnel.newCategory')}>
-            <div
-              className="flex items-center gap-0.5 cursor-pointer hover:text-[#c8daea] transition-colors"
-              onClick={() => setShowCategoryModal(true)}
-            >
-              <FolderPlus size={14} />
-            </div>
-          </Tooltip>
         </div>
       </div>
 
@@ -112,16 +102,6 @@ export function SeaTunnelSidebar({ sidebarWidth, onResize, hidden }: SeaTunnelSi
         />
       )}
 
-      {/* 新建分类弹窗 */}
-      {showCategoryModal && (
-        <CategoryEditModal
-          mode="create"
-          onClose={() => setShowCategoryModal(false)}
-          onSave={async (name) => {
-            await createCategory(name);
-          }}
-        />
-      )}
     </div>
   );
 }

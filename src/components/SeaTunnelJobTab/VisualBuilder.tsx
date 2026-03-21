@@ -1,6 +1,6 @@
 import React from 'react';
-import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -189,20 +189,15 @@ const FieldInput: React.FC<FieldInputProps> = ({ field, value, onChange, t }) =>
   };
 
   if (field.type === 'select' && field.options) {
+    const options = field.options.map((opt) => ({ value: opt, label: opt }));
     return (
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`${inputCls} appearance-none pr-7 cursor-pointer`}
-        >
-          <option value="">{t('seaTunnelJob.visualBuilder.pleaseSelect')}</option>
-          {field.options.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
-        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] pointer-events-none" />
-      </div>
+      <DropdownSelect
+        value={value}
+        options={options}
+        placeholder={t('seaTunnelJob.visualBuilder.pleaseSelect')}
+        onChange={onChange}
+        className="w-full"
+      />
     );
   }
 
@@ -253,18 +248,12 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
       {/* Connector type selector */}
       <div className="flex flex-col gap-1">
         <span className={labelCls}>{t('seaTunnelJob.visualBuilder.type')}</span>
-        <div className="relative">
-          <select
-            value={config.type}
-            onChange={(e) => handleTypeChange(e.target.value as ConnectorType)}
-            className={`${inputCls} appearance-none pr-7 cursor-pointer`}
-          >
-            {CONNECTOR_TYPES.map((ct) => (
-              <option key={ct} value={ct}>{ct}</option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] pointer-events-none" />
-        </div>
+        <DropdownSelect
+          value={config.type}
+          options={CONNECTOR_TYPES.map((ct) => ({ value: ct, label: ct }))}
+          onChange={(v) => handleTypeChange(v as ConnectorType)}
+          className="w-full"
+        />
       </div>
 
       {/* Dynamic fields */}
@@ -335,20 +324,12 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange, t
           return (
             <div key={idx} className="bg-[#0d1117] border border-[#253347] rounded p-2.5 flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <div className="relative flex-1 mr-2">
-                  <select
-                    value={tr.type}
-                    onChange={(e) =>
-                      updateTransform(idx, { type: e.target.value as TransformType, fields: {} })
-                    }
-                    className={`${inputCls} appearance-none pr-7 cursor-pointer`}
-                  >
-                    {TRANSFORM_TYPES.map((tt) => (
-                      <option key={tt} value={tt}>{tt}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] pointer-events-none" />
-                </div>
+                <DropdownSelect
+                  value={tr.type}
+                  options={TRANSFORM_TYPES.map((tt) => ({ value: tt, label: tt }))}
+                  onChange={(v) => updateTransform(idx, { type: v as TransformType, fields: {} })}
+                  className="flex-1 mr-2"
+                />
                 <button
                   onClick={() => removeTransform(idx)}
                   className="text-[#7a9bb8] hover:text-red-400 transition-colors text-xs px-1"
@@ -391,15 +372,7 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
   return (
     <div className="flex flex-col h-full gap-0">
       {/* Env bar */}
-      <div className="flex items-center gap-4 px-3 py-2 bg-[#0d1117] border-b border-[#253347] flex-shrink-0">
-        <span className={`${labelCls} whitespace-nowrap`}>{t('seaTunnelJob.visualBuilder.jobName')}</span>
-        <input
-          type="text"
-          value={value.env.jobName}
-          onChange={(e) => onChange({ ...value, env: { ...value.env, jobName: e.target.value } })}
-          placeholder="unnamed-job"
-          className={`${inputCls} flex-1`}
-        />
+      <div className="flex items-center gap-3 px-3 py-2 bg-[#0d1117] border-b border-[#253347] flex-shrink-0">
         <span className={`${labelCls} whitespace-nowrap`}>{t('seaTunnelJob.visualBuilder.parallelism')}</span>
         <input
           type="number"
@@ -408,7 +381,8 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
           onChange={(e) =>
             onChange({ ...value, env: { ...value.env, parallelism: parseInt(e.target.value, 10) || 1 } })
           }
-          className={`${inputCls} w-20`}
+          className={`${inputCls}`}
+          style={{ width: '100px' }}
         />
       </div>
 

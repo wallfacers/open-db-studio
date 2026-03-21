@@ -37,3 +37,6 @@ Thumbs.db
 # Claude Code & Superpowers
 .claude/
 .superpowers/
+
+# Tauri sidecar binaries (downloaded at build time)
+src-tauri/binaries/

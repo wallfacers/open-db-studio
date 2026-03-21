@@ -1,35 +1,39 @@
 #!/usr/bin/env node
 
 /**
- * Download Tauri sidecar binaries from GitHub Releases
+ * Download opencode-cli TUI binaries from GitHub Releases
  *
- * Usage: node scripts/download-sidecar.js
+ * Usage: node scripts/download-sidecar.cjs
  *
  * Environment variables:
  *   SIDECAR_VERSION - Version to download (default: 1.2.27)
- *   SIDECAR_REPO    - GitHub repo (default: wallfacers/open-db-studio)
  */
 
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const VERSION = process.env.SIDECAR_VERSION || '1.2.27';
-const REPO = process.env.SIDECAR_REPO || 'wallfacers/open-db-studio';
+const REPO = 'anomalyco/opencode';
 const BINARIES_DIR = path.join(__dirname, '..', 'src-tauri', 'binaries');
 
+// TUI 版本下载映射（zip 压缩包）
 const PLATFORMS = {
   'win32-x64': {
-    file: 'opencode-cli-x86_64-pc-windows-msvc.exe',
-    url: `https://github.com/${REPO}/releases/download/sidecar-v${VERSION}/opencode-cli-x86_64-pc-windows-msvc.exe`
+    zipFile: 'opencode-windows-x64.zip',
+    exeInZip: 'opencode.exe',
+    targetFile: 'opencode-cli-x86_64-pc-windows-msvc.exe'
   },
   'darwin-x64': {
-    file: 'opencode-cli-x86_64-apple-darwin',
-    url: `https://github.com/${REPO}/releases/download/sidecar-v${VERSION}/opencode-cli-x86_64-apple-darwin`
+    zipFile: 'opencode-darwin-x64.zip',
+    exeInZip: 'opencode',
+    targetFile: 'opencode-cli-x86_64-apple-darwin'
   },
   'darwin-arm64': {
-    file: 'opencode-cli-aarch64-apple-darwin',
-    url: `https://github.com/${REPO}/releases/download/sidecar-v${VERSION}/opencode-cli-aarch64-apple-darwin`
+    zipFile: 'opencode-darwin-arm64.zip',
+    exeInZip: 'opencode',
+    targetFile: 'opencode-cli-aarch64-apple-darwin'
   }
 };
 
@@ -48,11 +52,17 @@ function downloadFile(url, dest) {
     console.log(`Downloading: ${url}`);
 
     const file = fs.createWriteStream(dest);
+    let redirectCount = 0;
 
     const request = (url) => {
+      redirectCount++;
+      if (redirectCount > 10) {
+        reject(new Error('Too many redirects'));
+        return;
+      }
+
       https.get(url, (response) => {
         if (response.statusCode === 302 || response.statusCode === 301) {
-          // Follow redirect
           request(response.headers.location);
           return;
         }
@@ -67,8 +77,10 @@ function downloadFile(url, dest) {
 
         response.on('data', (chunk) => {
           downloaded += chunk.length;
-          const percent = ((downloaded / totalSize) * 100).toFixed(1);
-          process.stdout.write(`\rDownloading: ${percent}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`);
+          if (totalSize) {
+            const percent = ((downloaded / totalSize) * 100).toFixed(1);
+            process.stdout.write(`\rDownloading: ${percent}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`);
+          }
         });
 
         response.pipe(file);
@@ -88,6 +100,60 @@ function downloadFile(url, dest) {
   });
 }
 
+function extractZip(zipPath, targetDir, exeName, targetName) {
+  console.log(`Extracting ${exeName} from zip...`);
+
+  // 使用 PowerShell 解压（Windows）
+  if (process.platform === 'win32') {
+    const tempDir = path.join(targetDir, '_temp_extract');
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force"`, {
+      stdio: 'inherit'
+    });
+
+    // 查找可执行文件
+    const extractedPath = path.join(tempDir, exeName);
+    if (!fs.existsSync(extractedPath)) {
+      // 可能解压到了子目录中
+      const files = fs.readdirSync(tempDir);
+      for (const file of files) {
+        const subDir = path.join(tempDir, file);
+        if (fs.statSync(subDir).isDirectory()) {
+          const exePath = path.join(subDir, exeName);
+          if (fs.existsSync(exePath)) {
+            fs.copyFileSync(exePath, path.join(targetDir, targetName));
+            fs.rmSync(tempDir, { recursive: true });
+            fs.unlinkSync(zipPath);
+            return;
+          }
+        }
+      }
+      throw new Error(`Could not find ${exeName} in zip`);
+    }
+
+    fs.copyFileSync(extractedPath, path.join(targetDir, targetName));
+    fs.rmSync(tempDir, { recursive: true });
+    fs.unlinkSync(zipPath);
+  } else {
+    // macOS/Linux 使用 unzip
+    execSync(`unzip -o "${zipPath}" -d "${targetDir}"`, { stdio: 'inherit' });
+
+    const extractedPath = path.join(targetDir, exeName);
+    if (!fs.existsSync(extractedPath)) {
+      throw new Error(`Could not find ${exeName} in zip`);
+    }
+
+    fs.renameSync(extractedPath, path.join(targetDir, targetName));
+    fs.unlinkSync(zipPath);
+  }
+
+  console.log(`Extracted to: ${path.join(targetDir, targetName)}`);
+}
+
 async function main() {
   // Create binaries directory if not exists
   if (!fs.existsSync(BINARIES_DIR)) {
@@ -95,29 +161,33 @@ async function main() {
   }
 
   const platform = getPlatform();
-  const { file, url } = PLATFORMS[platform];
-  const dest = path.join(BINARIES_DIR, file);
+  const { zipFile, exeInZip, targetFile } = PLATFORMS[platform];
+  const targetPath = path.join(BINARIES_DIR, targetFile);
 
   // Check if file already exists
-  if (fs.existsSync(dest)) {
-    console.log(`Sidecar already exists: ${dest}`);
+  if (fs.existsSync(targetPath)) {
+    console.log(`Sidecar already exists: ${targetPath}`);
     console.log('Delete the file to re-download.');
     return;
   }
 
+  const zipUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${zipFile}`;
+  const zipPath = path.join(BINARIES_DIR, zipFile);
+
   try {
-    await downloadFile(url, dest);
+    await downloadFile(zipUrl, zipPath);
+    extractZip(zipPath, BINARIES_DIR, exeInZip, targetFile);
 
     // Make executable on Unix
     if (process.platform !== 'win32') {
-      fs.chmodSync(dest, 0o755);
+      fs.chmodSync(targetPath, 0o755);
     }
 
-    console.log(`Sidecar downloaded to: ${dest}`);
+    console.log(`\nSidecar ready: ${targetPath}`);
   } catch (error) {
-    console.error(`Failed to download sidecar: ${error.message}`);
-    console.error('\nPlease ensure the release exists at:');
-    console.error(`  https://github.com/${REPO}/releases/tag/sidecar-v${VERSION}`);
+    console.error(`\nFailed to download sidecar: ${error.message}`);
+    console.error('\nPlease check the release at:');
+    console.error(`  https://github.com/${REPO}/releases/tag/v${VERSION}`);
     process.exit(1);
   }
 }

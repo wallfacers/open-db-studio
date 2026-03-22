@@ -62,6 +62,7 @@ interface QueryState {
 
   closeTab: (tabId: string) => void;
   closeMetricTabById: (metricId: number) => void;
+  closeTabsByConnectionId: (connectionId: number) => void;
   closeAllTabs: () => void;
   closeTabsLeft: (tabId: string) => void;
   closeTabsRight: (tabId: string) => void;
@@ -319,6 +320,26 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         : s.activeTabId;
       return { tabs, activeTabId };
     });
+  },
+
+  closeTabsByConnectionId: (connectionId) => {
+    let removedIds: string[] = [];
+    set(s => {
+      const keep = s.tabs.filter(t => {
+        if (t.type === 'query') return t.queryContext?.connectionId !== connectionId;
+        if (t.type === 'table' || t.type === 'table_structure') return t.connectionId !== connectionId;
+        if (t.type === 'metric') return t.connectionId !== connectionId;
+        if (t.type === 'metric_list') return t.metricScope?.connectionId !== connectionId;
+        return true;
+      });
+      removedIds = s.tabs.filter(t => !keep.includes(t)).map(t => t.id);
+      if (removedIds.length === 0) return s;
+      const newActive = keep.find(t => t.id === s.activeTabId)
+        ? s.activeTabId
+        : (keep[keep.length - 1]?.id ?? '');
+      return { tabs: keep, activeTabId: newActive };
+    });
+    removedIds.forEach(id => invoke('delete_tab_file', { tabId: id }).catch(() => {}));
   },
 
   closeAllTabs: () => {

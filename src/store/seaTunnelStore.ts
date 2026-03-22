@@ -28,6 +28,24 @@ export function flushSeaTunnelPersist(): void {
   }
 }
 
+/** 递归收集指定节点下所有 Job 的 jobId */
+function collectDescendantJobIds(nodes: Map<string, STTreeNode>, rootId: string): number[] {
+  const jobIds: number[] = [];
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const pid = queue.shift()!;
+    for (const node of nodes.values()) {
+      if (node.parentId !== pid) continue;
+      if (node.nodeType === 'job' && node.meta.jobId != null) {
+        jobIds.push(node.meta.jobId);
+      } else if (node.nodeType === 'category') {
+        queue.push(node.id);
+      }
+    }
+  }
+  return jobIds;
+}
+
 export interface STTreeNode {
   id: string                      // "conn_1" | "cat_5" | "job_10"
   nodeType: 'connection' | 'category' | 'job'
@@ -52,6 +70,9 @@ interface SeaTunnelStore {
   selectedId: string | null
   isInitializing: boolean
   error: string | null
+  /** 各 Job 的当前 configJson，key=jobId。组件写入，MCP bridge 读取；AI 写入时组件订阅并同步 */
+  stJobContent: Map<number, string>
+  setStJobContent: (jobId: number, json: string) => void
   // actions
   init: () => Promise<void>
   toggleExpand: (id: string) => void
@@ -75,6 +96,12 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
   selectedId: null,
   isInitializing: false,
   error: null,
+  stJobContent: new Map(),
+  setStJobContent: (jobId, json) => set(s => {
+    const next = new Map(s.stJobContent);
+    next.set(jobId, json);
+    return { stJobContent: next };
+  }),
 
   init: async () => {
     set({ isInitializing: true, error: null });
@@ -195,8 +222,11 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
   },
 
   deleteConnection: async (id) => {
+    // 删除前收集该连接下所有 Job 的 ID，用于关闭已开启的 Tab
+    const jobIds = collectDescendantJobIds(get().nodes, `conn_${id}`);
     await invoke('delete_st_connection', { id });
     await get().init();
+    jobIds.forEach(jobId => useQueryStore.getState().closeSeaTunnelJobTab(jobId));
   },
 
   createCategory: async (name, parentCategoryId, connectionId) => {
@@ -229,8 +259,11 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
   },
 
   deleteCategory: async (id) => {
+    // 删除前收集该目录下所有 Job 的 ID，用于关闭已开启的 Tab
+    const jobIds = collectDescendantJobIds(get().nodes, `cat_${id}`);
     await invoke('delete_st_category', { id });
     await get().init();
+    jobIds.forEach(jobId => useQueryStore.getState().closeSeaTunnelJobTab(jobId));
   },
 
   createJob: async (name, categoryId, connectionId) => {
@@ -251,6 +284,7 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
       next.delete(`job_${id}`);
       return { nodes: next };
     });
+    useQueryStore.getState().closeSeaTunnelJobTab(id);
   },
 
   renameJob: async (id, name) => {

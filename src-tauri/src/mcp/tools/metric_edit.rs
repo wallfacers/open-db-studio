@@ -40,19 +40,52 @@ pub async fn update_metric_definition(handle: Arc<tauri::AppHandle>, args: Value
         &old_value,
     )?;
 
-    // 执行更新
-    let description = args["description"].as_str();
-    let display_name = args["display_name"].as_str();
+    // 执行更新（支持完整字段）
+    let input = crate::metrics::UpdateMetricInput {
+        display_name: args["display_name"].as_str().map(|s| s.to_string()),
+        description: args["description"].as_str().map(|s| s.to_string()),
+        table_name: args["table_name"].as_str().map(|s| s.to_string()),
+        column_name: args["column_name"].as_str().map(|s| s.to_string()),
+        filter_sql: args["filter_sql"].as_str().map(|s| s.to_string()),
+        aggregation: args["aggregation"].as_str().map(|s| s.to_string()),
+        name: None,
+        metric_type: None,
+        composite_components: None,
+        composite_formula: None,
+        category: None,
+        data_caliber: None,
+        version: None,
+        scope_database: None,
+        scope_schema: None,
+    };
 
-    let result = crate::db::update_metric_fields(metric_id, description, display_name);
+    // 收集已更新的字段名用于消息描述
+    let updated_fields: Vec<&str> = [
+        ("display_name", input.display_name.is_some()),
+        ("description", input.description.is_some()),
+        ("table_name", input.table_name.is_some()),
+        ("column_name", input.column_name.is_some()),
+        ("filter_sql", input.filter_sql.is_some()),
+        ("aggregation", input.aggregation.is_some()),
+    ]
+    .iter()
+    .filter_map(|(name, present)| if *present { Some(*name) } else { None })
+    .collect();
+
+    let result = crate::metrics::crud::update_metric(metric_id, &input);
 
     match result {
         Ok(updated) => {
             let new_value = serde_json::to_string(&updated).unwrap_or_default();
             crate::db::complete_change_history(history_id, Some(&new_value), "success")?;
+            let fields_desc = if updated_fields.is_empty() {
+                "（无字段变更）".to_string()
+            } else {
+                updated_fields.join("、")
+            };
             Ok(json!({
                 "success": true,
-                "message": format!("指标 {} 已更新，可输入「撤销」回滚", metric_id),
+                "message": format!("指标 {} 已更新字段 [{}]，可输入「撤销」回滚", metric_id, fields_desc),
                 "metric": updated
             }).to_string())
         }

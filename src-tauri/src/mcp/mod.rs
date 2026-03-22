@@ -190,12 +190,12 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "search_tabs",
-                "description": "Search currently opened tabs by type or table name",
+                "description": "Search currently opened tabs by type or table name. Results include job_id for seatunnel_job tabs and metric_id for metric tabs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "table_name": { "type": "string" },
-                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list"] }
+                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list", "seatunnel_job", "er_diagram"] }
                     },
                     "required": []
                 }
@@ -224,17 +224,18 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "open_tab",
-                "description": "Open a new tab for a table structure or metric. Waits for tab to be fully opened before returning.",
+                "description": "Open a new tab. For table_structure: requires connection_id + table_name. For metric: requires metric_id. For seatunnel_job: requires job_id. For query: requires connection_id. Waits for tab to be fully opened before returning.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "connection_id": { "type": "integer" },
-                        "type": { "type": "string", "enum": ["table_structure", "metric", "query"] },
-                        "table_name": { "type": "string" },
+                        "connection_id": { "type": "integer", "description": "Required for table_structure and query types" },
+                        "type": { "type": "string", "enum": ["table_structure", "metric", "query", "seatunnel_job"] },
+                        "table_name": { "type": "string", "description": "Required for table_structure" },
                         "database": { "type": "string" },
-                        "metric_id": { "type": "integer" }
+                        "metric_id": { "type": "integer", "description": "Required for metric type" },
+                        "job_id": { "type": "integer", "description": "Required for seatunnel_job type" }
                     },
-                    "required": ["connection_id", "type"]
+                    "required": ["type"]
                 }
             }),
             json!({
@@ -250,13 +251,17 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "update_metric_definition",
-                "description": "Update a metric's description or display_name. Requires Auto mode ON or ACP confirmation.",
+                "description": "Update a metric definition. Supports all core fields. Requires Auto mode ON. Only provided fields are updated; omitted fields remain unchanged.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "metric_id": { "type": "integer" },
-                        "description": { "type": "string" },
-                        "display_name": { "type": "string" }
+                        "display_name": { "type": "string", "description": "Display name shown in UI" },
+                        "description": { "type": "string", "description": "Metric description / business definition" },
+                        "table_name": { "type": "string", "description": "Source table name" },
+                        "column_name": { "type": "string", "description": "Target column for aggregation" },
+                        "filter_sql": { "type": "string", "description": "Optional WHERE clause fragment" },
+                        "aggregation": { "type": "string", "description": "Aggregation function, e.g. SUM / COUNT / AVG" }
                     },
                     "required": ["metric_id"]
                 }
@@ -357,13 +362,14 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "propose_seatunnel_job",
-                "description": "AI-generated SeaTunnel Job configuration proposal. Creates a Job config for data migration/sync and shows it to the user for confirmation. Use /gen-job style prompts to generate configs. If user accepts, the Job is created in the current category.",
+                "description": "AI-generated SeaTunnel Job configuration proposal. Creates or updates a Job config for data migration/sync and shows it to the user for confirmation. If job_id is provided, updates the existing job (use this when the user has a job tab open); otherwise creates a new job in the specified category.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "job_name": { "type": "string", "description": "Name for the SeaTunnel Job" },
                         "config_json": { "type": "string", "description": "SeaTunnel Job configuration JSON (env + source + sink sections)" },
-                        "category_id": { "type": "integer", "description": "Optional category ID to place the job in" },
+                        "job_id": { "type": "integer", "description": "Optional existing Job ID to update. Provide this when editing an already-open job tab." },
+                        "category_id": { "type": "integer", "description": "Optional category ID to place the job in (only used when creating a new job)" },
                         "description": { "type": "string", "description": "Brief description of what this job does" }
                     },
                     "required": ["job_name", "config_json"]

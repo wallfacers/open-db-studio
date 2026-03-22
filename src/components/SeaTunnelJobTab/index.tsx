@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Play, Square, Save, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -98,7 +98,10 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const { t } = useTranslation();
   const jobId = tab.stJobId;
   const { confirm } = useConfirmStore();
-  const { updateJobStatus, updateJobLabel } = useSeaTunnelStore();
+  const { updateJobStatus, updateJobLabel, setStJobContent } = useSeaTunnelStore();
+  // 订阅外部（AI）写入的 configJson；用 ref 区分组件自身写入 vs 外部写入，防止循环
+  const externalContent = useSeaTunnelStore(s => jobId ? s.stJobContent.get(jobId) : undefined);
+  const lastSyncedContentRef = useRef<string>('');
   const updateSeaTunnelJobTabTitle = useQueryStore(s => s.updateSeaTunnelJobTabTitle);
   // 订阅树节点 label，响应从树侧发起的重命名
   const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(`job_${jobId}`)?.label : undefined);
@@ -148,7 +151,11 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         // 统一用树节点名称作为 env.job.name
         parsed.env.jobName = job.name;
         setBuilderState(parsed);
-        setConfigJson(builderStateToConfig(parsed));
+        const finalJson = builderStateToConfig(parsed);
+        setConfigJson(finalJson);
+        // 同步到 store，供 MCP bridge 读取
+        lastSyncedContentRef.current = finalJson;
+        setStJobContent(jobId, finalJson);
       } catch (e) {
         setError(String(e));
       }
@@ -166,6 +173,17 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
     });
   }, [nodeLabel]);
 
+  // ── 外部（AI）写入 configJson 时同步到本地编辑器 ──────────────────────
+  useEffect(() => {
+    if (!jobId || externalContent === undefined) return;
+    // 跳过自身写入触发的订阅，避免循环
+    if (externalContent === lastSyncedContentRef.current) return;
+    lastSyncedContentRef.current = externalContent;
+    setConfigJson(externalContent);
+    const parsed = configToBuilderState(externalContent);
+    if (parsed) setBuilderState(parsed);
+  }, [externalContent, jobId]);
+
   // ── Job name change：同步写入 builderState.env.jobName ───────────────────
   const handleJobNameChange = useCallback((name: string) => {
     setJobName(name);
@@ -179,14 +197,17 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   // ── Sync builder ↔ JSON ───────────────────────────────────────────────────
   const handleBuilderChange = useCallback((state: BuilderState) => {
     setBuilderState(state);
-    setConfigJson(builderStateToConfig(state));
-  }, []);
+    const json = builderStateToConfig(state);
+    setConfigJson(json);
+    if (jobId) { lastSyncedContentRef.current = json; setStJobContent(jobId, json); }
+  }, [jobId, setStJobContent]);
 
   const handleJsonChange = useCallback((json: string) => {
     setConfigJson(json);
     const parsed = configToBuilderState(json);
     if (parsed) setBuilderState(parsed);
-  }, []);
+    if (jobId) { lastSyncedContentRef.current = json; setStJobContent(jobId, json); }
+  }, [jobId, setStJobContent]);
 
   // ── Mode switch ───────────────────────────────────────────────────────────
   const switchMode = useCallback(

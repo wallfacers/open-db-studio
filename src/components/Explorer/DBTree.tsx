@@ -18,6 +18,7 @@ import { BackupWizard } from '../ImportExport/BackupWizard';
 import { ImportWizard } from '../ImportExport/ImportWizard';
 import { CreateDatabaseDialog } from '../DatabaseManager/CreateDatabaseDialog';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useQueryStore } from '../../store/queryStore';
 import { Folder, FolderX } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 
@@ -304,8 +305,10 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           onEditConnection={() => setEditingConnId(getConnectionId(contextMenu.node))}
           onDeleteConnection={async () => {
             if (!await confirm({ message: t('dbTree.confirmDeleteConnection'), variant: 'danger' })) return;
-            await invoke('delete_connection', { id: getConnectionId(contextMenu.node) });
+            const connId = getConnectionId(contextMenu.node);
+            await invoke('delete_connection', { id: connId });
             useTreeStore.getState().init();
+            useQueryStore.getState().closeTabsByConnectionId(connId);
             showToast(t('dbTree.connectionDeleted'), 'success');
           }}
           onCreateTable={() => {
@@ -357,6 +360,15 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
               const parentId = Array.from(useTreeStore.getState().nodes.values())
                 .find(nd => nd.label === n.label && nd.nodeType === 'table')?.parentId ?? '';
               if (parentId) refreshNode(parentId);
+              // 关闭与该表关联的 Tab
+              const connId = getConnectionId(n);
+              const dbName = n.meta.database ?? `conn_${connId}`;
+              const schemaStr = n.meta.schema ?? '';
+              const dataTabId = `table_${connId}_${dbName}_${schemaStr}_${n.label}`;
+              const structTabId = `table_structure_${connId}_${dbName}_${schemaStr}_${n.label}`;
+              const { tabs, closeTab } = useQueryStore.getState();
+              if (tabs.some(t => t.id === dataTabId)) closeTab(dataTabId);
+              if (tabs.some(t => t.id === structTabId)) closeTab(structTabId);
               showToast(t('dbTree.operationSuccess'), 'success');
             } catch (e) {
               showToast(String(e), 'error');

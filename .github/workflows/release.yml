@@ -180,6 +180,7 @@ jobs:
 
       # ── Tauri 构建 ───────────────────────────
       - name: Build Tauri app
+        shell: bash
         run: |
           # $CERT_IMPORTED 由 Import 步骤通过 $GITHUB_ENV 写入，shell 层面可读
           # ${{ env.* }} 表达式无法读取动态写入的 GITHUB_ENV 变量，因此用 shell unset 代替

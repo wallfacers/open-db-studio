@@ -376,10 +376,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               <tr>
                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
                 {data.columns.map(col => (
-                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
-                    <div className="flex items-center gap-1">
+                  <th key={col} className="px-3 py-2 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
+                    <div className="flex items-center justify-between gap-2 w-full">
                       <span>{col}</span>
-                      <div className="flex flex-col gap-0 ml-1">
+                      <div className="flex flex-col gap-0 flex-shrink-0">
                         <Tooltip content={t('tableDataView.sortAsc')}>
                           <button
                             className={`leading-none p-0 hover:opacity-100 transition-colors ${

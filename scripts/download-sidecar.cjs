@@ -111,7 +111,7 @@ function downloadFile(url, dest) {
 }
 
 /**
- * 使用 adm-zip 解压（纯 Node.js，跨平台）
+ * 解压归档文件：.zip 用 AdmZip，.tar.gz 用系统 tar（Linux）
  */
 function extractArchive(archivePath, targetDir, exeName, targetName) {
   console.log(`Extracting ${exeName} from archive...`);
@@ -129,34 +129,43 @@ function extractArchive(archivePath, targetDir, exeName, targetName) {
   }
 
   try {
-    const zip = new AdmZip(archivePath);
-    zip.extractAllTo(targetDir, true); // overwrite
+    if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
+      // Linux: 使用系统 tar 解压
+      const { execSync } = require('child_process');
+      execSync(`tar xzf "${archivePath}" -C "${targetDir}"`, { stdio: 'inherit' });
+      fs.unlinkSync(archivePath);
 
-    // 查找可执行文件
-    let extractedPath = path.join(targetDir, exeName);
-    if (!fs.existsSync(extractedPath)) {
-      // 可能在子目录中，      const entries = zip.getEntries();
-      for (const entry of entries) {
-        if (entry.entryName.endsWith(exeName) || entry.entryName === exeName) {
-          extractedPath = path.join(targetDir, entry.entryName);
-          break;
+      const extractedPath = path.join(targetDir, exeName);
+      if (!fs.existsSync(extractedPath)) {
+        throw new Error(`Could not find ${exeName} after tar extraction`);
+      }
+      fs.renameSync(extractedPath, targetPath);
+      fs.chmodSync(targetPath, 0o755);
+    } else {
+      // Windows / macOS: 使用 AdmZip 解压 .zip
+      const zip = new AdmZip(archivePath);
+      zip.extractAllTo(targetDir, true); // overwrite
+
+      let extractedPath = path.join(targetDir, exeName);
+      if (!fs.existsSync(extractedPath)) {
+        const entries = zip.getEntries();
+        for (const entry of entries) {
+          if (entry.entryName.endsWith(exeName) || entry.entryName === exeName) {
+            extractedPath = path.join(targetDir, entry.entryName);
+            break;
+          }
+        }
+        if (!fs.existsSync(extractedPath)) {
+          throw new Error(`Could not find ${exeName} in archive`);
         }
       }
 
-      if (!fs.existsSync(extractedPath)) {
-        throw new Error(`Could not find ${exeName} in archive`);
+      fs.renameSync(extractedPath, targetPath);
+      fs.unlinkSync(archivePath);
+
+      if (process.platform !== 'win32') {
+        fs.chmodSync(targetPath, 0o755);
       }
-    }
-
-    // 重命名到目标文件名
-    fs.renameSync(extractedPath, targetPath);
-
-    // 删除压缩包
-    fs.unlinkSync(archivePath);
-
-    // Unix 系统添加执行权限
-    if (process.platform !== 'win32') {
-      fs.chmodSync(targetPath, 0o755);
     }
 
     console.log(`Extracted to: ${targetPath}`);

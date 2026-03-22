@@ -113,11 +113,21 @@ pub fn run() {
                 let exe_suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
                 let binary_name = format!("opencode-cli-{}{}", target_triple, exe_suffix);
 
+                // 打包后 NSIS/Windows sidecar 被剥离 target triple 直接放在 exe 同目录：
+                // {install_dir}/opencode-cli.exe（无 triple 后缀）
+                let exe_dir_sidecar = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.join(format!("opencode-cli{}", exe_suffix))));
+
                 let cli_path = match handle.path().resource_dir() {
                     Ok(resource_dir) => {
                         let release_path = resource_dir.join("binaries").join(&binary_name);
                         if release_path.exists() {
+                            // resource_dir/binaries/ 中存在带 triple 的文件（部分平台打包）
                             release_path
+                        } else if exe_dir_sidecar.as_ref().map(|p| p.exists()).unwrap_or(false) {
+                            // 安装包场景：opencode-cli.exe 直接放在 exe 同目录下（不含 triple）
+                            exe_dir_sidecar.unwrap()
                         } else {
                             // dev 模式: resource_dir = target/debug/
                             // 上移两级到 src-tauri/，再加 binaries/
@@ -130,13 +140,18 @@ pub fn run() {
                     }
                     Err(e) => {
                         log::warn!("Failed to get resource dir for opencode-cli sidecar: {}", e);
-                        // 降级：从当前可执行文件上移三级到 src-tauri/
-                        std::env::current_exe()
-                            .expect("Failed to get current exe path")
-                            .parent().and_then(|p| p.parent()).and_then(|p| p.parent())
-                            .expect("Failed to resolve src-tauri directory")
-                            .join("binaries")
-                            .join(&binary_name)
+                        if let Some(p) = exe_dir_sidecar.filter(|p| p.exists()) {
+                            // 安装包降级路径
+                            p
+                        } else {
+                            // dev 降级：从当前可执行文件上移三级到 src-tauri/
+                            std::env::current_exe()
+                                .expect("Failed to get current exe path")
+                                .parent().and_then(|p| p.parent()).and_then(|p| p.parent())
+                                .expect("Failed to resolve src-tauri directory")
+                                .join("binaries")
+                                .join(&binary_name)
+                        }
                     }
                 };
 

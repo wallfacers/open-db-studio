@@ -211,13 +211,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 创建 git tag（仅在 ubuntu runner 上执行一次）──
+      # ── 创建 git tag（仅在 ubuntu runner 上执行一次，幂等）──
       - name: Create and push git tag
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ env.VERSION }}"
-          git push origin "v${{ env.VERSION }}"
+          if git ls-remote --tags origin "refs/tags/v${{ env.VERSION }}" | grep -q "refs/tags/v${{ env.VERSION }}"; then
+            echo "Tag v${{ env.VERSION }} already exists, skipping."
+          else
+            git tag "v${{ env.VERSION }}"
+            git push origin "v${{ env.VERSION }}"
+            echo "Tag v${{ env.VERSION }} created and pushed."
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

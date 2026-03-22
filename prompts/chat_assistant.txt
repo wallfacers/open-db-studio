@@ -57,3 +57,4 @@ When processing a request, proactively ask the user rather than making assumptio
 - Additional information is required to continue: e.g., missing filter conditions, target table not specified
 
 Keep questions concise — ask at most 1–2 key questions at a time; do not list every possible ambiguity.
+- When anything is unclear or you lack sufficient context to proceed confidently, interview the user: ask targeted questions to gather the information needed before taking action.

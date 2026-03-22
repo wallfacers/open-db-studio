@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { ChevronDown, Trash2, ArrowDownToLine } from 'lucide-react';
@@ -15,7 +15,11 @@ interface JobLogPanelProps {
   onClear?: () => void;
 }
 
-const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClear }) => {
+export interface JobLogPanelHandle {
+  appendLog: (text: string) => void;
+}
+
+const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, onStatusChange, onClear }, ref) => {
   const { t } = useTranslation();
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [collapsed, setCollapsed] = useState(false);
@@ -25,7 +29,10 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
   const appendLog = useCallback((text: string) => {
     const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     setLogs((prev) => [...prev, { ts, text }]);
+    setCollapsed(false);
   }, []);
+
+  useImperativeHandle(ref, () => ({ appendLog }), [appendLog]);
 
   // Auto scroll
   useEffect(() => {
@@ -47,11 +54,10 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
         appendLog(payload.line);
       }),
 
-      // Job finished
-      listen<{ job_id: string }>('st_job_finished', ({ payload }) => {
+      // Job finished (status: FINISHED / FAILED / CANCELLED)
+      listen<{ job_id: string; status: string }>('st_job_finished', ({ payload }) => {
         if (payload.job_id !== jobId) return;
-        appendLog(t('seaTunnelJob.jobLogPanel.jobCompleted'));
-        onStatusChange('FINISHED');
+        onStatusChange(payload.status);
       }),
 
       // Stream error → fallback polling
@@ -167,7 +173,7 @@ const JobLogPanel: React.FC<JobLogPanelProps> = ({ jobId, onStatusChange, onClea
       )}
     </div>
   );
-};
+});
 
 function getLogColor(text: string): string {
   if (text.startsWith('[ERROR]')) return 'text-red-400';

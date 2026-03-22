@@ -19,6 +19,7 @@ struct StStreamErrorEvent {
 #[derive(serde::Serialize, Clone)]
 struct StJobFinishedEvent {
     job_id: String,
+    status: String,
 }
 
 // ─── 辅助函数 ─────────────────────────────────────────────────────────────────
@@ -553,11 +554,12 @@ pub async fn stream_st_job_logs(
             .await;
 
         match result {
-            Ok(()) => {
+            Ok(final_status) => {
                 let _ = app_clone.emit(
                     "st_job_finished",
                     StJobFinishedEvent {
                         job_id: job_id_clone,
+                        status: final_status,
                     },
                 );
             }

@@ -13,7 +13,7 @@ import VisualBuilder, {
   configToBuilderState,
 } from './VisualBuilder';
 import JsonEditor from './JsonEditor';
-import JobLogPanel from './JobLogPanel';
+import JobLogPanel, { type JobLogPanelHandle } from './JobLogPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +126,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const logPanelRef = useRef<JobLogPanelHandle>(null);
 
   // ── Load job info ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -273,6 +274,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
     if (!jobId) return;
     setSubmitting(true);
     setError(null);
+    logPanelRef.current?.appendLog(`[INFO] Submitting job "${jobName}"...`);
     try {
       // 1. Save first
       await invoke('update_st_job', {
@@ -288,6 +290,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       setSeaTunnelJobId(stJobId);
       setRunningStatus('RUNNING');
       updateJobStatus(jobId, 'RUNNING');
+      logPanelRef.current?.appendLog(`[INFO] Job submitted, id=${stJobId}`);
 
       // 3. Start log stream
       const connId = selectedConnectionId;
@@ -295,9 +298,11 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         await invoke('stream_st_job_logs', { connectionId: connId, jobId: stJobId });
       }
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
+      setError(msg);
       setRunningStatus('FAILED');
       updateJobStatus(jobId, 'FAILED');
+      logPanelRef.current?.appendLog(`[ERROR] Submit failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -305,13 +310,14 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
 
   // ── Stop ──────────────────────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
-    if (!seaTunnelJobId) return;
+    if (!jobId) return;
     try {
-      await invoke('stop_st_job', { jobId: seaTunnelJobId });
-      // Cancel log stream
-      await invoke('cancel_st_job_stream', { jobId: seaTunnelJobId }).catch(() => {});
+      await invoke('stop_st_job', { jobId });           // 内部 DB job ID (i64)
+      if (seaTunnelJobId) {
+        await invoke('cancel_st_job_stream', { jobId: seaTunnelJobId }).catch(() => {});
+      }
       setRunningStatus('CANCELLED');
-      if (jobId) updateJobStatus(jobId, 'CANCELLED');
+      updateJobStatus(jobId, 'CANCELLED');
     } catch (e) {
       setError(String(e));
     }
@@ -437,6 +443,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
 
       {/* ── Log panel ── */}
       <JobLogPanel
+        ref={logPanelRef}
         jobId={seaTunnelJobId}
         onStatusChange={handleStatusChange}
       />

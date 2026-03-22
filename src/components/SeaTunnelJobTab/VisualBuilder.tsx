@@ -89,30 +89,55 @@ export interface BuilderState {
   sink: ConnectorConfig;
 }
 
+// ─── Connector → SeaTunnel plugin_name & driver mapping ──────────────────────
+
+const JDBC_TYPES = new Set<ConnectorType>(['MySQL', 'PostgreSQL', 'SQLServer', 'Oracle']);
+
+/** UI type → SeaTunnel plugin_name */
+function toPluginName(type: ConnectorType): string {
+  return JDBC_TYPES.has(type) ? 'Jdbc' : type === 'FileCSV' || type === 'FileJSON' ? 'LocalFile' : type;
+}
+
+/** UI type → default JDBC driver class */
+export const DEFAULT_DRIVER: Partial<Record<ConnectorType, string>> = {
+  MySQL:      'com.mysql.cj.jdbc.Driver',
+  PostgreSQL: 'org.postgresql.Driver',
+  SQLServer:  'com.microsoft.sqlserver.jdbc.SQLServerDriver',
+  Oracle:     'oracle.jdbc.OracleDriver',
+};
+
+/** JDBC driver class → UI type (reverse lookup) */
+function driverToType(driver: string): ConnectorType {
+  if (driver.includes('mysql'))      return 'MySQL';
+  if (driver.includes('postgresql')) return 'PostgreSQL';
+  if (driver.includes('sqlserver'))  return 'SQLServer';
+  if (driver.includes('oracle'))     return 'Oracle';
+  return 'MySQL';
+}
+
 // ─── Serialization ────────────────────────────────────────────────────────────
 
 export function builderStateToConfig(state: BuilderState): string {
+  const buildConnector = (cfg: ConnectorConfig) => {
+    const fields = { ...cfg.fields };
+    // Auto-fill driver for JDBC types if not set
+    if (JDBC_TYPES.has(cfg.type) && !fields.driver) {
+      fields.driver = DEFAULT_DRIVER[cfg.type] ?? '';
+    }
+    return { plugin_name: toPluginName(cfg.type), ...fields };
+  };
+
   const obj: Record<string, unknown> = {
     env: {
       'job.name': state.env.jobName || 'unnamed-job',
       parallelism: state.env.parallelism || 1,
     },
-    source: [
-      {
-        plugin_name: state.source.type,
-        ...state.source.fields,
-      },
-    ],
+    source: [buildConnector(state.source)],
     transform: state.transforms.map((t) => ({
       plugin_name: t.type,
       ...t.fields,
     })),
-    sink: [
-      {
-        plugin_name: state.sink.type,
-        ...state.sink.fields,
-      },
-    ],
+    sink: [buildConnector(state.sink)],
   };
   return JSON.stringify(obj, null, 2);
 }
@@ -127,15 +152,24 @@ export function configToBuilderState(json: string): BuilderState | null {
       parallelism: Number(envRaw.parallelism ?? 1),
     };
 
-    const sourceArr = Array.isArray(obj.source) ? obj.source : [];
-    const sourceRaw = (sourceArr[0] ?? {}) as Record<string, unknown>;
-    const { plugin_name: srcType, ...srcFields } = sourceRaw;
-    const source: ConnectorConfig = {
-      type: (srcType as ConnectorType) || 'MySQL',
-      fields: Object.fromEntries(
-        Object.entries(srcFields).map(([k, v]) => [k, String(v ?? '')])
-      ),
+    const parseConnector = (arr: unknown[], defaultType: ConnectorType): ConnectorConfig => {
+      const raw = (Array.isArray(arr) ? arr[0] : {}) as Record<string, unknown>;
+      const { plugin_name: pluginName, ...rest } = raw;
+      const fields = Object.fromEntries(
+        Object.entries(rest).map(([k, v]) => [k, String(v ?? '')])
+      );
+      let type: ConnectorType = defaultType;
+      if (pluginName === 'Jdbc') {
+        type = driverToType(String(fields.driver ?? ''));
+      } else if (pluginName === 'LocalFile') {
+        type = fields.path?.endsWith('.json') ? 'FileJSON' : 'FileCSV';
+      } else if (pluginName) {
+        type = pluginName as ConnectorType;
+      }
+      return { type, fields };
     };
+
+    const source = parseConnector(Array.isArray(obj.source) ? obj.source : [], 'MySQL');
 
     const transformArr = Array.isArray(obj.transform) ? obj.transform : [];
     const transforms: TransformConfig[] = transformArr.map((t) => {
@@ -148,15 +182,7 @@ export function configToBuilderState(json: string): BuilderState | null {
       };
     });
 
-    const sinkArr = Array.isArray(obj.sink) ? obj.sink : [];
-    const sinkRaw = (sinkArr[0] ?? {}) as Record<string, unknown>;
-    const { plugin_name: sinkType, ...sinkFields } = sinkRaw;
-    const sink: ConnectorConfig = {
-      type: (sinkType as ConnectorType) || 'Console',
-      fields: Object.fromEntries(
-        Object.entries(sinkFields).map(([k, v]) => [k, String(v ?? '')])
-      ),
-    };
+    const sink = parseConnector(Array.isArray(obj.sink) ? obj.sink : [], 'Console');
 
     return { env, source, transforms, sink };
   } catch {
@@ -257,7 +283,9 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
   const fields = CONNECTOR_FIELDS[config.type] ?? [];
 
   const handleTypeChange = (type: ConnectorType) => {
-    onChange({ type, fields: {} });
+    const fields: Record<string, string> = {};
+    if (DEFAULT_DRIVER[type]) fields.driver = DEFAULT_DRIVER[type]!;
+    onChange({ type, fields });
   };
 
   const handleFieldChange = (key: string, value: string) => {

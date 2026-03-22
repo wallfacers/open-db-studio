@@ -1,4 +1,3 @@
-use futures_util::StreamExt;
 use reqwest::Client;
 
 /// SeaTunnel REST API 客户端
@@ -191,57 +190,78 @@ impl SeaTunnelClient {
         Ok(())
     }
 
-    /// 流式读取日志，GET /hazelcast/rest/maps/job-logs/{jobId}
-    /// 注意：SeaTunnel 可能不支持流式日志，此接口待验证
+    /// 轮询 job-info 获取进度日志，返回最终状态字符串（FINISHED / CANCELLED）
+    /// SeaTunnel REST API 无流式日志接口，改用每 2s 轮询 /job-info/{jobId}
     pub async fn stream_logs_with_callback<F>(
         &self,
         job_id: &str,
         mut on_line: F,
-    ) -> Result<(), String>
+    ) -> Result<String, String>
     where
         F: FnMut(String),
     {
-        let path = format!("/hazelcast/rest/maps/job-logs/{}", job_id);
-        let resp = self
-            .request(reqwest::Method::GET, &path)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to start log stream: {}", e))?;
+        let path = format!("/hazelcast/rest/maps/job-info/{}", job_id);
+        let mut last_source: u64 = 0;
+        let mut last_sink: u64 = 0;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp
-                .text()
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let resp = self
+                .request(reqwest::Method::GET, &path)
+                .send()
                 .await
-                .unwrap_or_else(|_| String::new());
-            return Err(format!("Log stream failed ({}): {}", status, text));
-        }
+                .map_err(|e| format!("Failed to fetch job info: {}", e))?;
 
-        let mut byte_stream = resp.bytes_stream();
-        let mut buffer = String::new();
+            if !resp.status().is_success() {
+                return Err(format!("job-info request failed: {}", resp.status()));
+            }
 
-        while let Some(chunk) = byte_stream.next().await {
-            match chunk {
-                Err(e) => return Err(format!("Stream error: {}", e)),
-                Ok(bytes) => {
-                    let text = String::from_utf8(bytes.to_vec())
-                        .map_err(|e| format!("Encoding error: {}", e))?;
-                    buffer.push_str(&text);
-                    // 按换行符分割，输出完整行
-                    while let Some(pos) = buffer.find('\n') {
-                        let line = buffer[..pos].trim_end_matches('\r').to_string();
-                        buffer = buffer[pos + 1..].to_string();
-                        on_line(line);
-                    }
+            let info: serde_json::Value = resp
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse job info: {}", e))?;
+
+            let status = info["jobStatus"].as_str().unwrap_or("UNKNOWN").to_string();
+
+            // 提取进度指标
+            let source_count = info["metrics"]["SourceReceivedCount"]
+                .as_u64()
+                .unwrap_or(0);
+            let sink_count = info["metrics"]["SinkWriteCount"].as_u64().unwrap_or(0);
+
+            if source_count != last_source || sink_count != last_sink {
+                on_line(format!(
+                    "[INFO] {} | 已读取: {} 行 | 已写入: {} 行",
+                    status, source_count, sink_count
+                ));
+                last_source = source_count;
+                last_sink = sink_count;
+            }
+
+            match status.as_str() {
+                "FINISHED" => {
+                    on_line(format!(
+                        "[INFO] 任务完成，共迁移 {} 行",
+                        sink_count
+                    ));
+                    return Ok("FINISHED".to_string());
+                }
+                "CANCELLED" => {
+                    on_line("[INFO] 任务已取消".to_string());
+                    return Ok("CANCELLED".to_string());
+                }
+                "FAILED" => {
+                    let error = info["errorMsg"].as_str().unwrap_or("Unknown error");
+                    // 只取第一行（后面是 Java stacktrace）
+                    let first_line = error.lines().next().unwrap_or(error);
+                    on_line(format!("[ERROR] 任务失败: {}", first_line));
+                    return Ok("FAILED".to_string());
+                }
+                _ => {
+                    // RUNNING 或其他，继续轮询
                 }
             }
         }
-
-        // 输出剩余内容（无换行结尾的最后一行）
-        if !buffer.is_empty() {
-            on_line(buffer);
-        }
-
-        Ok(())
     }
 }

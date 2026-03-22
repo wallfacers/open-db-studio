@@ -125,7 +125,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   // UI
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const logPanelRef = useRef<JobLogPanelHandle>(null);
 
   // ── Load job info ──────────────────────────────────────────────────────────
@@ -145,7 +144,24 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         setJobName(job.name);
         if (job.connection_id) setSelectedConnectionId(job.connection_id);
         if (job.last_job_id) setSeaTunnelJobId(job.last_job_id);
-        if (job.last_status) setRunningStatus(job.last_status as RunStatus);
+
+        // 如果上次状态是 RUNNING，向 SeaTunnel 查询实际状态（防止重启后状态卡在 RUNNING）
+        if (job.last_status === 'RUNNING' && job.last_job_id) {
+          try {
+            const actualStatus = await invoke<string>('get_st_job_status', { jobId: job.last_job_id });
+            const resolved = (['FINISHED', 'FAILED', 'CANCELLED', 'RUNNING'] as string[]).includes(actualStatus)
+              ? actualStatus as RunStatus
+              : 'idle';
+            setRunningStatus(resolved);
+            if (jobId) updateJobStatus(jobId, resolved);
+          } catch {
+            // SeaTunnel 不可用，重置为 idle
+            setRunningStatus('idle');
+            if (jobId) updateJobStatus(jobId, 'idle');
+          }
+        } else if (job.last_status) {
+          setRunningStatus(job.last_status as RunStatus);
+        }
 
         const json = job.config_json ?? DEFAULT_CONFIG_JSON;
         const parsed = configToBuilderState(json) ?? { ...DEFAULT_BUILDER_STATE };
@@ -158,7 +174,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         lastSyncedContentRef.current = finalJson;
         setStJobContent(jobId, finalJson);
       } catch (e) {
-        setError(String(e));
+        showToast?.(String(e), 'error');
       }
     })();
   }, [jobId]);
@@ -249,7 +265,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const handleSave = useCallback(async () => {
     if (!jobId) return;
     setSaving(true);
-    setError(null);
     try {
       await invoke('update_st_job', {
         id: jobId,
@@ -263,7 +278,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       updateSeaTunnelJobTabTitle(jobId, jobName);
       showToast?.(t('seaTunnelJob.toolbar.saveSuccess'), 'success');
     } catch (e) {
-      setError(String(e));
+      showToast?.(String(e), 'error');
     } finally {
       setSaving(false);
     }
@@ -273,7 +288,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const handleSubmit = useCallback(async () => {
     if (!jobId) return;
     setSubmitting(true);
-    setError(null);
     logPanelRef.current?.appendLog(`[INFO] Submitting job "${jobName}"...`);
     try {
       // 1. Save first
@@ -299,7 +313,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       }
     } catch (e) {
       const msg = String(e);
-      setError(msg);
       setRunningStatus('FAILED');
       updateJobStatus(jobId, 'FAILED');
       logPanelRef.current?.appendLog(`[ERROR] Submit failed: ${msg}`);
@@ -319,7 +332,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       setRunningStatus('CANCELLED');
       updateJobStatus(jobId, 'CANCELLED');
     } catch (e) {
-      setError(String(e));
+      logPanelRef.current?.appendLog(`[ERROR] Stop failed: ${String(e)}`);
     }
   }, [seaTunnelJobId, jobId, updateJobStatus]);
 
@@ -365,13 +378,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         </div>
 
         <div className="flex-1" />
-
-        {/* Error hint */}
-        {error && (
-          <span className="text-[10px] text-red-400 max-w-[200px] truncate" title={error}>
-            {error}
-          </span>
-        )}
 
         {/* Submit / Stop */}
         {isRunning ? (
@@ -444,7 +450,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       {/* ── Log panel ── */}
       <JobLogPanel
         ref={logPanelRef}
-        jobId={seaTunnelJobId}
+        jobId={isRunning ? seaTunnelJobId : null}
         onStatusChange={handleStatusChange}
       />
     </div>

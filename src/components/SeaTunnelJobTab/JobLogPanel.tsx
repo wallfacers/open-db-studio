@@ -24,7 +24,28 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [panelHeight, setPanelHeight] = useState(200);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = panelHeight;
+
+    const onMouseMove = (me: MouseEvent) => {
+      const delta = startY - me.clientY;
+      const newHeight = Math.max(80, Math.min(600, startHeight + delta));
+      setPanelHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   const appendLog = useCallback((text: string) => {
     const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -98,8 +119,15 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
   return (
     <div
       className="flex flex-col flex-shrink-0 border-t border-[#253347] bg-[#0d1117]"
-      style={{ height: collapsed ? 'auto' : '200px' }}
+      style={{ height: collapsed ? 'auto' : `${panelHeight}px` }}
     >
+      {/* Resize handle */}
+      {!collapsed && (
+        <div
+          className="h-1 cursor-ns-resize hover:bg-[#00c9a7]/50 flex-shrink-0 transition-colors"
+          onMouseDown={handleResizeMouseDown}
+        />
+      )}
       {/* Panel header */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#253347] flex-shrink-0">
         <button

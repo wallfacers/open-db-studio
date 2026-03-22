@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
@@ -12,6 +12,7 @@ import { RowContextMenu, type ClickTarget } from './RowContextMenu';
 import { usePendingChanges, type RowData } from './usePendingChanges';
 import { CellEditorModal } from './CellEditorModal';
 import { AutoCompleteInput } from './AutoCompleteInput';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface TableDataViewProps {
   tableName: string;
@@ -40,7 +41,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [pkColumn, setPkColumn] = useState<string>('id');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(100);
+  const [pageSize, setPageSize] = useState(100);
+  const [totalRows, setTotalRows] = useState(0);
   const [whereClause, setWhereClause] = useState('');
   const [orderClause, setOrderClause] = useState('');
   // 已应用的条件（只有点击搜索时才更新）
@@ -56,6 +58,13 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const latestOrderRef = useRef('');
   const [isLoading, setIsLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  // 可视化查询行状态
+  const [filterField, setFilterField] = useState('');
+  const [filterOp, setFilterOp] = useState('=');
+  const [filterValue, setFilterValue] = useState('');
+  // 列头排序状态
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'ASC' | 'DESC' | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const [cellEditor, setCellEditor] = useState<{ rowIdx: number; colIdx: number; value: string | null; columnName: string } | null>(null);
@@ -64,12 +73,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
+  // 请求序号：每次发起查询时递增，用于丢弃过期响应，防止竞争条件覆盖最新结果
+  const requestIdRef = useRef(0);
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
+    const reqId = ++requestIdRef.current;
     setIsLoading(true);
     try {
-      const result = await invoke<QueryResult>('get_table_data', {
+      const resp = await invoke<{ data: QueryResult; total_rows: number }>('get_table_data', {
         params: {
           connection_id: activeConnectionId,
           database: dbName || null,
@@ -79,18 +91,33 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           page_size: pageSize,
           where_clause: appliedWhereRef.current || null,
           order_clause: appliedOrderRef.current || null,
+          filter_column: filterField || null,
+          filter_operator: filterOp || null,
+          filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOp)) ? null : (filterValue || null),
+          filter_data_type: columns.find(c => c.name === filterField)?.data_type || null,
+          sort_column: sortCol,
+          sort_direction: sortDir,
         }
       });
-      setData(result);
+      if (reqId !== requestIdRef.current) return;
+      setData(resp.data);
+      setTotalRows(resp.total_rows);
     } catch (e) {
+      if (reqId !== requestIdRef.current) return;
       showToastRef.current(String(e), 'error');
     } finally {
-      setIsLoading(false);
+      if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
+    setFilterField('');
+    setFilterOp('=');
+    setFilterValue('');
+    setSortCol(null);
+    setSortDir(null);
+    setTotalRows(0);
     invoke<{ columns: ColumnMeta[] }>('get_table_detail', {
       connectionId: activeConnectionId, database: dbName || null, table: tableName
     })
@@ -195,6 +222,28 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setCellEditor({ rowIdx, colIdx, value, columnName });
   };
 
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
+
+  // 页码下拉选项，上限 500 防止大表渲染卡顿
+  const pageOptions = useMemo(() =>
+    Array.from({ length: Math.min(totalPages, 500) }, (_, i) => ({
+      value: String(i + 1),
+      label: String(i + 1),
+    })),
+  [totalPages]);
+
+  const PAGE_SIZE_OPTIONS = [
+    { value: '100', label: '100' },
+    { value: '200', label: '200' },
+    { value: '500', label: '500' },
+    { value: '1000', label: '1000' },
+  ];
+
+  const handlePageSizeChange = (v: string) => {
+    setPage(1);
+    setPageSize(Number(v));
+  };
+
   const rowBgClass = (rowIdx: number) => {
     if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
     const hasEdits = pending.edits.some(e => e.rowIdx === rowIdx);
@@ -213,15 +262,34 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           <Tooltip content={t('tableDataView.prevPage')}>
             <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
           </Tooltip>
-          <span className="text-[#c8daea]">{page}</span>
+          <DropdownSelect
+            value={String(page)}
+            options={pageOptions}
+            onChange={v => setPage(Number(v))}
+            plain
+          />
+          <span className="text-[#7a9bb8]">/ {totalPages}</span>
           <Tooltip content={t('tableDataView.nextPage')}>
             <button
-              disabled={!data || data.rows.length < pageSize}
+              disabled={page >= totalPages}
               onClick={() => setPage(p => p + 1)}
               className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
             ><ChevronRight size={14}/></button>
           </Tooltip>
-          <span className="text-[#7a9bb8]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
+          <Tooltip content={t('tableDataView.lastPage')}>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage(totalPages)}
+              className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+            >&gt;|</button>
+          </Tooltip>
+          <DropdownSelect
+            value={String(pageSize)}
+            options={PAGE_SIZE_OPTIONS}
+            onChange={handlePageSizeChange}
+            plain
+          />
+          <span className="text-[#7a9bb8]">{t('tableDataView.rowsPerPage')}</span>
           <Tooltip content={t('tableDataView.refreshData')}>
             <button onClick={handleSearch} className="p-1 hover:bg-[#1a2639] rounded">
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''}/>
@@ -270,6 +338,56 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         </div>
       </div>
 
+      {/* FilterRow — 可视化查询行 */}
+      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs gap-2">
+        <Filter size={12} className="text-[#7a9bb8] flex-shrink-0"/>
+        <DropdownSelect
+          value={filterField}
+          options={columns.map(c => ({ value: c.name, label: c.name }))}
+          placeholder={t('tableDataView.filterSelectField')}
+          onChange={(v) => {
+            setFilterField(v);
+            if (!v) { setFilterOp('='); setFilterValue(''); }
+          }}
+          className="w-36"
+        />
+        <DropdownSelect
+          value={filterOp}
+          options={[
+            { value: '=', label: '=' },
+            { value: '!=', label: '!=' },
+            { value: '>', label: '>' },
+            { value: '<', label: '<' },
+            { value: '>=', label: '>=' },
+            { value: '<=', label: '<=' },
+            { value: 'LIKE', label: 'LIKE' },
+            { value: 'IS NULL', label: 'IS NULL' },
+            { value: 'IS NOT NULL', label: 'IS NOT NULL' },
+          ]}
+          onChange={setFilterOp}
+          className="w-28"
+        />
+        {!['IS NULL', 'IS NOT NULL'].includes(filterOp) && (
+          <input
+            className="bg-transparent outline-none text-[#c8daea] flex-1 min-w-0"
+            placeholder={filterOp === 'LIKE'
+              ? t('tableDataView.filterValueLikePlaceholder')
+              : t('tableDataView.filterValuePlaceholder')}
+            value={filterValue}
+            onChange={e => setFilterValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+          />
+        )}
+        <Tooltip content={t('tableDataView.search')}>
+          <button
+            onClick={handleSearch}
+            className="p-1 hover:bg-[#1a2639] rounded text-[#7a9bb8] hover:text-[#00c9a7] transition-colors flex-shrink-0"
+          >
+            <Search size={14}/>
+          </button>
+        </Tooltip>
+      </div>
+
       {/* Filter Bar */}
       <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs gap-3">
         <Filter size={12} className="text-[#7a9bb8]"/>
@@ -307,7 +425,33 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               <tr>
                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
                 {data.columns.map(col => (
-                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
+                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
+                    <div className="flex items-center justify-between gap-1 w-full">
+                      <span>{col}</span>
+                      <Tooltip content={
+                        sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
+                        : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
+                        : t('tableDataView.sortAsc')
+                      }>
+                        <button
+                          className={`flex-shrink-0 leading-none transition-colors ${
+                            sortCol === col
+                              ? 'text-[#00c9a7]'
+                              : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
+                          }`}
+                          onClick={() => {
+                            if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
+                            else if (sortDir === 'ASC') { setSortDir('DESC'); }
+                            else { setSortCol(null); setSortDir(null); }
+                          }}
+                        >
+                          {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
+                           sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
+                           <ChevronsUpDown size={11}/>}
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </th>
                 ))}
               </tr>
             </thead>

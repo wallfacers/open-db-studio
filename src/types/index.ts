@@ -416,6 +416,7 @@ export interface OpenCodeProvider {
 
 export interface MetricPageResult {
   items: Metric[];
-  row_count: number;   // 本页实际行数（items.length），非总记录数
+  row_count: number;   // 本页实际行数（items.length）
+  total_rows: number;  // 满足过滤条件的总记录数
   duration_ms: number;
 }

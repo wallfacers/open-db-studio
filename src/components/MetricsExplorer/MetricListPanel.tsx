@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Trash2, Pencil, Plus, Sparkles, ListTodo, ChevronFirst, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { useConfirmStore } from '../../store/confirmStore';
 import { useQueryStore } from '../../store/queryStore';
 import { useTaskStore } from '../../store/taskStore';
 import { TablePickerModal } from './TablePickerModal';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface Props {
   scope: MetricScope;
@@ -31,8 +32,9 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [genInfo, setGenInfo] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(100);
+  const [pageSize, setPageSize] = useState(100);
   const [rowCount, setRowCount] = useState(0);
+  const [totalRows, setTotalRows] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
 
   const deleteMetric = useMetricsTreeStore(s => s.deleteMetric);
@@ -60,6 +62,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       });
       setMetrics(data.items);
       setRowCount(data.row_count);
+      setTotalRows(data.total_rows);
       setDurationMs(data.duration_ms);
 
       // 空页回退：若拿到空列表且当前不是第一页，自动回退
@@ -212,6 +215,27 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
     return <span className={`px-1.5 py-0.5 rounded text-[10px] ${s.cls}`}>{s.label}</span>;
   };
 
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
+
+  const pageOptions = useMemo(() =>
+    Array.from({ length: Math.min(totalPages, 500) }, (_, i) => ({
+      value: String(i + 1),
+      label: String(i + 1),
+    })),
+  [totalPages]);
+
+  const PAGE_SIZE_OPTIONS = [
+    { value: '100', label: '100' },
+    { value: '200', label: '200' },
+    { value: '500', label: '500' },
+    { value: '1000', label: '1000' },
+  ];
+
+  const handlePageSizeChange = (v: string) => {
+    setPage(1);
+    setPageSize(Number(v));
+  };
+
   const TABS: { key: FilterTab; label: string }[] = [
     { key: 'all', label: t('metricsExplorer.metricList.all') },
     { key: 'draft', label: t('metricsExplorer.metricList.draft') },
@@ -236,14 +260,32 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           disabled={page <= 1}
           title={t('metricsExplorer.metricList.prevPage')}
         ><ChevronLeft size={13} /></button>
-        <span className="text-xs text-[#a0b4c8] px-1">{page}</span>
+        <DropdownSelect
+          value={String(page)}
+          options={pageOptions}
+          onChange={v => setPage(Number(v))}
+          plain
+        />
+        <span className="text-xs text-[#4a6a8a]">/ {totalPages}</span>
         <button
           className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => setPage(p => p + 1)}
-          disabled={rowCount < pageSize}
+          disabled={page >= totalPages}
           title={t('metricsExplorer.metricList.nextPage')}
         ><ChevronRight size={13} /></button>
-        <span className="text-xs text-[#4a6a8a]">{pageSize}{t('metricsExplorer.metricList.rowsPerPage')}</span>
+        <button
+          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+          onClick={() => setPage(totalPages)}
+          disabled={page >= totalPages}
+          title={t('tableDataView.lastPage')}
+        >&gt;|</button>
+        <DropdownSelect
+          value={String(pageSize)}
+          options={PAGE_SIZE_OPTIONS}
+          onChange={handlePageSizeChange}
+          plain
+        />
+        <span className="text-xs text-[#4a6a8a]">{t('metricsExplorer.metricList.rowsPerPage')}</span>
         <button
           className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white"
           onClick={load}
@@ -326,7 +368,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
               <tr><td colSpan={8} className="text-center py-8 text-[#4a6a8a]">{t('metricsExplorer.metricList.noMetrics')}</td></tr>
             )}
             {filtered.map(m => (
-              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group cursor-pointer select-none" onClick={() => toggleSelect(m.id)}>
+              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group cursor-pointer" onClick={() => toggleSelect(m.id)}>
                 <td className="border-r border-[#1e2d42]">
                   <div className="flex items-center justify-center py-1.5">
                     <input type="checkbox" checked={selected.has(m.id)}

@@ -342,6 +342,12 @@
     "viewFullContent": "View Full Content",
     "formatJson": "Format JSON",
     "applyFilter": "Apply Filter",
+    "filterSelectField": "Select field",
+    "filterOperatorLabel": "Operator",
+    "filterValuePlaceholder": "Enter value",
+    "filterValueLikePlaceholder": "%keyword%",
+    "sortAsc": "Sort ascending",
+    "sortDesc": "Sort descending",
     "search": "Search"
   },
   "queryHistory": {

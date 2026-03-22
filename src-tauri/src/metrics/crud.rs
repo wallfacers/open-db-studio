@@ -316,45 +316,56 @@ pub fn list_metrics_by_node_paged(
     status: Option<&str>,
     page: u32,
     page_size: u32,
-) -> AppResult<(Vec<Metric>, usize)> {
+) -> AppResult<(Vec<Metric>, usize, i64)> {
     let conn = crate::db::get().lock().unwrap();
-    let mut sql = format!(
-        "SELECT {} FROM metrics WHERE connection_id=?1",
-        SELECT_COLS
-    );
+
+    // 构建公用 WHERE 片段与参数（不含 LIMIT/OFFSET/ORDER BY）
+    let mut where_sql = "WHERE connection_id=?1".to_string();
     let mut param_values: Vec<String> = vec![connection_id.to_string()];
     let mut idx = 2usize;
 
     if let Some(db) = database {
-        sql.push_str(&format!(" AND (scope_database=?{} OR scope_database IS NULL)", idx));
+        where_sql.push_str(&format!(" AND (scope_database=?{} OR scope_database IS NULL)", idx));
         param_values.push(db.to_string());
         idx += 1;
 
         if let Some(sc) = schema {
-            sql.push_str(&format!(" AND (scope_schema=?{} OR scope_schema IS NULL)", idx));
+            where_sql.push_str(&format!(" AND (scope_schema=?{} OR scope_schema IS NULL)", idx));
             param_values.push(sc.to_string());
             idx += 1;
         }
     }
     if let Some(st) = status {
-        sql.push_str(&format!(" AND status=?{}", idx));
+        where_sql.push_str(&format!(" AND status=?{}", idx));
         param_values.push(st.to_string());
         idx += 1;
     }
 
+    // COUNT 查询
+    let count_sql = format!("SELECT COUNT(*) FROM metrics {}", where_sql);
+    let total_rows: i64 = conn.query_row(
+        &count_sql,
+        rusqlite::params_from_iter(param_values.iter().map(|s| s.as_str())),
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    // 数据查询
     let offset = (page.saturating_sub(1)) as u64 * page_size as u64;
-    sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}", idx, idx + 1));
+    let data_sql = format!(
+        "SELECT {} FROM metrics {} ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}",
+        SELECT_COLS, where_sql, idx, idx + 1
+    );
     param_values.push(page_size.to_string());
     param_values.push(offset.to_string());
 
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare(&data_sql)?;
     let rows = stmt.query_map(
         rusqlite::params_from_iter(param_values.iter().map(|s| s.as_str())),
         row_to_metric,
     )?;
     let items: Vec<Metric> = rows.collect::<Result<Vec<_>, _>>()?;
     let row_count = items.len();
-    Ok((items, row_count))
+    Ok((items, row_count, total_rows))
 }
 
 pub fn count_metrics_batch(

@@ -427,6 +427,10 @@ fn build_filter_part(
         "IS NOT NULL" => format!("{} IS NOT NULL", col_escaped),
         _ => {
             let raw_value = value.unwrap_or("");
+            // 值为空时跳过，避免生成 `col = ` 这样的残缺 SQL（数值类型不加引号时尤其危险）
+            if raw_value.is_empty() {
+                return None;
+            }
             let quoted = quote_filter_value(raw_value, data_type);
             format!("{} {} {}", col_escaped, op_upper, quoted)
         }

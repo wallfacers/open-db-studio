@@ -342,18 +342,22 @@ pub struct TableDataParams {
 }
 
 /// 根据字段类型决定是否给值加单引号
-/// 字符串/日期类型加引号，数值/时间戳/布尔类型不加引号，未知类型保守加引号
+/// 字符串/日期/时间戳类型加引号，数值/布尔类型不加引号，未知类型保守加引号
+/// 安全兜底：即使 data_type 标记为数值类型，若值本身不像数字，仍加引号，
+/// 防止因前端传入 data_type 不准确时生成残缺 SQL（如 WHERE col = wechat）
 fn quote_filter_value(value: &str, data_type: &str) -> String {
     let dt = data_type.to_lowercase();
-    let needs_quote = if dt.contains("timestamp") {
-        false
-    } else if dt.contains("int") || dt.contains("float") || dt.contains("double")
+    // 判断值本身是否看起来像数字（整数或浮点数），用于兜底保护
+    let looks_numeric = value.trim().parse::<f64>().is_ok();
+
+    let needs_quote = if dt.contains("int") || dt.contains("float") || dt.contains("double")
         || dt.contains("decimal") || dt.contains("numeric") || dt.contains("real")
         || dt.contains("bool") || dt.contains("bit")
     {
-        false
+        // 数值/布尔类型：仅当值确实是数字时才不加引号，否则兜底加引号
+        !looks_numeric
     } else {
-        // varchar, char, text, date, datetime, time, string, unknown → 加引号
+        // varchar, char, text, date, datetime, time, timestamp, string, unknown → 加引号
         true
     };
 
@@ -384,8 +388,20 @@ mod tests {
     }
 
     #[test]
-    fn test_no_quote_timestamp() {
-        assert_eq!(quote_filter_value("1711123456", "timestamp"), "1711123456");
+    fn test_quote_timestamp() {
+        // timestamp 类型应加引号（UI 中通常输入 datetime 字符串）
+        assert_eq!(quote_filter_value("2024-01-01 12:00:00", "timestamp"), "'2024-01-01 12:00:00'");
+        // 纯数字的 Unix 时间戳：虽是 timestamp 类型，也加引号（保守策略）
+        assert_eq!(quote_filter_value("1711123456", "timestamp"), "'1711123456'");
+    }
+
+    #[test]
+    fn test_string_value_with_numeric_type_gets_quoted() {
+        // 兜底保护：当 data_type 声明为数值但值本身不是数字时，仍应加引号
+        // 防止因前端传入 data_type 不准确时生成 `col = wechat` 这样的残缺 SQL
+        assert_eq!(quote_filter_value("wechat", "int"), "'wechat'");
+        assert_eq!(quote_filter_value("active", "tinyint"), "'active'");
+        assert_eq!(quote_filter_value("abc", "bigint"), "'abc'");
     }
 
     #[test]
@@ -504,8 +520,15 @@ fn qualified_table(driver: &str, schema: Option<&str>, table: &str) -> String {
     }
 }
 
+/// get_table_data 的响应体，包含分页数据和总行数
+#[derive(Debug, serde::Serialize)]
+pub struct TableDataResponse {
+    pub data: crate::datasource::QueryResult,
+    pub total_rows: i64,
+}
+
 #[tauri::command]
-pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasource::QueryResult> {
+pub async fn get_table_data(params: TableDataParams) -> AppResult<TableDataResponse> {
     let config = crate::db::get_connection_config(params.connection_id)?;
     let ds = match params.database.as_deref().filter(|s| !s.is_empty()) {
         Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
@@ -557,9 +580,24 @@ pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasou
     };
 
     let tbl = qualified_table(&config.driver, params.schema.as_deref(), &params.table);
-    let sql = format!("SELECT * FROM {}{}{} LIMIT {} OFFSET {}", tbl, where_part, order_part, params.page_size, offset);
 
-    ds.execute(&sql).await
+    // COUNT 查询：与数据查询共用同一 WHERE 条件，不含 ORDER BY / LIMIT
+    let count_sql = format!("SELECT COUNT(*) FROM {}{}", tbl, where_part);
+    let total_rows: i64 = ds.execute(&count_sql).await
+        .ok()
+        .and_then(|r| r.rows.into_iter().next())
+        .and_then(|row| row.into_iter().next())
+        .and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_u64().map(|n| n as i64))
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+        .unwrap_or(0);
+
+    let sql = format!("SELECT * FROM {}{}{} LIMIT {} OFFSET {}", tbl, where_part, order_part, params.page_size, offset);
+    let data = ds.execute(&sql).await?;
+
+    Ok(TableDataResponse { data, total_rows })
 }
 
 #[tauri::command]
@@ -1022,7 +1060,8 @@ pub async fn list_metrics_by_node(
 #[derive(serde::Serialize)]
 pub struct MetricPageResult {
     pub items: Vec<crate::metrics::Metric>,
-    pub row_count: usize,   // 本页实际行数（items.len()），非总记录数
+    pub row_count: usize,   // 本页实际行数（items.len()）
+    pub total_rows: i64,    // 满足过滤条件的总记录数
     pub duration_ms: u64,
 }
 
@@ -1036,7 +1075,7 @@ pub async fn list_metrics_paged(
     page_size: u32,
 ) -> Result<MetricPageResult, String> {
     let start = std::time::Instant::now();
-    let (items, row_count) = crate::metrics::crud::list_metrics_by_node_paged(
+    let (items, row_count, total_rows) = crate::metrics::crud::list_metrics_by_node_paged(
         connection_id,
         database.as_deref(),
         schema.as_deref(),
@@ -1045,7 +1084,7 @@ pub async fn list_metrics_paged(
         page_size,
     ).map_err(|e| e.to_string())?;
     let duration_ms = start.elapsed().as_millis() as u64;
-    Ok(MetricPageResult { items, row_count, duration_ms })
+    Ok(MetricPageResult { items, row_count, total_rows, duration_ms })
 }
 
 #[tauri::command]

@@ -108,6 +108,12 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showSuggestions) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // 先同步当前输入值，再触发搜索
+        onChange(inputValue);
+        onSearch();
+      }
       return;
     }
 
@@ -140,6 +146,10 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
 
           if (filtered[highlightIndex]) {
             applySuggestion(filtered[highlightIndex]);
+          } else {
+            // 没有匹配项时直接触发搜索
+            onChange(inputValue);
+            onSearch();
           }
         }
         break;

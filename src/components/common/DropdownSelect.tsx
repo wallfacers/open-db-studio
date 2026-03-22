@@ -15,6 +15,7 @@ interface DropdownSelectProps {
   className?: string;         // 触发器额外宽度类，如 "w-32"
   direction?: 'up' | 'down';  // 默认 'down'
   maxHeight?: number;         // 下拉列表最大高度px，默认 240
+  plain?: boolean;            // 纯文字触发器，无边框/背景/箭头
 }
 
 export const DropdownSelect: React.FC<DropdownSelectProps> = ({
@@ -25,6 +26,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   className = '',
   direction = 'down',
   maxHeight = 240,
+  plain = false,
 }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -38,6 +40,15 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   return (
     <div ref={ref} className={`relative ${className}`}>
       {/* 触发器 */}
+      {plain ? (
+        <span
+          className={`text-xs cursor-pointer select-none hover:text-[#00c9a7] transition-colors
+                      ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#c8daea]'}`}
+          onClick={() => setOpen(o => !o)}
+        >
+          {displayLabel}
+        </span>
+      ) : (
       <div
         className="flex items-center gap-1 bg-[#151d28] border border-[#2a3f5a] rounded
                    px-2 py-1 cursor-pointer hover:border-[#3a5a7a] transition-colors select-none"
@@ -51,6 +62,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
           className={`flex-shrink-0 text-[#7a9bb8] transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </div>
+      )}
 
       {/* 下拉列表 */}
       {open && (

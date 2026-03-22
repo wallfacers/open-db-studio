@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
@@ -41,7 +41,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [pkColumn, setPkColumn] = useState<string>('id');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(100);
+  const [pageSize, setPageSize] = useState(100);
+  const [totalRows, setTotalRows] = useState(0);
   const [whereClause, setWhereClause] = useState('');
   const [orderClause, setOrderClause] = useState('');
   // 已应用的条件（只有点击搜索时才更新）
@@ -72,12 +73,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
+  // 请求序号：每次发起查询时递增，用于丢弃过期响应，防止竞争条件覆盖最新结果
+  const requestIdRef = useRef(0);
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
+    const reqId = ++requestIdRef.current;
     setIsLoading(true);
     try {
-      const result = await invoke<QueryResult>('get_table_data', {
+      const resp = await invoke<{ data: QueryResult; total_rows: number }>('get_table_data', {
         params: {
           connection_id: activeConnectionId,
           database: dbName || null,
@@ -95,11 +99,14 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           sort_direction: sortDir,
         }
       });
-      setData(result);
+      if (reqId !== requestIdRef.current) return;
+      setData(resp.data);
+      setTotalRows(resp.total_rows);
     } catch (e) {
+      if (reqId !== requestIdRef.current) return;
       showToastRef.current(String(e), 'error');
     } finally {
-      setIsLoading(false);
+      if (reqId === requestIdRef.current) setIsLoading(false);
     }
   }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
 
@@ -110,6 +117,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setFilterValue('');
     setSortCol(null);
     setSortDir(null);
+    setTotalRows(0);
     invoke<{ columns: ColumnMeta[] }>('get_table_detail', {
       connectionId: activeConnectionId, database: dbName || null, table: tableName
     })
@@ -214,6 +222,28 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setCellEditor({ rowIdx, colIdx, value, columnName });
   };
 
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
+
+  // 页码下拉选项，上限 500 防止大表渲染卡顿
+  const pageOptions = useMemo(() =>
+    Array.from({ length: Math.min(totalPages, 500) }, (_, i) => ({
+      value: String(i + 1),
+      label: String(i + 1),
+    })),
+  [totalPages]);
+
+  const PAGE_SIZE_OPTIONS = [
+    { value: '100', label: '100' },
+    { value: '200', label: '200' },
+    { value: '500', label: '500' },
+    { value: '1000', label: '1000' },
+  ];
+
+  const handlePageSizeChange = (v: string) => {
+    setPage(1);
+    setPageSize(Number(v));
+  };
+
   const rowBgClass = (rowIdx: number) => {
     if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
     const hasEdits = pending.edits.some(e => e.rowIdx === rowIdx);
@@ -232,15 +262,34 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           <Tooltip content={t('tableDataView.prevPage')}>
             <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
           </Tooltip>
-          <span className="text-[#c8daea]">{page}</span>
+          <DropdownSelect
+            value={String(page)}
+            options={pageOptions}
+            onChange={v => setPage(Number(v))}
+            plain
+          />
+          <span className="text-[#7a9bb8]">/ {totalPages}</span>
           <Tooltip content={t('tableDataView.nextPage')}>
             <button
-              disabled={!data || data.rows.length < pageSize}
+              disabled={page >= totalPages}
               onClick={() => setPage(p => p + 1)}
               className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
             ><ChevronRight size={14}/></button>
           </Tooltip>
-          <span className="text-[#7a9bb8]">{pageSize} {t('tableDataView.rowsPerPage')}</span>
+          <Tooltip content={t('tableDataView.lastPage')}>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage(totalPages)}
+              className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+            >&gt;|</button>
+          </Tooltip>
+          <DropdownSelect
+            value={String(pageSize)}
+            options={PAGE_SIZE_OPTIONS}
+            onChange={handlePageSizeChange}
+            plain
+          />
+          <span className="text-[#7a9bb8]">{t('tableDataView.rowsPerPage')}</span>
           <Tooltip content={t('tableDataView.refreshData')}>
             <button onClick={handleSearch} className="p-1 hover:bg-[#1a2639] rounded">
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''}/>

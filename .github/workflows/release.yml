@@ -81,7 +81,7 @@ jobs:
         include:
           - platform: ubuntu-22.04
             rust_target: x86_64-unknown-linux-gnu
-            tauri_args: ""
+            tauri_args: "--bundles deb,rpm"
           - platform: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: ""

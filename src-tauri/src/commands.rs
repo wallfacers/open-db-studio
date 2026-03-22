@@ -332,6 +332,152 @@ pub struct TableDataParams {
     pub page_size: u32,
     pub where_clause: Option<String>,
     pub order_clause: Option<String>,
+    // 新增字段
+    pub filter_column: Option<String>,
+    pub filter_operator: Option<String>,
+    pub filter_value: Option<String>,
+    pub filter_data_type: Option<String>,
+    pub sort_column: Option<String>,
+    pub sort_direction: Option<String>,
+}
+
+/// 根据字段类型决定是否给值加单引号
+/// 字符串/日期类型加引号，数值/时间戳/布尔类型不加引号，未知类型保守加引号
+fn quote_filter_value(value: &str, data_type: &str) -> String {
+    let dt = data_type.to_lowercase();
+    let needs_quote = if dt.contains("timestamp") {
+        false
+    } else if dt.contains("int") || dt.contains("float") || dt.contains("double")
+        || dt.contains("decimal") || dt.contains("numeric") || dt.contains("real")
+        || dt.contains("bool") || dt.contains("bit")
+    {
+        false
+    } else {
+        // varchar, char, text, date, datetime, time, string, unknown → 加引号
+        true
+    };
+
+    if needs_quote {
+        format!("'{}'", value.replace('\'', "''"))
+    } else {
+        value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quote_string_types() {
+        assert_eq!(quote_filter_value("张三", "varchar"), "'张三'");
+        assert_eq!(quote_filter_value("hello", "TEXT"), "'hello'");
+        assert_eq!(quote_filter_value("it's", "char"), "'it''s'");
+    }
+
+    #[test]
+    fn test_no_quote_numeric_types() {
+        assert_eq!(quote_filter_value("42", "int"), "42");
+        assert_eq!(quote_filter_value("3.14", "float"), "3.14");
+        assert_eq!(quote_filter_value("100", "bigint"), "100");
+        assert_eq!(quote_filter_value("9.9", "decimal"), "9.9");
+    }
+
+    #[test]
+    fn test_no_quote_timestamp() {
+        assert_eq!(quote_filter_value("1711123456", "timestamp"), "1711123456");
+    }
+
+    #[test]
+    fn test_quote_date_types() {
+        assert_eq!(quote_filter_value("2024-01-01", "date"), "'2024-01-01'");
+        assert_eq!(quote_filter_value("2024-01-01 12:00:00", "datetime"), "'2024-01-01 12:00:00'");
+        assert_eq!(quote_filter_value("12:00:00", "time"), "'12:00:00'");
+    }
+
+    #[test]
+    fn test_unknown_type_defaults_to_quote() {
+        assert_eq!(quote_filter_value("abc", "unknown_type"), "'abc'");
+        assert_eq!(quote_filter_value("abc", ""), "'abc'");
+    }
+}
+
+/// 将结构化过滤条件转为 SQL 片段（不含 WHERE 关键字）
+/// 返回 None 表示无有效过滤条件（column 为空）
+fn build_filter_part(
+    column: &str,
+    operator: &str,
+    value: Option<&str>,
+    data_type: &str,
+    driver: &str,
+) -> Option<String> {
+    if column.trim().is_empty() {
+        return None;
+    }
+
+    let col_escaped = if driver == "mysql" {
+        format!("`{}`", column.replace('`', "``"))
+    } else {
+        format!("\"{}\"", column.replace('"', "\"\""))
+    };
+
+    let op_upper = operator.trim().to_uppercase();
+    let fragment = match op_upper.as_str() {
+        "IS NULL" => format!("{} IS NULL", col_escaped),
+        "IS NOT NULL" => format!("{} IS NOT NULL", col_escaped),
+        _ => {
+            let raw_value = value.unwrap_or("");
+            let quoted = quote_filter_value(raw_value, data_type);
+            format!("{} {} {}", col_escaped, op_upper, quoted)
+        }
+    };
+
+    Some(fragment)
+}
+
+/// 合并结构化 filter_part 和手动 where_clause 文本，用 AND 连接
+fn merge_where(filter_part: Option<String>, where_clause: Option<&str>) -> String {
+    let where_text = where_clause.filter(|s| !s.trim().is_empty());
+    match (filter_part, where_text) {
+        (Some(fp), Some(wt)) => format!("{} AND ({})", fp, wt),
+        (Some(fp), None) => fp,
+        (None, Some(wt)) => wt.to_string(),
+        (None, None) => String::new(),
+    }
+}
+
+/// 合并列头排序和手动 order_clause 文本
+/// 列头排序在前，手动文本追加在后
+fn merge_order(
+    sort_column: Option<&str>,
+    sort_direction: Option<&str>,
+    order_clause: Option<&str>,
+    driver: &str,
+) -> Result<String, String> {
+    let sort_part = match (sort_column, sort_direction) {
+        (Some(col), Some(dir)) if !col.trim().is_empty() => {
+            let dir_upper = dir.trim().to_uppercase();
+            if dir_upper != "ASC" && dir_upper != "DESC" {
+                return Err(format!("Invalid sort direction: {}", dir));
+            }
+            let col_escaped = if driver == "mysql" {
+                format!("`{}`", col.replace('`', "``"))
+            } else {
+                format!("\"{}\"", col.replace('"', "\"\""))
+            };
+            Some(format!("{} {}", col_escaped, dir_upper))
+        }
+        _ => None,
+    };
+
+    let order_text = order_clause.filter(|s| !s.trim().is_empty());
+    let result = match (sort_part, order_text) {
+        (Some(sp), Some(ot)) => format!("{}, {}", sp, ot),
+        (Some(sp), None) => sp,
+        (None, Some(ot)) => ot.to_string(),
+        (None, None) => String::new(),
+    };
+    Ok(result)
 }
 
 /// 构建带 schema 前缀的表名（PG/Oracle 用）
@@ -370,17 +516,41 @@ pub async fn get_table_data(params: TableDataParams) -> AppResult<crate::datasou
     }
 
     let offset = params.page.saturating_sub(1) * params.page_size;
-    // 安全说明：where_clause 和 order_clause 是前端传入的自由文本，直接嵌入 SQL。
+
+    // 构建结构化 filter 片段
+    let filter_part = params.filter_column.as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .and_then(|col| build_filter_part(
+            col,
+            params.filter_operator.as_deref().unwrap_or("="),
+            params.filter_value.as_deref(),
+            params.filter_data_type.as_deref().unwrap_or(""),
+            &config.driver,
+        ));
+
+    // 合并 WHERE
+    // 安全说明：where_clause 是前端传入的自由文本，直接嵌入 SQL。
     // 这是设计决策：本应用为本地桌面工具，Tauri IPC 仅限本机访问，信任边界为本地用户。
     // 在实现网络化部署时必须改用参数绑定或 AST 白名单。
-    let where_part = params.where_clause
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| format!(" WHERE {}", s))
-        .unwrap_or_default();
-    let order_part = params.order_clause
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| format!(" ORDER BY {}", s))
-        .unwrap_or_default();
+    let merged_where = merge_where(filter_part, params.where_clause.as_deref());
+    let where_part = if merged_where.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", merged_where)
+    };
+
+    // 合并 ORDER BY
+    let merged_order = merge_order(
+        params.sort_column.as_deref(),
+        params.sort_direction.as_deref(),
+        params.order_clause.as_deref(),
+        &config.driver,
+    ).map_err(|e| crate::AppError::Other(e))?;
+    let order_part = if merged_order.is_empty() {
+        String::new()
+    } else {
+        format!(" ORDER BY {}", merged_order)
+    };
 
     let tbl = qualified_table(&config.driver, params.schema.as_deref(), &params.table);
     let sql = format!("SELECT * FROM {}{}{} LIMIT {} OFFSET {}", tbl, where_part, order_part, params.page_size, offset);

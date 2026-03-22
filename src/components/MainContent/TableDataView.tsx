@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
@@ -12,6 +12,7 @@ import { RowContextMenu, type ClickTarget } from './RowContextMenu';
 import { usePendingChanges, type RowData } from './usePendingChanges';
 import { CellEditorModal } from './CellEditorModal';
 import { AutoCompleteInput } from './AutoCompleteInput';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface TableDataViewProps {
   tableName: string;
@@ -56,6 +57,13 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const latestOrderRef = useRef('');
   const [isLoading, setIsLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  // 可视化查询行状态
+  const [filterField, setFilterField] = useState('');
+  const [filterOp, setFilterOp] = useState('=');
+  const [filterValue, setFilterValue] = useState('');
+  // 列头排序状态
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'ASC' | 'DESC' | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const [cellEditor, setCellEditor] = useState<{ rowIdx: number; colIdx: number; value: string | null; columnName: string } | null>(null);
@@ -79,6 +87,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           page_size: pageSize,
           where_clause: appliedWhereRef.current || null,
           order_clause: appliedOrderRef.current || null,
+          filter_column: filterField || null,
+          filter_operator: filterOp || null,
+          filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOp)) ? null : (filterValue || null),
+          filter_data_type: columns.find(c => c.name === filterField)?.data_type || null,
+          sort_column: sortCol,
+          sort_direction: sortDir,
         }
       });
       setData(result);
@@ -87,10 +101,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
+    setFilterField('');
+    setFilterOp('=');
+    setFilterValue('');
+    setSortCol(null);
+    setSortDir(null);
     invoke<{ columns: ColumnMeta[] }>('get_table_detail', {
       connectionId: activeConnectionId, database: dbName || null, table: tableName
     })
@@ -270,6 +289,56 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         </div>
       </div>
 
+      {/* FilterRow — 可视化查询行 */}
+      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs gap-2">
+        <Filter size={12} className="text-[#7a9bb8] flex-shrink-0"/>
+        <DropdownSelect
+          value={filterField}
+          options={columns.map(c => ({ value: c.name, label: c.name }))}
+          placeholder={t('tableDataView.filterSelectField')}
+          onChange={(v) => {
+            setFilterField(v);
+            if (!v) { setFilterOp('='); setFilterValue(''); }
+          }}
+          className="w-36"
+        />
+        <DropdownSelect
+          value={filterOp}
+          options={[
+            { value: '=', label: '=' },
+            { value: '!=', label: '!=' },
+            { value: '>', label: '>' },
+            { value: '<', label: '<' },
+            { value: '>=', label: '>=' },
+            { value: '<=', label: '<=' },
+            { value: 'LIKE', label: 'LIKE' },
+            { value: 'IS NULL', label: 'IS NULL' },
+            { value: 'IS NOT NULL', label: 'IS NOT NULL' },
+          ]}
+          onChange={setFilterOp}
+          className="w-28"
+        />
+        {!['IS NULL', 'IS NOT NULL'].includes(filterOp) && (
+          <input
+            className="bg-transparent outline-none text-[#c8daea] flex-1 min-w-0"
+            placeholder={filterOp === 'LIKE'
+              ? t('tableDataView.filterValueLikePlaceholder')
+              : t('tableDataView.filterValuePlaceholder')}
+            value={filterValue}
+            onChange={e => setFilterValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+          />
+        )}
+        <Tooltip content={t('tableDataView.search')}>
+          <button
+            onClick={handleSearch}
+            className="p-1 hover:bg-[#1a2639] rounded text-[#7a9bb8] hover:text-[#00c9a7] transition-colors flex-shrink-0"
+          >
+            <Search size={14}/>
+          </button>
+        </Tooltip>
+      </div>
+
       {/* Filter Bar */}
       <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs gap-3">
         <Filter size={12} className="text-[#7a9bb8]"/>
@@ -307,7 +376,45 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               <tr>
                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
                 {data.columns.map(col => (
-                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
+                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
+                    <div className="flex items-center gap-1">
+                      <span>{col}</span>
+                      <div className="flex flex-col gap-0 ml-1">
+                        <Tooltip content={t('tableDataView.sortAsc')}>
+                          <button
+                            className={`leading-none p-0 hover:opacity-100 transition-colors ${
+                              sortCol === col && sortDir === 'ASC' ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
+                            }`}
+                            onClick={() => {
+                              if (sortCol === col && sortDir === 'ASC') {
+                                setSortCol(null); setSortDir(null);
+                              } else {
+                                setSortCol(col); setSortDir('ASC');
+                              }
+                            }}
+                          >
+                            <ChevronUp size={10}/>
+                          </button>
+                        </Tooltip>
+                        <Tooltip content={t('tableDataView.sortDesc')}>
+                          <button
+                            className={`leading-none p-0 hover:opacity-100 transition-colors ${
+                              sortCol === col && sortDir === 'DESC' ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
+                            }`}
+                            onClick={() => {
+                              if (sortCol === col && sortDir === 'DESC') {
+                                setSortCol(null); setSortDir(null);
+                              } else {
+                                setSortCol(col); setSortDir('DESC');
+                              }
+                            }}
+                          >
+                            <ChevronDown size={10}/>
+                          </button>
+                        </Tooltip>
+                      </div>
+                    </div>
+                  </th>
                 ))}
               </tr>
             </thead>

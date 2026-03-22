@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
-import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
@@ -376,43 +376,31 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               <tr>
                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">{t('tableDataView.serialNo')}</th>
                 {data.columns.map(col => (
-                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
+                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
                     <div className="flex items-center justify-between gap-1 w-full">
                       <span>{col}</span>
-                      <div className="flex items-center gap-0 flex-shrink-0">
-                        <Tooltip content={t('tableDataView.sortAsc')}>
-                          <button
-                            className={`leading-none p-0 hover:opacity-100 transition-colors ${
-                              sortCol === col && sortDir === 'ASC' ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
-                            }`}
-                            onClick={() => {
-                              if (sortCol === col && sortDir === 'ASC') {
-                                setSortCol(null); setSortDir(null);
-                              } else {
-                                setSortCol(col); setSortDir('ASC');
-                              }
-                            }}
-                          >
-                            <ChevronUp size={10}/>
-                          </button>
-                        </Tooltip>
-                        <Tooltip content={t('tableDataView.sortDesc')}>
-                          <button
-                            className={`leading-none p-0 hover:opacity-100 transition-colors ${
-                              sortCol === col && sortDir === 'DESC' ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
-                            }`}
-                            onClick={() => {
-                              if (sortCol === col && sortDir === 'DESC') {
-                                setSortCol(null); setSortDir(null);
-                              } else {
-                                setSortCol(col); setSortDir('DESC');
-                              }
-                            }}
-                          >
-                            <ChevronDown size={10}/>
-                          </button>
-                        </Tooltip>
-                      </div>
+                      <Tooltip content={
+                        sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
+                        : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
+                        : t('tableDataView.sortAsc')
+                      }>
+                        <button
+                          className={`flex-shrink-0 leading-none transition-colors ${
+                            sortCol === col
+                              ? 'text-[#00c9a7]'
+                              : 'text-[#3a5a7a] opacity-0 group-hover/th:opacity-100 hover:text-[#7a9bb8]'
+                          }`}
+                          onClick={() => {
+                            if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
+                            else if (sortDir === 'ASC') { setSortDir('DESC'); }
+                            else { setSortCol(null); setSortDir(null); }
+                          }}
+                        >
+                          {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
+                           sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
+                           <ChevronsUpDown size={11}/>}
+                        </button>
+                      </Tooltip>
                     </div>
                   </th>
                 ))}

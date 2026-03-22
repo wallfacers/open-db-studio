@@ -342,6 +342,12 @@
     "viewFullContent": "查看完整内容",
     "formatJson": "格式化 JSON",
     "applyFilter": "应用过滤条件",
+    "filterSelectField": "选择字段",
+    "filterOperatorLabel": "条件",
+    "filterValuePlaceholder": "输入值",
+    "filterValueLikePlaceholder": "%关键词%",
+    "sortAsc": "升序排序",
+    "sortDesc": "降序排序",
     "search": "查询"
   },
   "queryHistory": {

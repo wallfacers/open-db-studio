@@ -692,12 +692,8 @@ export const useAiStore = create<AiState>()(
           // Guard: 已被 cancel 或 session 已被删除（deleteSession 会同时清除 chatStates）
           if (!get().chatStates[sessionId]?.isChatting) return;
 
-          // 若 mid-stream 已触发检测，保留现有 pendingElicitation，否则在此执行检测
-          const streamingFired = get().chatStates[sessionId]?.streamingElicitationFired ?? false;
-          const existingElicitation = streamingFired
-            ? (get().chatStates[sessionId]?.pendingElicitation ?? null)
-            : null;
-          const detected = streamingFired ? existingElicitation : (detectElicitation(content, sessionId) ?? null);
+          // turn 结束时始终对完整内容重新检测，确保 mid-stream 提前触发时不会丢失后续选项
+          const detected = detectElicitation(content, sessionId) ?? null;
 
           const newMsg = {
             role: 'assistant' as const,

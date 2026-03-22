@@ -180,17 +180,24 @@ jobs:
 
       # ── Tauri 构建 ───────────────────────────
       - name: Build Tauri app
-        run: npx tauri build ${{ matrix.tauri_args }}
+        run: |
+          # $CERT_IMPORTED 由 Import 步骤通过 $GITHUB_ENV 写入，shell 层面可读
+          # ${{ env.* }} 表达式无法读取动态写入的 GITHUB_ENV 变量，因此用 shell unset 代替
+          if [ "$CERT_IMPORTED" != "true" ]; then
+            echo "Signing not available, unsetting Apple signing env vars."
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          npx tauri build ${{ matrix.tauri_args }}
         env:
           TAURI_SKIP_DEVSERVER_CHECK: "true"
           # Linux AppImage 修复：linuxdeploy 在无 FUSE 的 CI 环境中需要 extract-and-run 模式
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          # macOS 签名：仅在证书成功导入时传入（CERT_IMPORTED 由 Import 步骤写入 $GITHUB_ENV）
-          APPLE_CERTIFICATE: ${{ env.CERT_IMPORTED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ env.CERT_IMPORTED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_ID: ${{ env.CERT_IMPORTED == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ env.CERT_IMPORTED == 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ env.CERT_IMPORTED == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          # 以下变量在 CERT_IMPORTED != true 时会被 run 脚本 unset
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       # ── 上传产物到 GitHub Release ─────────────
       - name: Upload artifacts to GitHub Release

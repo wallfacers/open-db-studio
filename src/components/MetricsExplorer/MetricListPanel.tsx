@@ -368,7 +368,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
               <tr><td colSpan={8} className="text-center py-8 text-[#4a6a8a]">{t('metricsExplorer.metricList.noMetrics')}</td></tr>
             )}
             {filtered.map(m => (
-              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group cursor-pointer select-none" onClick={() => toggleSelect(m.id)}>
+              <tr key={m.id} className="hover:bg-[#1a2639] border-b border-[#1e2d42] group cursor-pointer" onClick={() => toggleSelect(m.id)}>
                 <td className="border-r border-[#1e2d42]">
                   <div className="flex items-center justify-center py-1.5">
                     <input type="checkbox" checked={selected.has(m.id)}

@@ -388,7 +388,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
                           className={`flex-shrink-0 leading-none transition-colors ${
                             sortCol === col
                               ? 'text-[#00c9a7]'
-                              : 'text-[#3a5a7a] opacity-0 group-hover/th:opacity-100 hover:text-[#7a9bb8]'
+                              : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
                           }`}
                           onClick={() => {
                             if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }

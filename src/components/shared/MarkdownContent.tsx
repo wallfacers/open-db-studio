@@ -7,6 +7,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check, Maximize2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ChartBlock } from './ChartBlock';
+import { Tooltip } from '../common/Tooltip';
 
 // ── 代码放大弹框 ─────────────────────────────────────────────────────────────
 const CodeExpandModal: React.FC<{
@@ -61,13 +62,14 @@ const CodeExpandModal: React.FC<{
                 <><Copy size={13} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
             </button>
-            <button
-              onClick={onClose}
-              className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-              title={t('commonComponents.markdownContent.close')}
-            >
-              <X size={16} />
-            </button>
+            <Tooltip content={t('commonComponents.markdownContent.close')} className="contents">
+              <button
+                onClick={onClose}
+                className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </Tooltip>
           </div>
         </div>
         {/* 代码区域：overflow-auto 覆盖横纵两个方向 */}
@@ -119,13 +121,14 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
         <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
           <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setExpanded(true)}
-              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-              title={t('commonComponents.markdownContent.expandView')}
-            >
-              <Maximize2 size={12} />
-            </button>
+            <Tooltip content={t('commonComponents.markdownContent.expandView')} className="contents">
+              <button
+                onClick={() => setExpanded(true)}
+                className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              >
+                <Maximize2 size={12} />
+              </button>
+            </Tooltip>
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"

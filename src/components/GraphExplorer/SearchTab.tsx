@@ -3,6 +3,7 @@ import { Loader2, Search } from 'lucide-react';
 import type { GraphNode } from './useGraphData';
 import { useGraphSearch } from './useGraphSearch';
 import { useReactFlow } from '@xyflow/react';
+import { Tooltip } from '../common/Tooltip';
 
 interface SearchTabProps {
   connectionId: number | null;
@@ -104,24 +105,26 @@ export function SearchTab({
               </div>
 
               <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={e => handleSetFrom(e, node)}
-                  disabled={!isTable}
-                  title={isTable ? '设为路径起点' : '仅支持表节点'}
-                  className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  style={{ background: '#0a2010', color: '#4ade80', border: '1px solid #4ade8044' }}
-                >
-                  S
-                </button>
-                <button
-                  onClick={e => handleSetTo(e, node)}
-                  disabled={!isTable}
-                  title={isTable ? '设为路径终点' : '仅支持表节点'}
-                  className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  style={{ background: '#0a1525', color: '#5eb2f7', border: '1px solid #5eb2f744' }}
-                >
-                  T
-                </button>
+                <Tooltip content={isTable ? '设为路径起点' : '仅支持表节点'} className="contents">
+                  <button
+                    onClick={e => handleSetFrom(e, node)}
+                    disabled={!isTable}
+                    className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    style={{ background: '#0a2010', color: '#4ade80', border: '1px solid #4ade8044' }}
+                  >
+                    S
+                  </button>
+                </Tooltip>
+                <Tooltip content={isTable ? '设为路径终点' : '仅支持表节点'} className="contents">
+                  <button
+                    onClick={e => handleSetTo(e, node)}
+                    disabled={!isTable}
+                    className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    style={{ background: '#0a1525', color: '#5eb2f7', border: '1px solid #5eb2f744' }}
+                  >
+                    T
+                  </button>
+                </Tooltip>
               </div>
             </div>
           );

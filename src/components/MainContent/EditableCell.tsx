@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Maximize2 } from 'lucide-react';
+import { Tooltip } from '../common/Tooltip';
 
 interface EditableCellProps {
   value: string | number | boolean | null;
@@ -53,7 +54,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   const cancel = () => setEditing(false);
 
   const baseCellClass = [
-    'px-3 py-1.5 text-left text-[#c8daea] border-r border-b border-[#1e2d42] relative',
+    'px-3 py-1.5 text-left text-[#c8daea] border-r border-b border-[#1e2d42] relative overflow-hidden',
     isDeleted ? 'line-through text-red-400/60' : '',
     isCloned ? 'text-green-400' : '',
     isModified && !isDeleted ? 'bg-yellow-900/20' : '',
@@ -61,7 +62,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
 
   if (editing) {
     return (
-      <td className="border-r border-b border-[#1e2d42] p-0 relative" style={{ outline: '1px solid #3a7bd5', outlineOffset: '-1px', ...style }}>
+      <td className="border-r border-b border-[#1e2d42] p-0 relative overflow-hidden" style={{ outline: '1px solid #3a7bd5', outlineOffset: '-1px', ...style }}>
         <input
           ref={inputRef}
           value={draft}
@@ -85,14 +86,16 @@ export const EditableCell: React.FC<EditableCellProps> = ({
       onContextMenu={onContextMenu}
       style={style}
     >
-      <div
-        className="max-w-[300px] truncate"
-        title={displayValue === null ? undefined : String(displayValue)}
+      <Tooltip
+        content={displayValue === null ? undefined : String(displayValue)}
+        className="w-full min-w-0"
       >
-        {displayValue === null
-          ? <span className="text-[#7a9bb8]">NULL</span>
-          : String(displayValue)}
-      </div>
+        <div className="truncate">
+          {displayValue === null
+            ? <span className="text-[#7a9bb8]">NULL</span>
+            : String(displayValue)}
+        </div>
+      </Tooltip>
       {onOpenEditor && !isDeleted && (
         <button
           className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"

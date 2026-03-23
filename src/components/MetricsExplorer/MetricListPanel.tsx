@@ -9,6 +9,7 @@ import { useQueryStore } from '../../store/queryStore';
 import { useTaskStore } from '../../store/taskStore';
 import { TablePickerModal } from './TablePickerModal';
 import { DropdownSelect } from '../common/DropdownSelect';
+import { Tooltip } from '../common/Tooltip';
 
 interface Props {
   scope: MetricScope;
@@ -248,18 +249,20 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       {/* 过滤栏 */}
       <div className="flex items-center gap-2 px-4 h-10 border-b border-[#1e2d42] flex-wrap flex-shrink-0">
         {/* 分页控件 */}
-        <button
-          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          onClick={() => setPage(1)}
-          disabled={page <= 1}
-          title={t('metricsExplorer.metricList.firstPage')}
-        ><ChevronFirst size={13} /></button>
-        <button
-          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          onClick={() => setPage(p => p - 1)}
-          disabled={page <= 1}
-          title={t('metricsExplorer.metricList.prevPage')}
-        ><ChevronLeft size={13} /></button>
+        <Tooltip content={t('metricsExplorer.metricList.firstPage')} className="contents">
+          <button
+            className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            onClick={() => setPage(1)}
+            disabled={page <= 1}
+          ><ChevronFirst size={13} /></button>
+        </Tooltip>
+        <Tooltip content={t('metricsExplorer.metricList.prevPage')} className="contents">
+          <button
+            className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            onClick={() => setPage(p => p - 1)}
+            disabled={page <= 1}
+          ><ChevronLeft size={13} /></button>
+        </Tooltip>
         <DropdownSelect
           value={String(page)}
           options={pageOptions}
@@ -267,18 +270,20 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           plain
         />
         <span className="text-xs text-[#4a6a8a]">/ {totalPages}</span>
-        <button
-          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          onClick={() => setPage(p => p + 1)}
-          disabled={page >= totalPages}
-          title={t('metricsExplorer.metricList.nextPage')}
-        ><ChevronRight size={13} /></button>
-        <button
-          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs"
-          onClick={() => setPage(totalPages)}
-          disabled={page >= totalPages}
-          title={t('tableDataView.lastPage')}
-        >&gt;|</button>
+        <Tooltip content={t('metricsExplorer.metricList.nextPage')} className="contents">
+          <button
+            className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            onClick={() => setPage(p => p + 1)}
+            disabled={page >= totalPages}
+          ><ChevronRight size={13} /></button>
+        </Tooltip>
+        <Tooltip content={t('tableDataView.lastPage')} className="contents">
+          <button
+            className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+            onClick={() => setPage(totalPages)}
+            disabled={page >= totalPages}
+          >&gt;|</button>
+        </Tooltip>
         <DropdownSelect
           value={String(pageSize)}
           options={PAGE_SIZE_OPTIONS}
@@ -286,11 +291,12 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           plain
         />
         <span className="text-xs text-[#4a6a8a]">{t('metricsExplorer.metricList.rowsPerPage')}</span>
-        <button
-          className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white"
-          onClick={load}
-          title={t('metricsExplorer.refresh')}
-        ><RefreshCw size={12} /></button>
+        <Tooltip content={t('metricsExplorer.refresh')} className="contents">
+          <button
+            className="flex items-center justify-center w-6 h-6 rounded text-[#7a9bb8] hover:bg-[#1a2a3a] hover:text-white"
+            onClick={load}
+          ><RefreshCw size={12} /></button>
+        </Tooltip>
         <div className="w-px h-4 bg-[#1e2d42] mx-1" />
         <div className="flex gap-1">
           {TABS.map(t => (
@@ -389,20 +395,22 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]">{statusBadge(m.status)}</td>
                 <td className="px-3 py-1.5 border-r border-[#1e2d42]" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center gap-2 justify-end">
-                    <button
-                      className="flex items-center justify-center text-[#7a9bb8] hover:text-white"
-                      onClick={() => onOpenMetric?.(m.id, m.display_name)}
-                      title={t('metricsExplorer.metricList.edit')}
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    <button
-                      className="flex items-center justify-center text-red-400 hover:text-red-300"
-                      onClick={() => doDelete([m.id])}
-                      title={t('metricsExplorer.metricList.delete')}
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    <Tooltip content={t('metricsExplorer.metricList.edit')} className="contents">
+                      <button
+                        className="flex items-center justify-center text-[#7a9bb8] hover:text-white"
+                        onClick={() => onOpenMetric?.(m.id, m.display_name)}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content={t('metricsExplorer.metricList.delete')} className="contents">
+                      <button
+                        className="flex items-center justify-center text-red-400 hover:text-red-300"
+                        onClick={() => doDelete([m.id])}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </td>
               </tr>

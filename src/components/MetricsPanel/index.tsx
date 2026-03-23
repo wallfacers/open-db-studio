@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { BarChart2, Plus, Check, X, Trash2, Loader2, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Tooltip } from '../common/Tooltip';
 
 interface Metric {
   id: number;
@@ -234,29 +235,32 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-3 flex-shrink-0">
                   {metric.status === 'draft' && (
                     <>
-                      <button
-                        onClick={() => handleApprove(metric.id)}
-                        title={t('metricsExplorer.metricsTree.open')}
-                        className="p-1.5 rounded text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#0d3d2e] transition-colors"
-                      >
-                        <Check size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleReject(metric.id)}
-                        title={t('metricsExplorer.metricList.rejected')}
-                        className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
-                      >
-                        <X size={14} />
-                      </button>
+                      <Tooltip content={t('metricsExplorer.metricsTree.open')} className="contents">
+                        <button
+                          onClick={() => handleApprove(metric.id)}
+                          className="p-1.5 rounded text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#0d3d2e] transition-colors"
+                        >
+                          <Check size={14} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip content={t('metricsExplorer.metricList.rejected')} className="contents">
+                        <button
+                          onClick={() => handleReject(metric.id)}
+                          className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </Tooltip>
                     </>
                   )}
-                  <button
-                    onClick={() => handleDelete(metric.id)}
-                    title={t('metricsExplorer.metricList.delete')}
-                    className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <Tooltip content={t('metricsExplorer.metricList.delete')} className="contents">
+                    <button
+                      onClick={() => handleDelete(metric.id)}
+                      className="p-1.5 rounded text-[#7a9bb8] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             ))}

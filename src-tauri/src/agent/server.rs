@@ -4,6 +4,54 @@ use tauri::{Emitter, Manager};
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
 const HEALTH_POLL_MAX_ATTEMPTS: u32 = 20; // 10 seconds total
 
+// ── PID 文件管理 ──────────────────────────────────────────────────────────────
+
+fn pid_file_path(opencode_dir: &std::path::Path) -> std::path::PathBuf {
+    opencode_dir.join("opencode-serve.pid")
+}
+
+/// 写入当前 sidecar 进程的 PID 到文件。
+fn write_pid_file(opencode_dir: &std::path::Path, pid: u32) {
+    let _ = std::fs::write(pid_file_path(opencode_dir), pid.to_string());
+}
+
+/// 删除 PID 文件（正常退出时调用）。
+fn delete_pid_file(opencode_dir: &std::path::Path) {
+    let _ = std::fs::remove_file(pid_file_path(opencode_dir));
+}
+
+/// 按 PID kill 进程（跨平台）。
+fn kill_pid(pid: u32) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output();
+    }
+}
+
+/// 读取 PID 文件，kill 残留进程，然后删除文件。
+/// 用于启动前清理上次崩溃遗留的孤儿进程。
+fn kill_by_pid_file(opencode_dir: &std::path::Path) {
+    let pid_file = pid_file_path(opencode_dir);
+    if !pid_file.exists() {
+        return;
+    }
+    if let Ok(content) = std::fs::read_to_string(&pid_file) {
+        if let Ok(pid) = content.trim().parse::<u32>() {
+            log::info!("Killing stale opencode-cli sidecar (pid {}) from previous crash", pid);
+            kill_pid(pid);
+        }
+    }
+    let _ = std::fs::remove_file(&pid_file);
+}
+
 /// Find the first available TCP port starting from `base_port`.
 /// Tries up to 20 consecutive ports; returns `base_port` as fallback if all are busy.
 pub fn find_available_port(base_port: u16) -> u16 {
@@ -118,6 +166,9 @@ async fn try_start(
         )));
     }
 
+    if let Some(pid) = child.id() {
+        write_pid_file(opencode_dir, pid);
+    }
     log::info!("opencode serve started successfully on port {}", port);
     Ok(Some(child))
 }
@@ -203,6 +254,9 @@ pub async fn start_serve(
 ) -> AppResult<()> {
     let opencode_dir = app_data_dir.join("opencode");
 
+    // 清理上次崩溃遗留的孤儿进程
+    kill_by_pid_file(&opencode_dir);
+
     match try_start(&cli_path, &opencode_dir, port).await {
         Ok(child_opt) => {
             {
@@ -228,6 +282,7 @@ pub async fn start_serve(
 /// Stop the opencode serve child process (called on app exit).
 pub async fn stop_serve(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<crate::AppState>();
+    let opencode_dir = state.app_data_dir.join("opencode");
     let mut guard = state.serve_child.lock().await;
     if let Some(mut child) = guard.take() {
         if let Err(e) = child.kill().await {
@@ -236,4 +291,5 @@ pub async fn stop_serve(app_handle: &tauri::AppHandle) {
             log::info!("opencode serve process killed on app exit");
         }
     }
+    delete_pid_file(&opencode_dir);
 }

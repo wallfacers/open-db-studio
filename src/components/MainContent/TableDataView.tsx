@@ -16,6 +16,50 @@ import { DropdownSelect } from '../common/DropdownSelect';
 import { VirtualTable } from './VirtualTable';
 import { useVirtualRows } from '../../hooks/useVirtualRows';
 
+// ─── 独立子组件：持有 virtualizer，避免滚动时重渲染整个 TableDataView ─────────
+interface TableScrollContainerProps {
+  rowCount: number;
+  isLoading: boolean;
+  hasData: boolean;
+  columns: string[];
+  thead: React.ReactNode;
+  renderRow: (ri: number) => React.ReactNode;
+}
+
+const TableScrollContainer = React.memo(({
+  rowCount, isLoading, hasData, columns, thead, renderRow,
+}: TableScrollContainerProps) => {
+  const { t } = useTranslation();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualRows(rowCount, scrollRef);
+
+  return (
+    <div ref={scrollRef} className="flex-1 overflow-auto relative">
+      {isLoading && !hasData && (
+        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">
+          {t('tableDataView.loading')}
+        </div>
+      )}
+      {!isLoading && !hasData && (
+        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">
+          {t('tableDataView.noData')}
+        </div>
+      )}
+      {hasData && (
+        <>
+          {isLoading && <div className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none" />}
+          <VirtualTable
+            columns={columns}
+            rowVirtualizer={rowVirtualizer}
+            thead={thead}
+            renderRow={renderRow}
+          />
+        </>
+      )}
+    </div>
+  );
+});
+
 interface TableDataViewProps {
   tableName: string;
   dbName: string;
@@ -73,10 +117,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   const { pending, editCell, cloneRow, addEmptyRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
 
-  // 虚拟滚动：scrollRef 绑定到外层滚动容器，count 包含数据行 + 克隆行
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // 虚拟滚动行数（已移入 TableScrollContainer，此处仅做数量计算传递）
   const virtualRowCount = data ? data.rows.length + pending.clonedRows.length : 0;
-  const rowVirtualizer = useVirtualRows(virtualRowCount, scrollRef);
 
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
@@ -208,26 +250,26 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     }
   };
 
-  const getPendingValue = (rowIdx: number, colIdx: number) => {
+  const getPendingValue = useCallback((rowIdx: number, colIdx: number) => {
     const edit = pending.edits.find(e => e.rowIdx === rowIdx && e.colIdx === colIdx);
     return edit ? edit.newValue : undefined;
-  };
+  }, [pending.edits]);
 
-  const isRowDeleted = (rowIdx: number) => pending.deletedRowIdxs.includes(rowIdx);
+  const isRowDeleted = useCallback((rowIdx: number) => pending.deletedRowIdxs.includes(rowIdx), [pending.deletedRowIdxs]);
 
-  const handleContextMenu = (e: React.MouseEvent, rowIdx: number, colIdx: number, target: ClickTarget) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent, rowIdx: number, colIdx: number, target: ClickTarget) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, rowIdx, colIdx, target });
-  };
+  }, []);
 
-  const openCellEditor = (rowIdx: number, colIdx: number) => {
+  const openCellEditor = useCallback((rowIdx: number, colIdx: number) => {
     if (!data) return;
-    const currentVal = getPendingValue(rowIdx, colIdx);
+    const edit = pending.edits.find(e => e.rowIdx === rowIdx && e.colIdx === colIdx);
     const rawVal = data.rows[rowIdx][colIdx];
-    const value = currentVal !== undefined ? currentVal : (rawVal === null ? null : String(rawVal));
+    const value = edit ? edit.newValue : (rawVal === null ? null : String(rawVal));
     const columnName = data.columns[colIdx] ?? '';
     setCellEditor({ rowIdx, colIdx, value, columnName });
-  };
+  }, [data, pending.edits]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
 
@@ -251,12 +293,101 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setPageSize(Number(v));
   };
 
-  const rowBgClass = (rowIdx: number) => {
-    if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
-    const hasEdits = pending.edits.some(e => e.rowIdx === rowIdx);
-    if (hasEdits) return 'bg-yellow-900/20';
+  const rowBgClass = useCallback((rowIdx: number) => {
+    if (pending.deletedRowIdxs.includes(rowIdx)) return 'bg-red-900/20';
+    if (pending.edits.some(e => e.rowIdx === rowIdx)) return 'bg-yellow-900/20';
     return '';
-  };
+  }, [pending.edits, pending.deletedRowIdxs]);
+
+  // ─── 稳定化 renderRow，确保滚动期间不重建行内容 ─────────────────────────────
+  const renderRow = useCallback((ri: number) => {
+    if (!data) return null;
+    // 克隆行（绿色）
+    if (ri >= data.rows.length) {
+      const cloneIdx = ri - data.rows.length;
+      const row = pending.clonedRows[cloneIdx];
+      if (!row) return null;
+      return (
+        <>
+          <td style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs select-none flex-shrink-0">
+            <button
+              onClick={() => removeClonedRow(cloneIdx)}
+              className="text-red-400 hover:text-red-300 leading-none"
+              title={t('tableDataView.deleteRowMenuItem')}
+            >×</button>
+          </td>
+          {row.map((cell, ji) => (
+            <td key={ji} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] truncate flex-shrink-0">
+              {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
+            </td>
+          ))}
+        </>
+      );
+    }
+    // 普通数据行
+    const row = data.rows[ri];
+    return (
+      <>
+        <td
+          style={{ width: '40px', minWidth: '40px' }}
+          className={`px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none flex-shrink-0 ${rowBgClass(ri)}`}
+          onContextMenu={e => handleContextMenu(e, ri, -1, 'row')}
+        >
+          {(page - 1) * pageSize + ri + 1}
+        </td>
+        {row.map((cell, ci) => (
+          <EditableCell
+            key={ci}
+            value={cell}
+            pendingValue={getPendingValue(ri, ci)}
+            isDeleted={isRowDeleted(ri)}
+            onCommit={newVal => editCell(ri, ci, newVal)}
+            onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
+            onOpenEditor={() => openCellEditor(ri, ci)}
+            style={{ width: '150px', minWidth: '150px' }}
+          />
+        ))}
+      </>
+    );
+  }, [data, page, pageSize, pending, rowBgClass, getPendingValue, isRowDeleted, editCell, removeClonedRow, handleContextMenu, openCellEditor, t]);
+
+  // ─── 稳定化 thead，仅排序状态/列变化时重建 ────────────────────────────────
+  const thead = useMemo(() => data ? (
+    <tr>
+      <th style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
+        {t('tableDataView.serialNo')}
+      </th>
+      {data.columns.map(col => (
+        <th key={col} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
+          <div className="flex items-center justify-between gap-1 w-full">
+            <span className="truncate">{col}</span>
+            <Tooltip content={
+              sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
+              : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
+              : t('tableDataView.sortAsc')
+            }>
+              <button
+                className={`flex-shrink-0 leading-none transition-colors ${
+                  sortCol === col ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
+                }`}
+                onClick={() => {
+                  if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
+                  else if (sortDir === 'ASC') { setSortDir('DESC'); }
+                  else { setSortCol(null); setSortDir(null); }
+                }}
+              >
+                {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
+                 sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
+                 <ChevronsUpDown size={11}/>}
+              </button>
+            </Tooltip>
+          </div>
+        </th>
+      ))}
+    </tr>
+  ) : null, [data?.columns, sortCol, sortDir, t]);
+
+  const hasData = !!(data && (data.rows.length > 0 || pending.clonedRows.length > 0));
 
   return (
     <div className="flex-1 flex flex-col bg-[#080d12] overflow-hidden min-h-0">
@@ -416,111 +547,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         />
       </div>
 
-      {/* Table */}
-      <div ref={scrollRef} className="flex-1 overflow-auto relative">
-        {isLoading && !data && (
-          <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">{t('tableDataView.loading')}</div>
-        )}
-        {!isLoading && (!data || (data.rows.length === 0 && pending.clonedRows.length === 0)) && (
-          <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">{t('tableDataView.noData')}</div>
-        )}
-        {data && (data.rows.length > 0 || pending.clonedRows.length > 0) && (
-          <>
-            {isLoading && <div className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none" />}
-            <VirtualTable
-              columns={data.columns}
-              rowVirtualizer={rowVirtualizer}
-              thead={
-                <tr>
-                  {/* 行号列表头：宽度 40px，与 colgroup 对齐 */}
-                  <th style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
-                    {t('tableDataView.serialNo')}
-                  </th>
-                  {data.columns.map(col => (
-                    <th key={col} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
-                      <div className="flex items-center justify-between gap-1 w-full">
-                        <span className="truncate">{col}</span>
-                        <Tooltip content={
-                          sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
-                          : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
-                          : t('tableDataView.sortAsc')
-                        }>
-                          <button
-                            className={`flex-shrink-0 leading-none transition-colors ${
-                              sortCol === col
-                                ? 'text-[#00c9a7]'
-                                : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
-                            }`}
-                            onClick={() => {
-                              if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
-                              else if (sortDir === 'ASC') { setSortDir('DESC'); }
-                              else { setSortCol(null); setSortDir(null); }
-                            }}
-                          >
-                            {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
-                             sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
-                             <ChevronsUpDown size={11}/>}
-                          </button>
-                        </Tooltip>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              }
-              renderRow={(ri) => {
-                // 克隆行（绿色）
-                if (ri >= data.rows.length) {
-                  const cloneIdx = ri - data.rows.length;
-                  const row = pending.clonedRows[cloneIdx];
-                  return (
-                    <>
-                      <td style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs select-none flex-shrink-0">
-                        <button
-                          onClick={() => removeClonedRow(cloneIdx)}
-                          className="text-red-400 hover:text-red-300 leading-none"
-                          title={t('tableDataView.deleteRowMenuItem')}
-                        >×</button>
-                      </td>
-                      {row.map((cell, ji) => (
-                        <td key={ji} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 text-green-400 border-r border-[#1e2d42] truncate flex-shrink-0">
-                          {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
-                        </td>
-                      ))}
-                    </>
-                  );
-                }
-                // 普通数据行
-                const row = data.rows[ri];
-                return (
-                  <>
-                    {/* 行号列 */}
-                    <td
-                      style={{ width: '40px', minWidth: '40px' }}
-                      className={`px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none flex-shrink-0 ${rowBgClass(ri)}`}
-                      onContextMenu={e => handleContextMenu(e, ri, -1, 'row')}
-                    >
-                      {(page - 1) * pageSize + ri + 1}
-                    </td>
-                    {/* 数据单元格 */}
-                    {row.map((cell, ci) => (
-                      <EditableCell
-                        key={ci}
-                        value={cell}
-                        pendingValue={getPendingValue(ri, ci)}
-                        isDeleted={isRowDeleted(ri)}
-                        onCommit={newVal => editCell(ri, ci, newVal)}
-                        onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
-                        onOpenEditor={() => openCellEditor(ri, ci)}
-                        style={{ width: '150px', minWidth: '150px' }}
-                      />
-                    ))}
-                  </>
-                );
-              }}
-            />
-          </>
-        )}
-      </div>
+      {/* Table — 滚动/虚拟化由 TableScrollContainer 独立管理，不触发整组件重渲染 */}
+      <TableScrollContainer
+        rowCount={virtualRowCount}
+        isLoading={isLoading}
+        hasData={hasData}
+        columns={data?.columns ?? []}
+        thead={thead}
+        renderRow={renderRow}
+      />
 
       {/* Status Bar */}
       <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">

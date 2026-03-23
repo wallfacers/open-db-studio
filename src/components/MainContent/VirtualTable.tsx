@@ -8,6 +8,9 @@ interface VirtualTableProps {
   thead: React.ReactNode;
 }
 
+const ROW_NUM_WIDTH = 40;
+const COL_WIDTH = 150;
+
 export const VirtualTable: React.FC<VirtualTableProps> = ({
   columns,
   rowVirtualizer,
@@ -16,16 +19,17 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
 }) => {
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
+  const totalWidth = ROW_NUM_WIDTH + columns.length * COL_WIDTH;
 
   return (
     <table
-      style={{ tableLayout: 'fixed', width: '100%', borderCollapse: 'collapse' }}
+      style={{ tableLayout: 'fixed', width: `${totalWidth}px`, minWidth: `${totalWidth}px` }}
       className="text-left whitespace-nowrap text-xs"
     >
       <colgroup>
-        <col style={{ width: '40px' }} />
+        <col style={{ width: `${ROW_NUM_WIDTH}px` }} />
         {columns.map((col) => (
-          <col key={col} style={{ width: '150px' }} />
+          <col key={col} style={{ width: `${COL_WIDTH}px` }} />
         ))}
       </colgroup>
 
@@ -50,7 +54,7 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
               transform: `translateY(${vRow.start}px)`,
               width: '100%',
             }}
-            className="border-b border-[#1e2d42]"
+            className="hover:bg-[#1a2639]"
           >
             {renderRow(vRow.index)}
           </tr>

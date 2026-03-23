@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use super::{ConnectionConfig, DataSource, QueryResult, SchemaInfo, TableMeta};
+use super::{ConnectionConfig, DataSource, DriverCapabilities, QueryResult, SchemaInfo, SqlDialect, TableMeta};
 use crate::{AppError, AppResult};
 
 #[cfg(feature = "oracle-driver")]
@@ -135,5 +135,18 @@ impl DataSource for OracleDataSource {
     async fn get_schema(&self) -> AppResult<SchemaInfo> {
         let tables = self.get_tables().await?;
         Ok(SchemaInfo { tables })
+    }
+
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities {
+            has_schemas: true,
+            has_foreign_keys: true,
+            has_stored_procedures: true,
+            has_triggers: true,
+            has_materialized_views: false,
+            has_multi_database: false, // Oracle 使用 Schema 而非多数据库
+            has_partitions: true,
+            sql_dialect: SqlDialect::Standard,
+        }
     }
 }

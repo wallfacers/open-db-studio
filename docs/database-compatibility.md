@@ -186,8 +186,9 @@
 
 | 数据库 | DDL 来源 | 说明 |
 |--------|---------|------|
-| MySQL / SQL Server / TiDB | `SHOW CREATE TABLE` | 直接透传 |
-| PostgreSQL | `pg_get_tabledef()` 等系统函数 | 直接透传 |
+| MySQL / TiDB | `SHOW CREATE TABLE` | 直接透传 |
+| SQL Server | 基于 `INFORMATION_SCHEMA.COLUMNS` 手工拼接 | SQL Server 无 `SHOW CREATE TABLE`，手工构造 `CREATE TABLE [schema].[table]` |
+| PostgreSQL | 基于 `information_schema.columns` 手工拼接 | 直接透传列定义 |
 | Oracle | `DBMS_METADATA.GET_DDL` | 直接透传 |
 | SQLite | `SELECT sql FROM sqlite_master WHERE name=?` | 直接透传 |
 | Apache Doris | `SHOW CREATE TABLE`（含 `ENGINE=OLAP`、`DISTRIBUTED BY` 等 Doris 专有子句） | 前端展示直接透传；AI 上下文注入时改用 `information_schema.COLUMNS` 手工拼接标准 DDL，避免 Doris 专有子句干扰 SQL 生成 |

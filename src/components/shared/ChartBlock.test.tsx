@@ -23,6 +23,22 @@ vi.mock('lucide-react', () => ({
   Copy: () => React.createElement('span', { 'data-testid': 'icon-copy' }),
   Check: () => React.createElement('span', { 'data-testid': 'icon-check' }),
   AlertTriangle: () => React.createElement('span', { 'data-testid': 'icon-alert' }),
+  Maximize2: () => React.createElement('span', { 'data-testid': 'icon-maximize2' }),
+  X: () => React.createElement('span', { 'data-testid': 'icon-x' }),
+}));
+
+// react-i18next mock：返回 zh 翻译文本以保持测试语义
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const translations: Record<string, string> = {
+        'commonComponents.chartBlock.chartDataError': '图表数据格式有误',
+        'commonComponents.chartBlock.copy': '复制',
+        'commonComponents.chartBlock.copied': '已复制',
+      };
+      return translations[key] ?? key;
+    },
+  }),
 }));
 
 // jsdom 中 navigator.clipboard 默认为 undefined，必须手动挂载
@@ -135,7 +151,8 @@ describe('ChartBlock', () => {
       root.render(React.createElement(ChartBlock, { code }));
     });
 
-    const copyBtn = container.querySelector('button') as HTMLButtonElement;
+    // 工具栏有多个按钮，通过 icon-copy 定位复制按钮
+    const copyBtn = container.querySelector('[data-testid="icon-copy"]')?.closest('button') as HTMLButtonElement;
     await act(async () => {
       copyBtn.click();
     });
@@ -151,7 +168,8 @@ describe('ChartBlock', () => {
       root.render(React.createElement(ChartBlock, { code }));
     });
 
-    const copyBtn = container.querySelector('button') as HTMLButtonElement;
+    // 工具栏有多个按钮，通过 icon-copy 定位复制按钮
+    const copyBtn = container.querySelector('[data-testid="icon-copy"]')?.closest('button') as HTMLButtonElement;
     await act(async () => { copyBtn.click(); });
 
     expect(container.textContent).toContain('已复制');

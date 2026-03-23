@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { useConnectionStore } from '../../store';
+import { useConnectionStore, useQueryStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
@@ -83,6 +83,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const { activeConnectionId: storeConnectionId } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
 
+  // 订阅外部刷新信号（如截断表后触发）
+  const tabId = `table_${activeConnectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+  const externalRefreshSignal = useQueryStore(s => s.tableRefreshSignals[tabId] ?? 0);
+
   const [data, setData] = useState<QueryResult | null>(null);
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [pkColumn, setPkColumn] = useState<string>('id');
@@ -157,7 +161,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;

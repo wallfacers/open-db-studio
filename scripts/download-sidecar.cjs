@@ -57,56 +57,34 @@ function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     console.log(`Downloading: ${url}`);
 
-    const file = fs.createWriteStream(dest);
-    let redirectCount = 0;
+    const { execSync } = require('child_process');
 
-    const request = (urlStr) => {
-      redirectCount++;
-      if (redirectCount > 10) {
-        reject(new Error('Too many redirects'));
+    try {
+      if (process.platform === 'win32') {
+        // Windows: 使用 PowerShell 的 .NET HTTP 客户端，比内置 curl 更兼容 GitHub SSL
+        execSync(
+          `powershell -NoProfile -Command "` +
+          `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ` +
+          `$ProgressPreference = 'SilentlyContinue'; ` +
+          `Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing"`,
+          { stdio: 'inherit' }
+        );
+      } else {
+        execSync(`curl -L -o "${dest}" "${url}" --progress-bar`, { stdio: 'inherit' });
+      }
+
+      // 验证文件完整性
+      if (!fs.existsSync(dest) || fs.statSync(dest).size === 0) {
+        reject(new Error('Downloaded file is empty or missing'));
         return;
       }
 
-      https.get(urlStr, (response) => {
-        // 跟随重定向
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          request(response.headers.location);
-          return;
-        }
-
-        if (response.statusCode !== 200) {
-          fs.unlink(dest, () => {});
-          reject(new Error(`HTTP ${response.statusCode}: ${urlStr}`));
-          return;
-        }
-
-        const totalSize = parseInt(response.headers['content-length'], 10) || 0;
-        let downloaded = 0;
-
-        response.on('data', (chunk) => {
-          downloaded += chunk.length;
-          if (totalSize > 0) {
-            const percent = ((downloaded / totalSize) * 100).toFixed(1);
-            const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
-            const totalMB = (totalSize / 1024 / 1024).toFixed(1);
-            process.stdout.write(`\rDownloading: ${percent}% (${downloadedMB}/${totalMB} MB)`);
-          }
-        });
-
-        response.pipe(file);
-
-        file.on('finish', () => {
-          file.close();
-          console.log('\nDownload complete!');
-          resolve();
-        });
-      }).on('error', (err) => {
-        fs.unlink(dest, () => {});
-        reject(err);
-      });
-    };
-
-    request(url);
+      console.log('Download complete!');
+      resolve();
+    } catch (err) {
+      fs.unlink(dest, () => {});
+      reject(new Error(`Download failed: ${err.message}`));
+    }
   });
 }
 

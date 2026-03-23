@@ -232,7 +232,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const category = node.meta.objectName ?? 'tables';
         const objects = await invoke<string[]>('list_objects', {
           connectionId: node.meta.connectionId,
-          database: node.meta.database,
+          database: node.meta.database ?? null,
           schema: node.meta.schema ?? null,
           category,
         });

@@ -1098,14 +1098,15 @@ pub async fn count_metrics_batch(
 #[tauri::command]
 pub async fn list_objects(
     connection_id: i64,
-    database: String,
+    database: Option<String>,
     schema: Option<String>,
     category: String,
 ) -> AppResult<Vec<String>> {
     let config = crate::db::get_connection_config(connection_id)?;
+    let database_str = database.as_deref().unwrap_or("");
     let schema_str = schema.as_deref().unwrap_or("");
-    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, &database, schema_str).await?;
-    ds.list_objects(&database, schema.as_deref(), &category).await
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, database_str, schema_str).await?;
+    ds.list_objects(database_str, schema.as_deref(), &category).await
 }
 
 #[tauri::command]

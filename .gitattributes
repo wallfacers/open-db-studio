@@ -1,0 +1,22 @@
+# 默认所有文本文件统一使用 LF
+* text=auto eol=lf
+
+# Rust 文件明确使用 LF
+*.rs text eol=lf
+*.toml text eol=lf
+
+# 前端文件使用 LF
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Windows 批处理脚本保留 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf

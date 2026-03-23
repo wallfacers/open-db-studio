@@ -528,7 +528,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           <Tooltip content={t('assistant.openHistory')} className="contents">
             <span className={`cursor-pointer transition-colors p-1 ${showHistory ? 'text-[#00c9a7]' : 'hover:text-[#c8daea]'}`} onClick={() => setShowHistory((v) => !v)}><History size={16} /></span>
           </Tooltip>
-          <X size={16} className="cursor-pointer hover:text-[#c8daea] p-1" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }} />
+          <span className="cursor-pointer hover:text-[#c8daea] p-1 flex items-center" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }}><X size={16} /></span>
         </div>
       </div>
 

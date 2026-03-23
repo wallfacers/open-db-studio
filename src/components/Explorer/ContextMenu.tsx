@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useClickOutside } from '../../hooks/useClickOutside';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
@@ -64,6 +64,17 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; visible: boolean }>(
+    { left: x, top: y, visible: false }
+  );
+
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const { width, height } = menuRef.current.getBoundingClientRect();
+    const safeLeft = Math.max(8, Math.min(x, window.innerWidth - width - 8));
+    const safeTop = Math.max(8, Math.min(y, window.innerHeight - height - 8));
+    setPos({ left: safeLeft, top: safeTop, visible: true });
+  }, [x, y]);
 
   useClickOutside(menuRef, onClose);
 
@@ -138,16 +149,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   const items = getMenuItems();
 
-  const menuWidth = 160;
-  const menuHeight = items.length * 28 + 8;
-  const safeX = Math.min(x, window.innerWidth - menuWidth - 8);
-  const safeY = Math.min(y, window.innerHeight - menuHeight - 8);
-
   return (
     <div
       ref={menuRef}
       className="fixed z-50 bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl py-1 min-w-[160px]"
-      style={{ left: safeX, top: safeY }}
+      style={{ left: pos.left, top: pos.top, visibility: pos.visible ? 'visible' : 'hidden' }}
     >
       {items.map((item) => (
         <React.Fragment key={item.label}>

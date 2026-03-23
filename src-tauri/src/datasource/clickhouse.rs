@@ -207,9 +207,42 @@ impl DataSource for ClickHouseDataSource {
             .collect())
     }
 
-    async fn get_indexes(&self, _table: &str, _schema: Option<&str>) -> AppResult<Vec<IndexMeta>> {
-        // ClickHouse 使用主键和排序键而非传统索引，此处返回空
-        Ok(vec![])
+    async fn get_indexes(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<IndexMeta>> {
+        // ClickHouse 没有传统二级索引，通过 system.tables 暴露主键和排序键
+        #[derive(Deserialize, clickhouse::Row)]
+        struct TableKeyRow {
+            primary_key: String,
+            sorting_key: String,
+        }
+
+        let rows = self
+            .client
+            .query("SELECT primary_key, sorting_key FROM system.tables WHERE database = ? AND name = ?")
+            .bind(self.database.as_str())
+            .bind(table)
+            .fetch_all::<TableKeyRow>()
+            .await
+            .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+        let mut indexes = vec![];
+        if let Some(r) = rows.into_iter().next() {
+            if !r.primary_key.is_empty() {
+                indexes.push(IndexMeta {
+                    index_name: "PRIMARY_KEY".to_string(),
+                    is_unique: true,
+                    columns: r.primary_key.split(", ").map(String::from).collect(),
+                });
+            }
+            // 仅当排序键与主键不同时才单独展示
+            if !r.sorting_key.is_empty() && r.sorting_key != r.primary_key {
+                indexes.push(IndexMeta {
+                    index_name: "SORTING_KEY".to_string(),
+                    is_unique: false,
+                    columns: r.sorting_key.split(", ").map(String::from).collect(),
+                });
+            }
+        }
+        Ok(indexes)
     }
 
     async fn get_foreign_keys(&self, _table: &str, _schema: Option<&str>) -> AppResult<Vec<ForeignKeyMeta>> {

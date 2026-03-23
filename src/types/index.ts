@@ -220,9 +220,11 @@ export type NodeType =
   | 'trigger'
   | 'event'
   | 'sequence'
+  | 'materialized_view'
+  | 'dictionary'
   | 'column';
 
-export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences';
+export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences' | 'materialized_views' | 'dictionaries';
 
 export interface NodeMeta {
   connectionId?: number;

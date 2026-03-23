@@ -294,9 +294,18 @@ impl DataSource for MySqlDataSource {
 
     async fn get_table_ddl(&self, table: &str) -> AppResult<String> {
         if self.dialect == Dialect::Doris {
-            // Doris DDL 用 information_schema.COLUMNS 手工拼接标准 DDL（用于 AI 上下文注入）
+            // Doris AI 上下文注入：用 information_schema.COLUMNS 手工拼接标准 DDL，
+            // 避免 ENGINE=OLAP / DISTRIBUTED BY 等专有子句干扰 SQL 生成。
             return self.doris_build_standard_ddl(table).await;
         }
+        let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
+        let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
+        Ok(get_str(&row, 1))
+    }
+
+    async fn get_table_ddl_for_display(&self, table: &str, _schema: Option<&str>) -> AppResult<String> {
+        // 所有方言（含 Doris）展示时均直接透传 SHOW CREATE TABLE 原生结果，
+        // 让用户看到真实的数据库 DDL（含 Doris 专有子句）。
         let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
         let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
         Ok(get_str(&row, 1))

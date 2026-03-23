@@ -319,7 +319,7 @@ pub async fn get_table_ddl(connection_id: i64, table: String, database: Option<S
         None => crate::datasource::create_datasource(&config).await?,
     };
     let schema_ref = schema.as_deref().filter(|s| !s.is_empty());
-    ds.get_table_ddl_with_schema(&table, schema_ref).await
+    ds.get_table_ddl_for_display(&table, schema_ref).await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -817,7 +817,7 @@ pub async fn export_table_data(params: ExportParams) -> AppResult<String> {
 
             // 包含 DDL：先写建表语句
             if params.include_ddl {
-                match ds.get_table_ddl(&params.table).await {
+                match ds.get_table_ddl_for_display(&params.table, None).await {
                     Ok(ddl) => {
                         out += &format!("-- Table structure for `{}`\n", params.table);
                         out += "DROP TABLE IF EXISTS ";

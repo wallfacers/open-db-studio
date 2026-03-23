@@ -22,6 +22,8 @@ const NODE_ICONS: Record<NodeType, React.ElementType> = {
   trigger: Zap,
   event: Hash,
   sequence: Hash,
+  materialized_view: Eye,  // 物化视图：与普通视图同图标
+  dictionary: Hash,        // ClickHouse 字典
   column: Columns3,
 };
 

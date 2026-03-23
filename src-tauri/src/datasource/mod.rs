@@ -234,6 +234,13 @@ pub trait DataSource: Send + Sync {
         self.get_table_ddl(table).await
     }
 
+    /// 供前端"查看 DDL"和导出使用的原生 DDL（默认与 get_table_ddl_with_schema 相同）。
+    /// Doris 覆盖此方法返回 SHOW CREATE TABLE（含专有子句），
+    /// 而 get_table_ddl 仍返回标准 DDL 用于 AI 上下文注入。
+    async fn get_table_ddl_for_display(&self, table: &str, schema: Option<&str>) -> AppResult<String> {
+        self.get_table_ddl_with_schema(table, schema).await
+    }
+
     /// 列出所有数据库（MySQL: SHOW DATABASES / PG: pg_database）
     async fn list_databases(&self) -> AppResult<Vec<String>> {
         Ok(vec![])

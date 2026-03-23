@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Metric } from '../types';
+import { useQueryStore } from './queryStore';
 
 let _persistMetricsTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -340,6 +341,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
       }
       return { nodes, metricCounts };
     });
+    useQueryStore.getState().closeMetricTabById(metricId);
   },
 
   notifyMetricAdded: async (parentNodeId: string) => {

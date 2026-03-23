@@ -27,9 +27,24 @@ pub async fn undo_last_change(handle: Arc<tauri::AppHandle>, _args: Value, sessi
                 .map_err(|_| crate::AppError::Other("invalid metric target_id".into()))?;
             let old: serde_json::Value = serde_json::from_str(&record.old_value)
                 .map_err(|e| crate::AppError::Other(e.to_string()))?;
-            let description = old["description"].as_str();
-            let display_name = old["display_name"].as_str();
-            crate::db::update_metric_fields(metric_id, description, display_name)?;
+            let input = crate::metrics::UpdateMetricInput {
+                display_name: old["display_name"].as_str().map(|s| s.to_string()),
+                description: old["description"].as_str().map(|s| s.to_string()),
+                table_name: old["table_name"].as_str().map(|s| s.to_string()),
+                column_name: old["column_name"].as_str().map(|s| s.to_string()),
+                filter_sql: old["filter_sql"].as_str().map(|s| s.to_string()),
+                aggregation: old["aggregation"].as_str().map(|s| s.to_string()),
+                name: old["name"].as_str().map(|s| s.to_string()),
+                metric_type: old["metric_type"].as_str().map(|s| s.to_string()),
+                composite_components: old["composite_components"].as_str().map(|s| s.to_string()),
+                composite_formula: old["composite_formula"].as_str().map(|s| s.to_string()),
+                category: old["category"].as_str().map(|s| s.to_string()),
+                data_caliber: old["data_caliber"].as_str().map(|s| s.to_string()),
+                version: old["version"].as_str().map(|s| s.to_string()),
+                scope_database: old["scope_database"].as_str().map(|s| s.to_string()),
+                scope_schema: old["scope_schema"].as_str().map(|s| s.to_string()),
+            };
+            crate::metrics::crud::update_metric(metric_id, &input)?;
             crate::db::mark_change_undone(record.id)?;
             Ok(json!({ "success": true, "message": format!("已撤销指标 {} 的修改", metric_id) }).to_string())
         }

@@ -52,19 +52,24 @@ fn spawn_child(
     port: u16,
 ) -> std::io::Result<tokio::process::Child> {
     let config_file = opencode_dir.join("opencode.json");
-    tokio::process::Command::new(cli_path)
-        .args(["serve", "--port", &port.to_string()])
+    let mut cmd = tokio::process::Command::new(cli_path);
+    cmd.args(["serve", "--port", &port.to_string()])
         .current_dir(opencode_dir)
         .env("OPENCODE_CONFIG", &config_file)
         .env("OPENCODE_CONFIG_DIR", opencode_dir)
         // 禁用自动更新（autoupdate: false 在非全局路径下是已知 bug #6984，需用环境变量）
         .env("OPENCODE_DISABLE_AUTOUPDATE", "true")
-        .kill_on_drop(false) // we manage lifecycle explicitly
-        .spawn()
-        .map_err(|e| std::io::Error::new(
-            e.kind(),
-            format!("Failed to spawn opencode-cli at {}: {}", cli_path.display(), e)
-        ))
+        .kill_on_drop(false); // we manage lifecycle explicitly
+
+    // Windows：CREATE_NO_WINDOW (0x08000000) 阻止系统为子进程弹出 CMD 黑窗口，
+    // 避免用户误关导致 opencode-cli serve 被终止。
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    cmd.spawn().map_err(|e| std::io::Error::new(
+        e.kind(),
+        format!("Failed to spawn opencode-cli at {}: {}", cli_path.display(), e)
+    ))
 }
 
 /// Core logic: attempt to start serve once.

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Play, Square, Save, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,7 @@ import VisualBuilder, {
   configToBuilderState,
 } from './VisualBuilder';
 import JsonEditor from './JsonEditor';
-import JobLogPanel from './JobLogPanel';
+import JobLogPanel, { type JobLogPanelHandle } from './JobLogPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,7 +98,10 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const { t } = useTranslation();
   const jobId = tab.stJobId;
   const { confirm } = useConfirmStore();
-  const { updateJobStatus, updateJobLabel } = useSeaTunnelStore();
+  const { updateJobStatus, updateJobLabel, setStJobContent } = useSeaTunnelStore();
+  // 订阅外部（AI）写入的 configJson；用 ref 区分组件自身写入 vs 外部写入，防止循环
+  const externalContent = useSeaTunnelStore(s => jobId ? s.stJobContent.get(jobId) : undefined);
+  const lastSyncedContentRef = useRef<string>('');
   const updateSeaTunnelJobTabTitle = useQueryStore(s => s.updateSeaTunnelJobTabTitle);
   // 订阅树节点 label，响应从树侧发起的重命名
   const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(`job_${jobId}`)?.label : undefined);
@@ -122,7 +125,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   // UI
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const logPanelRef = useRef<JobLogPanelHandle>(null);
 
   // ── Load job info ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -141,16 +144,37 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         setJobName(job.name);
         if (job.connection_id) setSelectedConnectionId(job.connection_id);
         if (job.last_job_id) setSeaTunnelJobId(job.last_job_id);
-        if (job.last_status) setRunningStatus(job.last_status as RunStatus);
+
+        // 如果上次状态是 RUNNING，向 SeaTunnel 查询实际状态（防止重启后状态卡在 RUNNING）
+        if (job.last_status === 'RUNNING' && job.last_job_id) {
+          try {
+            const actualStatus = await invoke<string>('get_st_job_status', { jobId: job.last_job_id });
+            const resolved = (['FINISHED', 'FAILED', 'CANCELLED', 'RUNNING'] as string[]).includes(actualStatus)
+              ? actualStatus as RunStatus
+              : 'idle';
+            setRunningStatus(resolved);
+            if (jobId) updateJobStatus(jobId, resolved);
+          } catch {
+            // SeaTunnel 不可用，重置为 idle
+            setRunningStatus('idle');
+            if (jobId) updateJobStatus(jobId, 'idle');
+          }
+        } else if (job.last_status) {
+          setRunningStatus(job.last_status as RunStatus);
+        }
 
         const json = job.config_json ?? DEFAULT_CONFIG_JSON;
         const parsed = configToBuilderState(json) ?? { ...DEFAULT_BUILDER_STATE };
         // 统一用树节点名称作为 env.job.name
         parsed.env.jobName = job.name;
         setBuilderState(parsed);
-        setConfigJson(builderStateToConfig(parsed));
+        const finalJson = builderStateToConfig(parsed);
+        setConfigJson(finalJson);
+        // 同步到 store，供 MCP bridge 读取
+        lastSyncedContentRef.current = finalJson;
+        setStJobContent(jobId, finalJson);
       } catch (e) {
-        setError(String(e));
+        showToast?.(String(e), 'error');
       }
     })();
   }, [jobId]);
@@ -166,6 +190,17 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
     });
   }, [nodeLabel]);
 
+  // ── 外部（AI）写入 configJson 时同步到本地编辑器 ──────────────────────
+  useEffect(() => {
+    if (!jobId || externalContent === undefined) return;
+    // 跳过自身写入触发的订阅，避免循环
+    if (externalContent === lastSyncedContentRef.current) return;
+    lastSyncedContentRef.current = externalContent;
+    setConfigJson(externalContent);
+    const parsed = configToBuilderState(externalContent);
+    if (parsed) setBuilderState(parsed);
+  }, [externalContent, jobId]);
+
   // ── Job name change：同步写入 builderState.env.jobName ───────────────────
   const handleJobNameChange = useCallback((name: string) => {
     setJobName(name);
@@ -179,14 +214,17 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   // ── Sync builder ↔ JSON ───────────────────────────────────────────────────
   const handleBuilderChange = useCallback((state: BuilderState) => {
     setBuilderState(state);
-    setConfigJson(builderStateToConfig(state));
-  }, []);
+    const json = builderStateToConfig(state);
+    setConfigJson(json);
+    if (jobId) { lastSyncedContentRef.current = json; setStJobContent(jobId, json); }
+  }, [jobId, setStJobContent]);
 
   const handleJsonChange = useCallback((json: string) => {
     setConfigJson(json);
     const parsed = configToBuilderState(json);
     if (parsed) setBuilderState(parsed);
-  }, []);
+    if (jobId) { lastSyncedContentRef.current = json; setStJobContent(jobId, json); }
+  }, [jobId, setStJobContent]);
 
   // ── Mode switch ───────────────────────────────────────────────────────────
   const switchMode = useCallback(
@@ -227,7 +265,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const handleSave = useCallback(async () => {
     if (!jobId) return;
     setSaving(true);
-    setError(null);
     try {
       await invoke('update_st_job', {
         id: jobId,
@@ -241,7 +278,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       updateSeaTunnelJobTabTitle(jobId, jobName);
       showToast?.(t('seaTunnelJob.toolbar.saveSuccess'), 'success');
     } catch (e) {
-      setError(String(e));
+      showToast?.(String(e), 'error');
     } finally {
       setSaving(false);
     }
@@ -251,7 +288,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const handleSubmit = useCallback(async () => {
     if (!jobId) return;
     setSubmitting(true);
-    setError(null);
+    logPanelRef.current?.appendLog(`[INFO] Submitting job "${jobName}"...`);
     try {
       // 1. Save first
       await invoke('update_st_job', {
@@ -267,6 +304,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       setSeaTunnelJobId(stJobId);
       setRunningStatus('RUNNING');
       updateJobStatus(jobId, 'RUNNING');
+      logPanelRef.current?.appendLog(`[INFO] Job submitted, id=${stJobId}`);
 
       // 3. Start log stream
       const connId = selectedConnectionId;
@@ -274,9 +312,10 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         await invoke('stream_st_job_logs', { connectionId: connId, jobId: stJobId });
       }
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
       setRunningStatus('FAILED');
       updateJobStatus(jobId, 'FAILED');
+      logPanelRef.current?.appendLog(`[ERROR] Submit failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -284,15 +323,16 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
 
   // ── Stop ──────────────────────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
-    if (!seaTunnelJobId) return;
+    if (!jobId) return;
     try {
-      await invoke('stop_st_job', { jobId: seaTunnelJobId });
-      // Cancel log stream
-      await invoke('cancel_st_job_stream', { jobId: seaTunnelJobId }).catch(() => {});
+      await invoke('stop_st_job', { jobId });           // 内部 DB job ID (i64)
+      if (seaTunnelJobId) {
+        await invoke('cancel_st_job_stream', { jobId: seaTunnelJobId }).catch(() => {});
+      }
       setRunningStatus('CANCELLED');
-      if (jobId) updateJobStatus(jobId, 'CANCELLED');
+      updateJobStatus(jobId, 'CANCELLED');
     } catch (e) {
-      setError(String(e));
+      logPanelRef.current?.appendLog(`[ERROR] Stop failed: ${String(e)}`);
     }
   }, [seaTunnelJobId, jobId, updateJobStatus]);
 
@@ -338,13 +378,6 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         </div>
 
         <div className="flex-1" />
-
-        {/* Error hint */}
-        {error && (
-          <span className="text-[10px] text-red-400 max-w-[200px] truncate" title={error}>
-            {error}
-          </span>
-        )}
 
         {/* Submit / Stop */}
         {isRunning ? (
@@ -416,7 +449,8 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
 
       {/* ── Log panel ── */}
       <JobLogPanel
-        jobId={seaTunnelJobId}
+        ref={logPanelRef}
+        jobId={isRunning ? seaTunnelJobId : null}
         onStatusChange={handleStatusChange}
       />
     </div>

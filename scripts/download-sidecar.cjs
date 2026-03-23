@@ -11,7 +11,6 @@
  *   SIDECAR_VERSION - Version to download (default: 1.2.27)
  */
 
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
@@ -54,60 +53,27 @@ function getPlatform() {
 }
 
 function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    console.log(`Downloading: ${url}`);
+  const { execSync } = require('child_process');
 
-    const file = fs.createWriteStream(dest);
-    let redirectCount = 0;
+  console.log(`Downloading: ${url}`);
 
-    const request = (urlStr) => {
-      redirectCount++;
-      if (redirectCount > 10) {
-        reject(new Error('Too many redirects'));
-        return;
-      }
+  if (process.platform === 'win32') {
+    execSync(
+      `powershell -NoProfile -Command "` +
+      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ` +
+      `$ProgressPreference = 'SilentlyContinue'; ` +
+      `Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing"`,
+      { stdio: 'inherit' }
+    );
+  } else {
+    execSync(`curl -L -o "${dest}" "${url}" --progress-bar`, { stdio: 'inherit' });
+  }
 
-      https.get(urlStr, (response) => {
-        // 跟随重定向
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          request(response.headers.location);
-          return;
-        }
+  if (!fs.existsSync(dest) || fs.statSync(dest).size === 0) {
+    throw new Error('Downloaded file is empty or missing');
+  }
 
-        if (response.statusCode !== 200) {
-          fs.unlink(dest, () => {});
-          reject(new Error(`HTTP ${response.statusCode}: ${urlStr}`));
-          return;
-        }
-
-        const totalSize = parseInt(response.headers['content-length'], 10) || 0;
-        let downloaded = 0;
-
-        response.on('data', (chunk) => {
-          downloaded += chunk.length;
-          if (totalSize > 0) {
-            const percent = ((downloaded / totalSize) * 100).toFixed(1);
-            const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
-            const totalMB = (totalSize / 1024 / 1024).toFixed(1);
-            process.stdout.write(`\rDownloading: ${percent}% (${downloadedMB}/${totalMB} MB)`);
-          }
-        });
-
-        response.pipe(file);
-
-        file.on('finish', () => {
-          file.close();
-          console.log('\nDownload complete!');
-          resolve();
-        });
-      }).on('error', (err) => {
-        fs.unlink(dest, () => {});
-        reject(err);
-      });
-    };
-
-    request(url);
-  });
+  console.log('Download complete!');
 }
 
 /**
@@ -175,7 +141,7 @@ function extractArchive(archivePath, targetDir, exeName, targetName) {
   }
 }
 
-async function main() {
+function main() {
   // 创建目录
   if (!fs.existsSync(BINARIES_DIR)) {
     fs.mkdirSync(BINARIES_DIR, { recursive: true });
@@ -199,8 +165,14 @@ async function main() {
   const archiveUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${archive}`;
   const archivePath = path.join(BINARIES_DIR, archive);
 
+  // 存在旧 zip 无论是否完整，直接删除重新下载
+  if (fs.existsSync(archivePath)) {
+    console.log(`Removing existing archive: ${archivePath}`);
+    fs.unlinkSync(archivePath);
+  }
+
   try {
-    await downloadFile(archiveUrl, archivePath);
+    downloadFile(archiveUrl, archivePath);
     extractArchive(archivePath, BINARIES_DIR, exeName, targetName);
 
     console.log(`\n✅ Sidecar ready: ${targetPath}`);

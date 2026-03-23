@@ -1080,53 +1080,6 @@ pub fn get_metric_by_id(metric_id: i64) -> crate::AppResult<Option<crate::metric
     Ok(result)
 }
 
-pub fn update_metric_fields(
-    metric_id: i64,
-    description: Option<&str>,
-    display_name: Option<&str>,
-) -> crate::AppResult<crate::metrics::Metric> {
-    let conn = get().lock().unwrap();
-    conn.execute(
-        "UPDATE metrics SET
-            description = COALESCE(?2, description),
-            display_name = COALESCE(?3, display_name),
-            updated_at = datetime('now')
-         WHERE id = ?1",
-        rusqlite::params![metric_id, description, display_name],
-    )?;
-    let updated = conn.query_row(
-        "SELECT id,connection_id,name,display_name,table_name,column_name,aggregation,\
-         filter_sql,description,status,source,metric_type,composite_components,\
-         composite_formula,category,data_caliber,version,scope_database,scope_schema,\
-         created_at,updated_at FROM metrics WHERE id=?1",
-        [metric_id],
-        |row| Ok(crate::metrics::Metric {
-            id: row.get(0)?,
-            connection_id: row.get(1)?,
-            name: row.get(2)?,
-            display_name: row.get(3)?,
-            table_name: row.get(4)?,
-            column_name: row.get(5)?,
-            aggregation: row.get(6)?,
-            filter_sql: row.get(7)?,
-            description: row.get(8)?,
-            status: row.get(9)?,
-            source: row.get(10)?,
-            metric_type: row.get(11)?,
-            composite_components: row.get(12)?,
-            composite_formula: row.get(13)?,
-            category: row.get(14)?,
-            data_caliber: row.get(15)?,
-            version: row.get(16)?,
-            scope_database: row.get(17)?,
-            scope_schema: row.get(18)?,
-            created_at: row.get(19)?,
-            updated_at: row.get(20)?,
-        }),
-    ).map_err(|e| crate::AppError::Other(e.to_string()))?;
-    Ok(updated)
-}
-
 // ============ agent_sessions CRUD ============
 
 /// 插入 agent session 记录

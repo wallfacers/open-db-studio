@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "download:sidecar": "node scripts/download-sidecar.cjs",
     "build:skills": "cd src-tauri/skills/echarts-ai-skill && npm install && npm run build",
-    "kill:sidecar": "powershell -Command \"Get-Process opencode-cli -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0\"",
+    "kill:sidecar": "node scripts/kill-sidecar.cjs",
     "tauri:dev": "npm run kill:sidecar && npm run download:sidecar && npm run build:skills && tauri dev",
     "tauri:build": "npm run kill:sidecar && npm run download:sidecar && npm run build:skills && tauri build",
     "lint": "tsc --noEmit",

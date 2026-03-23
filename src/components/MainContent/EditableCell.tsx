@@ -9,6 +9,7 @@ interface EditableCellProps {
   onCommit: (newValue: string | null) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onOpenEditor?: () => void;
+  style?: React.CSSProperties;
 }
 
 export const EditableCell: React.FC<EditableCellProps> = ({
@@ -19,6 +20,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
   onCommit,
   onContextMenu,
   onOpenEditor,
+  style,
 }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -59,7 +61,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
 
   if (editing) {
     return (
-      <td className="border-r border-[#1e2d42] p-0 relative" style={{ outline: '1px solid #3a7bd5', outlineOffset: '-1px' }}>
+      <td className="border-r border-[#1e2d42] p-0 relative" style={{ outline: '1px solid #3a7bd5', outlineOffset: '-1px', ...style }}>
         <input
           ref={inputRef}
           value={draft}
@@ -81,6 +83,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
       className={`${baseCellClass} group`}
       onDoubleClick={startEdit}
       onContextMenu={onContextMenu}
+      style={style}
     >
       <div
         className="max-w-[300px] truncate"

@@ -6,6 +6,7 @@ import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
 import { Copy, Check, AlertTriangle, Maximize2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Tooltip } from '../common/Tooltip';
 
 // ── ODS 暗色主题（与项目色系一致）────────────────────────────────────────────
 const COLOR_PALETTE = [
@@ -159,13 +160,14 @@ const ChartExpandModal: React.FC<{
       <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#1e2d42] flex-shrink-0">
           <span className="text-xs text-[#7a9bb8] font-mono">{chartType}</span>
-          <button
-            onClick={onClose}
-            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-            title="关闭"
-          >
-            <X size={16} />
-          </button>
+          <Tooltip content="关闭" className="contents">
+            <button
+              onClick={onClose}
+              className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </Tooltip>
         </div>
         <div className="flex-1 min-h-0 p-2">
           <ReactECharts
@@ -406,13 +408,14 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
         <span className="text-xs text-[#7a9bb8] font-mono">{chartType}</span>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setExpanded(true)}
-            className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-            title="放大查看"
-          >
-            <Maximize2 size={12} />
-          </button>
+          <Tooltip content="放大查看" className="contents">
+            <button
+              onClick={() => setExpanded(true)}
+              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            >
+              <Maximize2 size={12} />
+            </button>
+          </Tooltip>
           <button
             onClick={handleCopy}
             className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"

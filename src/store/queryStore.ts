@@ -98,6 +98,10 @@ interface QueryState {
   // Auto 模式自动应用 Banner（短暂显示后清除）
   autoApplyBanner: { reason: string } | null;
   setAutoApplyBanner: (banner: { reason: string } | null) => void;
+
+  // 表数据外部刷新信号（tabId → 递增计数器，TableDataView 订阅后自动刷新）
+  tableRefreshSignals: Record<string, number>;
+  triggerTableRefresh: (tabId: string) => void;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -176,6 +180,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   pendingDiff: null,
   autoApplyBanner: null,
   setAutoApplyBanner: (banner) => set({ autoApplyBanner: banner }),
+  tableRefreshSignals: {},
+  triggerTableRefresh: (tabId) => set(s => ({
+    tableRefreshSignals: { ...s.tableRefreshSignals, [tabId]: (s.tableRefreshSignals[tabId] ?? 0) + 1 },
+  })),
   editorInfo: {},
   explanationContent: {},
   explanationStreaming: {},

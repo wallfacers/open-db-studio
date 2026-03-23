@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { ChevronDown, Trash2, ArrowDownToLine } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Tooltip } from '../common/Tooltip';
 
 interface LogLine {
   ts: string;
@@ -147,28 +148,30 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
         </button>
 
         <div className="flex items-center gap-1">
-          <button
-            onClick={handleClear}
-            title={t('seaTunnelJob.jobLogPanel.clearLog')}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded transition-colors"
-          >
-            <Trash2 size={11} />
-            {t('seaTunnelJob.jobLogPanel.clear')}
-          </button>
-          <button
-            onClick={() => {
-              setAutoScroll(true);
-              bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            title={t('seaTunnelJob.jobLogPanel.scrollToBottom')}
-            className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${
-              autoScroll
-                ? 'text-[#00c9a7] bg-[#00c9a7]/10'
-                : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
-            }`}
-          >
-            <ArrowDownToLine size={11} />
-          </button>
+          <Tooltip content={t('seaTunnelJob.jobLogPanel.clearLog')} className="contents">
+            <button
+              onClick={handleClear}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded transition-colors"
+            >
+              <Trash2 size={11} />
+              {t('seaTunnelJob.jobLogPanel.clear')}
+            </button>
+          </Tooltip>
+          <Tooltip content={t('seaTunnelJob.jobLogPanel.scrollToBottom')} className="contents">
+            <button
+              onClick={() => {
+                setAutoScroll(true);
+                bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${
+                autoScroll
+                  ? 'text-[#00c9a7] bg-[#00c9a7]/10'
+                  : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
+              }`}
+            >
+              <ArrowDownToLine size={11} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

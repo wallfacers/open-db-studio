@@ -3,6 +3,7 @@ import { Check, X } from 'lucide-react';
 import { diffLines } from 'diff';
 import { useTranslation } from 'react-i18next';
 import type { SqlDiffProposal } from '../../types';
+import { Tooltip } from '../common/Tooltip';
 
 interface DiffPanelProps {
   proposal: SqlDiffProposal;
@@ -23,13 +24,14 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({ proposal, onApply, onCance
       {/* 标题栏 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42]">
         <span className="text-xs font-medium text-[#c8daea]">{t('assistant.diffPanel.title')}</span>
-        <button
-          onClick={onCancel}
-          className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
-          title={t('common.cancel')}
-        >
-          <X size={14} />
-        </button>
+        <Tooltip content={t('common.cancel')} className="contents">
+          <button
+            onClick={onCancel}
+            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+          >
+            <X size={14} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* 原因说明 */}

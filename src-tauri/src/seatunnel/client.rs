@@ -1,5 +1,56 @@
 use reqwest::Client;
 
+/// 将 JSON Value 转换为 u64，兼容数字类型和字符串类型（SeaTunnel 返回的指标值是字符串）
+fn json_to_u64(v: &serde_json::Value) -> Option<u64> {
+    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
+
+/// 从 job-info JSON 中提取指标值，大小写不敏感，兼容数字/字符串值类型
+fn extract_metric(info: &serde_json::Value, key: &str) -> u64 {
+    let key_lower = key.to_lowercase();
+
+    // 从 metrics 对象中大小写不敏感查找
+    if let Some(obj) = info.get("metrics").and_then(|m| m.as_object()) {
+        for (k, v) in obj {
+            if k.to_lowercase() == key_lower {
+                if let Some(n) = json_to_u64(v) { return n; }
+            }
+        }
+    }
+    // 顶层直接字段
+    if let Some(v) = info.get(key) {
+        if let Some(n) = json_to_u64(v) { return n; }
+    }
+    // jobDag.vertices 聚合
+    if let Some(vertices) = info.get("jobDag").and_then(|d| d.get("vertices")).and_then(|v| v.as_array()) {
+        let sum: u64 = vertices.iter()
+            .filter_map(|vtx| {
+                vtx.get("metrics").and_then(|m| m.as_object()).and_then(|obj| {
+                    obj.iter()
+                        .find(|(k, _)| k.to_lowercase() == key_lower)
+                        .and_then(|(_, v)| json_to_u64(v))
+                })
+            })
+            .sum();
+        if sum > 0 { return sum; }
+    }
+    0
+}
+
+/// job-info 响应中提取 metrics 对象的标量键值（排除嵌套对象），用于 debug 日志
+fn format_metrics_debug(info: &serde_json::Value) -> String {
+    if let Some(obj) = info.get("metrics").and_then(|m| m.as_object()) {
+        let pairs: Vec<String> = obj.iter()
+            .filter(|(_, v)| v.is_number() || v.is_string())
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+        if !pairs.is_empty() {
+            return pairs.join(", ");
+        }
+    }
+    "(metrics 为空)".to_string()
+}
+
 /// SeaTunnel REST API 客户端
 pub struct SeaTunnelClient {
     base_url: String,
@@ -203,9 +254,11 @@ impl SeaTunnelClient {
         let path = format!("/hazelcast/rest/maps/job-info/{}", job_id);
         let mut last_source: u64 = 0;
         let mut last_sink: u64 = 0;
+        let mut poll_count: u32 = 0;
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            poll_count += 1;
 
             let resp = self
                 .request(reqwest::Method::GET, &path)
@@ -224,13 +277,12 @@ impl SeaTunnelClient {
 
             let status = info["jobStatus"].as_str().unwrap_or("UNKNOWN").to_string();
 
-            // 提取进度指标
-            let source_count = info["metrics"]["SourceReceivedCount"]
-                .as_u64()
-                .unwrap_or(0);
-            let sink_count = info["metrics"]["SinkWriteCount"].as_u64().unwrap_or(0);
+            // 提取进度指标（兼容多级路径）
+            let source_count = extract_metric(&info, "SourceReceivedCount");
+            let sink_count = extract_metric(&info, "SinkWriteCount");
 
-            if source_count != last_source || sink_count != last_sink {
+            // 行数变化、首次轮询、或每 5 次轮询输出一次心跳，避免长时间无日志
+            if source_count != last_source || sink_count != last_sink || poll_count == 1 || poll_count % 5 == 0 {
                 on_line(format!(
                     "[INFO] {} | 已读取: {} 行 | 已写入: {} 行",
                     status, source_count, sink_count
@@ -241,9 +293,30 @@ impl SeaTunnelClient {
 
             match status.as_str() {
                 "FINISHED" => {
+                    // SeaTunnel 在状态切换为 FINISHED 时指标可能尚未刷新，
+                    // 追加一次轮询以确保取到最终写入行数
+                    let final_info = if sink_count == 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        if let Ok(r) = self.request(reqwest::Method::GET, &path).send().await {
+                            r.json::<serde_json::Value>().await.ok()
+                        } else { None }
+                    } else { None };
+
+                    let (final_sink, final_source) = if let Some(ref fi) = final_info {
+                        (extract_metric(fi, "SinkWriteCount"), extract_metric(fi, "SourceReceivedCount"))
+                    } else {
+                        (sink_count, source_count)
+                    };
+
+                    // debug：输出实际 metrics 字段，帮助排查字段名不匹配
+                    if final_sink == 0 {
+                        let debug_info = final_info.as_ref().unwrap_or(&info);
+                        on_line(format!("[WARN] 写入行数为 0，metrics 字段: {}", format_metrics_debug(debug_info)));
+                    }
+
                     on_line(format!(
-                        "[INFO] 任务完成，共迁移 {} 行",
-                        sink_count
+                        "[INFO] 任务完成，共迁移 {} 行（读取 {} 行）",
+                        final_sink, final_source.max(last_source.max(source_count))
                     ));
                     return Ok("FINISHED".to_string());
                 }

@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { ChevronRight, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/appStore';
+import { Tooltip } from '../common/Tooltip';
 
 interface AssistantToggleTabProps {
   /** 当前 AI 助手面板实际宽度（面板关闭时传 0） */
@@ -54,6 +55,7 @@ export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
   };
 
   return (
+    <Tooltip content={isOpen ? t('assistant.collapseAssistant') : t('assistant.expandAssistant')} className="contents">
     <button
       style={{
         position: 'fixed',
@@ -66,7 +68,6 @@ export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
       }}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
-      title={isOpen ? t('assistant.collapseAssistant') : t('assistant.expandAssistant')}
       aria-label={isOpen ? t('assistant.collapseAssistant') : t('assistant.expandAssistant')}
       className={[
         'group flex flex-col items-center justify-center gap-0.5',
@@ -106,5 +107,6 @@ export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
         <span className="w-1 h-px bg-current rounded-full" />
       </div>
     </button>
+    </Tooltip>
   );
 };

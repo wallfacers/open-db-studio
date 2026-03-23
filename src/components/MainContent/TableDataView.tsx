@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
-import { useConnectionStore } from '../../store';
+import { useConnectionStore, useQueryStore } from '../../store';
 import type { QueryResult, ColumnMeta } from '../../types';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
@@ -83,6 +83,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const { activeConnectionId: storeConnectionId } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
 
+  // 订阅外部刷新信号（如截断表后触发）
+  const tabId = `table_${activeConnectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+  const externalRefreshSignal = useQueryStore(s => s.tableRefreshSignals[tabId] ?? 0);
+
   const [data, setData] = useState<QueryResult | null>(null);
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [pkColumn, setPkColumn] = useState<string>('id');
@@ -157,7 +161,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
@@ -309,15 +313,16 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       if (!row) return null;
       return (
         <>
-          <td style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-green-400 text-center text-xs select-none flex-shrink-0">
-            <button
-              onClick={() => removeClonedRow(cloneIdx)}
-              className="text-red-400 hover:text-red-300 leading-none"
-              title={t('tableDataView.deleteRowMenuItem')}
-            >×</button>
+          <td style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-green-400 text-center text-xs select-none">
+            <Tooltip content={t('tableDataView.deleteRowMenuItem')} className="contents">
+              <button
+                onClick={() => removeClonedRow(cloneIdx)}
+                className="text-red-400 hover:text-red-300 leading-none"
+              >×</button>
+            </Tooltip>
           </td>
           {row.map((cell, ji) => (
-            <td key={ji} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] truncate flex-shrink-0">
+            <td key={ji} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] truncate">
               {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
             </td>
           ))}
@@ -329,8 +334,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     return (
       <>
         <td
-          style={{ width: '40px', minWidth: '40px' }}
-          className={`px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs cursor-default select-none flex-shrink-0 ${rowBgClass(ri)}`}
+          style={{ flex: '0 0 40px', minWidth: '40px' }}
+          className={`px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs cursor-default select-none ${rowBgClass(ri)}`}
           onContextMenu={e => handleContextMenu(e, ri, -1, 'row')}
         >
           {(page - 1) * pageSize + ri + 1}
@@ -344,7 +349,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
             onCommit={newVal => editCell(ri, ci, newVal)}
             onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
             onOpenEditor={() => openCellEditor(ri, ci)}
-            style={{ width: '150px', minWidth: '150px' }}
+            style={{ flex: '1 0 150px' }}
           />
         ))}
       </>
@@ -354,11 +359,11 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   // ─── 稳定化 thead，仅排序状态/列变化时重建 ────────────────────────────────
   const thead = useMemo(() => data ? (
     <tr style={{ display: 'flex', borderBottom: '1px solid #1e2d42' }}>
-      <th style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
+      <th style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
         {t('tableDataView.serialNo')}
       </th>
       {data.columns.map(col => (
-        <th key={col} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
+        <th key={col} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
           <div className="flex items-center justify-between gap-1 w-full">
             <span className="truncate">{col}</span>
             <Tooltip content={

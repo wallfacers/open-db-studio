@@ -3,6 +3,7 @@ import { Handle, Position, BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from
 import type { NodeProps, EdgeProps } from '@xyflow/react';
 import { Plus, Database, BarChart2, Hash, ArrowLeftRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Tooltip } from '../common/Tooltip';
 
 export interface ColumnInfo {
   name: string;
@@ -101,7 +102,9 @@ function BaseNode({
           <Icon size={13} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[#c8daea] text-xs font-semibold truncate" title={data.name}>{data.name}</p>
+          <Tooltip content={data.name} className="w-full">
+            <p className="text-[#c8daea] text-xs font-semibold truncate">{data.name}</p>
+          </Tooltip>
           <p className="text-[#3d5470] text-[9px]">Object Type · {badgeLabel.toUpperCase()}</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -109,21 +112,23 @@ function BaseNode({
             <span className="text-[9px] text-[#7a9bb8] bg-[#0d1117] px-1 rounded">{propCount}✦</span>
           )}
           {linkCount > 0 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); data.onHighlightLinks?.(data.id); }}
-              className="text-[9px] text-[#00c9a7] bg-[#0d1f1a] px-1 rounded hover:bg-[#00c9a722] transition-colors"
-              title={t('graphExplorer.highlightLinks')}
-            >
-              {linkCount}⇌
-            </button>
+            <Tooltip content={t('graphExplorer.highlightLinks')} className="contents">
+              <button
+                onClick={(e) => { e.stopPropagation(); data.onHighlightLinks?.(data.id); }}
+                className="text-[9px] text-[#00c9a7] bg-[#0d1f1a] px-1 rounded hover:bg-[#00c9a722] transition-colors"
+              >
+                {linkCount}⇌
+              </button>
+            </Tooltip>
           )}
-          <button
-            title={t('graphExplorer.addAlias')}
-            onClick={handleAddAlias}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea]"
-          >
-            <Plus size={11} />
-          </button>
+          <Tooltip content={t('graphExplorer.addAlias')} className="contents">
+            <button
+              onClick={handleAddAlias}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea]"
+            >
+              <Plus size={11} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -183,7 +188,9 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
           <Database size={13} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[#c8daea] text-xs font-semibold truncate" title={nodeData.name}>{nodeData.name}</p>
+          <Tooltip content={nodeData.name} className="w-full">
+            <p className="text-[#c8daea] text-xs font-semibold truncate">{nodeData.name}</p>
+          </Tooltip>
           <p className="text-[#3d5470] text-[9px]">Object Type · TABLE</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">

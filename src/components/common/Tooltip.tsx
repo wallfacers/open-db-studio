@@ -1,6 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+const MAX_WIDTH = 320;
+const MARGIN = 8;
+
 interface TooltipProps {
   content?: string;
   children: React.ReactNode;
@@ -13,6 +16,7 @@ interface TooltipProps {
 /**
  * 统一主题风格的 Tooltip 组件。
  * 显示在鼠标光标正下方，使用 Portal 渲染到 body。
+ * 自动处理四边缘溢出：右侧不足时向左偏移，底部不足时显示在光标上方。
  */
 export const Tooltip: React.FC<TooltipProps> = ({
   content,
@@ -41,6 +45,16 @@ export const Tooltip: React.FC<TooltipProps> = ({
     setMousePos(null);
   };
 
+  const getPosition = (pos: { x: number; y: number }) => {
+    // 右边缘：光标右侧偏移 12px，超出则从右侧留出 margin
+    const left = Math.min(pos.x + 12, window.innerWidth - MAX_WIDTH - MARGIN);
+    // 底部边缘：下方放不下时显示在光标上方
+    const top = pos.y + 24 + 32 > window.innerHeight
+      ? pos.y - 32
+      : pos.y + 24;
+    return { left, top };
+  };
+
   return (
     <div
       className={className}
@@ -53,14 +67,9 @@ export const Tooltip: React.FC<TooltipProps> = ({
         createPortal(
           <div
             className="fixed z-[9999] px-2 py-1 text-xs text-[#c8daea] bg-[#151d28]
-                       border border-[#2a3f5a] rounded shadow-lg whitespace-nowrap
+                       border border-[#2a3f5a] rounded shadow-lg break-words
                        pointer-events-none tooltip-fade-in"
-            style={{
-              left: Math.min(mousePos.x + 12, window.innerWidth - 8),
-              top: mousePos.y + 24 + 32 > window.innerHeight
-                ? mousePos.y - 32
-                : mousePos.y + 24,
-            }}
+            style={{ maxWidth: MAX_WIDTH, ...getPosition(mousePos) }}
           >
             {content}
           </div>,

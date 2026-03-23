@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditorType, languages as MonacoLanguages, IRange as MonacoIRange } from 'monaco-editor';
 import { useTranslation } from 'react-i18next';
@@ -647,6 +647,20 @@ export const MainContent: React.FC<MainContentProps> = ({
     ? contextSchemas[contextSchemaKey]
     : [];
 
+  // 检测同名表数据 tab（不同数据库下相同表名），用于在 tab 标题中加数据库前缀做区分
+  const conflictingTableTabTitles = useMemo(() => {
+    const counts: Record<string, number> = {};
+    tabs.forEach(t => {
+      if (t.type === 'table' || t.type === 'table_structure') {
+        const key = `${t.type}__${t.title}`;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    });
+    return new Set(
+      Object.entries(counts).filter(([, c]) => c > 1).map(([k]) => k)
+    );
+  }, [tabs]);
+
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
       {/* Tabs */}
@@ -675,7 +689,13 @@ export const MainContent: React.FC<MainContentProps> = ({
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
-            <span className="truncate flex-1 text-xs">{tab.title}</span>
+            <span className="truncate flex-1 text-xs">
+              {(tab.type === 'table' || tab.type === 'table_structure') &&
+               conflictingTableTabTitles.has(`${tab.type}__${tab.title}`) &&
+               tab.db
+                ? `${tab.db}.${tab.title}`
+                : tab.title}
+            </span>
             <Tooltip content={t('mainContent.closeTab')}>
               <div
                 className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
@@ -1065,13 +1085,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                         className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left"
                                         onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                       >
-                                        <div className="max-w-[300px] truncate" title={cellStr ?? undefined}>
-                                          {cell === null
-                                            ? <span className="text-[#7a9bb8]">NULL</span>
-                                            : typeof cell === 'string' && cell.startsWith('✓')
-                                              ? <span className="text-green-400">{cell}</span>
-                                              : <span className="text-[#c8daea]">{cellStr}</span>}
-                                        </div>
+                                        <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
+                                          <div className="truncate">
+                                            {cell === null
+                                              ? <span className="text-[#7a9bb8]">NULL</span>
+                                              : typeof cell === 'string' && cell.startsWith('✓')
+                                                ? <span className="text-green-400">{cell}</span>
+                                                : <span className="text-[#c8daea]">{cellStr}</span>}
+                                          </div>
+                                        </Tooltip>
                                         {cellStr !== null && (
                                           <button
                                             className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
@@ -1157,13 +1179,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                           className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left"
                                           onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                         >
-                                          <div className="max-w-[300px] truncate" title={cellStr ?? undefined}>
-                                            {cell === null
-                                              ? <span className="text-[#7a9bb8]">NULL</span>
-                                              : typeof cell === 'string' && cell.startsWith('✓')
-                                                ? <span className="text-green-400">{cell}</span>
-                                                : <span className="text-[#c8daea]">{cellStr}</span>}
-                                          </div>
+                                          <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
+                                            <div className="truncate">
+                                              {cell === null
+                                                ? <span className="text-[#7a9bb8]">NULL</span>
+                                                : typeof cell === 'string' && cell.startsWith('✓')
+                                                  ? <span className="text-green-400">{cell}</span>
+                                                  : <span className="text-[#c8daea]">{cellStr}</span>}
+                                            </div>
+                                          </Tooltip>
                                           {cellStr !== null && (
                                             <button
                                               className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"

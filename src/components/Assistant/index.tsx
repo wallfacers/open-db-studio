@@ -468,22 +468,24 @@ export const Assistant: React.FC<AssistantProps> = ({
         </div>
 
         {isChatting ? (
-          <button
-            className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
-            onClick={() => cancelChat(currentSessionId)}
-            title={t('assistant.stopGeneration')}
-          >
-            <Square size={14} />
-          </button>
+          <Tooltip content={t('assistant.stopGeneration')} className="contents">
+            <button
+              className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
+              onClick={() => cancelChat(currentSessionId)}
+            >
+              <Square size={14} />
+            </button>
+          </Tooltip>
         ) : (
-          <button
-            className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
-            onClick={handleSendMessage}
-            disabled={!chatInput.trim()}
-            title={t('assistant.sendMessage')}
-          >
-            <Send size={14} />
-          </button>
+          <Tooltip content={t('assistant.sendMessage')} className="contents">
+            <button
+              className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
+              onClick={handleSendMessage}
+              disabled={!chatInput.trim()}
+            >
+              <Send size={14} />
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -500,28 +502,33 @@ export const Assistant: React.FC<AssistantProps> = ({
       {/* Header */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
         <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
-        <div className="flex items-center space-x-3 text-[#7a9bb8]">
+        <div className="flex items-center space-x-4 text-[#7a9bb8]">
           {!showHistory && chatHistory.length > 0 && (
-            <span
-              title={t('assistant.clearHistory')}
-              className="flex items-center cursor-pointer hover:text-red-400"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: '清空对话',
-                  message: '确定清空当前对话记录？此操作不可恢复。',
-                  variant: 'danger',
-                });
-                if (!ok) return;
-                clearHistory(currentSessionId);
-                showToast(t('assistant.historyCleared'), 'info');
-              }}
-            >
-              <Trash2 size={16} />
-            </span>
+            <Tooltip content={t('assistant.clearHistory')} className="contents">
+              <span
+                className="flex items-center cursor-pointer hover:text-red-400 p-1"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: '清空对话',
+                    message: '确定清空当前对话记录？此操作不可恢复。',
+                    variant: 'danger',
+                  });
+                  if (!ok) return;
+                  clearHistory(currentSessionId);
+                  showToast(t('assistant.historyCleared'), 'info');
+                }}
+              >
+                <Trash2 size={16} />
+              </span>
+            </Tooltip>
           )}
-          <span title={t('assistant.newChat')} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { newSession(); setShowHistory(false); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
-          <span title={t('assistant.openHistory')} className={`cursor-pointer transition-colors ${showHistory ? 'text-[#00c9a7]' : 'hover:text-[#c8daea]'}`} onClick={() => setShowHistory((v) => !v)}><History size={16} /></span>
-          <X size={16} className="cursor-pointer hover:text-[#c8daea]" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }} />
+          <Tooltip content={t('assistant.newChat')} className="contents">
+            <span className="cursor-pointer hover:text-[#c8daea] p-1" onClick={() => { newSession(); setShowHistory(false); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
+          </Tooltip>
+          <Tooltip content={t('assistant.openHistory')} className="contents">
+            <span className={`cursor-pointer transition-colors p-1 ${showHistory ? 'text-[#00c9a7]' : 'hover:text-[#c8daea]'}`} onClick={() => setShowHistory((v) => !v)}><History size={16} /></span>
+          </Tooltip>
+          <span className="cursor-pointer hover:text-[#c8daea] p-1 flex items-center" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }}><X size={16} /></span>
         </div>
       </div>
 
@@ -586,22 +593,23 @@ export const Assistant: React.FC<AssistantProps> = ({
                           {relTime} · {sess.messages.length} {t('assistant.messageCount')}
                         </div>
                       </div>
-                      <button
-                        className="opacity-0 group-hover:opacity-100 p-0.5 text-[#4a6a8a] hover:text-red-400 transition-all flex-shrink-0"
-                        title={t('assistant.deleteSession')}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          const ok = await confirm({
-                            title: '删除会话',
-                            message: '确定删除该会话？此操作不可恢复。',
-                            variant: 'danger',
-                          });
-                          if (!ok) return;
-                          deleteSession(sess.id);
-                        }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      <Tooltip content={t('assistant.deleteSession')} className="contents">
+                        <button
+                          className="opacity-0 group-hover:opacity-100 p-1 text-[#4a6a8a] hover:text-red-400 transition-all flex-shrink-0"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const ok = await confirm({
+                              title: '删除会话',
+                              message: '确定删除该会话？此操作不可恢复。',
+                              variant: 'danger',
+                            });
+                            if (!ok) return;
+                            deleteSession(sess.id);
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </Tooltip>
                     </div>
                   );
                 })

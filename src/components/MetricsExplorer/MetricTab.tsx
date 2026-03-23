@@ -4,6 +4,7 @@ import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Metric, UpdateMetricPayload, ColumnMeta, MetricScope } from '../../types';
 import { DropdownSelect } from '../common/DropdownSelect';
+import { Tooltip } from '../common/Tooltip';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
 
@@ -312,16 +313,17 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
           {error && <span className="text-xs text-red-400">{error}</span>}
           {/* 编辑模式才显示删除按钮 */}
           {!isCreateMode && (
-            <button
-              className="flex items-center gap-1.5 px-3 py-1 bg-[#1a2a3a] border border-[#2a3f5a] text-red-400 text-xs rounded
-                         hover:border-red-500 hover:text-red-300 disabled:opacity-50"
-              onClick={handleDelete}
-              disabled={deleting || saving}
-              title={t('metricsExplorer.metricTab.deleteTitle')}
-            >
-              <Trash2 size={12} />
-              {deleting ? t('metricsExplorer.metricTab.deleting') : t('metricsExplorer.metricTab.delete')}
-            </button>
+            <Tooltip content={t('metricsExplorer.metricTab.deleteTitle')} className="contents">
+              <button
+                className="flex items-center gap-1.5 px-3 py-1 bg-[#1a2a3a] border border-[#2a3f5a] text-red-400 text-xs rounded
+                           hover:border-red-500 hover:text-red-300 disabled:opacity-50"
+                onClick={handleDelete}
+                disabled={deleting || saving}
+              >
+                <Trash2 size={12} />
+                {deleting ? t('metricsExplorer.metricTab.deleting') : t('metricsExplorer.metricTab.delete')}
+              </button>
+            </Tooltip>
           )}
           <button
             className="flex items-center gap-1.5 px-3 py-1 bg-[#00c9a7] text-black text-xs rounded

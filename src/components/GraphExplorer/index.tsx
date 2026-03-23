@@ -38,6 +38,7 @@ import { AliasEditor } from './AliasEditor';
 import { DropdownSelect } from '../common/DropdownSelect';
 import type { GraphNode } from './useGraphData';
 import { GraphSearchPanel } from './GraphSearchPanel';
+import { Tooltip } from '../common/Tooltip';
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
@@ -658,24 +659,25 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
         <div className="ml-auto flex items-center gap-1.5">
           {/* Search panel toggle */}
-          <button
-            onClick={() => {
-              if (activePanel === 'search') {
-                setActivePanel(null);
-              } else {
-                setSelectedNode(null);
-                setActivePanel('search');
-              }
-            }}
-            title="实体搜索 / 路径查询"
-            className={`flex items-center gap-1 px-2 py-1 text-xs border rounded transition-colors ${
-              activePanel === 'search'
-                ? 'text-[#00c9a7] bg-[#0a1f18] border-[#00a98f55]'
-                : 'text-[#7a9bb8] hover:text-[#c8daea] bg-[#111922] hover:bg-[#1e2d42] border-[#1e2d42]'
-            }`}
-          >
-            <Search size={13} />
-          </button>
+          <Tooltip content="实体搜索 / 路径查询" className="contents">
+            <button
+              onClick={() => {
+                if (activePanel === 'search') {
+                  setActivePanel(null);
+                } else {
+                  setSelectedNode(null);
+                  setActivePanel('search');
+                }
+              }}
+              className={`flex items-center gap-1 px-2 py-1 text-xs border rounded transition-colors ${
+                activePanel === 'search'
+                  ? 'text-[#00c9a7] bg-[#0a1f18] border-[#00a98f55]'
+                  : 'text-[#7a9bb8] hover:text-[#c8daea] bg-[#111922] hover:bg-[#1e2d42] border-[#1e2d42]'
+              }`}
+            >
+              <Search size={13} />
+            </button>
+          </Tooltip>
 
           {/* Edit mode toggle */}
           <button

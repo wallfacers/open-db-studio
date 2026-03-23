@@ -580,6 +580,13 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
             const parentId = Array.from(useTreeStore.getState().nodes.values())
               .find(n => n.label === truncateConfirm.tableName && n.nodeType === 'table')?.parentId ?? '';
             if (parentId) refreshNode(parentId);
+            // 如果表数据 Tab 已打开且为活跃 Tab，触发数据刷新
+            const dbName = truncateConfirm.database ?? `conn_${truncateConfirm.connectionId}`;
+            const tabId = `table_${truncateConfirm.connectionId}_${dbName}_${truncateConfirm.schema ?? ''}_${truncateConfirm.tableName}`;
+            const { tabs, activeTabId, triggerTableRefresh } = useQueryStore.getState();
+            if (tabs.some(t => t.id === tabId) && activeTabId === tabId) {
+              triggerTableRefresh(tabId);
+            }
           }}
           showToast={showToast}
         />

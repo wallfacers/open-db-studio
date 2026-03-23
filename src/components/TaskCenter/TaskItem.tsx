@@ -3,6 +3,7 @@ import { Loader2, CheckCircle, XCircle, Square, RotateCcw, Trash2, ExternalLink 
 import { useTranslation } from 'react-i18next';
 import { Task, useTaskStore } from '../../store/taskStore';
 import { useConfirm } from '../../hooks/useConfirm';
+import { Tooltip } from '../common/Tooltip';
 
 interface Props {
   task: Task;
@@ -163,40 +164,44 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
         {/* Actions */}
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {task.status === 'running' && (
-            <button
-              onClick={handleCancel}
-              className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
-              title={t('taskCenter.cancel', 'Cancel')}
-            >
-              <Square size={14} />
-            </button>
+            <Tooltip content={t('taskCenter.cancel', 'Cancel')} className="contents">
+              <button
+                onClick={handleCancel}
+                className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
+              >
+                <Square size={14} />
+              </button>
+            </Tooltip>
           )}
           {(task.status === 'failed' || task.status === 'cancelled') && task.type !== 'ai_generate_metrics' && (
-            <button
-              onClick={handleRetry}
-              className="p-1.5 text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
-              title={t('taskCenter.retry', 'Retry')}
-            >
-              <RotateCcw size={14} />
-            </button>
+            <Tooltip content={t('taskCenter.retry', 'Retry')} className="contents">
+              <button
+                onClick={handleRetry}
+                className="p-1.5 text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
+              >
+                <RotateCcw size={14} />
+              </button>
+            </Tooltip>
           )}
           {task.status === 'completed' && task.outputPath && (
-            <button
-              onClick={handleOpenOutput}
-              className="p-1.5 text-[#7a9bb8] hover:text-[#3794ff] transition-colors"
-              title={t('taskCenter.openOutput', 'Open output')}
-            >
-              <ExternalLink size={14} />
-            </button>
+            <Tooltip content={t('taskCenter.openOutput', 'Open output')} className="contents">
+              <button
+                onClick={handleOpenOutput}
+                className="p-1.5 text-[#7a9bb8] hover:text-[#3794ff] transition-colors"
+              >
+                <ExternalLink size={14} />
+              </button>
+            </Tooltip>
           )}
           {(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && (
-            <button
-              onClick={handleRemove}
-              className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
-              title={t('taskCenter.remove', 'Remove')}
-            >
-              <Trash2 size={14} />
-            </button>
+            <Tooltip content={t('taskCenter.remove', 'Remove')} className="contents">
+              <button
+                onClick={handleRemove}
+                className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>

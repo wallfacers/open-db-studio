@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { AliasEditor } from './AliasEditor';
 import type { GraphNode, GraphEdge } from './useGraphData';
 import { parseAliases } from './graphUtils';
+import { Tooltip } from '../common/Tooltip';
 
 interface NodeDetailProps {
   node: GraphNode;
@@ -264,14 +265,17 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             {nodeTypeIcon(node.node_type)}
             <div className="min-w-0">
-              <p className="text-[#c8daea] text-sm font-semibold truncate"
-                title={node.node_type === 'link' ? (node.display_name || node.name) : node.name}>
-                {node.node_type === 'link' ? (node.display_name || node.name) : node.name}
-              </p>
-              {node.node_type !== 'link' && node.display_name && node.display_name !== node.name && (
-                <p className="text-[#7a9bb8] text-xs truncate mt-0.5" title={node.display_name}>
-                  {node.display_name}
+              <Tooltip content={node.node_type === 'link' ? (node.display_name || node.name) : node.name} className="w-full">
+                <p className="text-[#c8daea] text-sm font-semibold truncate">
+                  {node.node_type === 'link' ? (node.display_name || node.name) : node.name}
                 </p>
+              </Tooltip>
+              {node.node_type !== 'link' && node.display_name && node.display_name !== node.name && (
+                <Tooltip content={node.display_name} className="w-full">
+                  <p className="text-[#7a9bb8] text-xs truncate mt-0.5">
+                    {node.display_name}
+                  </p>
+                </Tooltip>
               )}
             </div>
           </div>
@@ -407,9 +411,11 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                         <span className={`text-[10px] font-medium flex-shrink-0 ${edgeTypeColor(edge.edge_type)}`}>
                           {edge.edge_type}
                         </span>
-                        <span className="text-[#c8daea] text-[10px] font-mono truncate flex-1" title={peerName}>
-                          {peerName}
-                        </span>
+                        <Tooltip content={peerName} className="truncate flex-1">
+                          <span className="text-[#c8daea] text-[10px] font-mono truncate">
+                            {peerName}
+                          </span>
+                        </Tooltip>
                         {edge.source && edge.source !== 'schema' && (
                           <SourceBadge source={edge.source} />
                         )}

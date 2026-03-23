@@ -23,7 +23,7 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
 
   return (
     <table
-      style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }}
+      style={{ width: '100%', minWidth: `${totalWidth}px` }}
       className="text-left whitespace-nowrap text-xs"
     >
       <thead className="sticky top-0 bg-[#0d1117] z-10" style={{ display: 'block' }}>

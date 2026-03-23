@@ -1,4 +1,4 @@
-use crate::datasource::{ConnectionConfig, QueryResult, SchemaInfo, TableMeta};
+use crate::datasource::{ConnectionConfig, DbStats, DriverCapabilities, QueryResult, SchemaInfo, TableMeta};
 use crate::db::models::{Connection, CreateConnectionRequest, QueryHistory};
 use crate::llm::{ChatContext, ChatMessage, AgentMessage, ToolDefinition};
 use crate::{AppError, AppResult};
@@ -2083,10 +2083,10 @@ pub async fn backup_database(params: BackupParams) -> Result<(), String> {
     let config = crate::db::get_connection_config(params.connection_id)
         .map_err(|e| e.to_string())?;
 
-    let host = &config.host;
-    let port = config.port;
-    let user = &config.username;
-    let password = &config.password;
+    let host = config.host.as_deref().unwrap_or("");
+    let port = config.port.unwrap_or(0);
+    let user = config.username.as_deref().unwrap_or("");
+    let password = config.password.as_deref().unwrap_or("");
 
     let driver = config.driver.to_lowercase();
 
@@ -3893,4 +3893,23 @@ pub async fn find_subgraph(
     // 4. 复用现有 BFS + LRU 缓存
     let entities = vec![from_name, to_name];
     crate::graph::query::find_relevant_subgraph(connection_id, &entities, max_hops).await
+}
+
+// ============ 多数据源扩展命令 ============
+
+/// 返回驱动能力声明，前端用于控制 DBTree 菜单显隐
+#[tauri::command]
+pub async fn get_driver_capabilities(connection_id: i64) -> AppResult<DriverCapabilities> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
+    Ok(ds.capabilities())
+}
+
+/// 返回库级 + 表级统计信息，用于性能监控图表
+#[tauri::command]
+pub async fn get_db_stats(connection_id: i64, database: Option<String>) -> AppResult<DbStats> {
+    let config = crate::db::get_connection_config(connection_id)?;
+    let db = database.as_deref().unwrap_or("");
+    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, db, "").await?;
+    ds.get_db_stats(database.as_deref()).await
 }

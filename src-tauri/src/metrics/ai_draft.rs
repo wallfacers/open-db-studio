@@ -217,7 +217,7 @@ async fn do_generate(
     };
     log_emit!(
         "info",
-        &format!("连接数据库 {} ({})", config.database, config.driver)
+        &format!("连接数据库 {} ({})", config.database.as_deref().unwrap_or(""), config.driver)
     );
 
     // 2. 创建数据源

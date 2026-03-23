@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS connections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     group_id INTEGER REFERENCES connection_groups(id) ON DELETE SET NULL,
-    driver TEXT NOT NULL CHECK(driver IN ('mysql','postgres','oracle','sqlserver','sqlite')),
+    driver TEXT NOT NULL CHECK(driver IN ('mysql','postgres','oracle','sqlserver','sqlite','doris','tidb','clickhouse')),
     host TEXT,
     port INTEGER,
     database_name TEXT,

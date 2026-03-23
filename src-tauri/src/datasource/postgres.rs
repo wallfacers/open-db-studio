@@ -16,15 +16,24 @@ impl PostgresDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        use crate::AppError;
+        let host = config.host.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        let port = config.port
+            .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
+        let username = config.username.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
         let mut opts = PgConnectOptions::new()
-            .host(&config.host)
-            .port(config.port as u16)
-            .username(&config.username)
-            .password(&config.password)
+            .host(host)
+            .port(port)
+            .username(username)
             .ssl_mode(PgSslMode::Disable);
+        if let Some(pw) = config.password.as_deref() {
+            opts = opts.password(pw);
+        }
         // database 为空时不设置，sqlx 默认使用用户名作为库名（PG 规范）
-        if !config.database.is_empty() {
-            opts = opts.database(&config.database);
+        if let Some(db) = config.database.as_deref().filter(|s| !s.is_empty()) {
+            opts = opts.database(db);
         }
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");

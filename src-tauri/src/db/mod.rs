@@ -267,12 +267,13 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
 
     Ok(crate::datasource::ConnectionConfig {
         driver,
-        host: row.1.unwrap_or_default(),
-        port: row.2.unwrap_or(default_port) as u16,
-        database,
-        username,
-        password,
+        host: row.1,
+        port: row.2.map(|p| p as u16).or(Some(default_port as u16)),
+        database: Some(database),
+        username: Some(username),
+        password: Some(password),
         extra_params: row.6,
+        file_path: None,
     })
 }
 

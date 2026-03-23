@@ -28,12 +28,19 @@ static POOL_CACHE: Lazy<Mutex<HashMap<CacheKey, Arc<dyn DataSource>>>> =
 
 /// 获取或创建缓存的数据源。
 /// 首次调用时建立连接池；后续调用直接复用已有连接池，无额外握手开销。
+///
+/// SQLite 驱动例外：基于文件锁，不入缓存，每次直接新建（开销可接受）。
 pub async fn get_or_create(
     connection_id: i64,
     config: &ConnectionConfig,
     database: &str,
     schema: &str,
 ) -> AppResult<Arc<dyn DataSource>> {
+    // SQLite 不走缓存
+    if config.driver == "sqlite" {
+        return create_datasource_arc(config, database, schema).await;
+    }
+
     let key: CacheKey = (connection_id, database.to_string(), schema.to_string());
 
     // 快速路径：已有缓存直接返回
@@ -92,7 +99,7 @@ async fn create_datasource_arc(
 ) -> AppResult<Arc<dyn DataSource>> {
     let mut cfg = config.clone();
     if !database.is_empty() {
-        cfg.database = database.to_string();
+        cfg.database = Some(database.to_string());
     }
     let ds: Arc<dyn DataSource> = match cfg.driver.as_str() {
         "mysql" => Arc::new(super::mysql::MySqlDataSource::new(&cfg).await?),
@@ -102,6 +109,11 @@ async fn create_datasource_arc(
         }
         "oracle" => Arc::new(super::oracle::OracleDataSource::new(&cfg).await?),
         "sqlserver" => Arc::new(super::sqlserver::SqlServerDataSource::new(&cfg).await?),
+        // SQLite 基于文件锁，不使用连接池；直接新建，不存入缓存
+        "sqlite" => Arc::new(super::sqlite::SqliteDataSource::new(&cfg).await?),
+        "doris" => Arc::new(super::mysql::MySqlDataSource::new_with_dialect(&cfg, super::mysql::Dialect::Doris).await?),
+        "tidb" => Arc::new(super::mysql::MySqlDataSource::new_with_dialect(&cfg, super::mysql::Dialect::TiDB).await?),
+        "clickhouse" => Arc::new(super::clickhouse::ClickHouseDataSource::new(&cfg).await?),
         d => return Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     };
     Ok(ds)

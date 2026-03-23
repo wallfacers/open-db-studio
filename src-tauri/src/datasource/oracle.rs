@@ -25,10 +25,13 @@ impl OracleDataSource {
         }
         #[cfg(feature = "oracle-driver")]
         {
+            let host = config.host.as_deref().unwrap_or("localhost");
+            let port = config.port.unwrap_or(1521);
+            let database = config.database.as_deref().unwrap_or("");
             Ok(Self {
-                connection_string: format!("//{}:{}/{}", config.host, config.port, config.database),
-                username: config.username.clone(),
-                password: config.password.clone(),
+                connection_string: format!("//{}:{}/{}", host, port, database),
+                username: config.username.as_deref().unwrap_or("").to_string(),
+                password: config.password.as_deref().unwrap_or("").to_string(),
             })
         }
     }

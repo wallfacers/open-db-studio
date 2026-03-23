@@ -1,7 +1,9 @@
+pub mod clickhouse;
 pub mod mysql;
 pub mod oracle;
 pub mod pool_cache;
 pub mod postgres;
+pub mod sqlite;
 pub mod sqlserver;
 
 use async_trait::async_trait;
@@ -112,16 +114,93 @@ pub struct FullSchemaInfo {
 }
 
 /// 连接配置（来自前端）
+///
+/// `host` / `port` / `database` / `username` / `password` 改为 Option，
+/// 以支持 SQLite（仅需 `file_path`）等无需网络的驱动。
+/// 已有网络驱动（MySQL/PostgreSQL/Oracle/SQL Server）在构建时
+/// 使用 `.as_deref().unwrap_or("")` 或 `.ok_or(AppError::Datasource(...))` 取值。
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ConnectionConfig {
     pub driver: String,
-    pub host: String,
-    pub port: u16,
-    pub database: String,
-    pub username: String,
-    pub password: String,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub database: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
     pub extra_params: Option<String>,
+    /// SQLite 专用：.sqlite 文件绝对路径
+    pub file_path: Option<String>,
 }
+
+// ─── 驱动能力声明 ────────────────────────────────────────────────────────────
+
+/// SQL 方言（供前端 AI Prompt 注入使用）
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum SqlDialect {
+    /// MySQL / TiDB / SQLite / PostgreSQL 标准方言
+    Standard,
+    /// Apache Doris 专有函数
+    Doris,
+    /// ClickHouse 专有函数（arrayJoin / groupArray / countIf 等）
+    ClickHouse,
+}
+
+/// 驱动能力声明结构体，各驱动自报支持项。
+/// 前端根据此声明动态决定 DBTree 中哪些类别节点可见。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DriverCapabilities {
+    pub has_schemas: bool,
+    pub has_foreign_keys: bool,
+    pub has_stored_procedures: bool,
+    pub has_triggers: bool,
+    pub has_materialized_views: bool,
+    pub has_multi_database: bool,
+    pub has_partitions: bool,
+    pub sql_dialect: SqlDialect,
+}
+
+impl Default for DriverCapabilities {
+    fn default() -> Self {
+        Self {
+            has_schemas: false,
+            has_foreign_keys: false,
+            has_stored_procedures: false,
+            has_triggers: false,
+            has_materialized_views: false,
+            has_multi_database: false,
+            has_partitions: false,
+            sql_dialect: SqlDialect::Standard,
+        }
+    }
+}
+
+// ─── 数据库统计信息 ──────────────────────────────────────────────────────────
+
+/// 单表统计
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TableStat {
+    pub name: String,
+    pub row_count: Option<i64>,
+    pub data_size_bytes: Option<i64>,
+    pub index_size_bytes: Option<i64>,
+}
+
+/// 库级摘要
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbSummary {
+    pub total_tables: usize,
+    pub total_size_bytes: Option<i64>,
+    pub db_version: Option<String>,
+}
+
+/// 数据库统计信息（用于性能监控图表）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbStats {
+    pub tables: Vec<TableStat>,
+    pub db_summary: DbSummary,
+}
+
+// ─── DataSource Trait ────────────────────────────────────────────────────────
 
 /// 数据源统一抽象 trait
 #[async_trait]
@@ -161,8 +240,6 @@ pub trait DataSource: Send + Sync {
     }
 
     /// 列出指定数据库中的 Schema（PostgreSQL/Oracle 专用）。
-    /// **重要：** 调用方应先使用 `create_datasource_with_db(config, database)` 创建连接到目标数据库的数据源，
-    /// `_database` 参数仅为接口一致性保留，具体实现通常忽略它（连接池已绑定到目标数据库）。
     async fn list_schemas(&self, _database: &str) -> AppResult<Vec<String>> {
         Ok(vec![])
     }
@@ -177,13 +254,27 @@ pub trait DataSource: Send + Sync {
         Ok(vec![])
     }
 
+    /// 返回驱动能力声明（默认：全保守 false）
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities::default()
+    }
+
+    /// 返回库级 + 表级统计信息（用于性能监控图表）
+    async fn get_db_stats(&self, _database: Option<&str>) -> AppResult<DbStats> {
+        Ok(DbStats {
+            tables: vec![],
+            db_summary: DbSummary {
+                total_tables: 0,
+                total_size_bytes: None,
+                db_version: None,
+            },
+        })
+    }
+
     async fn get_full_schema(&self) -> AppResult<FullSchemaInfo> {
         let tables_meta = self.get_tables().await?;
         let mut tables = vec![];
         for t in &tables_meta {
-            // 默认实现对每张表的 metadata 查询采用 unwrap_or_default：
-            // 这是为了让未实现扩展方法的驱动（Oracle/MSSQL stub）能静默返回空数据。
-            // 真实驱动实现（MySQL/PostgreSQL）应覆盖本方法并传播错误。
             let schema = t.schema.as_deref();
             let columns = self.get_columns(&t.name, schema).await.unwrap_or_default();
             let indexes = self.get_indexes(&t.name, schema).await.unwrap_or_default();
@@ -196,15 +287,21 @@ pub trait DataSource: Send + Sync {
     }
 }
 
+// ─── 工厂函数 ────────────────────────────────────────────────────────────────
+
 /// 根据配置创建对应数据源实例
 pub async fn create_datasource(
     config: &ConnectionConfig,
 ) -> AppResult<Box<dyn DataSource>> {
     match config.driver.as_str() {
-        "mysql" => Ok(Box::new(mysql::MySqlDataSource::new(config).await?)),
+        "mysql"  => Ok(Box::new(mysql::MySqlDataSource::new(config).await?)),
         "postgres" => Ok(Box::new(postgres::PostgresDataSource::new(config).await?)),
-        "oracle" => Ok(Box::new(oracle::OracleDataSource::new(config).await?)),
+        "oracle"   => Ok(Box::new(oracle::OracleDataSource::new(config).await?)),
         "sqlserver" => Ok(Box::new(sqlserver::SqlServerDataSource::new(config).await?)),
+        "sqlite"    => Ok(Box::new(sqlite::SqliteDataSource::new(config).await?)),
+        "doris"     => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(config, mysql::Dialect::Doris).await?)),
+        "tidb"      => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(config, mysql::Dialect::TiDB).await?)),
+        "clickhouse" => Ok(Box::new(clickhouse::ClickHouseDataSource::new(config).await?)),
         d => Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     }
 }
@@ -215,7 +312,7 @@ pub async fn create_datasource_with_db(
     database: &str,
 ) -> AppResult<Box<dyn DataSource>> {
     let mut cfg = config.clone();
-    cfg.database = database.to_string();
+    cfg.database = Some(database.to_string());
     create_datasource(&cfg).await
 }
 
@@ -228,14 +325,18 @@ pub async fn create_datasource_with_context(
     let mut cfg = config.clone();
     if let Some(db) = database {
         if !db.is_empty() {
-            cfg.database = db.to_string();
+            cfg.database = Some(db.to_string());
         }
     }
     match cfg.driver.as_str() {
-        "mysql" => Ok(Box::new(mysql::MySqlDataSource::new(&cfg).await?)),
+        "mysql"  => Ok(Box::new(mysql::MySqlDataSource::new(&cfg).await?)),
         "postgres" => Ok(Box::new(postgres::PostgresDataSource::new_with_schema(&cfg, schema).await?)),
-        "oracle" => Ok(Box::new(oracle::OracleDataSource::new(&cfg).await?)),
+        "oracle"   => Ok(Box::new(oracle::OracleDataSource::new(&cfg).await?)),
         "sqlserver" => Ok(Box::new(sqlserver::SqlServerDataSource::new(&cfg).await?)),
+        "sqlite"    => Ok(Box::new(sqlite::SqliteDataSource::new(&cfg).await?)),
+        "doris"     => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(&cfg, mysql::Dialect::Doris).await?)),
+        "tidb"      => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(&cfg, mysql::Dialect::TiDB).await?)),
+        "clickhouse" => Ok(Box::new(clickhouse::ClickHouseDataSource::new(&cfg).await?)),
         d => Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     }
 }

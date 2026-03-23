@@ -11,11 +11,20 @@ pub struct SqlServerDataSource {
 
 impl SqlServerDataSource {
     pub async fn new(cfg: &ConnectionConfig) -> AppResult<Self> {
+        let host = cfg.host.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        let port = cfg.port
+            .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
+        let username = cfg.username.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+        let password = cfg.password.as_deref().unwrap_or("");
         let mut config = Config::new();
-        config.host(&cfg.host);
-        config.port(cfg.port);
-        config.database(&cfg.database);
-        config.authentication(AuthMethod::sql_server(&cfg.username, &cfg.password));
+        config.host(host);
+        config.port(port);
+        if let Some(db) = cfg.database.as_deref().filter(|s| !s.is_empty()) {
+            config.database(db);
+        }
+        config.authentication(AuthMethod::sql_server(username, password));
         config.trust_cert(); // MVP 阶段跳过证书验证
         Ok(Self { config })
     }

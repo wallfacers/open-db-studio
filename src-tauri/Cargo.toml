@@ -90,6 +90,9 @@ agent-client-protocol = "0.10.2"
 axum = { version = "0.7", features = ["http1", "json"] }
 tower = "0.4"
 
+# ClickHouse 官方 HTTP 客户端（port 8123）
+clickhouse = { version = "0.12", features = ["uuid"] }
+
 # Oracle 驱动（可选，需要 Oracle Instant Client）
 [target.'cfg(target_os = "windows")'.dependencies]
 oracle = { version = "0.6", optional = true }

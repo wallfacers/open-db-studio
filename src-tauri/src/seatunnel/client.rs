@@ -1,59 +1,34 @@
 use reqwest::Client;
 
-/// 从 job-info JSON 中提取指标值，大小写不敏感，兼容多种嵌套路径：
-/// - `metrics.{key}`（标准路径，尝试原始 key 及 camelCase / PascalCase 变体）
-/// - `jobDag.vertices[*].metrics.{key}` 聚合（部分版本）
-/// - 直接顶层 `{key}`
-fn extract_metric(info: &serde_json::Value, key: &str) -> u64 {
-    // 构造 camelCase（首字母小写）和 PascalCase（首字母大写）两种变体
-    let lower_key = {
-        let mut s = key.to_string();
-        if let Some(c) = s.get_mut(0..1) {
-            c.make_ascii_lowercase();
-        }
-        s
-    };
-    let upper_key = {
-        let mut s = key.to_string();
-        if let Some(c) = s.get_mut(0..1) {
-            c.make_ascii_uppercase();
-        }
-        s
-    };
-    let variants: &[&str] = &[key, &lower_key, &upper_key];
+/// 将 JSON Value 转换为 u64，兼容数字类型和字符串类型（SeaTunnel 返回的指标值是字符串）
+fn json_to_u64(v: &serde_json::Value) -> Option<u64> {
+    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
 
-    // 从 metrics 对象中查找
-    if let Some(metrics) = info.get("metrics") {
-        for k in variants {
-            if let Some(v) = metrics.get(*k).and_then(|v| v.as_u64()) {
-                return v;
-            }
-        }
-        // metrics 里大小写不敏感全扫描
-        if let Some(obj) = metrics.as_object() {
-            let key_lower = key.to_lowercase();
-            for (k, v) in obj {
-                if k.to_lowercase() == key_lower {
-                    if let Some(n) = v.as_u64() { return n; }
-                }
+/// 从 job-info JSON 中提取指标值，大小写不敏感，兼容数字/字符串值类型
+fn extract_metric(info: &serde_json::Value, key: &str) -> u64 {
+    let key_lower = key.to_lowercase();
+
+    // 从 metrics 对象中大小写不敏感查找
+    if let Some(obj) = info.get("metrics").and_then(|m| m.as_object()) {
+        for (k, v) in obj {
+            if k.to_lowercase() == key_lower {
+                if let Some(n) = json_to_u64(v) { return n; }
             }
         }
     }
     // 顶层直接字段
-    for k in variants {
-        if let Some(v) = info.get(*k).and_then(|v| v.as_u64()) {
-            return v;
-        }
+    if let Some(v) = info.get(key) {
+        if let Some(n) = json_to_u64(v) { return n; }
     }
     // jobDag.vertices 聚合
     if let Some(vertices) = info.get("jobDag").and_then(|d| d.get("vertices")).and_then(|v| v.as_array()) {
-        let key_lower = key.to_lowercase();
         let sum: u64 = vertices.iter()
             .filter_map(|vtx| {
                 vtx.get("metrics").and_then(|m| m.as_object()).and_then(|obj| {
                     obj.iter()
                         .find(|(k, _)| k.to_lowercase() == key_lower)
-                        .and_then(|(_, v)| v.as_u64())
+                        .and_then(|(_, v)| json_to_u64(v))
                 })
             })
             .sum();
@@ -62,18 +37,18 @@ fn extract_metric(info: &serde_json::Value, key: &str) -> u64 {
     0
 }
 
-/// job-info 响应中提取 metrics 对象的所有键值，用于 debug 日志
+/// job-info 响应中提取 metrics 对象的标量键值（排除嵌套对象），用于 debug 日志
 fn format_metrics_debug(info: &serde_json::Value) -> String {
     if let Some(obj) = info.get("metrics").and_then(|m| m.as_object()) {
         let pairs: Vec<String> = obj.iter()
-            .filter(|(_, v)| v.is_number())
+            .filter(|(_, v)| v.is_number() || v.is_string())
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
         if !pairs.is_empty() {
             return pairs.join(", ");
         }
     }
-    "(metrics 为空或无数字字段)".to_string()
+    "(metrics 为空)".to_string()
 }
 
 /// SeaTunnel REST API 客户端
@@ -306,8 +281,8 @@ impl SeaTunnelClient {
             let source_count = extract_metric(&info, "SourceReceivedCount");
             let sink_count = extract_metric(&info, "SinkWriteCount");
 
-            // 行数变化时记录日志；或每 5 次轮询输出一次心跳，避免长时间无日志
-            if source_count != last_source || sink_count != last_sink || poll_count % 5 == 0 {
+            // 行数变化、首次轮询、或每 5 次轮询输出一次心跳，避免长时间无日志
+            if source_count != last_source || sink_count != last_sink || poll_count == 1 || poll_count % 5 == 0 {
                 on_line(format!(
                     "[INFO] {} | 已读取: {} 行 | 已写入: {} 行",
                     status, source_count, sink_count

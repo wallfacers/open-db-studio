@@ -8,6 +8,7 @@ export interface Connection {
   database_name: string | null;
   username: string | null;
   extra_params: string | null;
+  file_path: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -23,6 +24,7 @@ export interface CreateConnectionRequest {
   password?: string;
   extra_params?: string;
   group_id?: number | null;
+  file_path?: string;
 }
 
 export interface QueryResult {
@@ -220,9 +222,11 @@ export type NodeType =
   | 'trigger'
   | 'event'
   | 'sequence'
+  | 'materialized_view'
+  | 'dictionary'
   | 'column';
 
-export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences';
+export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences' | 'materialized_views' | 'dictionaries';
 
 export interface NodeMeta {
   connectionId?: number;

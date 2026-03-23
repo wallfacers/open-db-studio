@@ -479,6 +479,22 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V13: connections 新增 file_path 列（SQLite 数据源专用）
+    {
+        let has_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('connections') WHERE name = 'file_path'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_col {
+            conn.execute_batch("ALTER TABLE connections ADD COLUMN file_path TEXT")?;
+            log::info!("V13: added connections.file_path column");
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

@@ -4,20 +4,39 @@ import type { TreeNode, NodeType, CategoryKey, ConnectionGroup } from '../types'
 
 // 各数据库方言支持的 Category 列表
 const CATEGORIES_BY_DRIVER: Record<string, CategoryKey[]> = {
-  mysql: ['tables', 'views', 'functions', 'procedures', 'triggers', 'events'],
-  postgres: ['tables', 'views', 'functions', 'procedures', 'triggers', 'sequences'],
-  oracle: ['tables', 'views', 'functions', 'procedures', 'triggers', 'sequences'],
-  sqlserver: ['tables', 'views', 'functions', 'procedures', 'triggers'],
+  mysql:      ['tables', 'views', 'functions', 'procedures', 'triggers', 'events'],
+  postgres:   ['tables', 'views', 'functions', 'procedures', 'triggers', 'sequences'],
+  oracle:     ['tables', 'views', 'functions', 'procedures', 'triggers', 'sequences'],
+  sqlserver:  ['tables', 'views', 'functions', 'procedures', 'triggers'],
+  sqlite:     ['tables', 'views', 'triggers'],
+  doris:      ['tables', 'views', 'materialized_views'],
+  clickhouse: ['tables', 'views', 'dictionaries'],
+  tidb:       ['tables', 'views'],
 };
 
 const CATEGORY_LABELS: Record<CategoryKey, string> = {
-  tables: 'Tables',
-  views: 'Views',
-  functions: 'Functions',
-  procedures: 'Procedures',
-  triggers: 'Triggers',
-  events: 'Events',
-  sequences: 'Sequences',
+  tables:             'Tables',
+  views:              'Views',
+  functions:          'Functions',
+  procedures:         'Procedures',
+  triggers:           'Triggers',
+  events:             'Events',
+  sequences:          'Sequences',
+  materialized_views: 'Materialized Views',
+  dictionaries:       'Dictionaries',
+};
+
+// category key → 叶节点 NodeType 的映射（无法用 slice(0,-1) 统一推导）
+const CATEGORY_TO_NODE_TYPE: Record<CategoryKey, NodeType> = {
+  tables:             'table',
+  views:              'view',
+  functions:          'function',
+  procedures:         'procedure',
+  triggers:           'trigger',
+  events:             'event',
+  sequences:          'sequence',
+  materialized_views: 'materialized_view',
+  dictionaries:       'dictionary',
 };
 
 let _persistTreeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -163,21 +182,26 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const driver = node.meta.driver ?? 'mysql';
         const needsSchema = ['postgres', 'oracle'].includes(driver);
 
-        for (const db of databases) {
-          const dbId = `${nodeId}/db_${db}`;
-          const dbNode: TreeNode = {
-            id: dbId,
-            nodeType: 'database',
-            label: db,
-            parentId: nodeId,
-            hasChildren: true,
-            loaded: needsSchema ? false : true,
-            meta: { ...node.meta, database: db },
-          };
-          children.push(dbNode);
+        if (databases.length === 0) {
+          // 无多数据库概念（如 SQLite）：category 直接挂在 connection 节点下
+          children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
+        } else {
+          for (const db of databases) {
+            const dbId = `${nodeId}/db_${db}`;
+            const dbNode: TreeNode = {
+              id: dbId,
+              nodeType: 'database',
+              label: db,
+              parentId: nodeId,
+              hasChildren: true,
+              loaded: needsSchema ? false : true,
+              meta: { ...node.meta, database: db },
+            };
+            children.push(dbNode);
 
-          if (!needsSchema) {
-            children.push(...makeCategoryNodes(dbId, driver, { ...node.meta, database: db }));
+            if (!needsSchema) {
+              children.push(...makeCategoryNodes(dbId, driver, { ...node.meta, database: db }));
+            }
           }
         }
       } else if (node.nodeType === 'database') {
@@ -208,13 +232,12 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const category = node.meta.objectName ?? 'tables';
         const objects = await invoke<string[]>('list_objects', {
           connectionId: node.meta.connectionId,
-          database: node.meta.database,
+          database: node.meta.database ?? null,
           schema: node.meta.schema ?? null,
           category,
         });
-        // category 末尾去掉 's' 得到 nodeType（tables->table, views->view 等）
-        const leafType = category.slice(0, -1) as NodeType;
-        const hasChildren = ['table', 'view'].includes(leafType);
+        const leafType = CATEGORY_TO_NODE_TYPE[category as CategoryKey] ?? (category.slice(0, -1) as NodeType);
+        const hasChildren = ['table', 'view', 'materialized_view'].includes(leafType);
         for (const name of objects) {
           children.push({
             id: `${nodeId}/${leafType}_${name}`,

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
 use std::time::{Duration, Instant};
 
-use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, TableStatInfo, ViewMeta};
+use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
 use crate::AppResult;
 use sqlx::Row;
 
@@ -16,15 +16,24 @@ impl PostgresDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        use crate::AppError;
+        let host = config.host.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        let port = config.port
+            .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
+        let username = config.username.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
         let mut opts = PgConnectOptions::new()
-            .host(&config.host)
-            .port(config.port as u16)
-            .username(&config.username)
-            .password(&config.password)
+            .host(host)
+            .port(port)
+            .username(username)
             .ssl_mode(PgSslMode::Disable);
+        if let Some(pw) = config.password.as_deref() {
+            opts = opts.password(pw);
+        }
         // database 为空时不设置，sqlx 默认使用用户名作为库名（PG 规范）
-        if !config.database.is_empty() {
-            opts = opts.database(&config.database);
+        if let Some(db) = config.database.as_deref().filter(|s| !s.is_empty()) {
+            opts = opts.database(db);
         }
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");
@@ -351,6 +360,58 @@ impl DataSource for PostgresDataSource {
             _ => vec![],
         };
         Ok(names)
+    }
+
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities {
+            has_schemas: true,
+            has_foreign_keys: true,
+            has_stored_procedures: true,
+            has_triggers: true,
+            has_materialized_views: false,
+            has_multi_database: true,
+            has_partitions: true,
+            sql_dialect: SqlDialect::Standard,
+        }
+    }
+
+    async fn get_db_stats(&self, _database: Option<&str>) -> AppResult<DbStats> {
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+            "SELECT s.relname, \
+                    COALESCE(st.n_live_tup, 0)::bigint, \
+                    pg_total_relation_size(s.oid)::bigint \
+             FROM pg_class s \
+             JOIN pg_namespace n ON s.relnamespace = n.oid \
+             LEFT JOIN pg_stat_user_tables st \
+                 ON st.relname = s.relname AND st.schemaname = n.nspname \
+             WHERE s.relkind = 'r' \
+               AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
+             ORDER BY pg_total_relation_size(s.oid) DESC"
+        ).fetch_all(&self.pool).await?;
+
+        let mut total_bytes: i64 = 0;
+        let tables: Vec<TableStat> = rows.iter().map(|(name, row_count, bytes)| {
+            total_bytes += bytes;
+            TableStat {
+                name: name.clone(),
+                row_count: Some(*row_count),
+                data_size_bytes: Some(*bytes),
+                index_size_bytes: None,
+            }
+        }).collect();
+
+        let version_row: Option<(String,)> = sqlx::query_as("SELECT version()")
+            .fetch_optional(&self.pool).await.ok().flatten();
+        let db_version = version_row.map(|(v,)| v);
+
+        Ok(DbStats {
+            db_summary: DbSummary {
+                total_tables: tables.len(),
+                total_size_bytes: Some(total_bytes),
+                db_version,
+            },
+            tables,
+        })
     }
 
     async fn list_tables_with_stats(&self, _database: &str, schema: Option<&str>) -> AppResult<Vec<TableStatInfo>> {

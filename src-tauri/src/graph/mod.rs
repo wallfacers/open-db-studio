@@ -160,7 +160,7 @@ pub async fn run_graph_build(
     };
     // 若调用方指定了 database（如 MySQL 多库场景），覆盖连接配置中存储的默认库名
     if let Some(db) = database.filter(|s| !s.is_empty()) {
-        config.database = db;
+        config.database = Some(db);
     }
 
     let ds = match crate::datasource::create_datasource(&config).await {

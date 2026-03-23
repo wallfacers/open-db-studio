@@ -115,6 +115,41 @@ git push origin master
 
 ---
 
+## 4.1 Release Notes 规范
+
+每次合并到 master 后，需在 GitHub Release 页面填写版本日志。格式如下：
+
+```markdown
+## vX.Y.Z Release Notes
+
+✨ **新功能**
+
+- **功能名称**：简短描述，说明用户侧的变化和价值
+
+---
+
+🐛 **Bug 修复**
+
+- **问题描述**：修复了什么问题，用户此前会遇到什么现象
+
+---
+
+🔧 **构建与发布**（可选，仅有 CI/CD 层面变更时填写）
+
+- 简短说明构建、打包、签名、平台兼容性方面的改进
+```
+
+**撰写规则：**
+
+1. **以用户视角描述**，避免直接复制 commit message，要说明用户能感知到的变化
+2. **新功能**（`feat:`）→ 放入 ✨ 新功能
+3. **Bug 修复**（`fix:`）→ 放入 🐛 Bug 修复；CI/构建类 fix 归入 🔧 构建与发布
+4. **纯内部变更**（`chore:`、`refactor:`、`docs:`）不出现在 Release Notes 中
+5. **同一模块多个 fix** 可合并为一条，避免逐条罗列 commit
+6. **版本标题格式**：`vX.Y.Z Release Notes`，与 tag 名保持一致
+
+---
+
 ## 5. 版本号规则（SemVer）
 
 版本号格式：`MAJOR.MINOR.PATCH`，遵循 [Semantic Versioning 2.0.0](https://semver.org/)。

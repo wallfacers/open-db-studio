@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use super::{ConnectionConfig, DataSource, QueryResult, SchemaInfo, TableMeta};
+use super::{ConnectionConfig, DataSource, DriverCapabilities, QueryResult, SchemaInfo, SqlDialect, TableMeta};
 use crate::{AppError, AppResult};
 
 #[cfg(feature = "oracle-driver")]
@@ -25,10 +25,13 @@ impl OracleDataSource {
         }
         #[cfg(feature = "oracle-driver")]
         {
+            let host = config.host.as_deref().unwrap_or("localhost");
+            let port = config.port.unwrap_or(1521);
+            let database = config.database.as_deref().unwrap_or("");
             Ok(Self {
-                connection_string: format!("//{}:{}/{}", config.host, config.port, config.database),
-                username: config.username.clone(),
-                password: config.password.clone(),
+                connection_string: format!("//{}:{}/{}", host, port, database),
+                username: config.username.as_deref().unwrap_or("").to_string(),
+                password: config.password.as_deref().unwrap_or("").to_string(),
             })
         }
     }
@@ -132,5 +135,18 @@ impl DataSource for OracleDataSource {
     async fn get_schema(&self) -> AppResult<SchemaInfo> {
         let tables = self.get_tables().await?;
         Ok(SchemaInfo { tables })
+    }
+
+    fn capabilities(&self) -> DriverCapabilities {
+        DriverCapabilities {
+            has_schemas: true,
+            has_foreign_keys: true,
+            has_stored_procedures: true,
+            has_triggers: true,
+            has_materialized_views: false,
+            has_multi_database: false, // Oracle 使用 Schema 而非多数据库
+            has_partitions: true,
+            sql_dialect: SqlDialect::Standard,
+        }
     }
 }

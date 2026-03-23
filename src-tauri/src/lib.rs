@@ -324,6 +324,8 @@ pub fn run() {
             commands::delete_graph_edge,
             commands::update_graph_edge,
             commands::find_subgraph,
+            commands::get_driver_capabilities,
+            commands::get_db_stats,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

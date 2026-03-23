@@ -3,8 +3,16 @@ use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use sqlx::Row;
 use std::time::{Duration, Instant};
 
-use super::{ColumnMeta, ConnectionConfig, DataSource, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, TableMeta, TableStatInfo, ViewMeta};
-use crate::AppResult;
+use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
+use crate::{AppError, AppResult};
+
+/// 驱动内部方言标记（与 SqlDialect 用途不同：此枚举控制驱动内部 SQL 分支逻辑）
+#[derive(Debug, Clone, PartialEq)]
+pub enum Dialect {
+    MySQL,
+    Doris,
+    TiDB,
+}
 
 /// MySQL information_schema 的某些列（如 TABLE_NAME）使用 binary 排序规则，
 /// sqlx 将其识别为 VARBINARY 而非 VARCHAR。此函数先尝试 String，再降级为 Vec<u8>→UTF-8。
@@ -42,13 +50,26 @@ fn format_size(bytes: i64) -> String {
 
 pub struct MySqlDataSource {
     pool: MySqlPool,
+    dialect: Dialect,
 }
 
 impl MySqlDataSource {
     pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
+        Self::new_with_dialect(config, Dialect::MySQL).await
+    }
+
+    pub async fn new_with_dialect(config: &ConnectionConfig, dialect: Dialect) -> AppResult<Self> {
+        let host = config.host.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        let port = config.port
+            .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
+        let username = config.username.as_deref()
+            .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+        let password = config.password.as_deref().unwrap_or("");
+        let database = config.database.as_deref().unwrap_or("");
         let url = format!(
             "mysql://{}:{}@{}:{}/{}",
-            config.username, config.password, config.host, config.port, config.database
+            username, password, host, port, database
         );
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
@@ -56,7 +77,7 @@ impl MySqlDataSource {
             .idle_timeout(Duration::from_secs(300))
             .connect(&url)
             .await?;
-        Ok(Self { pool })
+        Ok(Self { pool, dialect })
     }
 }
 
@@ -250,6 +271,10 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_procedures(&self) -> AppResult<Vec<ProcedureMeta>> {
+        // Doris / TiDB 不支持存储过程
+        if self.dialect == Dialect::Doris || self.dialect == Dialect::TiDB {
+            return Ok(vec![]);
+        }
         let rows = sqlx::query(
             "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE()"
         ).fetch_all(&self.pool).await?;
@@ -268,6 +293,19 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn get_table_ddl(&self, table: &str) -> AppResult<String> {
+        if self.dialect == Dialect::Doris {
+            // Doris AI 上下文注入：用 information_schema.COLUMNS 手工拼接标准 DDL，
+            // 避免 ENGINE=OLAP / DISTRIBUTED BY 等专有子句干扰 SQL 生成。
+            return self.doris_build_standard_ddl(table).await;
+        }
+        let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
+        let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
+        Ok(get_str(&row, 1))
+    }
+
+    async fn get_table_ddl_for_display(&self, table: &str, _schema: Option<&str>) -> AppResult<String> {
+        // 所有方言（含 Doris）展示时均直接透传 SHOW CREATE TABLE 原生结果，
+        // 让用户看到真实的数据库 DDL（含 Doris 专有子句）。
         let sql = format!("SHOW CREATE TABLE `{}`", table.replace('`', "``"));
         let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
         Ok(get_str(&row, 1))
@@ -295,26 +333,48 @@ impl DataSource for MySqlDataSource {
                 rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "functions" => {
+                if self.dialect == Dialect::Doris || self.dialect == Dialect::TiDB {
+                    return Ok(vec![]);
+                }
                 let rows = sqlx::query(
                     "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION' ORDER BY ROUTINE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
                 rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "procedures" => {
+                if self.dialect == Dialect::Doris || self.dialect == Dialect::TiDB {
+                    return Ok(vec![]);
+                }
                 let rows = sqlx::query(
                     "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE' ORDER BY ROUTINE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
                 rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "triggers" => {
+                if self.dialect == Dialect::Doris || self.dialect == Dialect::TiDB {
+                    return Ok(vec![]);
+                }
                 let rows = sqlx::query(
                     "SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
                 rows.iter().map(|r| get_str(r, 0)).collect()
             }
             "events" => {
+                if self.dialect == Dialect::Doris {
+                    return Ok(vec![]);
+                }
                 let rows = sqlx::query(
                     "SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = ? ORDER BY EVENT_NAME"
+                ).bind(database).fetch_all(&self.pool).await?;
+                rows.iter().map(|r| get_str(r, 0)).collect()
+            }
+            "materialized_views" => {
+                if self.dialect != Dialect::Doris {
+                    return Ok(vec![]);
+                }
+                // Doris 物化视图
+                let rows = sqlx::query(
+                    "SELECT TABLE_NAME FROM information_schema.MATERIALIZED_VIEWS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
                 ).bind(database).fetch_all(&self.pool).await?;
                 rows.iter().map(|r| get_str(r, 0)).collect()
             }
@@ -324,13 +384,16 @@ impl DataSource for MySqlDataSource {
     }
 
     async fn list_tables_with_stats(&self, database: &str, _schema: Option<&str>) -> AppResult<Vec<TableStatInfo>> {
-        let rows = sqlx::query(
-            "SELECT TABLE_NAME, TABLE_ROWS, (DATA_LENGTH + INDEX_LENGTH) \
+        // Doris 的 TABLE_ROWS 不准确，改用 DATA_LENGTH
+        let row_col = if self.dialect == Dialect::Doris { "DATA_LENGTH" } else { "TABLE_ROWS" };
+        let sql = format!(
+            "SELECT TABLE_NAME, {}, (DATA_LENGTH + INDEX_LENGTH) \
              FROM information_schema.TABLES \
              WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' \
-             ORDER BY TABLE_NAME"
-        ).bind(database).fetch_all(&self.pool).await?;
-
+             ORDER BY TABLE_NAME",
+            row_col
+        );
+        let rows = sqlx::query(&sql).bind(database).fetch_all(&self.pool).await?;
         let stats = rows.iter().map(|r| {
             let name = get_str(r, 0);
             let row_count: Option<i64> = r.try_get(1).ok();
@@ -339,5 +402,120 @@ impl DataSource for MySqlDataSource {
             TableStatInfo { name, row_count, size }
         }).collect();
         Ok(stats)
+    }
+
+    fn capabilities(&self) -> DriverCapabilities {
+        match self.dialect {
+            Dialect::MySQL => DriverCapabilities {
+                has_schemas: false,
+                has_foreign_keys: true,
+                has_stored_procedures: true,
+                has_triggers: true,
+                has_materialized_views: false,
+                has_multi_database: true,
+                has_partitions: true,
+                sql_dialect: SqlDialect::Standard,
+            },
+            Dialect::Doris => DriverCapabilities {
+                has_schemas: false,
+                has_foreign_keys: false,
+                has_stored_procedures: false,
+                has_triggers: false,
+                has_materialized_views: true,
+                has_multi_database: true,
+                has_partitions: true,
+                sql_dialect: SqlDialect::Doris,
+            },
+            Dialect::TiDB => DriverCapabilities {
+                has_schemas: false,
+                has_foreign_keys: true,
+                has_stored_procedures: false,
+                has_triggers: false,
+                has_materialized_views: false,
+                has_multi_database: true,
+                has_partitions: true,
+                sql_dialect: SqlDialect::Standard,
+            },
+        }
+    }
+
+    async fn get_db_stats(&self, database: Option<&str>) -> AppResult<DbStats> {
+        let db = database.unwrap_or("");
+        let sql = if db.is_empty() {
+            "SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH \
+             FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' \
+             ORDER BY DATA_LENGTH DESC".to_string()
+        } else {
+            "SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH \
+             FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' \
+             ORDER BY DATA_LENGTH DESC".to_string()
+        };
+        let query = if db.is_empty() {
+            sqlx::query(&sql).fetch_all(&self.pool).await?
+        } else {
+            sqlx::query(&sql).bind(db).fetch_all(&self.pool).await?
+        };
+
+        let mut total_size: i64 = 0;
+        let tables: Vec<TableStat> = query.iter().map(|r| {
+            let data: i64 = r.try_get(2).unwrap_or(0);
+            let idx: i64 = r.try_get(3).unwrap_or(0);
+            total_size += data + idx;
+            TableStat {
+                name: get_str(r, 0),
+                row_count: r.try_get(1).ok(),
+                data_size_bytes: Some(data),
+                index_size_bytes: Some(idx),
+            }
+        }).collect();
+
+        let version_row = sqlx::query("SELECT VERSION()").fetch_optional(&self.pool).await?;
+        let db_version = version_row.and_then(|r| r.try_get::<String, _>(0).ok());
+
+        Ok(DbStats {
+            db_summary: DbSummary {
+                total_tables: tables.len(),
+                total_size_bytes: Some(total_size),
+                db_version,
+            },
+            tables,
+        })
+    }
+}
+
+impl MySqlDataSource {
+    /// Doris 专用：用 information_schema.COLUMNS 手工拼接标准 DDL（用于 AI 上下文注入）
+    async fn doris_build_standard_ddl(&self, table: &str) -> AppResult<String> {
+        let rows = sqlx::query(
+            "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY \
+             FROM information_schema.COLUMNS \
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? \
+             ORDER BY ORDINAL_POSITION"
+        ).bind(table).fetch_all(&self.pool).await?;
+
+        if rows.is_empty() {
+            return Err(AppError::Datasource(format!("Table '{}' not found", table)));
+        }
+
+        let mut col_defs = vec![];
+        let mut pk_cols = vec![];
+        for r in &rows {
+            let name = get_str(r, 0);
+            let data_type = get_str(r, 1);
+            let nullable = get_str(r, 2) == "YES";
+            let default = get_opt_str(r, 3);
+            let key = get_str(r, 4);
+            if key == "PRI" { pk_cols.push(format!("`{}`", name)); }
+
+            let mut def = format!("  `{}` {}", name, data_type);
+            if !nullable { def.push_str(" NOT NULL"); }
+            if let Some(d) = default { def.push_str(&format!(" DEFAULT '{}'", d)); }
+            col_defs.push(def);
+        }
+        if !pk_cols.is_empty() {
+            col_defs.push(format!("  PRIMARY KEY ({})", pk_cols.join(", ")));
+        }
+
+        Ok(format!("CREATE TABLE `{}` (\n{}\n)", table, col_defs.join(",\n")))
     }
 }

@@ -106,6 +106,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         username: req.username ?? '',
         password: req.password ?? '',
         extra_params: req.extra_params,
+        file_path: req.file_path,
       },
     });
   },

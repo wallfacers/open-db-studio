@@ -144,7 +144,10 @@
     "saveChanges": "Save Changes",
     "save": "Save",
     "group": "Group",
-    "noGroup": "No Group"
+    "noGroup": "No Group",
+    "filePath": "Database File Path",
+    "filePathPlaceholder": "/path/to/database.sqlite",
+    "browse": "Browse..."
   },
   "explorer": {
     "connectionListRefreshed": "Connection list refreshed",

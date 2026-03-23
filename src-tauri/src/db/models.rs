@@ -11,6 +11,7 @@ pub struct Connection {
     pub database_name: Option<String>,
     pub username: Option<String>,
     pub extra_params: Option<String>,
+    pub file_path: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -33,6 +34,7 @@ pub struct CreateConnectionRequest {
     pub username: Option<String>,
     pub password: Option<String>,
     pub extra_params: Option<String>,
+    pub file_path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

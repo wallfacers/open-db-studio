@@ -39,7 +39,7 @@ pub fn get() -> &'static Mutex<Connection> {
 pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
     let conn = get().lock().unwrap();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok(models::Connection {
@@ -52,9 +52,10 @@ pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            sort_order: row.get(9)?,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
+            file_path: row.get(9)?,
+            sort_order: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
         }),
     ).optional()?;
     Ok(result)
@@ -64,7 +65,7 @@ pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
 pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     let conn = get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
          FROM connections ORDER BY sort_order, name"
     )?;
     let rows = stmt.query_map([], |row| {
@@ -78,9 +79,10 @@ pub fn list_connections() -> AppResult<Vec<models::Connection>> {
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            sort_order: row.get(9)?,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
+            file_path: row.get(9)?,
+            sort_order: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
         })
     })?;
 
@@ -103,6 +105,7 @@ pub struct UpdateConnectionRequest {
     pub password: Option<String>,
     pub extra_params: Option<String>,
     pub group_id: Option<i64>,
+    pub file_path: Option<String>,
 }
 
 /// 创建连接，密码加密存储
@@ -116,18 +119,18 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
     };
 
     conn.execute(
-        "INSERT INTO connections (name, group_id, driver, host, port, database_name, username, password_enc, extra_params, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+        "INSERT INTO connections (name, group_id, driver, host, port, database_name, username, password_enc, extra_params, file_path, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
         rusqlite::params![
             req.name, req.group_id, req.driver, req.host, req.port,
             req.database_name, req.username, password_enc,
-            req.extra_params, now
+            req.extra_params, req.file_path, now
         ],
     )?;
 
     let id = conn.last_insert_rowid();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok(models::Connection {
@@ -140,9 +143,10 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            sort_order: row.get(9)?,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
+            file_path: row.get(9)?,
+            sort_order: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
         }),
     )?;
     Ok(result)
@@ -169,11 +173,11 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
             conn.execute(
                 "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
                  database_name=?5, username=?6, password_enc=?7,
-                 extra_params=?8, group_id=?9, updated_at=?10 WHERE id=?11",
+                 extra_params=?8, group_id=?9, file_path=?10, updated_at=?11 WHERE id=?12",
                 rusqlite::params![
                     req.name, req.driver, req.host, req.port,
                     req.database_name, req.username, password_enc,
-                    req.extra_params, req.group_id, now, id
+                    req.extra_params, req.group_id, req.file_path, now, id
                 ],
             )?;
         }
@@ -181,18 +185,18 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
             conn.execute(
                 "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
                  database_name=?5, username=?6,
-                 extra_params=?7, group_id=?8, updated_at=?9 WHERE id=?10",
+                 extra_params=?7, group_id=?8, file_path=?9, updated_at=?10 WHERE id=?11",
                 rusqlite::params![
                     req.name, req.driver, req.host, req.port,
                     req.database_name, req.username,
-                    req.extra_params, req.group_id, now, id
+                    req.extra_params, req.group_id, req.file_path, now, id
                 ],
             )?;
         }
     }
 
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, sort_order, created_at, updated_at
+        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok(models::Connection {
@@ -205,9 +209,10 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
             database_name: row.get(6)?,
             username: row.get(7)?,
             extra_params: row.get(8)?,
-            sort_order: row.get(9)?,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
+            file_path: row.get(9)?,
+            sort_order: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
         }),
     )?;
     Ok(result)
@@ -231,7 +236,7 @@ pub fn get_connection_password(id: i64) -> AppResult<String> {
 pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::ConnectionConfig> {
     let conn = get().lock().unwrap();
     let row = conn.query_row(
-        "SELECT driver, host, port, database_name, username, password_enc, extra_params
+        "SELECT driver, host, port, database_name, username, password_enc, extra_params, file_path
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok((
@@ -242,6 +247,7 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
             row.get::<_, Option<String>>(4)?,
             row.get::<_, Option<String>>(5)?,
             row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
         )),
     ).optional()?
     .ok_or_else(|| crate::AppError::Other(format!("Connection {} not found", id)))?;
@@ -256,6 +262,9 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         "postgres" => 5432,
         "sqlserver" => 1433,
         "oracle" => 1521,
+        "doris" => 9030,
+        "clickhouse" => 8123,
+        "tidb" => 4000,
         _ => 3306, // mysql
     };
     let username = row.4.unwrap_or_default();
@@ -273,7 +282,7 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         username: Some(username),
         password: Some(password),
         extra_params: row.6,
-        file_path: None,
+        file_path: row.7,
     })
 }
 

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS connections (
     username TEXT,
     password_enc TEXT,
     extra_params TEXT,
+    file_path TEXT,
     sort_order INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))

@@ -144,7 +144,10 @@
     "saveChanges": "保存修改",
     "save": "保存",
     "group": "所属分组",
-    "noGroup": "无分组"
+    "noGroup": "无分组",
+    "filePath": "数据库文件路径",
+    "filePathPlaceholder": "/path/to/database.sqlite",
+    "browse": "浏览..."
   },
   "explorer": {
     "connectionListRefreshed": "已刷新连接列表",

@@ -1,28 +1,79 @@
 use reqwest::Client;
 
-/// 从 job-info JSON 中提取指标值，兼容多种嵌套路径：
-/// - `metrics.{key}`（标准路径）
+/// 从 job-info JSON 中提取指标值，大小写不敏感，兼容多种嵌套路径：
+/// - `metrics.{key}`（标准路径，尝试原始 key 及 camelCase / PascalCase 变体）
 /// - `jobDag.vertices[*].metrics.{key}` 聚合（部分版本）
 /// - 直接顶层 `{key}`
 fn extract_metric(info: &serde_json::Value, key: &str) -> u64 {
-    // 标准路径
-    if let Some(v) = info.get("metrics").and_then(|m| m.get(key)).and_then(|v| v.as_u64()) {
-        return v;
-    }
-    // 顶层直接字段
-    if let Some(v) = info.get(key).and_then(|v| v.as_u64()) {
-        return v;
-    }
-    // jobDag.vertices 聚合（某些版本把指标放在每个 vertex 里）
-    if let Some(vertices) = info.get("jobDag").and_then(|d| d.get("vertices")).and_then(|v| v.as_array()) {
-        let sum: u64 = vertices.iter()
-            .filter_map(|vtx| vtx.get("metrics").and_then(|m| m.get(key)).and_then(|v| v.as_u64()))
-            .sum();
-        if sum > 0 {
-            return sum;
+    // 构造 camelCase（首字母小写）和 PascalCase（首字母大写）两种变体
+    let lower_key = {
+        let mut s = key.to_string();
+        if let Some(c) = s.get_mut(0..1) {
+            c.make_ascii_lowercase();
+        }
+        s
+    };
+    let upper_key = {
+        let mut s = key.to_string();
+        if let Some(c) = s.get_mut(0..1) {
+            c.make_ascii_uppercase();
+        }
+        s
+    };
+    let variants: &[&str] = &[key, &lower_key, &upper_key];
+
+    // 从 metrics 对象中查找
+    if let Some(metrics) = info.get("metrics") {
+        for k in variants {
+            if let Some(v) = metrics.get(*k).and_then(|v| v.as_u64()) {
+                return v;
+            }
+        }
+        // metrics 里大小写不敏感全扫描
+        if let Some(obj) = metrics.as_object() {
+            let key_lower = key.to_lowercase();
+            for (k, v) in obj {
+                if k.to_lowercase() == key_lower {
+                    if let Some(n) = v.as_u64() { return n; }
+                }
+            }
         }
     }
+    // 顶层直接字段
+    for k in variants {
+        if let Some(v) = info.get(*k).and_then(|v| v.as_u64()) {
+            return v;
+        }
+    }
+    // jobDag.vertices 聚合
+    if let Some(vertices) = info.get("jobDag").and_then(|d| d.get("vertices")).and_then(|v| v.as_array()) {
+        let key_lower = key.to_lowercase();
+        let sum: u64 = vertices.iter()
+            .filter_map(|vtx| {
+                vtx.get("metrics").and_then(|m| m.as_object()).and_then(|obj| {
+                    obj.iter()
+                        .find(|(k, _)| k.to_lowercase() == key_lower)
+                        .and_then(|(_, v)| v.as_u64())
+                })
+            })
+            .sum();
+        if sum > 0 { return sum; }
+    }
     0
+}
+
+/// job-info 响应中提取 metrics 对象的所有键值，用于 debug 日志
+fn format_metrics_debug(info: &serde_json::Value) -> String {
+    if let Some(obj) = info.get("metrics").and_then(|m| m.as_object()) {
+        let pairs: Vec<String> = obj.iter()
+            .filter(|(_, v)| v.is_number())
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+        if !pairs.is_empty() {
+            return pairs.join(", ");
+        }
+    }
+    "(metrics 为空或无数字字段)".to_string()
 }
 
 /// SeaTunnel REST API 客户端
@@ -269,20 +320,28 @@ impl SeaTunnelClient {
                 "FINISHED" => {
                     // SeaTunnel 在状态切换为 FINISHED 时指标可能尚未刷新，
                     // 追加一次轮询以确保取到最终写入行数
-                    let final_sink = if sink_count == 0 {
+                    let final_info = if sink_count == 0 {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         if let Ok(r) = self.request(reqwest::Method::GET, &path).send().await {
-                            if let Ok(v) = r.json::<serde_json::Value>().await {
-                                let s = extract_metric(&v, "SinkWriteCount");
-                                if s > 0 { s } else { sink_count }
-                            } else { sink_count }
-                        } else { sink_count }
+                            r.json::<serde_json::Value>().await.ok()
+                        } else { None }
+                    } else { None };
+
+                    let (final_sink, final_source) = if let Some(ref fi) = final_info {
+                        (extract_metric(fi, "SinkWriteCount"), extract_metric(fi, "SourceReceivedCount"))
                     } else {
-                        sink_count
+                        (sink_count, source_count)
                     };
+
+                    // debug：输出实际 metrics 字段，帮助排查字段名不匹配
+                    if final_sink == 0 {
+                        let debug_info = final_info.as_ref().unwrap_or(&info);
+                        on_line(format!("[WARN] 写入行数为 0，metrics 字段: {}", format_metrics_debug(debug_info)));
+                    }
+
                     on_line(format!(
                         "[INFO] 任务完成，共迁移 {} 行（读取 {} 行）",
-                        final_sink, last_source.max(source_count)
+                        final_sink, final_source.max(last_source.max(source_count))
                     ));
                     return Ok("FINISHED".to_string());
                 }

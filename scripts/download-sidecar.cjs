@@ -11,7 +11,6 @@
  *   SIDECAR_VERSION - Version to download (default: 1.2.27)
  */
 
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
@@ -54,38 +53,27 @@ function getPlatform() {
 }
 
 function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    console.log(`Downloading: ${url}`);
+  const { execSync } = require('child_process');
 
-    const { execSync } = require('child_process');
+  console.log(`Downloading: ${url}`);
 
-    try {
-      if (process.platform === 'win32') {
-        // Windows: 使用 PowerShell 的 .NET HTTP 客户端，比内置 curl 更兼容 GitHub SSL
-        execSync(
-          `powershell -NoProfile -Command "` +
-          `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ` +
-          `$ProgressPreference = 'SilentlyContinue'; ` +
-          `Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing"`,
-          { stdio: 'inherit' }
-        );
-      } else {
-        execSync(`curl -L -o "${dest}" "${url}" --progress-bar`, { stdio: 'inherit' });
-      }
+  if (process.platform === 'win32') {
+    execSync(
+      `powershell -NoProfile -Command "` +
+      `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ` +
+      `$ProgressPreference = 'SilentlyContinue'; ` +
+      `Invoke-WebRequest -Uri '${url}' -OutFile '${dest}' -UseBasicParsing"`,
+      { stdio: 'inherit' }
+    );
+  } else {
+    execSync(`curl -L -o "${dest}" "${url}" --progress-bar`, { stdio: 'inherit' });
+  }
 
-      // 验证文件完整性
-      if (!fs.existsSync(dest) || fs.statSync(dest).size === 0) {
-        reject(new Error('Downloaded file is empty or missing'));
-        return;
-      }
+  if (!fs.existsSync(dest) || fs.statSync(dest).size === 0) {
+    throw new Error('Downloaded file is empty or missing');
+  }
 
-      console.log('Download complete!');
-      resolve();
-    } catch (err) {
-      fs.unlink(dest, () => {});
-      reject(new Error(`Download failed: ${err.message}`));
-    }
-  });
+  console.log('Download complete!');
 }
 
 /**
@@ -153,7 +141,7 @@ function extractArchive(archivePath, targetDir, exeName, targetName) {
   }
 }
 
-async function main() {
+function main() {
   // 创建目录
   if (!fs.existsSync(BINARIES_DIR)) {
     fs.mkdirSync(BINARIES_DIR, { recursive: true });
@@ -177,8 +165,14 @@ async function main() {
   const archiveUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${archive}`;
   const archivePath = path.join(BINARIES_DIR, archive);
 
+  // 存在旧 zip 无论是否完整，直接删除重新下载
+  if (fs.existsSync(archivePath)) {
+    console.log(`Removing existing archive: ${archivePath}`);
+    fs.unlinkSync(archivePath);
+  }
+
   try {
-    await downloadFile(archiveUrl, archivePath);
+    downloadFile(archiveUrl, archivePath);
     extractArchive(archivePath, BINARIES_DIR, exeName, targetName);
 
     console.log(`\n✅ Sidecar ready: ${targetPath}`);

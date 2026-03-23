@@ -23,17 +23,10 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
 
   return (
     <table
-      style={{ tableLayout: 'fixed', width: `${totalWidth}px`, minWidth: `${totalWidth}px` }}
+      style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }}
       className="text-left whitespace-nowrap text-xs"
     >
-      <colgroup>
-        <col style={{ width: `${ROW_NUM_WIDTH}px` }} />
-        {columns.map((col) => (
-          <col key={col} style={{ width: `${COL_WIDTH}px` }} />
-        ))}
-      </colgroup>
-
-      <thead className="sticky top-0 bg-[#0d1117] z-10">
+      <thead className="sticky top-0 bg-[#0d1117] z-10" style={{ display: 'block' }}>
         {thead}
       </thead>
 

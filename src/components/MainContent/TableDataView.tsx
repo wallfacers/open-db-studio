@@ -309,7 +309,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       if (!row) return null;
       return (
         <>
-          <td style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-green-400 bg-[#0d1117] text-center text-xs select-none flex-shrink-0">
+          <td style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-green-400 text-center text-xs select-none flex-shrink-0">
             <button
               onClick={() => removeClonedRow(cloneIdx)}
               className="text-red-400 hover:text-red-300 leading-none"
@@ -330,7 +330,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       <>
         <td
           style={{ width: '40px', minWidth: '40px' }}
-          className={`px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none flex-shrink-0 ${rowBgClass(ri)}`}
+          className={`px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs cursor-default select-none flex-shrink-0 ${rowBgClass(ri)}`}
           onContextMenu={e => handleContextMenu(e, ri, -1, 'row')}
         >
           {(page - 1) * pageSize + ri + 1}
@@ -353,12 +353,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   // ─── 稳定化 thead，仅排序状态/列变化时重建 ────────────────────────────────
   const thead = useMemo(() => data ? (
-    <tr>
-      <th style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
+    <tr style={{ display: 'flex', borderBottom: '1px solid #1e2d42' }}>
+      <th style={{ width: '40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
         {t('tableDataView.serialNo')}
       </th>
       {data.columns.map(col => (
-        <th key={col} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
+        <th key={col} style={{ width: '150px', minWidth: '150px' }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
           <div className="flex items-center justify-between gap-1 w-full">
             <span className="truncate">{col}</span>
             <Tooltip content={

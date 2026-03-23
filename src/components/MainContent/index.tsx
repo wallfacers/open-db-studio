@@ -51,7 +51,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
   });
 };
 import {
-  FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, Folder,
+  FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
   BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
 } from 'lucide-react';
@@ -84,6 +84,10 @@ function getSqlAtCursor(sql: string, cursorOffset: number): string {
   }
   return sql.trim();
 }
+
+// 结果集分页常量（模块级，非组件内）
+const RESULT_PAGE_SIZE = 200;
+const RESULT_MAX_ROWS = 500;
 
 interface MainContentProps {
   handleFormat: () => void;
@@ -224,6 +228,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [resultCellViewer, setResultCellViewer] = useState<{ value: string | null; columnName: string } | null>(null);
   const [resultCellMenu, setResultCellMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null);
   const resultCellMenuRef = useRef<HTMLDivElement>(null);
+  const [resultPage, setResultPage] = useState(0);
   const [editorContextMenu, setEditorContextMenu] = useState<{
     x: number; y: number;
     selectedSql: string;
@@ -432,6 +437,10 @@ export const MainContent: React.FC<MainContentProps> = ({
       setSelectedResultPane(0);
     }
   }, [isExecuting]);
+
+  useEffect(() => {
+    setResultPage(0);
+  }, [selectedResultPane, activeTab]);
 
   // 解释内容消失时自动切回第一个结果集（避免 Zustand/React 批处理差异导致残留空白页）
   useEffect(() => {
@@ -1019,62 +1028,184 @@ export const MainContent: React.FC<MainContentProps> = ({
                       <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.kind === 'select' && (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.length === 0 ? (
                       <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
-                    ) : (
-                      <>
-                        <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
-                          <thead className="sticky top-0 bg-[#0d1117] z-10">
-                            <tr>
-                              <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
-                              {(typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.map((col) => (
-                                <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
-                                  {col}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.rows.map((row, ri) => (
-                              <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
-                                <td
-                                  className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-left text-xs select-none cursor-default"
-                                  onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
-                                >{ri + 1}</td>
-                                {row.map((cell, ci) => {
-                                  const colName = (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns[ci] ?? '';
-                                  const cellStr = cell === null ? null : String(cell);
-                                  return (
-                                    <td
-                                      key={ci}
-                                      className="px-3 py-1.5 border-r border-[#1e2d42] relative group text-left"
-                                      onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
-                                    >
-                                      <div
-                                        className="max-w-[300px] truncate"
-                                        title={cellStr ?? undefined}
-                                      >
-                                        {cell === null
-                                          ? <span className="text-[#7a9bb8]">NULL</span>
-                                          : typeof cell === 'string' && cell.startsWith('✓')
-                                            ? <span className="text-green-400">{cell}</span>
-                                            : <span className="text-[#c8daea]">{cellStr}</span>}
-                                      </div>
-                                      {cellStr !== null && (
-                                        <button
-                                          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
-                                          onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
-                                        >
-                                          <Maximize2 size={10} />
-                                        </button>
-                                      )}
-                                    </td>
-                                  );
-                                })}
+                    ) : (() => {
+                      const activeResult = typeof selectedResultPane === 'number'
+                        ? currentResults[selectedResultPane]
+                        : undefined;
+
+                      if (!activeResult) return null;
+
+                      const allRows = activeResult.rows;
+
+                      // dml-report 或行数极少：使用原始全量渲染，无截断无分页
+                      if (activeResult.kind === 'dml-report' || allRows.length <= RESULT_PAGE_SIZE) {
+                        return (
+                          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                            <thead className="sticky top-0 bg-[#0d1117] z-10">
+                              <tr>
+                                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                                {activeResult.columns.map((col) => (
+                                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
+                                ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </>
-                    )}
+                            </thead>
+                            <tbody>
+                              {allRows.map((row, ri) => (
+                                <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
+                                  <td
+                                    className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-left text-xs select-none cursor-default"
+                                    onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
+                                  >{ri + 1}</td>
+                                  {row.map((cell, ci) => {
+                                    const colName = activeResult.columns[ci] ?? '';
+                                    const cellStr = cell === null ? null : String(cell);
+                                    return (
+                                      <td
+                                        key={ci}
+                                        className="px-3 py-1.5 border-r border-[#1e2d42] relative group text-left"
+                                        onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
+                                      >
+                                        <div className="max-w-[300px] truncate" title={cellStr ?? undefined}>
+                                          {cell === null
+                                            ? <span className="text-[#7a9bb8]">NULL</span>
+                                            : typeof cell === 'string' && cell.startsWith('✓')
+                                              ? <span className="text-green-400">{cell}</span>
+                                              : <span className="text-[#c8daea]">{cellStr}</span>}
+                                        </div>
+                                        {cellStr !== null && (
+                                          <button
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                            onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
+                                          >
+                                            <Maximize2 size={10} />
+                                          </button>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        );
+                      }
+
+                      // SELECT 结果（行数 > RESULT_PAGE_SIZE）：截断 + 分页
+                      const displayRows = allRows.slice(0, RESULT_MAX_ROWS);
+                      const totalDisplayPages = Math.ceil(displayRows.length / RESULT_PAGE_SIZE);
+                      const pageRows = displayRows.slice(
+                        resultPage * RESULT_PAGE_SIZE,
+                        (resultPage + 1) * RESULT_PAGE_SIZE
+                      );
+                      const isTruncated = allRows.length > RESULT_MAX_ROWS;
+
+                      const exportCsv = () => {
+                        const header = activeResult.columns.join(',');
+                        const body = allRows.map(row =>
+                          row.map(cell => (cell === null ? '' : `"${String(cell).replace(/"/g, '""')}"`)).join(',')
+                        ).join('\n');
+                        const csv = `${header}\n${body}`;
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'query_result.csv';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      };
+
+                      return (
+                        <>
+                          {isTruncated && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/30 border-b border-yellow-700/50 text-yellow-300 text-xs flex-shrink-0">
+                              <span>⚠ 查询返回 {allRows.length} 行，当前显示前 {RESULT_MAX_ROWS} 行。如需查看全量数据请使用 LIMIT 或导出。</span>
+                              <button
+                                onClick={exportCsv}
+                                className="ml-auto px-2 py-0.5 rounded border border-yellow-600 hover:bg-yellow-800/50 transition-colors flex-shrink-0"
+                              >
+                                导出全量
+                              </button>
+                            </div>
+                          )}
+
+                          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                            <thead className="sticky top-0 bg-[#0d1117] z-10">
+                              <tr>
+                                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                                {activeResult.columns.map((col) => (
+                                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
+                                    {col}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pageRows.map((row, pageRi) => {
+                                const ri = resultPage * RESULT_PAGE_SIZE + pageRi;
+                                return (
+                                  <tr key={ri} className="hover:bg-[#1a2639] border-b border-[#1e2d42]">
+                                    <td
+                                      className="px-3 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-left text-xs select-none cursor-default"
+                                      onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
+                                    >{ri + 1}</td>
+                                    {row.map((cell, ci) => {
+                                      const colName = activeResult.columns[ci] ?? '';
+                                      const cellStr = cell === null ? null : String(cell);
+                                      return (
+                                        <td
+                                          key={ci}
+                                          className="px-3 py-1.5 border-r border-[#1e2d42] relative group text-left"
+                                          onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
+                                        >
+                                          <div className="max-w-[300px] truncate" title={cellStr ?? undefined}>
+                                            {cell === null
+                                              ? <span className="text-[#7a9bb8]">NULL</span>
+                                              : typeof cell === 'string' && cell.startsWith('✓')
+                                                ? <span className="text-green-400">{cell}</span>
+                                                : <span className="text-[#c8daea]">{cellStr}</span>}
+                                          </div>
+                                          {cellStr !== null && (
+                                            <button
+                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                              onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
+                                            >
+                                              <Maximize2 size={10} />
+                                            </button>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+
+                          {displayRows.length > RESULT_PAGE_SIZE && (
+                            <div
+                              data-testid="result-pagination"
+                              className="flex-shrink-0 h-8 flex items-center justify-center gap-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs"
+                            >
+                              <button
+                                disabled={resultPage <= 0}
+                                onClick={() => setResultPage(p => p - 1)}
+                                className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+                              >
+                                <ChevronLeft size={14}/>
+                              </button>
+                              <span>第 {resultPage + 1} / {totalDisplayPages} 页</span>
+                              <button
+                                disabled={resultPage >= totalDisplayPages - 1}
+                                onClick={() => setResultPage(p => p + 1)}
+                                className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+                              >
+                                <ChevronRight size={14}/>
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </>
                 )}
               </div>

@@ -121,3 +121,56 @@ describe('metric tab rendering', () => {
     expect(container.querySelector('[data-testid="metric-list-panel"]')).toBeTruthy();
   });
 });
+
+describe('SQL 结果集截断与分页', () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  it('结果行数 <= 200 时不显示截断提示和翻页', async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => [`${i}`]);
+    useQueryStore.setState({
+      tabs: [{ id: 'q1', type: 'query', title: 'Q1' }],
+      activeTabId: 'q1',
+      results: { q1: [{ kind: 'select', columns: ['id'], rows, row_count: 50, duration_ms: 1 }] },
+    });
+    const { MainContent } = await import('./index');
+    await act(async () => {
+      createRoot(container).render(React.createElement(MainContent, { ...defaultProps, resultsHeight: 300 }));
+    });
+    expect(container.textContent).not.toContain('显示前');
+    expect(container.querySelector('[data-testid="result-pagination"]')).toBeNull();
+  });
+
+  it('结果行数 > 500 时显示截断提示', async () => {
+    const rows = Array.from({ length: 600 }, (_, i) => [`${i}`]);
+    useQueryStore.setState({
+      tabs: [{ id: 'q2', type: 'query', title: 'Q2' }],
+      activeTabId: 'q2',
+      results: { q2: [{ kind: 'select', columns: ['id'], rows, row_count: 600, duration_ms: 1 }] },
+    });
+    const { MainContent } = await import('./index');
+    await act(async () => {
+      createRoot(container).render(React.createElement(MainContent, { ...defaultProps, resultsHeight: 300 }));
+    });
+    expect(container.textContent).toContain('600');
+    expect(container.textContent).toContain('500');
+  });
+
+  it('结果行数 > 200 时显示翻页控件', async () => {
+    const rows = Array.from({ length: 250 }, (_, i) => [`${i}`]);
+    useQueryStore.setState({
+      tabs: [{ id: 'q3', type: 'query', title: 'Q3' }],
+      activeTabId: 'q3',
+      results: { q3: [{ kind: 'select', columns: ['id'], rows, row_count: 250, duration_ms: 1 }] },
+    });
+    const { MainContent } = await import('./index');
+    await act(async () => {
+      createRoot(container).render(React.createElement(MainContent, { ...defaultProps, resultsHeight: 300 }));
+    });
+    expect(container.querySelector('[data-testid="result-pagination"]')).not.toBeNull();
+  });
+});

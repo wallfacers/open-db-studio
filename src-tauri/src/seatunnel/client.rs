@@ -1,5 +1,30 @@
 use reqwest::Client;
 
+/// 从 job-info JSON 中提取指标值，兼容多种嵌套路径：
+/// - `metrics.{key}`（标准路径）
+/// - `jobDag.vertices[*].metrics.{key}` 聚合（部分版本）
+/// - 直接顶层 `{key}`
+fn extract_metric(info: &serde_json::Value, key: &str) -> u64 {
+    // 标准路径
+    if let Some(v) = info.get("metrics").and_then(|m| m.get(key)).and_then(|v| v.as_u64()) {
+        return v;
+    }
+    // 顶层直接字段
+    if let Some(v) = info.get(key).and_then(|v| v.as_u64()) {
+        return v;
+    }
+    // jobDag.vertices 聚合（某些版本把指标放在每个 vertex 里）
+    if let Some(vertices) = info.get("jobDag").and_then(|d| d.get("vertices")).and_then(|v| v.as_array()) {
+        let sum: u64 = vertices.iter()
+            .filter_map(|vtx| vtx.get("metrics").and_then(|m| m.get(key)).and_then(|v| v.as_u64()))
+            .sum();
+        if sum > 0 {
+            return sum;
+        }
+    }
+    0
+}
+
 /// SeaTunnel REST API 客户端
 pub struct SeaTunnelClient {
     base_url: String,
@@ -203,9 +228,11 @@ impl SeaTunnelClient {
         let path = format!("/hazelcast/rest/maps/job-info/{}", job_id);
         let mut last_source: u64 = 0;
         let mut last_sink: u64 = 0;
+        let mut poll_count: u32 = 0;
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            poll_count += 1;
 
             let resp = self
                 .request(reqwest::Method::GET, &path)
@@ -224,13 +251,12 @@ impl SeaTunnelClient {
 
             let status = info["jobStatus"].as_str().unwrap_or("UNKNOWN").to_string();
 
-            // 提取进度指标
-            let source_count = info["metrics"]["SourceReceivedCount"]
-                .as_u64()
-                .unwrap_or(0);
-            let sink_count = info["metrics"]["SinkWriteCount"].as_u64().unwrap_or(0);
+            // 提取进度指标（兼容多级路径）
+            let source_count = extract_metric(&info, "SourceReceivedCount");
+            let sink_count = extract_metric(&info, "SinkWriteCount");
 
-            if source_count != last_source || sink_count != last_sink {
+            // 行数变化时记录日志；或每 5 次轮询输出一次心跳，避免长时间无日志
+            if source_count != last_source || sink_count != last_sink || poll_count % 5 == 0 {
                 on_line(format!(
                     "[INFO] {} | 已读取: {} 行 | 已写入: {} 行",
                     status, source_count, sink_count
@@ -241,9 +267,22 @@ impl SeaTunnelClient {
 
             match status.as_str() {
                 "FINISHED" => {
-                    on_line(format!(
-                        "[INFO] 任务完成，共迁移 {} 行",
+                    // SeaTunnel 在状态切换为 FINISHED 时指标可能尚未刷新，
+                    // 追加一次轮询以确保取到最终写入行数
+                    let final_sink = if sink_count == 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        if let Ok(r) = self.request(reqwest::Method::GET, &path).send().await {
+                            if let Ok(v) = r.json::<serde_json::Value>().await {
+                                let s = extract_metric(&v, "SinkWriteCount");
+                                if s > 0 { s } else { sink_count }
+                            } else { sink_count }
+                        } else { sink_count }
+                    } else {
                         sink_count
+                    };
+                    on_line(format!(
+                        "[INFO] 任务完成，共迁移 {} 行（读取 {} 行）",
+                        final_sink, last_source.max(source_count)
                     ));
                     return Ok("FINISHED".to_string());
                 }

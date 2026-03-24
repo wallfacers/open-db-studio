@@ -1,7 +1,7 @@
 # GraphExplorer 节点点击高亮联动设计
 
 **日期**: 2026-03-25
-**状态**: approved
+**状态**: implemented
 
 ## 需求
 

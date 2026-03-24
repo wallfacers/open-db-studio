@@ -236,6 +236,9 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
 
+  // ── Node click focus state (1-hop neighbor highlight) ────────────────────────
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+
   const handleHighlightLinks = useCallback((nodeId: string) => {
     setHighlightedNodeId(prev => prev === nodeId ? null : nodeId);
   }, []);
@@ -417,13 +420,23 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       },
     }));
     const flowEdges = toFlowEdges(filteredEdges).map(e => {
-      if (highlightedEdgeIds.has(e.id)) {
-        return { ...e, style: { ...e.style, stroke: '#00c9a7', strokeWidth: 3 }, animated: true };
-      }
-      if (highlightedEdgeIds.size > 0) {
-        return { ...e, style: { ...e.style, opacity: 0.2 } };
-      }
-      return e;
+      const isHighlighted = highlightedEdgeIds.has(e.id);
+      const isDimmed = highlightedEdgeIds.size > 0 && !highlightedEdgeIds.has(e.id);
+      return {
+        ...e,
+        data: {
+          ...e.data,
+          highlighted: isHighlighted,
+          dimmed: isDimmed,
+        },
+        // Keep style for backwards compatibility with non-RelationEdge edges
+        style: {
+          ...e.style,
+          ...(isHighlighted ? { stroke: '#00c9a7', strokeWidth: 3 } : {}),
+          ...(isDimmed ? { opacity: 0.3 } : {}),
+        },
+        animated: isHighlighted,
+      };
     });
     const { nodes: laid, edges: laidEdges } = buildLayout(flowNodes, flowEdges);
     setRfNodes(laid);
@@ -543,20 +556,49 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     setHighlightedEdgeIds(new Set());
   }, []);
 
-  // ── Node click ──────────────────────────────────────────────────────────────
+  // ── Node click → focus 1-hop neighbors + open detail ────────────────────────
   const onNodeClick: NodeMouseHandler = useCallback(
     (_evt, node) => {
+      // Calculate 1-hop neighbors from filteredEdges
+      const neighborNodeIds = new Set<string>();
+      const neighborEdgeIds = new Set<string>();
+
+      filteredEdges.forEach(edge => {
+        if (edge.from_node === node.id) {
+          neighborNodeIds.add(edge.to_node);
+          neighborEdgeIds.add(edge.id);
+        } else if (edge.to_node === node.id) {
+          neighborNodeIds.add(edge.from_node);
+          neighborEdgeIds.add(edge.id);
+        }
+      });
+
+      // Include the clicked node itself
+      neighborNodeIds.add(node.id);
+
+      // Set focus state
+      setFocusedNodeId(node.id);
+      setHighlightedNodeIds(neighborNodeIds);
+      setHighlightedEdgeIds(neighborEdgeIds);
+
+      // Open detail panel
       const raw = rawNodes.find((n) => n.id === node.id);
       if (raw) {
         setSelectedNode(raw);
         setActivePanel('detail');
       }
     },
-    [rawNodes],
+    [rawNodes, filteredEdges],
   );
 
-  // ── Pane double-click → close detail ────────────────────────────────────────
+  // ── Pane click → clear focus; double-click → close detail ───────────────────
   const onPaneClick = useCallback((event: React.MouseEvent) => {
+    // Always clear focus state on any pane click
+    setFocusedNodeId(null);
+    setHighlightedNodeIds(new Set());
+    setHighlightedEdgeIds(new Set());
+
+    // Double-click also closes detail panel
     if (event.detail >= 2) {
       setSelectedNode(null);
       setActivePanel(null);

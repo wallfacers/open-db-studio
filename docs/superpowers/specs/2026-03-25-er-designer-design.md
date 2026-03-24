@@ -27,6 +27,8 @@
 | Diff 同步 | 双向 + Diff 报告 + 选择性同步 | 最完整的同步能力 |
 | DDL 方言 | 先行支持 5 种（含未实现连接的方言） | DDL 生成不依赖实际连接 |
 | 关系策略 | 注释标记优先，外键约束可选 | 适配企业级项目性能需求 |
+| TabType | 新增 `er_design`，废弃旧 `er_diagram` | 旧类型为只读浏览，新类型为完整设计器，统一入口避免混淆 |
+| AI 集成阶段 | Phase 2 单独设计 | AI 协议定义需独立设计文档，初期实现先聚焦核心编辑+DDL+Diff |
 
 ## 2. 整体布局
 
@@ -56,7 +58,7 @@
 
 - ActivityBar 新增"ER 设计器"图标，位于 Database Explorer 之后
 - ERSidebar：独立目录树，结构为 `ER项目 → 表 → 列`，底部显示绑定的数据库连接
-- Tab 复用现有 Tab 系统，新增 `er_design` TabType，每个 ER 项目打开一个 Tab
+- Tab 复用现有 Tab 系统，新增 `er_design` TabType（废弃旧 `er_diagram` 类型），每个 ER 项目打开一个 Tab
 - 画布基于 ReactFlow，节点风格参考现有 ERDiagram.tsx
 - Assistant 联动：活跃 Tab 为 `er_design` 时自动切换 ER 图上下文
 
@@ -130,10 +132,10 @@ CREATE TABLE er_relations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id      INTEGER NOT NULL REFERENCES er_projects(id) ON DELETE CASCADE,
     name            TEXT NULL,
-    source_table_id INTEGER NOT NULL REFERENCES er_tables(id),
-    source_column_id INTEGER NOT NULL REFERENCES er_columns(id),
-    target_table_id INTEGER NOT NULL REFERENCES er_tables(id),
-    target_column_id INTEGER NOT NULL REFERENCES er_columns(id),
+    source_table_id INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
+    source_column_id INTEGER NOT NULL REFERENCES er_columns(id) ON DELETE CASCADE,
+    target_table_id INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
+    target_column_id INTEGER NOT NULL REFERENCES er_columns(id) ON DELETE CASCADE,
     relation_type   TEXT DEFAULT 'one_to_many',
     on_delete       TEXT DEFAULT 'NO ACTION',
     on_update       TEXT DEFAULT 'NO ACTION',
@@ -149,9 +151,15 @@ CREATE TABLE er_indexes (
     table_id        INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
     name            TEXT NOT NULL,
     type            TEXT DEFAULT 'INDEX',      -- INDEX / UNIQUE / FULLTEXT
-    columns         TEXT NOT NULL,             -- JSON array of column_ids
+    columns         TEXT NOT NULL,             -- JSON array of column names (便于导出/Diff 对比)
     created_at      TEXT NOT NULL
 );
+
+-- 唯一约束：同一项目内表名不重复
+CREATE UNIQUE INDEX idx_er_tables_project_name ON er_tables(project_id, name);
+```
+
+**迁移策略：** 新表添加到 `schema/init.sql`（新用户）+ `src-tauri/src/db/migrations.rs`（现有用户升级）。
 ```
 
 ### 3.2 JSON 导出格式
@@ -220,6 +228,7 @@ src-tauri/src/er/
 ```
 -- 项目 CRUD
 er_create_project / er_update_project / er_delete_project / er_list_projects
+er_get_project(project_id) -> ErProjectFull  -- 返回项目+所有表/列/关系/索引，单次加载
 
 -- 表 CRUD
 er_create_table / er_update_table / er_delete_table
@@ -238,9 +247,10 @@ er_generate_ddl(project_id, dialect, options)
   options: { include_indexes: bool, include_comments: bool, include_foreign_keys: bool }
 
 -- Diff 与同步
-er_diff_with_database(project_id)
+er_diff_with_database(project_id)              -- 后端从 er_projects 读取 connection_id/database_name/schema_name
 er_sync_from_database(project_id, table_names?)
-er_sync_to_database(project_id, changes)
+er_generate_sync_ddl(project_id, changes)      -- 预览：生成 ALTER/CREATE/DROP DDL
+er_execute_sync_ddl(project_id, ddl_statements) -- 执行：逐条执行，失败时中断并报告
 
 -- 导入导出
 er_export_json(project_id)
@@ -273,6 +283,8 @@ trait DdlDialect {
 | DATETIME | DATETIME | TIMESTAMP | TIMESTAMP | DATETIME2 | TEXT |
 | BOOLEAN | TINYINT(1) | BOOLEAN | NUMBER(1) | BIT | INTEGER |
 | DECIMAL(p,s) | DECIMAL(p,s) | NUMERIC(p,s) | NUMBER(p,s) | DECIMAL(p,s) | REAL |
+
+> 以上为示例性映射，完整映射（含 INT、SMALLINT、TINYINT、FLOAT、DOUBLE、DATE、TIME、TIMESTAMP、BLOB、JSON、ENUM 等）在实现时补齐。Diff 引擎对比类型时需做大小写 + 别名归一化（如 PostgreSQL 的 `character varying` = `VARCHAR`）。
 
 **DDL 生成默认选项：**
 
@@ -412,10 +424,11 @@ ER 设计器
 
 ### 5.4 Tab 集成
 
-- `TabType` 新增 `'er_design'`
+- `TabType` 新增 `'er_design'`，废弃并移除旧 `'er_diagram'` 类型及 `ERDiagram.tsx` 只读组件
 - `Tab` 接口新增 `erProjectId?: number`
 - `queryStore` 新增 `openERDesignTab(projectId, projectName)` 方法，按 `erProjectId` 去重
 - `MainContent` 新增渲染分支：`activeTab.type === 'er_design'` → `<ERCanvas />`
+- 迁移：移除 `MainContent` 中 `er_diagram` 分支，删除 `src/components/ERDiagram.tsx` 和 `src/components/TableNode.tsx`
 
 ## 6. 核心功能流程
 
@@ -480,10 +493,14 @@ ER 设计器
   → Dagre 自动布局 → 画布渲染
 ```
 
-### 6.4 AI 助手集成
+### 6.4 AI 助手集成（Phase 2 — 需独立设计文档）
 
-当活跃 Tab 为 `er_design` 时，Assistant 上下文自动切换：
+> AI 协议定义（结构化响应格式、tool registration、错误处理）复杂度高，将在 Phase 2 单独设计。
+> Phase 1 先实现核心编辑 + DDL 生成 + Diff 同步功能。
 
+**Phase 2 预期能力：**
+
+- 当活跃 Tab 为 `er_design` 时，Assistant 上下文自动切换
 - 系统 prompt 注入当前 ER 项目的表/列/关系摘要
 - AI 返回结构化操作指令，前端解析后调用 `erDesignerStore` 方法
 - 支持的 AI 操作：
@@ -588,19 +605,26 @@ Hover 显示完整信息。
 
 ### 7.5 撤销/重做
 
-基于操作历史栈：
+基于**逆操作（inverse operation）**模式，非全量快照，避免大型项目内存问题：
 
 ```typescript
 interface OperationRecord {
   type: 'add_table' | 'delete_table' | 'add_column' | 'update_column'
         | 'add_relation' | 'delete_relation' | 'move_node' | 'batch'
-  before: snapshot
-  after: snapshot
+  forward: EntityDelta    // 正向变更（受影响实体的字段级 diff）
+  inverse: EntityDelta    // 逆向变更（撤销用）
   timestamp: number
 }
+
+// 示例：update_column 只记录变更字段
+// forward: { columnId: 5, changes: { data_type: "VARCHAR(500)" } }
+// inverse: { columnId: 5, changes: { data_type: "VARCHAR(255)" } }
 ```
 
-撤销 = 恢复 before 状态 + 同步 SQLite，重做 = 恢复 after 状态 + 同步 SQLite。
+- 最大历史深度：50 条操作
+- 仅内存保存，Tab 关闭后历史清空
+- `batch` 操作（如 AI 批量建模）作为单条记录，撤销时整体回退
+- 撤销 = 执行 inverse delta + 同步 SQLite，重做 = 执行 forward delta + 同步 SQLite
 
 ## 8. 技术依赖
 
@@ -616,3 +640,9 @@ interface OperationRecord {
 - `rusqlite`（已有）— SQLite 操作
 - `serde_json`（已有）— JSON 序列化
 - 无需新增外部依赖
+
+## 9. 注意事项
+
+- **i18n**：所有用户可见文本使用 `react-i18next` 翻译键，与项目现有国际化保持一致
+- **快捷键冲突**：Ctrl+D 可能与浏览器/Monaco 冲突，实现时需验证，备选 Ctrl+Shift+D
+- **性能**：大型项目（100+ 表）需注意 ReactFlow 渲染性能，必要时启用节点虚拟化

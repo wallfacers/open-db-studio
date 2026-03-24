@@ -1,0 +1,649 @@
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::AppResult;
+use crate::error::AppError;
+use super::models::*;
+use super::diff_engine::{DatabaseSchema, DbTableInfo, DbColumnInfo, DbIndexInfo, DiffResult};
+
+// ---------------------------------------------------------------------------
+// Sync execution result
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncExecutionResult {
+    pub statement: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+// ─── Project CRUD ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_create_project(req: CreateProjectRequest) -> AppResult<ErProject> {
+    crate::er::repository::create_project(&req)
+}
+
+#[tauri::command]
+pub async fn er_update_project(id: i64, req: UpdateProjectRequest) -> AppResult<ErProject> {
+    crate::er::repository::update_project(id, &req)
+}
+
+#[tauri::command]
+pub async fn er_delete_project(id: i64) -> AppResult<()> {
+    crate::er::repository::delete_project(id)
+}
+
+#[tauri::command]
+pub async fn er_list_projects() -> AppResult<Vec<ErProject>> {
+    crate::er::repository::list_projects()
+}
+
+#[tauri::command]
+pub async fn er_get_project(project_id: i64) -> AppResult<ErProjectFull> {
+    crate::er::repository::get_project_full(project_id)
+}
+
+// ─── Table CRUD ─────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_create_table(req: CreateTableRequest) -> AppResult<ErTable> {
+    crate::er::repository::create_table(&req)
+}
+
+#[tauri::command]
+pub async fn er_update_table(id: i64, req: UpdateTableRequest) -> AppResult<ErTable> {
+    crate::er::repository::update_table(id, &req)
+}
+
+#[tauri::command]
+pub async fn er_delete_table(id: i64) -> AppResult<()> {
+    crate::er::repository::delete_table(id)
+}
+
+// ─── Column CRUD ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_create_column(req: CreateColumnRequest) -> AppResult<ErColumn> {
+    crate::er::repository::create_column(&req)
+}
+
+#[tauri::command]
+pub async fn er_update_column(id: i64, req: UpdateColumnRequest) -> AppResult<ErColumn> {
+    crate::er::repository::update_column(id, &req)
+}
+
+#[tauri::command]
+pub async fn er_delete_column(id: i64) -> AppResult<()> {
+    crate::er::repository::delete_column(id)
+}
+
+#[tauri::command]
+pub async fn er_reorder_columns(table_id: i64, column_ids: Vec<i64>) -> AppResult<()> {
+    crate::er::repository::reorder_columns(table_id, &column_ids)
+}
+
+// ─── Relation CRUD ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_create_relation(req: CreateRelationRequest) -> AppResult<ErRelation> {
+    crate::er::repository::create_relation(&req)
+}
+
+#[tauri::command]
+pub async fn er_update_relation(id: i64, req: UpdateRelationRequest) -> AppResult<ErRelation> {
+    crate::er::repository::update_relation(id, &req)
+}
+
+#[tauri::command]
+pub async fn er_delete_relation(id: i64) -> AppResult<()> {
+    crate::er::repository::delete_relation(id)
+}
+
+// ─── Index CRUD ─────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_create_index(req: CreateIndexRequest) -> AppResult<ErIndex> {
+    crate::er::repository::create_index(&req)
+}
+
+#[tauri::command]
+pub async fn er_update_index(id: i64, req: UpdateIndexRequest) -> AppResult<ErIndex> {
+    crate::er::repository::update_index(id, &req)
+}
+
+#[tauri::command]
+pub async fn er_delete_index(id: i64) -> AppResult<()> {
+    crate::er::repository::delete_index(id)
+}
+
+// ─── Connection Binding ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_bind_connection(project_id: i64, req: BindConnectionRequest) -> AppResult<()> {
+    crate::er::repository::bind_connection(project_id, &req)
+}
+
+#[tauri::command]
+pub async fn er_unbind_connection(project_id: i64) -> AppResult<()> {
+    crate::er::repository::unbind_connection(project_id)
+}
+
+// ─── DDL Generation ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<String> {
+    let full = crate::er::repository::get_project_full(project_id)?;
+
+    // Build columns_map and indexes_map from ErProjectFull
+    let mut columns_map: HashMap<i64, Vec<ErColumn>> = HashMap::new();
+    let mut indexes_map: HashMap<i64, Vec<ErIndex>> = HashMap::new();
+    let mut tables: Vec<ErTable> = Vec::new();
+
+    for tf in &full.tables {
+        tables.push(tf.table.clone());
+        columns_map.insert(tf.table.id, tf.columns.clone());
+        indexes_map.insert(tf.table.id, tf.indexes.clone());
+    }
+
+    let gen_options = super::ddl_generator::GenerateOptions {
+        include_indexes: options.include_indexes.unwrap_or(true),
+        include_comments: options.include_comments.unwrap_or(true),
+        include_foreign_keys: options.include_foreign_keys.unwrap_or(false),
+    };
+
+    super::ddl_generator::generate_ddl(
+        &tables,
+        &columns_map,
+        &indexes_map,
+        &full.relations,
+        &options.dialect,
+        &gen_options,
+    )
+}
+
+// ─── Diff & Sync ────────────────────────────────────────────────────────────
+
+/// Helper: load project and build maps for diff/sync operations.
+fn load_project_maps(project_id: i64) -> AppResult<(
+    ErProjectFull,
+    Vec<ErTable>,
+    HashMap<i64, Vec<ErColumn>>,
+    HashMap<i64, Vec<ErIndex>>,
+)> {
+    let full = crate::er::repository::get_project_full(project_id)?;
+    let mut columns_map: HashMap<i64, Vec<ErColumn>> = HashMap::new();
+    let mut indexes_map: HashMap<i64, Vec<ErIndex>> = HashMap::new();
+    let mut tables: Vec<ErTable> = Vec::new();
+
+    for tf in &full.tables {
+        tables.push(tf.table.clone());
+        columns_map.insert(tf.table.id, tf.columns.clone());
+        indexes_map.insert(tf.table.id, tf.indexes.clone());
+    }
+
+    Ok((full, tables, columns_map, indexes_map))
+}
+
+/// Helper: get a datasource for the bound connection of a project.
+async fn get_bound_datasource(
+    project: &ErProject,
+) -> AppResult<Box<dyn crate::datasource::DataSource>> {
+    let connection_id = project.connection_id.ok_or_else(|| {
+        AppError::Other("No connection bound to this ER project".to_string())
+    })?;
+
+    let config = crate::db::get_connection_config(connection_id)?;
+    let ds = crate::datasource::create_datasource_with_context(
+        &config,
+        project.database_name.as_deref(),
+        project.schema_name.as_deref(),
+    )
+    .await?;
+
+    Ok(ds)
+}
+
+/// Convert datasource FullSchemaInfo to diff_engine DatabaseSchema format.
+fn schema_to_db_schema(schema: &crate::datasource::FullSchemaInfo) -> DatabaseSchema {
+    DatabaseSchema {
+        tables: schema
+            .tables
+            .iter()
+            .map(|t| DbTableInfo {
+                name: t.name.clone(),
+                columns: t
+                    .columns
+                    .iter()
+                    .map(|c| DbColumnInfo {
+                        name: c.name.clone(),
+                        data_type: c.data_type.clone(),
+                        nullable: c.is_nullable,
+                        is_primary_key: c.is_primary_key,
+                    })
+                    .collect(),
+                indexes: t
+                    .indexes
+                    .iter()
+                    .map(|i| DbIndexInfo {
+                        name: i.index_name.clone(),
+                        index_type: if i.is_unique {
+                            "UNIQUE".to_string()
+                        } else {
+                            "INDEX".to_string()
+                        },
+                        columns: i.columns.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+#[tauri::command]
+pub async fn er_diff_with_database(project_id: i64) -> AppResult<DiffResult> {
+    let (full, tables, columns_map, indexes_map) = load_project_maps(project_id)?;
+
+    let ds = get_bound_datasource(&full.project).await?;
+    let db_full_schema = ds.get_full_schema().await?;
+    let db_schema = schema_to_db_schema(&db_full_schema);
+
+    let diff = super::diff_engine::compute_diff(&tables, &columns_map, &indexes_map, &db_schema);
+    Ok(diff)
+}
+
+#[tauri::command]
+pub async fn er_sync_from_database(
+    project_id: i64,
+    table_names: Option<Vec<String>>,
+) -> AppResult<()> {
+    let full = crate::er::repository::get_project_full(project_id)?;
+    let ds = get_bound_datasource(&full.project).await?;
+    let db_full_schema = ds.get_full_schema().await?;
+
+    // Build a set of existing ER table names (lowercase) for lookup
+    let existing_tables: HashMap<String, &ErTableFull> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.name.to_lowercase(), tf))
+        .collect();
+
+    for db_table in &db_full_schema.tables {
+        // Filter by table_names if provided
+        if let Some(ref filter) = table_names {
+            let lower = db_table.name.to_lowercase();
+            if !filter.iter().any(|n| n.to_lowercase() == lower) {
+                continue;
+            }
+        }
+
+        let lower_name = db_table.name.to_lowercase();
+
+        if let Some(er_tf) = existing_tables.get(&lower_name) {
+            // Table exists in ER -- update columns
+            // Build existing column name map
+            let existing_cols: HashMap<String, &ErColumn> = er_tf
+                .columns
+                .iter()
+                .map(|c| (c.name.to_lowercase(), c))
+                .collect();
+
+            for (i, db_col) in db_table.columns.iter().enumerate() {
+                let col_lower = db_col.name.to_lowercase();
+                if let Some(er_col) = existing_cols.get(&col_lower) {
+                    // Update existing column
+                    let req = UpdateColumnRequest {
+                        name: Some(db_col.name.clone()),
+                        data_type: Some(db_col.data_type.clone()),
+                        nullable: Some(db_col.is_nullable),
+                        default_value: db_col.column_default.clone(),
+                        is_primary_key: Some(db_col.is_primary_key),
+                        is_auto_increment: None, // preserve existing
+                        comment: db_col.comment.clone(),
+                        sort_order: Some(i as i64),
+                    };
+                    crate::er::repository::update_column(er_col.id, &req)?;
+                } else {
+                    // Create new column
+                    let req = CreateColumnRequest {
+                        table_id: er_tf.table.id,
+                        name: db_col.name.clone(),
+                        data_type: db_col.data_type.clone(),
+                        nullable: Some(db_col.is_nullable),
+                        default_value: db_col.column_default.clone(),
+                        is_primary_key: Some(db_col.is_primary_key),
+                        is_auto_increment: Some(
+                            db_col
+                                .extra
+                                .as_deref()
+                                .map(|e| e.contains("auto_increment"))
+                                .unwrap_or(false),
+                        ),
+                        comment: db_col.comment.clone(),
+                        sort_order: Some(i as i64),
+                    };
+                    crate::er::repository::create_column(&req)?;
+                }
+            }
+
+            // Sync indexes: remove existing, re-create from DB
+            for er_idx in &er_tf.indexes {
+                let _ = crate::er::repository::delete_index(er_idx.id);
+            }
+            for db_idx in &db_table.indexes {
+                let columns_json =
+                    serde_json::to_string(&db_idx.columns).unwrap_or_else(|_| "[]".to_string());
+                let req = CreateIndexRequest {
+                    table_id: er_tf.table.id,
+                    name: db_idx.index_name.clone(),
+                    index_type: Some(if db_idx.is_unique {
+                        "UNIQUE".to_string()
+                    } else {
+                        "INDEX".to_string()
+                    }),
+                    columns: columns_json,
+                };
+                crate::er::repository::create_index(&req)?;
+            }
+        } else {
+            // Table does not exist in ER -- create it
+            let table_req = CreateTableRequest {
+                project_id,
+                name: db_table.name.clone(),
+                comment: None,
+                position_x: None,
+                position_y: None,
+                color: None,
+            };
+            let new_table = crate::er::repository::create_table(&table_req)?;
+
+            // Create columns
+            for (i, db_col) in db_table.columns.iter().enumerate() {
+                let col_req = CreateColumnRequest {
+                    table_id: new_table.id,
+                    name: db_col.name.clone(),
+                    data_type: db_col.data_type.clone(),
+                    nullable: Some(db_col.is_nullable),
+                    default_value: db_col.column_default.clone(),
+                    is_primary_key: Some(db_col.is_primary_key),
+                    is_auto_increment: Some(
+                        db_col
+                            .extra
+                            .as_deref()
+                            .map(|e| e.contains("auto_increment"))
+                            .unwrap_or(false),
+                    ),
+                    comment: db_col.comment.clone(),
+                    sort_order: Some(i as i64),
+                };
+                crate::er::repository::create_column(&col_req)?;
+            }
+
+            // Create indexes
+            for db_idx in &db_table.indexes {
+                let columns_json =
+                    serde_json::to_string(&db_idx.columns).unwrap_or_else(|_| "[]".to_string());
+                let idx_req = CreateIndexRequest {
+                    table_id: new_table.id,
+                    name: db_idx.index_name.clone(),
+                    index_type: Some(if db_idx.is_unique {
+                        "UNIQUE".to_string()
+                    } else {
+                        "INDEX".to_string()
+                    }),
+                    columns: columns_json,
+                };
+                crate::er::repository::create_index(&idx_req)?;
+            }
+        }
+    }
+
+    // TODO: Parse FK relationships and comment marker relations
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn er_generate_sync_ddl(
+    project_id: i64,
+    changes: serde_json::Value,
+) -> AppResult<Vec<String>> {
+    // Basic structure: generate ALTER/CREATE/DROP DDL based on selected diff changes.
+    // The `changes` JSON contains the selected items from the DiffReport dialog.
+    // This will be refined later with full diff-to-DDL conversion.
+    let _full = crate::er::repository::get_project_full(project_id)?;
+
+    let mut statements: Vec<String> = Vec::new();
+
+    // Parse changes JSON to extract operations
+    if let Some(added_tables) = changes.get("added_tables").and_then(|v| v.as_array()) {
+        for table_val in added_tables {
+            if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
+                // TODO: Generate full CREATE TABLE DDL from ER model
+                statements.push(format!("-- CREATE TABLE {} (details to be generated)", table_name));
+            }
+        }
+    }
+
+    if let Some(removed_tables) = changes.get("removed_tables").and_then(|v| v.as_array()) {
+        for table_val in removed_tables {
+            if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
+                statements.push(format!("DROP TABLE IF EXISTS {};", table_name));
+            }
+        }
+    }
+
+    if let Some(modified_tables) = changes.get("modified_tables").and_then(|v| v.as_array()) {
+        for table_val in modified_tables {
+            let table_name = table_val
+                .get("table_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            if let Some(added_cols) = table_val.get("added_columns").and_then(|v| v.as_array()) {
+                for col in added_cols {
+                    let col_name = col.get("name").and_then(|v| v.as_str()).unwrap_or("col");
+                    let col_type = col.get("data_type").and_then(|v| v.as_str()).unwrap_or("TEXT");
+                    statements.push(format!(
+                        "ALTER TABLE {} ADD COLUMN {} {};",
+                        table_name, col_name, col_type
+                    ));
+                }
+            }
+
+            if let Some(removed_cols) = table_val.get("removed_columns").and_then(|v| v.as_array())
+            {
+                for col in removed_cols {
+                    let col_name = col.get("name").and_then(|v| v.as_str()).unwrap_or("col");
+                    statements.push(format!(
+                        "ALTER TABLE {} DROP COLUMN {};",
+                        table_name, col_name
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(statements)
+}
+
+#[tauri::command]
+pub async fn er_execute_sync_ddl(
+    project_id: i64,
+    ddl_statements: Vec<String>,
+) -> AppResult<Vec<SyncExecutionResult>> {
+    let full = crate::er::repository::get_project_full(project_id)?;
+    let ds = get_bound_datasource(&full.project).await?;
+
+    let mut results = Vec::with_capacity(ddl_statements.len());
+
+    for stmt in &ddl_statements {
+        match ds.execute(stmt).await {
+            Ok(_) => {
+                results.push(SyncExecutionResult {
+                    statement: stmt.clone(),
+                    success: true,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                results.push(SyncExecutionResult {
+                    statement: stmt.clone(),
+                    success: false,
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+// ─── Export/Import ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn er_export_json(project_id: i64) -> AppResult<String> {
+    let full = crate::er::repository::get_project_full(project_id)?;
+
+    let mut columns_map: HashMap<i64, Vec<ErColumn>> = HashMap::new();
+    let mut indexes_map: HashMap<i64, Vec<ErIndex>> = HashMap::new();
+    let mut tables: Vec<ErTable> = Vec::new();
+
+    for tf in &full.tables {
+        tables.push(tf.table.clone());
+        columns_map.insert(tf.table.id, tf.columns.clone());
+        indexes_map.insert(tf.table.id, tf.indexes.clone());
+    }
+
+    super::export::export_project(
+        &full.project,
+        &tables,
+        &columns_map,
+        &indexes_map,
+        &full.relations,
+    )
+}
+
+#[tauri::command]
+pub async fn er_import_json(json: String) -> AppResult<ErProject> {
+    let data = super::export::parse_import(&json)?;
+
+    // Create the project
+    let project = crate::er::repository::create_project(&CreateProjectRequest {
+        name: data.project.name.clone(),
+        description: data.project.description.clone(),
+    })?;
+
+    // Track table name → id for relation resolution
+    let mut table_name_to_id: HashMap<String, i64> = HashMap::new();
+    // Track (table_name, column_name) → column_id for relation resolution
+    let mut column_key_to_id: HashMap<(String, String), i64> = HashMap::new();
+
+    for export_table in &data.project.tables {
+        let table = crate::er::repository::create_table(&CreateTableRequest {
+            project_id: project.id,
+            name: export_table.name.clone(),
+            comment: export_table.comment.clone(),
+            position_x: Some(export_table.position.x),
+            position_y: Some(export_table.position.y),
+            color: None,
+        })?;
+
+        table_name_to_id.insert(export_table.name.clone(), table.id);
+
+        // Create columns
+        for (i, export_col) in export_table.columns.iter().enumerate() {
+            let col = crate::er::repository::create_column(&CreateColumnRequest {
+                table_id: table.id,
+                name: export_col.name.clone(),
+                data_type: export_col.data_type.clone(),
+                nullable: Some(export_col.nullable),
+                default_value: export_col.default_value.clone(),
+                is_primary_key: Some(export_col.is_primary_key),
+                is_auto_increment: Some(export_col.is_auto_increment),
+                comment: export_col.comment.clone(),
+                sort_order: Some(i as i64),
+            })?;
+
+            column_key_to_id.insert(
+                (export_table.name.clone(), export_col.name.clone()),
+                col.id,
+            );
+        }
+
+        // Create indexes
+        for export_idx in &export_table.indexes {
+            let columns_json = serde_json::to_string(&export_idx.columns)
+                .unwrap_or_else(|_| "[]".to_string());
+            crate::er::repository::create_index(&CreateIndexRequest {
+                table_id: table.id,
+                name: export_idx.name.clone(),
+                index_type: Some(export_idx.index_type.clone()),
+                columns: columns_json,
+            })?;
+        }
+    }
+
+    // Create relations
+    for export_rel in &data.project.relations {
+        let src_table_id = table_name_to_id
+            .get(&export_rel.source.table)
+            .copied()
+            .ok_or_else(|| {
+                AppError::Other(format!(
+                    "Source table '{}' not found in import",
+                    export_rel.source.table
+                ))
+            })?;
+        let src_col_id = column_key_to_id
+            .get(&(
+                export_rel.source.table.clone(),
+                export_rel.source.column.clone(),
+            ))
+            .copied()
+            .ok_or_else(|| {
+                AppError::Other(format!(
+                    "Source column '{}.{}' not found in import",
+                    export_rel.source.table, export_rel.source.column
+                ))
+            })?;
+        let tgt_table_id = table_name_to_id
+            .get(&export_rel.target.table)
+            .copied()
+            .ok_or_else(|| {
+                AppError::Other(format!(
+                    "Target table '{}' not found in import",
+                    export_rel.target.table
+                ))
+            })?;
+        let tgt_col_id = column_key_to_id
+            .get(&(
+                export_rel.target.table.clone(),
+                export_rel.target.column.clone(),
+            ))
+            .copied()
+            .ok_or_else(|| {
+                AppError::Other(format!(
+                    "Target column '{}.{}' not found in import",
+                    export_rel.target.table, export_rel.target.column
+                ))
+            })?;
+
+        crate::er::repository::create_relation(&CreateRelationRequest {
+            project_id: project.id,
+            name: export_rel.name.clone(),
+            source_table_id: src_table_id,
+            source_column_id: src_col_id,
+            target_table_id: tgt_table_id,
+            target_column_id: tgt_col_id,
+            relation_type: Some(export_rel.relation_type.clone()),
+            on_delete: Some(export_rel.on_delete.clone()),
+            on_update: None,
+            source: export_rel.source_type.clone(),
+            comment_marker: export_rel.comment_marker.clone(),
+        })?;
+    }
+
+    Ok(project)
+}

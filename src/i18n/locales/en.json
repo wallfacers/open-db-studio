@@ -15,6 +15,7 @@
     "settings": "Settings",
     "metrics": "Metrics",
     "knowledgeGraph": "Knowledge Graph",
+    "erDesigner": "ER Designer",
     "migrationCenter": "Migration Center"
   },
   "assistant": {

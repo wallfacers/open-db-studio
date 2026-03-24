@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Database, ListTodo, Activity, Network, Workflow, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { User, Database, ListTodo, Activity, Network, Workflow, Settings, ChevronRight, ChevronLeft, Grid3x3 } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -94,6 +94,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           >
             <Network size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             {isExpanded && <span className="text-[13px] truncate">{t('activity.knowledgeGraph')}</span>}
+          </div>
+        </Tooltip>
+
+        <Tooltip content={!isExpanded ? t('activity.erDesigner') : undefined}>
+          <div
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'er_designer' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('er_designer');
+              setIsSidebarOpen(true);
+            }}
+          >
+            <Grid3x3 size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">{t('activity.erDesigner')}</span>}
           </div>
         </Tooltip>
 

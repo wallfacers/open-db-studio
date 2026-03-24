@@ -195,7 +195,20 @@ export default function App() {
         onResize={handleSidebarResize}
         hidden={activeActivity !== 'seatunnel'}
       />
-      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && (
+      {activeActivity === 'er_designer' && (
+        <div
+          style={{ width: sidebarWidth }}
+          className="flex-shrink-0 bg-[#0d1117] border-r border-[#1e2d42] flex flex-col"
+        >
+          <div className="flex items-center justify-between px-3 h-10 border-b border-[#1e2d42]">
+            <span className="text-xs text-[#c8daea] font-medium uppercase tracking-wider">ER Designer</span>
+          </div>
+          <div className="flex-1 flex items-center justify-center text-[#7a9bb8] text-xs">
+            ERSidebar Placeholder
+          </div>
+        </div>
+      )}
+      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && activeActivity !== 'er_designer' && (
         activeActivity !== 'settings' && activeActivity !== 'tasks' &&
         activeActivity !== 'graph' && (
           <Explorer

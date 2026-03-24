@@ -314,8 +314,8 @@ CREATE TABLE IF NOT EXISTS er_projects (
     viewport_x      REAL DEFAULT 0,
     viewport_y      REAL DEFAULT 0,
     viewport_zoom   REAL DEFAULT 1,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 -- ER 表
@@ -327,8 +327,8 @@ CREATE TABLE IF NOT EXISTS er_tables (
     position_x      REAL DEFAULT 0,
     position_y      REAL DEFAULT 0,
     color           TEXT NULL,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 -- ER 列
@@ -343,8 +343,8 @@ CREATE TABLE IF NOT EXISTS er_columns (
     is_auto_increment INTEGER DEFAULT 0,
     comment         TEXT,
     sort_order      INTEGER DEFAULT 0,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 -- ER 关系
@@ -361,8 +361,8 @@ CREATE TABLE IF NOT EXISTS er_relations (
     on_update       TEXT DEFAULT 'NO ACTION',
     source          TEXT DEFAULT 'designer',
     comment_marker  TEXT NULL,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 -- ER 索引
@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS er_indexes (
     name            TEXT NOT NULL,
     type            TEXT DEFAULT 'INDEX',
     columns         TEXT NOT NULL,
-    created_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 -- 唯一约束：同一项目内表名不重复

@@ -109,7 +109,7 @@ export interface UpdateLlmConfigInput {
 export type TabType =
   | 'query'
   | 'table'
-  | 'er_diagram'
+  | 'er_design'
   | 'table_structure'   // 从 App.tsx TabData 迁移
   | 'metric'
   | 'metric_list'
@@ -134,6 +134,7 @@ export interface Tab {
   isNewTable?: boolean;        // table_structure Tab 专用
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
+  erProjectId?: number;        // er_design Tab 专用
 }
 
 export interface ColumnMeta {

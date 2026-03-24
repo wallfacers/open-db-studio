@@ -15,6 +15,7 @@
     "settings": "设置",
     "metrics": "业务指标",
     "knowledgeGraph": "知识图谱",
+    "erDesigner": "ER 设计器",
     "migrationCenter": "迁移中心"
   },
   "assistant": {

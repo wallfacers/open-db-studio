@@ -1,7 +1,7 @@
 # 设计规格：指标目录集成到数据库树
 
 **日期**：2026-03-25
-**状态**：已批准
+**状态**：已批准（v2 修订）
 **作者**：Claude Code (brainstorming)
 
 ---
@@ -58,9 +58,9 @@ const needsSchema = ['postgres', 'oracle'].includes(driver);
 | 文件 | 改动性质 |
 |------|---------|
 | `src/types/index.ts` | NodeType 新增 `metrics_folder` \| `metric` |
-| `src/store/treeStore.ts` | 新增 `metricCounts` Map；插入逻辑；loadChildren 新分支；deleteMetricNode action |
+| `src/store/treeStore.ts` | 新增 `metricCounts` Map；插入逻辑；loadChildren 新分支；deleteMetricNode action；refreshNode/\_removeSubtree 清除 metricCounts |
 | `src/components/Explorer/DBTree.tsx` | 渲染新节点类型；右键菜单；新增 Props 回调 |
-| `src/components/Explorer/index.tsx` | 透传 `onOpenMetricTab` / `onOpenMetricListTab` 回调 |
+| `src/components/Explorer/index.tsx` | 新增 Props 定义并透传 `onOpenMetricTab` / `onOpenMetricListTab` 回调 |
 | `src/components/ActivityBar/index.tsx` | 隐藏指标图标（保留代码） |
 
 ---
@@ -80,6 +80,7 @@ export type NodeType =
 ```
 
 `NodeMeta` 接口不变；`metric` 节点复用 `objectName` 字段存储 metricId（string 类型）。
+从 `metric` 节点取 metricId 时须显式转换：`const metricId = Number(node.meta.objectName)`。
 
 ---
 
@@ -89,7 +90,7 @@ export type NodeType =
 
 ```typescript
 interface TreeStore {
-  metricCounts: Map<string, number>;  // key = metrics_folder 节点 ID
+  metricCounts: Map<string, number>;    // key = metrics_folder 节点 ID，value = 指标数量
   deleteMetricNode: (nodeId: string) => void;
 }
 // 初始值
@@ -103,39 +104,77 @@ function makeMetricsFolderNode(parentId: string, meta: TreeNode['meta']): TreeNo
   return {
     id: `${parentId}/metrics_folder`,
     nodeType: 'metrics_folder',
-    label: 'dbTree.metrics',  // i18n key，渲染时调用 t()
+    label: 'dbTree.metrics',   // i18n key，DBTree 渲染时调用 t()
     parentId,
-    hasChildren: true,
+    hasChildren: true,         // 初始设为 true 以显示展开箭头；加载后修正为 metrics.length > 0
     loaded: false,
     meta: { ...meta },
   };
 }
 ```
 
+> **注意**：`hasChildren: true` 是初始占位值，展开前用户会看到展开箭头。
+> 加载完成后 `loadChildren` 会将其修正为 `metrics.length > 0`（与现有 category 节点行为一致）。
+
+#### Tauri invoke 参数约定
+
+treeStore 中所有 `invoke` 调用均使用 camelCase 键名（如 `connectionId`、`database`），
+Tauri 2.x 配置了全局 `camelCase → snake_case` 转换，Rust 命令接收 snake_case 参数。
+本设计沿用此约定，无需额外处理。
+
+---
+
 #### 插入时机
 
-**SQLite（无 database）**：
+**SQLite（无 database）** — `connection` 节点，`databases.length === 0`：
 ```typescript
-// connection 节点，databases.length === 0
 children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
-children.push(makeMetricsFolderNode(nodeId, node.meta));
+children.push(makeMetricsFolderNode(nodeId, node.meta));  // 追加在 categories 末尾
 ```
 
-**MySQL 等（有 database，无 schema）**：
+**MySQL 等（有 database，无 schema）** — `connection` 节点的 db 循环内，`!needsSchema` 分支：
 ```typescript
 if (!needsSchema) {
   children.push(...makeCategoryNodes(dbId, driver, { ...node.meta, database: db }));
-  children.push(makeMetricsFolderNode(dbId, { ...node.meta, database: db }));
+  children.push(makeMetricsFolderNode(dbId, { ...node.meta, database: db }));  // 追加
 }
 ```
 
-**PostgreSQL/Oracle（有 schema）**：
+**PostgreSQL/Oracle（有 schema）** — `database` 节点 loadChildren 分支，schema 循环结束后追加：
 ```typescript
-// database 节点，schemas 加载完毕后末尾追加
-children.push(makeMetricsFolderNode(nodeId, node.meta));
+// 原有 database 节点分支（loadChildren 中）：
+} else if (node.nodeType === 'database') {
+  const driver = node.meta.driver ?? 'postgres';
+  if (['postgres', 'oracle'].includes(driver)) {
+    const schemas = await invoke<string[]>('list_schemas', {
+      connectionId: node.meta.connectionId,
+      database: node.meta.database,
+    });
+    for (const schema of schemas) {
+      const schemaId = `${nodeId}/schema_${schema}`;
+      children.push({
+        id: schemaId,
+        nodeType: 'schema',
+        label: schema,
+        parentId: nodeId,
+        hasChildren: true,
+        loaded: false,
+        meta: { ...node.meta, schema },
+      });
+    }
+    // 新增：metrics_folder 追加在所有 schema 节点之后
+    children.push(makeMetricsFolderNode(nodeId, node.meta));
+  }
+}
 ```
 
-#### loadChildren 新分支
+---
+
+#### loadChildren 新分支（metrics_folder）
+
+遵循现有模式：子节点 push 到 `children`，由外层统一调用 `_addNodes(children)` 注册，
+再由外层统一 `set` 将父节点标记为 `loaded: true`。
+`metricCounts` 通过额外的 `set` 在 `_addNodes` 调用之后单独更新。
 
 ```typescript
 } else if (node.nodeType === 'metrics_folder') {
@@ -157,34 +196,69 @@ children.push(makeMetricsFolderNode(nodeId, node.meta));
       meta: { ...node.meta, objectName: String(m.id) },
     });
   }
+  // metrics_folder 的 hasChildren 在外层 set loaded:true 时一并修正
+  // metricCounts 在外层 _addNodes 调用后单独 set：
+  // （在 try 块末尾 _addNodes(children) 之后追加）
   set(s => ({
     metricCounts: new Map(s.metricCounts).set(nodeId, metrics.length),
     nodes: (() => {
       const n = new Map(s.nodes);
-      n.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
+      const folder = n.get(nodeId);
+      if (folder) n.set(nodeId, { ...folder, hasChildren: metrics.length > 0 });
       return n;
     })(),
   }));
 }
 ```
 
+> 外层的 `_addNodes(children)` 会将所有 `metric` 子节点同时写入 `nodes` 和 `searchIndex`，
+> 然后额外的 `set` 再更新 `metricCounts` 和 `hasChildren`，不存在双写冲突。
+
+---
+
 #### deleteMetricNode action
+
+须同时清理 `nodes`、`searchIndex`、`metricCounts`：
 
 ```typescript
 deleteMetricNode: (nodeId: string) => {
   set(s => {
     const nodes = new Map(s.nodes);
+    const searchIndex = new Map(s.searchIndex);
     const metricCounts = new Map(s.metricCounts);
     const node = nodes.get(nodeId);
     nodes.delete(nodeId);
-    // 递减父目录计数
+    searchIndex.delete(nodeId);          // 同步清理搜索索引
     if (node?.parentId) {
       const count = metricCounts.get(node.parentId) ?? 0;
       metricCounts.set(node.parentId, Math.max(0, count - 1));
     }
-    return { nodes, metricCounts };
+    return { nodes, searchIndex, metricCounts };
   });
 },
+```
+
+---
+
+#### refreshNode / _removeSubtree 清理 metricCounts
+
+`refreshNode` 调用 `_removeSubtree` 后，需清除被刷新节点对应的 `metricCounts` 条目，
+否则刷新后徽章会残留旧数值直到下次 `loadChildren` 覆盖。
+
+在 `refreshNode` 的现有逻辑中，清除子树后追加：
+```typescript
+// refreshNode 中，removeChildren(nodeId) 之后：
+set(s => {
+  const metricCounts = new Map(s.metricCounts);
+  metricCounts.delete(nodeId);   // 清除当前节点的计数（适用于 metrics_folder）
+  return { metricCounts };
+});
+```
+
+`_removeSubtree` 本身递归删除子节点时，也需同步删除这些子节点的 `metricCounts` 条目：
+```typescript
+// _removeSubtree 递归删除时追加
+metricCounts.delete(id);   // 清除被删子节点的计数
 ```
 
 ---
@@ -195,6 +269,7 @@ deleteMetricNode: (nodeId: string) => {
 
 ```typescript
 interface DBTreeProps {
+  // 新增
   onOpenMetricTab?: (metricId: number, title: string, connectionId?: number) => void;
   onOpenMetricListTab?: (
     scope: { connectionId: number; database?: string; schema?: string },
@@ -203,13 +278,21 @@ interface DBTreeProps {
 }
 ```
 
+#### 从 store 读取 metricCounts
+
+```typescript
+const { nodes, expandedIds, selectedId, loadingIds, metricCounts,
+        toggleExpand, selectNode, refreshNode, search,
+        deleteMetricNode } = useTreeStore();
+```
+
 #### 图标
 
 ```typescript
 import { BarChart2 } from 'lucide-react';
 
-// metrics_folder → BarChart2（折叠/展开同图标，用颜色区分状态）
-// metric         → BarChart2
+// metrics_folder → BarChart2（折叠/展开同图标，用颜色区分展开状态）
+// metric         → BarChart2（metricType 未存入 meta，统一使用 BarChart2）
 ```
 
 #### 计数徽章
@@ -231,17 +314,50 @@ import { BarChart2 } from 'lucide-react';
 - 分隔线
 - 「刷新」→ `refreshNode(node.id)`
 
-**metric 节点**：
+**metric 节点**（取 metricId 须显式转换）：
+```typescript
+const metricId = Number(node.meta.objectName);  // objectName 存的是 String(m.id)
+const connectionId = node.meta.connectionId!;
+```
 - 「打开」→ `onOpenMetricTab?.(metricId, node.label, connectionId)`
 - 分隔线
-- 「删除」→ 确认弹窗 → `invoke('delete_metric', { id: metricId })` → `deleteMetricNode(node.id)` → `closeMetricTabById(metricId)`
+- 「删除」：
+  1. 确认弹窗（复用 `useConfirm`）
+  2. `await invoke('delete_metric', { id: metricId })`
+  3. `deleteMetricNode(node.id)`
+  4. `useQueryStore.getState().closeMetricTabById(metricId)`
 
 ---
 
-### 4. ActivityBar 隐藏（`components/ActivityBar/index.tsx`）
+### 4. Explorer/index.tsx — Props 扩展与透传
+
+```typescript
+// ExplorerProps 新增两个可选回调：
+interface ExplorerProps {
+  // 现有 props 不变...
+  onOpenMetricTab?: (metricId: number, title: string, connectionId?: number) => void;
+  onOpenMetricListTab?: (
+    scope: { connectionId: number; database?: string; schema?: string },
+    title: string
+  ) => void;
+}
+
+// DBTree 调用处增加透传：
+<DBTree
+  // 现有 props 不变...
+  onOpenMetricTab={onOpenMetricTab}
+  onOpenMetricListTab={onOpenMetricListTab}
+/>
+```
+
+调用方（`App.tsx`）将这两个回调从 `queryStore` 连接处传入，复用现有的 `openMetricTab` / `openNewMetricTab`。
+
+---
+
+### 5. ActivityBar 隐藏（`components/ActivityBar/index.tsx`）
 
 ```tsx
-{/* 指标入口临时隐藏，MetricsExplorer 代码保留 */}
+{/* 指标入口临时隐藏，MetricsExplorer 代码保留，后续可恢复 */}
 {false && <MetricsActivityButton />}
 ```
 
@@ -253,22 +369,33 @@ import { BarChart2 } from 'lucide-react';
 用户展开 metrics_folder
   ↓
 treeStore.toggleExpand(folderId)
+  → loadChildren(folderId)
+    → invoke('list_metrics_by_node', { connectionId, database, schema: null })
+    → 生成 metric[] 子节点，push 进 children
+    → _addNodes(children) — 写入 nodes + searchIndex
+    → set metricCounts[folderId] = metrics.length
+    → set nodes[folderId].hasChildren = metrics.length > 0
   ↓
-treeStore.loadChildren(folderId)
-  ↓
-invoke('list_metrics_by_node', { connectionId, database, schema: null })
-  ↓
-生成 metric[] 子节点 + 更新 metricCounts
-  ↓
-DBTree 渲染：显示 metric 节点列表 + metrics_folder 上的 [N] 徽章
+DBTree 渲染：metric 节点列表 + metrics_folder 上的 [N] 徽章
 
 用户右键 metric → 删除
   ↓
+const metricId = Number(node.meta.objectName)
+  ↓
 invoke('delete_metric', { id: metricId })
   ↓
-treeStore.deleteMetricNode(nodeId)      // 移除节点 + 递减父目录计数
+treeStore.deleteMetricNode(nodeId)
+  → 清理 nodes、searchIndex、metricCounts（父目录计数 -1）
   ↓
-queryStore.closeMetricTabById(metricId) // 关闭对应 Tab
+queryStore.closeMetricTabById(metricId)
+
+用户右键 metrics_folder → 刷新
+  ↓
+treeStore.refreshNode(folderId)
+  → _removeSubtree：删除所有 metric 子节点（nodes + searchIndex + metricCounts 子项）
+  → 清除 metricCounts[folderId]
+  → 重置 loaded: false
+  → loadChildren(folderId) 重新加载
 ```
 
 ---
@@ -289,7 +416,9 @@ queryStore.closeMetricTabById(metricId) // 关闭对应 Tab
 
 | 场景 | 处理方式 |
 |------|---------|
-| 该数据库下无指标 | `metrics_folder` 节点 `hasChildren: false`，展开后显示空，不显示 `[N]` |
+| 该数据库下无指标 | 加载后 `hasChildren: false`，不显示 `[N]`；加载前展开箭头可见（与现有 category 节点行为一致） |
 | 加载失败 | 沿用现有 loadChildren 错误处理：折叠节点，设置 `error` 状态 |
-| 指标被 MetricsExplorer 面板删除 | treeStore 不感知，下次用户手动刷新指标目录后同步 |
+| 指标被 MetricsExplorer 面板删除 | treeStore 不感知，用户手动刷新指标目录后同步（跨面板实时同步不在本期范围） |
 | 新建指标后计数更新 | 新建成功后调用 `refreshNode(folderId)` 重新加载子节点并更新计数 |
+| refreshNode 后 metricCounts | refreshNode 显式删除 `metricCounts[folderId]`，徽章消失；重新加载后恢复正确数值 |
+| searchIndex 与 metric 节点 | `_addNodes` 写入，`deleteMetricNode` 同步删除，保持一致 |

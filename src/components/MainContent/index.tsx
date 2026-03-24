@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -674,8 +674,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {tab.type === 'query' ? (
               <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
-            ) : tab.type === 'er_diagram' ? (
-              <DatabaseZap size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'er_design' ? (
+              <Grid3x3 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'table_structure' ? (
               <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'metric' ? (
@@ -709,9 +709,12 @@ export const MainContent: React.FC<MainContentProps> = ({
       </div>
 
       {activeTabObj ? (
-        activeTabObj.type === 'er_diagram' ? (
-          <div className="flex-1 w-full h-full relative">
-            <ERDiagram />
+        activeTabObj.type === 'er_design' ? (
+          <div className="flex-1 w-full h-full relative flex items-center justify-center bg-[#080d12]">
+            <div className="text-[#7a9bb8] text-sm">
+              ER Designer - Project ID: {activeTabObj.erProjectId}
+              <span className="block text-center text-xs mt-2 opacity-60">(Canvas component coming soon)</span>
+            </div>
           </div>
         ) : activeTabObj.type === 'table' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">

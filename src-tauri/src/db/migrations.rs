@@ -495,6 +495,9 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V14: ER 设计器表（新表使用 CREATE TABLE IF NOT EXISTS，init.sql 已包含）
+    // 此处无需额外迁移语句，init.sql 的 execute_batch 已幂等创建
+
     log::info!("Database migrations completed");
     Ok(())
 }

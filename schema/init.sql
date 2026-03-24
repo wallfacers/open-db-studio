@@ -300,3 +300,80 @@ CREATE TABLE IF NOT EXISTS seatunnel_jobs (
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+-- ============ V7: ER 设计器 ============
+
+-- ER 项目
+CREATE TABLE IF NOT EXISTS er_projects (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    connection_id   INTEGER NULL,
+    database_name   TEXT NULL,
+    schema_name     TEXT NULL,
+    viewport_x      REAL DEFAULT 0,
+    viewport_y      REAL DEFAULT 0,
+    viewport_zoom   REAL DEFAULT 1,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- ER 表
+CREATE TABLE IF NOT EXISTS er_tables (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      INTEGER NOT NULL REFERENCES er_projects(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    comment         TEXT,
+    position_x      REAL DEFAULT 0,
+    position_y      REAL DEFAULT 0,
+    color           TEXT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- ER 列
+CREATE TABLE IF NOT EXISTS er_columns (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_id        INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    data_type       TEXT NOT NULL,
+    nullable        INTEGER DEFAULT 1,
+    default_value   TEXT NULL,
+    is_primary_key  INTEGER DEFAULT 0,
+    is_auto_increment INTEGER DEFAULT 0,
+    comment         TEXT,
+    sort_order      INTEGER DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- ER 关系
+CREATE TABLE IF NOT EXISTS er_relations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      INTEGER NOT NULL REFERENCES er_projects(id) ON DELETE CASCADE,
+    name            TEXT NULL,
+    source_table_id INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
+    source_column_id INTEGER NOT NULL REFERENCES er_columns(id) ON DELETE CASCADE,
+    target_table_id INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
+    target_column_id INTEGER NOT NULL REFERENCES er_columns(id) ON DELETE CASCADE,
+    relation_type   TEXT DEFAULT 'one_to_many',
+    on_delete       TEXT DEFAULT 'NO ACTION',
+    on_update       TEXT DEFAULT 'NO ACTION',
+    source          TEXT DEFAULT 'designer',
+    comment_marker  TEXT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- ER 索引
+CREATE TABLE IF NOT EXISTS er_indexes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_id        INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    type            TEXT DEFAULT 'INDEX',
+    columns         TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
+-- 唯一约束：同一项目内表名不重复
+CREATE UNIQUE INDEX IF NOT EXISTS idx_er_tables_project_name ON er_tables(project_id, name);

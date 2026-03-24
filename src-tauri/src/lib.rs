@@ -11,6 +11,7 @@ mod metrics;
 mod migration;
 mod pipeline;
 mod seatunnel;
+mod er;
 mod skill_sync;
 mod state;
 

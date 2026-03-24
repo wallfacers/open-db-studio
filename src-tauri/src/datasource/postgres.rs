@@ -459,15 +459,16 @@ mod tests {
     fn base_config() -> ConnectionConfig {
         ConnectionConfig {
             driver: "postgres".to_string(),
-            host: std::env::var("PG_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            host: Some(std::env::var("PG_HOST").unwrap_or_else(|_| "localhost".to_string())),
             port: std::env::var("PG_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
-                .unwrap_or(5432),
-            database: std::env::var("PG_DB").unwrap_or_else(|_| "postgres".to_string()),
-            username: std::env::var("PG_USER").unwrap_or_else(|_| "postgres".to_string()),
-            password: std::env::var("PG_PASSWORD").unwrap_or_else(|_| "123456".to_string()),
+                .or(Some(5432)),
+            database: Some(std::env::var("PG_DB").unwrap_or_else(|_| "postgres".to_string())),
+            username: Some(std::env::var("PG_USER").unwrap_or_else(|_| "postgres".to_string())),
+            password: Some(std::env::var("PG_PASSWORD").unwrap_or_else(|_| "123456".to_string())),
             extra_params: None,
+            file_path: None,
         }
     }
 
@@ -512,7 +513,7 @@ mod tests {
         println!("已创建 schema: {}", schema_name);
 
         // 执行：调 list_schemas
-        let schemas = ds.list_schemas(&cfg.database).await.expect("list_schemas 失败");
+        let schemas = ds.list_schemas(cfg.database.as_deref().unwrap_or("postgres")).await.expect("list_schemas 失败");
         println!("list_schemas 返回: {:?}", schemas);
 
         // 断言
@@ -548,13 +549,13 @@ mod tests {
         println!("已创建 {}.{}", schema_name, table_name);
 
         // 验证 list_schemas 能看到该 schema
-        let schemas = ds.list_schemas(&cfg.database).await.expect("list_schemas 失败");
+        let schemas = ds.list_schemas(cfg.database.as_deref().unwrap_or("postgres")).await.expect("list_schemas 失败");
         println!("list_schemas: {:?}", schemas);
         assert!(schemas.contains(&schema_name.to_string()),
             "list_schemas 未返回 '{}': {:?}", schema_name, schemas);
 
         // 验证 list_objects 能列出该表
-        let tables = ds.list_objects(&cfg.database, Some(schema_name), "tables")
+        let tables = ds.list_objects(cfg.database.as_deref().unwrap_or("postgres"), Some(schema_name), "tables")
             .await.expect("list_objects 失败");
         println!("list_objects({}): {:?}", schema_name, tables);
         assert!(tables.contains(&table_name.to_string()),

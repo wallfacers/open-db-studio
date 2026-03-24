@@ -498,6 +498,48 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
     // V14: ER 设计器表（新表使用 CREATE TABLE IF NOT EXISTS，init.sql 已包含）
     // 此处无需额外迁移语句，init.sql 的 execute_batch 已幂等创建
 
+    // V15: graph_nodes CHECK 约束加入 'link'
+    // 存量数据库的 CHECK 约束缺少 'link' 类型，导致 INSERT link 节点静默失败
+    {
+        let gn_sql: String = conn
+            .query_row(
+                "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='table' AND name='graph_nodes'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap_or_default();
+
+        if !gn_sql.contains("'link'") {
+            let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
+
+            let rebuild_result = conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE graph_nodes_new (
+                     id            TEXT PRIMARY KEY,
+                     node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias','link')),
+                     connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
+                     name          TEXT NOT NULL,
+                     display_name  TEXT,
+                     aliases       TEXT,
+                     source        TEXT DEFAULT 'schema',
+                     is_deleted    INTEGER NOT NULL DEFAULT 0,
+                     metadata      TEXT,
+                     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+                 );
+                 INSERT INTO graph_nodes_new SELECT * FROM graph_nodes;
+                 DROP TABLE graph_nodes;
+                 ALTER TABLE graph_nodes_new RENAME TO graph_nodes;
+                 CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);
+                 CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+                 COMMIT;"
+            );
+
+            let _ = conn.execute_batch("PRAGMA foreign_keys = ON;");
+            rebuild_result?;
+            log::info!("V15: graph_nodes CHECK constraint updated to include 'link' node_type");
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

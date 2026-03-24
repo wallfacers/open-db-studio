@@ -330,6 +330,14 @@ pub async fn process_pending_events(
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("NO ACTION");
 
+                            if ref_table.is_empty() || via_col.is_empty() {
+                                log::warn!(
+                                    "[event_processor] ADD_FK 跳过：ref_table='{}' via_col='{}' (表 {}，event_id={})",
+                                    ref_table, via_col, ev.table_name, ev.id
+                                );
+                                continue;
+                            }
+
                             let table_node_id = make_node_id(conn_id, "table", &[&ev.table_name]);
                             let ref_table_node_id = make_node_id(conn_id, "table", &[ref_table]);
                             let link_id = format!(
@@ -337,10 +345,8 @@ pub async fn process_pending_events(
                                 conn_id, ev.table_name, ref_table, via_col
                             );
 
-                            // 推断 cardinality（简化：固定 N:1）
                             let cardinality = "N:1";
 
-                            // Link Node metadata
                             let link_metadata = serde_json::json!({
                                 "edge_type": "fk",
                                 "cardinality": cardinality,
@@ -357,12 +363,20 @@ pub async fn process_pending_events(
 
                             let display_name = format!("{} → {}", ev.table_name, ref_table);
 
-                            // 插入 Link Node（INSERT OR IGNORE 保证幂等）
-                            // name = "fk"（edge_type 标识符）; display_name = "table → ref_table"（可读标签）
-                            let inserted = db_conn.execute(
-                                "INSERT OR IGNORE INTO graph_nodes
+                            log::info!(
+                                "[event_processor] ADD_FK: {} → {} via {} (link_id={})",
+                                ev.table_name, ref_table, via_col, link_id
+                            );
+
+                            // 使用 UPSERT 代替 INSERT OR IGNORE，确保 link 节点一定被创建或更新
+                            match db_conn.execute(
+                                "INSERT INTO graph_nodes
                                    (id, node_type, connection_id, name, display_name, metadata, source)
-                                 VALUES (?1, 'link', ?2, ?3, ?4, ?5, 'schema')",
+                                 VALUES (?1, 'link', ?2, ?3, ?4, ?5, 'schema')
+                                 ON CONFLICT(id) DO UPDATE SET
+                                   metadata = excluded.metadata,
+                                   display_name = excluded.display_name,
+                                   is_deleted = 0",
                                 rusqlite::params![
                                     link_id,
                                     conn_id,
@@ -370,30 +384,62 @@ pub async fn process_pending_events(
                                     display_name,
                                     link_metadata.to_string(),
                                 ],
-                            ).unwrap_or(0);
+                            ) {
+                                Ok(n) => {
+                                    log::info!(
+                                        "[event_processor] Link node UPSERT OK: link_id={}, rows_affected={}",
+                                        link_id, n
+                                    );
+                                    if n > 0 {
+                                        stats.inserted += 1;
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "[event_processor] Link node INSERT FAILED: link_id={}, error={}",
+                                        link_id, e
+                                    );
+                                    // 不中断整个流程，继续处理下一个事件
+                                }
+                            }
 
-                            // 插入两条边（INSERT OR IGNORE 保证幂等）
+                            // 插入两条边
                             let edge1_id = format!("{}=>{}", table_node_id, link_id);
-                            let _ = db_conn.execute(
+                            if let Err(e) = db_conn.execute(
                                 "INSERT OR IGNORE INTO graph_edges
                                    (id, from_node, to_node, edge_type)
                                  VALUES (?1, ?2, ?3, 'to_link')",
                                 rusqlite::params![edge1_id, table_node_id, link_id],
-                            );
+                            ) {
+                                log::error!(
+                                    "[event_processor] Edge to_link INSERT FAILED: {}, error={}",
+                                    edge1_id, e
+                                );
+                            }
 
                             let edge2_id = format!("{}=>{}", link_id, ref_table_node_id);
-                            let _ = db_conn.execute(
+                            if let Err(e) = db_conn.execute(
                                 "INSERT OR IGNORE INTO graph_edges
                                    (id, from_node, to_node, edge_type)
                                  VALUES (?1, ?2, ?3, 'from_link')",
                                 rusqlite::params![edge2_id, link_id, ref_table_node_id],
-                            );
-
-                            // 仅真正插入时计数（IGNORE 时 inserted == 0）
-                            if inserted > 0 {
-                                stats.inserted += 1;
+                            ) {
+                                log::error!(
+                                    "[event_processor] Edge from_link INSERT FAILED: {}, error={}",
+                                    edge2_id, e
+                                );
                             }
+                        } else {
+                            log::warn!(
+                                "[event_processor] ADD_FK metadata 解析失败: event_id={}, metadata={}",
+                                ev.id, meta_str
+                            );
                         }
+                    } else {
+                        log::warn!(
+                            "[event_processor] ADD_FK 无 metadata: event_id={}, table={}",
+                            ev.id, ev.table_name
+                        );
                     }
                 }
 

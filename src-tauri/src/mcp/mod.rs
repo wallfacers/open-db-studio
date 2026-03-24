@@ -436,6 +436,18 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["keyword", "connection_id"]
                 }
+            }),
+            json!({
+                "name": "graph_debug_links",
+                "description": "诊断工具：查看指定连接的所有 Link Node 及其 metadata（source_table、target_table、via 等），用于排查 graph_find_join_paths 返回空路径的问题。可选按表名过滤。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer", "description": "数据库连接 ID" },
+                        "table_name": { "type": "string", "description": "可选：按表名过滤，只返回涉及该表的 Link Node" }
+                    },
+                    "required": ["connection_id"]
+                }
             })
         ]
     })
@@ -752,6 +764,9 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "graph_search_metrics" => {
             tools::graph::search_metrics::handle(Arc::clone(&handle), args).await
+        }
+        "graph_debug_links" => {
+            tools::graph::debug_links::handle(Arc::clone(&handle), args).await
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

@@ -268,23 +268,135 @@ fn build_join_path(from: &str, _to: &str, edges: &[LogicalEdge]) -> JoinPath {
     }
     let path = tables.join(" → ");
 
+    // 为多跳路径生成完整的 SQL hint
+    let mut sql_parts: Vec<String> = Vec::new();
+    let mut via_parts: Vec<String> = Vec::new();
+    let mut prev_table = from.to_string();
+
+    for edge in edges {
+        let m = &edge.metadata;
+        if !m.via.is_empty() {
+            // 根据实际遍历方向生成正确的 JOIN
+            via_parts.push(format!("{}.{} = {}.{}", prev_table, m.via, edge.target_table, "id"));
+            sql_parts.push(format!("JOIN {} ON {}.{} = {}.id", edge.target_table, prev_table, m.via, edge.target_table));
+        }
+        prev_table = edge.target_table.clone();
+    }
+
     // 取第一条边的元数据作为主要描述
-    let (via, cardinality, on_delete, description, sql_hint) = if let Some(first) = edges.first() {
+    let (cardinality, on_delete, description) = if let Some(first) = edges.first() {
         let m = &first.metadata;
-        let via_str = if !m.via.is_empty() {
-            format!("{}.{} = {}.{}", m.source_table, m.via, m.target_table, "id")
-        } else {
-            String::new()
-        };
-        let hint = if !m.via.is_empty() {
-            format!("JOIN {} ON {}.{} = {}.id", m.target_table, m.source_table, m.via, m.target_table)
-        } else {
-            String::new()
-        };
-        (via_str, m.cardinality.clone(), m.on_delete.clone(), m.description.clone(), hint)
+        (m.cardinality.clone(), m.on_delete.clone(), m.description.clone())
     } else {
-        (String::new(), String::new(), String::new(), String::new(), String::new())
+        (String::new(), String::new(), String::new())
     };
 
-    JoinPath { path, via, cardinality, on_delete, description, sql_hint }
+    JoinPath {
+        path,
+        via: via_parts.join(", "),
+        cardinality,
+        on_delete,
+        description,
+        sql_hint: sql_parts.join(" "),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_graph(edges: Vec<(&str, &str, &str)>) -> ConnectionGraph {
+        let mut adj: HashMap<String, Vec<LogicalEdge>> = HashMap::new();
+
+        for (source, target, via_col) in &edges {
+            let meta = LinkMetadata {
+                cardinality: "N:1".to_string(),
+                via: via_col.to_string(),
+                on_delete: "CASCADE".to_string(),
+                description: format!("{}.{} → {}.id", source, via_col, target),
+                source_table: source.to_string(),
+                target_table: target.to_string(),
+            };
+
+            // 正向边: source → target
+            adj.entry(source.to_string()).or_default().push(LogicalEdge {
+                link_node_id: format!("link:{}:{}", source, target),
+                target_table: target.to_string(),
+                metadata: meta.clone(),
+            });
+
+            // 反向边: target → source（与 load_connection_graph 一致）
+            let mut rev_meta = meta;
+            std::mem::swap(&mut rev_meta.source_table, &mut rev_meta.target_table);
+            adj.entry(target.to_string()).or_default().push(LogicalEdge {
+                link_node_id: format!("link:{}:{}", source, target),
+                target_table: source.to_string(),
+                metadata: rev_meta,
+            });
+        }
+
+        ConnectionGraph {
+            adj,
+            path_cache: LruCache::new(NonZeroUsize::new(100).unwrap()),
+        }
+    }
+
+    #[test]
+    fn test_bfs_forward_direction() {
+        // order_items.order_id → orders.id （正向：从有 FK 的表到被引用表）
+        let mut graph = make_test_graph(vec![("order_items", "orders", "order_id")]);
+        let paths = bfs_find_paths(&mut graph, "order_items", "orders", 4);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "order_items → orders");
+        assert!(paths[0].sql_hint.contains("JOIN orders ON order_items.order_id = orders.id"));
+    }
+
+    #[test]
+    fn test_bfs_reverse_direction() {
+        // 反向：从 orders 找到 order_items（通过双向边）
+        let mut graph = make_test_graph(vec![("order_items", "orders", "order_id")]);
+        let paths = bfs_find_paths(&mut graph, "orders", "order_items", 4);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "orders → order_items");
+        // 反向时 sql_hint 也应该正确
+        assert!(paths[0].sql_hint.contains("JOIN order_items ON orders.order_id = order_items.id"),
+            "actual sql_hint: {}", paths[0].sql_hint);
+    }
+
+    #[test]
+    fn test_bfs_multi_hop() {
+        // order_items → orders, orders → customers
+        let mut graph = make_test_graph(vec![
+            ("order_items", "orders", "order_id"),
+            ("orders", "customers", "customer_id"),
+        ]);
+        let paths = bfs_find_paths(&mut graph, "order_items", "customers", 4);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "order_items → orders → customers");
+        assert!(paths[0].sql_hint.contains("JOIN orders ON order_items.order_id = orders.id"));
+        assert!(paths[0].sql_hint.contains("JOIN customers ON orders.customer_id = customers.id"));
+    }
+
+    #[test]
+    fn test_bfs_no_path() {
+        let mut graph = make_test_graph(vec![("order_items", "orders", "order_id")]);
+        let paths = bfs_find_paths(&mut graph, "orders", "products", 4);
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_bfs_same_table() {
+        let mut graph = make_test_graph(vec![("order_items", "orders", "order_id")]);
+        let paths = bfs_find_paths(&mut graph, "orders", "orders", 4);
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_bfs_cache_hit() {
+        let mut graph = make_test_graph(vec![("order_items", "orders", "order_id")]);
+        let paths1 = bfs_find_paths(&mut graph, "order_items", "orders", 4);
+        let paths2 = bfs_find_paths(&mut graph, "order_items", "orders", 4);
+        assert_eq!(paths1.len(), paths2.len());
+        assert_eq!(paths1[0].path, paths2[0].path);
+    }
 }

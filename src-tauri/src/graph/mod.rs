@@ -163,6 +163,15 @@ pub async fn run_graph_build(
         config.database = Some(db);
     }
 
+    // 安全检查：MySQL/PostgreSQL 等必须指定数据库，否则 get_schema() 返回空导致全部表被误删
+    let effective_db = config.database.as_deref().unwrap_or("");
+    if effective_db.is_empty() && matches!(config.driver.as_str(), "mysql" | "postgres" | "doris" | "tidb") {
+        let msg = "构建失败：未指定数据库名。请在构建图谱时选择目标数据库。".to_string();
+        log_emit!("ERROR", &msg);
+        emit_failed(&app, &task_id, &msg, &logs);
+        return;
+    }
+
     let ds = match crate::datasource::create_datasource(&config).await {
         Ok(ds) => ds,
         Err(e) => {
@@ -279,6 +288,14 @@ pub async fn run_graph_build(
     match sync_aliases_to_graph(connection_id) {
         Ok(n) => log_emit!("INFO", &format!("别名节点同步完成，共 {} 个", n)),
         Err(e) => log_emit!("WARN", &format!("别名同步失败（不影响主流程）: {}", e)),
+    }
+
+    // 8. 失效图缓存，确保下次 find_join_paths 使用最新数据
+    {
+        use tauri::Manager;
+        let app_state = app.state::<crate::AppState>();
+        app_state.graph_cache.invalidate(connection_id).await;
+        log_emit!("INFO", "图缓存已失效，下次查询将重新加载");
     }
 
     emit_completed(&app, &task_id, &logs);

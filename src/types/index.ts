@@ -424,3 +424,132 @@ export interface MetricPageResult {
   total_rows: number;  // 满足过滤条件的总记录数
   duration_ms: number;
 }
+
+// ============ ER 设计器类型 ============
+
+export interface ErProject {
+  id: number;
+  name: string;
+  description: string | null;
+  connection_id: number | null;
+  database_name: string | null;
+  schema_name: string | null;
+  viewport_x: number;
+  viewport_y: number;
+  viewport_zoom: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErTable {
+  id: number;
+  project_id: number;
+  name: string;
+  comment: string | null;
+  position_x: number;
+  position_y: number;
+  color: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErColumn {
+  id: number;
+  table_id: number;
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  default_value: string | null;
+  is_primary_key: boolean;
+  is_auto_increment: boolean;
+  comment: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErRelation {
+  id: number;
+  project_id: number;
+  name: string | null;
+  source_table_id: number;
+  source_column_id: number;
+  target_table_id: number;
+  target_column_id: number;
+  relation_type: string;
+  on_delete: string;
+  on_update: string;
+  source: string;  // 'schema' | 'comment' | 'designer'
+  comment_marker: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErIndex {
+  id: number;
+  table_id: number;
+  name: string;
+  type: string;  // 'INDEX' | 'UNIQUE' | 'FULLTEXT'
+  columns: string;  // JSON array of column names
+  created_at: string;
+}
+
+export interface ErTableFull {
+  table: ErTable;
+  columns: ErColumn[];
+  indexes: ErIndex[];
+}
+
+export interface ErProjectFull {
+  project: ErProject;
+  tables: ErTableFull[];
+  relations: ErRelation[];
+}
+
+export interface DiffResult {
+  added_tables: TableDiff[];
+  removed_tables: TableDiff[];
+  modified_tables: TableModDiff[];
+}
+
+export interface TableDiff {
+  table_name: string;
+  columns: { name: string; data_type: string; nullable: boolean; is_primary_key: boolean }[];
+}
+
+export interface TableModDiff {
+  table_name: string;
+  added_columns: ColumnDiff[];
+  removed_columns: ColumnDiff[];
+  modified_columns: ColumnModDiff[];
+  added_indexes: IndexDiff[];
+  removed_indexes: IndexDiff[];
+}
+
+export interface ColumnDiff {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+}
+
+export interface ColumnModDiff {
+  name: string;
+  er_type: string;
+  db_type: string;
+  er_nullable: boolean;
+  db_nullable: boolean;
+  type_changed: boolean;
+  nullable_changed: boolean;
+}
+
+export interface IndexDiff {
+  name: string;
+  index_type: string;
+  columns: string[];
+}
+
+export interface SyncExecutionResult {
+  statement: string;
+  success: boolean;
+  error: string | null;
+}

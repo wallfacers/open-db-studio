@@ -1,7 +1,50 @@
 # ER 图设计器 — 设计规格文档
 
 > 日期: 2026-03-25
-> 状态: Draft
+> 状态: Phase 1 Partial (Backend Complete, Frontend Canvas Pending)
+> 最后更新: 2026-03-25
+
+## 实现状态
+
+### 已完成 (Phase 1 Backend + 基础 Frontend)
+
+| 模块 | 组件 | 状态 |
+|------|------|------|
+| **Backend** | SQLite 表结构 (er_projects, er_tables, er_columns, er_relations, er_indexes) | ✅ |
+| **Backend** | Rust models.rs (实体 + 请求类型) | ✅ |
+| **Backend** | repository.rs (完整 CRUD) | ✅ |
+| **Backend** | ddl_generator.rs (5种方言) | ✅ |
+| **Backend** | diff_engine.rs (双向 Diff) | ✅ |
+| **Backend** | export.rs (JSON v1.0 导入导出) | ✅ |
+| **Backend** | commands.rs (29个 Tauri 命令) | ✅ |
+| **Frontend** | TypeScript 类型定义 | ✅ |
+| **Frontend** | erDesignerStore (Zustand) | ✅ |
+| **Frontend** | TabType 'er_design' + openERDesignTab | ✅ |
+| **Frontend** | ActivityBar 图标入口 | ✅ |
+| **Frontend** | ERSidebar (项目树 + 右键菜单) | ✅ |
+| **Frontend** | ProjectContextMenu / TableContextMenu | ✅ |
+
+### 待实现 (Phase 1 Frontend Canvas)
+
+| 模块 | 组件 | 优先级 |
+|------|------|--------|
+| **Frontend** | ERCanvas/index.tsx (ReactFlow 画布容器) | HIGH |
+| **Frontend** | ERCanvas/ERTableNode.tsx (表节点组件) | HIGH |
+| **Frontend** | ERCanvas/EREdge.tsx (3种样式关系线) | HIGH |
+| **Frontend** | ERCanvas/ERToolbar.tsx (工具栏) | HIGH |
+| **Frontend** | dialogs/DDLPreviewDialog.tsx | HIGH |
+| **Frontend** | dialogs/DiffReportDialog.tsx | HIGH |
+| **Frontend** | dialogs/BindConnectionDialog.tsx | MEDIUM |
+| **Frontend** | dialogs/ImportTableDialog.tsx | MEDIUM |
+| **Frontend** | hooks/useERCanvas.ts | MEDIUM |
+| **Frontend** | hooks/useERKeyboard.ts | MEDIUM |
+| **Frontend** | Undo/Redo 完整实现 (inverse operation) | LOW |
+
+### Phase 2 (独立设计文档)
+
+| 模块 | 说明 |
+|------|------|
+| **AI 集成** | Assistant 联动、结构化操作指令、批量建模 |
 
 ## 1. 概述
 

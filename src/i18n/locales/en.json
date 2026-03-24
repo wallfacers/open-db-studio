@@ -426,7 +426,9 @@
     "language": "Language",
     "languageDesc": "Switch display language. Takes effect immediately.",
     "languageZh": "Chinese (中文)",
-    "languageEn": "English"
+    "languageEn": "English",
+    "tablePageSizeLimit": "Max Rows Per Page",
+    "tablePageSizeLimitDesc": "Set the pagination limit for table data view. Up to 5000 rows supported with virtual scrolling enabled."
   },
   "erDiagram": {
     "addTable": "Add Table",

@@ -426,7 +426,9 @@
     "language": "语言",
     "languageDesc": "切换界面显示语言，立即生效。",
     "languageZh": "中文",
-    "languageEn": "英文 (English)"
+    "languageEn": "英文 (English)",
+    "tablePageSizeLimit": "表数据每页最大行数",
+    "tablePageSizeLimitDesc": "设置表数据视图的分页上限，支持最大 5000 行（已启用虚拟滚动）。"
   },
   "erDiagram": {
     "addTable": "添加表",

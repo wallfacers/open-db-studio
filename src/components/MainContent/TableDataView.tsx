@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore, useQueryStore } from '../../store';
+import { useAppStore } from '../../store/appStore';
 import type { QueryResult, ColumnMeta } from '../../types';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
@@ -82,6 +83,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const { t } = useTranslation();
   const { activeConnectionId: storeConnectionId } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
+  const tablePageSizeLimit = useAppStore((s) => s.tablePageSizeLimit);
+  const initTablePageSizeLimit = useAppStore((s) => s.initTablePageSizeLimit);
 
   // 订阅外部刷新信号（如截断表后触发）
   const tabId = `table_${activeConnectionId}_${dbName}_${schema ?? ''}_${tableName}`;
@@ -181,6 +184,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       })
       .catch(() => {});
   }, [activeConnectionId, tableName]);
+
+  useEffect(() => { initTablePageSizeLimit(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (pageSize > tablePageSizeLimit) {
+      setPageSize(tablePageSizeLimit);
+      setPage(1);
+    }
+  }, [tablePageSizeLimit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -285,12 +297,11 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     })),
   [totalPages]);
 
-  const PAGE_SIZE_OPTIONS = [
-    { value: '100', label: '100' },
-    { value: '200', label: '200' },
-    { value: '500', label: '500' },
-    { value: '1000', label: '1000' },
-  ];
+  const PAGE_SIZE_OPTIONS = useMemo(() =>
+    [100, 500, 1000, 2000, 3000, 5000]
+      .filter(s => s <= tablePageSizeLimit)
+      .map(s => ({ value: String(s), label: String(s) })),
+  [tablePageSizeLimit]);
 
   const handlePageSizeChange = (v: string) => {
     setPage(1);

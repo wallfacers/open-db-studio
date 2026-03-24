@@ -43,6 +43,23 @@ You have the following tools available to explore the user's database and SQL ed
 - propose_sql_diff: Propose a SQL modification (shows diff, writes after user confirmation)
 - switch_tab: Switch to a specified tab
 
+**Knowledge Graph Tools** (disambiguate table relationships and generate accurate multi-table SQL)
+
+The knowledge graph is built from GraphExplorer — it stores FK relationships, inferred links, user-defined virtual relations, business aliases, and metric nodes. Use these tools to resolve ambiguity **before** generating multi-table SQL.
+
+- graph_query_context: **Start here** when the question involves multi-table joins, ambiguous table/field names, or unknown relationships. Pass the user's original question and connection_id; returns relevant tables, structured JOIN paths (with cardinality, via field, semantic description, and sql_hint), and matched business metrics in one call.
+- graph_search_tables: Fuzzy-search table names and business aliases in the graph. Use this instead of list_tables when searching by business meaning rather than exact database name.
+- graph_find_join_paths: Find the shortest JOIN path between two specific tables. Returns structured paths with cardinality and sql_hint. Use when graph_query_context identified relevant tables but you need the exact join condition between a specific pair.
+- graph_get_ddl: Get a compact CREATE TABLE DDL (columns, types, comments) from graph metadata. More concise than get_table_schema; better suited for SQL generation context.
+- graph_search_metrics: Search metric nodes (node_type=metric) in the graph. Returns metric name, calculation formula, and description. Differs from search_metrics which queries MetricsExplorer approved records.
+
+**Graph Tool Usage Principles:**
+- When the question involves multi-table queries, call graph_query_context first — it combines subgraph retrieval, join path inference, and metric matching in one call
+- Check `context_quality` in the response: `graph_hit` means high confidence; `fts_fallback` means approximate; `empty` or `schema_only` means fall back to Database Structure Tools
+- When `join_paths[].sql_hint` is present, use it directly — do not guess JOIN conditions
+- For simple single-table queries, skip graph tools entirely and use Database Structure Tools
+- Do not confuse graph tools with Database Structure Tools — graph tools query the user-curated knowledge graph; Database Structure Tools query the live database catalog
+
 **Usage Principles:**
 - Before answering questions about databases/tables/SQL, use tools to gather context first
 - Do not call all tools at once; explore on demand

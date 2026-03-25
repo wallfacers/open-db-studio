@@ -225,7 +225,9 @@ export type NodeType =
   | 'sequence'
   | 'materialized_view'
   | 'dictionary'
-  | 'column';
+  | 'column'
+  | 'metrics_folder'
+  | 'metric';
 
 export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences' | 'materialized_views' | 'dictionaries';
 

@@ -496,6 +496,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       const nodes = new Map(s.nodes);
       const searchIndex = new Map(s.searchIndex);
       const expandedIds = new Set(s.expandedIds);
+      const metricCounts = new Map(s.metricCounts);
       const toRemove: string[] = [];
       const queue = [nodeId];
       while (queue.length > 0) {
@@ -511,8 +512,11 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         nodes.delete(id);
         searchIndex.delete(id);
         expandedIds.delete(id);
+        metricCounts.delete(id);
       }
-      return { nodes, searchIndex, expandedIds };
+      // Clear current node's count (applicable for metrics_folder)
+      metricCounts.delete(nodeId);
+      return { nodes, searchIndex, expandedIds, metricCounts };
     });
   },
 }));

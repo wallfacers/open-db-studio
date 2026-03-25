@@ -197,7 +197,12 @@
     "confirmDeleteGroup": "确定要删除此分组？连接将移至未分组。",
     "groupDeleted": "分组已删除",
     "connectionFailed": "连接失败，请检查连接配置",
-    "doubleClickToOpen": "双击打开连接"
+    "doubleClickToOpen": "双击打开连接",
+    "metrics": "指标",
+    "openMetricList": "打开指标列表",
+    "newMetric": "新建指标",
+    "deleteMetric": "删除指标",
+    "confirmDeleteMetric": "确认删除指标 \"{{name}}\"？"
   },
   "contextMenu": {
     "newConnection": "新建连接",
@@ -225,7 +230,10 @@
     "noGroup": "无分组（取消分组）",
     "exportDatabase": "导出数据",
     "backupDatabase": "备份数据库",
-    "exportMultiTable": "导出多表"
+    "exportMultiTable": "导出多表",
+    "openMetricList": "打开指标列表",
+    "newMetric": "新建指标",
+    "deleteMetric": "删除指标"
   },
   "objectPanel": {
     "views": "视图",

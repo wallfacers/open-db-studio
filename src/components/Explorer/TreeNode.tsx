@@ -38,6 +38,7 @@ interface TreeNodeProps {
   onClick: () => void;
   onDoubleClick?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  badge?: React.ReactNode;
 }
 
 export const TreeNode: React.FC<TreeNodeProps> = ({
@@ -49,6 +50,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
   onClick,
   onDoubleClick,
   onContextMenu,
+  badge,
 }) => {
   const { t } = useTranslation();
 
@@ -113,6 +115,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
       >
         {displayLabel}
       </span>
+      {badge}
     </div>
   );
 };

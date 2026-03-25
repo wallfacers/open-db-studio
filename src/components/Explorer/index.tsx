@@ -22,6 +22,12 @@ interface ExplorerProps {
   onNewQuery: (connectionId: number, connName: string, database?: string, schema?: string) => void;
   onOpenTableData: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
   onOpenTableStructure: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
+  // 新增指标相关回调
+  onOpenMetricTab?: (metricId: number, title: string, connectionId?: number) => void;
+  onOpenMetricListTab?: (
+    scope: { connectionId: number; database?: string; schema?: string },
+    title: string
+  ) => void;
 }
 
 export const Explorer: React.FC<ExplorerProps> = ({
@@ -35,6 +41,9 @@ export const Explorer: React.FC<ExplorerProps> = ({
   onNewQuery,
   onOpenTableData,
   onOpenTableStructure,
+  // 新增
+  onOpenMetricTab,
+  onOpenMetricListTab,
 }) => {
   const { t } = useTranslation();
   const { init, refresh, nodes } = useTreeStore();
@@ -297,6 +306,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
                 activeConnectionIds={activeConnectionIds}
                 onOpenConnection={handleOpenConnection}
                 onCloseConnection={handleCloseConnection}
+                onOpenMetricTab={onOpenMetricTab}
+                onOpenMetricListTab={onOpenMetricListTab}
               />
             )}
           </>

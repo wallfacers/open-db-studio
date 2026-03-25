@@ -71,18 +71,21 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? t('activity.metrics') : undefined}>
-          <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
-            onClick={() => {
-              setActiveActivity('metrics');
-              setIsSidebarOpen(true);
-            }}
-          >
-            <Activity size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.metrics')}</span>}
-          </div>
-        </Tooltip>
+        {/* 指标入口临时隐藏，MetricsExplorer 代码保留，后续可恢复 */}
+        {false && (
+          <Tooltip content={!isExpanded ? t('activity.metrics') : undefined}>
+            <div
+              className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-[#e8f4ff] border-l-[3px] border-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#e8f4ff] hover:bg-[#1e2d42] border-l-[3px] border-transparent'}`}
+              onClick={() => {
+                setActiveActivity('metrics');
+                setIsSidebarOpen(true);
+              }}
+            >
+              <Activity size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+              {isExpanded && <span className="text-[13px] truncate">{t('activity.metrics')}</span>}
+            </div>
+          </Tooltip>
+        )}
 
         <Tooltip content={!isExpanded ? t('activity.knowledgeGraph') : undefined}>
           <div

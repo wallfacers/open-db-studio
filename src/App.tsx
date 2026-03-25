@@ -214,6 +214,8 @@ export default function App() {
             onNewQuery={openQueryTab}
             onOpenTableData={openTableDataTab}
             onOpenTableStructure={openTableStructureTab}
+            onOpenMetricTab={(metricId, title, connId) => useQueryStore.getState().openMetricTab(metricId, title, connId)}
+            onOpenMetricListTab={(scope, title) => useQueryStore.getState().openMetricListTab(scope, title)}
           />
         )
       )}

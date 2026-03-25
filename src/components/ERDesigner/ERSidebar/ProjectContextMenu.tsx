@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Edit3, Trash2, Link2, Unlink, Download, LucideIcon } from 'lucide-react';
+import { Edit3, Trash2, Link2, Unlink, Download, Table2, LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 
@@ -23,7 +23,7 @@ interface MenuItem {
 export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, projectId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { projects, deleteProject } = useErDesignerStore();
+  const { projects, deleteProject, loadProject, addTable } = useErDesignerStore();
 
   const project = projects.find(p => p.id === projectId);
 
@@ -58,12 +58,20 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     onClose();
   };
 
+  const handleAddTable = async () => {
+    await loadProject(projectId);
+    await addTable('new_table', { x: 100, y: 100 });
+    onClose();
+  };
+
   const handleExport = () => {
     // TODO: Export project as JSON
     onClose();
   };
 
   const menuItems: MenuItem[] = [
+    { icon: Table2, label: t('erDesigner.newTable') || '新建表', onClick: handleAddTable },
+    { type: 'divider' },
     { icon: Edit3, label: t('common.rename') || '重命名', onClick: handleRename },
     { icon: Link2, label: t('erDesigner.bindConnection') || '绑定连接', onClick: handleBindConnection, show: !project?.connection_id },
     { icon: Unlink, label: t('erDesigner.unbindConnection') || '解除绑定', onClick: handleUnbind, show: !!project?.connection_id },

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Plus, Database, Table2, Key, Link2, MoreVertical, Trash2, Edit3, Download, Upload, ChevronRight, ChevronDown } from 'lucide-react';
+import { Folder, FolderOpen, Plus, Database, Table2, Key, Link2, MoreVertical, Trash2, Edit3, Download, Upload, ChevronRight, ChevronDown } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
@@ -143,7 +143,11 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                 ) : (
                   <ChevronRight size={14} className="mr-1 text-[#7a9bb8] flex-shrink-0" />
                 )}
-                <FolderOpen size={14} className="mr-2 text-[#f59e0b] flex-shrink-0" />
+                {expandedProjects.has(project.id) ? (
+                  <FolderOpen size={14} className="mr-2 text-[#00c9a7] flex-shrink-0" />
+                ) : (
+                  <Folder size={14} className="mr-2 text-[#7a9bb8] flex-shrink-0" />
+                )}
                 <span className="text-xs text-[#c8daea] flex-1 truncate">{project.name}</span>
                 {project.connection_id && (
                   <Tooltip content={t('erDesigner.connectionBound') || '已绑定连接'}>
@@ -210,11 +214,6 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                       </div>
                     ))}
 
-                  {/* Add Table Button */}
-                  <div className="flex items-center px-2 py-1 cursor-pointer transition-colors hover:bg-[#151d28] text-[#7a9bb8]">
-                    <Plus size={12} className="mr-2 flex-shrink-0" />
-                    <span className="text-[11px]">{t('erDesigner.newTable') || '新建表'}</span>
-                  </div>
                 </div>
               )}
             </div>

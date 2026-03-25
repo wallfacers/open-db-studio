@@ -3,7 +3,7 @@ import { useClickOutside } from '../../hooks/useClickOutside';
 import {
   FilePlus, FilePlus2, Pencil, Trash2,
   RefreshCw, FileEdit, ListTree, Copy, Eye, FolderOpen, DatabaseZap, FolderInput,
-  Code2, Eraser, Download, Upload, Database, Archive, PlugZap, Unplug
+  Code2, Eraser, Download, Upload, Database, Archive, PlugZap, Unplug, BarChart2, Plus
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TreeNode } from '../../types';
@@ -48,6 +48,11 @@ interface ContextMenuProps {
   onExportDatabase?: () => void;
   onBackupDatabase?: () => void;
   onExportMultiTable?: () => void;
+  // 新增指标相关回调
+  onOpenMetricList?: () => void;
+  onNewMetric?: () => void;
+  onOpenMetric?: () => void;
+  onDeleteMetric?: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -61,6 +66,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onExportDatabase,
   onBackupDatabase,
   onExportMultiTable,
+  // 新增
+  onOpenMetricList,
+  onNewMetric,
+  onOpenMetric,
+  onDeleteMetric,
 }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -141,6 +151,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         return [
           { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
           { label: t('contextMenu.copyColumnName'), icon: Copy, onClick: onCopyName, dividerBefore: true },
+        ];
+      case 'metrics_folder':
+        return [
+          { label: t('contextMenu.newQuery'), icon: FilePlus, onClick: onNewQuery },
+          { label: t('contextMenu.openMetricList'), icon: BarChart2, onClick: onOpenMetricList || (() => {}), disabled: !onOpenMetricList, dividerBefore: true },
+          { label: t('contextMenu.newMetric'), icon: Plus, onClick: onNewMetric || (() => {}), disabled: !onNewMetric },
+          { label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh, dividerBefore: true },
+        ];
+      case 'metric':
+        return [
+          { label: t('contextMenu.openMetricList'), icon: Eye, onClick: onOpenMetric || (() => {}), disabled: !onOpenMetric },
+          { label: t('contextMenu.deleteMetric'), icon: Trash2, onClick: onDeleteMetric || (() => {}), danger: true, dividerBefore: true },
         ];
       default:
         return [{ label: t('contextMenu.refresh'), icon: RefreshCw, onClick: onRefresh }];

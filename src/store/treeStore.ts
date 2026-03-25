@@ -200,6 +200,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         if (databases.length === 0) {
           // 无多数据库概念（如 SQLite）：category 直接挂在 connection 节点下
           children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
+          children.push(makeMetricsFolderNode(nodeId, node.meta));
         } else {
           for (const db of databases) {
             const dbId = `${nodeId}/db_${db}`;
@@ -216,6 +217,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
             if (!needsSchema) {
               children.push(...makeCategoryNodes(dbId, driver, { ...node.meta, database: db }));
+              children.push(makeMetricsFolderNode(dbId, { ...node.meta, database: db }));
             }
           }
         }
@@ -239,6 +241,8 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             };
             children.push(schemaNode);
           }
+          // metrics_folder 追加在所有 schema 节点之后
+          children.push(makeMetricsFolderNode(nodeId, node.meta));
         }
       } else if (node.nodeType === 'schema') {
         const driver = node.meta.driver ?? 'postgres';

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { TreeNode, NodeType, CategoryKey, ConnectionGroup } from '../types';
+import type { TreeNode, NodeType, CategoryKey, ConnectionGroup, Metric } from '../types';
 
 // 各数据库方言支持的 Category 列表
 const CATEGORIES_BY_DRIVER: Record<string, CategoryKey[]> = {
@@ -64,6 +64,18 @@ function makeCategoryNodes(parentId: string, driver: string, meta: TreeNode['met
   }));
 }
 
+function makeMetricsFolderNode(parentId: string, meta: TreeNode['meta']): TreeNode {
+  return {
+    id: `${parentId}/metrics_folder`,
+    nodeType: 'metrics_folder',
+    label: 'dbTree.metrics',   // i18n key，DBTree 渲染时调用 t()
+    parentId,
+    hasChildren: true,         // 初始设为 true 以显示展开箭头；加载后修正
+    loaded: false,
+    meta: { ...meta },
+  };
+}
+
 interface TreeStore {
   nodes: Map<string, TreeNode>;
   searchIndex: Map<string, TreeNode>;
@@ -71,6 +83,7 @@ interface TreeStore {
   selectedId: string | null;
   loadingIds: Set<string>;
   error: string | null;
+  metricCounts: Map<string, number>;  // 新增：key = metrics_folder 节点 ID
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -79,6 +92,7 @@ interface TreeStore {
   selectNode: (nodeId: string) => void;
   refreshNode: (nodeId: string) => Promise<void>;
   search: (query: string) => TreeNode[];
+  deleteMetricNode: (nodeId: string) => void;  // 新增
   _addNodes: (nodes: TreeNode[]) => void;
   _removeSubtree: (nodeId: string) => void;
 }
@@ -90,6 +104,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   selectedId: null,
   loadingIds: new Set(),
   error: null,
+  metricCounts: new Map(),
 
   init: async () => {
     set({ error: null });
@@ -399,6 +414,32 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
     visit(null);
     return result;
+  },
+
+  deleteMetricNode: (nodeId: string) => {
+    set(s => {
+      const node = s.nodes.get(nodeId);
+      if (!node || node.nodeType !== 'metric') return s;
+
+      const nodes = new Map(s.nodes);
+      const searchIndex = new Map(s.searchIndex);
+      const expandedIds = new Set(s.expandedIds);
+
+      nodes.delete(nodeId);
+      searchIndex.delete(nodeId);
+      expandedIds.delete(nodeId);
+
+      // Update metric count for parent metrics_folder
+      const parentId = node.parentId;
+      if (parentId) {
+        const metricCounts = new Map(s.metricCounts);
+        const currentCount = metricCounts.get(parentId) ?? 0;
+        metricCounts.set(parentId, Math.max(0, currentCount - 1));
+        return { nodes, searchIndex, expandedIds, metricCounts };
+      }
+
+      return { nodes, searchIndex, expandedIds };
+    });
   },
 
   _addNodes: (newNodes: TreeNode[]) => {

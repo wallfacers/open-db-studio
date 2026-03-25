@@ -268,6 +268,25 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             meta: { ...node.meta, objectName: name },
           });
         }
+      } else if (node.nodeType === 'metrics_folder') {
+        const { connectionId, database } = node.meta;
+        const metrics = await invoke<Metric[]>('list_metrics_by_node', {
+          connectionId,
+          database: database ?? null,
+          schema: null,
+          status: null,
+        });
+        for (const m of metrics) {
+          children.push({
+            id: `${nodeId}/metric_${m.id}`,
+            nodeType: 'metric',
+            label: m.display_name,
+            parentId: nodeId,
+            hasChildren: false,
+            loaded: true,
+            meta: { ...node.meta, objectName: String(m.id) },
+          });
+        }
       } else if (node.nodeType === 'table' || node.nodeType === 'view') {
         const detail = await invoke<{ columns: { name: string; data_type: string; is_primary_key: boolean }[] }>(
           'get_table_detail',
@@ -287,6 +306,20 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }
 
       get()._addNodes(children);
+
+      // metrics_folder 节点加载后更新 metricCounts 和 hasChildren
+      if (node.nodeType === 'metrics_folder') {
+        const metrics = children.filter(c => c.nodeType === 'metric');
+        set(s => ({
+          metricCounts: new Map(s.metricCounts).set(nodeId, metrics.length),
+          nodes: (() => {
+            const n = new Map(s.nodes);
+            const folder = n.get(nodeId);
+            if (folder) n.set(nodeId, { ...folder, hasChildren: metrics.length > 0 });
+            return n;
+          })(),
+        }));
+      }
 
       set(s => {
         const newNodes = new Map(s.nodes);

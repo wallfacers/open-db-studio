@@ -1,7 +1,8 @@
 # 表数据列表：列头排序 + 可视化查询行 设计文档
 
 **日期**：2026-03-22
-**状态**：已确认，待实现
+**状态**：✅ 已实现
+**实现日期**：2026-03-26
 **涉及文件**：
 - `src-tauri/src/commands.rs`（扩展 `TableDataParams`，新增 Rust 拼接逻辑）
 - `src/components/MainContent/TableDataView.tsx`（列头排序 + FilterRow UI）

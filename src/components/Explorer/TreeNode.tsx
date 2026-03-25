@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, Loader2,
   Folder, FolderOpen, Database, Layers, TableProperties,
   LayoutDashboard, Code2, GitBranch, Zap, Columns3,
-  Eye, Hash, Gauge
+  Eye, Hash, BarChart2
 } from 'lucide-react';
 import type { NodeType, TreeNode as TreeNodeType } from '../../types';
 import { DbDriverIcon } from './DbDriverIcon';
@@ -25,8 +25,8 @@ const NODE_ICONS: Record<NodeType, React.ElementType> = {
   materialized_view: Eye,  // 物化视图：与普通视图同图标
   dictionary: Hash,        // ClickHouse 字典
   column: Columns3,
-  metrics_folder: Folder,  // 指标目录：使用文件夹图标，由 isExpanded 动态选择
-  metric: Gauge,           // 单个指标：使用仪表盘图标
+  metrics_folder: BarChart2,  // 指标目录：由 isExpanded 动态切换 Folder/FolderOpen
+  metric: BarChart2,          // 单个指标：使用柱状图图标
 };
 
 interface TreeNodeProps {

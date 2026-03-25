@@ -111,7 +111,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     try {
       const [groups, connections] = await Promise.all([
         invoke<{ id: number; name: string; color: string | null; sort_order: number; created_at: string }[]>('list_groups'),
-        invoke<{ id: number; name: string; group_id: number | null; driver: string; sort_order: number }[]>('list_connections'),
+        invoke<{ id: number; name: string; group_id: number | null; driver: string; sort_order: number; database_name: string | null }[]>('list_connections'),
       ]);
 
       const newNodes = new Map<string, TreeNode>();
@@ -138,7 +138,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           parentId,
           hasChildren: true,
           loaded: false,
-          meta: { connectionId: c.id, driver: c.driver, sortOrder: c.sort_order },
+          meta: { connectionId: c.id, driver: c.driver, sortOrder: c.sort_order, ...(c.database_name ? { database: c.database_name } : {}) },
         };
         newNodes.set(node.id, node);
       }

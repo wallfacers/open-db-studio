@@ -218,6 +218,17 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
     Ok(result)
 }
 
+/// 返回用户在连接配置中显式指定的数据库名（不做任何默认值填充）
+pub fn get_configured_database(id: i64) -> AppResult<Option<String>> {
+    let conn = get().lock().unwrap();
+    let name: Option<String> = conn.query_row(
+        "SELECT database_name FROM connections WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    ).optional()?.flatten();
+    Ok(name.filter(|s| !s.is_empty()))
+}
+
 /// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
 pub fn get_connection_password(id: i64) -> AppResult<String> {
     let conn = get().lock().unwrap();

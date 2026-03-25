@@ -1001,6 +1001,10 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Op
 
 #[tauri::command]
 pub async fn list_databases(connection_id: i64) -> AppResult<Vec<String>> {
+    // 若用户在连接配置中显式指定了数据库名，直接返回该单一数据库
+    if let Some(db) = crate::db::get_configured_database(connection_id)? {
+        return Ok(vec![db]);
+    }
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
     ds.list_databases().await
@@ -1020,6 +1024,10 @@ const SYSTEM_SCHEMAS: &[&str] = &[
 
 #[tauri::command]
 pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
+    // 若用户在连接配置中显式指定了数据库名，直接返回该单一数据库（跳过系统库过滤，用户库不可能是系统库）
+    if let Some(db) = crate::db::get_configured_database(connection_id)? {
+        return Ok(vec![db]);
+    }
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
     let dbs = ds.list_databases().await?;

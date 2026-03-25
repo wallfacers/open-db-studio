@@ -49,6 +49,9 @@ function computeVisibleNodes(
     const children = Array.from(nodes.values())
       .filter(n => n.parentId === parentId)
       .sort((a, b) => {
+        // metrics_folder 始终排在同级节点第一位
+        if (a.nodeType === 'metrics_folder') return -1;
+        if (b.nodeType === 'metrics_folder') return 1;
         // connection/group 节点按 sortOrder 排序，其余按名称
         const isOrderable = a.nodeType === 'connection' || a.nodeType === 'group';
         if (isOrderable) {

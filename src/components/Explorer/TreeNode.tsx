@@ -62,9 +62,11 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
   // 统一规则：展开 → 主题色；收起 → 灰色（与节点类型、是否有子节点无关）
   const isGreen = isExpanded;
 
-  // category 节点显示 i18n 标签
+  // category 节点显示 i18n 标签；metrics_folder 节点的 label 是 i18n key
   const displayLabel = node.nodeType === 'category' && node.meta.objectName
     ? t(`category.${node.meta.objectName}`, { defaultValue: node.label })
+    : node.nodeType === 'metrics_folder'
+    ? t(node.label, { defaultValue: node.label })
     : node.label;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

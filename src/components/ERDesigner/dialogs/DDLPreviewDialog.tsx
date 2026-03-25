@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { BaseModal } from '../../common/BaseModal';
 import { DropdownSelect } from '../../common/DropdownSelect';
@@ -28,6 +29,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
   onClose,
   onExecute,
 }) => {
+  const { t } = useTranslation();
   const generateDDL = useErDesignerStore((s) => s.generateDDL);
 
   const [dialect, setDialect] = useState<SqlDialect>('mysql');
@@ -52,7 +54,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
         })
         .catch((err) => {
           console.error('Failed to generate DDL:', err);
-          setDdl('-- 生成 DDL 失败\n' + String(err));
+          setDdl('-- ' + t('erDesigner.generateDdlFailed') + '\n' + String(err));
         })
         .finally(() => {
           setLoading(false);
@@ -79,17 +81,17 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
 
   return (
     <BaseModal
-      title="生成 DDL"
+      title={t('erDesigner.generateDdl')}
       onClose={onClose}
       width={640}
       footerButtons={[
         {
-          label: '复制',
+          label: copied ? t('erDesigner.copied') : t('erDesigner.copyDdl'),
           onClick: handleCopy,
           variant: 'secondary',
         },
         {
-          label: '执行到数据库',
+          label: t('erDesigner.executeToDB'),
           onClick: handleExecute,
           variant: 'primary',
           disabled: !hasConnection || loading || !ddl || ddl.startsWith('--'),
@@ -99,7 +101,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
       <div className="flex flex-col gap-4">
         {/* 方言选择 */}
         <div className="flex items-center gap-4">
-          <span className="text-xs text-[#c8daea]">方言:</span>
+          <span className="text-xs text-[#c8daea]">{t('erDesigner.dialect')}:</span>
           <DropdownSelect
             value={dialect}
             options={DIALECT_OPTIONS}
@@ -117,7 +119,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
               onChange={(e) => setIncludeIndexes(e.target.checked)}
               className="accent-[#00c9a7] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">索引</span>
+            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeIndexes')}</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -126,7 +128,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
               onChange={(e) => setIncludeComments(e.target.checked)}
               className="accent-[#00c9a7] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">列注释(含标记)</span>
+            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeComments')}</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -135,7 +137,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
               onChange={(e) => setIncludeForeignKeys(e.target.checked)}
               className="accent-[#00c9a7] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">外键约束</span>
+            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeForeignKeys')}</span>
           </label>
         </div>
 
@@ -146,14 +148,14 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
                        border border-[#1e2d42] overflow-auto max-h-80
                        ${loading ? 'opacity-50' : ''}`}
           >
-            {loading ? '生成中...' : ddl || '暂无 DDL'}
+            {loading ? t('erDesigner.generating') : ddl || t('erDesigner.noDdl')}
           </pre>
         </div>
 
         {/* 执行提示 */}
         {!hasConnection && (
           <div className="text-xs text-[#7a9bb8]">
-            提示：执行到数据库需要先绑定连接
+            {t('erDesigner.executeNeedsConnection')}
           </div>
         )}
       </div>

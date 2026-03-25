@@ -32,6 +32,7 @@ interface NodeData {
   onAddColumn: () => void;
   onUpdateColumn: (colId: number, updates: Partial<ErColumn>) => void;
   onDeleteColumn: (colId: number) => void;
+  [key: string]: unknown;
 }
 
 export default function ERCanvas() {
@@ -208,7 +209,7 @@ export default function ERCanvas() {
         <Controls />
         <MiniMap
           nodeColor="#111922"
-          nodeStroke="#253347"
+          nodeStrokeColor="#253347"
           maskColor="rgba(0, 0, 0, 0.8)"
         />
       </ReactFlow>

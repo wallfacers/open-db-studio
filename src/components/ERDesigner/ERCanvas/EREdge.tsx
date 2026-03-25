@@ -20,7 +20,7 @@ export default function EREdge({ id, sourceX, sourceY, targetX, targetY, data, s
   });
 
   const sourceType = data?.source_type || 'schema';
-  const relationType = data?.relation_type || '1:N';
+  const relationType = (data?.relation_type as string) || '1:N';
 
   // 根据源类型设置样式
   const getEdgeStyle = () => {

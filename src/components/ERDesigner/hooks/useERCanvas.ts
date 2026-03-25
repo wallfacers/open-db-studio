@@ -11,6 +11,7 @@ interface NodeData {
   onAddColumn: () => void;
   onUpdateColumn: (colId: number, updates: Partial<ErColumn>) => void;
   onDeleteColumn: (colId: number) => void;
+  [key: string]: unknown;
 }
 
 const dagreGraph = new dagre.graphlib.Graph();

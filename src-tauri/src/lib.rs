@@ -327,6 +327,7 @@ pub fn run() {
             commands::find_subgraph,
             commands::get_driver_capabilities,
             commands::get_db_stats,
+            commands::read_text_file,
             er::commands::er_create_project,
             er::commands::er_update_project,
             er::commands::er_delete_project,

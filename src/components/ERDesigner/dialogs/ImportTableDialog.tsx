@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import type { TableMeta } from '../../../types';
 import { BaseModal } from '../../common/BaseModal';
@@ -26,6 +27,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
   onClose,
   onImported,
 }) => {
+  const { t } = useTranslation();
   const syncFromDatabase = useErDesignerStore((s) => s.syncFromDatabase);
 
   const [tables, setTables] = useState<TableWithColumns[]>([]);
@@ -50,7 +52,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
         const result = await invoke<TableMeta[]>('get_tables', { connectionId });
         setTables(result.map(t => ({ ...t, columnCount: undefined })));
       } catch (e) {
-        setError('加载表列表失败: ' + String(e));
+        setError(`${t('erDesigner.loadTablesFailed')}: ${String(e)}`);
         setTables([]);
       } finally {
         setLoadingTables(false);
@@ -91,14 +93,14 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
   // 获取表的列数
   const getColumnCountText = (table: TableWithColumns): string => {
     if (table.columnCount) {
-      return `${table.columnCount}列`;
+      return `${t('erDesigner.columnCount', { count: table.columnCount })}`;
     }
     return '';
   };
 
   const handleImport = async () => {
     if (selectedTables.size === 0) {
-      setError('请至少选择一个表');
+      setError(t('erDesigner.selectAtLeastOne'));
       return;
     }
     setLoading(true);
@@ -108,7 +110,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
       onImported();
       handleClose();
     } catch (e) {
-      setError('导入表失败: ' + String(e));
+      setError(`${t('erDesigner.importFailed')}: ${String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -126,12 +128,12 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
   if (!connectionId || !databaseName) {
     return (
       <BaseModal
-        title="从数据库导入表"
+        title={t('erDesigner.importTableTitle')}
         onClose={handleClose}
         width={560}
         footerButtons={[
           {
-            label: '取消',
+            label: t('common.cancel'),
             onClick: handleClose,
             variant: 'secondary',
           },
@@ -140,7 +142,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
         <div className="flex flex-col items-center justify-center py-8 gap-4">
           <Database size={48} className="text-[#7a9bb8]" />
           <div className="text-sm text-[#c8daea] text-center max-w-xs">
-            项目尚未绑定数据库连接，请先绑定连接后再导入表。
+            {t('erDesigner.noConnectionForImport')}
           </div>
         </div>
       </BaseModal>
@@ -149,24 +151,24 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
 
   return (
     <BaseModal
-      title="从数据库导入表"
+      title={t('erDesigner.importTableTitle')}
       onClose={handleClose}
       width={560}
       footerButtons={[
         {
-          label: '取消',
+          label: t('common.cancel'),
           onClick: handleClose,
           variant: 'secondary',
         },
         {
-          label: '导入',
+          label: t('erDesigner.importBtn'),
           onClick: handleImport,
           variant: 'primary',
           loading,
           disabled: selectedTables.size === 0 || loading,
         },
       ]}
-      footerHint={`已选: ${selectedTables.size} 个表`}
+      footerHint={t('erDesigner.selectedCount', { count: selectedTables.size })}
     >
       <div className="flex flex-col gap-4">
         {/* 搜索框 */}
@@ -175,7 +177,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="搜索表名..."
+            placeholder={t('erDesigner.searchTablePlaceholder')}
             className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-2 text-xs text-[#c8daea] placeholder:text-[#7a9bb8] focus:outline-none focus:border-[#009e84] transition-colors"
           />
         </div>
@@ -191,11 +193,11 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
               className="accent-[#00c9a7] w-4 h-4"
             />
             <span className="text-xs text-[#c8daea]">
-              {allSelected ? '取消全选' : '全选'}
+              {allSelected ? t('erDesigner.deselectAll') : t('erDesigner.selectAll')}
             </span>
           </label>
           <span className="text-xs text-[#7a9bb8]">
-            共 {filteredTables.length} 个表
+            {t('erDesigner.tableCount', { count: filteredTables.length })}
           </span>
         </div>
 
@@ -203,12 +205,12 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
         <div className="overflow-y-auto max-h-80 border border-[#253347] rounded">
           {loadingTables ? (
             <div className="flex items-center justify-center py-8">
-              <div className="text-xs text-[#7a9bb8]">加载中...</div>
+              <div className="text-xs text-[#7a9bb8]">{t('common.loading')}</div>
             </div>
           ) : filteredTables.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="text-xs text-[#7a9bb8]">
-                {searchTerm ? '未找到匹配的表' : '数据库中暂无表'}
+                {searchTerm ? t('erDesigner.noTablesFound') : t('erDesigner.noTablesInDb')}
               </div>
             </div>
           ) : (

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Plus,
   LayoutGrid,
@@ -10,7 +11,8 @@ import {
 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { open } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { invoke } from '@tauri-apps/api/core';
 import dagre from 'dagre';
 import type { Node } from '@xyflow/react';
 
@@ -33,6 +35,7 @@ export default function ERToolbar({
   tables = [],
   nodes = [],
 }: ERToolbarProps) {
+  const { t } = useTranslation();
   const {
     addTable,
     diffWithDatabase,
@@ -142,21 +145,8 @@ export default function ERToolbar({
   const handleExportJson = async () => {
     try {
       const json = await exportJson(projectId);
-
-      // 选择保存路径
-      const savePath = await open({
-        multiple: false,
-        filters: [
-          {
-            name: 'JSON',
-            extensions: ['json'],
-          },
-        ],
-      });
-
-      if (savePath && typeof savePath === 'string') {
-        await writeTextFile(savePath, json);
-      }
+      await writeText(json);
+      console.log('JSON copied to clipboard');
     } catch (e) {
       console.error('Export JSON failed:', e);
     }
@@ -176,7 +166,7 @@ export default function ERToolbar({
       });
 
       if (openPath && typeof openPath === 'string') {
-        const json = await readTextFile(openPath);
+        const json = await invoke<string>('read_text_file', { path: openPath });
         await importJson(json);
       }
     } catch (e) {
@@ -190,29 +180,29 @@ export default function ERToolbar({
       <button
         onClick={handleAddTable}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title="新建表"
+        title={t('erDesigner.newTable')}
       >
         <Plus size={14} />
-        <span>新建表</span>
+        <span>{t('erDesigner.newTable')}</span>
       </button>
 
       <button
         onClick={handleAutoLayout}
         disabled={isAutoLayouting}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title="自动布局"
+        title={t('erDesigner.autoLayout')}
       >
         <LayoutGrid size={14} />
-        <span>{isAutoLayouting ? '布局中...' : '自动布局'}</span>
+        <span>{isAutoLayouting ? t('erDesigner.layouting') : t('erDesigner.autoLayout')}</span>
       </button>
 
       <button
         onClick={handleImportTables}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title="导入表"
+        title={t('erDesigner.importTables')}
       >
         <Download size={14} />
-        <span>导入</span>
+        <span>{t('erDesigner.importTables')}</span>
       </button>
 
       {/* 分隔符 */}
@@ -222,7 +212,7 @@ export default function ERToolbar({
       <button
         onClick={handleDDL}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title="DDL 预览"
+        title={t('erDesigner.ddlPreview')}
       >
         <FileCode size={14} />
         <span>DDL</span>
@@ -231,7 +221,7 @@ export default function ERToolbar({
       <button
         onClick={handleDiff}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title="数据库差异"
+        title={t('erDesigner.diffCheck')}
       >
         <GitCompare size={14} />
         <span>Diff</span>
@@ -241,10 +231,10 @@ export default function ERToolbar({
         onClick={handleSync}
         disabled={isSyncing}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title="同步数据库"
+        title={t('erDesigner.syncDB')}
       >
         <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-        <span>{isSyncing ? '同步中...' : '同步'}</span>
+        <span>{isSyncing ? t('erDesigner.syncing') : t('erDesigner.sync')}</span>
       </button>
 
       {/* 分隔符 */}
@@ -254,19 +244,19 @@ export default function ERToolbar({
       <button
         onClick={handleExportJson}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title="导出 JSON"
+        title={t('erDesigner.exportJson')}
       >
         <Upload size={14} />
-        <span>导出</span>
+        <span>{t('erDesigner.exportJson')}</span>
       </button>
 
       <button
         onClick={handleImportJson}
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title="导入 JSON"
+        title={t('erDesigner.importJson')}
       >
         <Download size={14} />
-        <span>导入JSON</span>
+        <span>{t('erDesigner.importJson')}</span>
       </button>
     </div>
   );

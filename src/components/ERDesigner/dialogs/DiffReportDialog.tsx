@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { BaseModal } from '../../common/BaseModal';
@@ -55,6 +56,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
   onSyncToDb,
   onSyncFromDb,
 }) => {
+  const { t } = useTranslation();
   const diffWithDatabase = useErDesignerStore((s) => s.diffWithDatabase);
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -222,18 +224,18 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
 
   return (
     <BaseModal
-      title="结构差异对比"
+      title={t('erDesigner.diffTitle')}
       onClose={onClose}
       width={600}
       footerButtons={[
         {
-          label: '数据库 → ER',
+          label: t('erDesigner.syncFromDb'),
           onClick: handleSyncFromDb,
           variant: 'secondary',
           disabled: loading || fromDb.length === 0,
         },
         {
-          label: 'ER → 数据库',
+          label: t('erDesigner.syncToDb'),
           onClick: handleSyncToDb,
           variant: 'primary',
           disabled: loading || toDb.length === 0,
@@ -244,14 +246,14 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
         {/* 连接信息 */}
         {connectionInfo && (
           <div className="text-xs text-[#7a9bb8]">
-            ER 图 vs {connectionInfo.name} / {connectionInfo.database}
+            {`${t('erDesigner.erVsDb')} ${connectionInfo.name} / ${connectionInfo.database}`}
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-8 text-xs text-[#7a9bb8]">加载差异中...</div>
+          <div className="text-center py-8 text-xs text-[#7a9bb8]">{t('erDesigner.loadingDiff')}</div>
         ) : !diffResult ? (
-          <div className="text-center py-8 text-xs text-[#7a9bb8]">获取差异失败</div>
+          <div className="text-center py-8 text-xs text-[#7a9bb8]">{t('erDesigner.diffFailed')}</div>
         ) : (
           <div className="flex flex-col gap-4 max-h-96 overflow-y-auto">
             {/* 新增（仅 ER 图有） */}
@@ -259,7 +261,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
               <div>
                 <div className="flex items-center gap-2 text-xs text-[#00c9a7] mb-2">
                   <CheckCircle2 size={14} />
-                  <span>新增（仅 ER 图有）</span>
+                  <span>{t('erDesigner.addedSection')}</span>
                 </div>
                 <div className="space-y-1">
                   {diffResult.added_tables.map((table) => {
@@ -270,7 +272,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                         checked={selectedChanges.has(key)}
                         onCheck={(checked) => handleCheck(key, checked)}
                         icon={<CheckCircle2 size={12} />}
-                        label={`表 ${table.table_name} (${table.columns.length}列)`}
+                        label={`${t('erDesigner.tableLabel')} ${table.table_name} (${table.columns.length}${t('erDesigner.columnLabel')})`}
                       />
                     );
                   })}
@@ -283,7 +285,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
               <div>
                 <div className="flex items-center gap-2 text-xs text-[#f0b90b] mb-2">
                   <AlertTriangle size={14} />
-                  <span>变更</span>
+                  <span>{t('erDesigner.modifiedSection')}</span>
                 </div>
                 <div className="space-y-1">
                   {diffResult.modified_tables.map((table) => (
@@ -299,8 +301,8 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                               checked={selectedChanges.has(key)}
                               onCheck={(checked) => handleCheck(key, checked)}
                               icon={<CheckCircle2 size={12} />}
-                              label={`列 ${col.name} ${col.data_type}`}
-                              detail="新增"
+                              label={`${t('erDesigner.columnLabel')} ${col.name} ${col.data_type}`}
+                              detail={t('erDesigner.addedLabel')}
                             />
                           );
                         })}
@@ -313,8 +315,8 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                               checked={selectedChanges.has(key)}
                               onCheck={(checked) => handleCheck(key, checked)}
                               icon={<Trash2 size={12} />}
-                              label={`列 ${col.name} ${col.data_type}`}
-                              detail="删除"
+                              label={`${t('erDesigner.columnLabel')} ${col.name} ${col.data_type}`}
+                              detail={t('erDesigner.removedLabel')}
                             />
                           );
                         })}
@@ -332,7 +334,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                               checked={selectedChanges.has(key)}
                               onCheck={(checked) => handleCheck(key, checked)}
                               icon={<AlertTriangle size={12} />}
-                              label={`列 ${table.table_name}.${col.name}`}
+                              label={`${t('erDesigner.columnLabel')} ${table.table_name}.${col.name}`}
                               detail={typeInfo}
                             />
                           );
@@ -346,7 +348,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                               checked={selectedChanges.has(key)}
                               onCheck={(checked) => handleCheck(key, checked)}
                               icon={<CheckCircle2 size={12} />}
-                              label={`索引 ${idx.name}`}
+                              label={`${t('erDesigner.indexLabel')} ${idx.name}`}
                               detail={`${idx.index_type} (${idx.columns.join(', ')})`}
                             />
                           );
@@ -360,7 +362,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                               checked={selectedChanges.has(key)}
                               onCheck={(checked) => handleCheck(key, checked)}
                               icon={<Trash2 size={12} />}
-                              label={`索引 ${idx.name}`}
+                              label={`${t('erDesigner.indexLabel')} ${idx.name}`}
                               detail={`${idx.index_type} (${idx.columns.join(', ')})`}
                             />
                           );
@@ -377,7 +379,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
               <div>
                 <div className="flex items-center gap-2 text-xs text-[#ef4444] mb-2">
                   <Trash2 size={14} />
-                  <span>删除（仅数据库有）</span>
+                  <span>{t('erDesigner.removedSection')}</span>
                 </div>
                 <div className="space-y-1">
                   {diffResult.removed_tables.map((table) => {
@@ -388,7 +390,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                         checked={selectedChanges.has(key)}
                         onCheck={(checked) => handleCheck(key, checked)}
                         icon={<Trash2 size={12} />}
-                        label={`列 ${table.table_name}.${table.columns[0]?.name || ''}`}
+                        label={`${t('erDesigner.columnLabel')} ${table.table_name}.${table.columns[0]?.name || ''}`}
                         detail={`${table.columns[0]?.data_type || 'TEXT'}`}
                       />
                     );
@@ -401,7 +403,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {diffResult.added_tables.length === 0 &&
               diffResult.removed_tables.length === 0 &&
               diffResult.modified_tables.length === 0 && (
-                <div className="text-center py-4 text-xs text-[#00c9a7]">没有检测到差异</div>
+                <div className="text-center py-4 text-xs text-[#00c9a7]">{t('erDesigner.noDiff')}</div>
               )}
           </div>
         )}

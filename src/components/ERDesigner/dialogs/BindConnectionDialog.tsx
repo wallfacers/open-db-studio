@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../../../store/connectionStore';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { BaseModal } from '../../common/BaseModal';
@@ -18,6 +19,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
   onClose,
   onBound,
 }) => {
+  const { t } = useTranslation();
   const { connections, loadConnections } = useConnectionStore();
   const bindConnection = useErDesignerStore((s) => s.bindConnection);
 
@@ -52,7 +54,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
         const dbs = await invoke<string[]>('list_databases', { connectionId: selectedConnectionId });
         setDatabaseOptions(dbs.map(db => ({ value: db, label: db })));
       } catch (e) {
-        setError('加载数据库列表失败: ' + String(e));
+        setError(`${t('erDesigner.loadDbListFailed')}: ${String(e)}`);
         setDatabaseOptions([]);
       } finally {
         setLoadingDatabases(false);
@@ -83,7 +85,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
           setSelectedSchema('public');
         }
       } catch (e) {
-        setError('加载 Schema 列表失败: ' + String(e));
+        setError(`${t('erDesigner.loadSchemaListFailed')}: ${String(e)}`);
         setSchemaOptions([]);
       } finally {
         setLoadingSchemas(false);
@@ -94,7 +96,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
 
   const handleBind = async () => {
     if (!selectedConnectionId || !selectedDatabase) {
-      setError('请选择连接和数据库');
+      setError(t('erDesigner.selectConnectionAndDb'));
       return;
     }
     setLoading(true);
@@ -109,7 +111,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
       onBound();
       onClose();
     } catch (e) {
-      setError('绑定连接失败: ' + String(e));
+      setError(`${t('erDesigner.bindFailed')}: ${String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -130,17 +132,17 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
 
   return (
     <BaseModal
-      title="绑定数据库连接"
+      title={t('erDesigner.bindConnectionTitle')}
       onClose={handleClose}
       width={480}
       footerButtons={[
         {
-          label: '取消',
+          label: t('common.cancel'),
           onClick: handleClose,
           variant: 'secondary',
         },
         {
-          label: '绑定',
+          label: t('common.bind'),
           onClick: handleBind,
           variant: 'primary',
           loading,
@@ -152,28 +154,28 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
       <div className="flex flex-col gap-4">
         {/* 连接选择 */}
         <div>
-          <label className="block text-xs text-[#7a9bb8] mb-1">连接</label>
+          <label className="block text-xs text-[#7a9bb8] mb-1">{t('erDesigner.connectionLabel')}</label>
           <DropdownSelect
             value={selectedConnectionId?.toString() || ''}
             options={connections.map(c => ({ value: c.id.toString(), label: c.name }))}
             onChange={(val) => setSelectedConnectionId(val ? Number(val) : null)}
             className="w-full"
-            placeholder="请选择连接"
+            placeholder={t('erDesigner.selectConnectionPlaceholder')}
           />
         </div>
 
         {/* 数据库选择 */}
         <div>
-          <label className="block text-xs text-[#7a9bb8] mb-1">数据库</label>
+          <label className="block text-xs text-[#7a9bb8] mb-1">{t('erDesigner.databaseLabel')}</label>
           {loadingDatabases ? (
-            <div className="text-xs text-[#7a9bb8]">加载中...</div>
+            <div className="text-xs text-[#7a9bb8]">{t('common.loading')}</div>
           ) : (
             <DropdownSelect
               value={selectedDatabase}
               options={databaseOptions}
               onChange={setSelectedDatabase}
               className="w-full"
-              placeholder="请选择数据库"
+              placeholder={t('erDesigner.selectDatabasePlaceholder')}
             />
           )}
         </div>
@@ -181,16 +183,16 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
         {/* Schema 选择（仅 PostgreSQL） */}
         {showSchema && (
           <div>
-            <label className="block text-xs text-[#7a9bb8] mb-1">Schema</label>
+            <label className="block text-xs text-[#7a9bb8] mb-1">{t('erDesigner.schemaLabel')}</label>
             {loadingSchemas ? (
-              <div className="text-xs text-[#7a9bb8]">加载中...</div>
+              <div className="text-xs text-[#7a9bb8]">{t('common.loading')}</div>
             ) : (
               <DropdownSelect
                 value={selectedSchema}
                 options={schemaOptions}
                 onChange={setSelectedSchema}
                 className="w-full"
-                placeholder="请选择 Schema"
+                placeholder={t('erDesigner.selectSchemaPlaceholder')}
               />
             )}
           </div>
@@ -199,7 +201,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
         {/* 提示信息 */}
         {conn && !showSchema && (
           <div className="text-xs text-[#7a9bb8]">
-            当前数据库类型: {conn.driver}
+            {t('erDesigner.dbType', { type: conn.driver })}
           </div>
         )}
       </div>

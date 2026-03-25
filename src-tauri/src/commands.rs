@@ -3922,3 +3922,9 @@ pub async fn get_db_stats(connection_id: i64, database: Option<String>) -> AppRe
     let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, db, "").await?;
     ds.get_db_stats(database.as_deref()).await
 }
+
+/// 读取文本文件内容（用于 JSON 导入）
+#[tauri::command]
+pub async fn read_text_file(path: String) -> AppResult<String> {
+    std::fs::read_to_string(&path).map_err(|e| crate::error::AppError::Other(e.to_string()))
+}

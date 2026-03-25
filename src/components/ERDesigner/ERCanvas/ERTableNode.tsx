@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Handle, Position, useNodeConnections, useReactFlow } from '@xyflow/react';
 import { Key, Hash, X, MoreVertical } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { DropdownSelect } from '../../common/DropdownSelect';
 
@@ -30,6 +31,7 @@ interface ERTableNodeData {
 }
 
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
+  const { t } = useTranslation();
   const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn } = data;
   const { deleteTable } = useErDesignerStore();
   const { setNodes } = useReactFlow();
@@ -91,6 +93,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   };
 
   const ColumnRow = ({ col }: { col: typeof columns[number] }) => {
+    const { t } = useTranslation();
     const [isEditingName, setIsEditingName] = useState(false);
     const [editName, setEditName] = useState(col.name);
 
@@ -148,16 +151,17 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           <div
             className={`cursor-pointer shrink-0 ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
             onClick={handleTogglePrimaryKey}
-            title={col.is_primary_key ? 'Primary Key' : 'Click to set as Primary Key'}
+            title={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}
           >
             <Key className="w-3 h-3" />
           </div>
           {col.is_primary_key && (
-            <Hash
-              className={`w-3 h-3 cursor-pointer shrink-0 ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
-              onClick={handleToggleAutoIncrement}
-              title={col.is_auto_increment ? 'Auto Increment' : 'Click to set as Auto Increment'}
-            />
+            <span title={col.is_auto_increment ? t('erDesigner.autoIncrement') : t('erDesigner.clickToSetAI')}>
+              <Hash
+                className={`w-3 h-3 cursor-pointer shrink-0 ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+                onClick={handleToggleAutoIncrement}
+              />
+            </span>
           )}
 
           {isEditingName ? (
@@ -173,7 +177,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           ) : (
             <span
               className="text-gray-300 text-xs cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate"
-              title="Double click to edit"
+              title={t('erDesigner.dblClickToEdit')}
               onDoubleClick={() => setIsEditingName(true)}
             >
               {col.name}
@@ -223,7 +227,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         ) : (
           <h3
             className="text-gray-200 text-sm font-medium truncate cursor-text hover:bg-[#253347] px-2 py-0.5 -ml-2 rounded transition-colors flex-1"
-            title="Double click to edit table name"
+            title={t('erDesigner.dblClickToEditName')}
             onDoubleClick={() => setIsEditingName(true)}
           >
             {table.name}
@@ -253,7 +257,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
                 className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
                 onClick={() => { handleDeleteTable(); setShowMenu(false); }}
               >
-                Delete Table
+                {t('erDesigner.deleteTable')}
               </div>
             </div>,
             document.body
@@ -273,7 +277,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         className="px-4 py-2 border-t border-[#253347] text-center cursor-pointer hover:bg-[#1a2639] transition-colors"
         onClick={onAddColumn}
       >
-        <span className="text-xs text-[#00c9a7]">+ Add Column</span>
+        <span className="text-xs text-[#00c9a7]">+ {t('erDesigner.addColumnBtn')}</span>
       </div>
     </div>
   );

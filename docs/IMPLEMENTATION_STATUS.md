@@ -216,9 +216,19 @@
 | 计划文档 | 目标 | 备注 |
 |---------|------|------|
 | `docs/plans/2026-03-12-sql-editor-ai-ghost-text-*` | Monaco 内联 AI Ghost Text 补全（Tab 接受/Esc 拒绝） | Rust 命令 `ai_inline_complete` 未实现 |
-| `docs/superpowers/plans/2026-03-12-acp-persistent-session.md` | 复用 opencode-cli 进程，消除冷启动延迟 | 未实现 |
-| `docs/superpowers/plans/2026-03-18-llm-config-provider-first.md` | 从 opencode `/config/providers` 动态加载供应商和模型 | 未实现，修复 `ProviderModelNotFoundError` |
-| `docs/superpowers/plans/2026-03-17-ui-state-persistence.md` | UI 状态全量迁移到 SQLite（树展开/标签页/SQL 文件化） | ⚠️ 部分实现：Rust 侧 `get_ui_state` 已有，前端标签页仍用 localStorage |
+
+## 已完成（2026-03-20 后补录）✅
+
+| 计划文档 | 目标 | 实现状态 |
+|---------|------|---------|
+| `docs/superpowers/plans/2026-03-18-llm-config-provider-first.md` | 从 opencode `/config/providers` 动态加载供应商和模型 | `opencode_provider_id`+`config_mode` 已入 DB；`agent_list_providers` 命令已注册；`LlmSettings.tsx` 已动态加载 |
+| `docs/superpowers/plans/2026-03-17-ui-state-persistence.md` | UI 状态全量迁移到 SQLite | `get_ui_state` / `set_ui_state` 命令已实现，前端已迁移至 SQLite |
+
+## 已废弃计划 ⚠️
+
+| 计划文档 | 目标 | 废弃原因 |
+|---------|------|---------|
+| `docs/superpowers/plans/2026-03-12-acp-persistent-session.md` | 复用 opencode-cli 进程消除冷启动 | ACP 协议已整体替换为 Serve 模式；`serve_child` 长驻进程实现同等效果；`ai_chat_acp` 已降为废弃桩 |
 
 ---
 

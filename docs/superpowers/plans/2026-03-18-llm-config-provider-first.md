@@ -1,5 +1,8 @@
 # LLM 配置供应商优先重设计 实现计划
 
+> **状态: ✅ 已实现**
+> `opencode_provider_id` + `config_mode` 已写入 DB 模型和迁移；`agent_list_providers` 命令已注册；前端 `LlmSettings.tsx` 已调用 `invoke('agent_list_providers')` 动态加载供应商列表。
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 重设计 LLM 配置页面，支持从 opencode `/config/providers` 动态加载供应商和模型，修复 `ProviderModelNotFoundError`，支持自定义供应商。

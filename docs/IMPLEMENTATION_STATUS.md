@@ -178,7 +178,7 @@
 | 5 个 graph_* MCP 工具注册（Phase 1） | `src-tauri/src/mcp/mod.rs`（`graph_get_node_list` 等） | `docs/superpowers/specs/2026-03-20-graph-mcp-skill-design.md` |
 | find_join_paths_structured + link 节点过滤（规则 1+2） | `src-tauri/src/graph/traversal.rs` | commit `36563e2` |
 | 全局连接池缓存（消除树导航重复握手） | `src-tauri/src/datasource/pool.rs` 或 `mod.rs` | commit `bb1e492` |
-| SeaTunnel 前端集成（连接配置 + Job 状态展示） | `SeaTunnelExplorer/index.tsx`, `SeaTunnelJobTab/index.tsx` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
+| SeaTunnel 完整实现（连接管理 CRUD、分类/Job 管理、REST API 提交/停止/状态轮询、日志流式拉取） | `src-tauri/src/seatunnel/client.rs`, `src-tauri/src/seatunnel/commands.rs`, `SeaTunnelExplorer/`, `SeaTunnelJobTab/` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
 | i18n 全量国际化（Assistant/GraphExplorer/MetricsExplorer/SeaTunnel） | `src/i18n/` | commits `7eccf9d`, `0baae87` |
 
 ### 废弃/超时计划 ⚠️
@@ -238,7 +238,7 @@
 2. **完整 RAG 管道**（向量 + 指标 + GraphRAG 三路融合）
 3. **插件系统**（数据源/AI 提供商/导出格式）
 4. **团队协作**（SQL 片段共享、指标库导出/导入）
-5. **SeaTunnel 外部引擎接入**（基础 UI 已就绪，REST API 提交待实现）
+5. **SeaTunnel 外部引擎接入**（已完整实现：连接管理、Job CRUD、REST API 提交/停止/状态轮询、日志流式拉取）
 
 ---
 

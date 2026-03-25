@@ -169,9 +169,9 @@
 - [ ] 连接配置脱敏导出
 
 ### SeaTunnel 外部引擎接入
-- [ ] SeaTunnel 连接配置
-- [ ] 迁移 job 生成 + REST API 提交
-- [ ] 任务状态同步展示
+- [x] SeaTunnel 连接配置
+- [x] 迁移 job 生成 + REST API 提交
+- [x] 任务状态同步展示
 
 ---
 

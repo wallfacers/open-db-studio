@@ -708,6 +708,23 @@ export const MainContent: React.FC<MainContentProps> = ({
         ))}
       </div>
 
+      {/* table 类型 tab 始终保持 mounted，通过 display 控制显隐，避免切换时 unmount 导致闪烁 */}
+      {tabs.filter(t => t.type === 'table').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <TableDataView
+            tableName={tab.title}
+            dbName={tab.db || ''}
+            connectionId={tab.connectionId}
+            schema={tab.schema}
+            showToast={showToast}
+          />
+        </div>
+      ))}
+
       {activeTabObj ? (
         activeTabObj.type === 'er_design' ? (
           <div className="flex-1 w-full h-full relative flex items-center justify-center bg-[#080d12]">
@@ -716,17 +733,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <span className="block text-center text-xs mt-2 opacity-60">(Canvas component coming soon)</span>
             </div>
           </div>
-        ) : activeTabObj.type === 'table' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <TableDataView
-              tableName={activeTabObj.title}
-              dbName={activeTabObj.db || ''}
-              connectionId={activeTabObj.connectionId}
-              schema={activeTabObj.schema}
-              showToast={showToast}
-            />
-          </div>
-        ) : activeTabObj.type === 'table_structure' ? (
+        ) : activeTabObj.type === 'table' ? null
+        : activeTabObj.type === 'table_structure' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <TableStructureView
               connectionId={activeTabObj.connectionId!}

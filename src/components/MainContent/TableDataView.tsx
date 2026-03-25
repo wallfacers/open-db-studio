@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore, useQueryStore } from '../../store';
@@ -15,6 +15,7 @@ import { CellEditorModal } from './CellEditorModal';
 import { AutoCompleteInput } from './AutoCompleteInput';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { VirtualTable } from './VirtualTable';
+import { NormalTable } from './NormalTable';
 import { useVirtualRows } from '../../hooks/useVirtualRows';
 
 // ─── 独立子组件：持有 virtualizer，避免滚动时重渲染整个 TableDataView ─────────
@@ -24,11 +25,13 @@ interface TableScrollContainerProps {
   hasData: boolean;
   columns: string[];
   thead: React.ReactNode;
+  normalThead: React.ReactNode;
   renderRow: (ri: number) => React.ReactNode;
+  useVirtual: boolean;
 }
 
 const TableScrollContainer = React.memo(({
-  rowCount, isLoading, hasData, columns, thead, renderRow,
+  rowCount, isLoading, hasData, columns, thead, normalThead, renderRow, useVirtual,
 }: TableScrollContainerProps) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -36,25 +39,33 @@ const TableScrollContainer = React.memo(({
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-auto relative">
-      {isLoading && !hasData && (
-        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">
-          {t('tableDataView.loading')}
-        </div>
-      )}
-      {!isLoading && !hasData && (
-        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">
-          {t('tableDataView.noData')}
+      {!hasData && (
+        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm transition-opacity duration-200"
+          style={{ opacity: isLoading ? 0.5 : 1 }}>
+          {isLoading ? t('tableDataView.loading') : t('tableDataView.noData')}
         </div>
       )}
       {hasData && (
         <>
-          {isLoading && <div className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none" />}
-          <VirtualTable
-            columns={columns}
-            rowVirtualizer={rowVirtualizer}
-            thead={thead}
-            renderRow={renderRow}
+          <div
+            className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none transition-opacity duration-200"
+            style={{ opacity: isLoading ? 1 : 0, visibility: isLoading ? 'visible' : 'hidden' }}
           />
+          {useVirtual ? (
+            <VirtualTable
+              columns={columns}
+              rowVirtualizer={rowVirtualizer}
+              thead={thead}
+              renderRow={renderRow}
+            />
+          ) : (
+            <NormalTable
+              columns={columns}
+              rowCount={rowCount}
+              thead={normalThead}
+              renderRow={renderRow}
+            />
+          )}
         </>
       )}
     </div>
@@ -156,8 +167,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         }
       });
       if (reqId !== requestIdRef.current) return;
-      setData(resp.data);
-      setTotalRows(resp.total_rows);
+      startTransition(() => {
+        setData(resp.data);
+        setTotalRows(resp.total_rows);
+      });
     } catch (e) {
       if (reqId !== requestIdRef.current) return;
       showToastRef.current(String(e), 'error');
@@ -175,7 +188,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setSortDir(null);
     setTotalRows(0);
     invoke<{ columns: ColumnMeta[] }>('get_table_detail', {
-      connectionId: activeConnectionId, database: dbName || null, table: tableName
+      connectionId: activeConnectionId, database: dbName || null, schema: schema || null, table: tableName
     })
       .then(detail => {
         setColumns(detail.columns);
@@ -368,6 +381,33 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   }, [data, page, pageSize, pending, rowBgClass, getPendingValue, isRowDeleted, editCell, removeClonedRow, handleContextMenu, openCellEditor, t]);
 
   // ─── 稳定化 thead，仅排序状态/列变化时重建 ────────────────────────────────
+  const colSortButtons = useCallback((col: string) => (
+    <div className="flex items-center justify-between gap-1 w-full">
+      <span className="truncate">{col}</span>
+      <Tooltip content={
+        sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
+        : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
+        : t('tableDataView.sortAsc')
+      }>
+        <button
+          className={`flex-shrink-0 leading-none transition-colors ${
+            sortCol === col ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
+          }`}
+          onClick={() => {
+            if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
+            else if (sortDir === 'ASC') { setSortDir('DESC'); }
+            else { setSortCol(null); setSortDir(null); }
+          }}
+        >
+          {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
+           sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
+           <ChevronsUpDown size={11}/>}
+        </button>
+      </Tooltip>
+    </div>
+  ), [sortCol, sortDir, setSortCol, setSortDir, t]);
+
+  // flex 布局版（VirtualTable 使用）
   const thead = useMemo(() => data ? (
     <tr style={{ display: 'flex', borderBottom: '1px solid #1e2d42' }}>
       <th style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
@@ -375,33 +415,25 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       </th>
       {data.columns.map(col => (
         <th key={col} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
-          <div className="flex items-center justify-between gap-1 w-full">
-            <span className="truncate">{col}</span>
-            <Tooltip content={
-              sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
-              : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
-              : t('tableDataView.sortAsc')
-            }>
-              <button
-                className={`flex-shrink-0 leading-none transition-colors ${
-                  sortCol === col ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
-                }`}
-                onClick={() => {
-                  if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
-                  else if (sortDir === 'ASC') { setSortDir('DESC'); }
-                  else { setSortCol(null); setSortDir(null); }
-                }}
-              >
-                {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
-                 sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
-                 <ChevronsUpDown size={11}/>}
-              </button>
-            </Tooltip>
-          </div>
+          {colSortButtons(col)}
         </th>
       ))}
     </tr>
-  ) : null, [data?.columns, sortCol, sortDir, t]);
+  ) : null, [data?.columns, colSortButtons, t]);
+
+  // 标准表格布局版（NormalTable 使用，列宽由浏览器自动计算）
+  const normalThead = useMemo(() => data ? (
+    <tr>
+      <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">
+        {t('tableDataView.serialNo')}
+      </th>
+      {data.columns.map(col => (
+        <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
+          {colSortButtons(col)}
+        </th>
+      ))}
+    </tr>
+  ) : null, [data?.columns, colSortButtons, t]);
 
   const hasData = !!(data && (data.rows.length > 0 || pending.clonedRows.length > 0));
 
@@ -570,7 +602,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         hasData={hasData}
         columns={data?.columns ?? []}
         thead={thead}
+        normalThead={normalThead}
         renderRow={renderRow}
+        useVirtual={pageSize === 5000}
       />
 
       {/* Status Bar */}

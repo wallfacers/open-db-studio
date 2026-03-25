@@ -142,8 +142,7 @@
 ### 未实现（有设计文档，待开始）
 - [ ] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）
 - [ ] LLM 配置供应商优先重设计（从 opencode `/config/providers` 动态加载）
-- [ ] ACP 持久化 Session（复用 opencode-cli 进程，消除冷启动）
-- [ ] UI 状态全量持久化至 SQLite（⚠️ 部分：Rust 侧已有 `get_ui_state`，前端标签页仍用 localStorage）
+- [x] UI 状态全量持久化至 SQLite（标签页、树展开状态、连接列表、分页大小均已迁移至 SQLite）
 
 ---
 

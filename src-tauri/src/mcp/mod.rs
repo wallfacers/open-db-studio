@@ -216,74 +216,74 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "graph_query_context",
-                "description": "当问题涉及多表关联、字段歧义或不确定表名时优先调用。基于 GraphExplorer 知识图谱，返回相关表列表、推断的 JOIN 路径、精简 DDL 和业务指标。获得结果后再按需调用细粒度工具深挖。",
+                "description": "Call this first when the question involves multi-table joins, ambiguous field names, or uncertain table names. Uses the GraphExplorer knowledge graph to return relevant tables, inferred JOIN paths, condensed DDL, and business metrics. Use fine-grained tools for deeper exploration after getting results.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "question": { "type": "string", "description": "用户原始问题（用于实体提取）" },
-                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                        "question": { "type": "string", "description": "The user's original question (used for entity extraction)" },
+                        "connection_id": { "type": "integer", "description": "Database connection ID" }
                     },
                     "required": ["question", "connection_id"]
                 }
             }),
             json!({
                 "name": "graph_search_tables",
-                "description": "在知识图谱中按关键词模糊搜索表名、别名、display_name，返回匹配的表列表。与 list_tables 的区别：本工具搜索用户定义的业务别名，list_tables 返回数据库实际表名。",
+                "description": "Fuzzy-search table names, aliases, and display_names in the knowledge graph. Unlike list_tables (which returns actual DB table names), this tool searches user-defined business aliases.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "question": { "type": "string", "description": "搜索关键词" },
-                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                        "question": { "type": "string", "description": "Search keyword" },
+                        "connection_id": { "type": "integer", "description": "Database connection ID" }
                     },
                     "required": ["question", "connection_id"]
                 }
             }),
             json!({
                 "name": "graph_find_join_paths",
-                "description": "给定起点表和终点表，在知识图谱中查找通过 Link Node（两跳结构：table→link→table）连接的最短 JOIN 路径，支持多跳中间表穿越。返回包含 cardinality、via 字段、语义描述的结构化路径列表。首次调用有约 10ms 图加载耗时，后续调用 < 1ms。",
+                "description": "Find the shortest JOIN path between two tables via Link Nodes (two-hop structure: table→link→table) in the knowledge graph, supporting multi-hop traversal. Returns structured paths with cardinality, via fields, and semantic descriptions. First call ~10ms graph load; subsequent calls <1ms.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "from_table": { "type": "string", "description": "起点表名" },
-                        "to_table": { "type": "string", "description": "终点表名" },
-                        "connection_id": { "type": "integer", "description": "数据库连接 ID" },
-                        "max_depth": { "type": "integer", "description": "最大跳数，默认 4，最大 6" }
+                        "from_table": { "type": "string", "description": "Source table name" },
+                        "to_table": { "type": "string", "description": "Target table name" },
+                        "connection_id": { "type": "integer", "description": "Database connection ID" },
+                        "max_depth": { "type": "integer", "description": "Maximum hops, default 4, max 6" }
                     },
                     "required": ["from_table", "to_table", "connection_id"]
                 }
             }),
             json!({
                 "name": "graph_get_ddl",
-                "description": "获取指定表的精简 DDL（仅包含字段名、类型、注释、外键），用于了解字段详情。与 get_table_schema 的区别：本工具输出 CREATE TABLE 文本，更适合直接插入 SQL 生成 prompt。",
+                "description": "Get condensed DDL for a table (column names, types, comments, and foreign keys only). Unlike get_table_schema, this outputs CREATE TABLE text suitable for direct inclusion in SQL generation prompts.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "table_name": { "type": "string", "description": "表名" },
-                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                        "table_name": { "type": "string", "description": "Table name" },
+                        "connection_id": { "type": "integer", "description": "Database connection ID" }
                     },
                     "required": ["table_name", "connection_id"]
                 }
             }),
             json!({
                 "name": "graph_search_metrics",
-                "description": "在知识图谱中搜索业务指标节点，返回指标名称和计算逻辑定义。与 search_metrics 的区别：本工具搜索图谱节点（node_type=metric），search_metrics 搜索 MetricsExplorer 中 approved 的指标记录。",
+                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. Unlike fs_search('tab.metric'), this searches graph nodes (node_type=metric); fs_search searches approved MetricsExplorer records.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "keyword": { "type": "string", "description": "搜索关键词" },
-                        "connection_id": { "type": "integer", "description": "数据库连接 ID" }
+                        "keyword": { "type": "string", "description": "Search keyword" },
+                        "connection_id": { "type": "integer", "description": "Database connection ID" }
                     },
                     "required": ["keyword", "connection_id"]
                 }
             }),
             json!({
                 "name": "graph_debug_links",
-                "description": "诊断工具：查看指定连接的所有 Link Node 及其 metadata（source_table、target_table、via 等），用于排查 graph_find_join_paths 返回空路径的问题。可选按表名过滤。",
+                "description": "Diagnostic tool: inspect all Link Nodes and their metadata (source_table, target_table, via, etc.) for a connection. Use this to diagnose why graph_find_join_paths returns empty paths. Optionally filter by table name.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "connection_id": { "type": "integer", "description": "数据库连接 ID" },
-                        "table_name": { "type": "string", "description": "可选：按表名过滤，只返回涉及该表的 Link Node" }
+                        "connection_id": { "type": "integer", "description": "Database connection ID" },
+                        "table_name": { "type": "string", "description": "Optional: filter to only return Link Nodes involving this table" }
                     },
                     "required": ["connection_id"]
                 }
@@ -311,7 +311,7 @@ fn tool_definitions() -> Value {
                         "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: table@conn:N" },
                         "patch": {
                             "type": "object",
-                            "description": "tab.query text: {mode:'text',op:'replace|insert_after|replace_all',range?:[from,to],content:'...',reason?:'...'}. struct: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name:'...',comment:'...'}"
+                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment}. tab.table modify: {action:'modify_column',column_name,changes:{name?,data_type?,length?,is_nullable?,default_value?,extra?,comment?}}"
                         }
                     },
                     "required": ["resource", "target", "patch"]
@@ -347,9 +347,9 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | panel.history" },
+                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | panel.history" },
                         "target":   { "type": "string", "description": "active | tab_id | new" },
-                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. panel.history: undo" },
+                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column. panel.history: undo" },
                         "params":   { "type": "object" }
                     },
                     "required": ["resource", "target", "action"]
@@ -461,7 +461,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
             let table = args["table"].as_str()
                 .ok_or_else(|| crate::AppError::Other("missing table".into()))?;
-            // 验证表名只含合法字符（防止 SQL 注入）
+            // Validate table name contains only safe characters (prevent SQL injection)
             if !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Err(crate::AppError::Other("Invalid table name".into()));
             }
@@ -487,7 +487,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
             let table = args["table"].as_str()
                 .ok_or_else(|| crate::AppError::Other("missing table".into()))?;
-            // 验证表名只含合法字符（防止 SQL 注入）
+            // Validate table name contains only safe characters (prevent SQL injection)
             if !table.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Err(crate::AppError::Other("Invalid table name".into()));
             }
@@ -531,7 +531,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 Some(s) => tasks.into_iter().filter(|t| t.status == s).collect(),
                 None => tasks,
             };
-            // 返回摘要信息（不含 params 字段，减少噪音）
+            // Return summary (omit params field to reduce noise)
             let summary: Vec<serde_json::Value> = filtered.iter().map(|t| json!({
                 "id": t.id,
                 "type": t.type_,
@@ -554,7 +554,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
             match crate::db::get_task_by_id(task_id)? {
                 None => Ok(format!("Task '{}' not found", task_id)),
                 Some(t) => {
-                    // 解析 error_details JSON 字符串为数组（方便 AI 阅读）
+                    // Parse error_details JSON string into array for easier AI consumption
                     let error_details: serde_json::Value = t.error_details
                         .as_deref()
                         .and_then(|s| serde_json::from_str(s).ok())

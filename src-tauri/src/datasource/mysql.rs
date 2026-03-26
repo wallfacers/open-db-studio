@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlConnectOptions, MySqlSslMode};
+use sqlx::ConnectOptions;
 use sqlx::Row;
 use std::time::{Duration, Instant};
 
@@ -73,7 +74,8 @@ impl MySqlDataSource {
             .username(username)
             .password(password)
             .database(database)
-            .ssl_mode(MySqlSslMode::Disabled);
+            .ssl_mode(MySqlSslMode::Disabled)
+            .log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(30))

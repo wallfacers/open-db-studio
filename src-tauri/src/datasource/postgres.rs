@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgRow, PgSslMode};
-use sqlx::{Column, Row, TypeInfo};
+use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
@@ -299,6 +299,7 @@ impl PostgresDataSource {
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");
         opts = opts.options([("search_path", search_path)]);
+        opts = opts.log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(30))

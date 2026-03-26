@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { Handle, Position, useNodeConnections, useReactFlow } from '@xyflow/react';
+import { Handle, Position, useNodeConnections } from '@xyflow/react';
 import { Key, Hash, X, MoreVertical } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { DropdownSelect } from '../../common/DropdownSelect';
 
 const SQL_TYPES = [
@@ -28,13 +27,12 @@ interface ERTableNodeData {
   onAddColumn: () => void;
   onUpdateColumn: (colId: number, updates: Partial<import('../../../types').ErColumn>) => void;
   onDeleteColumn: (colId: number) => void;
+  onDeleteTable: () => void;
 }
 
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
-  const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn } = data;
-  const { deleteTable } = useErDesignerStore();
-  const { setNodes } = useReactFlow();
+  const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(table.name);
@@ -89,7 +87,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   };
 
   const handleDeleteTable = () => {
-    deleteTable(table.id);
+    onDeleteTable();
   };
 
   const ColumnRow = ({ col }: { col: typeof columns[number] }) => {
@@ -194,6 +192,13 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             plain
           />
         </div>
+
+        {/* Delete Column Button */}
+        <X
+          size={10}
+          className="opacity-0 group-hover:opacity-100 cursor-pointer text-gray-500 hover:text-red-400 shrink-0 ml-1 z-10"
+          onClick={(e) => { e.stopPropagation(); onDeleteColumn(col.id); }}
+        />
 
         {/* Source Handle (Right) - For outgoing connections */}
         <Handle

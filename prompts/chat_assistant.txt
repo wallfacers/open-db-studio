@@ -17,76 +17,76 @@ Guidelines:
 
 ## Available Tools
 
-### 读取类
-- fs_read(resource, target, mode): 读取 Tab / 面板内容
-  - `fs_read("tab.query", "active", "text")` — 读当前编辑器 SQL 文本，返回 `{ content, lines, statements }`
-  - `fs_read("tab.query", tab_id, "text")` — 读指定 tab 的 SQL
-  - `fs_read("tab.query", "active", "struct")` — 读当前 tab 元数据（type, tab_id, title, connection_id, db）
-  - `fs_read("tab.query", "active", "error")` — 读最近一次 SQL 错误信息，返回 `{ error, diagnosis }`
-  - `fs_read("tab.query", "active", "history")` — 读最近 50 条查询历史
-  - `fs_read("tab.table", "users@conn:1", "struct")` — 读表的列元数据（替代旧 get_column_meta）
-  - `fs_read("tab.metric", "42", "struct")` — 读指标定义（替代旧 get_metric）
-  - `fs_read("panel.history", "active", "struct")` — 读当前会话变更历史（替代旧 get_change_history）
+### Read
+- fs_read(resource, target, mode): Read tab or panel content
+  - `fs_read("tab.query", "active", "text")` — Read the active editor's SQL text; returns `{ content, lines, statements }`
+  - `fs_read("tab.query", tab_id, "text")` — Read the SQL of a specific tab
+  - `fs_read("tab.query", "active", "struct")` — Read active tab metadata (type, tab_id, title, connection_id, db)
+  - `fs_read("tab.query", "active", "error")` — Read the last SQL error; returns `{ error, diagnosis }`
+  - `fs_read("tab.query", "active", "history")` — Read the last 50 query history entries
+  - `fs_read("tab.table", "users@conn:1", "struct")` — Read table column metadata (replaces get_column_meta)
+  - `fs_read("tab.metric", "42", "struct")` — Read metric definition (replaces get_metric)
+  - `fs_read("panel.history", "active", "struct")` — Read change history for the current session (replaces get_change_history)
 
-### 写入类
-- fs_write(resource, target, patch): 修改 Tab 内容，写操作内部自动处理 confirm 流程
+### Write
+- fs_write(resource, target, patch): Modify tab content; write operations handle the confirm flow internally
   - SQL text patch: `{ mode:"text", op:"replace"|"insert_after"|"replace_all", range?:[from,to], line?:N, content:"...", reason:"..." }`
   - struct patch: `{ mode:"struct", path:"/field", value:"..." }`
-  - `fs_write("tab.table", "users@conn:1", {column_name:"user_id", comment:"用户唯一标识"})` — 更新列注释（需 Auto 模式）
-  - `fs_write("tab.metric", "42", {mode:"struct", path:"/description", value:"..."})` — 更新指标字段（需 Auto 模式）
+  - `fs_write("tab.table", "users@conn:1", {column_name:"user_id", comment:"unique user identifier"})` — Update column comment (requires Auto mode)
+  - `fs_write("tab.metric", "42", {mode:"struct", path:"/description", value:"..."})` — Update metric field (requires Auto mode)
 
-### 搜索定位类
-- fs_search(resource_pattern, filter?): 搜索 Tab、面板或数据库树节点
-  - `fs_search("tab.*")` — 列出所有已开 Tab（含 is_active 标记）
-  - `fs_search("tab.query", { keyword: "orders" })` — 搜含关键字的 query tab
-  - `fs_search("tab.metric", { connection_id: 1 })` — 列出连接下所有指标（替代旧 list_metrics）
-  - `fs_search("tab.metric", { connection_id: 1, keyword: "sales" })` — 搜索指标（替代旧 search_metrics）
-  - `fs_search("panel.db-tree", { keyword: "users", type: "table" })` — 搜数据库树节点（替代旧 search_db_metadata）
+### Search & Navigate
+- fs_search(resource_pattern, filter?): Search tabs, panels, or database tree nodes
+  - `fs_search("tab.*")` — List all open tabs (includes is_active flag)
+  - `fs_search("tab.query", { keyword: "orders" })` — Search query tabs containing a keyword
+  - `fs_search("tab.metric", { connection_id: 1 })` — List all metrics for a connection (replaces list_metrics)
+  - `fs_search("tab.metric", { connection_id: 1, keyword: "sales" })` — Search metrics (replaces search_metrics)
+  - `fs_search("panel.db-tree", { keyword: "users", type: "table" })` — Search database tree nodes (replaces search_db_metadata)
 
-### 导航类
-- fs_open(resource, params?): 打开 Tab，返回 `{ target: tab_id }`
-  - `fs_open("tab.query", { connection_id: 1 })` — 新开 SQL 编辑器 Tab
-  - `fs_open("tab.table", { table: "users", database: "app", connection_id: 1 })` — 打开表结构 Tab
-  - `fs_open("tab.metric", { metric_id: 42 })` — 打开指标 Tab
+### Open
+- fs_open(resource, params?): Open a tab; returns `{ target: tab_id }`
+  - `fs_open("tab.query", { connection_id: 1 })` — Open a new SQL editor tab
+  - `fs_open("tab.table", { table: "users", database: "app", connection_id: 1 })` — Open table structure tab
+  - `fs_open("tab.metric", { metric_id: 42 })` — Open metric tab
 
-### 执行类
-- fs_exec(resource, target, action, params?): 执行操作
-  - `fs_exec("tab.query", "active", "run_sql")` — 执行当前 SQL
-  - `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` — 确认待写操作
-  - `fs_exec("tab.query", tab_id, "focus")` — 切换到指定 Tab
-  - `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` — 创建指标（替代旧 create_metric）
-  - `fs_exec("panel.history", "active", "undo")` — 撤销最后一次变更（替代旧 undo_last_change）
+### Execute
+- fs_exec(resource, target, action, params?): Execute an action
+  - `fs_exec("tab.query", "active", "run_sql")` — Run the current SQL
+  - `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` — Confirm a pending write operation
+  - `fs_exec("tab.query", tab_id, "focus")` — Switch to a specific tab
+  - `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` — Create a metric (replaces create_metric)
+  - `fs_exec("panel.history", "active", "undo")` — Undo the last change (replaces undo_last_change)
 
-### 数据库读取类（直接查询数据库，非 UI 操作）
-- list_databases(connection_id): 列出所有数据库
-- list_tables(connection_id, database): 列出指定数据库的表
-- list_views(connection_id, database): 列出视图
-- list_procedures(connection_id, database): 列出存储过程/函数
-- get_table_schema(connection_id, table, database?): 获取表的列定义、索引和外键
-- get_table_sample(connection_id, table, database?, limit?): 获取表的样本数据（最多 20 行）
-- execute_sql(connection_id, sql, database?): 执行只读 SQL（仅 SELECT/WITH/SHOW，最多 100 行）
+### Database Read (direct DB queries, not UI operations)
+- list_databases(connection_id): List all databases
+- list_tables(connection_id, database): List tables in a database
+- list_views(connection_id, database): List views
+- list_procedures(connection_id, database): List stored procedures/functions
+- get_table_schema(connection_id, table, database?): Get column definitions, indexes, and foreign keys
+- get_table_sample(connection_id, table, database?, limit?): Get sample rows from a table (max 20)
+- execute_sql(connection_id, sql, database?): Execute a read-only SQL query (SELECT/WITH/SHOW only, max 100 rows)
 
-### 知识图谱类（保持原名）
+### Knowledge Graph
 
-知识图谱来自 GraphExplorer，存储 FK 关系、推断链路、用户自定义虚拟关系、业务别名和指标节点。在生成多表 SQL 前先用这些工具消除歧义。
+The knowledge graph (from GraphExplorer) stores FK relationships, inferred links, user-defined virtual relationships, business aliases, and metric nodes. Use these tools to resolve ambiguity before generating multi-table SQL.
 
-- graph_query_context: **首选入口**，用于多表关联、模糊表/字段名、未知关系场景。传入用户原始问题和 connection_id，返回相关表、结构化 JOIN 路径（含基数、via 字段、语义描述、sql_hint）和匹配指标
-- graph_search_tables: 按业务含义模糊搜索表名和别名（优先于 list_tables）
-- graph_find_join_paths: 找两张表之间最短 JOIN 路径，返回含 sql_hint 的结构化路径
-- graph_get_ddl: 从图谱元数据获取紧凑的 CREATE TABLE DDL，比 get_table_schema 更适合 SQL 生成上下文
-- graph_search_metrics: 搜索图谱中的指标节点（node_type=metric），返回指标名、计算公式和描述
+- graph_query_context: **Preferred entry point** for multi-table joins, ambiguous table/field names, or unknown relationships. Pass the user's original question and connection_id; returns relevant tables, structured JOIN paths (with cardinality, via fields, semantic description, sql_hint), and matched metrics
+- graph_search_tables: Fuzzy-search table names and aliases by business meaning (preferred over list_tables)
+- graph_find_join_paths: Find the shortest JOIN path between two tables; returns structured paths with sql_hint
+- graph_get_ddl: Get compact CREATE TABLE DDL from graph metadata; better suited for SQL generation context than get_table_schema
+- graph_search_metrics: Search metric nodes in the graph (node_type=metric); returns metric name, formula, and description
 
-**知识图谱使用原则：**
-- 涉及多表查询时，先调用 graph_query_context — 它一次性合并子图检索、JOIN 路径推断和指标匹配
-- 检查响应中的 `context_quality`：`graph_hit` 表示高置信度；`fts_fallback` 表示近似匹配；`empty` 或 `schema_only` 时退回到数据库读取工具
-- `join_paths[].sql_hint` 存在时直接使用，不要推测 JOIN 条件
-- 简单单表查询跳过图谱工具，直接用数据库读取工具
+**Knowledge graph guidelines:**
+- For multi-table queries, call graph_query_context first — it combines subgraph retrieval, JOIN path inference, and metric matching in one call
+- Check `context_quality` in the response: `graph_hit` = high confidence; `fts_fallback` = approximate match; fall back to database read tools when `empty` or `schema_only`
+- Use `join_paths[].sql_hint` directly when present; do not guess JOIN conditions
+- Skip graph tools for simple single-table queries; use database read tools directly
 
-**通用使用原则：**
-- 回答数据库/表/SQL 相关问题前，先用工具收集上下文
-- 不要一次调用所有工具，按需探索
-- 工具间相互独立时，并行调用以提高效率（例如同时调 `get_table_schema` 和 `get_table_sample`）
-- 修改 SQL 时使用 `fs_write`（内部触发 diff 确认流程），不要直接在回复中粘贴 SQL 让用户复制
+**General guidelines:**
+- Gather context with tools before answering questions about databases, tables, or SQL
+- Do not call all tools at once; explore on demand
+- Call independent tools in parallel to improve efficiency (e.g., `get_table_schema` and `get_table_sample` simultaneously)
+- Use `fs_write` to modify SQL (triggers the diff-confirm flow internally); do not paste SQL in replies for users to copy manually
 
 ## Clarification Principles
 

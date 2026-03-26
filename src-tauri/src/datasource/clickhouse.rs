@@ -134,7 +134,23 @@ impl DataSource for ClickHouseDataSource {
             }
             let row: Vec<serde_json::Value> = columns
                 .iter()
-                .map(|k| obj.get(k).cloned().unwrap_or(serde_json::Value::Null))
+                .map(|k| {
+                    let v = obj.get(k).cloned().unwrap_or(serde_json::Value::Null);
+                    // 将可能超出 JS 安全整数范围的整数转为字符串（JS 精度上限 2^53 - 1）
+                    if let serde_json::Value::Number(ref n) = v {
+                        let s = n.to_string();
+                        if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+                            const MAX_SAFE: i64 = 9_007_199_254_740_991;
+                            let out_of_range = s.strip_prefix('-')
+                                .map(|abs| abs.parse::<i64>().map_or(true, |i| i > MAX_SAFE))
+                                .unwrap_or_else(|| s.parse::<i64>().map_or(true, |i| i > MAX_SAFE));
+                            if out_of_range {
+                                return serde_json::Value::String(s);
+                            }
+                        }
+                    }
+                    v
+                })
                 .collect();
             rows.push(row);
         }

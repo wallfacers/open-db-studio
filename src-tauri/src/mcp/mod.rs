@@ -171,47 +171,9 @@ fn tool_definitions() -> Value {
                     "type": "object",
                     "properties": {
                         "table_name": { "type": "string" },
-                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list", "seatunnel_job", "er_diagram"] }
+                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list", "seatunnel_job", "er_design"] }
                     },
                     "required": []
-                }
-            }),
-            json!({
-                "name": "get_tab_content",
-                "description": "Get the content of a specific tab (SQL, table data, metric definition, etc.)",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "tab_id": { "type": "string" }
-                    },
-                    "required": ["tab_id"]
-                }
-            }),
-            json!({
-                "name": "open_tab",
-                "description": "Open an existing SeaTunnel job tab. NOTE: For SQL query tabs use fs_open('tab.query',...). For metric tabs use fs_open('tab.metric',...). For table structure tabs use fs_open('tab.table',...).",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "type":   { "type": "string", "enum": ["seatunnel_job"] },
-                        "job_id": { "type": "integer", "description": "Required for seatunnel_job type" }
-                    },
-                    "required": ["type", "job_id"]
-                }
-            }),
-            json!({
-                "name": "propose_seatunnel_job",
-                "description": "AI-generated SeaTunnel Job configuration proposal. Creates or updates a Job config for data migration/sync and shows it to the user for confirmation. If job_id is provided, updates the existing job (use this when the user has a job tab open); otherwise creates a new job in the specified category.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "job_name": { "type": "string", "description": "Name for the SeaTunnel Job" },
-                        "config_json": { "type": "string", "description": "SeaTunnel Job configuration JSON (env + source + sink sections)" },
-                        "job_id": { "type": "integer", "description": "Optional existing Job ID to update. Provide this when editing an already-open job tab." },
-                        "category_id": { "type": "integer", "description": "Optional category ID to place the job in (only used when creating a new job)" },
-                        "description": { "type": "string", "description": "Brief description of what this job does" }
-                    },
-                    "required": ["job_name", "config_json"]
                 }
             }),
             json!({
@@ -294,8 +256,8 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.table | tab.metric | panel.db-tree | panel.history" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.table: table@conn:N. tab.metric: <metric_id>. panel.history: active" },
+                        "resource": { "type": "string", "description": "tab.query | tab.table | tab.metric | tab.seatunnel | panel.db-tree | panel.history" },
+                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.table: table@conn:N. tab.metric: <metric_id>. tab.seatunnel: <job_id>. panel.history: active" },
                         "mode":     { "type": "string", "description": "tab.query: text|struct|error|history. tab.table/metric/history: struct" }
                     },
                     "required": ["resource", "target", "mode"]
@@ -307,8 +269,8 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: table@conn:N" },
+                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
+                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: table@conn:N. tab.seatunnel: <job_id>" },
                         "patch": {
                             "type": "object",
                             "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment}. tab.table modify: {action:'modify_column',column_name,changes:{name?,data_type?,length?,is_nullable?,default_value?,extra?,comment?}}"
@@ -335,8 +297,8 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table" },
-                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table: {table,database,connection_id}" }
+                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
+                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table: {table,database,connection_id}. tab.seatunnel: {job_id}" }
                     },
                     "required": ["resource"]
                 }
@@ -347,9 +309,9 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | panel.history" },
+                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel | panel.history" },
                         "target":   { "type": "string", "description": "active | tab_id | new" },
-                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column. panel.history: undo" },
+                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column. tab.seatunnel: create. panel.history: undo" },
                         "params":   { "type": "object" }
                     },
                     "required": ["resource", "target", "action"]
@@ -582,15 +544,6 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         "search_tabs" => {
             tools::tab_control::search_tabs(Arc::clone(&handle), args).await
         }
-        "get_tab_content" => {
-            tools::tab_control::get_tab_content(Arc::clone(&handle), args).await
-        }
-        "open_tab" => {
-            tools::tab_control::open_tab(Arc::clone(&handle), args).await
-        }
-        "propose_seatunnel_job" => {
-            tools::seatunnel::propose_seatunnel_job(Arc::clone(&handle), args).await
-        }
         "graph_query_context" => {
             tools::graph::query_context::handle(Arc::clone(&handle), args).await
         }
@@ -637,6 +590,9 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 }
                 r if r.starts_with("tab.table") => {
                     tools::fs_table::handle(Arc::clone(&handle), op, &target, payload, session_id).await
+                }
+                r if r.starts_with("tab.seatunnel") => {
+                    tools::fs_seatunnel::handle(Arc::clone(&handle), op, &target, payload, session_id).await
                 }
                 "panel.history" => {
                     tools::fs_history::handle(Arc::clone(&handle), op, &target, payload, session_id).await

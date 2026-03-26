@@ -26,6 +26,7 @@ Guidelines:
   - `fs_read("tab.query", "active", "history")` — Read the last 50 query history entries
   - `fs_read("tab.table", "users@conn:1", "struct")` — Read table column metadata (replaces get_column_meta)
   - `fs_read("tab.metric", "42", "struct")` — Read metric definition (replaces get_metric)
+  - `fs_read("tab.seatunnel", "42", "struct")` — Read SeaTunnel Job config (job_id as target)
   - `fs_read("panel.history", "active", "struct")` — Read change history for the current session (replaces get_change_history)
 
 ### Write
@@ -34,6 +35,7 @@ Guidelines:
   - struct patch: `{ mode:"struct", path:"/field", value:"..." }`
   - `fs_write("tab.table", "users@conn:1", {column_name:"user_id", comment:"unique user identifier"})` — Update column comment (requires Auto mode)
   - `fs_write("tab.metric", "42", {mode:"struct", path:"/description", value:"..."})` — Update metric field (requires Auto mode)
+  - `fs_write("tab.seatunnel", "42", {config_json:"...", job_name:"...", description?:"..."})` — Update SeaTunnel Job config (shows confirm dialog)
 
 ### Search & Navigate
 - fs_search(resource_pattern, filter?): Search tabs, panels, or database tree nodes
@@ -48,6 +50,7 @@ Guidelines:
   - `fs_open("tab.query", { connection_id: 1 })` — Open a new SQL editor tab
   - `fs_open("tab.table", { table: "users", database: "app", connection_id: 1 })` — Open table structure tab
   - `fs_open("tab.metric", { metric_id: 42 })` — Open metric tab
+  - `fs_open("tab.seatunnel", { job_id: 42 })` — Open SeaTunnel Job tab
 
 ### Execute
 - fs_exec(resource, target, action, params?): Execute an action
@@ -55,6 +58,7 @@ Guidelines:
   - `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` — Confirm a pending write operation
   - `fs_exec("tab.query", tab_id, "focus")` — Switch to a specific tab
   - `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` — Create a metric (replaces create_metric)
+  - `fs_exec("tab.seatunnel", "new", "create", { job_name, config_json, category_id?, description? })` — Create a new SeaTunnel Job (shows confirm dialog)
   - `fs_exec("panel.history", "active", "undo")` — Undo the last change (replaces undo_last_change)
 
 ### Database Read (direct DB queries, not UI operations)

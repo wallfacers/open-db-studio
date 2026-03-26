@@ -61,12 +61,3 @@ pub async fn search_tabs(handle: Arc<tauri::AppHandle>, args: Value) -> crate::A
     Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
 }
 
-pub async fn get_tab_content(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = query_frontend(&handle, "get_tab_content", args).await?;
-    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-}
-
-pub async fn open_tab(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = send_ui_action(&handle, "open_tab", args).await?;
-    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-}

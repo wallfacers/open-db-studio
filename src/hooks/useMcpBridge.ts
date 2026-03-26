@@ -10,13 +10,13 @@ import type { FsOp } from '../mcp/fs'
 
 interface UiActionPayload {
   request_id: string;
-  action: 'focus_tab' | 'open_tab' | 'propose_seatunnel_job';
+  action: 'open_tab' | 'propose_seatunnel_job';
   params: Record<string, unknown>;
 }
 
 interface QueryRequestPayload {
   request_id: string;
-  query_type: 'search_tabs' | 'get_tab_content' | 'search_db_metadata' | 'fs_request';
+  query_type: 'search_tabs' | 'get_tab_content' | 'fs_request';
   params: Record<string, unknown>;
 }
 
@@ -31,22 +31,7 @@ export function useMcpBridge() {
     const unlistenUiAction = listen<UiActionPayload>('mcp://ui-action', async (event) => {
       const { request_id, action, params } = event.payload;
       try {
-        if (action === 'focus_tab') {
-          const tabId = params.tab_id as string;
-          const tab = useQueryStore.getState().tabs.find(t => t.id === tabId);
-          if (!tab) {
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: false, data: null,
-              error: `Tab ${tabId} not found`
-            });
-            return;
-          }
-          setActiveTabId(tabId);
-          await invoke('mcp_ui_action_respond', {
-            requestId: request_id, success: true,
-            data: { tab_id: tabId }, error: null
-          });
-        } else if (action === 'propose_seatunnel_job') {
+        if (action === 'propose_seatunnel_job') {
           const { job_name, config_json, category_id, description, job_id } = params as {
             job_name: string; config_json: string;
             category_id?: number; description?: string; job_id?: number;

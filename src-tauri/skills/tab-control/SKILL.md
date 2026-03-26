@@ -15,6 +15,7 @@ Use the unified fs_* DSL tools to operate on any tab, panel, or settings page.
 tab.query        — SQL 编辑器 Tab
 tab.table        — 表结构 Tab
 tab.metric       — 指标定义 Tab
+tab.seatunnel    — SeaTunnel Job Tab
 panel.db-tree    — 数据库树面板
 panel.tasks      — 任务中心面板
 settings.llm     — LLM 配置页
@@ -47,6 +48,7 @@ fs_read("tab.query",    "active",   "text")    # current SQL text + statements
 fs_read("tab.query",    tab_id,     "text")    # specific tab SQL
 fs_read("tab.table",    "users",    "struct")  # table schema
 fs_read("tab.metric",   "list",     "struct")  # metric list
+fs_read("tab.seatunnel","42",       "struct")  # job config
 fs_read("panel.tasks",  "list",     "struct")  # task list
 fs_read("panel.tasks",  "history",  "struct")  # change history
 fs_read("settings.llm", "active",   "struct")  # LLM config
@@ -102,6 +104,7 @@ Returns `{ target: tab_id }` — use returned target for subsequent operations.
 fs_open("tab.query",  { connection_id: 1 })
 fs_open("tab.table",  { table: "users", database: "app", connection_id: 1 })
 fs_open("tab.metric", { metric_id: 42 })
+fs_open("tab.seatunnel", { job_id: 42 })
 fs_open("settings.llm")
 fs_open("panel.tasks")
 ```
@@ -120,6 +123,7 @@ fs_exec(resource, target, action, params?)
 | `fs_exec("tab.query", tab_id, "focus")` | switch to tab |
 | `fs_exec("panel.db-tree", "conn:1", "refresh")` | refresh db tree |
 | `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` | create metric |
+| `fs_exec("tab.seatunnel", "new", "create", { job_name, config_json, category_id?, description? })` | create SeaTunnel job |
 
 ## Tab Discovery Strategy
 

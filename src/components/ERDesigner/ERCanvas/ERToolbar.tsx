@@ -8,8 +8,10 @@ import {
   FileCode,
   GitCompare,
   RefreshCw,
+  Link2,
 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import type { ErTable } from '../../../types';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { invoke } from '@tauri-apps/api/core';
@@ -24,6 +26,8 @@ export interface ERToolbarProps {
   setNodes?: (nodes: Node[]) => void;
   tables?: Array<{ id: number; position_x: number; position_y: number }>;
   nodes?: Node[];
+  onTableAdded?: (table: ErTable) => void;
+  onOpenBind?: () => void;
 }
 
 export default function ERToolbar({
@@ -34,6 +38,8 @@ export default function ERToolbar({
   setNodes,
   tables = [],
   nodes = [],
+  onTableAdded,
+  onOpenBind,
 }: ERToolbarProps) {
   const { t } = useTranslation();
   const {
@@ -50,7 +56,9 @@ export default function ERToolbar({
   // 新建表
   const handleAddTable = async () => {
     try {
-      await addTable('new_table', { x: 0, y: 0 });
+      const pos = { x: Math.random() * 300 + 100, y: Math.random() * 300 + 100 };
+      const table = await addTable('new_table', pos);
+      onTableAdded?.(table);
     } catch (e) {
       console.error('Failed to add table:', e);
     }
@@ -203,6 +211,15 @@ export default function ERToolbar({
       >
         <Download size={14} />
         <span>{t('erDesigner.importTables')}</span>
+      </button>
+
+      <button
+        onClick={onOpenBind}
+        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
+        title={t('erDesigner.bindConnection')}
+      >
+        <Link2 size={14} />
+        <span>{t('erDesigner.bindConnection')}</span>
       </button>
 
       {/* 分隔符 */}

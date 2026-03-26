@@ -69,6 +69,7 @@ import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 import { buildErrorContext } from '../../utils/errorContext';
 import { askAiWithContext } from '../../utils/askAi';
+import { computeColumnWidths } from '../../utils/columnWidths';
 import { MarkdownContent } from '../shared/MarkdownContent';
 
 function getSqlAtCursor(sql: string, cursorOffset: number): string {
@@ -1070,14 +1071,21 @@ export const MainContent: React.FC<MainContentProps> = ({
 
                       // dml-report 或行数极少：使用原始全量渲染，无截断无分页
                       if (activeResult.kind === 'dml-report' || allRows.length <= RESULT_PAGE_SIZE) {
+                        const rColWidths = computeColumnWidths(
+                          activeResult.columns,
+                          allRows as (string | number | boolean | null)[][],
+                        );
                         return (
-                          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                          <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
                             <thead className="sticky top-0 bg-[#0d1117] z-10">
                               <tr>
                                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
-                                {activeResult.columns.map((col) => (
-                                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
-                                ))}
+                                {activeResult.columns.map((col, ci) => {
+                                  const w = rColWidths[ci] ?? 150;
+                                  return (
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">{col}</th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
@@ -1090,13 +1098,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                   {row.map((cell, ci) => {
                                     const colName = activeResult.columns[ci] ?? '';
                                     const cellStr = cell === null ? null : String(cell);
+                                    const w = rColWidths[ci] ?? 150;
                                     return (
                                       <td
                                         key={ci}
-                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left max-w-[300px] overflow-hidden"
+                                        style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
+                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
                                         onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                       >
-                                        <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
+                                        <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                           <div className="truncate">
                                             {cell === null
                                               ? <span className="text-[#7a9bb8]">NULL</span>
@@ -1131,6 +1141,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                         (resultPage + 1) * RESULT_PAGE_SIZE
                       );
                       const isTruncated = allRows.length > RESULT_MAX_ROWS;
+                      const rColWidths = computeColumnWidths(
+                        activeResult.columns,
+                        allRows as (string | number | boolean | null)[][],
+                      );
 
                       const exportCsv = () => {
                         const header = activeResult.columns.join(',');
@@ -1161,15 +1175,18 @@ export const MainContent: React.FC<MainContentProps> = ({
                             </div>
                           )}
 
-                          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                          <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
                             <thead className="sticky top-0 bg-[#0d1117] z-10">
                               <tr>
                                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
-                                {activeResult.columns.map((col) => (
-                                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
-                                    {col}
-                                  </th>
-                                ))}
+                                {activeResult.columns.map((col, ci) => {
+                                  const w = rColWidths[ci] ?? 150;
+                                  return (
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                      {col}
+                                    </th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
@@ -1184,13 +1201,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                     {row.map((cell, ci) => {
                                       const colName = activeResult.columns[ci] ?? '';
                                       const cellStr = cell === null ? null : String(cell);
+                                      const w = rColWidths[ci] ?? 150;
                                       return (
                                         <td
                                           key={ci}
-                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left max-w-[300px] overflow-hidden"
+                                          style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
+                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
                                           onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                         >
-                                          <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
+                                          <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                             <div className="truncate">
                                               {cell === null
                                                 ? <span className="text-[#7a9bb8]">NULL</span>

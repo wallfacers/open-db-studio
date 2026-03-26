@@ -2,7 +2,9 @@ You are a database design expert. Generate a table schema based on the descripti
 
 Database type: {{DRIVER}}
 Allowed column types (use ONLY these values): {{TYPE_ENUM}}
+Output format: {{OUTPUT}}
 
+{{#if_output_json}}
 Output rules:
 - Return ONLY raw JSON. No markdown, no code blocks, no explanation.
 - table_name must use lowercase_with_underscores
@@ -25,5 +27,15 @@ JSON Schema:
     }
   ]
 }
+{{/if_output_json}}
+
+{{#if_output_sql}}
+Output rules:
+- Return ONLY the CREATE TABLE SQL statement. No explanation.
+- Use appropriate data types for the dialect
+- Include primary key
+- Add relevant indexes for frequently queried columns
+- Use NOT NULL where appropriate
+{{/if_output_sql}}
 
 Description: {{DESCRIPTION}}

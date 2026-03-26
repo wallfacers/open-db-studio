@@ -6,27 +6,32 @@ triggers:
 
 # table-edit Skill
 
-Use these tools to read table column metadata and update column comments.
+Use fs_* tools to read table column metadata and update column comments.
 
 ## Available Tools
 
-### get_column_meta
+### Read column metadata
 Get column metadata (name, type, nullable, comment) for a table.
 ```
-get_column_meta(connection_id: integer, table_name: string, database?: string)
+fs_read("tab.table", "table_name@conn:N", "struct")
+fs_read("tab.table", "table_name",        "struct")   # single-connection shorthand
 ```
+Returns `{ type:"table", name, columns:[{ name, type, nullable, comment }] }`.
 
-### update_column_comment
-Update a column's comment/description via ALTER TABLE. Requires Auto mode ON.
+### Update column comment
+Update a column's comment/description. Requires Auto mode ON.
 Supported databases: MySQL, PostgreSQL.
 ```
-update_column_comment(connection_id: integer, table_name: string, column_name: string, comment: string, database?: string)
+fs_write("tab.table", "table_name@conn:N", {
+  "mode": "struct",
+  "path": "/columns/N/comment",
+  "value": "new comment text"
+})
 ```
-On success, returns a message with undo instructions.
+Returns `{ status: "applied" }` on success. Undo via `fs_exec("tab.query","active","undo")`.
 
 ## Write Operation Guidelines
 
-- Always call `get_column_meta` first to read the current state before updating
-- All writes are recorded in `change_history` for undo support
-- In Auto OFF mode, the tool returns an error — use ACP `request_permission` first
+- Always call `fs_read` first to read current state before updating
+- In Auto OFF mode, the Adapter returns `{ status:"error", message:"需要开启 Auto 模式" }` — do not retry without user action
 - NOT supported: changing column type or column name (high risk, not exposed in this version)

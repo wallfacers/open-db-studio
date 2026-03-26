@@ -55,7 +55,6 @@ export const EditableCell: React.FC<EditableCellProps> = ({
 
   const baseCellClass = [
     'px-3 py-1.5 text-left text-[#c8daea] border-r border-b border-[#1e2d42] relative overflow-hidden',
-    'max-w-[300px]',
     isDeleted ? 'line-through text-red-400/60' : '',
     isCloned ? 'text-green-400' : '',
     isModified && !isDeleted ? 'bg-yellow-900/20' : '',

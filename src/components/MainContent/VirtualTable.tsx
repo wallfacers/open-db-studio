@@ -3,23 +3,26 @@ import type { Virtualizer } from '@tanstack/react-virtual';
 
 interface VirtualTableProps {
   columns: string[];
+  colWidths: number[];
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
   renderRow: (rowIndex: number) => React.ReactNode;
   thead: React.ReactNode;
 }
 
 const ROW_NUM_WIDTH = 40;
-const COL_WIDTH = 150;
 
 export const VirtualTable: React.FC<VirtualTableProps> = ({
   columns,
+  colWidths,
   rowVirtualizer,
   renderRow,
   thead,
 }) => {
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
-  const totalWidth = ROW_NUM_WIDTH + columns.length * COL_WIDTH;
+  const totalWidth = ROW_NUM_WIDTH + (colWidths.length > 0
+    ? colWidths.reduce((s, w) => s + w, 0)
+    : columns.length * 150);
 
   return (
     <table

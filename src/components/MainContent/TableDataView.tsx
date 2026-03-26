@@ -17,6 +17,7 @@ import { DropdownSelect } from '../common/DropdownSelect';
 import { VirtualTable } from './VirtualTable';
 import { NormalTable } from './NormalTable';
 import { useVirtualRows } from '../../hooks/useVirtualRows';
+import { computeColumnWidths } from '../../utils/columnWidths';
 
 // ─── 独立子组件：持有 virtualizer，避免滚动时重渲染整个 TableDataView ─────────
 interface TableScrollContainerProps {
@@ -24,6 +25,7 @@ interface TableScrollContainerProps {
   isLoading: boolean;
   hasData: boolean;
   columns: string[];
+  colWidths: number[];
   thead: React.ReactNode;
   normalThead: React.ReactNode;
   renderRow: (ri: number) => React.ReactNode;
@@ -31,7 +33,7 @@ interface TableScrollContainerProps {
 }
 
 const TableScrollContainer = React.memo(({
-  rowCount, isLoading, hasData, columns, thead, normalThead, renderRow, useVirtual,
+  rowCount, isLoading, hasData, columns, colWidths, thead, normalThead, renderRow, useVirtual,
 }: TableScrollContainerProps) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -54,6 +56,7 @@ const TableScrollContainer = React.memo(({
           {useVirtual ? (
             <VirtualTable
               columns={columns}
+              colWidths={colWidths}
               rowVirtualizer={rowVirtualizer}
               thead={thead}
               renderRow={renderRow}
@@ -305,6 +308,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
 
+  // 动态列宽：根据列名 + 前50行采样内容估算，范围 [80, 750px]
+  const colWidths = useMemo(
+    () => data ? computeColumnWidths(data.columns, data.rows as (string | number | boolean | null)[][]) : [],
+    [data],
+  );
+
   // 页码下拉选项，上限 500 防止大表渲染卡顿
   const pageOptions = useMemo(() =>
     Array.from({ length: Math.min(totalPages, 500) }, (_, i) => ({
@@ -348,11 +357,14 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               >×</button>
             </Tooltip>
           </td>
-          {row.map((cell, ji) => (
-            <td key={ji} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] truncate">
-              {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
-            </td>
-          ))}
+          {row.map((cell, ji) => {
+            const w = colWidths[ji] ?? 150;
+            return (
+              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px` }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] overflow-hidden">
+                <div className="truncate">{cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}</div>
+              </td>
+            );
+          })}
         </>
       );
     }
@@ -367,21 +379,24 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         >
           {(page - 1) * pageSize + ri + 1}
         </td>
-        {row.map((cell, ci) => (
-          <EditableCell
-            key={ci}
-            value={cell}
-            pendingValue={getPendingValue(ri, ci)}
-            isDeleted={isRowDeleted(ri)}
-            onCommit={newVal => editCell(ri, ci, newVal)}
-            onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
-            onOpenEditor={() => openCellEditor(ri, ci)}
-            style={{ flex: '1 0 150px' }}
-          />
-        ))}
+        {row.map((cell, ci) => {
+          const w = colWidths[ci] ?? 150;
+          return (
+            <EditableCell
+              key={ci}
+              value={cell}
+              pendingValue={getPendingValue(ri, ci)}
+              isDeleted={isRowDeleted(ri)}
+              onCommit={newVal => editCell(ri, ci, newVal)}
+              onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
+              onOpenEditor={() => openCellEditor(ri, ci)}
+              style={{ flex: `0 0 ${w}px`, minWidth: `${w}px` }}
+            />
+          );
+        })}
       </>
     );
-  }, [data, page, pageSize, pending, rowBgClass, getPendingValue, isRowDeleted, editCell, removeClonedRow, handleContextMenu, openCellEditor, t]);
+  }, [data, page, pageSize, pending, colWidths, rowBgClass, getPendingValue, isRowDeleted, editCell, removeClonedRow, handleContextMenu, openCellEditor, t]);
 
   // ─── 稳定化 thead，仅排序状态/列变化时重建 ────────────────────────────────
   const colSortButtons = useCallback((col: string) => (
@@ -416,27 +431,33 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       <th style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
         {t('tableDataView.serialNo')}
       </th>
-      {data.columns.map(col => (
-        <th key={col} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
-          {colSortButtons(col)}
-        </th>
-      ))}
+      {data.columns.map((col, ci) => {
+        const w = colWidths[ci] ?? 150;
+        return (
+          <th key={col} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px` }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
+            {colSortButtons(col)}
+          </th>
+        );
+      })}
     </tr>
-  ) : null, [data?.columns, colSortButtons, t]);
+  ) : null, [data?.columns, colWidths, colSortButtons, t]);
 
-  // 标准表格布局版（NormalTable 使用，列宽由浏览器自动计算）
+  // 标准表格布局版（NormalTable 使用）
   const normalThead = useMemo(() => data ? (
     <tr>
       <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">
         {t('tableDataView.serialNo')}
       </th>
-      {data.columns.map(col => (
-        <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th">
-          {colSortButtons(col)}
-        </th>
-      ))}
+      {data.columns.map((col, ci) => {
+        const w = colWidths[ci] ?? 150;
+        return (
+          <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
+            {colSortButtons(col)}
+          </th>
+        );
+      })}
     </tr>
-  ) : null, [data?.columns, colSortButtons, t]);
+  ) : null, [data?.columns, colWidths, colSortButtons, t]);
 
   const hasData = !!(data && (data.rows.length > 0 || pending.clonedRows.length > 0));
 
@@ -604,6 +625,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         isLoading={isLoading}
         hasData={hasData}
         columns={data?.columns ?? []}
+        colWidths={colWidths}
         thead={thead}
         normalThead={normalThead}
         renderRow={renderRow}

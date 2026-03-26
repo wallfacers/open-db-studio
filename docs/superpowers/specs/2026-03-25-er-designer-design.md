@@ -1,691 +1,493 @@
-# ER 图设计器 — 设计规格文档
+# ER 图设计器 — 设计规格文档（修订版 v2）
 
-> 日期: 2026-03-25
-> 状态: Phase 1 Partial (Backend Complete, Frontend Canvas Pending)
-> 最后更新: 2026-03-25
+> 日期: 2026-03-27
+> 状态: Revision — 修复现有实现，双向同步优先
+> 原始日期: 2026-03-25
 
-## 实现状态
+---
 
-### 已完成 (Phase 1 Backend + 基础 Frontend)
+## 背景与问题诊断
 
-| 模块 | 组件 | 状态 |
-|------|------|------|
-| **Backend** | SQLite 表结构 (er_projects, er_tables, er_columns, er_relations, er_indexes) | ✅ |
-| **Backend** | Rust models.rs (实体 + 请求类型) | ✅ |
-| **Backend** | repository.rs (完整 CRUD) | ✅ |
-| **Backend** | ddl_generator.rs (5种方言) | ✅ |
-| **Backend** | diff_engine.rs (双向 Diff) | ✅ |
-| **Backend** | export.rs (JSON v1.0 导入导出) | ✅ |
-| **Backend** | commands.rs (29个 Tauri 命令) | ✅ |
-| **Frontend** | TypeScript 类型定义 | ✅ |
-| **Frontend** | erDesignerStore (Zustand) | ✅ |
-| **Frontend** | TabType 'er_design' + openERDesignTab | ✅ |
-| **Frontend** | ActivityBar 图标入口 | ✅ |
-| **Frontend** | ERSidebar (项目树 + 右键菜单) | ✅ |
-| **Frontend** | ProjectContextMenu / TableContextMenu | ✅ |
+原始规格（2026-03-25）定义的前端实现存在以下根本性问题：
 
-### 待实现 (Phase 1 Frontend Canvas)
+1. **`ERCanvas` 从未接入** — `MainContent` 渲染 placeholder，画布组件不可见
+2. **双状态同步 anti-pattern** — `ERCanvas/index.tsx` 用 `useMemo` 把 Zustand store 变化同步到 ReactFlow 本地状态，造成无限渲染循环
+3. **`onConnect` 不持久化** — 连线只更新 ReactFlow 本地边，不调用 `store.addRelation`
+4. **`ERToolbar` 孤立** — 工具栏组件存在但未接入 `ERCanvas`（ERCanvas 从未渲染）
+5. **新建表不更新画布** — `ERToolbar.handleAddTable` 调用 `store.addTable` 但没有回调路径把新节点加入 ReactFlow
+6. **删除表不更新画布** — `ERTableNode.handleDeleteTable` 调用 `store.deleteTable` 但节点不从 ReactFlow 中移除
+7. **后端状态未验证** — er_* Tauri 命令、SQLite 迁移从未在运行时验证
 
-| 模块 | 组件 | 优先级 |
-|------|------|--------|
-| **Frontend** | ERCanvas/index.tsx (ReactFlow 画布容器) | HIGH |
-| **Frontend** | ERCanvas/ERTableNode.tsx (表节点组件) | HIGH |
-| **Frontend** | ERCanvas/EREdge.tsx (3种样式关系线) | HIGH |
-| **Frontend** | ERCanvas/ERToolbar.tsx (工具栏) | HIGH |
-| **Frontend** | dialogs/DDLPreviewDialog.tsx | HIGH |
-| **Frontend** | dialogs/DiffReportDialog.tsx | HIGH |
-| **Frontend** | dialogs/BindConnectionDialog.tsx | MEDIUM |
-| **Frontend** | dialogs/ImportTableDialog.tsx | MEDIUM |
-| **Frontend** | hooks/useERCanvas.ts | MEDIUM |
-| **Frontend** | hooks/useERKeyboard.ts | MEDIUM |
-| **Frontend** | Undo/Redo 完整实现 (inverse operation) | LOW |
+---
 
-### Phase 2 (独立设计文档)
+## 核心目标
 
-| 模块 | 说明 |
-|------|------|
-| **AI 集成** | Assistant 联动、结构化操作指令、批量建模 |
+**双向同步优先**：ER 图作为真实数据库 Schema 的镜像 + 编辑层。
 
-## 1. 概述
+- 连接数据库 → 导入 Schema → 可视化编辑
+- ER 图变更 → 生成 DDL Diff → 推送到数据库
+- 数据库变更 → 同步回 ER 图
 
-在 open-db-studio 中新增独立的 **ER 图设计器**模块，作为 ActivityBar 的一级导航项。支持可视化表结构设计、多方言 DDL 生成、数据库双向 Diff 同步、AI 对话式建模，以及与知识图谱注释标记系统的深度集成。
+**全功能保留**：原规格所有功能（多项目管理、注释标记集成、撤销/重做、DDL 生成、Diff 报告）保留，修复实现而非砍功能。
 
-### 1.1 核心价值
+---
 
-- 可视化设计数据库表结构，降低建模门槛
-- 多方言 DDL 生成，一份设计适配多种数据库
-- 双向 Diff + 选择性同步，ER 图与真实数据库保持一致
-- AI 对话式批量建模，自然语言快速生成完整数据模型
-- 注释标记关系管理，适配企业级项目（业务代码维护关系，不依赖外键约束）
+## 1. 核心架构原则：单向数据流
 
-### 1.2 设计决策
+### 问题根源
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| 模块独立性 | 独立 ActivityBar 项 + 独立 Store | 功能复杂度高，避免污染现有模块 |
-| 项目组织 | 混合模式（独立项目 + 绑定连接） | 兼顾离线设计和在线同步场景 |
-| 持久化 | SQLite 主存储 + JSON 导出 | 统一管理 + 便于分享备份 |
-| AI 交互 | 复用现有 Assistant 面板 | 一致的交互体验，减少学习成本 |
-| 导入粒度 | 全量 + 选择性导入 | 灵活应对不同场景 |
-| Diff 同步 | 双向 + Diff 报告 + 选择性同步 | 最完整的同步能力 |
-| DDL 方言 | 先行支持 5 种（含未实现连接的方言） | DDL 生成不依赖实际连接 |
-| 关系策略 | 注释标记优先，外键约束可选 | 适配企业级项目性能需求 |
-| TabType | 新增 `er_design`，废弃旧 `er_diagram` | 旧类型为只读浏览，新类型为完整设计器，统一入口避免混淆 |
-| AI 集成阶段 | Phase 2 单独设计 | AI 协议定义需独立设计文档，初期实现先聚焦核心编辑+DDL+Diff |
+原 `ERCanvas` 企图维护两份状态同步：
+- ReactFlow 本地状态（nodes/edges）
+- Zustand store（tables/columns/relations）
 
-## 2. 整体布局
+用 `useMemo` 做副作用同步，导致循环渲染。`useERCanvas.ts` 同样存在此问题（`initialNodes` 是 useMemo，依赖 `tables`，导致 useEffect 每次重触发）——该文件标记为**删除**，不在新实现中使用。
+
+### 新架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ TitleBar                                                     │
-├────┬──────────┬──────────────────────────────┬───────────────┤
-│    │          │ [ER项目A] [ER项目B] [×]      │               │
-│ A  │  ER      │──────────────────────────────│   Assistant   │
-│ c  │  Sidebar │  工具栏: [+表][布局][DDL]    │   (复用)      │
-│ t  │          │  [Diff][同步][导入][导出]     │               │
-│ i  │ 📁项目1  │                              │               │
-│ v  │  └─users │   ReactFlow 画布             │               │
-│ i  │  └─orders│   ┌─────┐    ┌─────┐        │               │
-│ t  │ 📁项目2  │   │users │───│orders│        │               │
-│ y  │  └─...   │   └─────┘    └─────┘        │               │
-│    │          │                              │               │
-│ B  │──────────│                              │               │
-│ a  │ 🔗绑定   │                              │               │
-│ r  │ MySQL-dev│                              │               │
-├────┴──────────┴──────────────────────────────┴───────────────┤
-│ StatusBar                                                     │
-└─────────────────────────────────────────────────────────────┘
+项目加载（useEffect，projectId 变化时触发一次）
+    store.loadProject(projectId)          ← 设置 activeProjectId + 填充 store
+        → 读取 store.getState()
+        → setNodes(tables → ReactFlow nodes，含完整 data callbacks)
+        → setEdges(relations → ReactFlow edges)
+
+用户操作（拖拽/编辑/连线）
+    → ReactFlow 本地状态立即响应（流畅）
+    → 操作完成后回调持久化（store → Rust invoke）
+    → store 局部更新自身 state（不调用 setNodes/setEdges）
+
+画布 reload（同步数据库到 ER 后）
+    → 调用 reloadCanvas()（见 Section 3）
+    → 重新 loadProject + setNodes + setEdges
 ```
 
-**关键设计点：**
+**关键约束**：
+- 画布状态由 ReactFlow 本地管理，**不**反向从 store 驱动
+- store 只做持久化，不调用 setNodes/setEdges
+- 项目切换（projectId 变化）才重新 setNodes/setEdges
+- `addTable` / `deleteTable` 等改变节点数量的操作，**必须**通过 ERCanvas 提供的回调来同步 ReactFlow，不能只更新 store
 
-- ActivityBar 新增"ER 设计器"图标，位于 Database Explorer 之后
-- ERSidebar：独立目录树，结构为 `ER项目 → 表 → 列`，底部显示绑定的数据库连接
-- Tab 复用现有 Tab 系统，新增 `er_design` TabType（废弃旧 `er_diagram` 类型），每个 ER 项目打开一个 Tab
-- 画布基于 ReactFlow，节点风格参考现有 ERDiagram.tsx
-- Assistant 联动：活跃 Tab 为 `er_design` 时自动切换 ER 图上下文
+参考实现模式：`src/components/ERDiagram.tsx`（useEffect 加载一次，ReactFlow 管理本地状态）。
 
-### 2.1 UI 一致性约束
+---
 
-所有组件严格遵循项目 Abyss 深色主题：
-
-| 元素 | 样式 |
-|------|------|
-| 主题色 | `#00c9a7`（cyan accent） |
-| 背景层级 | `#080d12` → `#0d1117` → `#111922` → `#151d28` |
-| 下拉弹框 | 复用 `DropdownSelect` 组件（Portal, `z-[200]`, `bg-[#151d28] border-[#2a3f5a]`） |
-| 弹窗 | 复用 `BaseModal`（`bg-[#111922] border-[#253347]`） |
-| 确认框 | 复用 `ConfirmDialog`（全局 Zustand store） |
-| 右键菜单 | 遵循 ContextMenu 样式（`bg-[#0d1117] border-[#1e2d42]`, `px-3 py-1.5 text-xs`） |
-| 输入框 | `bg-[#1a2639] border-[#253347]`，focus: `border-[#009e84]` |
-| 图标 | 统一 `lucide-react` |
-| 浮动层 | `createPortal` 到 `document.body` |
-
-## 3. 数据模型
-
-### 3.1 SQLite 表结构
-
-```sql
--- ER 项目
-CREATE TABLE er_projects (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    connection_id   INTEGER NULL,           -- 绑定的数据库连接（NULL=离线项目）
-    database_name   TEXT NULL,
-    schema_name     TEXT NULL,
-    viewport_x      REAL DEFAULT 0,
-    viewport_y      REAL DEFAULT 0,
-    viewport_zoom   REAL DEFAULT 1,
-    created_at      TEXT NOT NULL,           -- ISO 8601
-    updated_at      TEXT NOT NULL
-);
-
--- ER 表
-CREATE TABLE er_tables (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id      INTEGER NOT NULL REFERENCES er_projects(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    comment         TEXT,
-    position_x      REAL DEFAULT 0,
-    position_y      REAL DEFAULT 0,
-    color           TEXT NULL,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
-
--- ER 列
-CREATE TABLE er_columns (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_id        INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    data_type       TEXT NOT NULL,
-    nullable        INTEGER DEFAULT 1,
-    default_value   TEXT NULL,
-    is_primary_key  INTEGER DEFAULT 0,
-    is_auto_increment INTEGER DEFAULT 0,
-    comment         TEXT,
-    sort_order      INTEGER DEFAULT 0,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
-
--- ER 关系
-CREATE TABLE er_relations (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id      INTEGER NOT NULL REFERENCES er_projects(id) ON DELETE CASCADE,
-    name            TEXT NULL,
-    source_table_id INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
-    source_column_id INTEGER NOT NULL REFERENCES er_columns(id) ON DELETE CASCADE,
-    target_table_id INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
-    target_column_id INTEGER NOT NULL REFERENCES er_columns(id) ON DELETE CASCADE,
-    relation_type   TEXT DEFAULT 'one_to_many',
-    on_delete       TEXT DEFAULT 'NO ACTION',
-    on_update       TEXT DEFAULT 'NO ACTION',
-    source          TEXT DEFAULT 'designer',  -- schema / comment / designer
-    comment_marker  TEXT NULL,                 -- 原始注释标记文本
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
-
--- ER 索引
-CREATE TABLE er_indexes (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_id        INTEGER NOT NULL REFERENCES er_tables(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    type            TEXT DEFAULT 'INDEX',      -- INDEX / UNIQUE / FULLTEXT
-    columns         TEXT NOT NULL,             -- JSON array of column names (便于导出/Diff 对比)
-    created_at      TEXT NOT NULL
-);
-
--- 唯一约束：同一项目内表名不重复
-CREATE UNIQUE INDEX idx_er_tables_project_name ON er_tables(project_id, name);
-```
-
-**迁移策略：** 新表添加到 `schema/init.sql`（新用户）+ `src-tauri/src/db/migrations.rs`（现有用户升级）。
-```
-
-### 3.2 JSON 导出格式
-
-```json
-{
-  "version": "1.0",
-  "project": {
-    "name": "电商系统",
-    "description": "...",
-    "tables": [
-      {
-        "name": "users",
-        "comment": "用户表",
-        "position": { "x": 100, "y": 200 },
-        "columns": [
-          {
-            "name": "id",
-            "data_type": "BIGINT",
-            "nullable": false,
-            "is_primary_key": true,
-            "is_auto_increment": true
-          },
-          {
-            "name": "email",
-            "data_type": "VARCHAR(255)",
-            "nullable": false
-          }
-        ],
-        "indexes": [
-          { "name": "idx_email", "type": "UNIQUE", "columns": ["email"] }
-        ]
-      }
-    ],
-    "relations": [
-      {
-        "name": "fk_order_user",
-        "source": { "table": "orders", "column": "user_id" },
-        "target": { "table": "users", "column": "id" },
-        "type": "one_to_many",
-        "on_delete": "CASCADE",
-        "source_type": "comment",
-        "comment_marker": "@ref:users.id"
-      }
-    ]
-  }
-}
-```
-
-## 4. Rust 后端
-
-### 4.1 模块结构
-
-```
-src-tauri/src/er/
-├── mod.rs              -- 模块入口
-├── models.rs           -- 数据结构体
-├── repository.rs       -- SQLite CRUD
-├── ddl_generator.rs    -- 多方言 DDL 生成引擎
-├── diff_engine.rs      -- 双向 Diff 对比引擎
-├── export.rs           -- JSON 导出/导入
-```
-
-### 4.2 Tauri 命令
-
-```
--- 项目 CRUD
-er_create_project / er_update_project / er_delete_project / er_list_projects
-er_get_project(project_id) -> ErProjectFull  -- 返回项目+所有表/列/关系/索引，单次加载
-
--- 表 CRUD
-er_create_table / er_update_table / er_delete_table
-
--- 列 CRUD
-er_create_column / er_update_column / er_delete_column / er_reorder_columns
-
--- 关系 CRUD
-er_create_relation / er_update_relation / er_delete_relation
-
--- 索引 CRUD
-er_create_index / er_update_index / er_delete_index
-
--- DDL 生成
-er_generate_ddl(project_id, dialect, options)
-  options: { include_indexes: bool, include_comments: bool, include_foreign_keys: bool }
-
--- Diff 与同步
-er_diff_with_database(project_id)              -- 后端从 er_projects 读取 connection_id/database_name/schema_name
-er_sync_from_database(project_id, table_names?)
-er_generate_sync_ddl(project_id, changes)      -- 预览：生成 ALTER/CREATE/DROP DDL
-er_execute_sync_ddl(project_id, ddl_statements) -- 执行：逐条执行，失败时中断并报告
-
--- 导入导出
-er_export_json(project_id)
-er_import_json(json)
-```
-
-### 4.3 DDL 多方言生成引擎
-
-支持方言：MySQL、PostgreSQL、Oracle、SQL Server、SQLite
-
-```rust
-trait DdlDialect {
-    fn create_table(table, columns, indexes) -> String;
-    fn map_type(generic_type: &str) -> String;
-    fn primary_key_syntax(columns) -> String;
-    fn foreign_key_syntax(relation) -> String;
-    fn auto_increment_syntax() -> String;
-    fn index_syntax(index) -> String;
-    fn comment_syntax(table, column, comment) -> String;
-}
-```
-
-**类型映射表：**
-
-| 通用类型 | MySQL | PostgreSQL | Oracle | SQL Server | SQLite |
-|---------|-------|------------|--------|------------|--------|
-| BIGINT | BIGINT | BIGINT | NUMBER(19) | BIGINT | INTEGER |
-| VARCHAR(n) | VARCHAR(n) | VARCHAR(n) | VARCHAR2(n) | NVARCHAR(n) | TEXT |
-| TEXT | TEXT | TEXT | CLOB | NVARCHAR(MAX) | TEXT |
-| DATETIME | DATETIME | TIMESTAMP | TIMESTAMP | DATETIME2 | TEXT |
-| BOOLEAN | TINYINT(1) | BOOLEAN | NUMBER(1) | BIT | INTEGER |
-| DECIMAL(p,s) | DECIMAL(p,s) | NUMERIC(p,s) | NUMBER(p,s) | DECIMAL(p,s) | REAL |
-
-> 以上为示例性映射，完整映射（含 INT、SMALLINT、TINYINT、FLOAT、DOUBLE、DATE、TIME、TIMESTAMP、BLOB、JSON、ENUM 等）在实现时补齐。Diff 引擎对比类型时需做大小写 + 别名归一化（如 PostgreSQL 的 `character varying` = `VARCHAR`）。
-
-**DDL 生成默认选项：**
-
-- `include_indexes`: true
-- `include_comments`: true（含关系标记）
-- `include_foreign_keys`: **false**（企业级默认不生成外键约束）
-
-### 4.4 Diff 引擎
-
-```rust
-struct DiffResult {
-    added_tables:    Vec<TableDiff>,      // ER 有、数据库没有
-    removed_tables:  Vec<TableDiff>,      // 数据库有、ER 没有
-    modified_tables: Vec<TableModDiff>,   // 两边都有但有差异
-}
-
-struct TableModDiff {
-    table_name: String,
-    added_columns:    Vec<ColumnDiff>,
-    removed_columns:  Vec<ColumnDiff>,
-    modified_columns: Vec<ColumnModDiff>,  // 类型变更、nullable 变更等
-    added_indexes:    Vec<IndexDiff>,
-    removed_indexes:  Vec<IndexDiff>,
-    added_relations:  Vec<RelationDiff>,
-    removed_relations: Vec<RelationDiff>,
-}
-```
-
-## 5. 前端架构
-
-### 5.1 Zustand Store: `erDesignerStore`
-
-```typescript
-interface ErDesignerStore {
-  // 项目列表
-  projects: ErProject[]
-  loadProjects: () => Promise<void>
-  createProject: (name: string, description?: string) => Promise<ErProject>
-  updateProject: (id: number, updates: Partial<ErProject>) => Promise<void>
-  deleteProject: (id: number) => Promise<void>
-
-  // 当前活跃项目状态
-  activeProjectId: number | null
-  tables: ErTable[]
-  columns: Record<number, ErColumn[]>
-  relations: ErRelation[]
-  indexes: Record<number, ErIndex[]>
-
-  // 数据加载
-  loadProject: (projectId: number) => Promise<void>
-
-  // 表操作
-  addTable: (name: string, position: {x: number, y: number}) => Promise<ErTable>
-  updateTable: (id: number, updates: Partial<ErTable>) => Promise<void>
-  deleteTable: (id: number) => Promise<void>
-
-  // 列操作
-  addColumn: (tableId: number, column: Partial<ErColumn>) => Promise<void>
-  updateColumn: (id: number, updates: Partial<ErColumn>) => Promise<void>
-  deleteColumn: (id: number, tableId: number) => Promise<void>
-  reorderColumns: (tableId: number, columnIds: number[]) => Promise<void>
-
-  // 关系操作
-  addRelation: (rel: Partial<ErRelation>) => Promise<void>
-  updateRelation: (id: number, updates: Partial<ErRelation>) => Promise<void>
-  deleteRelation: (id: number) => Promise<void>
-
-  // 索引操作
-  addIndex: (tableId: number, index: Partial<ErIndex>) => Promise<void>
-  updateIndex: (id: number, updates: Partial<ErIndex>) => Promise<void>
-  deleteIndex: (id: number, tableId: number) => Promise<void>
-
-  // 连接绑定
-  bindConnection: (projectId: number, connectionId: number, db: string, schema?: string) => Promise<void>
-  unbindConnection: (projectId: number) => Promise<void>
-
-  // DDL / Diff / Sync
-  generateDDL: (projectId: number, dialect: string) => Promise<string>
-  diffWithDatabase: (projectId: number) => Promise<DiffResult>
-  syncFromDatabase: (projectId: number, tableNames?: string[]) => Promise<void>
-
-  // 导入导出
-  exportJson: (projectId: number) => Promise<string>
-  importJson: (json: string) => Promise<ErProject>
-
-  // 撤销/重做
-  undo: () => void
-  redo: () => void
-  operationHistory: OperationRecord[]
-}
-```
-
-### 5.2 组件树
+## 2. 组件结构
 
 ```
 src/components/ERDesigner/
-├── index.tsx                     -- 入口组件
+├── index.tsx                     ← 只导出 ERSidebar（保持不变）
 ├── ERSidebar/
-│   ├── index.tsx                 -- 侧边栏主组件
-│   ├── ProjectTree.tsx           -- 项目目录树
-│   ├── ProjectTreeNode.tsx       -- 单个树节点渲染
-│   └── ProjectContextMenu.tsx    -- 右键菜单
+│   ├── index.tsx                 ← 确认 loadProjects 在挂载时调用；双击节点调用 openERDesignTab
+│   ├── ProjectContextMenu.tsx    ← 新增"打开"菜单项，调用 openERDesignTab（目前无此项）
+│   └── TableContextMenu.tsx
 ├── ERCanvas/
-│   ├── index.tsx                 -- ReactFlow 画布容器
-│   ├── ERToolbar.tsx             -- 画布工具栏
-│   ├── ERTableNode.tsx           -- 表节点组件
-│   └── EREdge.tsx                -- 关系连线（自定义样式）
+│   ├── index.tsx                 ← 重写：单向数据流架构
+│   ├── ERTableNode.tsx           ← 修复：data 新增 onDeleteTable 回调；补全列删除按钮
+│   ├── EREdge.tsx                ← 保留现有实现，不改动
+│   └── ERToolbar.tsx             ← 修改：新增 onTableAdded 回调 prop；新增"绑定连接"按钮
 ├── dialogs/
-│   ├── CreateProjectDialog.tsx   -- 新建项目（BaseModal）
-│   ├── BindConnectionDialog.tsx  -- 绑定数据库连接（DropdownSelect）
-│   ├── ImportTableDialog.tsx     -- 从数据库导入表
-│   ├── DDLPreviewDialog.tsx      -- DDL 预览（方言选择+代码高亮+复制/执行）
-│   └── DiffReportDialog.tsx      -- Diff 报告（变更列表+同步方向选择）
+│   ├── DDLPreviewDialog.tsx      ← 保留，props: visible/projectId/hasConnection/onClose/onExecute
+│   ├── DiffReportDialog.tsx      ← 保留，props: visible/projectId/connectionInfo/onClose/onSyncToDb/onSyncFromDb
+│   ├── BindConnectionDialog.tsx  ← 保留，接入触发点
+│   └── ImportTableDialog.tsx     ← 保留，接入触发点
 └── hooks/
-    ├── useERCanvas.ts            -- ReactFlow 节点/边与 store 同步
-    └── useERKeyboard.ts          -- 画布快捷键
+    ├── useERCanvas.ts            ← **删除**（含循环渲染 anti-pattern）
+    └── useERKeyboard.ts          ← 保留，集成快捷键
 ```
 
-### 5.3 ERSidebar 目录树结构
-
-```
-ER 设计器
-├── 📁 电商系统              (右键: 重命名/删除/绑定连接/导出)
-│   ├── 📋 users             (右键: 编辑/删除/添加列)
-│   │   ├── 🔑 id            (PK 图标)
-│   │   ├──    email
-│   │   └──    name
-│   ├── 📋 orders
-│   │   ├── 🔑 id
-│   │   ├── 🔗 user_id       (FK/关系 图标)
-│   │   └──    amount
-│   └── [+ 新建表]
-├── 📁 支付系统
-│   └── ...
-└── [+ 新建项目]
-```
-
-### 5.4 Tab 集成
-
-- `TabType` 新增 `'er_design'`，废弃并移除旧 `'er_diagram'` 类型及 `ERDiagram.tsx` 只读组件
-- `Tab` 接口新增 `erProjectId?: number`
-- `queryStore` 新增 `openERDesignTab(projectId, projectName)` 方法，按 `erProjectId` 去重
-- `MainContent` 新增渲染分支：`activeTab.type === 'er_design'` → `<ERCanvas />`
-- 迁移：移除 `MainContent` 中 `er_diagram` 分支，删除 `src/components/ERDiagram.tsx` 和 `src/components/TableNode.tsx`
-
-## 6. 核心功能流程
-
-### 6.1 DDL 预览弹窗
-
-```
-┌─────────────────────────────────────────┐
-│ 生成 DDL                          [×]   │
-│─────────────────────────────────────────│
-│ 方言: [MySQL ▼]                         │
-│ ☑ 索引  ☑ 列注释(含标记)  ☐ 外键约束    │
-│─────────────────────────────────────────│
-│ CREATE TABLE `users` (                  │
-│   `id` BIGINT NOT NULL AUTO_INCREMENT,  │
-│   `email` VARCHAR(255) NOT NULL,        │
-│   PRIMARY KEY (`id`)                    │
-│ ) ENGINE=InnoDB;                        │
-│─────────────────────────────────────────│
-│              [复制]  [执行到数据库]       │
-└─────────────────────────────────────────┘
-```
-
-- 方言切换用 `DropdownSelect`，实时重新生成
-- 代码高亮复用 `prismjs` SQL 语法
-- "执行到数据库"仅当项目已绑定连接时可用
-- 外键约束默认关闭
-
-### 6.2 Diff 报告弹窗
-
-```
-┌───────────────────────────────────────────────────┐
-│ 结构差异对比                                 [×]   │
-│───────────────────────────────────────────────────│
-│ ER 图 vs MySQL-dev / ecommerce                    │
-│───────────────────────────────────────────────────│
-│ ✅ 新增（仅 ER 图有）                              │
-│   ☑ 表 payments (4列)                             │
-│   ☑ 列 users.avatar_url VARCHAR(500)              │
-│ ⚠️ 变更                                           │
-│   ☑ 列 orders.amount DECIMAL(10,2)→DECIMAL(12,2)  │
-│ 🗑️ 删除（仅数据库有）                              │
-│   ☐ 列 users.legacy_field TEXT                    │
-│───────────────────────────────────────────────────│
-│ [ER → 数据库 (生成 ALTER)]  [数据库 → ER (更新设计)]│
-└───────────────────────────────────────────────────┘
-```
-
-- 每项可勾选，选择性同步
-- ER → 数据库：生成 ALTER/CREATE/DROP DDL，预览后执行
-- 数据库 → ER：将勾选的变更同步回 ER 图
-
-### 6.3 数据库导入流程
-
-```
-用户点击"从数据库导入"
-  → 项目已绑定连接？ ─否→ 弹出 BindConnectionDialog
-  → 是 → 选择: [全量导入] / [选择导入]
-    → 全量: invoke get_full_schema → 转换为 ER 数据
-    → 选择: 弹出表列表（含搜索过滤）→ 勾选 → 导入
-  → 解析真实 FK → er_relation (source="schema")
-  → 解析列注释标记 → er_relation (source="comment")
-  → Dagre 自动布局 → 画布渲染
-```
-
-### 6.4 AI 助手集成（Phase 2 — 需独立设计文档）
-
-> AI 协议定义（结构化响应格式、tool registration、错误处理）复杂度高，将在 Phase 2 单独设计。
-> Phase 1 先实现核心编辑 + DDL 生成 + Diff 同步功能。
-
-**Phase 2 预期能力：**
-
-- 当活跃 Tab 为 `er_design` 时，Assistant 上下文自动切换
-- 系统 prompt 注入当前 ER 项目的表/列/关系摘要
-- AI 返回结构化操作指令，前端解析后调用 `erDesignerStore` 方法
-- 支持的 AI 操作：
-  - `create_table` / `drop_table` / `rename_table`
-  - `add_column` / `drop_column` / `modify_column`
-  - `add_relation` / `drop_relation`
-  - `add_index` / `drop_index`
-  - `generate_ddl` / `diff_database`
-  - `batch`（批量建模："设计一个电商系统"→ 一次性生成多表+关系）
-
-### 6.5 关系管理与注释标记集成
-
-#### 关系来源三层模型
-
-| source | 含义 | 视觉样式 | 可编辑性 |
-|--------|------|----------|----------|
-| `schema` | 真实 FK 约束 | 实线蓝色 `#3794ff`，2px | 不可删除（由 DB 管理） |
-| `comment` | 注释标记推断 | 虚线琥珀色 `#f59e0b`，1.5px | 可编辑标记 |
-| `designer` | ER 设计器创建 | 点线紫色 `#a855f7`，1.5px | 可自由编辑 |
-
-#### 创建关系时的同步选项
-
-```
-同步选项（创建/编辑关系时显示）:
-  ☑ 写入注释标记 (@ref:table.column)    ← 默认勾选
-  ☐ 生成真实外键 (ALTER TABLE)           ← 默认不勾选
-```
-
-#### 注释标记维护规则
-
-- 创建关系 + 勾选标记同步：在列 comment 中追加 `@ref:table.column`，不破坏原有注释
-- 编辑关系（source="comment"）：替换列 comment 中的旧标记为新标记
-- 删除关系（source="comment"）：从列 comment 中移除对应标记
-- 删除关系（source="schema"）：提示需生成 DROP FOREIGN KEY DDL
-
-#### 知识图谱联动
-
-项目已绑定连接 + 变更涉及注释标记时：
-→ invoke 更新数据库列注释
-→ 触发知识图谱增量重建（event_processor）
-→ 知识图谱自动拾取新的注释标记关系
-
-支持的标记格式（与知识图谱 `comment_parser.rs` 一致）：
-- `@ref:table.column`
-- `@fk(table=T,col=C,type=REL_TYPE)`
-- `[ref:table.column]`
-- `$$ref(table.column)$$`
-
-## 7. 画布交互
-
-### 7.1 ERTableNode 节点
-
-```
-┌──────────────────────────────┐
-│ 📋 users            [⋯] [×] │  表头：双击重命名，[⋯]更多操作，[×]删除
-│──────────────────────────────│
-│ 🔑 id       BIGINT     ≡    │  PK图标 | 列名(双击编辑) | 类型(点击DropdownSelect) | 拖拽排序
-│    email     VARCHAR(255) ≡  │
-│    name      VARCHAR(100) ≡  │
-│──────────────────────────────│
-│ [+ 添加列]                   │
-└──────────────────────────────┘
-```
-
-- 每列左侧 target handle，右侧 source handle
-- hover 时显示 handle，连接时高亮 `#00c9a7`
-- 类型选择使用 `DropdownSelect` 组件
-
-### 7.2 关系连线
-
-```
-实线蓝色 ━━━ FK ━━━▶  source="schema"
-虚线琥珀 ╌╌╌ 注释 ╌╌▶  source="comment"
-点线紫色 ‥‥‥ 设计 ‥‥▶  source="designer"
-```
-
-连线上居中显示关系类型标签（`1:N` / `1:1` / `N:N`），`bg-[#151d28]` 小气泡。
-Hover 显示完整信息。
-
-### 7.3 工具栏
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ [+ 新建表] [⊞ 自动布局] [⬇ 导入] │ [DDL] [Diff] [↔ 同步] │ [📥 导出] [📤 导入JSON] │
-└─────────────────────────────────────────────────────────────┘
-```
-
-样式：`bg-[#111922]/90 backdrop-blur border-[#1e2d42] rounded-lg shadow-lg`
-按钮：`px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded`
-
-### 7.4 快捷键
-
-| 快捷键 | 操作 |
-|--------|------|
-| Delete / Backspace | 删除选中节点或连线 |
-| Ctrl+A | 全选 |
-| Ctrl+Z | 撤销 |
-| Ctrl+Shift+Z | 重做 |
-| Ctrl+D | 复制选中表 |
-| Ctrl+L | 自动布局 |
-| Ctrl+E | 导出 DDL |
-
-### 7.5 撤销/重做
-
-基于**逆操作（inverse operation）**模式，非全量快照，避免大型项目内存问题：
+### MainContent 修改
 
 ```typescript
-interface OperationRecord {
-  type: 'add_table' | 'delete_table' | 'add_column' | 'update_column'
-        | 'add_relation' | 'delete_relation' | 'move_node' | 'batch'
-  forward: EntityDelta    // 正向变更（受影响实体的字段级 diff）
-  inverse: EntityDelta    // 逆向变更（撤销用）
-  timestamp: number
-}
-
-// 示例：update_column 只记录变更字段
-// forward: { columnId: 5, changes: { data_type: "VARCHAR(500)" } }
-// inverse: { columnId: 5, changes: { data_type: "VARCHAR(255)" } }
+// 去掉 placeholder，改为：
+activeTabObj.type === 'er_design'
+  ? <ERCanvas projectId={activeTabObj.erProjectId!} />
+  : ...
 ```
 
-- 最大历史深度：50 条操作
-- 仅内存保存，Tab 关闭后历史清空
-- `batch` 操作（如 AI 批量建模）作为单条记录，撤销时整体回退
-- 撤销 = 执行 inverse delta + 同步 SQLite，重做 = 执行 forward delta + 同步 SQLite
+---
 
-## 8. 技术依赖
+## 3. ERCanvas/index.tsx 重写规格
 
-### 前端
+### 状态结构
 
-- `@xyflow/react`（已有）— ReactFlow 画布
-- `dagre`（已有）— 自动布局
-- `prismjs`（已有）— DDL 代码高亮
-- `lucide-react`（已有）— 图标
+```typescript
+export default function ERCanvas({ projectId }: { projectId: number }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const rfInstance = useRef<ReactFlowInstance | null>(null)
 
-### 后端（Rust）
+  // 对话框显示状态
+  const [showDDL, setShowDDL] = useState(false)
+  const [showDiff, setShowDiff] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [showBind, setShowBind] = useState(false)
 
-- `rusqlite`（已有）— SQLite 操作
-- `serde_json`（已有）— JSON 序列化
-- 无需新增外部依赖
+  const store = useErDesignerStore()
 
-## 9. 注意事项
+  // 当前项目（用于检查 connection_id）
+  const activeProject = store.projects.find(p => p.id === projectId) ?? null
+  const hasConnection = !!activeProject?.connection_id
+  ...
+}
+```
 
-- **i18n**：所有用户可见文本使用 `react-i18next` 翻译键，与项目现有国际化保持一致
-- **快捷键冲突**：Ctrl+D 可能与浏览器/Monaco 冲突，实现时需验证，备选 Ctrl+Shift+D
-- **性能**：大型项目（100+ 表）需注意 ReactFlow 渲染性能，必要时启用节点虚拟化
+### buildNodeData 辅助函数
+
+由于 `ERTableNode` 读取 `data` 中的回调，必须在构建 node 时一并传入。抽取为内部辅助：
+
+```typescript
+// 注意：buildNodeData 的 deps 只包含 store/setNodes/setEdges，
+// 不包含 table 和 cols —— 它们是函数参数，每次调用时从参数作用域捕获，
+// 不是来自外部 state，因此不需要加入依赖。
+// 切勿把 table 或 cols 加入 useCallback deps，否则会破坏 memoization。
+const buildNodeData = useCallback((table: ErTable, cols: ErColumn[]) => ({
+  table,
+  columns: cols,
+  onUpdateTable: (updates: Partial<ErTable>) => store.updateTable(table.id, updates),
+  onAddColumn: () => store.addColumn(table.id, {
+    name: `column_${(cols.length || 0) + 1}`,
+    data_type: 'VARCHAR',
+    nullable: true,
+    default_value: null,
+    is_primary_key: false,
+    is_auto_increment: false,
+    comment: null,
+    sort_order: cols.length || 0,
+  }),
+  onUpdateColumn: (colId: number, updates: Partial<ErColumn>) =>
+    store.updateColumn(colId, updates),
+  onDeleteColumn: (colId: number) => {
+    store.deleteColumn(colId, table.id)
+    // setNodes functional updater form — safe with memoized callback
+    setNodes(nds => nds.map(n =>
+      n.id === `table-${table.id}`
+        ? { ...n, data: { ...n.data, columns: (n.data.columns as ErColumn[]).filter(c => c.id !== colId) } }
+        : n
+    ))
+  },
+  onDeleteTable: () => {
+    store.deleteTable(table.id)
+    setNodes(nds => nds.filter(n => n.id !== `table-${table.id}`))
+    setEdges(eds => eds.filter(e =>
+      e.source !== `table-${table.id}` && e.target !== `table-${table.id}`
+    ))
+  },
+}), [store, setNodes, setEdges])
+```
+
+### 项目加载
+
+```typescript
+const reloadCanvas = useCallback(() => {
+  store.loadProject(projectId).then(() => {
+    const state = useErDesignerStore.getState()
+    const newNodes = state.tables.map((table) => ({
+      id: `table-${table.id}`,
+      type: 'erTable',
+      position: { x: table.position_x, y: table.position_y },
+      data: buildNodeData(table, state.columns[table.id] || []),
+    }))
+    const newEdges = state.relations.map((rel) => ({
+      id: `edge-${rel.id}`,
+      source: `table-${rel.source_table_id}`,
+      sourceHandle: `${rel.source_column_id}-source`,
+      target: `table-${rel.target_table_id}`,
+      targetHandle: `${rel.target_column_id}-target`,
+      type: 'erEdge',
+      data: { relation_type: rel.relation_type, source_type: rel.source },
+    }))
+    setNodes(newNodes)
+    setEdges(newEdges)
+  })
+}, [projectId, buildNodeData, setNodes, setEdges, store])
+
+// 项目切换时加载（reloadCanvas 稳定，加入依赖是正确的）
+useEffect(() => {
+  reloadCanvas()
+}, [reloadCanvas])
+```
+
+### 关键事件处理
+
+```typescript
+// 拖拽结束 → 持久化位置（不触发 setNodes）
+const onNodeDragStop = useCallback((_: unknown, node: Node) => {
+  const tableId = parseInt(node.id.replace('table-', ''))
+  store.updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
+}, [store])
+
+// 连线 → 立即更新画布 + 后台持久化
+// 注意：relation_type 使用 'one_to_many'（后端 canonical value），不用 '1:N'
+const onConnect = useCallback((connection: Connection) => {
+  setEdges((eds) => addEdge({
+    ...connection,
+    type: 'erEdge',
+    data: { relation_type: 'one_to_many', source_type: 'designer' }
+  }, eds))
+  const sourceColumnId = parseInt(connection.sourceHandle!.replace('-source', ''))
+  const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))
+  const sourceTableId = parseInt(connection.source!.replace('table-', ''))
+  const targetTableId = parseInt(connection.target!.replace('table-', ''))
+  store.addRelation({
+    source_table_id: sourceTableId,
+    source_column_id: sourceColumnId,
+    target_table_id: targetTableId,
+    target_column_id: targetColumnId,
+    relation_type: 'one_to_many',
+    source: 'designer'
+  })
+}, [setEdges, store])
+```
+
+### ERToolbar 接入
+
+ERToolbar 已有 `onOpenDDL`、`onOpenDiff`、`onOpenImport`、`setNodes`、`nodes`、`tables` 六个 props。
+
+**新增 `onTableAdded` prop**（需修改 ERToolbar）：
+
+```typescript
+// ERToolbar.tsx — 新增到 ERToolbarProps
+onTableAdded?: (table: ErTable) => void;
+
+// handleAddTable 修改：
+const handleAddTable = async () => {
+  const pos = { x: Math.random() * 300 + 100, y: Math.random() * 300 + 100 }
+  const table = await addTable('new_table', pos)
+  onTableAdded?.(table)
+}
+```
+
+```typescript
+// ERCanvas 内，传给 ERToolbar：
+const handleTableAdded = useCallback((table: ErTable) => {
+  setNodes(nds => [...nds, {
+    id: `table-${table.id}`,
+    type: 'erTable',
+    position: { x: table.position_x, y: table.position_y },
+    data: buildNodeData(table, []),
+  }])
+}, [setNodes, buildNodeData])
+```
+
+**新增"绑定连接"按钮**（ERToolbar 目前无此按钮，需新增）：
+
+```typescript
+// ERToolbarProps 新增：
+onOpenBind?: () => void;
+
+// 按钮渲染（插入到 DDL/Diff/Sync 分组前）：
+<button onClick={onOpenBind} ...>
+  <Link2 size={14} />
+  <span>{t('erDesigner.bindConnection')}</span>
+</button>
+```
+
+ERCanvas 中传入：`onOpenBind={() => setShowBind(true)}`
+
+**Diff 按钮连接检查**（ERToolbar 内 handleDiff）：
+
+```typescript
+const handleDiff = async () => {
+  // ERToolbar 不知道 connection_id，检查逻辑移到 ERCanvas 层
+  // ERCanvas 传入 onOpenDiff 时已做检查：
+  //   hasConnection ? setShowDiff(true) : toast.warning(t('erDesigner.noConnectionBound'))
+}
+```
+
+即：ERCanvas 传入的 `onOpenDiff` 内部做连接检查，ERToolbar 直接调用。
+
+**自动布局**：ERToolbar 已自带 dagre 实现，通过 `setNodes` + `nodes` props 驱动，无需修改。
+
+**导出 JSON**：保持现有行为（复制到剪贴板），不改为文件下载。
+
+### 对话框挂载（使用正确的 props 接口）
+
+```typescript
+// ERCanvas 内补充：连接信息衍生
+// database_name: string | null 字段已确认存在于 ErProject 类型（src/types/index.ts line 8）
+const connectionInfo = activeProject?.connection_id
+  ? { name: `Connection ${activeProject.connection_id}`, database: activeProject.database_name ?? '' }
+  : null
+
+return (
+  <div className="w-full h-full flex flex-col">
+    <ERToolbar
+      projectId={projectId}
+      onOpenDDL={() => setShowDDL(true)}
+      onOpenDiff={() => hasConnection ? setShowDiff(true) : {/* toast */}}
+      onOpenImport={() => setShowImport(true)}
+      onOpenBind={() => setShowBind(true)}
+      onTableAdded={handleTableAdded}
+      setNodes={setNodes}
+      nodes={nodes}
+      tables={store.tables}
+    />
+    <div className="flex-1 min-h-0">
+      <ReactFlow
+        nodes={nodes} edges={edges}
+        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+        onConnect={onConnect} onNodeDragStop={onNodeDragStop}
+        onInit={(i) => { rfInstance.current = i }}
+        nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+        deleteKeyCode={['Backspace', 'Delete']}
+        fitView
+      >
+        <Background color="#253347" gap={20} />
+        <Controls />
+        <MiniMap nodeColor="#111922" nodeStrokeColor="#253347" />
+      </ReactFlow>
+    </div>
+
+    {/* DDLPreviewDialog — 实际 props 接口 */}
+    <DDLPreviewDialog
+      visible={showDDL}
+      projectId={projectId}
+      hasConnection={hasConnection}
+      onClose={() => setShowDDL(false)}
+      onExecute={(ddl) => { /* invoke execute_query */ }}
+    />
+
+    {/* DiffReportDialog — 实际 props 接口 */}
+    <DiffReportDialog
+      visible={showDiff}
+      projectId={projectId}
+      connectionInfo={connectionInfo}
+      onClose={() => setShowDiff(false)}
+      {/* TODO Phase 3: 实现同步到数据库（store.generateSyncDDL → store.executeSyncDDL） */}
+      onSyncToDb={(_changes) => { /* Phase 3 stub */ }}
+      onSyncFromDb={(changes) => { store.syncFromDatabase(projectId).then(reloadCanvas) }}
+    />
+
+    {showImport && (
+      <ImportTableDialog
+        projectId={projectId}
+        onClose={() => setShowImport(false)}
+        onImported={() => { setShowImport(false); reloadCanvas() }}
+      />
+    )}
+
+    {showBind && (
+      <BindConnectionDialog
+        projectId={projectId}
+        onClose={() => setShowBind(false)}
+      />
+    )}
+  </div>
+)
+```
+
+---
+
+## 4. ERTableNode 修复点
+
+### 4.1 新增 `onDeleteTable` 回调
+
+`ERTableNodeData` 新增字段：
+
+```typescript
+interface ERTableNodeData {
+  ...
+  onDeleteTable: () => void;  // 新增
+}
+```
+
+`handleDeleteTable` 改为调用 `data.onDeleteTable()`（不再直接调用 store）：
+
+```typescript
+const handleDeleteTable = () => {
+  data.onDeleteTable()  // ERCanvas 提供的回调，同步 store + ReactFlow
+}
+```
+
+### 4.2 列删除按钮
+
+`ColumnRow` 中缺少删除列按钮。在每行操作区右侧补全：
+
+```tsx
+<X
+  size={10}
+  className="opacity-0 group-hover:opacity-100 cursor-pointer text-gray-500 hover:text-red-400 shrink-0 ml-1"
+  onClick={(e) => { e.stopPropagation(); onDeleteColumn(col.id) }}
+/>
+```
+
+---
+
+## 5. ERSidebar 修复点
+
+### 5.1 右键菜单新增"打开"项
+
+`ProjectContextMenu.tsx` 目前无"打开"菜单项（只有新建表、重命名、绑定连接、解除绑定、导出、删除）。
+
+新增：
+
+```tsx
+<div onClick={() => { openERDesignTab(project.id, project.name); onClose() }}>
+  {t('erDesigner.openProject')}
+</div>
+```
+
+### 5.2 ERSidebar loadProjects 时机
+
+验证项（非代码改动）：确认 `ERSidebar/index.tsx` 在 `useEffect(() => { loadProjects() }, [])` 中调用。若没有，则添加此 effect。
+
+---
+
+## 6. 后端验证策略
+
+按优先级逐步验证，遇到问题就地修最小改动：
+
+| 优先级 | 命令 | 验证时机 |
+|--------|------|----------|
+| P0 | `er_list_projects`、`er_create_project`、`er_get_project` | ERSidebar 加载 + 打开项目 |
+| P0 | `er_create_table`、`er_update_table`、`er_delete_table` | 画布新建表、拖拽持久化、删除表 |
+| P0 | `er_create_column`、`er_update_column`、`er_delete_column` | 节点内编辑列 |
+| P1 | `er_create_relation`、`er_delete_relation` | 连线持久化 |
+| P1 | `er_generate_ddl` | DDLPreviewDialog |
+| P2 | `er_diff_with_database`、`er_sync_from_database` | DiffReportDialog |
+
+**SQLite 迁移**：检查 `src-tauri/src/db/migrations.rs`，确认 `er_projects`、`er_tables`、`er_columns`、`er_relations`、`er_indexes` 五张表已包含在迁移脚本中。
+
+**修复范围**：只修编译错误和运行时 panic，不重构后端逻辑。
+
+**relation_type 规范**：后端 canonical value 为 `'one_to_many'`（非 `'1:N'`）。前端所有 hardcoded 关系类型统一改为 `'one_to_many'`。
+
+---
+
+## 7. 保留不变的功能
+
+以下功能原规格设计合理，实现中不做改动：
+
+- **数据模型**（SQLite 表结构、JSON 导出格式）— 见原规格 Section 3
+- **DDL 多方言引擎**（MySQL/PostgreSQL/Oracle/SQL Server/SQLite）— 见原规格 Section 4.3
+- **Diff 引擎数据结构**（DiffResult/TableModDiff）— 见原规格 Section 4.4
+- **Zustand store 接口**（erDesignerStore.ts）— 保持现有实现，不修改
+- **关系来源三层模型**（schema/comment/designer，视觉样式区分）— 见原规格 Section 6.5
+- **快捷键**（useERKeyboard.ts）— 集成进 ERCanvas
+- **撤销/重做**（undo/redo stub）— 保持现有 stub，不升级也不删除
+- **注释标记集成**（@ref 写回、知识图谱联动）— 保留后端逻辑，DiffReport 同步时调用
+
+---
+
+## 8. 实现优先级
+
+```
+Phase 1（核心可用）:
+  1. MainContent 接入 ERCanvas（去掉 placeholder）
+  2. ERCanvas 重写（单向数据流 + buildNodeData + reloadCanvas）
+  3. ERTableNode 修复（onDeleteTable + 列删除按钮）
+  4. ERToolbar 修改（新增 onTableAdded + 绑定连接按钮）
+  5. ERSidebar 修复（右键"打开"菜单项）
+  6. 删除 useERCanvas.ts
+  7. P0 后端命令验证 + 修复
+
+Phase 2（功能完整）:
+  8. P1 命令验证：relation、DDL 生成
+  9. DDLPreviewDialog 接入（correct props）
+  10. BindConnectionDialog 接入
+
+Phase 3（同步闭环）:
+  11. P2 命令验证：diff、sync
+  12. DiffReportDialog 接入（connectionInfo + onSyncToDb/FromDb）
+  13. ImportTableDialog 接入（onImported → reloadCanvas）
+```

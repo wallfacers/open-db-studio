@@ -41,8 +41,6 @@ struct ResolvedFk<'a> {
 // ---------------------------------------------------------------------------
 
 pub trait DdlDialect {
-    fn name(&self) -> &str;
-
     fn create_table(
         &self,
         table: &ErTable,
@@ -267,8 +265,6 @@ fn escape_comment(s: &str) -> String {
 pub struct MySqlDialect;
 
 impl DdlDialect for MySqlDialect {
-    fn name(&self) -> &str { "mysql" }
-
     fn map_type(&self, generic_type: &str) -> String {
         map_type_with(generic_type, &|base| match base {
             "BIGINT" => "BIGINT",
@@ -357,8 +353,6 @@ impl DdlDialect for MySqlDialect {
 pub struct PostgresDialect;
 
 impl DdlDialect for PostgresDialect {
-    fn name(&self) -> &str { "postgres" }
-
     fn map_type(&self, generic_type: &str) -> String {
         map_type_with(generic_type, &|base| match base {
             "BIGINT" => "BIGINT",
@@ -460,8 +454,6 @@ impl DdlDialect for PostgresDialect {
 pub struct OracleDialect;
 
 impl DdlDialect for OracleDialect {
-    fn name(&self) -> &str { "oracle" }
-
     fn map_type(&self, generic_type: &str) -> String {
         map_type_with(generic_type, &|base| match base {
             "BIGINT" => "NUMBER(19)",
@@ -557,8 +549,6 @@ impl DdlDialect for OracleDialect {
 pub struct SqlServerDialect;
 
 impl DdlDialect for SqlServerDialect {
-    fn name(&self) -> &str { "sqlserver" }
-
     fn map_type(&self, generic_type: &str) -> String {
         map_type_with(generic_type, &|base| match base {
             "BIGINT" => "BIGINT",
@@ -641,8 +631,6 @@ impl DdlDialect for SqlServerDialect {
 pub struct SqliteDialect;
 
 impl DdlDialect for SqliteDialect {
-    fn name(&self) -> &str { "sqlite" }
-
     fn map_type(&self, generic_type: &str) -> String {
         map_type_with(generic_type, &|base| match base {
             "BIGINT" => "INTEGER",

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useQueryStore } from '../store/queryStore';
-import { useTreeStore } from '../store/treeStore';
 import { useAppStore } from '../store/appStore';
 import { useConfirmStore } from '../store/confirmStore';
 import { useSeaTunnelStore } from '../store/seaTunnelStore';
@@ -23,7 +22,6 @@ interface QueryRequestPayload {
 
 export function useMcpBridge() {
   const { tabs, activeTabId, setActiveTabId, sqlContent, openTableStructureTab, openMetricTab, openQueryTab, openSeaTunnelJobTab } = useQueryStore();
-  const treeNodes = useTreeStore((s) => s.nodes);
 
   // 注册所有 FsAdapter（幂等，可重复调用）
   registerFsAdapters()
@@ -190,6 +188,7 @@ export function useMcpBridge() {
 
         if (query_type === 'search_tabs') {
           const { table_name, type: tabType } = params as { table_name?: string; type?: string };
+          const currentActiveTabId = useQueryStore.getState().activeTabId;
           data = currentTabs.filter(t => {
             if (tabType && t.type !== tabType) return false;
             if (table_name) {
@@ -202,6 +201,7 @@ export function useMcpBridge() {
             title: t.title,
             connection_id: t.connectionId,
             db: t.db,
+            is_active: t.id === currentActiveTabId,
             // 附带专属 ID，便于 AI 直接引用
             ...(t.metricId != null && { metric_id: t.metricId }),
             ...(t.stJobId != null && { job_id: t.stJobId }),
@@ -247,23 +247,6 @@ export function useMcpBridge() {
           } else {
             data = null;
           }
-        } else if (query_type === 'search_db_metadata') {
-          const keyword = (params as { keyword?: string }).keyword ?? '';
-          // 从 treeNodes（Zustand treeStore）搜索已缓存节点（Map<string, TreeNode>）
-          const nodes = useTreeStore.getState().nodes;
-          const results: Array<{ node_id: string; name: string; type: string; connection_id?: number }> = [];
-          const kw = keyword.toLowerCase();
-          for (const [nodeId, node] of nodes.entries()) {
-            if (node.label.toLowerCase().includes(kw)) {
-              results.push({
-                node_id: nodeId,
-                name: node.label,
-                type: node.nodeType,
-                connection_id: node.meta?.connectionId,
-              });
-            }
-          }
-          data = results;
         } else if (query_type === 'fs_request') {
           const { op, resource, target, payload: fsPayload } = params as {
             op: FsOp; resource: string; target: string; payload: Record<string, unknown>

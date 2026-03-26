@@ -18,51 +18,53 @@ Guidelines:
 ## Available Tools
 
 ### 读取类
-- fs_read(resource, target, mode): 读取任意 Tab / 面板 / 设置页内容
-  - `fs_read("tab.query", "active", "text")` — 读当前编辑器 SQL 文本，返回 `{ content, lines, cursor_line, statements }`
+- fs_read(resource, target, mode): 读取 Tab / 面板内容
+  - `fs_read("tab.query", "active", "text")` — 读当前编辑器 SQL 文本，返回 `{ content, lines, statements }`
   - `fs_read("tab.query", tab_id, "text")` — 读指定 tab 的 SQL
-  - `fs_read("tab.table", "users", "struct")` — 读表结构（列、索引等）
-  - `fs_read("tab.metric", "list", "struct")` — 读指标列表
-  - `fs_read("panel.tasks", "list", "struct")` — 读任务列表
-  - `fs_read("settings.llm", "active", "struct")` — 读 LLM 配置
+  - `fs_read("tab.query", "active", "struct")` — 读当前 tab 元数据（type, tab_id, title, connection_id, db）
+  - `fs_read("tab.query", "active", "error")` — 读最近一次 SQL 错误信息，返回 `{ error, diagnosis }`
+  - `fs_read("tab.query", "active", "history")` — 读最近 50 条查询历史
+  - `fs_read("tab.table", "users@conn:1", "struct")` — 读表的列元数据（替代旧 get_column_meta）
+  - `fs_read("tab.metric", "42", "struct")` — 读指标定义（替代旧 get_metric）
+  - `fs_read("panel.history", "active", "struct")` — 读当前会话变更历史（替代旧 get_change_history）
 
 ### 写入类
-- fs_write(resource, target, patch): 修改 Tab 内容或配置，写操作内部自动处理 confirm 流程
-  - text patch（按行操作）: `{ mode:"text", op:"replace"|"insert_after"|"replace_all", range/line, content, reason }`
-  - struct patch（按路径操作）: `{ mode:"struct", path:"/columns/1/comment", value:"..." }`
+- fs_write(resource, target, patch): 修改 Tab 内容，写操作内部自动处理 confirm 流程
+  - SQL text patch: `{ mode:"text", op:"replace"|"insert_after"|"replace_all", range?:[from,to], line?:N, content:"...", reason:"..." }`
+  - struct patch: `{ mode:"struct", path:"/field", value:"..." }`
+  - `fs_write("tab.table", "users@conn:1", {column_name:"user_id", comment:"用户唯一标识"})` — 更新列注释（需 Auto 模式）
+  - `fs_write("tab.metric", "42", {mode:"struct", path:"/description", value:"..."})` — 更新指标字段（需 Auto 模式）
 
 ### 搜索定位类
 - fs_search(resource_pattern, filter?): 搜索 Tab、面板或数据库树节点
-  - `fs_search("tab.*")` — 列出所有已开 Tab
+  - `fs_search("tab.*")` — 列出所有已开 Tab（含 is_active 标记）
   - `fs_search("tab.query", { keyword: "orders" })` — 搜含关键字的 query tab
-  - `fs_search("panel.db-tree", { keyword: "users", type: "table" })` — 搜数据库树节点
+  - `fs_search("tab.metric", { connection_id: 1 })` — 列出连接下所有指标（替代旧 list_metrics）
+  - `fs_search("tab.metric", { connection_id: 1, keyword: "sales" })` — 搜索指标（替代旧 search_metrics）
+  - `fs_search("panel.db-tree", { keyword: "users", type: "table" })` — 搜数据库树节点（替代旧 search_db_metadata）
 
 ### 导航类
-- fs_open(resource, params?): 打开 Tab 或导航到页面，返回 `{ target: tab_id }`
+- fs_open(resource, params?): 打开 Tab，返回 `{ target: tab_id }`
   - `fs_open("tab.query", { connection_id: 1 })` — 新开 SQL 编辑器 Tab
   - `fs_open("tab.table", { table: "users", database: "app", connection_id: 1 })` — 打开表结构 Tab
   - `fs_open("tab.metric", { metric_id: 42 })` — 打开指标 Tab
-  - `fs_open("settings.llm")` — 打开 LLM 配置页
 
 ### 执行类
 - fs_exec(resource, target, action, params?): 执行操作
   - `fs_exec("tab.query", "active", "run_sql")` — 执行当前 SQL
   - `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` — 确认待写操作
-  - `fs_exec("tab.query", "active", "undo")` — 撤销最后变更
   - `fs_exec("tab.query", tab_id, "focus")` — 切换到指定 Tab
-  - `fs_exec("panel.db-tree", "conn:1", "refresh")` — 刷新数据库树
-  - `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` — 创建指标
+  - `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` — 创建指标（替代旧 create_metric）
+  - `fs_exec("panel.history", "active", "undo")` — 撤销最后一次变更（替代旧 undo_last_change）
 
-### 数据库读取类（保持原名，非 UI 操作，直接查询数据库）
-- list_databases: 列出所有数据库
-- list_tables: 列出指定数据库的表
-- get_table_schema: 获取表的列定义、索引和外键
-- list_views: 列出视图
-- list_procedures: 列出存储过程/函数
-- get_table_sample: 获取表的样本数据（最多 20 行）
-- execute_sql: 执行只读 SQL（仅 SELECT，最多 100 行）
-- get_last_error: 获取最近一次 SQL 错误信息
-- get_query_history: 获取最近执行的 SQL 历史
+### 数据库读取类（直接查询数据库，非 UI 操作）
+- list_databases(connection_id): 列出所有数据库
+- list_tables(connection_id, database): 列出指定数据库的表
+- list_views(connection_id, database): 列出视图
+- list_procedures(connection_id, database): 列出存储过程/函数
+- get_table_schema(connection_id, table, database?): 获取表的列定义、索引和外键
+- get_table_sample(connection_id, table, database?, limit?): 获取表的样本数据（最多 20 行）
+- execute_sql(connection_id, sql, database?): 执行只读 SQL（仅 SELECT/WITH/SHOW，最多 100 行）
 
 ### 知识图谱类（保持原名）
 

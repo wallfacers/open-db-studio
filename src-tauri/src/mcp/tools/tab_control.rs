@@ -26,7 +26,7 @@ pub(crate) async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &
     }
 }
 
-async fn send_ui_action(handle: &Arc<tauri::AppHandle>, action: &str, params: Value) -> crate::AppResult<Value> {
+pub(crate) async fn send_ui_action(handle: &Arc<tauri::AppHandle>, action: &str, params: Value) -> crate::AppResult<Value> {
     let app_state = handle.state::<crate::AppState>();
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<crate::state::UiActionResponse>();

@@ -41,22 +41,21 @@ When user input is ambiguous (e.g. "revenue", "orders", "users"):
 ## Available Tools
 
 ### list metrics
-List metrics (optionally filtered).
+List metrics for a connection (optionally filtered by status/database/limit).
 ```
-fs_read("tab.metric", "list", "struct")
+fs_search("tab.metric", { connection_id: N, status?: "approved"|"draft"|"rejected", limit?: 50 })
 ```
-Supports filter params via connection_id / status / database / schema / limit in the call context.
 
 ### search metrics
-Search **approved** metrics by keyword.
+Search **approved** metrics by keyword (space-separated terms are ANDed).
 ```
-fs_search("tab.metric", { keyword: "...", connection_id: N })
+fs_search("tab.metric", { connection_id: N, keyword: "sales revenue" })
 ```
 
 ### get metric
-Get full metric definition.
+Get full metric definition by ID.
 ```
-fs_read("tab.metric", metric_id, "struct")
+fs_read("tab.metric", "<metric_id>", "struct")
 ```
 
 
@@ -80,7 +79,7 @@ FROM {table_name}
 
 ### 4. Composite metric
 
-* Resolve ALL sub-metrics via `fs_read("tab.metric", id, "struct")`
+* Resolve ALL sub-metrics via `fs_read("tab.metric", "<id>", "struct")`
 * Build using CTEs
 * Apply `composite_formula` strictly
 

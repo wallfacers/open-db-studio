@@ -54,7 +54,17 @@ export class QueryTabAdapter implements FsAdapter {
     exec:   ['focus', 'run_sql', 'undo', 'confirm_write'],
   }
 
-  async read(target: string, mode: 'text' | 'struct'): Promise<FsReadResult> {
+  async read(target: string, mode: string): Promise<FsReadResult> {
+    // 特殊模式：不依赖具体 tab
+    if (mode === 'error') {
+      const { error, diagnosis } = useQueryStore.getState()
+      return { error: error ?? null, diagnosis: diagnosis ?? null }
+    }
+    if (mode === 'history') {
+      const { queryHistory } = useQueryStore.getState()
+      return { history: queryHistory.slice(0, 50) }
+    }
+
     const tabId = resolveTabId(target)
     const { tabs, sqlContent } = useQueryStore.getState()
     const tab = tabs.find(t => t.id === tabId)
@@ -62,7 +72,7 @@ export class QueryTabAdapter implements FsAdapter {
 
     if (mode === 'struct') {
       return {
-        type:          'query',
+        type:          tab.type,
         tab_id:        tab.id,
         title:         tab.title,
         connection_id: tab.connectionId ?? null,
@@ -110,7 +120,7 @@ export class QueryTabAdapter implements FsAdapter {
   }
 
   async search(filter: FsSearchFilter): Promise<FsSearchResult[]> {
-    const { tabs } = useQueryStore.getState()
+    const { tabs, activeTabId } = useQueryStore.getState()
     const kw = filter.keyword?.toLowerCase()
 
     return tabs
@@ -120,7 +130,7 @@ export class QueryTabAdapter implements FsAdapter {
         resource: 'tab.query',
         target:   t.id,
         label:    `query · ${t.title}`,
-        meta:     { connection_id: t.connectionId, db: t.db ?? null },
+        meta:     { connection_id: t.connectionId, db: t.db ?? null, is_active: t.id === activeTabId },
       }))
   }
 

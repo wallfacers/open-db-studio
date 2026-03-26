@@ -71,23 +71,23 @@ The `skills/` directory contains the following skills; refer to them first when 
 
 ### Viewing Tables/Metrics (when user has not opened a tab)
 1. `fs_search("panel.db-tree", { keyword })` to quickly locate the target
-2. If not found, `fs_search("tab.*")` to check open tabs
+2. If not found, `fs_search("tab.*")` to check open tabs (is_active=true marks the current tab)
 3. If a new tab is needed, `fs_open(resource, params)` and use returned `target`
 4. `fs_read(resource, target, mode)` to read the content
 
 ### Updating Column Comments
-1. `fs_read("tab.table", "table_name@conn:N", "struct")` — read current columns
-2. `fs_write("tab.table", "table_name@conn:N", { mode:"struct", path:"/columns/N/comment", value:"..." })`
-3. After success, inform the user the change was applied
+1. `fs_read("tab.table", "table_name@conn:N", "struct")` — read current columns (requires Auto mode ON)
+2. `fs_write("tab.table", "table_name@conn:N", { column_name: "col", comment: "new comment" })` — executes ALTER TABLE
+3. After success, inform the user the change was applied (undo available via `fs_exec("panel.history","active","undo")`)
 
 ### Updating Metric Definitions
-1. `fs_read("tab.metric", metric_id, "struct")` — read current definition
-2. `fs_write("tab.metric", metric_id, { mode:"struct", path:"/description", value:"..." })`
-3. After success, inform the user the change was applied
+1. `fs_read("tab.metric", "<metric_id>", "struct")` — read current definition
+2. `fs_write("tab.metric", "<metric_id>", { mode:"struct", path:"/description", value:"..." })` — requires Auto mode ON
+3. After success, inform the user the change was applied (undo available via `fs_exec("panel.history","active","undo")`)
 
 ### Create Metric
-1. `fs_exec("tab.metric","new","create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })`
+1. `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })`
 
 ### Undo
-1. `fs_exec("tab.query","active","undo")` or `fs_exec("panel.tasks","active","undo")`
+1. `fs_exec("panel.history", "active", "undo")` — undo the last successful metric/column change
 2. Inform the user of the specific content and old value that was restored

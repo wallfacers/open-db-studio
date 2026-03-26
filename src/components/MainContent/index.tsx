@@ -331,8 +331,9 @@ export const MainContent: React.FC<MainContentProps> = ({
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
 
-    // 同步光标/选区信息到 queryStore，供 Tool Bridge 消歧
-    const syncEditorInfo = () => {
+    // 同步光标/选区信息到 queryStore，供 Tool Bridge 消歧（节流 100ms）
+    let syncEditorInfoTimer: ReturnType<typeof setTimeout> | null = null;
+    const doSyncEditorInfo = () => {
       const model = editor.getModel();
       if (!model) return;
       const selection = editor.getSelection();
@@ -356,9 +357,16 @@ export const MainContent: React.FC<MainContentProps> = ({
         },
       );
     };
+    const syncEditorInfo = () => {
+      if (syncEditorInfoTimer) return; // 节流：已有待执行任务则跳过
+      syncEditorInfoTimer = setTimeout(() => {
+        syncEditorInfoTimer = null;
+        doSyncEditorInfo();
+      }, 100);
+    };
     editor.onDidChangeCursorPosition(syncEditorInfo);
     editor.onDidChangeCursorSelection(syncEditorInfo);
-    syncEditorInfo(); // 初始化一次
+    doSyncEditorInfo(); // 初始化一次（同步执行）
 
     if (completionProviderRegistered.current) return;
     completionProviderRegistered.current = true;
@@ -1522,19 +1530,17 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => {
+            onClick={async () => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
               setEditorContextMenu(null);
               const text = menu.selectedSql || ed?.getModel()?.getValue() || '';
-              const range = menu.selectionRange ?? ed?.getModel()?.getFullModelRange();
-              if (text && range) {
-                writeText(menu.selectedSql
-                  ? menu.selectedSql
-                  : (ed?.getModel()?.getValueInRange(range) ?? ''));
+              if (text) {
+                try {
+                  await writeText(text);
+                } catch { /* 静默忽略剪贴板错误 */ }
               }
               ed?.focus();
-              ed?.trigger('keyboard', 'editor.action.clipboardCopyAction', null);
             }}
           >
             <Copy size={13} color="#7a9bb8" />

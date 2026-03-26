@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Edit3, Trash2, Link2, Unlink, Download, Table2, LucideIcon } from 'lucide-react';
+import { Edit3, Trash2, Link2, Unlink, Download, Table2, LucideIcon, FolderOpen } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { useQueryStore } from '../../../store/queryStore';
 
 interface ProjectContextMenuProps {
   x: number;
@@ -24,6 +25,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const { projects, deleteProject, loadProject, addTable } = useErDesignerStore();
+  const { openERDesignTab } = useQueryStore();
 
   const project = projects.find(p => p.id === projectId);
 
@@ -69,7 +71,13 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     onClose();
   };
 
+  const handleOpen = () => {
+    openERDesignTab(projectId, project?.name || '');
+    onClose();
+  };
+
   const menuItems: MenuItem[] = [
+    { icon: FolderOpen, label: t('common.open') || '打开', onClick: handleOpen },
     { icon: Table2, label: t('erDesigner.newTable') || '新建表', onClick: handleAddTable },
     { type: 'divider' },
     { icon: Edit3, label: t('common.rename') || '重命名', onClick: handleRename },

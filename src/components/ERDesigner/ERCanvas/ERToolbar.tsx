@@ -44,7 +44,6 @@ export default function ERToolbar({
   const { t } = useTranslation();
   const {
     addTable,
-    diffWithDatabase,
     syncFromDatabase,
     exportJson,
     importJson,
@@ -127,14 +126,8 @@ export default function ERToolbar({
   };
 
   // Diff
-  const handleDiff = async () => {
-    try {
-      const diff = await diffWithDatabase(projectId);
-      console.log('Diff result:', diff);
-      onOpenDiff();
-    } catch (e) {
-      console.error('Diff failed:', e);
-    }
+  const handleDiff = () => {
+    onOpenDiff();
   };
 
   // 同步数据库

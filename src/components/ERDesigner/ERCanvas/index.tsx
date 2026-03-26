@@ -21,6 +21,7 @@ import { DDLPreviewDialog } from '../dialogs/DDLPreviewDialog'
 import { DiffReportDialog } from '../dialogs/DiffReportDialog'
 import { BindConnectionDialog } from '../dialogs/BindConnectionDialog'
 import { ImportTableDialog } from '../dialogs/ImportTableDialog'
+import { useERKeyboard } from '../hooks/useERKeyboard'
 import type { ErTable, ErColumn } from '../../../types'
 
 const nodeTypes = {
@@ -52,16 +53,29 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
 
-  const store = useErDesignerStore()
-  const activeProject = store.projects.find(p => p.id === projectId) ?? null
+  // Select only the actions and state values needed (stable references for actions)
+  const loadProject = useErDesignerStore(s => s.loadProject)
+  const updateTable = useErDesignerStore(s => s.updateTable)
+  const addColumn = useErDesignerStore(s => s.addColumn)
+  const updateColumn = useErDesignerStore(s => s.updateColumn)
+  const deleteColumn = useErDesignerStore(s => s.deleteColumn)
+  const deleteTable = useErDesignerStore(s => s.deleteTable)
+  const addRelation = useErDesignerStore(s => s.addRelation)
+  const syncFromDatabase = useErDesignerStore(s => s.syncFromDatabase)
+
+  // State values for rendering
+  const projects = useErDesignerStore(s => s.projects)
+  const tables = useErDesignerStore(s => s.tables)
+
+  const activeProject = projects.find(p => p.id === projectId) ?? null
   const hasConnection = !!activeProject?.connection_id
 
-  // deps: ONLY store, setNodes, setEdges — NOT table or cols (they're function params)
+  // deps: ONLY stable action refs, setNodes, setEdges — NOT table or cols (they're function params)
   const buildNodeData = useCallback((table: ErTable, cols: ErColumn[]): NodeData => ({
     table,
     columns: cols,
-    onUpdateTable: (updates: Partial<ErTable>) => store.updateTable(table.id, updates),
-    onAddColumn: () => store.addColumn(table.id, {
+    onUpdateTable: (updates: Partial<ErTable>) => updateTable(table.id, updates),
+    onAddColumn: () => addColumn(table.id, {
       name: `column_${(cols.length || 0) + 1}`,
       data_type: 'VARCHAR',
       nullable: true,
@@ -72,9 +86,9 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
       sort_order: cols.length || 0,
     }),
     onUpdateColumn: (colId: number, updates: Partial<ErColumn>) =>
-      store.updateColumn(colId, updates),
+      updateColumn(colId, updates),
     onDeleteColumn: (colId: number) => {
-      store.deleteColumn(colId, table.id)
+      deleteColumn(colId, table.id)
       setNodes(nds => nds.map(n =>
         n.id === `table-${table.id}`
           ? { ...n, data: { ...n.data, columns: (n.data.columns as ErColumn[]).filter(c => c.id !== colId) } }
@@ -82,16 +96,16 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
       ))
     },
     onDeleteTable: () => {
-      store.deleteTable(table.id)
+      deleteTable(table.id)
       setNodes(nds => nds.filter(n => n.id !== `table-${table.id}`))
       setEdges(eds => eds.filter(e =>
         e.source !== `table-${table.id}` && e.target !== `table-${table.id}`
       ))
     },
-  }), [store, setNodes, setEdges])  // ← ONLY these deps
+  }), [updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
 
   const reloadCanvas = useCallback(() => {
-    store.loadProject(projectId).then(() => {
+    loadProject(projectId).then(() => {
       const state = useErDesignerStore.getState()
       const newNodes: Node<NodeData>[] = state.tables.map((table) => ({
         id: `table-${table.id}`,
@@ -111,7 +125,7 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
       setNodes(newNodes)
       setEdges(newEdges)
     })
-  }, [projectId, buildNodeData, setNodes, setEdges, store])
+  }, [projectId, buildNodeData, setNodes, setEdges, loadProject])
 
   useEffect(() => {
     reloadCanvas()
@@ -119,8 +133,8 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
     const tableId = parseInt(node.id.replace('table-', ''))
-    store.updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
-  }, [store])
+    updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
+  }, [updateTable])
 
   // IMPORTANT: relation_type must be 'one_to_many' (not '1:N')
   const onConnect = useCallback((connection: Connection) => {
@@ -133,7 +147,7 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
     const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))
     const sourceTableId = parseInt(connection.source!.replace('table-', ''))
     const targetTableId = parseInt(connection.target!.replace('table-', ''))
-    store.addRelation({
+    addRelation({
       source_table_id: sourceTableId,
       source_column_id: sourceColumnId,
       target_table_id: targetTableId,
@@ -141,7 +155,7 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
       relation_type: 'one_to_many',
       source: 'designer'
     })
-  }, [setEdges, store])
+  }, [setEdges, addRelation])
 
   const handleTableAdded = useCallback((table: ErTable) => {
     setNodes(nds => [...nds, {
@@ -151,6 +165,16 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
       data: buildNodeData(table, []),
     }])
   }, [setNodes, buildNodeData])
+
+  // Integrate keyboard shortcuts
+  useERKeyboard({
+    nodes,
+    edges,
+    selectedNodes: [],
+    selectedEdges: [],
+    onAutoLayout: () => {},
+    onExportDDL: () => setShowDDL(true),
+  })
 
   // connectionInfo for DiffReportDialog
   const connectionInfo = activeProject?.connection_id
@@ -168,7 +192,7 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
         onTableAdded={handleTableAdded}
         setNodes={setNodes as (nodes: Node[]) => void}
         nodes={nodes}
-        tables={store.tables}
+        tables={tables}
       />
       <div className="flex-1 min-h-0">
         <ReactFlow
@@ -203,7 +227,7 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
         connectionInfo={connectionInfo}
         onClose={() => setShowDiff(false)}
         onSyncToDb={(_changes) => { /* Phase 3 stub */ }}
-        onSyncFromDb={(_changes) => { store.syncFromDatabase(projectId).then(reloadCanvas) }}
+        onSyncFromDb={(_changes) => { syncFromDatabase(projectId).then(reloadCanvas) }}
       />
       <BindConnectionDialog
         visible={showBind}

@@ -448,6 +448,68 @@ fn tool_definitions() -> Value {
                     },
                     "required": ["connection_id"]
                 }
+            }),json!({
+                "name": "fs_read",
+                "description": "Read content from any tab, panel, or settings page. mode=text returns SQL with line numbers; mode=struct returns structured JSON.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "resource": { "type": "string", "description": "tab.query | tab.table | tab.metric | panel.db-tree | panel.tasks | settings.llm | settings.conn" },
+                        "target":   { "type": "string", "description": "active | list | tab_id | table_name | metric_id" },
+                        "mode":     { "type": "string", "enum": ["text", "struct"] }
+                    },
+                    "required": ["resource", "target", "mode"]
+                }
+            }),json!({
+                "name": "fs_write",
+                "description": "Write or patch a tab or settings page. SQL editor writes show diff unless Auto mode is on.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "resource": { "type": "string" },
+                        "target":   { "type": "string" },
+                        "patch": {
+                            "type": "object",
+                            "description": "Text: {mode:'text',op:'replace|insert_after|replace_all',range?:[from,to],line?:N,content:'...',reason?:'...'}. Struct: {mode:'struct',path:'/field',value:...}"
+                        }
+                    },
+                    "required": ["resource", "target", "patch"]
+                }
+            }),json!({
+                "name": "fs_search",
+                "description": "Search across tabs or panels. Use resource_pattern='tab.*' for all tabs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "resource_pattern": { "type": "string", "description": "tab.* | tab.query | panel.db-tree" },
+                        "filter": { "type": "object", "description": "{keyword?, type?, connection_id?}" }
+                    },
+                    "required": ["resource_pattern"]
+                }
+            }),json!({
+                "name": "fs_open",
+                "description": "Open a new tab or navigate to a page. Returns { target: tab_id }.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "resource": { "type": "string" },
+                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.table: {table,database,connection_id}." }
+                    },
+                    "required": ["resource"]
+                }
+            }),json!({
+                "name": "fs_exec",
+                "description": "Execute an action on a resource target.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "resource": { "type": "string" },
+                        "target":   { "type": "string", "description": "active | tab_id" },
+                        "action":   { "type": "string", "description": "focus | run_sql | undo | confirm_write | refresh | create" },
+                        "params":   { "type": "object" }
+                    },
+                    "required": ["resource", "target", "action"]
+                }
             })
         ]
     })
@@ -767,6 +829,35 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "graph_debug_links" => {
             tools::graph::debug_links::handle(Arc::clone(&handle), args).await
+        }
+        "fs_read" | "fs_write" | "fs_search" | "fs_open" | "fs_exec" => {
+            // 构造转发给前端 FsRouter 的请求体
+            let op = name.strip_prefix("fs_").unwrap_or(name);
+            let resource = args
+                .get("resource").or_else(|| args.get("resource_pattern"))
+                .and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let target = args.get("target")
+                .and_then(|v| v.as_str()).unwrap_or("active").to_string();
+            let payload = match op {
+                "search" => args.get("filter").cloned().unwrap_or(json!({})),
+                "write"  => args.get("patch").cloned().unwrap_or(json!({})),
+                "open"   => args.get("params").cloned().unwrap_or(json!({})),
+                "exec"   => json!({
+                    "action": args.get("action").and_then(|v| v.as_str()).unwrap_or(""),
+                    "params": args.get("params").cloned().unwrap_or(json!({}))
+                }),
+                _        => json!({
+                    "mode": args.get("mode").and_then(|v| v.as_str()).unwrap_or("struct")
+                }),
+            };
+            // 复用 query_frontend：发 mcp://query-request，query_type = "fs_request"
+            // 前端 useMcpBridge 的 fs_request 分支接收并路由到 FsRouter
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle,
+                "fs_request",
+                json!({ "op": op, "resource": resource, "target": target, "payload": payload }),
+            ).await?;
+            Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

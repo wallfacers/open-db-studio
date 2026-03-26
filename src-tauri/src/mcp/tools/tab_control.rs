@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &str, params: Value) -> crate::AppResult<Value> {
+pub(crate) async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &str, params: Value) -> crate::AppResult<Value> {
     let app_state = handle.state::<crate::AppState>();
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();

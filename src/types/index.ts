@@ -367,34 +367,7 @@ export interface UpdateMetricPayload {
   scope_schema?: string;
 }
 
-// ── ACP Elicitation / Permission 类型 ─────────────────────────────────────
-
-/** 文字检测路径的单个选项 */
-export interface ElicitationOption {
-  value: string
-  label: string
-  description?: string
-}
-
-/** 文字检测路径的 elicitation 请求（AI 消息结束后由前端构造） */
-export interface ElicitationRequest {
-  id: string              // 随机 UUID，仅用于 React key
-  sessionId: string
-  source: 'text'
-  type: 'select'
-  message: string         // 提示语（解析自消息末尾问句）
-  options: ElicitationOption[]
-}
-
-/** ACP session/elicitation 路径的请求（ext_method 桥接，来自 Rust StreamEvent） */
-export interface AcpElicitationRequest {
-  id: string                       // elicitation_id（Rust 生成的 UUID）
-  sessionId: string
-  source: 'acp-elicitation'
-  mode: 'form' | 'url'
-  message: string
-  schema: Record<string, unknown>  // requestedSchema JSON（ACP 规范的受限 JSON Schema）
-}
+// ── ACP Permission 类型 ───────────────────────────────────────────────────
 
 /** ACP request_permission 路径的权限确认请求（来自 Rust StreamEvent） */
 export interface PermissionRequest {

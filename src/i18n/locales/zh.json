@@ -79,9 +79,6 @@
       "title": "修改建议",
       "apply": "应用"
     },
-    "elicitation": {
-      "permissionTitle": "工具执行确认"
-    },
     "thinking": {
       "thinking": "思考中",
       "thought": "已深度思考"

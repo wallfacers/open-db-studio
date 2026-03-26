@@ -110,14 +110,13 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const lastUserMessageId = useAiStore((s) => s.chatStates[currentSessionId]?.lastUserMessageId ?? null);
   const canRedo = useAiStore((s) => s.chatStates[currentSessionId]?.canRedo ?? false);
   const isCompacting = useAiStore((s) => s.chatStates[currentSessionId]?.isCompacting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
-  const pendingElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingElicitation ?? null);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -692,21 +691,10 @@ export const Assistant: React.FC<AssistantProps> = ({
               {/* 权限确认面板（isChatting=true 时，ACP native 路径） */}
               {pendingPermission && (
                 <ElicitationPanel
-                  type="permission"
                   request={pendingPermission}
                   onRespond={(optionId, cancelled) =>
                     respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
                   }
-                />
-              )}
-
-              {/* 选项选择面板（文字检测路径：mid-stream 或 turn 结束后均可显示） */}
-              {pendingElicitation && (
-                <ElicitationPanel
-                  type="elicitation"
-                  request={pendingElicitation}
-                  onSelect={(text) => respondElicitation(currentSessionId, text)}
-                  onCancel={() => clearElicitation(currentSessionId)}
                 />
               )}
 

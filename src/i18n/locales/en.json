@@ -79,9 +79,6 @@
       "title": "Change Proposal",
       "apply": "Apply"
     },
-    "elicitation": {
-      "permissionTitle": "Tool Execution Confirmation"
-    },
     "thinking": {
       "thinking": "Thinking",
       "thought": "Deep thought completed"

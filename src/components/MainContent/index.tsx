@@ -1093,7 +1093,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                     return (
                                       <td
                                         key={ci}
-                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left"
+                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left max-w-[300px] overflow-hidden"
                                         onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                       >
                                         <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
@@ -1187,7 +1187,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                       return (
                                         <td
                                           key={ci}
-                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left"
+                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left max-w-[300px] overflow-hidden"
                                           onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                         >
                                           <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">

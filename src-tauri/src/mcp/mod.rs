@@ -629,9 +629,9 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 }),
             };
 
-            // resource 级别分发：后端直接处理 vs 转发给前端 FsRouter
+            // Dispatch by resource: handle in backend vs forward to frontend FsRouter
             match resource.as_str() {
-                // ── 后端直接处理（无前端 roundtrip）──────────────────────────
+                // ── Handled directly in backend (no frontend roundtrip) ──────────────────────────
                 r if r.starts_with("tab.metric") => {
                     tools::fs_metric::handle(Arc::clone(&handle), op, &target, payload, session_id).await
                 }
@@ -641,7 +641,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 "panel.history" => {
                     tools::fs_history::handle(Arc::clone(&handle), op, &target, payload, session_id).await
                 }
-                // ── 前端 FsRouter 处理（tab.query → QueryTabAdapter, panel.db-tree → DbTreeAdapter）
+                // ── Handled by frontend FsRouter (tab.query → QueryTabAdapter, panel.db-tree → DbTreeAdapter)
                 _ => {
                     let result = crate::mcp::tools::tab_control::query_frontend(
                         &handle,
@@ -672,20 +672,20 @@ async fn handle_mcp(
 ) -> Json<JsonRpcResponse> {
     let id = req.id.clone();
     match req.method.as_str() {
-        // MCP 握手：必须在 tools/list 之前完成，否则客户端会重试/超时
+        // MCP handshake: must complete before tools/list or clients will retry/timeout
         "initialize" => Json(JsonRpcResponse::ok(id, json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "open-db-studio", "version": "0.1.0" }
         }))),
-        // 通知类型（无 id），客户端不等响应，返回空 result 即可
+        // Notification (no id), client doesn't wait for response — return empty result
         "notifications/initialized" => Json(JsonRpcResponse::ok(id, json!(null))),
         "tools/list" => Json(JsonRpcResponse::ok(id, tool_definitions())),
         "tools/call" => {
             let params = req.params.unwrap_or(Value::Null);
             let name = params["name"].as_str().unwrap_or("").to_string();
             let args = params["arguments"].clone();
-            // 获取 session_id
+            // Resolve session_id
             let session_id = {
                 use tauri::Manager;
                 let app_state = handle.state::<crate::AppState>();
@@ -723,7 +723,7 @@ async fn handle_optimize_mcp(
             let params = req.params.unwrap_or(Value::Null);
             let name = params["name"].as_str().unwrap_or("").to_string();
             let args = params["arguments"].clone();
-            // 白名单校验：只允许 4 个只读工具
+            // Allowlist: only 4 read-only tools permitted
             let allowed = ["list_databases", "list_tables", "get_table_schema", "get_table_sample"];
             if !allowed.contains(&name.as_str()) {
                 return Json(JsonRpcResponse::err(id, -32601, "Tool not available in optimize mode"));
@@ -740,7 +740,7 @@ async fn handle_optimize_mcp(
 }
 
 pub async fn start_mcp_server(app_handle: tauri::AppHandle) -> crate::AppResult<u16> {
-    // 优先使用固定端口便于调试；若已被占用则退回随机端口
+    // Prefer fixed port for easier debugging; fall back to random port if occupied
     let listener = TcpListener::bind("127.0.0.1:19876")
         .or_else(|_| TcpListener::bind("127.0.0.1:0"))
         .map_err(|e| crate::AppError::Other(format!("MCP server bind failed: {}", e)))?;

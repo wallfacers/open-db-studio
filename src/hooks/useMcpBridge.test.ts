@@ -3,6 +3,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // ─── Mock Tauri APIs ────────────────────────────────────────────────────────
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
+// ─── Mock fs module（提升到顶层，vitest 会自动 hoist）────────────────────────
+vi.mock('../mcp/fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../mcp/fs')>()
+  return {
+    ...actual,
+    fsRouter: {
+      handle: vi.fn().mockResolvedValue(JSON.stringify({ content: 'SELECT 1', lines: [] })),
+    },
+    registerFsAdapters: vi.fn(),
+  }
+});
+
 type ListenCallback<T> = (event: { payload: T }) => void | Promise<void>;
 const capturedListeners: Record<string, ListenCallback<unknown>> = {};
 
@@ -19,6 +31,7 @@ import { renderHook } from '@testing-library/react';
 import { useQueryStore } from '../store/queryStore';
 import { useTreeStore } from '../store/treeStore';
 import { useMcpBridge } from './useMcpBridge';
+import { fsRouter, registerFsAdapters } from '../mcp/fs';
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -382,3 +395,41 @@ describe('错误处理', () => {
     }));
   });
 });
+
+// ─── 新增：fs_request 场景 ───────────────────────────────────────────────────
+
+describe('mcp://query-request → fs_request', () => {
+  it('将 fs_request 路由到 fsRouter.handle 并回调 mcp_query_respond', async () => {
+    mountBridge()
+
+    await emitQueryRequest({
+      request_id: 'fs-1',
+      query_type: 'fs_request',
+      params: { op: 'read', resource: 'tab.query', target: 'active', payload: { mode: 'text' } },
+    })
+
+    expect(fsRouter.handle).toHaveBeenCalledWith({
+      op: 'read', resource: 'tab.query', target: 'active', payload: { mode: 'text' },
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('mcp_query_respond', {
+      requestId: 'fs-1',
+      data: { content: 'SELECT 1', lines: [] },
+    })
+  })
+
+  it('fsRouter 抛出错误时回调 error 字段', async () => {
+    vi.mocked(fsRouter.handle).mockRejectedValueOnce(new Error('Unknown resource: tab.unknown'))
+    mountBridge()
+
+    await emitQueryRequest({
+      request_id: 'fs-2',
+      query_type: 'fs_request',
+      params: { op: 'read', resource: 'tab.unknown', target: 'active', payload: { mode: 'text' } },
+    })
+
+    expect(mockInvoke).toHaveBeenCalledWith('mcp_query_respond', {
+      requestId: 'fs-2',
+      data: { error: 'Unknown resource: tab.unknown' },
+    })
+  })
+})

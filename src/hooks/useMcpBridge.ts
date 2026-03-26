@@ -6,6 +6,8 @@ import { useTreeStore } from '../store/treeStore';
 import { useAppStore } from '../store/appStore';
 import { useConfirmStore } from '../store/confirmStore';
 import { useSeaTunnelStore } from '../store/seaTunnelStore';
+import { fsRouter, registerFsAdapters } from '../mcp/fs'
+import type { FsOp } from '../mcp/fs'
 
 interface UiActionPayload {
   request_id: string;
@@ -15,13 +17,16 @@ interface UiActionPayload {
 
 interface QueryRequestPayload {
   request_id: string;
-  query_type: 'search_tabs' | 'get_tab_content' | 'search_db_metadata';
+  query_type: 'search_tabs' | 'get_tab_content' | 'search_db_metadata' | 'fs_request';
   params: Record<string, unknown>;
 }
 
 export function useMcpBridge() {
   const { tabs, activeTabId, setActiveTabId, sqlContent, openTableStructureTab, openMetricTab, openQueryTab, openSeaTunnelJobTab } = useQueryStore();
   const treeNodes = useTreeStore((s) => s.nodes);
+
+  // 注册所有 FsAdapter（幂等，可重复调用）
+  registerFsAdapters()
 
   useEffect(() => {
     // 监听 UI 操作（写方向）
@@ -259,6 +264,16 @@ export function useMcpBridge() {
             }
           }
           data = results;
+        } else if (query_type === 'fs_request') {
+          const { op, resource, target, payload: fsPayload } = params as {
+            op: FsOp; resource: string; target: string; payload: Record<string, unknown>
+          }
+          try {
+            const resultStr = await fsRouter.handle({ op, resource, target, payload: fsPayload })
+            data = JSON.parse(resultStr) as unknown
+          } catch (fsErr) {
+            data = { error: fsErr instanceof Error ? fsErr.message : String(fsErr) }
+          }
         }
 
         await invoke('mcp_query_respond', { requestId: request_id, data });

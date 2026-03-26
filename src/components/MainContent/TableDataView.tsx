@@ -142,6 +142,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   showToastRef.current = showToast;
   // 请求序号：每次发起查询时递增，用于丢弃过期响应，防止竞争条件覆盖最新结果
   const requestIdRef = useRef(0);
+  // columns ref：避免 columns state 变化导致 loadData 重建进而触发二次请求
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
@@ -161,7 +164,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           filter_column: filterField || null,
           filter_operator: filterOp || null,
           filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOp)) ? null : (filterValue || null),
-          filter_data_type: columns.find(c => c.name === filterField)?.data_type || null,
+          filter_data_type: columnsRef.current.find(c => c.name === filterField)?.data_type || null,
           sort_column: sortCol,
           sort_direction: sortDir,
         }
@@ -177,7 +180,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;

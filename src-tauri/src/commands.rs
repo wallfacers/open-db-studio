@@ -2924,7 +2924,36 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
             });
         }
     }
-    result
+
+    // 合并相邻 assistant 消息（OpenCode 每次工具调用会产生独立 assistant turn，
+    // 但流式期间前端将所有内容累积为一条消息，重载时须保持一致）
+    let mut merged: Vec<ParsedChatMessage> = Vec::new();
+    for msg in result {
+        if msg.role == "assistant" {
+            if let Some(last) = merged.last_mut() {
+                if last.role == "assistant" {
+                    if !msg.content.is_empty() {
+                        if !last.content.is_empty() {
+                            last.content.push('\n');
+                        }
+                        last.content.push_str(&msg.content);
+                    }
+                    if let Some(t) = msg.thinking_content {
+                        match &mut last.thinking_content {
+                            Some(existing) => {
+                                existing.push('\n');
+                                existing.push_str(&t);
+                            }
+                            None => last.thinking_content = Some(t),
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
+        merged.push(msg);
+    }
+    merged
 }
 
 /// 创建 agent session

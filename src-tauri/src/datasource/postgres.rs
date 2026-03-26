@@ -46,11 +46,11 @@ fn pg_row_value(row: &PgRow, i: usize) -> serde_json::Value {
                 .map(serde_json::Value::String)
                 .unwrap_or(serde_json::Value::Null)
         }
-        // int8 / bigint / bigserial / oid（oid 在 PG 中是 u32，但 i64 足够）
+        // int8 / bigint / bigserial — 转为字符串，避免 JS Number 精度丢失（> 2^53）
         "int8" | "bigint" | "bigserial" => {
             row.try_get::<Option<i64>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| serde_json::Value::String(v.to_string()))
                 .unwrap_or(serde_json::Value::Null)
         }
         // int4 / integer / serial（最常见的整数类型）

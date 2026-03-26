@@ -137,7 +137,8 @@ impl DataSource for SqlServerDataSource {
                 if let Ok(Some(val)) = row.try_get::<&str, _>(i) {
                     serde_json::Value::String(val.to_string())
                 } else if let Ok(Some(val)) = row.try_get::<i64, _>(i) {
-                    serde_json::json!(val)
+                    // BIGINT — 转为字符串，避免 JS Number 精度丢失（> 2^53）
+                    serde_json::Value::String(val.to_string())
                 } else if let Ok(Some(val)) = row.try_get::<i32, _>(i) {
                     serde_json::json!(val)
                 } else if let Ok(Some(val)) = row.try_get::<f64, _>(i) {

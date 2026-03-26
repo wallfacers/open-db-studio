@@ -60,6 +60,7 @@ import { TableDataView } from './TableDataView';
 import { TableStructureView } from './TableStructureView';
 import { CellEditorModal } from './CellEditorModal';
 import ERDiagram from '../ERDiagram';
+import ERCanvas from '../ERDesigner/ERCanvas';
 import { MetricTab } from '../MetricsExplorer/MetricTab';
 import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
 import SeaTunnelJobTab from '../SeaTunnelJobTab';
@@ -736,12 +737,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
       {activeTabObj ? (
         activeTabObj.type === 'er_design' ? (
-          <div className="flex-1 w-full h-full relative flex items-center justify-center bg-[#080d12]">
-            <div className="text-[#7a9bb8] text-sm">
-              ER Designer - Project ID: {activeTabObj.erProjectId}
-              <span className="block text-center text-xs mt-2 opacity-60">(Canvas component coming soon)</span>
-            </div>
-          </div>
+          <ERCanvas projectId={activeTabObj.erProjectId!} />
         ) : activeTabObj.type === 'table' ? null
         : activeTabObj.type === 'table_structure' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">

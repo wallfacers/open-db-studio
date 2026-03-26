@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlConnectOptions, MySqlSslMode};
 use sqlx::Row;
 use std::time::{Duration, Instant};
 
@@ -67,15 +67,18 @@ impl MySqlDataSource {
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
         let password = config.password.as_deref().unwrap_or("");
         let database = config.database.as_deref().unwrap_or("");
-        let url = format!(
-            "mysql://{}:{}@{}:{}/{}",
-            username, password, host, port, database
-        );
+        let connect_opts = MySqlConnectOptions::new()
+            .host(host)
+            .port(port)
+            .username(username)
+            .password(password)
+            .database(database)
+            .ssl_mode(MySqlSslMode::Disabled);
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(30))
             .idle_timeout(Duration::from_secs(300))
-            .connect(&url)
+            .connect_with(connect_opts)
             .await?;
         Ok(Self { pool, dialect })
     }

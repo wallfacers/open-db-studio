@@ -49,6 +49,7 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
               top: 0,
               transform: `translateY(${vRow.start}px)`,
               width: '100%',
+              overflow: 'hidden',
             }}
             className="hover:bg-[#1a2639]"
           >

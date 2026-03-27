@@ -88,7 +88,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
     >
       <Tooltip
         content={displayValue === null ? undefined : String(displayValue)}
-        className="w-full min-w-0"
+        className="block w-full min-w-0"
       >
         <div className="truncate">
           {displayValue === null

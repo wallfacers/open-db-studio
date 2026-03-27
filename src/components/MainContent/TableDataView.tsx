@@ -360,7 +360,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           {row.map((cell, ji) => {
             const w = colWidths[ji] ?? 150;
             return (
-              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px` }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] overflow-hidden">
+              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] overflow-hidden">
                 <div className="truncate">{cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}</div>
               </td>
             );
@@ -390,7 +390,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               onCommit={newVal => editCell(ri, ci, newVal)}
               onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
               onOpenEditor={() => openCellEditor(ri, ci)}
-              style={{ flex: `0 0 ${w}px`, minWidth: `${w}px` }}
+              style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }}
             />
           );
         })}
@@ -434,7 +434,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       {data.columns.map((col, ci) => {
         const w = colWidths[ci] ?? 150;
         return (
-          <th key={col} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px` }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
+          <th key={col} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
             {colSortButtons(col)}
           </th>
         );

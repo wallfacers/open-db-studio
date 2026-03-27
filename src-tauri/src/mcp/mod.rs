@@ -275,15 +275,15 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "fs_write",
-                "description": "Write or patch tab content. SQL editor writes show diff unless Auto mode is on. Requires Auto mode ON for tab.metric and tab.table writes.",
+                "description": "Write or patch tab content. SQL editor writes show diff unless Auto mode is on. ⚠️ tab.table ONLY works on EXISTING tables (generates ALTER TABLE SQL to query tab). CANNOT fill the new-table designer form — use fs_open with initial_columns for new tables.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: table@conn:N. tab.seatunnel: <job_id>" },
+                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: EXISTING table only, format table@conn:N (e.g. users@conn:1). tab.seatunnel: <job_id>" },
                         "patch": {
                             "type": "object",
-                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment} → writes ALTER SQL to query tab. tab.table modify: {action:'modify_column',column_name,changes:{...}} → writes ALTER SQL to query tab. NOTE: tab.table write does NOT execute DDL directly; user reviews and executes manually."
+                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment} → ALTER SQL to query tab (EXISTING table only). tab.table modify: {action:'modify_column',column_name,changes:{...}} → ALTER SQL to query tab (EXISTING table only). For NEW tables use fs_open with initial_columns."
                         }
                     },
                     "required": ["resource", "target", "patch"]
@@ -303,12 +303,12 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "fs_open",
-                "description": "Open a new tab. Returns { target: tab_id }.",
+                "description": "Open a new tab. Returns { target: tab_id }. For new table form with columns: pass initial_columns in params — this is the ONE-SHOT way to pre-fill the form (cannot add columns after opening).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table: {table?,database,connection_id,initial_columns?,initial_table_name?} — omit 'table' for new table mode with optional pre-filled columns. tab.seatunnel: {job_id}" }
+                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table NEW: {connection_id,database,initial_table_name?,initial_columns:[...ALL columns...]} — pass ALL columns here, ONE-SHOT, cannot add columns later. tab.table EXISTING: {table,database,connection_id}. tab.seatunnel: {job_id}" }
                     },
                     "required": ["resource"]
                 }

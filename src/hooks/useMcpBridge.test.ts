@@ -148,6 +148,80 @@ describe('mcp://ui-action → open_tab (table_structure)', () => {
       data: { tab_id: newTab!.id },
     }));
   });
+
+  it('新建表模式（无 table_name）+ initial_columns 预填，回调 success=true 含 tab_id', async () => {
+    useQueryStore.setState({ tabs: [], activeTabId: '' });
+    mountBridge();
+
+    await emitUiAction({
+      request_id: 'req-4',
+      action: 'open_tab',
+      params: {
+        connection_id: 1,
+        type: 'table_structure',
+        database: 'mydb',
+        initial_table_name: 'operation_logs',
+        initial_columns: [
+          { name: 'id',         data_type: 'BIGINT',      is_primary_key: true, extra: 'auto_increment' },
+          { name: 'user_id',    data_type: 'BIGINT',      is_nullable: true },
+          { name: 'action',     data_type: 'VARCHAR',     length: '50', is_nullable: false },
+          { name: 'created_at', data_type: 'DATETIME',    is_nullable: false },
+        ],
+      },
+    });
+
+    const tabs = useQueryStore.getState().tabs;
+    const newTab = tabs.find(t => t.type === 'table_structure' && t.title === 'operation_logs');
+    expect(newTab).toBeDefined();
+    expect(newTab!.initialColumns).toHaveLength(4);
+    expect(newTab!.initialColumns![0].name).toBe('id');
+    expect(mockInvoke).toHaveBeenCalledWith('mcp_ui_action_respond', expect.objectContaining({
+      requestId: 'req-4',
+      success: true,
+      data: { tab_id: newTab!.id },
+    }));
+  });
+
+  it('多个"新建表" tab 并存时，beforeIds 差集能正确找到本次新增的 tab', async () => {
+    // 预设一个已有的 '新建表' tab，模拟旧 title-matching 会碰撞的场景
+    useQueryStore.setState({
+      tabs: [
+        { id: 'existing-new-table', type: 'table_structure', title: '新建表', connectionId: 1, db: 'mydb', isNewTable: true },
+      ],
+      activeTabId: 'existing-new-table',
+    });
+    mountBridge();
+
+    await emitUiAction({
+      request_id: 'req-5',
+      action: 'open_tab',
+      params: { connection_id: 1, type: 'table_structure', database: 'mydb' },
+    });
+
+    const call = mockInvoke.mock.calls.find(
+      c => c[0] === 'mcp_ui_action_respond' && (c[1] as { requestId: string }).requestId === 'req-5'
+    );
+    expect(call).toBeDefined();
+    const resp = call![1] as { success: boolean; data: { tab_id: string } };
+    expect(resp.success).toBe(true);
+    // 返回的 tab_id 应该是新建的那个，不是预设的旧 tab
+    expect(resp.data.tab_id).not.toBe('existing-new-table');
+  });
+
+  it('connection_id 为 null 时回调 success=false', async () => {
+    mountBridge();
+
+    await emitUiAction({
+      request_id: 'req-6',
+      action: 'open_tab',
+      params: { connection_id: null, type: 'table_structure', database: 'mydb' },
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('mcp_ui_action_respond', expect.objectContaining({
+      requestId: 'req-6',
+      success: false,
+    }));
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -5,18 +5,19 @@ import { useQueryStore } from '../store/queryStore';
 import { useAppStore } from '../store/appStore';
 import { useConfirmStore } from '../store/confirmStore';
 import { useSeaTunnelStore } from '../store/seaTunnelStore';
+import { useTreeStore } from '../store/treeStore';
 import { fsRouter, registerFsAdapters } from '../mcp/fs'
 import type { FsOp } from '../mcp/fs'
 
 interface UiActionPayload {
   request_id: string;
-  action: 'open_tab' | 'propose_seatunnel_job';
+  action: 'open_tab' | 'propose_seatunnel_job' | 'focus_tab';
   params: Record<string, unknown>;
 }
 
 interface QueryRequestPayload {
   request_id: string;
-  query_type: 'search_tabs' | 'get_tab_content' | 'fs_request';
+  query_type: 'search_tabs' | 'get_tab_content' | 'fs_request' | 'search_db_metadata';
   params: Record<string, unknown>;
 }
 
@@ -31,7 +32,22 @@ export function useMcpBridge() {
     const unlistenUiAction = listen<UiActionPayload>('mcp://ui-action', async (event) => {
       const { request_id, action, params } = event.payload;
       try {
-        if (action === 'propose_seatunnel_job') {
+        if (action === 'focus_tab') {
+          const { tab_id } = params as { tab_id?: string };
+          const tab = useQueryStore.getState().tabs.find(t => t.id === tab_id);
+          if (tab) {
+            setActiveTabId(tab.id);
+            await invoke('mcp_ui_action_respond', {
+              requestId: request_id, success: true,
+              data: { tab_id: tab.id }, error: null,
+            });
+          } else {
+            await invoke('mcp_ui_action_respond', {
+              requestId: request_id, success: false, data: null,
+              error: `Tab '${tab_id}' not found`,
+            });
+          }
+        } else if (action === 'propose_seatunnel_job') {
           const { job_name, config_json, category_id, description, job_id } = params as {
             job_name: string; config_json: string;
             category_id?: number; description?: string; job_id?: number;
@@ -114,13 +130,16 @@ export function useMcpBridge() {
 
           if (type === 'table_structure' && connection_id != null) {
             // table_name 为 null/undefined 时为新建表模式（支持 initial_columns 预填）
+            const beforeTabIds = new Set(useQueryStore.getState().tabs.map(t => t.id));
             openTableStructureTab(connection_id, database, undefined, table_name || undefined, initial_columns, initial_table_name);
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const expectedTitle = initial_table_name || table_name || '新建表';
-            const newTab = useQueryStore.getState().tabs.find(
-              t => t.type === 'table_structure' && t.connectionId === connection_id && t.title === expectedTitle
+            // Zustand set() 是同步的，状态已更新；优先找新增 tab，其次找同标题的已有 tab（重复防御路径）
+            const stateAfter = useQueryStore.getState();
+            const newlyAdded = stateAfter.tabs.find(t => !beforeTabIds.has(t.id) && t.type === 'table_structure');
+            const fallback = newlyAdded ?? stateAfter.tabs.find(
+              t => t.type === 'table_structure' && t.connectionId === connection_id &&
+              t.title === (initial_table_name || table_name || '新建表')
             );
-            newTabId = newTab?.id ?? null;
+            newTabId = fallback?.id ?? null;
           } else if (type === 'metric' && metric_id) {
             openMetricTab(metric_id, `Metric #${metric_id}`);
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -246,6 +265,22 @@ export function useMcpBridge() {
           } catch (fsErr) {
             data = { error: fsErr instanceof Error ? fsErr.message : String(fsErr) }
           }
+        } else if (query_type === 'search_db_metadata') {
+          const { keyword, type: nodeType, connection_id } = params as {
+            keyword?: string; type?: string; connection_id?: number;
+          };
+          const nodes = useTreeStore.getState().nodes;
+          const kw = (keyword ?? '').toLowerCase();
+          data = Array.from(nodes.values()).filter(n => {
+            if (nodeType && n.nodeType !== nodeType) return false;
+            if (connection_id != null && n.meta?.connectionId !== connection_id) return false;
+            if (kw) return n.label.toLowerCase().includes(kw);
+            return true;
+          }).map(n => ({
+            name: n.label,
+            type: n.nodeType,
+            ...(n.meta?.connectionId != null && { connection_id: n.meta.connectionId }),
+          }));
         }
 
         await invoke('mcp_query_respond', { requestId: request_id, data });

@@ -45,6 +45,15 @@ fn tool_definitions() -> Value {
     json!({
         "tools": [
             {
+                "name": "list_connections",
+                "description": "List all configured database connections (id, name, driver, host, database_name). Call this first when connection_id is unknown.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
                 "name": "list_databases",
                 "description": "List all databases for a connection",
                 "inputSchema": {
@@ -381,6 +390,10 @@ fn optimize_tool_definitions() -> Value {
 
 async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, session_id: String) -> crate::AppResult<String> {
     match name {
+        "list_connections" => {
+            let connections = crate::db::list_connections()?;
+            Ok(serde_json::to_string_pretty(&connections).unwrap_or_default())
+        }
         "list_databases" => {
             let conn_id = args["connection_id"].as_i64()
                 .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;

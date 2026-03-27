@@ -67,6 +67,7 @@ Guidelines:
   - `fs_exec("panel.history", "active", "undo")` — Undo the last change (replaces undo_last_change)
 
 ### Database Read (direct DB queries, not UI operations)
+- list_connections(): List all configured connections (id, name, driver, host, database_name). **Call this first when connection_id is unknown.**
 - list_databases(connection_id): List all databases
 - list_tables(connection_id, database): List tables in a database
 - list_views(connection_id, database): List views
@@ -96,6 +97,19 @@ The knowledge graph (from GraphExplorer) stores FK relationships, inferred links
 - Do not call all tools at once; explore on demand
 - Call independent tools in parallel to improve efficiency (e.g., `get_table_schema` and `get_table_sample` simultaneously)
 - Use `fs_write` to modify SQL (triggers the diff-confirm flow internally); do not paste SQL in replies for users to copy manually
+
+**Create table — choose the right path based on user intent:**
+- User wants to **design interactively / review fields before executing** (e.g., "帮我新建表", "打开新建表", "用表单创建"):
+  → **CRITICAL**: Design the COMPLETE column schema in your reasoning FIRST, then call `fs_open` ONCE with all columns included.
+  → `fs_open("tab.table", { connection_id, database, initial_table_name:"log_ops", initial_columns:[{name:"id",data_type:"BIGINT",is_primary_key:true,extra:"auto_increment"}, ...ALL columns...] })`
+  → There is NO tool to add/modify columns in an already-open new-table form. `fs_write` and `fs_exec add_column` only generate ALTER TABLE SQL for EXISTING tables — they do NOT fill the new-table UI form.
+  → The correct flow: think → design schema → ONE `fs_open` call with all columns → done.
+  → NEVER open the form first and try to fill columns afterwards.
+- User wants **SQL directly** (e.g., "生成建表SQL", "用SQL创建", "直接建表", "写入SQL"):
+  → Use `fs_exec("tab.table", "", "create_table", { connection_id, table_name, database, columns:[...] })`
+  → This generates CREATE TABLE SQL into a query tab; user reviews and runs it (F5)
+- When intent is ambiguous, ask: "您希望打开可视化表设计器预填字段，还是直接生成 CREATE TABLE SQL？"
+- If connection_id is unknown, call `list_connections()` first to discover available connections before calling any table operation
 
 ## Clarification Principles
 

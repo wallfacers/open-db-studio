@@ -29,7 +29,7 @@ export class FsRouter {
       }
       case 'write': {
         if (!adapter.write) throw new Error(`${req.resource} does not support write`)
-        return JSON.stringify(await adapter.write(req.target, req.payload as FsWritePatch))
+        return JSON.stringify(await adapter.write(req.target, req.payload as unknown as FsWritePatch))
       }
       case 'open': {
         if (!adapter.open) throw new Error(`${req.resource} does not support open`)

@@ -273,7 +273,7 @@ fn tool_definitions() -> Value {
                         "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: table@conn:N. tab.seatunnel: <job_id>" },
                         "patch": {
                             "type": "object",
-                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment}. tab.table modify: {action:'modify_column',column_name,changes:{name?,data_type?,length?,is_nullable?,default_value?,extra?,comment?}}"
+                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment} → writes ALTER SQL to query tab. tab.table modify: {action:'modify_column',column_name,changes:{...}} → writes ALTER SQL to query tab. NOTE: tab.table write does NOT execute DDL directly; user reviews and executes manually."
                         }
                     },
                     "required": ["resource", "target", "patch"]
@@ -298,20 +298,20 @@ fn tool_definitions() -> Value {
                     "type": "object",
                     "properties": {
                         "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table: {table,database,connection_id}. tab.seatunnel: {job_id}" }
+                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table: {table?,database,connection_id,initial_columns?,initial_table_name?} — omit 'table' for new table mode with optional pre-filled columns. tab.seatunnel: {job_id}" }
                     },
                     "required": ["resource"]
                 }
             }),
             json!({
                 "name": "fs_exec",
-                "description": "Execute an action on a resource target.",
+                "description": "Execute an action on a resource target. NOTE: tab.table actions generate SQL and write it to a query tab for user review — they do NOT execute DDL directly.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel | panel.history" },
                         "target":   { "type": "string", "description": "active | tab_id | new" },
-                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column. tab.seatunnel: create. panel.history: undo" },
+                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column (writes SQL to query tab). tab.seatunnel: create. panel.history: undo" },
                         "params":   { "type": "object" }
                     },
                     "required": ["resource", "target", "action"]

@@ -83,7 +83,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     { icon: Edit3, label: t('common.rename') || '重命名', onClick: handleRename },
     { icon: Link2, label: t('erDesigner.bindConnection') || '绑定连接', onClick: handleBindConnection, show: !project?.connection_id },
     { icon: Unlink, label: t('erDesigner.unbindConnection') || '解除绑定', onClick: handleUnbind, show: !!project?.connection_id },
-    { icon: Download, label: t('common.export') || '导出 JSON', onClick: handleExport },
+    { icon: Download, label: t('erDesigner.exportJson') || '导出 JSON', onClick: handleExport },
     { type: 'divider' },
     { icon: Trash2, label: t('common.delete') || '删除', onClick: handleDelete, danger: true },
   ];

@@ -287,13 +287,13 @@ export const MainContent: React.FC<MainContentProps> = ({
       const ctxParts: string[] = [];
       if (result.graph_context) {
         if (result.graph_context.relevant_tables.length > 0) {
-          ctxParts.push(`相关表：${result.graph_context.relevant_tables.join('、')}`);
+          ctxParts.push(`${t('mainContent.relevantTables')}${result.graph_context.relevant_tables.join('、')}`);
         }
         if (result.graph_context.join_paths.length > 0) {
-          ctxParts.push(`JOIN 路径：${result.graph_context.join_paths.join('；')}`);
+          ctxParts.push(`${t('mainContent.joinPaths')}${result.graph_context.join_paths.join('；')}`);
         }
         if (result.graph_context.metrics.length > 0) {
-          ctxParts.push(`指标定义：\n${result.graph_context.metrics.map(m => `  • ${m}`).join('\n')}`);
+          ctxParts.push(`${t('mainContent.metricDefinitions')}\n${result.graph_context.metrics.map(m => `  • ${m}`).join('\n')}`);
         }
       }
       if (ctxParts.length > 0) {
@@ -303,12 +303,12 @@ export const MainContent: React.FC<MainContentProps> = ({
         setGraphCtxByTab(prev => { const n = { ...prev }; delete n[activeTab]; return n; });
       }
       if (result.validation_warning) {
-        showToast(`SQL 校验警告：${result.validation_warning}`, 'warning');
+        showToast(`${t('mainContent.sqlValidationWarning')}${result.validation_warning}`, 'warning');
       }
       setNlPanelOpen(false);
       setNlInput('');
     } catch (e) {
-      showToast(`AI 生成失败：${String(e)}`, 'error');
+      showToast(`${t('mainContent.aiGenerateFailed')}${String(e)}`, 'error');
     } finally {
       setNlLoading(false);
     }
@@ -746,6 +746,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               tableName={activeTabObj.isNewTable ? undefined : activeTabObj.title}
               database={activeTabObj.db}
               schema={activeTabObj.schema}
+              initialColumns={activeTabObj.initialColumns}
+              initialTableName={activeTabObj.initialTableName}
               onSuccess={() => showToast('操作成功', 'success')}
               showToast={showToast}
             />
@@ -830,11 +832,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                   </Tooltip>
                   {nlPanelOpen && (
                     <div className="absolute top-full left-0 mt-1 z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-xl w-72 p-2 flex flex-col gap-2">
-                      <div className="text-[10px] text-[#7a9bb8] px-1">用自然语言描述查询需求，AI 将结合知识图谱生成 SQL</div>
+                      <div className="text-[10px] text-[#7a9bb8] px-1">{t('mainContent.nlPanelHint')}</div>
                       <input
                         ref={nlInputRef}
                         className="bg-[#0d1117] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#00c9a7] placeholder:text-[#3a5070]"
-                        placeholder="例：查询上月各城市销售额排名前10"
+                        placeholder={t('mainContent.nlInputPlaceholder')}
                         value={nlInput}
                         onChange={e => setNlInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerateSqlV2(); } if (e.key === 'Escape') setNlPanelOpen(false); }}
@@ -845,7 +847,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         onClick={handleGenerateSqlV2}
                         disabled={nlLoading || !nlInput.trim()}
                       >
-                        {nlLoading ? '生成中…' : '生成 SQL'}
+                        {nlLoading ? t('mainContent.generating') : t('mainContent.generateSql')}
                       </button>
                     </div>
                   )}
@@ -919,8 +921,8 @@ export const MainContent: React.FC<MainContentProps> = ({
                   {graphCtxExpanded
                     ? <ChevronDown size={12} className="flex-shrink-0" />
                     : <ChevronRight size={12} className="flex-shrink-0" />}
-                  <span className="text-[#4a8ab0]">▸ 参考了以下知识图谱上下文</span>
-                  <span className="text-[#3a5070] ml-1">（点击展开）</span>
+                  <span className="text-[#4a8ab0]">▸ {t('mainContent.graphContextRef')}</span>
+                  <span className="text-[#3a5070] ml-1">{t('mainContent.clickToExpand')}</span>
                 </button>
                 {graphCtxExpanded && (
                   <div className="px-3 pb-2">
@@ -1063,7 +1065,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     ) : currentResults.length === 0 ? (
                       <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.kind === 'select' && (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.length === 0 ? (
-                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
+                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>
                     ) : (() => {
                       const activeResult = typeof selectedResultPane === 'number'
                         ? currentResults[selectedResultPane]
@@ -1169,12 +1171,12 @@ export const MainContent: React.FC<MainContentProps> = ({
                         <>
                           {isTruncated && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/30 border-b border-yellow-700/50 text-yellow-300 text-xs flex-shrink-0">
-                              <span>⚠ 查询返回 {allRows.length} 行，当前显示前 {RESULT_MAX_ROWS} 行。如需查看全量数据请使用 LIMIT 或导出。</span>
+                              <span>{t('mainContent.rowsTruncatedWarning', { total: allRows.length, max: RESULT_MAX_ROWS })}</span>
                               <button
                                 onClick={exportCsv}
                                 className="ml-auto px-2 py-0.5 rounded border border-yellow-600 hover:bg-yellow-800/50 transition-colors flex-shrink-0"
                               >
-                                导出全量
+                                {t('mainContent.exportFull')}
                               </button>
                             </div>
                           )}
@@ -1251,7 +1253,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                               >
                                 <ChevronLeft size={14}/>
                               </button>
-                              <span>第 {resultPage + 1} / {totalDisplayPages} 页</span>
+                              <span>{t('mainContent.pageNumber', { current: resultPage + 1, total: totalDisplayPages })}</span>
                               <button
                                 disabled={resultPage >= totalDisplayPages - 1}
                                 onClick={() => setResultPage(p => p + 1)}

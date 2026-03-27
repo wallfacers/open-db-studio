@@ -65,6 +65,16 @@
     "confirmDeleteAll": "Clear all chats?",
     "confirmYes": "Confirm",
     "confirmNo": "Cancel",
+    "concurrentChatLimit": "Multiple chats in progress, please wait before sending new message",
+    "autoModeOn": "Auto Mode: ON — AI can execute write operations without confirmation",
+    "autoModeOff": "Auto Mode: OFF — Write operations require manual confirmation",
+    "toggleAutoMode": "Toggle Auto Mode",
+    "clearChatTitle": "Clear Chat",
+    "clearChatConfirm": "Clear current chat history? This cannot be undone.",
+    "deleteSessionTitle": "Delete Session",
+    "deleteSessionConfirm": "Delete this session? This cannot be undone.",
+    "deleteAllSessionsTitle": "Delete All Sessions",
+    "deleteAllSessionsConfirm": "Delete all session records? This cannot be undone.",
     "waitMsg0": "Connecting to model...",
     "waitMsg1": "AI is thinking...",
     "waitMsg2": "Composing reply...",
@@ -82,6 +92,9 @@
     "thinking": {
       "thinking": "Thinking",
       "thought": "Deep thought completed"
+    },
+    "elicitation": {
+      "title": "Tool Execution Confirmation"
     },
     "slashCommands": {
       "undo": {
@@ -294,7 +307,22 @@
     "closeTab": "Close Tab",
     "closeResult": "Close Result",
     "dmlReport": "Exec Report",
-    "dmlReportCount": "stmts"
+    "dmlReportCount": "stmts",
+    "relevantTables": "Relevant tables: ",
+    "joinPaths": "JOIN paths: ",
+    "metricDefinitions": "Metric definitions: ",
+    "sqlValidationWarning": "SQL validation warning: ",
+    "aiGenerateFailed": "AI generation failed: ",
+    "nlPanelHint": "Describe your query in natural language, AI will generate SQL using knowledge graph",
+    "nlInputPlaceholder": "e.g., Query top 10 cities by sales last month",
+    "generating": "Generating...",
+    "generateSql": "Generate SQL",
+    "graphContextRef": "Referenced the following knowledge graph context",
+    "clickToExpand": "(click to expand)",
+    "querySuccessNoData": "Query successful, no data",
+    "rowsTruncatedWarning": "⚠ Query returned {{total}} rows, showing first {{max}}. Use LIMIT or export to view all data.",
+    "exportFull": "Export All",
+    "pageNumber": "Page {{current}} / {{total}}"
   },
   "tableDataView": {
     "firstPage": "First page",
@@ -416,7 +444,8 @@
   "app": {
     "chatMsg1": "Help me analyze the birth rate changes in Shanghai in 2023",
     "chatMsg2": "Based on user input, matched the following tables",
-    "chatMsg3": "To analyze the birth rate changes in Shanghai in 2023, we need to extract from"
+    "chatMsg3": "To analyze the birth rate changes in Shanghai in 2023, we need to extract from",
+    "sqlFormatFailed": "SQL formatting failed"
   },
   "settings": {
     "title": "Settings",
@@ -739,6 +768,26 @@
       "noDescription": "No description",
       "descriptionPlaceholder": "Describe the business meaning of this relationship...",
       "linkWeight": "Weight"
+    },
+    "searchTab": {
+      "searchPlaceholder": "Search node names...",
+      "searchHint": "Enter keywords to search graph nodes",
+      "noResults": "No matching nodes found",
+      "filteredHidden": "Currently filtered, node is hidden",
+      "setAsStart": "Set as path start",
+      "setAsEnd": "Set as path end",
+      "tableOnly": "Table nodes only"
+    },
+    "pathTab": {
+      "setInSearch": "Click [S]/[T] in search results to set",
+      "maxHops": "Max hops",
+      "sameNodeError": "Start and end cannot be the same",
+      "searching": "Searching...",
+      "findPath": "Find Path",
+      "retry": "Retry",
+      "noPathFound": "No path found within {{n}} hops",
+      "restoreFullGraph": "Restore Full Graph",
+      "extractSubgraph": "Extract Subgraph"
     }
   },
   "metricsExplorer": {

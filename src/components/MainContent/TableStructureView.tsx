@@ -138,29 +138,48 @@ interface TableStructureViewProps {
   tableName?: string;
   database?: string;
   schema?: string;
+  initialColumns?: Array<{
+    name: string; data_type: string; length?: string;
+    is_nullable?: boolean; default_value?: string;
+    is_primary_key?: boolean; extra?: string; comment?: string;
+  }>;
+  initialTableName?: string;
   onSuccess: () => void;
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const TableStructureView: React.FC<TableStructureViewProps> = ({
-  connectionId, tableName, database, schema, onSuccess, showToast
+  connectionId, tableName, database, schema, initialColumns, initialTableName, onSuccess, showToast
 }) => {
   const { t } = useTranslation();
   const [columns, setColumns] = useState<EditableColumn[]>([]);
   const [originalColumns, setOriginalColumns] = useState<EditableColumn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [newTableName, setNewTableName] = useState(tableName ?? '');
+  const [newTableName, setNewTableName] = useState(initialTableName || tableName || '');
 
   const { connections } = useConnectionStore();
   const driver = connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
 
   useEffect(() => {
     if (!tableName) {
-      const initCols: EditableColumn[] = [{
-        id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
-        defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
-      }];
+      const initCols: EditableColumn[] = initialColumns && initialColumns.length > 0
+        ? initialColumns.map(c => ({
+            id: makeId(),
+            name: c.name,
+            dataType: (c.data_type ?? 'VARCHAR').toUpperCase(),
+            length: c.length ?? '',
+            isNullable: c.is_nullable ?? true,
+            defaultValue: c.default_value ?? '',
+            isPrimaryKey: c.is_primary_key ?? false,
+            extra: c.extra ?? '',
+            comment: c.comment ?? '',
+            _isNew: true,
+          }))
+        : [{
+            id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
+            defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
+          }];
       setColumns(initCols);
       setOriginalColumns([]);
       return;

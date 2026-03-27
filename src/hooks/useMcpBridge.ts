@@ -104,17 +104,21 @@ export function useMcpBridge() {
             });
           }
         } else if (action === 'open_tab') {
-          const { connection_id, type, table_name, database, metric_id, job_id } = params as {
+          const { connection_id, type, table_name, database, metric_id, job_id, initial_columns, initial_table_name } = params as {
             connection_id?: number; type: string; table_name?: string;
             database?: string; metric_id?: number; job_id?: number;
+            initial_columns?: import('../types').Tab['initialColumns'];
+            initial_table_name?: string;
           };
           let newTabId: string | null = null;
 
-          if (type === 'table_structure' && table_name && connection_id != null) {
-            openTableStructureTab(connection_id, database, undefined, table_name);
+          if (type === 'table_structure' && connection_id != null) {
+            // table_name 为 null/undefined 时为新建表模式（支持 initial_columns 预填）
+            openTableStructureTab(connection_id, database, undefined, table_name || undefined, initial_columns, initial_table_name);
             await new Promise(resolve => setTimeout(resolve, 100));
+            const expectedTitle = initial_table_name || table_name || '新建表';
             const newTab = useQueryStore.getState().tabs.find(
-              t => t.type === 'table_structure' && t.connectionId === connection_id && t.title === table_name
+              t => t.type === 'table_structure' && t.connectionId === connection_id && t.title === expectedTitle
             );
             newTabId = newTab?.id ?? null;
           } else if (type === 'metric' && metric_id) {

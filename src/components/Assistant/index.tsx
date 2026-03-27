@@ -257,9 +257,12 @@ export const Assistant: React.FC<AssistantProps> = ({
   const streamingContent = useAiStore(
     (s) => s.chatStates[currentSessionId]?.streamingContent
   );
+  const streamingThinking = useAiStore(
+    (s) => s.chatStates[currentSessionId]?.streamingThinkingContent
+  );
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, streamingContent, currentSessionId]);
+  }, [chatHistory, streamingContent, streamingThinking, pendingPermission, currentSessionId]);
 
   useEffect(() => {
     loadConfigs();
@@ -272,7 +275,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     // 并发上限检查
     const activeChatCount = Object.values(useAiStore.getState().chatStates).filter((s) => s.isChatting).length;
     if (activeChatCount >= 10) {
-      showToast('已有多个对话正在进行，请等待其完成后再发送新消息', 'warning');
+      showToast(t('assistant.concurrentChatLimit'), 'warning');
       return;
     }
     setChatInput('');
@@ -443,14 +446,14 @@ export const Assistant: React.FC<AssistantProps> = ({
         {/* Auto 模式开关 */}
         <Tooltip
           content={autoMode
-            ? 'Auto 模式：开启 — AI 可直接执行写操作，无需逐一确认'
-            : 'Auto 模式：关闭 — 写操作执行前需要手动确认'}
+            ? t('assistant.autoModeOn')
+            : t('assistant.autoModeOff')}
           delay={500}
         >
           <button
             onClick={() => setAutoMode(!autoMode)}
             className="flex items-center gap-1.5 px-1.5 py-1 rounded transition-colors hover:bg-[#1e2d42]"
-            aria-label="切换 Auto 模式"
+            aria-label={t('assistant.toggleAutoMode')}
           >
             <span className="text-[11px] text-[#5b8ab0] select-none">Auto</span>
             {/* 开关轨道 */}
@@ -508,8 +511,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                 className="flex items-center cursor-pointer hover:text-red-400 p-1"
                 onClick={async () => {
                   const ok = await confirm({
-                    title: '清空对话',
-                    message: '确定清空当前对话记录？此操作不可恢复。',
+                    title: t('assistant.clearChatTitle'),
+                    message: t('assistant.clearChatConfirm'),
                     variant: 'danger',
                   });
                   if (!ok) return;
@@ -598,8 +601,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                           onClick={async (e) => {
                             e.stopPropagation();
                             const ok = await confirm({
-                              title: '删除会话',
-                              message: '确定删除该会话？此操作不可恢复。',
+                              title: t('assistant.deleteSessionTitle'),
+                              message: t('assistant.deleteSessionConfirm'),
                               variant: 'danger',
                             });
                             if (!ok) return;
@@ -622,8 +625,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                 className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[#7a9bb8] hover:text-red-400 hover:bg-[#1e2d42] rounded transition-colors"
                 onClick={async () => {
                   const ok = await confirm({
-                    title: '删除所有会话',
-                    message: '确定删除全部会话记录？此操作不可恢复。',
+                    title: t('assistant.deleteAllSessionsTitle'),
+                    message: t('assistant.deleteAllSessionsConfirm'),
                     variant: 'danger',
                   });
                   if (!ok) return;

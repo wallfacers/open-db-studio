@@ -7,13 +7,13 @@ pub async fn handle(
     op: &str,
     target: &str,
     payload: Value,
-    session_id: String,
+    _session_id: String,
 ) -> crate::AppResult<String> {
     match op {
         "read"  => read(Arc::clone(&handle), target).await,
-        "write" => write(&handle, target, payload, session_id).await,
+        "write" => write(&handle, target, payload).await,
         "open"  => open(&handle, payload).await,
-        "exec"  => exec(&handle, target, payload, session_id).await,
+        "exec"  => exec(&handle, payload).await,
         _ => Err(crate::AppError::Other(format!("tab.table: unsupported op '{}'", op))),
     }
 }
@@ -55,26 +55,23 @@ async fn read(handle: Arc<tauri::AppHandle>, target: &str) -> crate::AppResult<S
     super::table_edit::get_column_meta(handle, args).await
 }
 
-/// fs_write — 根据 action 分发到不同的表操作
-///
-/// action="update_comment" (默认):
-///   {column_name:"user_id", comment:"..."}
-///   {mode:"struct", path:"/column_name/comment", value:"..."}
+/// fs_write — 生成 SQL 写入查询 Tab（不直接执行）
 ///
 /// action="modify_column":
 ///   {action:"modify_column", column_name:"old_name", changes:{name?, data_type?, length?, ...}}
+/// 默认 action="update_comment":
+///   {column_name:"user_id", comment:"..."}
 async fn write(
     handle: &Arc<tauri::AppHandle>,
     target: &str,
     patch: Value,
-    session_id: String,
 ) -> crate::AppResult<String> {
     let action = patch.get("action").and_then(|v| v.as_str()).unwrap_or("");
     let (table_name, conn_id, target_db) = parse_target(target)?;
     let database = patch["database"].as_str().map(|s| s.to_string())
         .or(target_db).unwrap_or_default();
 
-    match action {
+    let sql = match action {
         "modify_column" => {
             let args = json!({
                 "connection_id": conn_id,
@@ -83,9 +80,9 @@ async fn write(
                 "column_name":   patch["column_name"],
                 "changes":       patch["changes"]
             });
-            super::table_edit::modify_column(Arc::clone(handle), args, session_id).await
+            super::table_edit::generate_modify_column_sql(&args).await?
         }
-        // 默认：update_comment（兼容旧格式）
+        // 默认：update_comment
         _ => {
             let (column_name, comment) = if patch.get("mode").and_then(|v| v.as_str()) == Some("struct") {
                 let path = patch["path"].as_str().unwrap_or("").trim_start_matches('/');
@@ -110,51 +107,103 @@ async fn write(
                 "comment":       comment,
                 "database":      database
             });
-            super::table_edit::update_column_comment(Arc::clone(handle), args, session_id).await
+            super::table_edit::generate_update_comment_sql(&args).await?
         }
-    }
+    };
+
+    // 写入查询 Tab
+    write_sql_to_query_tab(handle, conn_id, &database, &sql, action).await
 }
 
-/// fs_exec("tab.table", ...) — 执行表结构操作
+/// fs_exec("tab.table", ...) — 生成 DDL 写入查询 Tab（不直接执行）
 ///
 /// action="create_table":  { action:"create_table", params:{ connection_id, table_name, database?, columns:[...] } }
 /// action="add_column":    { action:"add_column",   params:{ connection_id, table_name, database?, column:{...}, after_column? } }
 /// action="drop_column":   { action:"drop_column",  params:{ connection_id, table_name, database?, column_name } }
 async fn exec(
     handle: &Arc<tauri::AppHandle>,
-    _target: &str,
     payload: Value,
-    session_id: String,
 ) -> crate::AppResult<String> {
     let action = payload["action"].as_str().unwrap_or("");
     let params = &payload["params"];
 
-    match action {
-        "create_table" => {
-            super::table_edit::create_table(Arc::clone(handle), params.clone(), session_id).await
-        }
-        "add_column" => {
-            super::table_edit::add_column(Arc::clone(handle), params.clone(), session_id).await
-        }
-        "drop_column" => {
-            super::table_edit::drop_column(Arc::clone(handle), params.clone(), session_id).await
-        }
-        _ => Err(crate::AppError::Other(format!("tab.table exec: unsupported action '{}'", action))),
-    }
+    let sql = match action {
+        "create_table" => super::table_edit::generate_create_table_sql(params)?,
+        "add_column"   => super::table_edit::generate_add_column_sql(params)?,
+        "drop_column"  => super::table_edit::generate_drop_column_sql(params)?,
+        _ => return Err(crate::AppError::Other(format!("tab.table exec: unsupported action '{}'", action))),
+    };
+
+    let conn_id = params["connection_id"].as_i64().unwrap_or(0);
+    let database = params["database"].as_str().unwrap_or("");
+
+    write_sql_to_query_tab(handle, conn_id, database, &sql, action).await
 }
 
-/// fs_open("tab.table", {table, database, connection_id}) → 打开表结构 Tab
+/// fs_open("tab.table", {table, database, connection_id, initial_columns?, initial_table_name?})
+/// → 打开表结构 Tab（支持预填列定义）
 async fn open(handle: &Arc<tauri::AppHandle>, params: Value) -> crate::AppResult<String> {
-    let result = super::tab_control::send_ui_action(
-        handle,
-        "open_tab",
-        json!({
-            "type":          "table_structure",
-            "table_name":    params["table"],
-            "database":      params["database"],
-            "connection_id": params["connection_id"]
-        }),
-    )
-    .await?;
+    let mut action_params = json!({
+        "type":          "table_structure",
+        "table_name":    params["table"],
+        "database":      params["database"],
+        "connection_id": params["connection_id"]
+    });
+    // 透传预填列定义（AI 提案式创建表）
+    if let Some(cols) = params.get("initial_columns") {
+        action_params["initial_columns"] = cols.clone();
+    }
+    if let Some(name) = params.get("initial_table_name") {
+        action_params["initial_table_name"] = name.clone();
+    }
+
+    let result = super::tab_control::send_ui_action(handle, "open_tab", action_params).await?;
     Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
+}
+
+// ─── 共享：将 SQL 写入查询 Tab ───────────────────────────────────────────────
+
+/// 打开一个查询 Tab 并将生成的 SQL 写入，返回成功信息
+async fn write_sql_to_query_tab(
+    handle: &Arc<tauri::AppHandle>,
+    conn_id: i64,
+    database: &str,
+    sql: &str,
+    action_label: &str,
+) -> crate::AppResult<String> {
+    // 1. 打开新查询 Tab
+    let open_result = super::tab_control::query_frontend(
+        handle, "fs_request",
+        json!({
+            "op": "open",
+            "resource": "tab.query",
+            "target": "",
+            "payload": { "connection_id": conn_id, "database": database }
+        }),
+    ).await?;
+
+    let tab_id = open_result["target"].as_str().unwrap_or("active");
+
+    // 2. 将 SQL 写入 Tab
+    super::tab_control::query_frontend(
+        handle, "fs_request",
+        json!({
+            "op": "write",
+            "resource": "tab.query",
+            "target": tab_id,
+            "payload": {
+                "mode": "text",
+                "op": "replace_all",
+                "content": sql,
+                "reason": format!("AI generated {} SQL", action_label)
+            }
+        }),
+    ).await?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("已将 SQL 写入查询标签，请检查后手动执行（F5）。"),
+        "tab_id": tab_id,
+        "sql": sql
+    }).to_string())
 }

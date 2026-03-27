@@ -208,7 +208,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                         ))}
                         {getTableColumns(table.id).length > 5 && (
                           <div className="px-2 py-0.5 ml-4 text-[10px] text-[#5a6a7a]">
-                            +{getTableColumns(table.id).length - 5} 更多列
+                            {t('erDesigner.moreColumns', { count: getTableColumns(table.id).length - 5 })}
                           </div>
                         )}
                       </div>

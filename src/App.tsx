@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { format as formatSql } from 'sql-formatter';
+import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
 import { MainContent } from './components/MainContent';
@@ -24,6 +25,7 @@ import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
 
 export default function App() {
+  const { t } = useTranslation();
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
   const [activeActivity, setActiveActivity] = useState('database');
   const [searchQuery, setSearchQuery] = useState('');
@@ -108,7 +110,7 @@ export default function App() {
       });
       setSql(activeTabId, formatted);
     } catch {
-      showToast('SQL 格式化失败', 'error');
+      showToast(t('app.sqlFormatFailed'), 'error');
     }
   };
 

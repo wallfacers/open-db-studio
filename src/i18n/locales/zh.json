@@ -65,6 +65,16 @@
     "confirmDeleteAll": "确认清除所有对话？",
     "confirmYes": "确认",
     "confirmNo": "取消",
+    "concurrentChatLimit": "已有多个对话正在进行，请等待其完成后再发送新消息",
+    "autoModeOn": "Auto 模式：开启 — AI 可直接执行写操作，无需逐一确认",
+    "autoModeOff": "Auto 模式：关闭 — 写操作执行前需要手动确认",
+    "toggleAutoMode": "切换 Auto 模式",
+    "clearChatTitle": "清空对话",
+    "clearChatConfirm": "确定清空当前对话记录？此操作不可恢复。",
+    "deleteSessionTitle": "删除会话",
+    "deleteSessionConfirm": "确定删除该会话？此操作不可恢复。",
+    "deleteAllSessionsTitle": "删除所有会话",
+    "deleteAllSessionsConfirm": "确定删除全部会话记录？此操作不可恢复。",
     "waitMsg0": "正在连接模型...",
     "waitMsg1": "AI 正在思考...",
     "waitMsg2": "整理回复中...",
@@ -82,6 +92,9 @@
     "thinking": {
       "thinking": "思考中",
       "thought": "已深度思考"
+    },
+    "elicitation": {
+      "title": "工具执行确认"
     },
     "slashCommands": {
       "undo": {
@@ -294,7 +307,23 @@
     "closeTab": "关闭标签页",
     "closeResult": "关闭结果",
     "dmlReport": "执行报告",
-    "dmlReportCount": "条"
+    "dmlReportCount": "条",
+    "relevantTables": "相关表：",
+    "joinPaths": "JOIN 路径：",
+    "metricDefinitions": "指标定义：",
+    "sqlValidationWarning": "SQL 校验警告：",
+    "sqlValidationWarning": "SQL 校验警告：",
+    "aiGenerateFailed": "AI 生成失败：",
+    "nlPanelHint": "用自然语言描述查询需求，AI 将结合知识图谱生成 SQL",
+    "nlInputPlaceholder": "例：查询上月各城市销售额排名前10",
+    "generating": "生成中…",
+    "generateSql": "生成 SQL",
+    "graphContextRef": "参考了以下知识图谱上下文",
+    "clickToExpand": "（点击展开）",
+    "querySuccessNoData": "查询成功，暂无数据",
+    "rowsTruncatedWarning": "⚠ 查询返回 {{total}} 行，当前显示前 {{max}} 行。如需查看全量数据请使用 LIMIT 或导出。",
+    "exportFull": "导出全量",
+    "pageNumber": "第 {{current}} / {{total}} 页"
   },
   "tableDataView": {
     "firstPage": "第一页",
@@ -416,7 +445,8 @@
   "app": {
     "chatMsg1": "帮我分析2023年上海市出生率变化",
     "chatMsg2": "基于用户输入，匹配到如下表",
-    "chatMsg3": "为了分析2023年上海市的出生率变化，我们需要从"
+    "chatMsg3": "为了分析2023年上海市的出生率变化，我们需要从",
+    "sqlFormatFailed": "SQL 格式化失败"
   },
   "settings": {
     "title": "设置",
@@ -739,6 +769,26 @@
       "noDescription": "暂无描述",
       "descriptionPlaceholder": "描述关联的业务含义...",
       "linkWeight": "关联权重"
+    },
+    "searchTab": {
+      "searchPlaceholder": "搜索节点名称...",
+      "searchHint": "输入关键词搜索图谱节点",
+      "noResults": "未找到匹配节点",
+      "filteredHidden": "当前已过滤，节点不可见",
+      "setAsStart": "设为路径起点",
+      "setAsEnd": "设为路径终点",
+      "tableOnly": "仅支持表节点"
+    },
+    "pathTab": {
+      "setInSearch": "在搜索结果中点击 [S]/[T] 设置",
+      "maxHops": "最大跳数",
+      "sameNodeError": "起点和终点不能相同",
+      "searching": "查找中...",
+      "findPath": "查找路径",
+      "retry": "重试",
+      "noPathFound": "在 {{n}} 跳范围内未找到路径",
+      "restoreFullGraph": "恢复全图",
+      "extractSubgraph": "提取子图"
     }
   },
   "metricsExplorer": {

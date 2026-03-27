@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import type { PermissionRequest } from '../../types'
 
 interface Props {
@@ -7,6 +8,7 @@ interface Props {
 }
 
 const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
+  const { t } = useTranslation()
   const kindOrder = ['allow_once', 'allow_always', 'reject_once', 'reject_always', 'deny'] as const
   const sorted = [...request.options].sort(
     (a, b) => kindOrder.indexOf(a.kind as typeof kindOrder[number]) - kindOrder.indexOf(b.kind as typeof kindOrder[number])
@@ -16,7 +18,7 @@ const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
     <div className="mx-3 mb-3 rounded-lg border border-[#1e3a5f] bg-[#0d2137] p-3">
       <div className="mb-2 flex items-center gap-1.5">
         <span className="text-[13px]">🔐</span>
-        <span className="text-[12px] font-semibold text-[#8ab0cc]">工具执行确认</span>
+        <span className="text-[12px] font-semibold text-[#8ab0cc]">{t('assistant.elicitation.title')}</span>
       </div>
       <p className="mb-3 text-[12px] text-[#c8daea] leading-relaxed">{request.message}</p>
       <div className="flex flex-wrap gap-2">
@@ -37,7 +39,7 @@ const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
           onClick={() => onRespond('', true)}
           className="rounded border border-[#2a3a4a] bg-transparent px-3 py-1.5 text-[12px] text-[#5b8ab0] transition-colors hover:border-[#3a5a7a] hover:text-[#8ab0cc]"
         >
-          取消
+          {t('common.cancel')}
         </button>
       </div>
     </div>

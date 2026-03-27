@@ -102,7 +102,8 @@ Returns `{ target: tab_id }` — use returned target for subsequent operations.
 
 ```
 fs_open("tab.query",  { connection_id: 1 })
-fs_open("tab.table",  { table: "users", database: "app", connection_id: 1 })
+fs_open("tab.table",  { table: "users", database: "app", connection_id: 1 })  # edit existing
+fs_open("tab.table",  { connection_id: 1, database: "app", initial_table_name: "orders", initial_columns: [...] })  # new table with pre-filled columns
 fs_open("tab.metric", { metric_id: 42 })
 fs_open("tab.seatunnel", { job_id: 42 })
 fs_open("settings.llm")
@@ -121,6 +122,9 @@ fs_exec(resource, target, action, params?)
 | `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` | confirm pending write |
 | `fs_exec("tab.query", "active", "undo")` | undo last change |
 | `fs_exec("tab.query", tab_id, "focus")` | switch to tab |
+| `fs_exec("tab.table", "", "create_table", { connection_id, table_name, columns:[...] })` | generates CREATE TABLE SQL to query tab |
+| `fs_exec("tab.table", "", "add_column", { connection_id, table_name, column:{...} })` | generates ALTER ADD COLUMN SQL to query tab |
+| `fs_exec("tab.table", "", "drop_column", { connection_id, table_name, column_name })` | generates ALTER DROP COLUMN SQL to query tab |
 | `fs_exec("panel.db-tree", "conn:1", "refresh")` | refresh db tree |
 | `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` | create metric |
 | `fs_exec("tab.seatunnel", "new", "create", { job_name, config_json, category_id?, description? })` | create SeaTunnel job |

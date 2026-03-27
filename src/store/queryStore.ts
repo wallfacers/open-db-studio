@@ -55,7 +55,7 @@ interface QueryState {
 
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
-  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
+  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string, initialColumns?: import('../types').Tab['initialColumns'], initialTableName?: string) => void;
   openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
@@ -260,7 +260,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
-  openTableStructureTab: (connectionId, database, schema, tableName) => {
+  openTableStructureTab: (connectionId, database, schema, tableName, initialColumns, initialTableName) => {
     const dbName = database ?? `conn_${connectionId}`;
     const isNew = !tableName;
     const id = isNew
@@ -270,9 +270,11 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
       const tab: Tab = {
         id, type: 'table_structure',
-        title: tableName ?? '新建表',
+        title: initialTableName || tableName || '新建表',
         db: dbName, connectionId, schema,
         isNewTable: isNew,
+        initialColumns,
+        initialTableName,
       };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });

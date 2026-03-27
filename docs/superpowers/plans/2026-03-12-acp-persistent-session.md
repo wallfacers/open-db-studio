@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:executing-plans to implement this plan.
 
+> **状态: ⚠️ 已废弃（目标已通过不同架构实现）**
+> ACP 协议已整体替换为 opencode HTTP Serve 模式（`start_serve` / `agent_chat`）。
+> `ai_chat_acp` 已降级为废弃桩函数，`state.rs` 中用 `serve_child`（长驻进程）取代了本计划的 `acp_session` 字段。
+> 消除冷启动的目标由 Serve 模式的长驻 HTTP 进程实现，本计划无需执行。
+
 **Goal:** 复用 opencode-cli 进程跨多轮对话（消除冷启动延迟），同时修复 AI 助手面板的配置选择不生效问题。
 
 **Architecture:** 将 ACP session 生命周期从"每次请求新建/销毁"改为"首次或配置变更时建立，之后复用"。由于 `ClientSideConnection` 是 `!Send`，通过 channel 代理模式把 connection 锁定在专用线程，`AppState` 只存 `UnboundedSender<AcpRequest>`（`Send + Sync`）。前端传 `configId`，Rust 按 ID 查配置，配置变更时自动重建 session。

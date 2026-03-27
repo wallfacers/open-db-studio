@@ -109,7 +109,7 @@ export interface UpdateLlmConfigInput {
 export type TabType =
   | 'query'
   | 'table'
-  | 'er_diagram'
+  | 'er_design'
   | 'table_structure'   // 从 App.tsx TabData 迁移
   | 'metric'
   | 'metric_list'
@@ -132,8 +132,15 @@ export interface Tab {
   schema?: string;
   queryContext?: QueryContext;
   isNewTable?: boolean;        // table_structure Tab 专用
+  initialTableName?: string;   // table_structure Tab：AI 预填表名
+  initialColumns?: Array<{     // table_structure Tab：AI 预填列定义
+    name: string; data_type: string; length?: string;
+    is_nullable?: boolean; default_value?: string;
+    is_primary_key?: boolean; extra?: string; comment?: string;
+  }>;
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
+  erProjectId?: number;        // er_design Tab 专用
 }
 
 export interface ColumnMeta {
@@ -224,7 +231,9 @@ export type NodeType =
   | 'sequence'
   | 'materialized_view'
   | 'dictionary'
-  | 'column';
+  | 'column'
+  | 'metrics_folder'
+  | 'metric';
 
 export type CategoryKey = 'tables' | 'views' | 'functions' | 'procedures' | 'triggers' | 'events' | 'sequences' | 'materialized_views' | 'dictionaries';
 
@@ -364,34 +373,7 @@ export interface UpdateMetricPayload {
   scope_schema?: string;
 }
 
-// ── ACP Elicitation / Permission 类型 ─────────────────────────────────────
-
-/** 文字检测路径的单个选项 */
-export interface ElicitationOption {
-  value: string
-  label: string
-  description?: string
-}
-
-/** 文字检测路径的 elicitation 请求（AI 消息结束后由前端构造） */
-export interface ElicitationRequest {
-  id: string              // 随机 UUID，仅用于 React key
-  sessionId: string
-  source: 'text'
-  type: 'select'
-  message: string         // 提示语（解析自消息末尾问句）
-  options: ElicitationOption[]
-}
-
-/** ACP session/elicitation 路径的请求（ext_method 桥接，来自 Rust StreamEvent） */
-export interface AcpElicitationRequest {
-  id: string                       // elicitation_id（Rust 生成的 UUID）
-  sessionId: string
-  source: 'acp-elicitation'
-  mode: 'form' | 'url'
-  message: string
-  schema: Record<string, unknown>  // requestedSchema JSON（ACP 规范的受限 JSON Schema）
-}
+// ── ACP Permission 类型 ───────────────────────────────────────────────────
 
 /** ACP request_permission 路径的权限确认请求（来自 Rust StreamEvent） */
 export interface PermissionRequest {
@@ -423,4 +405,133 @@ export interface MetricPageResult {
   row_count: number;   // 本页实际行数（items.length）
   total_rows: number;  // 满足过滤条件的总记录数
   duration_ms: number;
+}
+
+// ============ ER 设计器类型 ============
+
+export interface ErProject {
+  id: number;
+  name: string;
+  description: string | null;
+  connection_id: number | null;
+  database_name: string | null;
+  schema_name: string | null;
+  viewport_x: number;
+  viewport_y: number;
+  viewport_zoom: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErTable {
+  id: number;
+  project_id: number;
+  name: string;
+  comment: string | null;
+  position_x: number;
+  position_y: number;
+  color: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErColumn {
+  id: number;
+  table_id: number;
+  name: string;
+  data_type: string;
+  nullable: boolean;
+  default_value: string | null;
+  is_primary_key: boolean;
+  is_auto_increment: boolean;
+  comment: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErRelation {
+  id: number;
+  project_id: number;
+  name: string | null;
+  source_table_id: number;
+  source_column_id: number;
+  target_table_id: number;
+  target_column_id: number;
+  relation_type: string;
+  on_delete: string;
+  on_update: string;
+  source: string;  // 'schema' | 'comment' | 'designer'
+  comment_marker: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ErIndex {
+  id: number;
+  table_id: number;
+  name: string;
+  type: string;  // 'INDEX' | 'UNIQUE' | 'FULLTEXT'
+  columns: string;  // JSON array of column names
+  created_at: string;
+}
+
+export interface ErTableFull {
+  table: ErTable;
+  columns: ErColumn[];
+  indexes: ErIndex[];
+}
+
+export interface ErProjectFull {
+  project: ErProject;
+  tables: ErTableFull[];
+  relations: ErRelation[];
+}
+
+export interface DiffResult {
+  added_tables: TableDiff[];
+  removed_tables: TableDiff[];
+  modified_tables: TableModDiff[];
+}
+
+export interface TableDiff {
+  table_name: string;
+  columns: { name: string; data_type: string; nullable: boolean; is_primary_key: boolean }[];
+}
+
+export interface TableModDiff {
+  table_name: string;
+  added_columns: ColumnDiff[];
+  removed_columns: ColumnDiff[];
+  modified_columns: ColumnModDiff[];
+  added_indexes: IndexDiff[];
+  removed_indexes: IndexDiff[];
+}
+
+export interface ColumnDiff {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+}
+
+export interface ColumnModDiff {
+  name: string;
+  er_type: string;
+  db_type: string;
+  er_nullable: boolean;
+  db_nullable: boolean;
+  type_changed: boolean;
+  nullable_changed: boolean;
+}
+
+export interface IndexDiff {
+  name: string;
+  index_type: string;
+  columns: string[];
+}
+
+export interface SyncExecutionResult {
+  statement: string;
+  success: boolean;
+  error: string | null;
 }

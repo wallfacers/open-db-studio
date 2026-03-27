@@ -178,7 +178,7 @@
 | 5 个 graph_* MCP 工具注册（Phase 1） | `src-tauri/src/mcp/mod.rs`（`graph_get_node_list` 等） | `docs/superpowers/specs/2026-03-20-graph-mcp-skill-design.md` |
 | find_join_paths_structured + link 节点过滤（规则 1+2） | `src-tauri/src/graph/traversal.rs` | commit `36563e2` |
 | 全局连接池缓存（消除树导航重复握手） | `src-tauri/src/datasource/pool.rs` 或 `mod.rs` | commit `bb1e492` |
-| SeaTunnel 前端集成（连接配置 + Job 状态展示） | `SeaTunnelExplorer/index.tsx`, `SeaTunnelJobTab/index.tsx` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
+| SeaTunnel 完整实现（连接管理 CRUD、分类/Job 管理、REST API 提交/停止/状态轮询、日志流式拉取） | `src-tauri/src/seatunnel/client.rs`, `src-tauri/src/seatunnel/commands.rs`, `SeaTunnelExplorer/`, `SeaTunnelJobTab/` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
 | i18n 全量国际化（Assistant/GraphExplorer/MetricsExplorer/SeaTunnel） | `src/i18n/` | commits `7eccf9d`, `0baae87` |
 
 ### 废弃/超时计划 ⚠️
@@ -216,9 +216,19 @@
 | 计划文档 | 目标 | 备注 |
 |---------|------|------|
 | `docs/plans/2026-03-12-sql-editor-ai-ghost-text-*` | Monaco 内联 AI Ghost Text 补全（Tab 接受/Esc 拒绝） | Rust 命令 `ai_inline_complete` 未实现 |
-| `docs/superpowers/plans/2026-03-12-acp-persistent-session.md` | 复用 opencode-cli 进程，消除冷启动延迟 | 未实现 |
-| `docs/superpowers/plans/2026-03-18-llm-config-provider-first.md` | 从 opencode `/config/providers` 动态加载供应商和模型 | 未实现，修复 `ProviderModelNotFoundError` |
-| `docs/superpowers/plans/2026-03-17-ui-state-persistence.md` | UI 状态全量迁移到 SQLite（树展开/标签页/SQL 文件化） | ⚠️ 部分实现：Rust 侧 `get_ui_state` 已有，前端标签页仍用 localStorage |
+
+## 已完成（2026-03-20 后补录）✅
+
+| 计划文档 | 目标 | 实现状态 |
+|---------|------|---------|
+| `docs/superpowers/plans/2026-03-18-llm-config-provider-first.md` | 从 opencode `/config/providers` 动态加载供应商和模型 | `opencode_provider_id`+`config_mode` 已入 DB；`agent_list_providers` 命令已注册；`LlmSettings.tsx` 已动态加载 |
+| `docs/superpowers/plans/2026-03-17-ui-state-persistence.md` | UI 状态全量迁移到 SQLite | `get_ui_state` / `set_ui_state` 命令已实现，前端已迁移至 SQLite |
+
+## 已废弃计划 ⚠️
+
+| 计划文档 | 目标 | 废弃原因 |
+|---------|------|---------|
+| `docs/superpowers/plans/2026-03-12-acp-persistent-session.md` | 复用 opencode-cli 进程消除冷启动 | ACP 协议已整体替换为 Serve 模式；`serve_child` 长驻进程实现同等效果；`ai_chat_acp` 已降为废弃桩 |
 
 ---
 
@@ -228,7 +238,7 @@
 2. **完整 RAG 管道**（向量 + 指标 + GraphRAG 三路融合）
 3. **插件系统**（数据源/AI 提供商/导出格式）
 4. **团队协作**（SQL 片段共享、指标库导出/导入）
-5. **SeaTunnel 外部引擎接入**（基础 UI 已就绪，REST API 提交待实现）
+5. **SeaTunnel 外部引擎接入**（已完整实现：连接管理、Job CRUD、REST API 提交/停止/状态轮询、日志流式拉取）
 
 ---
 

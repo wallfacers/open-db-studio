@@ -31,6 +31,12 @@ interface DBTreeProps {
   activeConnectionIds: Set<number>;
   onOpenConnection: (connectionId: number) => void;
   onCloseConnection: (connectionId: number) => void;
+  // 新增指标相关回调
+  onOpenMetricTab?: (metricId: number, title: string, connectionId?: number) => void;
+  onOpenMetricListTab?: (
+    scope: { connectionId: number; database?: string; schema?: string },
+    title: string
+  ) => void;
 }
 
 function computeVisibleNodes(
@@ -43,6 +49,9 @@ function computeVisibleNodes(
     const children = Array.from(nodes.values())
       .filter(n => n.parentId === parentId)
       .sort((a, b) => {
+        // metrics_folder 始终排在同级节点第一位
+        if (a.nodeType === 'metrics_folder') return -1;
+        if (b.nodeType === 'metrics_folder') return 1;
         // connection/group 节点按 sortOrder 排序，其余按名称
         const isOrderable = a.nodeType === 'connection' || a.nodeType === 'group';
         if (isOrderable) {
@@ -84,10 +93,14 @@ export const DBTree: React.FC<DBTreeProps> = ({
   activeConnectionIds,
   onOpenConnection,
   onCloseConnection,
+  // 新增
+  onOpenMetricTab,
+  onOpenMetricListTab,
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const { nodes, expandedIds, selectedId, loadingIds, toggleExpand, selectNode, refreshNode, search } = useTreeStore();
+  const { nodes, expandedIds, selectedId, loadingIds, metricCounts,
+          toggleExpand, selectNode, refreshNode, search, deleteMetricNode } = useTreeStore();
 
   const [contextMenu, setContextMenu] = useState<{ node: TreeNodeType; x: number; y: number } | null>(null);
   const [moveToGroupPicker, setMoveToGroupPicker] = useState<{
@@ -255,18 +268,29 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
 
   return (
     <div className="flex-1 overflow-y-auto py-1">
-      {visibleNodes.map(node => (
-        <TreeNode
-          key={node.id}
-          node={node}
-          indent={getIndentLevel(node, nodes)}
-          isExpanded={searchQuery.trim() ? !collapsedInSearch.has(node.id) : expandedIds.has(node.id)}
-          isSelected={selectedId === node.id}
-          isLoading={loadingIds.has(node.id)}
-          onClick={() => handleNodeClick(node)}
-          onContextMenu={(e) => handleContextMenu(e, node)}
-        />
-      ))}
+      {visibleNodes.map(node => {
+        // metrics_folder 节点显示计数徽章
+        const metricCountBadge = node.nodeType === 'metrics_folder' ? (() => {
+          const count = metricCounts.get(node.id);
+          return count !== undefined && count > 0
+            ? <span className="text-[10px] text-[#7a9bb8] flex-shrink-0 ml-1">[{count}]</span>
+            : null;
+        })() : null;
+
+        return (
+          <TreeNode
+            key={node.id}
+            node={node}
+            indent={getIndentLevel(node, nodes)}
+            isExpanded={searchQuery.trim() ? !collapsedInSearch.has(node.id) : expandedIds.has(node.id)}
+            isSelected={selectedId === node.id}
+            isLoading={loadingIds.has(node.id)}
+            onClick={() => handleNodeClick(node)}
+            onContextMenu={(e) => handleContextMenu(e, node)}
+            badge={metricCountBadge}
+          />
+        );
+      })}
 
       {contextMenu && (
         <ContextMenu
@@ -451,6 +475,52 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
                 }
               : undefined
           }
+          onOpenMetricList={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            const scope = {
+              connectionId: getConnectionId(n),
+              database: n.meta.database,
+              schema: n.meta.schema,
+            };
+            const connName = getConnName(n);
+            const dbPart = n.meta.database ? ` / ${n.meta.database}` : '';
+            const title = `${connName}${dbPart} - ${t('dbTree.metrics')}`;
+            onOpenMetricListTab?.(scope, title);
+          }}
+          onNewMetric={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            const scope = {
+              connectionId: getConnectionId(n),
+              database: n.meta.database,
+              schema: n.meta.schema,
+            };
+            const connName = getConnName(n);
+            const dbPart = n.meta.database ? ` / ${n.meta.database}` : '';
+            const scopeTitle = `${connName}${dbPart}`;
+            useQueryStore.getState().openNewMetricTab(scope, scopeTitle);
+          }}
+          onOpenMetric={() => {
+            const n = contextMenu.node;
+            setContextMenu(null);
+            const metricId = Number(n.meta.objectName);
+            const connectionId = n.meta.connectionId;
+            onOpenMetricTab?.(metricId, n.label, connectionId);
+          }}
+          onDeleteMetric={async () => {
+            const n = contextMenu.node;
+            if (!await confirm({ message: t('dbTree.confirmDeleteMetric', { name: n.label }), variant: 'danger' })) return;
+            const metricId = Number(n.meta.objectName);
+            try {
+              await invoke('delete_metric', { id: metricId });
+              deleteMetricNode(n.id);
+              useQueryStore.getState().closeMetricTabById(metricId);
+              showToast(t('dbTree.operationSuccess'), 'success');
+            } catch (e) {
+              showToast(String(e), 'error');
+            }
+          }}
         />
       )}
 

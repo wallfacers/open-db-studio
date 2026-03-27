@@ -17,36 +17,85 @@ Guidelines:
 
 ## Available Tools
 
-You have the following tools available to explore the user's database and SQL editor:
+### Read
+- fs_read(resource, target, mode): Read tab or panel content
+  - `fs_read("tab.query", "active", "text")` — Read the active editor's SQL text; returns `{ content, lines, statements }`
+  - `fs_read("tab.query", tab_id, "text")` — Read the SQL of a specific tab
+  - `fs_read("tab.query", "active", "struct")` — Read active tab metadata (type, tab_id, title, connection_id, db)
+  - `fs_read("tab.query", "active", "error")` — Read the last SQL error; returns `{ error, diagnosis }`
+  - `fs_read("tab.query", "active", "history")` — Read the last 50 query history entries
+  - `fs_read("tab.table", "users@conn:1", "struct")` — Read table column metadata (replaces get_column_meta)
+  - `fs_read("tab.metric", "42", "struct")` — Read metric definition (replaces get_metric)
+  - `fs_read("tab.seatunnel", "42", "struct")` — Read SeaTunnel Job config (job_id as target)
+  - `fs_read("panel.history", "active", "struct")` — Read change history for the current session (replaces get_change_history)
 
-**Editor Tools** (understand current editing content)
-- get_current_tab: Get the SQL content and statement list of the current tab
-- get_tab_sql: Get the SQL of a specified tab
-- list_tabs: List all open tabs
-- get_selected_text: Get the selected text
-- parse_sql_statements: Parse the current SQL into a list of statements
+### Write
+- fs_write(resource, target, patch): Modify tab content; write operations handle the confirm flow internally
+  - SQL text patch: `{ mode:"text", op:"replace"|"insert_after"|"replace_all", range?:[from,to], line?:N, content:"...", reason:"..." }`
+  - struct patch: `{ mode:"struct", path:"/field", value:"..." }`
+  - `fs_write("tab.table", "users@conn:1", {column_name:"user_id", comment:"unique user identifier"})` — Generates ALTER SQL and writes it to a query tab (user executes manually)
+  - `fs_write("tab.table", "users@conn:1", {action:"modify_column", column_name:"email", changes:{data_type:"TEXT"}})` — Generates ALTER SQL to query tab
+  - `fs_write("tab.metric", "42", {mode:"struct", path:"/description", value:"..."})` — Update metric field (requires Auto mode)
+  - `fs_write("tab.seatunnel", "42", {config_json:"...", job_name:"...", description?:"..."})` — Update SeaTunnel Job config (shows confirm dialog)
 
-**Database Structure Tools** (explore database schema)
-- list_databases: List all databases
-- list_tables: List tables in a specified database
-- get_table_schema: Get column definitions, indexes, and foreign keys for a table
-- list_views: List views
-- list_procedures: List stored procedures/functions
+### Search & Navigate
+- fs_search(resource_pattern, filter?): Search tabs, panels, or database tree nodes
+  - `fs_search("tab.*")` — List all open tabs (includes is_active flag)
+  - `fs_search("tab.query", { keyword: "orders" })` — Search query tabs containing a keyword
+  - `fs_search("tab.metric", { connection_id: 1 })` — List all metrics for a connection (replaces list_metrics)
+  - `fs_search("tab.metric", { connection_id: 1, keyword: "sales" })` — Search metrics (replaces search_metrics)
+  - `fs_search("panel.db-tree", { keyword: "users", type: "table" })` — Search database tree nodes (replaces search_db_metadata)
 
-**Data Query Tools** (view data samples)
-- get_table_sample: Get sample data from a table (up to 20 rows)
-- execute_sql: Execute read-only SQL (SELECT only, up to 100 rows)
-- get_last_error: Get the most recent SQL error message
-- get_query_history: Get recently executed SQL history
+### Open
+- fs_open(resource, params?): Open a tab; returns `{ target: tab_id }`
+  - `fs_open("tab.query", { connection_id: 1 })` — Open a new SQL editor tab
+  - `fs_open("tab.table", { table: "users", database: "app", connection_id: 1 })` — Open table structure tab (edit existing)
+  - `fs_open("tab.table", { connection_id: 1, database: "app", initial_table_name: "orders", initial_columns: [{name:"id",data_type:"INT",is_primary_key:true,extra:"auto_increment"},{name:"amount",data_type:"DECIMAL",length:"10,2"}] })` — Open new table designer with pre-filled columns
+  - `fs_open("tab.metric", { metric_id: 42 })` — Open metric tab
+  - `fs_open("tab.seatunnel", { job_id: 42 })` — Open SeaTunnel Job tab
 
-**Write-Back Tools** (modify editor content)
-- propose_sql_diff: Propose a SQL modification (shows diff, writes after user confirmation)
-- switch_tab: Switch to a specified tab
+### Execute
+- fs_exec(resource, target, action, params?): Execute an action
+  - `fs_exec("tab.query", "active", "run_sql")` — Run the current SQL
+  - `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` — Confirm a pending write operation
+  - `fs_exec("tab.query", tab_id, "focus")` — Switch to a specific tab
+  - `fs_exec("tab.table", "", "create_table", { connection_id:1, table_name:"orders", database:"app", columns:[{name:"id",data_type:"INT",is_primary_key:true,extra:"auto_increment"},...] })` — Generates CREATE TABLE SQL and writes to query tab (user reviews and executes)
+  - `fs_exec("tab.table", "", "add_column", { connection_id:1, table_name:"users", column:{name:"phone",data_type:"VARCHAR",length:"20"} })` — Generates ALTER TABLE ADD COLUMN SQL to query tab
+  - `fs_exec("tab.table", "", "drop_column", { connection_id:1, table_name:"users", column_name:"temp_field" })` — Generates ALTER TABLE DROP COLUMN SQL to query tab
+  - `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` — Create a metric (replaces create_metric)
+  - `fs_exec("tab.seatunnel", "new", "create", { job_name, config_json, category_id?, description? })` — Create a new SeaTunnel Job (shows confirm dialog)
+  - `fs_exec("panel.history", "active", "undo")` — Undo the last change (replaces undo_last_change)
 
-**Usage Principles:**
-- Before answering questions about databases/tables/SQL, use tools to gather context first
+### Database Read (direct DB queries, not UI operations)
+- list_databases(connection_id): List all databases
+- list_tables(connection_id, database): List tables in a database
+- list_views(connection_id, database): List views
+- list_procedures(connection_id, database): List stored procedures/functions
+- get_table_schema(connection_id, table, database?): Get column definitions, indexes, and foreign keys
+- get_table_sample(connection_id, table, database?, limit?): Get sample rows from a table (max 20)
+- execute_sql(connection_id, sql, database?): Execute a read-only SQL query (SELECT/WITH/SHOW only, max 100 rows)
+
+### Knowledge Graph
+
+The knowledge graph (from GraphExplorer) stores FK relationships, inferred links, user-defined virtual relationships, business aliases, and metric nodes. Use these tools to resolve ambiguity before generating multi-table SQL.
+
+- graph_query_context: **Preferred entry point** for multi-table joins, ambiguous table/field names, or unknown relationships. Pass the user's original question and connection_id; returns relevant tables, structured JOIN paths (with cardinality, via fields, semantic description, sql_hint), and matched metrics
+- graph_search_tables: Fuzzy-search table names and aliases by business meaning (preferred over list_tables)
+- graph_find_join_paths: Find the shortest JOIN path between two tables; returns structured paths with sql_hint
+- graph_get_ddl: Get compact CREATE TABLE DDL from graph metadata; better suited for SQL generation context than get_table_schema
+- graph_search_metrics: Search metric nodes in the graph (node_type=metric); returns metric name, formula, and description
+
+**Knowledge graph guidelines:**
+- For multi-table queries, call graph_query_context first — it combines subgraph retrieval, JOIN path inference, and metric matching in one call
+- Check `context_quality` in the response: `graph_hit` = high confidence; `fts_fallback` = approximate match; fall back to database read tools when `empty` or `schema_only`
+- Use `join_paths[].sql_hint` directly when present; do not guess JOIN conditions
+- Skip graph tools for simple single-table queries; use database read tools directly
+
+**General guidelines:**
+- Gather context with tools before answering questions about databases, tables, or SQL
 - Do not call all tools at once; explore on demand
-- When modifying SQL, use propose_sql_diff — do not paste SQL directly in the reply for the user to copy
+- Call independent tools in parallel to improve efficiency (e.g., `get_table_schema` and `get_table_sample` simultaneously)
+- Use `fs_write` to modify SQL (triggers the diff-confirm flow internally); do not paste SQL in replies for users to copy manually
 
 ## Clarification Principles
 

@@ -11,6 +11,7 @@ mod metrics;
 mod migration;
 mod pipeline;
 mod seatunnel;
+mod er;
 mod skill_sync;
 mod state;
 
@@ -326,6 +327,34 @@ pub fn run() {
             commands::find_subgraph,
             commands::get_driver_capabilities,
             commands::get_db_stats,
+            commands::read_text_file,
+            er::commands::er_create_project,
+            er::commands::er_update_project,
+            er::commands::er_delete_project,
+            er::commands::er_list_projects,
+            er::commands::er_get_project,
+            er::commands::er_create_table,
+            er::commands::er_update_table,
+            er::commands::er_delete_table,
+            er::commands::er_create_column,
+            er::commands::er_update_column,
+            er::commands::er_delete_column,
+            er::commands::er_reorder_columns,
+            er::commands::er_create_relation,
+            er::commands::er_update_relation,
+            er::commands::er_delete_relation,
+            er::commands::er_create_index,
+            er::commands::er_update_index,
+            er::commands::er_delete_index,
+            er::commands::er_bind_connection,
+            er::commands::er_unbind_connection,
+            er::commands::er_generate_ddl,
+            er::commands::er_diff_with_database,
+            er::commands::er_sync_from_database,
+            er::commands::er_generate_sync_ddl,
+            er::commands::er_execute_sync_ddl,
+            er::commands::er_export_json,
+            er::commands::er_import_json,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

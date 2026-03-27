@@ -308,12 +308,16 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
   try { meta = JSON.parse((nodeData.metadata as string) || '{}'); } catch { /* ignore */ }
 
   const isInferred = Boolean(meta.is_inferred);
+  const isDimmed = Boolean(nodeData.isDimmed);
   const borderClass = isInferred
     ? 'border-dashed border-[#00c9a7]'
     : 'border-[#00c9a7]';
 
   return (
-    <div className={`w-64 rounded-md border bg-[#111922] shadow-lg ${borderClass}`}>
+    <div
+      className={`w-64 rounded-md border bg-[#111922] shadow-lg ${borderClass} transition-opacity`}
+      style={{ opacity: isDimmed ? 0.3 : 1 }}
+    >
       <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
 
       {/* Row 1: edge_type + cardinality */}
@@ -386,7 +390,13 @@ export const RelationEdge = memo(({
   markerEnd,
 }: EdgeProps) => {
   const edgeType = String((data as Record<string, unknown>)?.edge_type ?? 'fk');
-  const stroke = edgeStroke(edgeType);
+  const isHighlighted = Boolean((data as Record<string, unknown>)?.highlighted);
+  const isDimmed = Boolean((data as Record<string, unknown>)?.dimmed);
+
+  const baseStroke = edgeStroke(edgeType);
+  const stroke = isHighlighted ? '#00c9a7' : baseStroke;
+  const strokeWidth = isHighlighted ? 3 : 1.5;
+  const opacity = isDimmed ? 0.3 : (isHighlighted ? 1 : 0.75);
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX, sourceY, sourcePosition,
@@ -399,12 +409,21 @@ export const RelationEdge = memo(({
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ stroke, strokeWidth: 1.5, opacity: 0.75 }}
+        style={{
+          stroke,
+          strokeWidth,
+          opacity,
+          transition: 'opacity 0.3s ease, stroke-width 0.3s ease',
+        }}
       />
       <EdgeLabelRenderer>
         <div
           className="nodrag nopan absolute pointer-events-none"
-          style={{ transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)` }}
+          style={{
+            transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
+            opacity,
+            transition: 'opacity 0.3s ease',
+          }}
         >
           <span
             className="text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none"

@@ -25,7 +25,7 @@ Primary goal: **eliminate ambiguity before SQL generation**.
 
 ## Disambiguation Strategy (Critical)
 
-When user input is ambiguous (e.g. “revenue”, “orders”, “users”):
+When user input is ambiguous (e.g. "revenue", "orders", "users"):
 
 1. Identify all possible metric candidates
 2. Resolve using priority:
@@ -40,30 +40,23 @@ When user input is ambiguous (e.g. “revenue”, “orders”, “users”):
 
 ## Available Tools
 
-### list_metrics
-List metrics (optionally filtered).
+### list metrics
+List metrics for a connection (optionally filtered by status/database/limit).
+```
+fs_search("tab.metric", { connection_id: N, status?: "approved"|"draft"|"rejected", limit?: 50 })
 ```
 
-list_metrics(connection_id, status?, database?, schema?, limit?)
-
+### search metrics
+Search **approved** metrics by keyword (space-separated terms are ANDed).
+```
+fs_search("tab.metric", { connection_id: N, keyword: "sales revenue" })
 ```
 
-### search_metrics
-Search **approved** metrics by keyword (AND logic).
+### get metric
+Get full metric definition by ID.
 ```
-
-search_metrics(connection_id, keyword)
-
+fs_read("tab.metric", "<metric_id>", "struct")
 ```
-
-### get_metric
-Get full metric definition.
-```
-
-get_metric(metric_id)
-
-````
-
 
 
 ## SQL Generation Rules (Strict)
@@ -77,7 +70,7 @@ get_metric(metric_id)
 SELECT {aggregation}({column_name}) AS {name}
 FROM {table_name}
 [WHERE {filter_sql}]
-````
+```
 
 ### 3. CUSTOM metric
 
@@ -86,7 +79,7 @@ FROM {table_name}
 
 ### 4. Composite metric
 
-* Resolve ALL sub-metrics via `get_metric`
+* Resolve ALL sub-metrics via `fs_read("tab.metric", "<id>", "struct")`
 * Build using CTEs
 * Apply `composite_formula` strictly
 

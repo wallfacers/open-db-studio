@@ -53,13 +53,14 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
 import { TableStructureView } from './TableStructureView';
 import { CellEditorModal } from './CellEditorModal';
 import ERDiagram from '../ERDiagram';
+import ERCanvas from '../ERDesigner/ERCanvas';
 import { MetricTab } from '../MetricsExplorer/MetricTab';
 import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
 import SeaTunnelJobTab from '../SeaTunnelJobTab';
@@ -69,6 +70,8 @@ import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 import { buildErrorContext } from '../../utils/errorContext';
 import { askAiWithContext } from '../../utils/askAi';
+import { computeColumnWidths, adjustColumnWidths, ROW_NUM_WIDTH } from '../../utils/columnWidths';
+import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { MarkdownContent } from '../shared/MarkdownContent';
 
 function getSqlAtCursor(sql: string, cursorOffset: number): string {
@@ -228,6 +231,8 @@ export const MainContent: React.FC<MainContentProps> = ({
   const [resultCellViewer, setResultCellViewer] = useState<{ value: string | null; columnName: string } | null>(null);
   const [resultCellMenu, setResultCellMenu] = useState<{ x: number; y: number; rowIdx: number; colIdx: number } | null>(null);
   const resultCellMenuRef = useRef<HTMLDivElement>(null);
+  const resultScrollRef = useRef<HTMLDivElement>(null);
+  const resultContainerWidth = useContainerWidth(resultScrollRef as React.RefObject<HTMLElement>);
   const [resultPage, setResultPage] = useState(0);
   const [editorContextMenu, setEditorContextMenu] = useState<{
     x: number; y: number;
@@ -285,13 +290,13 @@ export const MainContent: React.FC<MainContentProps> = ({
       const ctxParts: string[] = [];
       if (result.graph_context) {
         if (result.graph_context.relevant_tables.length > 0) {
-          ctxParts.push(`相关表：${result.graph_context.relevant_tables.join('、')}`);
+          ctxParts.push(`${t('mainContent.relevantTables')}${result.graph_context.relevant_tables.join('、')}`);
         }
         if (result.graph_context.join_paths.length > 0) {
-          ctxParts.push(`JOIN 路径：${result.graph_context.join_paths.join('；')}`);
+          ctxParts.push(`${t('mainContent.joinPaths')}${result.graph_context.join_paths.join('；')}`);
         }
         if (result.graph_context.metrics.length > 0) {
-          ctxParts.push(`指标定义：\n${result.graph_context.metrics.map(m => `  • ${m}`).join('\n')}`);
+          ctxParts.push(`${t('mainContent.metricDefinitions')}\n${result.graph_context.metrics.map(m => `  • ${m}`).join('\n')}`);
         }
       }
       if (ctxParts.length > 0) {
@@ -301,12 +306,12 @@ export const MainContent: React.FC<MainContentProps> = ({
         setGraphCtxByTab(prev => { const n = { ...prev }; delete n[activeTab]; return n; });
       }
       if (result.validation_warning) {
-        showToast(`SQL 校验警告：${result.validation_warning}`, 'warning');
+        showToast(`${t('mainContent.sqlValidationWarning')}${result.validation_warning}`, 'warning');
       }
       setNlPanelOpen(false);
       setNlInput('');
     } catch (e) {
-      showToast(`AI 生成失败：${String(e)}`, 'error');
+      showToast(`${t('mainContent.aiGenerateFailed')}${String(e)}`, 'error');
     } finally {
       setNlLoading(false);
     }
@@ -330,8 +335,9 @@ export const MainContent: React.FC<MainContentProps> = ({
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
 
-    // 同步光标/选区信息到 queryStore，供 Tool Bridge 消歧
-    const syncEditorInfo = () => {
+    // 同步光标/选区信息到 queryStore，供 Tool Bridge 消歧（节流 100ms）
+    let syncEditorInfoTimer: ReturnType<typeof setTimeout> | null = null;
+    const doSyncEditorInfo = () => {
       const model = editor.getModel();
       if (!model) return;
       const selection = editor.getSelection();
@@ -355,9 +361,16 @@ export const MainContent: React.FC<MainContentProps> = ({
         },
       );
     };
+    const syncEditorInfo = () => {
+      if (syncEditorInfoTimer) return; // 节流：已有待执行任务则跳过
+      syncEditorInfoTimer = setTimeout(() => {
+        syncEditorInfoTimer = null;
+        doSyncEditorInfo();
+      }, 100);
+    };
     editor.onDidChangeCursorPosition(syncEditorInfo);
     editor.onDidChangeCursorSelection(syncEditorInfo);
-    syncEditorInfo(); // 初始化一次
+    doSyncEditorInfo(); // 初始化一次（同步执行）
 
     if (completionProviderRegistered.current) return;
     completionProviderRegistered.current = true;
@@ -674,8 +687,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {tab.type === 'query' ? (
               <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
-            ) : tab.type === 'er_diagram' ? (
-              <DatabaseZap size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+            ) : tab.type === 'er_design' ? (
+              <Grid3x3 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'table_structure' ? (
               <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             ) : tab.type === 'metric' ? (
@@ -708,28 +721,36 @@ export const MainContent: React.FC<MainContentProps> = ({
         ))}
       </div>
 
+      {/* table 类型 tab 始终保持 mounted，通过 display 控制显隐，避免切换时 unmount 导致闪烁 */}
+      {tabs.filter(t => t.type === 'table').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <TableDataView
+            tableName={tab.title}
+            dbName={tab.db || ''}
+            connectionId={tab.connectionId}
+            schema={tab.schema}
+            showToast={showToast}
+          />
+        </div>
+      ))}
+
       {activeTabObj ? (
-        activeTabObj.type === 'er_diagram' ? (
-          <div className="flex-1 w-full h-full relative">
-            <ERDiagram />
-          </div>
-        ) : activeTabObj.type === 'table' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <TableDataView
-              tableName={activeTabObj.title}
-              dbName={activeTabObj.db || ''}
-              connectionId={activeTabObj.connectionId}
-              schema={activeTabObj.schema}
-              showToast={showToast}
-            />
-          </div>
-        ) : activeTabObj.type === 'table_structure' ? (
+        activeTabObj.type === 'er_design' ? (
+          <ERCanvas projectId={activeTabObj.erProjectId!} />
+        ) : activeTabObj.type === 'table' ? null
+        : activeTabObj.type === 'table_structure' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <TableStructureView
               connectionId={activeTabObj.connectionId!}
               tableName={activeTabObj.isNewTable ? undefined : activeTabObj.title}
               database={activeTabObj.db}
               schema={activeTabObj.schema}
+              initialColumns={activeTabObj.initialColumns}
+              initialTableName={activeTabObj.initialTableName}
               onSuccess={() => showToast('操作成功', 'success')}
               showToast={showToast}
             />
@@ -814,11 +835,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                   </Tooltip>
                   {nlPanelOpen && (
                     <div className="absolute top-full left-0 mt-1 z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-xl w-72 p-2 flex flex-col gap-2">
-                      <div className="text-[10px] text-[#7a9bb8] px-1">用自然语言描述查询需求，AI 将结合知识图谱生成 SQL</div>
+                      <div className="text-[10px] text-[#7a9bb8] px-1">{t('mainContent.nlPanelHint')}</div>
                       <input
                         ref={nlInputRef}
                         className="bg-[#0d1117] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#00c9a7] placeholder:text-[#3a5070]"
-                        placeholder="例：查询上月各城市销售额排名前10"
+                        placeholder={t('mainContent.nlInputPlaceholder')}
                         value={nlInput}
                         onChange={e => setNlInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGenerateSqlV2(); } if (e.key === 'Escape') setNlPanelOpen(false); }}
@@ -829,7 +850,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         onClick={handleGenerateSqlV2}
                         disabled={nlLoading || !nlInput.trim()}
                       >
-                        {nlLoading ? '生成中…' : '生成 SQL'}
+                        {nlLoading ? t('mainContent.generating') : t('mainContent.generateSql')}
                       </button>
                     </div>
                   )}
@@ -903,8 +924,8 @@ export const MainContent: React.FC<MainContentProps> = ({
                   {graphCtxExpanded
                     ? <ChevronDown size={12} className="flex-shrink-0" />
                     : <ChevronRight size={12} className="flex-shrink-0" />}
-                  <span className="text-[#4a8ab0]">▸ 参考了以下知识图谱上下文</span>
-                  <span className="text-[#3a5070] ml-1">（点击展开）</span>
+                  <span className="text-[#4a8ab0]">▸ {t('mainContent.graphContextRef')}</span>
+                  <span className="text-[#3a5070] ml-1">{t('mainContent.clickToExpand')}</span>
                 </button>
                 {graphCtxExpanded && (
                   <div className="px-3 pb-2">
@@ -1015,7 +1036,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 )}
               </div>
 
-              <div className="flex-1 overflow-auto">
+              <div ref={resultScrollRef} className="flex-1 overflow-auto">
                 {selectedResultPane === 'explanation' ? (
                   <div className="p-4 h-full overflow-auto">
                     {explanationContent[activeTab] ? (
@@ -1047,7 +1068,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     ) : currentResults.length === 0 ? (
                       <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.kind === 'select' && (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.length === 0 ? (
-                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">查询成功，暂无数据</div>
+                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>
                     ) : (() => {
                       const activeResult = typeof selectedResultPane === 'number'
                         ? currentResults[selectedResultPane]
@@ -1059,14 +1080,24 @@ export const MainContent: React.FC<MainContentProps> = ({
 
                       // dml-report 或行数极少：使用原始全量渲染，无截断无分页
                       if (activeResult.kind === 'dml-report' || allRows.length <= RESULT_PAGE_SIZE) {
+                        const rColWidths = adjustColumnWidths(
+                          computeColumnWidths(activeResult.columns, allRows as (string | number | boolean | null)[][]),
+                          resultContainerWidth,
+                          ROW_NUM_WIDTH,
+                        );
                         return (
-                          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                          <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
                             <thead className="sticky top-0 bg-[#0d1117] z-10">
                               <tr>
                                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
-                                {activeResult.columns.map((col) => (
-                                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">{col}</th>
-                                ))}
+                                {activeResult.columns.map((col, ci) => {
+                                  const w = rColWidths[ci] ?? 150;
+                                  return (
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                      <div className="truncate">{col}</div>
+                                    </th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
@@ -1079,13 +1110,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                   {row.map((cell, ci) => {
                                     const colName = activeResult.columns[ci] ?? '';
                                     const cellStr = cell === null ? null : String(cell);
+                                    const w = rColWidths[ci] ?? 150;
                                     return (
                                       <td
                                         key={ci}
-                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left"
+                                        style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
+                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
                                         onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                       >
-                                        <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
+                                        <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                           <div className="truncate">
                                             {cell === null
                                               ? <span className="text-[#7a9bb8]">NULL</span>
@@ -1120,6 +1153,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                         (resultPage + 1) * RESULT_PAGE_SIZE
                       );
                       const isTruncated = allRows.length > RESULT_MAX_ROWS;
+                      const rColWidths = adjustColumnWidths(
+                        computeColumnWidths(activeResult.columns, allRows as (string | number | boolean | null)[][]),
+                        resultContainerWidth,
+                        ROW_NUM_WIDTH,
+                      );
 
                       const exportCsv = () => {
                         const header = activeResult.columns.join(',');
@@ -1140,25 +1178,28 @@ export const MainContent: React.FC<MainContentProps> = ({
                         <>
                           {isTruncated && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/30 border-b border-yellow-700/50 text-yellow-300 text-xs flex-shrink-0">
-                              <span>⚠ 查询返回 {allRows.length} 行，当前显示前 {RESULT_MAX_ROWS} 行。如需查看全量数据请使用 LIMIT 或导出。</span>
+                              <span>{t('mainContent.rowsTruncatedWarning', { total: allRows.length, max: RESULT_MAX_ROWS })}</span>
                               <button
                                 onClick={exportCsv}
                                 className="ml-auto px-2 py-0.5 rounded border border-yellow-600 hover:bg-yellow-800/50 transition-colors flex-shrink-0"
                               >
-                                导出全量
+                                {t('mainContent.exportFull')}
                               </button>
                             </div>
                           )}
 
-                          <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
+                          <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
                             <thead className="sticky top-0 bg-[#0d1117] z-10">
                               <tr>
                                 <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
-                                {activeResult.columns.map((col) => (
-                                  <th key={col} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal">
-                                    {col}
-                                  </th>
-                                ))}
+                                {activeResult.columns.map((col, ci) => {
+                                  const w = rColWidths[ci] ?? 150;
+                                  return (
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                      <div className="truncate">{col}</div>
+                                    </th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
@@ -1173,13 +1214,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                     {row.map((cell, ci) => {
                                       const colName = activeResult.columns[ci] ?? '';
                                       const cellStr = cell === null ? null : String(cell);
+                                      const w = rColWidths[ci] ?? 150;
                                       return (
                                         <td
                                           key={ci}
-                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left"
+                                          style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
+                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
                                           onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                         >
-                                          <Tooltip content={cellStr ?? undefined} className="max-w-[300px] min-w-0">
+                                          <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                             <div className="truncate">
                                               {cell === null
                                                 ? <span className="text-[#7a9bb8]">NULL</span>
@@ -1217,7 +1260,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                               >
                                 <ChevronLeft size={14}/>
                               </button>
-                              <span>第 {resultPage + 1} / {totalDisplayPages} 页</span>
+                              <span>{t('mainContent.pageNumber', { current: resultPage + 1, total: totalDisplayPages })}</span>
                               <button
                                 disabled={resultPage >= totalDisplayPages - 1}
                                 onClick={() => setResultPage(p => p + 1)}
@@ -1492,19 +1535,17 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
-            onClick={() => {
+            onClick={async () => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
               setEditorContextMenu(null);
               const text = menu.selectedSql || ed?.getModel()?.getValue() || '';
-              const range = menu.selectionRange ?? ed?.getModel()?.getFullModelRange();
-              if (text && range) {
-                writeText(menu.selectedSql
-                  ? menu.selectedSql
-                  : (ed?.getModel()?.getValueInRange(range) ?? ''));
+              if (text) {
+                try {
+                  await writeText(text);
+                } catch { /* 静默忽略剪贴板错误 */ }
               }
               ed?.focus();
-              ed?.trigger('keyboard', 'editor.action.clipboardCopyAction', null);
             }}
           >
             <Copy size={13} color="#7a9bb8" />

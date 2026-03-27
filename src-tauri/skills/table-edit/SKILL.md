@@ -6,27 +6,47 @@ triggers:
 
 # table-edit Skill
 
-Use these tools to read table column metadata and update column comments.
+Use fs_* tools to read table column metadata and update column comments.
 
 ## Available Tools
 
-### get_column_meta
+### Read column metadata
 Get column metadata (name, type, nullable, comment) for a table.
+Target format: `table_name@conn:N` or `table_name@conn:N@db:mydb` for multi-database.
 ```
-get_column_meta(connection_id: integer, table_name: string, database?: string)
+fs_read("tab.table", "users@conn:1", "struct")
+fs_read("tab.table", "users@conn:1@db:app", "struct")
 ```
+Returns column list with name, data_type, nullable, comment, etc.
 
-### update_column_comment
-Update a column's comment/description via ALTER TABLE. Requires Auto mode ON.
+### Update column comment
+Update a column's comment/description. Requires Auto mode ON.
 Supported databases: MySQL, PostgreSQL.
 ```
-update_column_comment(connection_id: integer, table_name: string, column_name: string, comment: string, database?: string)
+fs_write("tab.table", "users@conn:1", {
+  "column_name": "user_id",
+  "comment": "用户唯一标识"
+})
 ```
-On success, returns a message with undo instructions.
+Or struct patch format:
+```
+fs_write("tab.table", "users@conn:1", {
+  "mode": "struct",
+  "path": "/user_id/comment",
+  "value": "用户唯一标识"
+})
+```
+Returns `{ "success": true, "message": "..." }` on success.
+Undo via `fs_exec("panel.history", "active", "undo")`.
+
+### Open table structure tab
+```
+fs_open("tab.table", { table: "users", database: "app", connection_id: 1 })
+```
 
 ## Write Operation Guidelines
 
-- Always call `get_column_meta` first to read the current state before updating
-- All writes are recorded in `change_history` for undo support
-- In Auto OFF mode, the tool returns an error — use ACP `request_permission` first
+- Always call `fs_read` first to read current state before updating
+- In Auto OFF mode, returns error "Auto 模式已关闭" — do not retry without user action
 - NOT supported: changing column type or column name (high risk, not exposed in this version)
+- All writes are recorded in change history and can be undone

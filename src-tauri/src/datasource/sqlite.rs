@@ -451,7 +451,7 @@ fn sqlite_value_to_json(row: &rusqlite::Row<'_>, idx: usize) -> serde_json::Valu
     use rusqlite::types::ValueRef;
     match row.get_ref(idx) {
         Ok(ValueRef::Null) => serde_json::Value::Null,
-        Ok(ValueRef::Integer(i)) => serde_json::json!(i),
+        Ok(ValueRef::Integer(i)) => serde_json::Value::String(i.to_string()),
         Ok(ValueRef::Real(f)) => serde_json::json!(f),
         Ok(ValueRef::Text(s)) => {
             serde_json::Value::String(String::from_utf8_lossy(s).into_owned())

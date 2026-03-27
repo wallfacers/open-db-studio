@@ -1001,6 +1001,10 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Op
 
 #[tauri::command]
 pub async fn list_databases(connection_id: i64) -> AppResult<Vec<String>> {
+    // 若用户在连接配置中显式指定了数据库名，直接返回该单一数据库
+    if let Some(db) = crate::db::get_configured_database(connection_id)? {
+        return Ok(vec![db]);
+    }
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
     ds.list_databases().await
@@ -1020,6 +1024,10 @@ const SYSTEM_SCHEMAS: &[&str] = &[
 
 #[tauri::command]
 pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
+    // 若用户在连接配置中显式指定了数据库名，直接返回该单一数据库（跳过系统库过滤，用户库不可能是系统库）
+    if let Some(db) = crate::db::get_configured_database(connection_id)? {
+        return Ok(vec![db]);
+    }
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
     let dbs = ds.list_databases().await?;
@@ -2916,7 +2924,36 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
             });
         }
     }
-    result
+
+    // 合并相邻 assistant 消息（OpenCode 每次工具调用会产生独立 assistant turn，
+    // 但流式期间前端将所有内容累积为一条消息，重载时须保持一致）
+    let mut merged: Vec<ParsedChatMessage> = Vec::new();
+    for msg in result {
+        if msg.role == "assistant" {
+            if let Some(last) = merged.last_mut() {
+                if last.role == "assistant" {
+                    if !msg.content.is_empty() {
+                        if !last.content.is_empty() {
+                            last.content.push('\n');
+                        }
+                        last.content.push_str(&msg.content);
+                    }
+                    if let Some(t) = msg.thinking_content {
+                        match &mut last.thinking_content {
+                            Some(existing) => {
+                                existing.push('\n');
+                                existing.push_str(&t);
+                            }
+                            None => last.thinking_content = Some(t),
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
+        merged.push(msg);
+    }
+    merged
 }
 
 /// 创建 agent session
@@ -3913,4 +3950,10 @@ pub async fn get_db_stats(connection_id: i64, database: Option<String>) -> AppRe
     let db = database.as_deref().unwrap_or("");
     let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, db, "").await?;
     ds.get_db_stats(database.as_deref()).await
+}
+
+/// 读取文本文件内容（用于 JSON 导入）
+#[tauri::command]
+pub async fn read_text_file(path: String) -> AppResult<String> {
+    std::fs::read_to_string(&path).map_err(|e| crate::error::AppError::Other(e.to_string()))
 }

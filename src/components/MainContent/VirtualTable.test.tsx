@@ -40,6 +40,7 @@ describe('VirtualTable', () => {
       createRoot(container).render(
         React.createElement(VirtualTable, {
           columns: ['id', 'name'],
+          colWidths: [100, 150],
           rowVirtualizer: virt,
           thead: React.createElement('tr', null,
             React.createElement('th', null, 'ID'),
@@ -60,6 +61,7 @@ describe('VirtualTable', () => {
       createRoot(container).render(
         React.createElement(VirtualTable, {
           columns: ['id'],
+          colWidths: [100],
           rowVirtualizer: virt,
           thead: React.createElement('tr', null),
           renderRow: (ri) => React.createElement('td', null, `row-${ri}`),
@@ -77,6 +79,7 @@ describe('VirtualTable', () => {
       createRoot(container).render(
         React.createElement(VirtualTable, {
           columns: ['id'],
+          colWidths: [100],
           rowVirtualizer: virt,
           thead: React.createElement('tr', null),
           renderRow: (ri) => React.createElement('td', null, `r${ri}`),

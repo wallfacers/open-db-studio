@@ -1,14 +1,6 @@
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-pub async fn get_metric(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let metric_id = args["metric_id"].as_i64()
-        .ok_or_else(|| crate::AppError::Other("missing metric_id".into()))?;
-    let metric = crate::db::get_metric_by_id(metric_id)?
-        .ok_or_else(|| crate::AppError::Other(format!("metric {} not found", metric_id)))?;
-    Ok(serde_json::to_string_pretty(&metric).unwrap_or_default())
-}
-
 pub async fn update_metric_definition(handle: Arc<tauri::AppHandle>, args: Value, session_id: String) -> crate::AppResult<String> {
     use tauri::Manager;
     let metric_id = args["metric_id"].as_i64()
@@ -112,30 +104,3 @@ pub async fn create_metric(_handle: Arc<tauri::AppHandle>, args: Value) -> crate
     Ok(serde_json::to_string_pretty(&metric).unwrap_or_default())
 }
 
-pub async fn list_metrics(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let connection_id = args["connection_id"].as_i64()
-        .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
-    let status = args["status"].as_str();
-    let database = args["database"].as_str();
-    let schema = args["schema"].as_str();
-    let limit = args["limit"].as_u64().unwrap_or(50).min(200) as usize;
-
-    let mut metrics = if database.is_some() || schema.is_some() {
-        crate::metrics::list_metrics_by_node(connection_id, database, schema, status)?
-    } else {
-        crate::metrics::list_metrics(connection_id, status)?
-    };
-    metrics.truncate(limit);
-    Ok(serde_json::to_string_pretty(&metrics).unwrap_or_default())
-}
-
-pub async fn search_metrics(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let connection_id = args["connection_id"].as_i64()
-        .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
-    let keyword = args["keyword"].as_str()
-        .ok_or_else(|| crate::AppError::Other("missing keyword".into()))?;
-
-    let keywords: Vec<String> = keyword.split_whitespace().map(|s| s.to_string()).collect();
-    let metrics = crate::metrics::search_metrics(connection_id, &keywords)?;
-    Ok(serde_json::to_string_pretty(&metrics).unwrap_or_default())
-}

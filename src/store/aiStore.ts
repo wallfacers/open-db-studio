@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, ElicitationRequest, PermissionRequest } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, PermissionRequest } from '../types';
 import { useAppStore } from './appStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -49,9 +49,7 @@ interface SessionRuntimeState {
   streamingThinkingContent: string;
   activeToolName: string | null;
   sessionStatus: string | null;
-  pendingElicitation: ElicitationRequest | null;       // 文字检测路径
   pendingPermission: PermissionRequest | null;          // permission 路径（isChatting=true）
-  streamingElicitationFired: boolean;                   // P0：mid-stream 已触发，防重复
   pendingConfigId: number | null;                       // 切换模型时暂存（session 尚未进入 sessions 列表）
   lastUserMessageId: string | null;                     // OpenCode message ID，undo 用
   canRedo: boolean;                                     // redo 可用标志
@@ -64,9 +62,7 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   streamingThinkingContent: '',
   activeToolName: null,
   sessionStatus: null,
-  pendingElicitation: null,
   pendingPermission: null,
-  streamingElicitationFired: false,
   pendingConfigId: null,
   lastUserMessageId: null,
   canRedo: false,
@@ -115,8 +111,6 @@ interface AiState {
   redoMessage: (sessionId: string) => Promise<void>;
   compactSession: (sessionId: string, modelId: string, providerId: string) => Promise<void>;
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
-  respondElicitation: (sessionId: string, selectedText: string) => Promise<void>;
-  clearElicitation: (sessionId: string) => void;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
@@ -396,28 +390,6 @@ export const useAiStore = create<AiState>()(
         }
       },
 
-      respondElicitation: async (sessionId, selectedText) => {
-        set((s) => ({
-          chatStates: {
-            ...s.chatStates,
-            [sessionId]: { ...s.chatStates[sessionId], pendingElicitation: null },
-          },
-        }));
-        // activeConnectionId 在 connectionStore，不在 aiStore
-        const { useConnectionStore } = await import('./connectionStore');
-        const connectionId = useConnectionStore.getState().activeConnectionId;
-        await get().sendAgentChatStream(selectedText, connectionId);
-      },
-
-      clearElicitation: (sessionId) => {
-        set((s) => ({
-          chatStates: {
-            ...s.chatStates,
-            [sessionId]: { ...s.chatStates[sessionId], pendingElicitation: null },
-          },
-        }));
-      },
-
       deleteAllSessions: () => {
         set({
           sessions: [],
@@ -636,9 +608,6 @@ export const useAiStore = create<AiState>()(
       // ── 流式 AI 对话（核心）──
 
       sendAgentChatStream: async (message, connectionId) => {
-        // 预导入检测器（commitAssistant 和 flushBuffers 均需要，必须在两者定义之前）
-        const { detectElicitation, isLikelyComplete } = await import('../utils/elicitationDetector');
-
         const { useQueryStore } = await import('./queryStore');
         const queryStore = useQueryStore.getState();
         const activeTabId = queryStore.activeTabId;
@@ -692,9 +661,6 @@ export const useAiStore = create<AiState>()(
           // Guard: 已被 cancel 或 session 已被删除（deleteSession 会同时清除 chatStates）
           if (!get().chatStates[sessionId]?.isChatting) return;
 
-          // turn 结束时始终对完整内容重新检测，确保 mid-stream 提前触发时不会丢失后续选项
-          const detected = detectElicitation(content, sessionId) ?? null;
-
           const newMsg = {
             role: 'assistant' as const,
             content,
@@ -738,7 +704,6 @@ export const useAiStore = create<AiState>()(
                 ...s.chatStates,
                 [sessionId]: {
                   ...defaultRuntimeState(),
-                  pendingElicitation: detected ?? null,  // 与 isChatting=false 同步写入，无竞态
                 },
               },
               ...(isCurrentSession ? { chatHistory: updatedMessages } : {}),
@@ -776,25 +741,6 @@ export const useAiStore = create<AiState>()(
               const delta = contentBuf; contentBuf = '';
               const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
               const newContent = (currentState.streamingContent ?? '') + delta;
-
-              // P0：mid-stream 检测——当新增内容含换行且尚未触发过
-              if (!currentState.streamingElicitationFired && delta.includes('\n') && isLikelyComplete(newContent)) {
-                const detected = detectElicitation(newContent, sessionId);
-                if (detected) {
-                  set((s) => ({
-                    chatStates: {
-                      ...s.chatStates,
-                      [sessionId]: {
-                        ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
-                        streamingContent: newContent,
-                        pendingElicitation: detected,
-                        streamingElicitationFired: true,
-                      },
-                    },
-                  }));
-                  return;
-                }
-              }
 
               set((s) => ({
                 chatStates: {

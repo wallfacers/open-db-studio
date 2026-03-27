@@ -55,10 +55,11 @@ interface QueryState {
 
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
-  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
+  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string, initialColumns?: import('../types').Tab['initialColumns'], initialTableName?: string) => void;
   openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
+  openERDesignTab: (projectId: number, projectName: string) => void;
 
   closeTab: (tabId: string) => void;
   closeMetricTabById: (metricId: number) => void;
@@ -259,7 +260,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
-  openTableStructureTab: (connectionId, database, schema, tableName) => {
+  openTableStructureTab: (connectionId, database, schema, tableName, initialColumns, initialTableName) => {
     const dbName = database ?? `conn_${connectionId}`;
     const isNew = !tableName;
     const id = isNew
@@ -269,9 +270,11 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
       const tab: Tab = {
         id, type: 'table_structure',
-        title: tableName ?? '新建表',
+        title: initialTableName || tableName || '新建表',
         db: dbName, connectionId, schema,
         isNewTable: isNew,
+        initialColumns,
+        initialTableName,
       };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
@@ -304,6 +307,16 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         ? (newTabs[newTabs.length - 1]?.id ?? '')
         : s.activeTabId;
       return { tabs: newTabs, activeTabId: newActiveId };
+    });
+  },
+
+  openERDesignTab: (projectId, projectName) => {
+    set(s => {
+      const existing = s.tabs.find(t => t.type === 'er_design' && t.erProjectId === projectId);
+      if (existing) return { activeTabId: existing.id };
+      const id = `er_design_${projectId}_${Date.now()}`;
+      const tab: Tab = { id, type: 'er_design', title: projectName, erProjectId: projectId };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },
 

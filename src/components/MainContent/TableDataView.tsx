@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, startTransition, useLayoutEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore, useQueryStore } from '../../store';
+import { useAppStore } from '../../store/appStore';
 import type { QueryResult, ColumnMeta } from '../../types';
 import { ChevronLeft, ChevronRight, RefreshCw, Filter, Download, Check, RotateCcw, Plus, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import { ExportDialog } from '../ExportDialog';
@@ -14,7 +15,9 @@ import { CellEditorModal } from './CellEditorModal';
 import { AutoCompleteInput } from './AutoCompleteInput';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { VirtualTable } from './VirtualTable';
+import { NormalTable } from './NormalTable';
 import { useVirtualRows } from '../../hooks/useVirtualRows';
+import { computeColumnWidths, adjustColumnWidths, ROW_NUM_WIDTH } from '../../utils/columnWidths';
 
 // ─── 独立子组件：持有 virtualizer，避免滚动时重渲染整个 TableDataView ─────────
 interface TableScrollContainerProps {
@@ -22,38 +25,66 @@ interface TableScrollContainerProps {
   isLoading: boolean;
   hasData: boolean;
   columns: string[];
+  colWidths: number[];
   thead: React.ReactNode;
+  normalThead: React.ReactNode;
   renderRow: (ri: number) => React.ReactNode;
+  useVirtual: boolean;
+  onContainerResize: (width: number) => void;
 }
 
 const TableScrollContainer = React.memo(({
-  rowCount, isLoading, hasData, columns, thead, renderRow,
+  rowCount, isLoading, hasData, columns, colWidths, thead, normalThead, renderRow, useVirtual, onContainerResize,
 }: TableScrollContainerProps) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualRows(rowCount, scrollRef);
 
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    onContainerResize(el.clientWidth);
+    let timer: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (!entry) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => onContainerResize(entry.contentRect.width), 80);
+    });
+    observer.observe(el);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [onContainerResize]);
+
   return (
     <div ref={scrollRef} className="flex-1 overflow-auto relative">
-      {isLoading && !hasData && (
-        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">
-          {t('tableDataView.loading')}
-        </div>
-      )}
-      {!isLoading && !hasData && (
-        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm">
-          {t('tableDataView.noData')}
+      {!hasData && (
+        <div className="absolute inset-0 flex items-center justify-center text-[#7a9bb8] text-sm transition-opacity duration-200"
+          style={{ opacity: isLoading ? 0.5 : 1 }}>
+          {isLoading ? t('tableDataView.loading') : t('tableDataView.noData')}
         </div>
       )}
       {hasData && (
         <>
-          {isLoading && <div className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none" />}
-          <VirtualTable
-            columns={columns}
-            rowVirtualizer={rowVirtualizer}
-            thead={thead}
-            renderRow={renderRow}
+          <div
+            className="absolute inset-0 bg-[#080d12]/40 z-10 pointer-events-none transition-opacity duration-200"
+            style={{ opacity: isLoading ? 1 : 0, visibility: isLoading ? 'visible' : 'hidden' }}
           />
+          {useVirtual ? (
+            <VirtualTable
+              columns={columns}
+              colWidths={colWidths}
+              rowVirtualizer={rowVirtualizer}
+              thead={thead}
+              renderRow={renderRow}
+            />
+          ) : (
+            <NormalTable
+              columns={columns}
+              rowCount={rowCount}
+              thead={normalThead}
+              renderRow={renderRow}
+            />
+          )}
         </>
       )}
     </div>
@@ -82,6 +113,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const { t } = useTranslation();
   const { activeConnectionId: storeConnectionId } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
+  const tablePageSizeLimit = useAppStore((s) => s.tablePageSizeLimit);
+  const initTablePageSizeLimit = useAppStore((s) => s.initTablePageSizeLimit);
 
   // 订阅外部刷新信号（如截断表后触发）
   const tabId = `table_${activeConnectionId}_${dbName}_${schema ?? ''}_${tableName}`;
@@ -128,6 +161,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   showToastRef.current = showToast;
   // 请求序号：每次发起查询时递增，用于丢弃过期响应，防止竞争条件覆盖最新结果
   const requestIdRef = useRef(0);
+  // columns ref：避免 columns state 变化导致 loadData 重建进而触发二次请求
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
 
   const loadData = useCallback(async () => {
     if (!activeConnectionId || !tableName) return;
@@ -147,21 +183,23 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           filter_column: filterField || null,
           filter_operator: filterOp || null,
           filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOp)) ? null : (filterValue || null),
-          filter_data_type: columns.find(c => c.name === filterField)?.data_type || null,
+          filter_data_type: columnsRef.current.find(c => c.name === filterField)?.data_type || null,
           sort_column: sortCol,
           sort_direction: sortDir,
         }
       });
       if (reqId !== requestIdRef.current) return;
-      setData(resp.data);
-      setTotalRows(resp.total_rows);
+      startTransition(() => {
+        setData(resp.data);
+        setTotalRows(resp.total_rows);
+      });
     } catch (e) {
       if (reqId !== requestIdRef.current) return;
       showToastRef.current(String(e), 'error');
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir, columns]);
+  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
@@ -172,7 +210,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     setSortDir(null);
     setTotalRows(0);
     invoke<{ columns: ColumnMeta[] }>('get_table_detail', {
-      connectionId: activeConnectionId, database: dbName || null, table: tableName
+      connectionId: activeConnectionId, database: dbName || null, schema: schema || null, table: tableName
     })
       .then(detail => {
         setColumns(detail.columns);
@@ -181,6 +219,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       })
       .catch(() => {});
   }, [activeConnectionId, tableName]);
+
+  useEffect(() => { initTablePageSizeLimit(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (pageSize > tablePageSizeLimit) {
+      setPageSize(tablePageSizeLimit);
+      setPage(1);
+    }
+  }, [tablePageSizeLimit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -277,6 +324,20 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
 
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // 基础宽度：列名与采样内容中的较大值
+  const baseColWidths = useMemo(
+    () => data ? computeColumnWidths(data.columns, data.rows as (string | number | boolean | null)[][]) : [],
+    [data],
+  );
+
+  // 动态列宽：容器不足时维持基础宽度；有剩余空间则按比例撑满
+  const colWidths = useMemo(
+    () => adjustColumnWidths(baseColWidths, containerWidth, ROW_NUM_WIDTH),
+    [baseColWidths, containerWidth],
+  );
+
   // 页码下拉选项，上限 500 防止大表渲染卡顿
   const pageOptions = useMemo(() =>
     Array.from({ length: Math.min(totalPages, 500) }, (_, i) => ({
@@ -285,12 +346,11 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     })),
   [totalPages]);
 
-  const PAGE_SIZE_OPTIONS = [
-    { value: '100', label: '100' },
-    { value: '200', label: '200' },
-    { value: '500', label: '500' },
-    { value: '1000', label: '1000' },
-  ];
+  const PAGE_SIZE_OPTIONS = useMemo(() =>
+    [100, 500, 1000, 2000, 3000, 5000]
+      .filter(s => s <= tablePageSizeLimit)
+      .map(s => ({ value: String(s), label: String(s) })),
+  [tablePageSizeLimit]);
 
   const handlePageSizeChange = (v: string) => {
     setPage(1);
@@ -321,11 +381,14 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               >×</button>
             </Tooltip>
           </td>
-          {row.map((cell, ji) => (
-            <td key={ji} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] truncate">
-              {cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}
-            </td>
-          ))}
+          {row.map((cell, ji) => {
+            const w = colWidths[ji] ?? 150;
+            return (
+              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 text-green-400 border-r border-b border-[#1e2d42] overflow-hidden">
+                <div className="truncate">{cell === null ? <span className="text-[#7a9bb8]">NULL</span> : String(cell)}</div>
+              </td>
+            );
+          })}
         </>
       );
     }
@@ -340,57 +403,85 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         >
           {(page - 1) * pageSize + ri + 1}
         </td>
-        {row.map((cell, ci) => (
-          <EditableCell
-            key={ci}
-            value={cell}
-            pendingValue={getPendingValue(ri, ci)}
-            isDeleted={isRowDeleted(ri)}
-            onCommit={newVal => editCell(ri, ci, newVal)}
-            onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
-            onOpenEditor={() => openCellEditor(ri, ci)}
-            style={{ flex: '1 0 150px' }}
-          />
-        ))}
+        {row.map((cell, ci) => {
+          const w = colWidths[ci] ?? 150;
+          return (
+            <EditableCell
+              key={ci}
+              value={cell}
+              pendingValue={getPendingValue(ri, ci)}
+              isDeleted={isRowDeleted(ri)}
+              onCommit={newVal => editCell(ri, ci, newVal)}
+              onContextMenu={e => handleContextMenu(e, ri, ci, 'cell')}
+              onOpenEditor={() => openCellEditor(ri, ci)}
+              style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }}
+            />
+          );
+        })}
       </>
     );
-  }, [data, page, pageSize, pending, rowBgClass, getPendingValue, isRowDeleted, editCell, removeClonedRow, handleContextMenu, openCellEditor, t]);
+  }, [data, page, pageSize, pending, colWidths, rowBgClass, getPendingValue, isRowDeleted, editCell, removeClonedRow, handleContextMenu, openCellEditor, t]);
 
   // ─── 稳定化 thead，仅排序状态/列变化时重建 ────────────────────────────────
+  const colSortButtons = useCallback((col: string) => (
+    <div className="flex items-center justify-between gap-1 w-full">
+      <span className="truncate">{col}</span>
+      <Tooltip content={
+        sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
+        : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
+        : t('tableDataView.sortAsc')
+      }>
+        <button
+          className={`flex-shrink-0 leading-none transition-colors ${
+            sortCol === col ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
+          }`}
+          onClick={() => {
+            if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
+            else if (sortDir === 'ASC') { setSortDir('DESC'); }
+            else { setSortCol(null); setSortDir(null); }
+          }}
+        >
+          {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
+           sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
+           <ChevronsUpDown size={11}/>}
+        </button>
+      </Tooltip>
+    </div>
+  ), [sortCol, sortDir, setSortCol, setSortDir, t]);
+
+  // flex 布局版（VirtualTable 使用）
   const thead = useMemo(() => data ? (
     <tr style={{ display: 'flex', borderBottom: '1px solid #1e2d42' }}>
       <th style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] font-normal">
         {t('tableDataView.serialNo')}
       </th>
-      {data.columns.map(col => (
-        <th key={col} style={{ flex: '1 0 150px' }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
-          <div className="flex items-center justify-between gap-1 w-full">
-            <span className="truncate">{col}</span>
-            <Tooltip content={
-              sortCol === col && sortDir === 'ASC' ? t('tableDataView.sortDesc')
-              : sortCol === col && sortDir === 'DESC' ? t('tableDataView.sortAsc')
-              : t('tableDataView.sortAsc')
-            }>
-              <button
-                className={`flex-shrink-0 leading-none transition-colors ${
-                  sortCol === col ? 'text-[#00c9a7]' : 'text-[#3a5a7a] hover:text-[#7a9bb8]'
-                }`}
-                onClick={() => {
-                  if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
-                  else if (sortDir === 'ASC') { setSortDir('DESC'); }
-                  else { setSortCol(null); setSortDir(null); }
-                }}
-              >
-                {sortCol === col && sortDir === 'ASC' ? <ChevronUp size={11}/> :
-                 sortCol === col && sortDir === 'DESC' ? <ChevronDown size={11}/> :
-                 <ChevronsUpDown size={11}/>}
-              </button>
-            </Tooltip>
-          </div>
-        </th>
-      ))}
+      {data.columns.map((col, ci) => {
+        const w = colWidths[ci] ?? 150;
+        return (
+          <th key={col} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
+            {colSortButtons(col)}
+          </th>
+        );
+      })}
     </tr>
-  ) : null, [data?.columns, sortCol, sortDir, t]);
+  ) : null, [data?.columns, colWidths, colSortButtons, t]);
+
+  // 标准表格布局版（NormalTable 使用）
+  const normalThead = useMemo(() => data ? (
+    <tr>
+      <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">
+        {t('tableDataView.serialNo')}
+      </th>
+      {data.columns.map((col, ci) => {
+        const w = colWidths[ci] ?? 150;
+        return (
+          <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal group/th overflow-hidden">
+            {colSortButtons(col)}
+          </th>
+        );
+      })}
+    </tr>
+  ) : null, [data?.columns, colWidths, colSortButtons, t]);
 
   const hasData = !!(data && (data.rows.length > 0 || pending.clonedRows.length > 0));
 
@@ -558,8 +649,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         isLoading={isLoading}
         hasData={hasData}
         columns={data?.columns ?? []}
+        colWidths={colWidths}
         thead={thead}
+        normalThead={normalThead}
         renderRow={renderRow}
+        useVirtual={pageSize === 5000}
+        onContainerResize={setContainerWidth}
       />
 
       {/* Status Bar */}

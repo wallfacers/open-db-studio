@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { format as formatSql } from 'sql-formatter';
+import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
 import { MainContent } from './components/MainContent';
@@ -17,12 +18,14 @@ import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
 import { flushMetricsPersist } from './store/metricsTreeStore';
 import { GraphExplorer } from './components/GraphExplorer';
 import { SeaTunnelSidebar } from './components/SeaTunnelExplorer';
+import { ERSidebar } from './components/ERDesigner';
 import { flushSeaTunnelPersist, useSeaTunnelStore } from './store/seaTunnelStore';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
 
 export default function App() {
+  const { t } = useTranslation();
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
   const [activeActivity, setActiveActivity] = useState('database');
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,7 +110,7 @@ export default function App() {
       });
       setSql(activeTabId, formatted);
     } catch {
-      showToast('SQL 格式化失败', 'error');
+      showToast(t('app.sqlFormatFailed'), 'error');
     }
   };
 
@@ -195,7 +198,11 @@ export default function App() {
         onResize={handleSidebarResize}
         hidden={activeActivity !== 'seatunnel'}
       />
-      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && (
+      <ERSidebar
+        width={sidebarWidth}
+        hidden={activeActivity !== 'er_designer'}
+      />
+      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && activeActivity !== 'er_designer' && (
         activeActivity !== 'settings' && activeActivity !== 'tasks' &&
         activeActivity !== 'graph' && (
           <Explorer
@@ -209,6 +216,8 @@ export default function App() {
             onNewQuery={openQueryTab}
             onOpenTableData={openTableDataTab}
             onOpenTableStructure={openTableStructureTab}
+            onOpenMetricTab={(metricId, title, connId) => useQueryStore.getState().openMetricTab(metricId, title, connId)}
+            onOpenMetricListTab={(scope, title) => useQueryStore.getState().openMetricListTab(scope, title)}
           />
         )
       )}

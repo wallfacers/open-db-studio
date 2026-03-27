@@ -1,13 +1,274 @@
 use async_trait::async_trait;
-use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
+use chrono;
+use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgRow, PgSslMode};
+use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
 use crate::AppResult;
-use sqlx::Row;
 
 pub struct PostgresDataSource {
     pool: PgPool,
+}
+
+/// 将 PgRow 第 i 列转换为 serde_json::Value，按类型名精确派发。
+/// 支持：标量、数组、Range、Composite/未知类型。
+fn pg_row_value(row: &PgRow, i: usize) -> serde_json::Value {
+    let type_name = row.column(i).type_info().name().to_lowercase();
+
+    // ── 数组类型（PG 内部命名以 `_` 开头，如 `_int4`；sqlx 也可能暴露 `int4[]`）──
+    if type_name.starts_with('_') || type_name.ends_with("[]") {
+        let elem = if type_name.starts_with('_') {
+            &type_name[1..]
+        } else {
+            &type_name[..type_name.len() - 2]
+        };
+        return pg_array_value(row, i, elem);
+    }
+
+    // ── Range 类型 ──
+    if matches!(
+        type_name.as_str(),
+        "int4range" | "int8range" | "numrange" | "tsrange" | "tstzrange" | "daterange"
+    ) {
+        return pg_range_value(row, i, &type_name);
+    }
+
+    // ── 标量类型（按 OID 族精确匹配）──
+    match type_name.as_str() {
+        // 文本族：varchar / text / char / bpchar / name / citext / xml
+        // inet / cidr / macaddr / macaddr8 / tsvector / tsquery 也走此分支
+        "text" | "varchar" | "bpchar" | "char" | "name" | "citext"
+        | "inet" | "cidr" | "macaddr" | "macaddr8" | "xml"
+        | "tsvector" | "tsquery" | "ltree" | "lquery" | "money" => {
+            row.try_get::<Option<String>, _>(i)
+                .ok().flatten()
+                .map(serde_json::Value::String)
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // int8 / bigint / bigserial — 转为字符串，避免 JS Number 精度丢失（> 2^53）
+        "int8" | "bigint" | "bigserial" => {
+            row.try_get::<Option<i64>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // int4 / integer / serial（最常见的整数类型）
+        "int4" | "integer" | "int" | "serial" => {
+            row.try_get::<Option<i32>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // int2 / smallint / smallserial
+        "int2" | "smallint" | "smallserial" => {
+            row.try_get::<Option<i16>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // oid（PostgreSQL 内部对象标识，sqlx 用 i64 解码）
+        "oid" => {
+            row.try_get::<Option<i64>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // float8 / double precision
+        "float8" | "double precision" | "float" => {
+            row.try_get::<Option<f64>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // float4 / real
+        "float4" | "real" => {
+            row.try_get::<Option<f32>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // bool / boolean
+        "bool" | "boolean" => {
+            row.try_get::<Option<bool>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // numeric / decimal
+        "numeric" | "decimal" => {
+            row.try_get::<Option<rust_decimal::Decimal>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // timestamp without time zone
+        "timestamp" => {
+            row.try_get::<Option<chrono::NaiveDateTime>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // timestamp with time zone
+        "timestamptz" => {
+            row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S%z").to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // date
+        "date" => {
+            row.try_get::<Option<chrono::NaiveDate>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.format("%Y-%m-%d").to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // time without time zone
+        "time" => {
+            row.try_get::<Option<chrono::NaiveTime>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.format("%H:%M:%S").to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // json / jsonb
+        "json" | "jsonb" => {
+            row.try_get::<Option<serde_json::Value>, _>(i)
+                .ok().flatten()
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // uuid
+        "uuid" => {
+            row.try_get::<Option<uuid::Uuid>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(v.to_string()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // bytea（二进制，转 hex 字符串）
+        "bytea" => {
+            row.try_get::<Option<Vec<u8>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::Value::String(format!("\\x{}", hex::encode(v))))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // interval（时间间隔，sqlx 无内置类型，降级为 String）
+        "interval" => {
+            row.try_get::<Option<String>, _>(i)
+                .ok().flatten()
+                .map(serde_json::Value::String)
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // 复合类型 / 枚举 / 未知类型：返回占位符
+        _ => {
+            // 先尝试能否作为字符串读取（枚举、自定义域类型通常可以）
+            if let Ok(Some(s)) = row.try_get::<Option<String>, _>(i) {
+                serde_json::Value::String(s)
+            } else {
+                serde_json::Value::String(format!("<{}>", type_name))
+            }
+        }
+    }
+}
+
+/// 处理数组类型，按元素类型名派发到对应的 Vec<T>。
+fn pg_array_value(row: &PgRow, i: usize, elem: &str) -> serde_json::Value {
+    match elem {
+        "text" | "varchar" | "bpchar" | "char" | "name" | "citext" => {
+            row.try_get::<Option<Vec<String>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "int8" | "bigint" => {
+            row.try_get::<Option<Vec<i64>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "int4" | "integer" | "int" => {
+            row.try_get::<Option<Vec<i32>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "int2" | "smallint" => {
+            row.try_get::<Option<Vec<i16>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "float8" | "double precision" => {
+            row.try_get::<Option<Vec<f64>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "float4" | "real" => {
+            row.try_get::<Option<Vec<f32>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "bool" | "boolean" => {
+            row.try_get::<Option<Vec<bool>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        "uuid" => {
+            row.try_get::<Option<Vec<uuid::Uuid>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v.iter().map(|u| u.to_string()).collect::<Vec<_>>()))
+                .unwrap_or(serde_json::Value::Null)
+        }
+        // numeric 数组、其他：回退字符串数组
+        _ => {
+            row.try_get::<Option<Vec<String>>, _>(i)
+                .ok().flatten()
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)
+        }
+    }
+}
+
+/// 处理 Range 类型：用 PgRange<T> 解码后格式化为 `[start,end)` 字符串。
+fn pg_range_value(row: &PgRow, i: usize, type_name: &str) -> serde_json::Value {
+    use std::ops::Bound;
+    use sqlx::postgres::types::PgRange;
+
+    fn fmt_bound<T: std::fmt::Display>(b: &Bound<T>) -> (String, &'static str) {
+        match b {
+            Bound::Unbounded        => ("-∞".to_string(), ""),
+            Bound::Excluded(v)      => (v.to_string(), ")"),
+            Bound::Included(v)      => (v.to_string(), "]"),
+        }
+    }
+
+    fn fmt_range<T: std::fmt::Display>(r: PgRange<T>) -> String {
+        let lo = match &r.start { Bound::Included(_) => "[", _ => "(" };
+        let (sv, _) = fmt_bound(&r.start);
+        let (ev, ec) = fmt_bound(&r.end);
+        format!("{}{},{}{}", lo, sv, ev, ec)
+    }
+
+    let result: Option<String> = match type_name {
+        "int4range" => row.try_get::<Option<PgRange<i32>>, _>(i)
+            .ok().flatten().map(fmt_range),
+        "int8range" => row.try_get::<Option<PgRange<i64>>, _>(i)
+            .ok().flatten().map(fmt_range),
+        "numrange" => row.try_get::<Option<PgRange<rust_decimal::Decimal>>, _>(i)
+            .ok().flatten().map(fmt_range),
+        "tsrange" => row.try_get::<Option<PgRange<chrono::NaiveDateTime>>, _>(i)
+            .ok().flatten().map(fmt_range),
+        "tstzrange" => row.try_get::<Option<PgRange<chrono::DateTime<chrono::Utc>>>, _>(i)
+            .ok().flatten().map(fmt_range),
+        "daterange" => row.try_get::<Option<PgRange<chrono::NaiveDate>>, _>(i)
+            .ok().flatten().map(fmt_range),
+        _ => None,
+    };
+
+    result
+        .map(serde_json::Value::String)
+        .unwrap_or(serde_json::Value::Null)
 }
 
 impl PostgresDataSource {
@@ -38,6 +299,7 @@ impl PostgresDataSource {
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");
         opts = opts.options([("search_path", search_path)]);
+        opts = opts.log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(30))
@@ -56,7 +318,6 @@ impl DataSource for PostgresDataSource {
     }
 
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
-        use sqlx::Column;
         let start = Instant::now();
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -69,28 +330,7 @@ impl DataSource for PostgresDataSource {
 
         let result_rows: Vec<Vec<serde_json::Value>> = rows
             .iter()
-            .map(|row| {
-                (0..columns.len())
-                    .map(|i| {
-                        // Try multiple types in order of preference
-                        if let Ok(val) = row.try_get::<Option<String>, _>(i) {
-                            val.map(serde_json::Value::String)
-                                .unwrap_or(serde_json::Value::Null)
-                        } else if let Ok(val) = row.try_get::<Option<i64>, _>(i) {
-                            val.map(|v| serde_json::json!(v))
-                                .unwrap_or(serde_json::Value::Null)
-                        } else if let Ok(val) = row.try_get::<Option<f64>, _>(i) {
-                            val.map(|v| serde_json::json!(v))
-                                .unwrap_or(serde_json::Value::Null)
-                        } else if let Ok(val) = row.try_get::<Option<bool>, _>(i) {
-                            val.map(|v| serde_json::json!(v))
-                                .unwrap_or(serde_json::Value::Null)
-                        } else {
-                            serde_json::Value::Null
-                        }
-                    })
-                    .collect()
-            })
+            .map(|row| (0..columns.len()).map(|i| pg_row_value(row, i)).collect())
             .collect();
 
         let row_count = result_rows.len();
@@ -459,15 +699,16 @@ mod tests {
     fn base_config() -> ConnectionConfig {
         ConnectionConfig {
             driver: "postgres".to_string(),
-            host: std::env::var("PG_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            host: Some(std::env::var("PG_HOST").unwrap_or_else(|_| "localhost".to_string())),
             port: std::env::var("PG_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
-                .unwrap_or(5432),
-            database: std::env::var("PG_DB").unwrap_or_else(|_| "postgres".to_string()),
-            username: std::env::var("PG_USER").unwrap_or_else(|_| "postgres".to_string()),
-            password: std::env::var("PG_PASSWORD").unwrap_or_else(|_| "123456".to_string()),
+                .or(Some(5432)),
+            database: Some(std::env::var("PG_DB").unwrap_or_else(|_| "postgres".to_string())),
+            username: Some(std::env::var("PG_USER").unwrap_or_else(|_| "postgres".to_string())),
+            password: Some(std::env::var("PG_PASSWORD").unwrap_or_else(|_| "123456".to_string())),
             extra_params: None,
+            file_path: None,
         }
     }
 
@@ -512,7 +753,7 @@ mod tests {
         println!("已创建 schema: {}", schema_name);
 
         // 执行：调 list_schemas
-        let schemas = ds.list_schemas(&cfg.database).await.expect("list_schemas 失败");
+        let schemas = ds.list_schemas(cfg.database.as_deref().unwrap_or("postgres")).await.expect("list_schemas 失败");
         println!("list_schemas 返回: {:?}", schemas);
 
         // 断言
@@ -548,13 +789,13 @@ mod tests {
         println!("已创建 {}.{}", schema_name, table_name);
 
         // 验证 list_schemas 能看到该 schema
-        let schemas = ds.list_schemas(&cfg.database).await.expect("list_schemas 失败");
+        let schemas = ds.list_schemas(cfg.database.as_deref().unwrap_or("postgres")).await.expect("list_schemas 失败");
         println!("list_schemas: {:?}", schemas);
         assert!(schemas.contains(&schema_name.to_string()),
             "list_schemas 未返回 '{}': {:?}", schema_name, schemas);
 
         // 验证 list_objects 能列出该表
-        let tables = ds.list_objects(&cfg.database, Some(schema_name), "tables")
+        let tables = ds.list_objects(cfg.database.as_deref().unwrap_or("postgres"), Some(schema_name), "tables")
             .await.expect("list_objects 失败");
         println!("list_objects({}): {:?}", schema_name, tables);
         assert!(tables.contains(&table_name.to_string()),

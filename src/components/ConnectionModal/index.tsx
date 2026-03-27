@@ -74,7 +74,12 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
     setTesting(true);
     setTestResult(null);
     try {
-      await testConnection(form);
+      // 编辑模式且密码未修改时，直接用已保存连接 ID 测试（避免空密码认证失败）
+      if (isEdit && connection?.id && !form.password) {
+        await invoke('test_connection_by_id', { connectionId: connection.id });
+      } else {
+        await testConnection(form);
+      }
       setTestResult(t('connectionModal.testSuccess'));
     } catch (e) {
       setTestResult(`✗ ${String(e)}`);

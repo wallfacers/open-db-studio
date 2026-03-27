@@ -15,6 +15,7 @@
     "settings": "Settings",
     "metrics": "Metrics",
     "knowledgeGraph": "Knowledge Graph",
+    "erDesigner": "ER Designer",
     "migrationCenter": "Migration Center"
   },
   "assistant": {
@@ -64,6 +65,16 @@
     "confirmDeleteAll": "Clear all chats?",
     "confirmYes": "Confirm",
     "confirmNo": "Cancel",
+    "concurrentChatLimit": "Multiple chats in progress, please wait before sending new message",
+    "autoModeOn": "Auto Mode: ON — AI can execute write operations without confirmation",
+    "autoModeOff": "Auto Mode: OFF — Write operations require manual confirmation",
+    "toggleAutoMode": "Toggle Auto Mode",
+    "clearChatTitle": "Clear Chat",
+    "clearChatConfirm": "Clear current chat history? This cannot be undone.",
+    "deleteSessionTitle": "Delete Session",
+    "deleteSessionConfirm": "Delete this session? This cannot be undone.",
+    "deleteAllSessionsTitle": "Delete All Sessions",
+    "deleteAllSessionsConfirm": "Delete all session records? This cannot be undone.",
     "waitMsg0": "Connecting to model...",
     "waitMsg1": "AI is thinking...",
     "waitMsg2": "Composing reply...",
@@ -78,12 +89,12 @@
       "title": "Change Proposal",
       "apply": "Apply"
     },
-    "elicitation": {
-      "permissionTitle": "Tool Execution Confirmation"
-    },
     "thinking": {
       "thinking": "Thinking",
       "thought": "Deep thought completed"
+    },
+    "elicitation": {
+      "title": "Tool Execution Confirmation"
     },
     "slashCommands": {
       "undo": {
@@ -196,7 +207,12 @@
     "confirmDeleteGroup": "Are you sure you want to delete this group? Connections will be moved to ungrouped.",
     "connectionFailed": "Connection failed, please check connection settings",
     "doubleClickToOpen": "Double-click to open connection",
-    "groupDeleted": "Group deleted"
+    "groupDeleted": "Group deleted",
+    "metrics": "Metrics",
+    "openMetricList": "Open Metric List",
+    "newMetric": "New Metric",
+    "deleteMetric": "Delete Metric",
+    "confirmDeleteMetric": "Confirm delete metric \"{{name}}\"?"
   },
   "contextMenu": {
     "newConnection": "New Connection",
@@ -224,7 +240,10 @@
     "noGroup": "No Group (Ungroup)",
     "exportDatabase": "Export Data",
     "backupDatabase": "Backup Database",
-    "exportMultiTable": "Export Multiple Tables"
+    "exportMultiTable": "Export Multiple Tables",
+    "openMetricList": "Open Metric List",
+    "newMetric": "New Metric",
+    "deleteMetric": "Delete Metric"
   },
   "objectPanel": {
     "views": "Views",
@@ -288,7 +307,22 @@
     "closeTab": "Close Tab",
     "closeResult": "Close Result",
     "dmlReport": "Exec Report",
-    "dmlReportCount": "stmts"
+    "dmlReportCount": "stmts",
+    "relevantTables": "Relevant tables: ",
+    "joinPaths": "JOIN paths: ",
+    "metricDefinitions": "Metric definitions: ",
+    "sqlValidationWarning": "SQL validation warning: ",
+    "aiGenerateFailed": "AI generation failed: ",
+    "nlPanelHint": "Describe your query in natural language, AI will generate SQL using knowledge graph",
+    "nlInputPlaceholder": "e.g., Query top 10 cities by sales last month",
+    "generating": "Generating...",
+    "generateSql": "Generate SQL",
+    "graphContextRef": "Referenced the following knowledge graph context",
+    "clickToExpand": "(click to expand)",
+    "querySuccessNoData": "Query successful, no data",
+    "rowsTruncatedWarning": "⚠ Query returned {{total}} rows, showing first {{max}}. Use LIMIT or export to view all data.",
+    "exportFull": "Export All",
+    "pageNumber": "Page {{current}} / {{total}}"
   },
   "tableDataView": {
     "firstPage": "First page",
@@ -410,7 +444,8 @@
   "app": {
     "chatMsg1": "Help me analyze the birth rate changes in Shanghai in 2023",
     "chatMsg2": "Based on user input, matched the following tables",
-    "chatMsg3": "To analyze the birth rate changes in Shanghai in 2023, we need to extract from"
+    "chatMsg3": "To analyze the birth rate changes in Shanghai in 2023, we need to extract from",
+    "sqlFormatFailed": "SQL formatting failed"
   },
   "settings": {
     "title": "Settings",
@@ -426,7 +461,9 @@
     "language": "Language",
     "languageDesc": "Switch display language. Takes effect immediately.",
     "languageZh": "Chinese (中文)",
-    "languageEn": "English"
+    "languageEn": "English",
+    "tablePageSizeLimit": "Max Rows Per Page",
+    "tablePageSizeLimitDesc": "Set the pagination limit for table data view. Up to 5000 rows supported with virtual scrolling enabled."
   },
   "erDiagram": {
     "addTable": "Add Table",
@@ -451,7 +488,16 @@
     "executing": "Executing...",
     "close": "Close",
     "create": "Create",
-    "save": "Save"
+    "save": "Save",
+    "rename": "Rename",
+    "export": "Export",
+    "edit": "Edit",
+    "delete": "Delete",
+    "duplicate": "Duplicate",
+    "import": "Import",
+    "copy": "Copy",
+    "bind": "Bind",
+    "loading": "Loading..."
   },
   "groupModal": {
     "createTitle": "New Group",
@@ -722,6 +768,26 @@
       "noDescription": "No description",
       "descriptionPlaceholder": "Describe the business meaning of this relationship...",
       "linkWeight": "Weight"
+    },
+    "searchTab": {
+      "searchPlaceholder": "Search node names...",
+      "searchHint": "Enter keywords to search graph nodes",
+      "noResults": "No matching nodes found",
+      "filteredHidden": "Currently filtered, node is hidden",
+      "setAsStart": "Set as path start",
+      "setAsEnd": "Set as path end",
+      "tableOnly": "Table nodes only"
+    },
+    "pathTab": {
+      "setInSearch": "Click [S]/[T] in search results to set",
+      "maxHops": "Max hops",
+      "sameNodeError": "Start and end cannot be the same",
+      "searching": "Searching...",
+      "findPath": "Find Path",
+      "retry": "Retry",
+      "noPathFound": "No path found within {{n}} hops",
+      "restoreFullGraph": "Restore Full Graph",
+      "extractSubgraph": "Extract Subgraph"
     }
   },
   "metricsExplorer": {
@@ -965,5 +1031,92 @@
       "deleteConnectionFailed": "Failed to delete cluster",
       "renameFailed": "Rename failed"
     }
+  },
+  "erDesigner": {
+    "title": "ER Designer",
+    "newProject": "New ER Project",
+    "projectName": "Project Name",
+    "noProjects": "No ER projects yet",
+    "clickPlus": "Click + to create a new project",
+    "connectionBound": "Connection bound",
+    "relations": "relations",
+    "newTable": "New Table",
+    "moreColumns": "+{{count}} more columns",
+    "confirmDeleteProject": "Delete this project? This action cannot be undone!",
+    "confirmDeleteTable": "Delete this table? This action cannot be undone!",
+    "bindConnection": "Bind Connection",
+    "unbindConnection": "Unbind",
+    "addColumn": "Add Column",
+    "generateDdl": "Generate DDL",
+    "dialect": "Dialect",
+    "includeIndexes": "Indexes",
+    "includeComments": "Column Comments (with markers)",
+    "includeForeignKeys": "Foreign Key Constraints",
+    "generating": "Generating...",
+    "noDdl": "No DDL",
+    "generateDdlFailed": "Failed to generate DDL",
+    "copyDdl": "Copy",
+    "copied": "Copied",
+    "executeToDB": "Execute to Database",
+    "executeNeedsConnection": "Tip: Bind a connection first to execute to database",
+    "diffTitle": "Structure Diff",
+    "erVsDb": "ER vs",
+    "loadingDiff": "Loading diff...",
+    "diffFailed": "Failed to get diff",
+    "addedSection": "Added (only in ER)",
+    "modifiedSection": "Modified",
+    "removedSection": "Removed (only in DB)",
+    "noDiff": "No differences detected",
+    "syncToDb": "ER → Database",
+    "syncFromDb": "Database → ER",
+    "tableLabel": "Table",
+    "columnLabel": "Column",
+    "indexLabel": "Index",
+    "addedLabel": "Added",
+    "removedLabel": "Removed",
+    "modifiedLabel": "Modified",
+    "bindConnectionTitle": "Bind Database Connection",
+    "connectionLabel": "Connection",
+    "databaseLabel": "Database",
+    "schemaLabel": "Schema",
+    "selectConnectionPlaceholder": "Select connection",
+    "selectDatabasePlaceholder": "Select database",
+    "selectSchemaPlaceholder": "Select schema",
+    "dbType": "Current DB type: {{type}}",
+    "loadDbListFailed": "Failed to load database list",
+    "loadSchemaListFailed": "Failed to load schema list",
+    "selectConnectionAndDb": "Please select connection and database",
+    "bindFailed": "Failed to bind connection",
+    "importTableTitle": "Import Tables from Database",
+    "noConnectionForImport": "No database connection bound. Please bind a connection first.",
+    "searchTablePlaceholder": "Search tables...",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "tableCount": "{{count}} tables total",
+    "selectedCount": "Selected: {{count}} tables",
+    "noTablesFound": "No matching tables found",
+    "noTablesInDb": "No tables in database",
+    "columnCount": "{{count}} columns",
+    "loadTablesFailed": "Failed to load tables",
+    "selectAtLeastOne": "Please select at least one table",
+    "importFailed": "Failed to import tables",
+    "autoLayout": "Auto Layout",
+    "layouting": "Laying out...",
+    "importTables": "Import",
+    "ddlPreview": "DDL",
+    "diffCheck": "DB Diff",
+    "syncDB": "Sync DB",
+    "syncing": "Syncing...",
+    "sync": "Sync",
+    "exportJson": "Export JSON",
+    "importJson": "Import JSON",
+    "addColumnBtn": "Add Column",
+    "deleteTable": "Delete Table",
+    "primaryKey": "Primary Key",
+    "clickToSetPK": "Click to set as Primary Key",
+    "autoIncrement": "Auto Increment",
+    "clickToSetAI": "Click to enable Auto Increment",
+    "dblClickToEdit": "Double click to edit",
+    "dblClickToEditName": "Double click to edit table name"
   }
 }

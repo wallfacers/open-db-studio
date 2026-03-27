@@ -2,48 +2,36 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useQueryStore } from '../store/queryStore';
-import { useTreeStore } from '../store/treeStore';
 import { useAppStore } from '../store/appStore';
 import { useConfirmStore } from '../store/confirmStore';
 import { useSeaTunnelStore } from '../store/seaTunnelStore';
+import { fsRouter, registerFsAdapters } from '../mcp/fs'
+import type { FsOp } from '../mcp/fs'
 
 interface UiActionPayload {
   request_id: string;
-  action: 'focus_tab' | 'open_tab' | 'propose_seatunnel_job';
+  action: 'open_tab' | 'propose_seatunnel_job';
   params: Record<string, unknown>;
 }
 
 interface QueryRequestPayload {
   request_id: string;
-  query_type: 'search_tabs' | 'get_tab_content' | 'search_db_metadata';
+  query_type: 'search_tabs' | 'get_tab_content' | 'fs_request';
   params: Record<string, unknown>;
 }
 
 export function useMcpBridge() {
   const { tabs, activeTabId, setActiveTabId, sqlContent, openTableStructureTab, openMetricTab, openQueryTab, openSeaTunnelJobTab } = useQueryStore();
-  const treeNodes = useTreeStore((s) => s.nodes);
+
+  // 注册所有 FsAdapter（幂等，可重复调用）
+  registerFsAdapters()
 
   useEffect(() => {
     // 监听 UI 操作（写方向）
     const unlistenUiAction = listen<UiActionPayload>('mcp://ui-action', async (event) => {
       const { request_id, action, params } = event.payload;
       try {
-        if (action === 'focus_tab') {
-          const tabId = params.tab_id as string;
-          const tab = useQueryStore.getState().tabs.find(t => t.id === tabId);
-          if (!tab) {
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: false, data: null,
-              error: `Tab ${tabId} not found`
-            });
-            return;
-          }
-          setActiveTabId(tabId);
-          await invoke('mcp_ui_action_respond', {
-            requestId: request_id, success: true,
-            data: { tab_id: tabId }, error: null
-          });
-        } else if (action === 'propose_seatunnel_job') {
+        if (action === 'propose_seatunnel_job') {
           const { job_name, config_json, category_id, description, job_id } = params as {
             job_name: string; config_json: string;
             category_id?: number; description?: string; job_id?: number;
@@ -116,17 +104,21 @@ export function useMcpBridge() {
             });
           }
         } else if (action === 'open_tab') {
-          const { connection_id, type, table_name, database, metric_id, job_id } = params as {
+          const { connection_id, type, table_name, database, metric_id, job_id, initial_columns, initial_table_name } = params as {
             connection_id?: number; type: string; table_name?: string;
             database?: string; metric_id?: number; job_id?: number;
+            initial_columns?: import('../types').Tab['initialColumns'];
+            initial_table_name?: string;
           };
           let newTabId: string | null = null;
 
-          if (type === 'table_structure' && table_name && connection_id != null) {
-            openTableStructureTab(connection_id, database, undefined, table_name);
+          if (type === 'table_structure' && connection_id != null) {
+            // table_name 为 null/undefined 时为新建表模式（支持 initial_columns 预填）
+            openTableStructureTab(connection_id, database, undefined, table_name || undefined, initial_columns, initial_table_name);
             await new Promise(resolve => setTimeout(resolve, 100));
+            const expectedTitle = initial_table_name || table_name || '新建表';
             const newTab = useQueryStore.getState().tabs.find(
-              t => t.type === 'table_structure' && t.connectionId === connection_id && t.title === table_name
+              t => t.type === 'table_structure' && t.connectionId === connection_id && t.title === expectedTitle
             );
             newTabId = newTab?.id ?? null;
           } else if (type === 'metric' && metric_id) {
@@ -185,6 +177,7 @@ export function useMcpBridge() {
 
         if (query_type === 'search_tabs') {
           const { table_name, type: tabType } = params as { table_name?: string; type?: string };
+          const currentActiveTabId = useQueryStore.getState().activeTabId;
           data = currentTabs.filter(t => {
             if (tabType && t.type !== tabType) return false;
             if (table_name) {
@@ -197,6 +190,7 @@ export function useMcpBridge() {
             title: t.title,
             connection_id: t.connectionId,
             db: t.db,
+            is_active: t.id === currentActiveTabId,
             // 附带专属 ID，便于 AI 直接引用
             ...(t.metricId != null && { metric_id: t.metricId }),
             ...(t.stJobId != null && { job_id: t.stJobId }),
@@ -242,23 +236,16 @@ export function useMcpBridge() {
           } else {
             data = null;
           }
-        } else if (query_type === 'search_db_metadata') {
-          const keyword = (params as { keyword?: string }).keyword ?? '';
-          // 从 treeNodes（Zustand treeStore）搜索已缓存节点（Map<string, TreeNode>）
-          const nodes = useTreeStore.getState().nodes;
-          const results: Array<{ node_id: string; name: string; type: string; connection_id?: number }> = [];
-          const kw = keyword.toLowerCase();
-          for (const [nodeId, node] of nodes.entries()) {
-            if (node.label.toLowerCase().includes(kw)) {
-              results.push({
-                node_id: nodeId,
-                name: node.label,
-                type: node.nodeType,
-                connection_id: node.meta?.connectionId,
-              });
-            }
+        } else if (query_type === 'fs_request') {
+          const { op, resource, target, payload: fsPayload } = params as {
+            op: FsOp; resource: string; target: string; payload: Record<string, unknown>
           }
-          data = results;
+          try {
+            const resultStr = await fsRouter.handle({ op, resource, target, payload: fsPayload })
+            data = JSON.parse(resultStr) as unknown
+          } catch (fsErr) {
+            data = { error: fsErr instanceof Error ? fsErr.message : String(fsErr) }
+          }
         }
 
         await invoke('mcp_query_respond', { requestId: request_id, data });

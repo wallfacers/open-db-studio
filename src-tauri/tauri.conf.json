@@ -1,6 +1,6 @@
 {
   "productName": "open-db-studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.open-db-studio.app",
   "build": {
     "frontendDist": "../dist",
@@ -41,10 +41,9 @@
     "resources": [
       "skills/db-read/SKILL.md",
       "skills/tab-control/SKILL.md",
-      "skills/metric-edit/SKILL.md",
       "skills/metric-read/SKILL.md",
       "skills/table-edit/SKILL.md",
-      "skills/history/SKILL.md",
+      "skills/graph-read/SKILL.md",
       "skills/echarts-ai-skill/SKILL.md",
       "skills/echarts-ai-skill/manifest.yaml",
       "skills/echarts-ai-skill/package.json",

@@ -1,0 +1,965 @@
+use std::collections::HashMap;
+
+use crate::AppResult;
+use crate::error::AppError;
+use super::models::{ErColumn, ErIndex, ErRelation, ErTable};
+
+// ---------------------------------------------------------------------------
+// GenerateOptions
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct GenerateOptions {
+    pub include_indexes: bool,
+    pub include_comments: bool,
+    pub include_foreign_keys: bool,
+}
+
+impl Default for GenerateOptions {
+    fn default() -> Self {
+        Self {
+            include_indexes: true,
+            include_comments: true,
+            include_foreign_keys: false,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Resolved FK info passed into dialect helpers
+// ---------------------------------------------------------------------------
+
+struct ResolvedFk<'a> {
+    relation: &'a ErRelation,
+    source_col_name: String,
+    target_table_name: String,
+    target_col_name: String,
+}
+
+// ---------------------------------------------------------------------------
+// DdlDialect trait
+// ---------------------------------------------------------------------------
+
+pub trait DdlDialect {
+    fn create_table(
+        &self,
+        table: &ErTable,
+        columns: &[ErColumn],
+        indexes: &[ErIndex],
+        relations: &[ErRelation],
+        all_tables: &[ErTable],
+        all_columns_map: &HashMap<i64, Vec<ErColumn>>,
+        options: &GenerateOptions,
+    ) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        let quoted_table = self.quote_identifier(&table.name);
+
+        // --- Column definitions ---
+        let mut col_defs: Vec<String> = Vec::new();
+        for col in columns {
+            let mut def = format!("  {} {}", self.quote_identifier(&col.name), self.map_column_type(col));
+            if !col.nullable {
+                def.push_str(" NOT NULL");
+            }
+            if col.is_auto_increment {
+                let ai = self.auto_increment_syntax();
+                if !ai.is_empty() {
+                    def.push_str(" ");
+                    def.push_str(ai);
+                }
+            }
+            if let Some(ref dv) = col.default_value {
+                if !dv.is_empty() {
+                    def.push_str(&format!(" DEFAULT {}", dv));
+                }
+            }
+            // Inline column comment for MySQL
+            if options.include_comments {
+                if let Some(extra) = self.inline_column_comment(col) {
+                    def.push_str(&extra);
+                }
+            }
+            col_defs.push(def);
+        }
+
+        // --- PRIMARY KEY constraint ---
+        let pk_cols: Vec<&ErColumn> = columns.iter().filter(|c| c.is_primary_key).collect();
+        if !pk_cols.is_empty() {
+            col_defs.push(self.primary_key_syntax(&pk_cols));
+        }
+
+        // --- FOREIGN KEY constraints ---
+        if options.include_foreign_keys {
+            let fks = resolve_fks(table, relations, all_tables, all_columns_map);
+            for fk in &fks {
+                col_defs.push(self.foreign_key_syntax(
+                    fk.relation,
+                    &fk.source_col_name,
+                    &fk.target_table_name,
+                    &fk.target_col_name,
+                ));
+            }
+        }
+
+        // --- CREATE TABLE ---
+        let stmt = format!("CREATE TABLE {} (\n{}\n){};",
+            quoted_table,
+            col_defs.join(",\n"),
+            self.table_suffix(table),
+        );
+        parts.push(stmt);
+
+        // --- Indexes ---
+        if options.include_indexes {
+            for idx in indexes {
+                let idx_stmt = self.index_syntax(&table.name, idx);
+                if !idx_stmt.is_empty() {
+                    parts.push(idx_stmt);
+                }
+            }
+        }
+
+        // --- Comments (post-table) ---
+        if options.include_comments {
+            if let Some(ref comment) = table.comment {
+                if !comment.is_empty() {
+                    let stmts = self.comment_syntax(&table.name, None, comment);
+                    parts.extend(stmts);
+                }
+            }
+            for col in columns {
+                if let Some(ref comment) = col.comment {
+                    if !comment.is_empty() {
+                        let stmts = self.comment_syntax(&table.name, Some(&col.name), comment);
+                        parts.extend(stmts);
+                    }
+                }
+            }
+        }
+
+        parts.join("\n\n")
+    }
+
+    fn map_type(&self, generic_type: &str) -> String;
+
+    /// Map a column to its dialect-specific type, considering auto_increment.
+    fn map_column_type(&self, col: &ErColumn) -> String {
+        self.map_type(&col.data_type)
+    }
+
+    fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String;
+    fn auto_increment_syntax(&self) -> &str;
+    fn index_syntax(&self, table_name: &str, index: &ErIndex) -> String;
+    fn foreign_key_syntax(
+        &self,
+        relation: &ErRelation,
+        source_col: &str,
+        target_table: &str,
+        target_col: &str,
+    ) -> String;
+    fn comment_syntax(
+        &self,
+        table_name: &str,
+        column_name: Option<&str>,
+        comment: &str,
+    ) -> Vec<String>;
+    fn quote_identifier(&self, name: &str) -> String;
+
+    /// Optional inline column comment (used by MySQL).
+    fn inline_column_comment(&self, _col: &ErColumn) -> Option<String> {
+        None
+    }
+
+    /// Optional table suffix (e.g. MySQL ENGINE clause).
+    fn table_suffix(&self, _table: &ErTable) -> String {
+        String::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: parse generic type like "VARCHAR(255)" or "DECIMAL(10,2)"
+// ---------------------------------------------------------------------------
+
+fn parse_type(input: &str) -> (&str, Option<&str>) {
+    if let Some(pos) = input.find('(') {
+        (&input[..pos], Some(&input[pos..]))
+    } else {
+        (input, None)
+    }
+}
+
+fn map_type_with(input: &str, mapper: &dyn Fn(&str) -> &str) -> String {
+    let (base, params) = parse_type(input);
+    let upper = base.to_uppercase();
+    let mapped = mapper(&upper);
+    match params {
+        Some(p) => format!("{}{}", mapped, p),
+        None => mapped.to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: resolve foreign keys
+// ---------------------------------------------------------------------------
+
+fn resolve_fks<'a>(
+    table: &ErTable,
+    relations: &'a [ErRelation],
+    all_tables: &[ErTable],
+    all_columns_map: &HashMap<i64, Vec<ErColumn>>,
+) -> Vec<ResolvedFk<'a>> {
+    let mut out = Vec::new();
+    for rel in relations {
+        if rel.source_table_id != table.id {
+            continue;
+        }
+        // Find source column name
+        let src_col_name = all_columns_map
+            .get(&rel.source_table_id)
+            .and_then(|cols| cols.iter().find(|c| c.id == rel.source_column_id))
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| format!("col_{}", rel.source_column_id));
+        // Find target table name
+        let tgt_table_name = all_tables
+            .iter()
+            .find(|t| t.id == rel.target_table_id)
+            .map(|t| t.name.clone())
+            .unwrap_or_else(|| format!("table_{}", rel.target_table_id));
+        // Find target column name
+        let tgt_col_name = all_columns_map
+            .get(&rel.target_table_id)
+            .and_then(|cols| cols.iter().find(|c| c.id == rel.target_column_id))
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| format!("col_{}", rel.target_column_id));
+
+        out.push(ResolvedFk {
+            relation: rel,
+            source_col_name: src_col_name,
+            target_table_name: tgt_table_name,
+            target_col_name: tgt_col_name,
+        });
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Helper: parse index columns JSON
+// ---------------------------------------------------------------------------
+
+fn parse_index_columns(json_str: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<String>>(json_str).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// Helper: escape single quotes in comments
+// ---------------------------------------------------------------------------
+
+fn escape_comment(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+// ===========================================================================
+// MySQL Dialect
+// ===========================================================================
+
+pub struct MySqlDialect;
+
+impl DdlDialect for MySqlDialect {
+    fn map_type(&self, generic_type: &str) -> String {
+        map_type_with(generic_type, &|base| match base {
+            "BIGINT" => "BIGINT",
+            "VARCHAR" => "VARCHAR",
+            "TEXT" => "TEXT",
+            "DATETIME" => "DATETIME",
+            "BOOLEAN" => "TINYINT(1)",
+            "DECIMAL" => "DECIMAL",
+            "INT" | "INTEGER" => "INT",
+            "SMALLINT" => "SMALLINT",
+            "TINYINT" => "TINYINT",
+            "FLOAT" => "FLOAT",
+            "DOUBLE" => "DOUBLE",
+            "DATE" => "DATE",
+            "TIME" => "TIME",
+            "TIMESTAMP" => "TIMESTAMP",
+            "BLOB" => "BLOB",
+            "JSON" => "JSON",
+            other => other,
+        })
+    }
+
+    fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
+        let cols: Vec<String> = pk_columns.iter().map(|c| self.quote_identifier(&c.name)).collect();
+        format!("  PRIMARY KEY ({})", cols.join(", "))
+    }
+
+    fn auto_increment_syntax(&self) -> &str { "AUTO_INCREMENT" }
+
+    fn index_syntax(&self, table_name: &str, index: &ErIndex) -> String {
+        let cols = parse_index_columns(&index.columns);
+        if cols.is_empty() { return String::new(); }
+        let quoted_cols: Vec<String> = cols.iter().map(|c| self.quote_identifier(c)).collect();
+        let unique = if index.index_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+        format!(
+            "CREATE {}INDEX {} ON {} ({});",
+            unique,
+            self.quote_identifier(&index.name),
+            self.quote_identifier(table_name),
+            quoted_cols.join(", "),
+        )
+    }
+
+    fn foreign_key_syntax(&self, relation: &ErRelation, source_col: &str, target_table: &str, target_col: &str) -> String {
+        let name = relation.name.as_deref().unwrap_or("fk");
+        format!(
+            "  CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE {} ON UPDATE {}",
+            self.quote_identifier(name),
+            self.quote_identifier(source_col),
+            self.quote_identifier(target_table),
+            self.quote_identifier(target_col),
+            relation.on_delete,
+            relation.on_update,
+        )
+    }
+
+    fn comment_syntax(&self, table_name: &str, column_name: Option<&str>, comment: &str) -> Vec<String> {
+        match column_name {
+            // Column comments handled inline; no post-table statement needed.
+            Some(_) => vec![],
+            None => vec![format!(
+                "ALTER TABLE {} COMMENT = '{}';",
+                self.quote_identifier(table_name),
+                escape_comment(comment),
+            )],
+        }
+    }
+
+    fn quote_identifier(&self, name: &str) -> String {
+        format!("`{}`", name)
+    }
+
+    fn inline_column_comment(&self, col: &ErColumn) -> Option<String> {
+        col.comment.as_ref().filter(|c| !c.is_empty()).map(|c| format!(" COMMENT '{}'", escape_comment(c)))
+    }
+
+    fn table_suffix(&self, _table: &ErTable) -> String {
+        " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4".to_string()
+    }
+}
+
+// ===========================================================================
+// PostgreSQL Dialect
+// ===========================================================================
+
+pub struct PostgresDialect;
+
+impl DdlDialect for PostgresDialect {
+    fn map_type(&self, generic_type: &str) -> String {
+        map_type_with(generic_type, &|base| match base {
+            "BIGINT" => "BIGINT",
+            "VARCHAR" => "VARCHAR",
+            "TEXT" => "TEXT",
+            "DATETIME" => "TIMESTAMP",
+            "BOOLEAN" => "BOOLEAN",
+            "DECIMAL" => "NUMERIC",
+            "INT" | "INTEGER" => "INTEGER",
+            "SMALLINT" => "SMALLINT",
+            "TINYINT" => "SMALLINT",
+            "FLOAT" => "REAL",
+            "DOUBLE" => "DOUBLE PRECISION",
+            "DATE" => "DATE",
+            "TIME" => "TIME",
+            "TIMESTAMP" => "TIMESTAMP",
+            "BLOB" => "BYTEA",
+            "JSON" => "JSONB",
+            other => other,
+        })
+    }
+
+    fn map_column_type(&self, col: &ErColumn) -> String {
+        if col.is_auto_increment {
+            let (base, _params) = parse_type(&col.data_type);
+            let upper = base.to_uppercase();
+            return match upper.as_str() {
+                "BIGINT" => "BIGSERIAL".to_string(),
+                "INT" | "INTEGER" => "SERIAL".to_string(),
+                "SMALLINT" => "SMALLSERIAL".to_string(),
+                _ => self.map_type(&col.data_type),
+            };
+        }
+        self.map_type(&col.data_type)
+    }
+
+    fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
+        let cols: Vec<String> = pk_columns.iter().map(|c| self.quote_identifier(&c.name)).collect();
+        format!("  PRIMARY KEY ({})", cols.join(", "))
+    }
+
+    fn auto_increment_syntax(&self) -> &str {
+        // Postgres uses SERIAL types instead
+        ""
+    }
+
+    fn index_syntax(&self, table_name: &str, index: &ErIndex) -> String {
+        let cols = parse_index_columns(&index.columns);
+        if cols.is_empty() { return String::new(); }
+        let quoted_cols: Vec<String> = cols.iter().map(|c| self.quote_identifier(c)).collect();
+        let unique = if index.index_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+        format!(
+            "CREATE {}INDEX {} ON {} ({});",
+            unique,
+            self.quote_identifier(&index.name),
+            self.quote_identifier(table_name),
+            quoted_cols.join(", "),
+        )
+    }
+
+    fn foreign_key_syntax(&self, relation: &ErRelation, source_col: &str, target_table: &str, target_col: &str) -> String {
+        let name = relation.name.as_deref().unwrap_or("fk");
+        format!(
+            "  CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE {} ON UPDATE {}",
+            self.quote_identifier(name),
+            self.quote_identifier(source_col),
+            self.quote_identifier(target_table),
+            self.quote_identifier(target_col),
+            relation.on_delete,
+            relation.on_update,
+        )
+    }
+
+    fn comment_syntax(&self, table_name: &str, column_name: Option<&str>, comment: &str) -> Vec<String> {
+        match column_name {
+            Some(col) => vec![format!(
+                "COMMENT ON COLUMN {}.{} IS '{}';",
+                self.quote_identifier(table_name),
+                self.quote_identifier(col),
+                escape_comment(comment),
+            )],
+            None => vec![format!(
+                "COMMENT ON TABLE {} IS '{}';",
+                self.quote_identifier(table_name),
+                escape_comment(comment),
+            )],
+        }
+    }
+
+    fn quote_identifier(&self, name: &str) -> String {
+        format!("\"{}\"", name)
+    }
+}
+
+// ===========================================================================
+// Oracle Dialect
+// ===========================================================================
+
+pub struct OracleDialect;
+
+impl DdlDialect for OracleDialect {
+    fn map_type(&self, generic_type: &str) -> String {
+        map_type_with(generic_type, &|base| match base {
+            "BIGINT" => "NUMBER(19)",
+            "VARCHAR" => "VARCHAR2",
+            "TEXT" => "CLOB",
+            "DATETIME" => "TIMESTAMP",
+            "BOOLEAN" => "NUMBER(1)",
+            "DECIMAL" => "NUMBER",
+            "INT" | "INTEGER" => "NUMBER(10)",
+            "SMALLINT" => "NUMBER(5)",
+            "TINYINT" => "NUMBER(3)",
+            "FLOAT" => "BINARY_FLOAT",
+            "DOUBLE" => "BINARY_DOUBLE",
+            "DATE" => "DATE",
+            "TIME" => "TIMESTAMP",
+            "TIMESTAMP" => "TIMESTAMP",
+            "BLOB" => "BLOB",
+            "JSON" => "CLOB",
+            other => other,
+        })
+    }
+
+    fn map_column_type(&self, col: &ErColumn) -> String {
+        let mapped = self.map_type(&col.data_type);
+        if col.is_auto_increment {
+            format!("{} GENERATED ALWAYS AS IDENTITY", mapped)
+        } else {
+            mapped
+        }
+    }
+
+    fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
+        let cols: Vec<String> = pk_columns.iter().map(|c| self.quote_identifier(&c.name)).collect();
+        format!("  PRIMARY KEY ({})", cols.join(", "))
+    }
+
+    fn auto_increment_syntax(&self) -> &str {
+        // Handled in map_column_type
+        ""
+    }
+
+    fn index_syntax(&self, table_name: &str, index: &ErIndex) -> String {
+        let cols = parse_index_columns(&index.columns);
+        if cols.is_empty() { return String::new(); }
+        let quoted_cols: Vec<String> = cols.iter().map(|c| self.quote_identifier(c)).collect();
+        let unique = if index.index_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+        format!(
+            "CREATE {}INDEX {} ON {} ({});",
+            unique,
+            self.quote_identifier(&index.name),
+            self.quote_identifier(table_name),
+            quoted_cols.join(", "),
+        )
+    }
+
+    fn foreign_key_syntax(&self, relation: &ErRelation, source_col: &str, target_table: &str, target_col: &str) -> String {
+        let name = relation.name.as_deref().unwrap_or("fk");
+        format!(
+            "  CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE {}",
+            self.quote_identifier(name),
+            self.quote_identifier(source_col),
+            self.quote_identifier(target_table),
+            self.quote_identifier(target_col),
+            relation.on_delete,
+        )
+    }
+
+    fn comment_syntax(&self, table_name: &str, column_name: Option<&str>, comment: &str) -> Vec<String> {
+        match column_name {
+            Some(col) => vec![format!(
+                "COMMENT ON COLUMN {}.{} IS '{}';",
+                self.quote_identifier(table_name),
+                self.quote_identifier(col),
+                escape_comment(comment),
+            )],
+            None => vec![format!(
+                "COMMENT ON TABLE {} IS '{}';",
+                self.quote_identifier(table_name),
+                escape_comment(comment),
+            )],
+        }
+    }
+
+    fn quote_identifier(&self, name: &str) -> String {
+        format!("\"{}\"", name)
+    }
+}
+
+// ===========================================================================
+// SQL Server Dialect
+// ===========================================================================
+
+pub struct SqlServerDialect;
+
+impl DdlDialect for SqlServerDialect {
+    fn map_type(&self, generic_type: &str) -> String {
+        map_type_with(generic_type, &|base| match base {
+            "BIGINT" => "BIGINT",
+            "VARCHAR" => "NVARCHAR",
+            "TEXT" => "NVARCHAR(MAX)",
+            "DATETIME" => "DATETIME2",
+            "BOOLEAN" => "BIT",
+            "DECIMAL" => "DECIMAL",
+            "INT" | "INTEGER" => "INT",
+            "SMALLINT" => "SMALLINT",
+            "TINYINT" => "TINYINT",
+            "FLOAT" => "FLOAT",
+            "DOUBLE" => "FLOAT(53)",
+            "DATE" => "DATE",
+            "TIME" => "TIME",
+            "TIMESTAMP" => "DATETIME2",
+            "BLOB" => "VARBINARY(MAX)",
+            "JSON" => "NVARCHAR(MAX)",
+            other => other,
+        })
+    }
+
+    fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
+        let cols: Vec<String> = pk_columns.iter().map(|c| self.quote_identifier(&c.name)).collect();
+        format!("  PRIMARY KEY ({})", cols.join(", "))
+    }
+
+    fn auto_increment_syntax(&self) -> &str { "IDENTITY(1,1)" }
+
+    fn index_syntax(&self, table_name: &str, index: &ErIndex) -> String {
+        let cols = parse_index_columns(&index.columns);
+        if cols.is_empty() { return String::new(); }
+        let quoted_cols: Vec<String> = cols.iter().map(|c| self.quote_identifier(c)).collect();
+        let unique = if index.index_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+        format!(
+            "CREATE {}INDEX {} ON {} ({});",
+            unique,
+            self.quote_identifier(&index.name),
+            self.quote_identifier(table_name),
+            quoted_cols.join(", "),
+        )
+    }
+
+    fn foreign_key_syntax(&self, relation: &ErRelation, source_col: &str, target_table: &str, target_col: &str) -> String {
+        let name = relation.name.as_deref().unwrap_or("fk");
+        format!(
+            "  CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE {} ON UPDATE {}",
+            self.quote_identifier(name),
+            self.quote_identifier(source_col),
+            self.quote_identifier(target_table),
+            self.quote_identifier(target_col),
+            relation.on_delete,
+            relation.on_update,
+        )
+    }
+
+    fn comment_syntax(&self, table_name: &str, column_name: Option<&str>, comment: &str) -> Vec<String> {
+        let escaped = escape_comment(comment);
+        match column_name {
+            Some(col) => vec![format!(
+                "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'{}', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'{}', @level2type = N'COLUMN', @level2name = N'{}';",
+                escaped, table_name, col,
+            )],
+            None => vec![format!(
+                "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'{}', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'{}';",
+                escaped, table_name,
+            )],
+        }
+    }
+
+    fn quote_identifier(&self, name: &str) -> String {
+        format!("[{}]", name)
+    }
+}
+
+// ===========================================================================
+// SQLite Dialect
+// ===========================================================================
+
+pub struct SqliteDialect;
+
+impl DdlDialect for SqliteDialect {
+    fn map_type(&self, generic_type: &str) -> String {
+        map_type_with(generic_type, &|base| match base {
+            "BIGINT" => "INTEGER",
+            "VARCHAR" => "TEXT",
+            "TEXT" => "TEXT",
+            "DATETIME" => "TEXT",
+            "BOOLEAN" => "INTEGER",
+            "DECIMAL" => "REAL",
+            "INT" | "INTEGER" => "INTEGER",
+            "SMALLINT" => "INTEGER",
+            "TINYINT" => "INTEGER",
+            "FLOAT" => "REAL",
+            "DOUBLE" => "REAL",
+            "DATE" => "TEXT",
+            "TIME" => "TEXT",
+            "TIMESTAMP" => "TEXT",
+            "BLOB" => "BLOB",
+            "JSON" => "TEXT",
+            other => other,
+        })
+    }
+
+    fn map_column_type(&self, col: &ErColumn) -> String {
+        // SQLite: AUTOINCREMENT only works with INTEGER PRIMARY KEY
+        // The type itself is always just the mapped type
+        self.map_type(&col.data_type)
+    }
+
+    fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
+        let cols: Vec<String> = pk_columns.iter().map(|c| {
+            let quoted = self.quote_identifier(&c.name);
+            if c.is_auto_increment {
+                format!("{} AUTOINCREMENT", quoted)
+            } else {
+                quoted
+            }
+        }).collect();
+        format!("  PRIMARY KEY ({})", cols.join(", "))
+    }
+
+    fn auto_increment_syntax(&self) -> &str {
+        // Handled in primary_key_syntax
+        ""
+    }
+
+    fn index_syntax(&self, table_name: &str, index: &ErIndex) -> String {
+        let cols = parse_index_columns(&index.columns);
+        if cols.is_empty() { return String::new(); }
+        let quoted_cols: Vec<String> = cols.iter().map(|c| self.quote_identifier(c)).collect();
+        let unique = if index.index_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+        format!(
+            "CREATE {}INDEX {} ON {} ({});",
+            unique,
+            self.quote_identifier(&index.name),
+            self.quote_identifier(table_name),
+            quoted_cols.join(", "),
+        )
+    }
+
+    fn foreign_key_syntax(&self, relation: &ErRelation, source_col: &str, target_table: &str, target_col: &str) -> String {
+        format!(
+            "  FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE {} ON UPDATE {}",
+            self.quote_identifier(source_col),
+            self.quote_identifier(target_table),
+            self.quote_identifier(target_col),
+            relation.on_delete,
+            relation.on_update,
+        )
+    }
+
+    fn comment_syntax(&self, table_name: &str, column_name: Option<&str>, comment: &str) -> Vec<String> {
+        // SQLite doesn't support comments natively; emit SQL line comments
+        match column_name {
+            Some(col) => vec![format!("-- Column {}.{}: {}", table_name, col, comment)],
+            None => vec![format!("-- Table {}: {}", table_name, comment)],
+        }
+    }
+
+    fn quote_identifier(&self, name: &str) -> String {
+        format!("\"{}\"", name)
+    }
+}
+
+// ===========================================================================
+// Main entry point
+// ===========================================================================
+
+pub fn generate_ddl(
+    tables: &[ErTable],
+    columns_map: &HashMap<i64, Vec<ErColumn>>,
+    indexes_map: &HashMap<i64, Vec<ErIndex>>,
+    relations: &[ErRelation],
+    dialect: &str,
+    options: &GenerateOptions,
+) -> AppResult<String> {
+    let dialect_impl: Box<dyn DdlDialect> = match dialect.to_lowercase().as_str() {
+        "mysql" => Box::new(MySqlDialect),
+        "postgres" | "postgresql" => Box::new(PostgresDialect),
+        "oracle" => Box::new(OracleDialect),
+        "sqlserver" | "mssql" => Box::new(SqlServerDialect),
+        "sqlite" => Box::new(SqliteDialect),
+        other => return Err(AppError::Other(format!("Unsupported DDL dialect: {}", other))),
+    };
+
+    let mut ddl_parts: Vec<String> = Vec::new();
+
+    for table in tables {
+        let empty_cols: Vec<ErColumn> = Vec::new();
+        let empty_idxs: Vec<ErIndex> = Vec::new();
+        let columns = columns_map.get(&table.id).unwrap_or(&empty_cols);
+        let indexes = indexes_map.get(&table.id).unwrap_or(&empty_idxs);
+
+        let stmt = dialect_impl.create_table(
+            table,
+            columns,
+            indexes,
+            relations,
+            tables,
+            columns_map,
+            options,
+        );
+        ddl_parts.push(stmt);
+    }
+
+    Ok(ddl_parts.join("\n\n"))
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_table(id: i64, name: &str) -> ErTable {
+        ErTable {
+            id,
+            project_id: 1,
+            name: name.to_string(),
+            comment: Some("Users table".to_string()),
+            position_x: 0.0,
+            position_y: 0.0,
+            color: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    fn make_column(id: i64, table_id: i64, name: &str, data_type: &str, pk: bool, ai: bool) -> ErColumn {
+        ErColumn {
+            id,
+            table_id,
+            name: name.to_string(),
+            data_type: data_type.to_string(),
+            nullable: !pk,
+            default_value: None,
+            is_primary_key: pk,
+            is_auto_increment: ai,
+            comment: Some(format!("{} column", name)),
+            sort_order: id,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_mysql_basic() {
+        let tables = vec![make_table(1, "users")];
+        let columns = vec![
+            make_column(1, 1, "id", "BIGINT", true, true),
+            make_column(2, 1, "name", "VARCHAR(255)", false, false),
+            make_column(3, 1, "active", "BOOLEAN", false, false),
+        ];
+        let mut cm = HashMap::new();
+        cm.insert(1, columns);
+        let im = HashMap::new();
+        let opts = GenerateOptions::default();
+
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "mysql", &opts).unwrap();
+        assert!(ddl.contains("CREATE TABLE `users`"));
+        assert!(ddl.contains("AUTO_INCREMENT"));
+        assert!(ddl.contains("TINYINT(1)"));
+        assert!(ddl.contains("ENGINE=InnoDB"));
+        assert!(ddl.contains("PRIMARY KEY"));
+    }
+
+    #[test]
+    fn test_postgres_serial() {
+        let tables = vec![make_table(1, "users")];
+        let columns = vec![
+            make_column(1, 1, "id", "BIGINT", true, true),
+            make_column(2, 1, "name", "VARCHAR(100)", false, false),
+        ];
+        let mut cm = HashMap::new();
+        cm.insert(1, columns);
+        let im = HashMap::new();
+        let opts = GenerateOptions::default();
+
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "postgres", &opts).unwrap();
+        assert!(ddl.contains("BIGSERIAL"));
+        assert!(ddl.contains("VARCHAR(100)"));
+        assert!(ddl.contains("COMMENT ON TABLE"));
+    }
+
+    #[test]
+    fn test_sqlite_basic() {
+        let tables = vec![make_table(1, "users")];
+        let columns = vec![
+            make_column(1, 1, "id", "INT", true, true),
+            make_column(2, 1, "email", "VARCHAR(255)", false, false),
+        ];
+        let mut cm = HashMap::new();
+        cm.insert(1, columns);
+        let im = HashMap::new();
+        let opts = GenerateOptions::default();
+
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "sqlite", &opts).unwrap();
+        assert!(ddl.contains("INTEGER"));
+        assert!(ddl.contains("AUTOINCREMENT"));
+        assert!(ddl.contains("TEXT")); // VARCHAR -> TEXT
+    }
+
+    #[test]
+    fn test_oracle_identity() {
+        let tables = vec![make_table(1, "users")];
+        let columns = vec![
+            make_column(1, 1, "id", "BIGINT", true, true),
+        ];
+        let mut cm = HashMap::new();
+        cm.insert(1, columns);
+        let im = HashMap::new();
+        let opts = GenerateOptions { include_comments: false, ..Default::default() };
+
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "oracle", &opts).unwrap();
+        assert!(ddl.contains("GENERATED ALWAYS AS IDENTITY"));
+        assert!(ddl.contains("NUMBER(19)"));
+    }
+
+    #[test]
+    fn test_sqlserver_identity() {
+        let tables = vec![make_table(1, "users")];
+        let columns = vec![
+            make_column(1, 1, "id", "INT", true, true),
+            make_column(2, 1, "name", "VARCHAR(50)", false, false),
+        ];
+        let mut cm = HashMap::new();
+        cm.insert(1, columns);
+        let im = HashMap::new();
+        let opts = GenerateOptions { include_comments: false, ..Default::default() };
+
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "sqlserver", &opts).unwrap();
+        assert!(ddl.contains("IDENTITY(1,1)"));
+        assert!(ddl.contains("NVARCHAR(50)"));
+    }
+
+    #[test]
+    fn test_unsupported_dialect() {
+        let result = generate_ddl(&[], &HashMap::new(), &HashMap::new(), &[], "mongo", &GenerateOptions::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_generation() {
+        let tables = vec![make_table(1, "users")];
+        let columns = vec![
+            make_column(1, 1, "id", "INT", true, false),
+            make_column(2, 1, "email", "VARCHAR(255)", false, false),
+        ];
+        let indexes = vec![ErIndex {
+            id: 1,
+            table_id: 1,
+            name: "idx_email".to_string(),
+            index_type: "UNIQUE".to_string(),
+            columns: r#"["email"]"#.to_string(),
+            created_at: String::new(),
+        }];
+        let mut cm = HashMap::new();
+        cm.insert(1, columns);
+        let mut im = HashMap::new();
+        im.insert(1, indexes);
+        let opts = GenerateOptions::default();
+
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "mysql", &opts).unwrap();
+        assert!(ddl.contains("CREATE UNIQUE INDEX"));
+        assert!(ddl.contains("idx_email"));
+    }
+
+    #[test]
+    fn test_foreign_key() {
+        let tables = vec![
+            make_table(1, "orders"),
+            make_table(2, "users"),
+        ];
+        let order_cols = vec![
+            make_column(1, 1, "id", "INT", true, true),
+            make_column(2, 1, "user_id", "INT", false, false),
+        ];
+        let user_cols = vec![
+            make_column(3, 2, "id", "INT", true, true),
+        ];
+        let mut cm = HashMap::new();
+        cm.insert(1, order_cols);
+        cm.insert(2, user_cols);
+        let im = HashMap::new();
+        let relations = vec![ErRelation {
+            id: 1,
+            project_id: 1,
+            name: Some("fk_order_user".to_string()),
+            source_table_id: 1,
+            source_column_id: 2,
+            target_table_id: 2,
+            target_column_id: 3,
+            relation_type: "many-to-one".to_string(),
+            on_delete: "CASCADE".to_string(),
+            on_update: "NO ACTION".to_string(),
+            source: "manual".to_string(),
+            comment_marker: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }];
+        let opts = GenerateOptions {
+            include_foreign_keys: true,
+            ..Default::default()
+        };
+
+        let ddl = generate_ddl(&tables, &cm, &im, &relations, "postgres", &opts).unwrap();
+        assert!(ddl.contains("FOREIGN KEY"));
+        assert!(ddl.contains("fk_order_user"));
+        assert!(ddl.contains("CASCADE"));
+    }
+}

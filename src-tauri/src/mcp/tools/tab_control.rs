@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &str, params: Value) -> crate::AppResult<Value> {
+pub(crate) async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &str, params: Value) -> crate::AppResult<Value> {
     let app_state = handle.state::<crate::AppState>();
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
@@ -26,7 +26,7 @@ async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &str, params
     }
 }
 
-async fn send_ui_action(handle: &Arc<tauri::AppHandle>, action: &str, params: Value) -> crate::AppResult<Value> {
+pub(crate) async fn send_ui_action(handle: &Arc<tauri::AppHandle>, action: &str, params: Value) -> crate::AppResult<Value> {
     let app_state = handle.state::<crate::AppState>();
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<crate::state::UiActionResponse>();
@@ -61,17 +61,3 @@ pub async fn search_tabs(handle: Arc<tauri::AppHandle>, args: Value) -> crate::A
     Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
 }
 
-pub async fn get_tab_content(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = query_frontend(&handle, "get_tab_content", args).await?;
-    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-}
-
-pub async fn focus_tab(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = send_ui_action(&handle, "focus_tab", args).await?;
-    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-}
-
-pub async fn open_tab(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = send_ui_action(&handle, "open_tab", args).await?;
-    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-}

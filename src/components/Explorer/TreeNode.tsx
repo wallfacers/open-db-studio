@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, Loader2,
   Folder, FolderOpen, Database, Layers, TableProperties,
   LayoutDashboard, Code2, GitBranch, Zap, Columns3,
-  Eye, Hash
+  Eye, Hash, BarChart2
 } from 'lucide-react';
 import type { NodeType, TreeNode as TreeNodeType } from '../../types';
 import { DbDriverIcon } from './DbDriverIcon';
@@ -25,6 +25,8 @@ const NODE_ICONS: Record<NodeType, React.ElementType> = {
   materialized_view: Eye,  // 物化视图：与普通视图同图标
   dictionary: Hash,        // ClickHouse 字典
   column: Columns3,
+  metrics_folder: BarChart2,  // 指标目录：由 isExpanded 动态切换 Folder/FolderOpen
+  metric: BarChart2,          // 单个指标：使用柱状图图标
 };
 
 interface TreeNodeProps {
@@ -36,6 +38,7 @@ interface TreeNodeProps {
   onClick: () => void;
   onDoubleClick?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  badge?: React.ReactNode;
 }
 
 export const TreeNode: React.FC<TreeNodeProps> = ({
@@ -47,20 +50,23 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
   onClick,
   onDoubleClick,
   onContextMenu,
+  badge,
 }) => {
   const { t } = useTranslation();
 
-  // category 和 group 节点根据展开状态切换图标
-  const Icon = (node.nodeType === 'category' || node.nodeType === 'group')
+  // category、group、metrics_folder 节点根据展开状态切换图标
+  const Icon = (node.nodeType === 'category' || node.nodeType === 'group' || node.nodeType === 'metrics_folder')
     ? (isExpanded ? FolderOpen : Folder)
     : (NODE_ICONS[node.nodeType] ?? LayoutDashboard);
 
   // 统一规则：展开 → 主题色；收起 → 灰色（与节点类型、是否有子节点无关）
   const isGreen = isExpanded;
 
-  // category 节点显示 i18n 标签
+  // category 节点显示 i18n 标签；metrics_folder 节点的 label 是 i18n key
   const displayLabel = node.nodeType === 'category' && node.meta.objectName
     ? t(`category.${node.meta.objectName}`, { defaultValue: node.label })
+    : node.nodeType === 'metrics_folder'
+    ? t(node.label, { defaultValue: node.label })
     : node.label;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -111,6 +117,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
       >
         {displayLabel}
       </span>
+      {badge}
     </div>
   );
 };

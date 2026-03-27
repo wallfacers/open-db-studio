@@ -110,14 +110,13 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondElicitation, clearElicitation, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const lastUserMessageId = useAiStore((s) => s.chatStates[currentSessionId]?.lastUserMessageId ?? null);
   const canRedo = useAiStore((s) => s.chatStates[currentSessionId]?.canRedo ?? false);
   const isCompacting = useAiStore((s) => s.chatStates[currentSessionId]?.isCompacting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
-  const pendingElicitation = useAiStore((s) => s.chatStates[currentSessionId]?.pendingElicitation ?? null);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -258,9 +257,12 @@ export const Assistant: React.FC<AssistantProps> = ({
   const streamingContent = useAiStore(
     (s) => s.chatStates[currentSessionId]?.streamingContent
   );
+  const streamingThinking = useAiStore(
+    (s) => s.chatStates[currentSessionId]?.streamingThinkingContent
+  );
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, streamingContent, currentSessionId]);
+  }, [chatHistory, streamingContent, streamingThinking, pendingPermission, currentSessionId]);
 
   useEffect(() => {
     loadConfigs();
@@ -273,7 +275,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     // 并发上限检查
     const activeChatCount = Object.values(useAiStore.getState().chatStates).filter((s) => s.isChatting).length;
     if (activeChatCount >= 10) {
-      showToast('已有多个对话正在进行，请等待其完成后再发送新消息', 'warning');
+      showToast(t('assistant.concurrentChatLimit'), 'warning');
       return;
     }
     setChatInput('');
@@ -444,14 +446,14 @@ export const Assistant: React.FC<AssistantProps> = ({
         {/* Auto 模式开关 */}
         <Tooltip
           content={autoMode
-            ? 'Auto 模式：开启 — AI 可直接执行写操作，无需逐一确认'
-            : 'Auto 模式：关闭 — 写操作执行前需要手动确认'}
+            ? t('assistant.autoModeOn')
+            : t('assistant.autoModeOff')}
           delay={500}
         >
           <button
             onClick={() => setAutoMode(!autoMode)}
             className="flex items-center gap-1.5 px-1.5 py-1 rounded transition-colors hover:bg-[#1e2d42]"
-            aria-label="切换 Auto 模式"
+            aria-label={t('assistant.toggleAutoMode')}
           >
             <span className="text-[11px] text-[#5b8ab0] select-none">Auto</span>
             {/* 开关轨道 */}
@@ -509,8 +511,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                 className="flex items-center cursor-pointer hover:text-red-400 p-1"
                 onClick={async () => {
                   const ok = await confirm({
-                    title: '清空对话',
-                    message: '确定清空当前对话记录？此操作不可恢复。',
+                    title: t('assistant.clearChatTitle'),
+                    message: t('assistant.clearChatConfirm'),
                     variant: 'danger',
                   });
                   if (!ok) return;
@@ -599,8 +601,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                           onClick={async (e) => {
                             e.stopPropagation();
                             const ok = await confirm({
-                              title: '删除会话',
-                              message: '确定删除该会话？此操作不可恢复。',
+                              title: t('assistant.deleteSessionTitle'),
+                              message: t('assistant.deleteSessionConfirm'),
                               variant: 'danger',
                             });
                             if (!ok) return;
@@ -623,8 +625,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                 className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[#7a9bb8] hover:text-red-400 hover:bg-[#1e2d42] rounded transition-colors"
                 onClick={async () => {
                   const ok = await confirm({
-                    title: '删除所有会话',
-                    message: '确定删除全部会话记录？此操作不可恢复。',
+                    title: t('assistant.deleteAllSessionsTitle'),
+                    message: t('assistant.deleteAllSessionsConfirm'),
                     variant: 'danger',
                   });
                   if (!ok) return;
@@ -692,21 +694,10 @@ export const Assistant: React.FC<AssistantProps> = ({
               {/* 权限确认面板（isChatting=true 时，ACP native 路径） */}
               {pendingPermission && (
                 <ElicitationPanel
-                  type="permission"
                   request={pendingPermission}
                   onRespond={(optionId, cancelled) =>
                     respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
                   }
-                />
-              )}
-
-              {/* 选项选择面板（文字检测路径：mid-stream 或 turn 结束后均可显示） */}
-              {pendingElicitation && (
-                <ElicitationPanel
-                  type="elicitation"
-                  request={pendingElicitation}
-                  onSelect={(text) => respondElicitation(currentSessionId, text)}
-                  onCancel={() => clearElicitation(currentSessionId)}
                 />
               )}
 

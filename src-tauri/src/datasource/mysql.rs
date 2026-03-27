@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlConnectOptions, MySqlSslMode};
+use sqlx::ConnectOptions;
 use sqlx::Row;
 use std::time::{Duration, Instant};
 
@@ -67,15 +68,19 @@ impl MySqlDataSource {
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
         let password = config.password.as_deref().unwrap_or("");
         let database = config.database.as_deref().unwrap_or("");
-        let url = format!(
-            "mysql://{}:{}@{}:{}/{}",
-            username, password, host, port, database
-        );
+        let connect_opts = MySqlConnectOptions::new()
+            .host(host)
+            .port(port)
+            .username(username)
+            .password(password)
+            .database(database)
+            .ssl_mode(MySqlSslMode::Disabled)
+            .log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
             .acquire_timeout(Duration::from_secs(30))
             .idle_timeout(Duration::from_secs(300))
-            .connect(&url)
+            .connect_with(connect_opts)
             .await?;
         Ok(Self { pool, dialect })
     }
@@ -126,11 +131,12 @@ impl DataSource for MySqlDataSource {
                             val.map(|v| serde_json::Value::String(v.to_string()))
                                 .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<u64>, _>(i) {
-                            // BIGINT UNSIGNED / BIT(n) — 必须在 i64 之前，避免大无符号值精度丢失
-                            val.map(|v| serde_json::json!(v))
+                            // BIGINT UNSIGNED / BIT(n) — 转为字符串，避免 JS Number 精度丢失（> 2^53）
+                            val.map(|v| serde_json::Value::String(v.to_string()))
                                 .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<i64>, _>(i) {
-                            val.map(|v| serde_json::json!(v))
+                            // BIGINT SIGNED — 转为字符串，避免 JS Number 精度丢失（> 2^53）
+                            val.map(|v| serde_json::Value::String(v.to_string()))
                                 .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<u16>, _>(i) {
                             // YEAR

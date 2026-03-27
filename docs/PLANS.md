@@ -141,9 +141,9 @@
 
 ### 未实现（有设计文档，待开始）
 - [ ] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）
-- [ ] LLM 配置供应商优先重设计（从 opencode `/config/providers` 动态加载）
-- [ ] ACP 持久化 Session（复用 opencode-cli 进程，消除冷启动）
-- [ ] UI 状态全量持久化至 SQLite（⚠️ 部分：Rust 侧已有 `get_ui_state`，前端标签页仍用 localStorage）
+- [x] LLM 配置供应商优先重设计（opencode_provider_id + config_mode 已入 DB；agent_list_providers 命令已实现；LlmSettings.tsx 已动态加载供应商列表）
+- [x] UI 状态全量持久化至 SQLite（标签页、树展开状态、连接列表、分页大小均已迁移至 SQLite）
+- [x] ACP 持久化 Session（目标已通过 Serve 模式实现；ACP 协议已废弃，serve_child 长驻进程取代）
 
 ---
 
@@ -169,9 +169,9 @@
 - [ ] 连接配置脱敏导出
 
 ### SeaTunnel 外部引擎接入
-- [ ] SeaTunnel 连接配置
-- [ ] 迁移 job 生成 + REST API 提交
-- [ ] 任务状态同步展示
+- [x] SeaTunnel 连接配置
+- [x] 迁移 job 生成 + REST API 提交
+- [x] 任务状态同步展示
 
 ---
 

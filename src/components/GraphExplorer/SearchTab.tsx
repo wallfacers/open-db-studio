@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, Search } from 'lucide-react';
 import type { GraphNode } from './useGraphData';
 import { useGraphSearch } from './useGraphSearch';
@@ -22,6 +23,7 @@ export function SearchTab({
   onHighlightNode,
   onSwitchToPath,
 }: SearchTabProps) {
+  const { t } = useTranslation();
   const { keyword, setKeyword, results, loading, searched } = useGraphSearch(connectionId);
   const { fitView } = useReactFlow();
 
@@ -55,7 +57,7 @@ export function SearchTab({
             type="text"
             value={keyword}
             onChange={e => setKeyword(e.target.value)}
-            placeholder="搜索节点名称..."
+            placeholder={t('graphExplorer.searchTab.searchPlaceholder')}
             className="w-full pl-7 pr-7 py-1.5 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00a98f] transition-colors"
           />
         </div>
@@ -64,11 +66,11 @@ export function SearchTab({
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {!searched && !loading && (
-          <p className="text-[#3d5470] text-xs text-center mt-8 px-4">输入关键词搜索图谱节点</p>
+          <p className="text-[#3d5470] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.searchHint')}</p>
         )}
 
         {searched && results.length === 0 && !loading && (
-          <p className="text-[#7a9bb8] text-xs text-center mt-8 px-4">未找到匹配节点</p>
+          <p className="text-[#7a9bb8] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.noResults')}</p>
         )}
 
         {results.map(node => {
@@ -100,12 +102,12 @@ export function SearchTab({
                   <p className="text-[#3d5470] text-[10px] truncate">{node.display_name}</p>
                 )}
                 {isHidden && (
-                  <p className="text-[#f59e0b] text-[9px]">当前已过滤，节点不可见</p>
+                  <p className="text-[#f59e0b] text-[9px]">{t('graphExplorer.searchTab.filteredHidden')}</p>
                 )}
               </div>
 
               <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Tooltip content={isTable ? '设为路径起点' : '仅支持表节点'} className="contents">
+                <Tooltip content={isTable ? t('graphExplorer.searchTab.setAsStart') : t('graphExplorer.searchTab.tableOnly')} className="contents">
                   <button
                     onClick={e => handleSetFrom(e, node)}
                     disabled={!isTable}
@@ -115,7 +117,7 @@ export function SearchTab({
                     S
                   </button>
                 </Tooltip>
-                <Tooltip content={isTable ? '设为路径终点' : '仅支持表节点'} className="contents">
+                <Tooltip content={isTable ? t('graphExplorer.searchTab.setAsEnd') : t('graphExplorer.searchTab.tableOnly')} className="contents">
                   <button
                     onClick={e => handleSetTo(e, node)}
                     disabled={!isTable}

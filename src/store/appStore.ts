@@ -22,6 +22,9 @@ interface AppState {
   autoMode: boolean;
   setAutoMode: (enabled: boolean) => void;
   initAutoMode: () => Promise<void>;
+  tablePageSizeLimit: number;
+  setTablePageSizeLimit: (size: number) => Promise<void>;
+  initTablePageSizeLimit: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -44,6 +47,26 @@ export const useAppStore = create<AppState>((set) => ({
       set({ autoMode: enabled });
     } catch (e) {
       console.error('Failed to get auto mode:', e);
+    }
+  },
+  tablePageSizeLimit: 1000,
+  setTablePageSizeLimit: async (size: number) => {
+    set({ tablePageSizeLimit: size });
+    try {
+      await invoke('set_ui_state', { key: 'table_page_size_limit', value: String(size) });
+    } catch (e) {
+      console.error('Failed to set table_page_size_limit:', e);
+    }
+  },
+  initTablePageSizeLimit: async () => {
+    try {
+      const raw = await invoke<string | null>('get_ui_state', { key: 'table_page_size_limit' });
+      if (raw) {
+        const size = Number(raw);
+        if (!isNaN(size) && size > 0) set({ tablePageSizeLimit: size });
+      }
+    } catch (e) {
+      console.error('Failed to get table_page_size_limit:', e);
     }
   },
 }));

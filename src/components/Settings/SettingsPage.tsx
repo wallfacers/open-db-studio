@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bot, Keyboard, Palette, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import { LlmSettingsPanel } from './LlmSettings';
+import { useAppStore } from '../../store/appStore';
 
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState('ai');
@@ -49,8 +50,17 @@ export function SettingsPage() {
   );
 }
 
+const PAGE_LIMIT_OPTIONS = [100, 500, 1000, 2000, 3000, 5000];
+
 function AppearanceSection({ t }: { t: any }) {
   const [currentLang, setCurrentLang] = useState(i18n.language?.startsWith('zh') ? 'zh' : 'en');
+  const tablePageSizeLimit = useAppStore((s) => s.tablePageSizeLimit);
+  const setTablePageSizeLimit = useAppStore((s) => s.setTablePageSizeLimit);
+  const initTablePageSizeLimit = useAppStore((s) => s.initTablePageSizeLimit);
+
+  useEffect(() => {
+    initTablePageSizeLimit();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLanguageChange = (lang: string) => {
     setCurrentLang(lang);
@@ -60,7 +70,7 @@ function AppearanceSection({ t }: { t: any }) {
   return (
     <div className="w-full max-w-lg p-8 space-y-6">
       <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('settings.appearance')}</h3>
-      <div className="space-y-3">
+      <div className="space-y-6">
         <div>
           <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.language')}</p>
           <p className="text-xs text-[#7a9bb8] mb-3">{t('settings.languageDesc')}</p>
@@ -79,6 +89,25 @@ function AppearanceSection({ t }: { t: any }) {
                 }`}
               >
                 {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.tablePageSizeLimit')}</p>
+          <p className="text-xs text-[#7a9bb8] mb-3">{t('settings.tablePageSizeLimitDesc')}</p>
+          <div className="flex flex-wrap gap-2">
+            {PAGE_LIMIT_OPTIONS.map((size) => (
+              <button
+                key={size}
+                onClick={() => setTablePageSizeLimit(size)}
+                className={`px-4 py-1.5 text-xs rounded transition-colors ${
+                  tablePageSizeLimit === size
+                    ? 'bg-[#003d2f] text-white border border-[#00c9a7]'
+                    : 'text-[#7a9bb8] border border-[#2a3f5a] hover:text-[#c8daea] hover:border-[#2a3f5a]'
+                }`}
+              >
+                {size}
               </button>
             ))}
           </div>

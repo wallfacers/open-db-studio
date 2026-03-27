@@ -270,12 +270,16 @@ impl LlmClient {
         sql: &str,
         sql_dialect: &str,
     ) -> AppResult<String> {
-        let system_prompt = include_str!("../../../prompts/sql_explain.txt")
-            .replace("{{DIALECT}}", sql_dialect);
+        let system_prompt = include_str!("../../../prompts/sql_analyze.txt")
+            .replace("{{DIALECT}}", sql_dialect)
+            .replace("{{SCHEMA}}", "(not provided)")
+            .replace("{{SQL}}", sql)
+            .replace("{{ERROR}}", "(none)")
+            .replace("{{MODE}}", "explain");
 
         let messages = vec![
             ChatMessage { role: "system".into(), content: system_prompt },
-            ChatMessage { role: "user".into(), content: sql.to_string() },
+            ChatMessage { role: "user".into(), content: "Please explain.".to_string() },
         ];
         self.chat(messages).await
     }
@@ -286,11 +290,14 @@ impl LlmClient {
         description: &str,
         dialect: &str,
     ) -> AppResult<String> {
-        let system_prompt = include_str!("../../../prompts/sql_create_table.txt")
-            .replace("{{DIALECT}}", dialect);
+        let system_prompt = include_str!("../../../prompts/generate_table_schema.txt")
+            .replace("{{DRIVER}}", dialect)
+            .replace("{{OUTPUT}}", "sql")
+            .replace("{{TYPE_ENUM}}", "")
+            .replace("{{DESCRIPTION}}", description);
         let messages = vec![
             ChatMessage { role: "system".into(), content: system_prompt },
-            ChatMessage { role: "user".into(), content: description.to_string() },
+            ChatMessage { role: "user".into(), content: "Generate the CREATE TABLE DDL.".to_string() },
         ];
         self.chat(messages).await
     }
@@ -346,11 +353,12 @@ impl LlmClient {
         schema_context: &str,
         dialect: &str,
     ) -> AppResult<String> {
-        let system_prompt = include_str!("../../../prompts/sql_diagnose.txt")
+        let system_prompt = include_str!("../../../prompts/sql_analyze.txt")
             .replace("{{DIALECT}}", dialect)
             .replace("{{SCHEMA}}", schema_context)
             .replace("{{SQL}}", sql)
-            .replace("{{ERROR}}", error_msg);
+            .replace("{{ERROR}}", error_msg)
+            .replace("{{MODE}}", "diagnose");
         let messages = vec![
             ChatMessage { role: "system".into(), content: system_prompt },
             ChatMessage { role: "user".into(), content: "请诊断此错误".to_string() },

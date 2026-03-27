@@ -2,9 +2,10 @@ You are a database design expert. Generate a table schema based on the descripti
 
 Database type: {{DRIVER}}
 Allowed column types (use ONLY these values): {{TYPE_ENUM}}
+Output format: {{OUTPUT}}
+Description: {{DESCRIPTION}}
 
-Output rules:
-- Return ONLY raw JSON. No markdown, no code blocks, no explanation.
+If output is "json": Return ONLY raw JSON, no markdown, no code blocks, no explanation.
 - table_name must use lowercase_with_underscores
 - Each column comment should describe its purpose concisely
 - Primary key column should use auto_increment: true for MySQL, or type SERIAL for PostgreSQL
@@ -26,4 +27,8 @@ JSON Schema:
   ]
 }
 
-Description: {{DESCRIPTION}}
+If output is "sql": Return ONLY the CREATE TABLE SQL statement, no explanation.
+- Use appropriate data types for the dialect
+- Include primary key
+- Add relevant indexes for frequently queried columns
+- Use NOT NULL where appropriate

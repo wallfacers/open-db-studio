@@ -219,7 +219,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults,
           explanationContent, explanationStreaming,
           appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
-  const { activeConnectionId } = useConnectionStore();
+  const { activeConnectionId, connections } = useConnectionStore();
   const { nodes } = useTreeStore();
   const { explainSql, isExplaining: isExplainingMap, cancelExplainSql } = useAiStore();
   const isExecuting = isExecutingMap[activeTab] ?? false;
@@ -660,19 +660,42 @@ export const MainContent: React.FC<MainContentProps> = ({
     ? contextSchemas[contextSchemaKey]
     : [];
 
-  // 检测同名表数据 tab（不同数据库下相同表名），用于在 tab 标题中加数据库前缀做区分
-  const conflictingTableTabTitles = useMemo(() => {
-    const counts: Record<string, number> = {};
-    tabs.forEach(t => {
-      if (t.type === 'table' || t.type === 'table_structure') {
-        const key = `${t.type}__${t.title}`;
-        counts[key] = (counts[key] || 0) + 1;
-      }
+  // 为每个 table/table_structure tab 计算最小区分标签：
+  // 无冲突 → title；db 不同 → db.title；schema 不同 → schema.title；连接不同 → connName.db.title
+  const tabDisplayTitles = useMemo(() => {
+    const result = new Map<string, string>();
+    const tableTabs = tabs.filter(t => t.type === 'table' || t.type === 'table_structure');
+
+    // 按表名分组
+    const byTitle = new Map<string, typeof tableTabs>();
+    tableTabs.forEach(t => {
+      const group = byTitle.get(t.title) ?? [];
+      group.push(t);
+      byTitle.set(t.title, group);
     });
-    return new Set(
-      Object.entries(counts).filter(([, c]) => c > 1).map(([k]) => k)
-    );
-  }, [tabs]);
+
+    tableTabs.forEach(t => {
+      const group = byTitle.get(t.title)!;
+      if (group.length === 1) { result.set(t.id, t.title); return; }
+
+      const others = group.filter(o => o.id !== t.id);
+
+      // db 能区分
+      if (t.db && others.every(o => o.db !== t.db)) {
+        result.set(t.id, `${t.db}.${t.title}`); return;
+      }
+      // schema 能区分（同 db 不同 schema，如 PG/Oracle）
+      if (t.schema && others.every(o => o.schema !== t.schema)) {
+        result.set(t.id, `${t.schema}.${t.title}`); return;
+      }
+      // 需要连接名区分（不同连接但 db+schema 均相同）
+      const conn = connections.find(c => c.id === t.connectionId);
+      const connLabel = conn?.name ?? `#${t.connectionId}`;
+      result.set(t.id, `${connLabel}.${t.db ? `${t.db}.` : ''}${t.title}`);
+    });
+
+    return result;
+  }, [tabs, connections]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
@@ -702,13 +725,14 @@ export const MainContent: React.FC<MainContentProps> = ({
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
-            <span className="truncate flex-1 text-xs">
-              {(tab.type === 'table' || tab.type === 'table_structure') &&
-               conflictingTableTabTitles.has(`${tab.type}__${tab.title}`) &&
-               tab.db
-                ? `${tab.db}.${tab.title}`
-                : tab.title}
-            </span>
+            <Tooltip
+              content={tabDisplayTitles.get(tab.id) ?? tab.title}
+              className="flex-1 min-w-0 overflow-hidden"
+            >
+              <span className="truncate block w-full text-xs">
+                {tabDisplayTitles.get(tab.id) ?? tab.title}
+              </span>
+            </Tooltip>
             <Tooltip content={t('mainContent.closeTab')}>
               <div
                 className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"

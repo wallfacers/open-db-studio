@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { NodeType, TreeNode as TreeNodeType } from '../../types';
 import { DbDriverIcon } from './DbDriverIcon';
+import { Tooltip } from '../common/Tooltip';
 
 const NODE_ICONS: Record<NodeType, React.ElementType> = {
   group: Folder,
@@ -112,11 +113,13 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
         />
       )}
 
-      <span
-        className={`text-[13px] truncate ${isSelected ? 'text-[#e8f4ff]' : 'text-[#b5cfe8]'}`}
-      >
-        {displayLabel}
-      </span>
+      <Tooltip content={displayLabel} className="min-w-0 overflow-hidden">
+        <span
+          className={`text-[13px] truncate block w-full ${isSelected ? 'text-[#e8f4ff]' : 'text-[#b5cfe8]'}`}
+        >
+          {displayLabel}
+        </span>
+      </Tooltip>
       {badge}
     </div>
   );

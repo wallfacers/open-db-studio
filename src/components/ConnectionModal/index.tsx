@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, FolderOpen } from 'lucide-react';
+import { X, FolderOpen, Link } from 'lucide-react';
+import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import { invoke } from '@tauri-apps/api/core';
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
 import { useConnectionStore } from '../../store';
@@ -48,8 +49,36 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
 
   const isSqlite = form.driver === 'sqlite';
 
+  type ClipboardConn = {
+    _odb: number; driver: string; name?: string; host?: string; port?: number;
+    database_name?: string; username?: string; password?: string;
+    file_path?: string; extra_params?: string;
+  };
+  const [clipboardConn, setClipboardConn] = useState<ClipboardConn | null>(null);
+
   useEffect(() => {
     invoke<{ id: number; name: string }[]>('list_groups').then(setGroups).catch(() => {});
+  }, []);
+
+  // 新建模式：mount 时检测剪贴板
+  useEffect(() => {
+    if (isEdit) return;
+    (async () => {
+      try {
+        const text = await readText();
+        const parsed = JSON.parse(text);
+        if (
+          parsed && typeof parsed === 'object' &&
+          parsed._odb === 1 &&
+          typeof parsed.driver === 'string' && parsed.driver.length > 0 &&
+          DRIVERS.some(d => d.value === parsed.driver)
+        ) {
+          setClipboardConn(parsed as ClipboardConn);
+        }
+      } catch {
+        // 静默忽略
+      }
+    })();
   }, []);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -58,6 +87,24 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
   const handleDriverChange = (driver: string) => {
     const d = DRIVERS.find((x) => x.value === driver);
     setForm((f) => ({ ...f, driver, port: d?.defaultPort ?? f.port ?? undefined }));
+  };
+
+  const handleImportFromClipboard = () => {
+    if (!clipboardConn) return;
+    const conn = clipboardConn;
+    setForm(f => ({
+      ...f,
+      driver: conn.driver,
+      name: conn.name ?? f.name,
+      host: conn.host ?? '',
+      port: conn.port ?? DRIVERS.find(d => d.value === conn.driver)?.defaultPort ?? undefined,
+      database_name: conn.database_name ?? '',
+      username: conn.username ?? '',
+      password: conn.password ?? '',
+      file_path: conn.file_path ?? '',
+      extra_params: conn.extra_params ?? '',
+    }));
+    setClipboardConn(null);
   };
 
   const handleBrowseFile = async () => {
@@ -117,6 +164,32 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
           <h2 className="text-white font-semibold">{isEdit ? t('connectionModal.editConnection') : t('connectionModal.newConnection')}</h2>
           <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
         </div>
+
+        {clipboardConn && (
+          <div className="bg-[#0d2137] border border-[#00c9a7]/40 rounded px-3 py-2 flex items-center gap-2 mb-4 text-sm">
+            <Link size={14} className="text-[#00c9a7] flex-shrink-0" />
+            <span className="text-[#b5cfe8]">{t('connectionModal.importBannerTitle')}（</span>
+            <span className="text-[#c8daea] font-medium">
+              {clipboardConn.name || t('connectionModal.importBannerUnnamed')} · {DRIVERS.find(d => d.value === clipboardConn.driver)?.label ?? clipboardConn.driver}
+            </span>
+            <span className="text-[#b5cfe8]">）</span>
+            <button
+              type="button"
+              onClick={handleImportFromClipboard}
+              className="text-[#00c9a7] hover:underline cursor-pointer ml-auto"
+            >
+              {t('connectionModal.importBannerImport')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setClipboardConn(null)}
+              aria-label={t('connectionModal.importBannerClose')}
+              className="text-[#7a9bb8] hover:text-[#c8daea] cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="space-y-3">
           <div>

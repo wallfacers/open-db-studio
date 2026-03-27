@@ -19,6 +19,7 @@ import { ImportWizard } from '../ImportExport/ImportWizard';
 import { CreateDatabaseDialog } from '../DatabaseManager/CreateDatabaseDialog';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { Folder, FolderX } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 
@@ -233,6 +234,30 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
     return `SELECT ${cols} FROM ${q(tableName)} LIMIT 100;`;
   };
 
+  const handleCopyConnectionInfo = async (connectionId: number) => {
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return;
+    try {
+      const password = await invoke<string>('get_connection_password', { id: connectionId });
+      const payload = {
+        _odb: 1,
+        driver: conn.driver,
+        name: conn.name,
+        host: conn.host ?? null,
+        port: conn.port ?? null,
+        database_name: conn.database_name ?? null,
+        username: conn.username ?? null,
+        password,
+        file_path: conn.file_path ?? null,
+        extra_params: conn.extra_params ?? null,
+      };
+      await writeText(JSON.stringify(payload));
+      showToast(t('contextMenu.copyConnectionInfoSuccess'), 'success');
+    } catch {
+      showToast(t('contextMenu.copyConnectionInfoError'), 'error');
+    }
+  };
+
   const handleMoveToGroup = async (connectionId: number, groupId: number | null) => {
     await invoke('move_connection_to_group', { connectionId, groupId });
     useTreeStore.getState().init();
@@ -326,6 +351,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
               y: contextMenu.y,
             });
           }}
+          onCopyConnectionInfo={() => handleCopyConnectionInfo(getConnectionId(contextMenu.node))}
           onEditConnection={() => setEditingConnId(getConnectionId(contextMenu.node))}
           onDeleteConnection={async () => {
             if (!await confirm({ message: t('dbTree.confirmDeleteConnection'), variant: 'danger' })) return;

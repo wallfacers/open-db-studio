@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, startTransition, useLayoutEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore, useQueryStore } from '../../store';
@@ -17,7 +17,7 @@ import { DropdownSelect } from '../common/DropdownSelect';
 import { VirtualTable } from './VirtualTable';
 import { NormalTable } from './NormalTable';
 import { useVirtualRows } from '../../hooks/useVirtualRows';
-import { computeColumnWidths } from '../../utils/columnWidths';
+import { computeColumnWidths, adjustColumnWidths, ROW_NUM_WIDTH } from '../../utils/columnWidths';
 
 // ─── 独立子组件：持有 virtualizer，避免滚动时重渲染整个 TableDataView ─────────
 interface TableScrollContainerProps {
@@ -30,14 +30,30 @@ interface TableScrollContainerProps {
   normalThead: React.ReactNode;
   renderRow: (ri: number) => React.ReactNode;
   useVirtual: boolean;
+  onContainerResize: (width: number) => void;
 }
 
 const TableScrollContainer = React.memo(({
-  rowCount, isLoading, hasData, columns, colWidths, thead, normalThead, renderRow, useVirtual,
+  rowCount, isLoading, hasData, columns, colWidths, thead, normalThead, renderRow, useVirtual, onContainerResize,
 }: TableScrollContainerProps) => {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualRows(rowCount, scrollRef);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    onContainerResize(el.clientWidth);
+    let timer: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (!entry) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => onContainerResize(entry.contentRect.width), 80);
+    });
+    observer.observe(el);
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [onContainerResize]);
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-auto relative">
@@ -308,10 +324,18 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
 
-  // 动态列宽：根据列名 + 前50行采样内容估算，范围 [80, 750px]
-  const colWidths = useMemo(
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // 基础宽度：列名与采样内容中的较大值
+  const baseColWidths = useMemo(
     () => data ? computeColumnWidths(data.columns, data.rows as (string | number | boolean | null)[][]) : [],
     [data],
+  );
+
+  // 动态列宽：容器不足时维持基础宽度；有剩余空间则按比例撑满
+  const colWidths = useMemo(
+    () => adjustColumnWidths(baseColWidths, containerWidth, ROW_NUM_WIDTH),
+    [baseColWidths, containerWidth],
   );
 
   // 页码下拉选项，上限 500 防止大表渲染卡顿
@@ -630,6 +654,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         normalThead={normalThead}
         renderRow={renderRow}
         useVirtual={pageSize === 5000}
+        onContainerResize={setContainerWidth}
       />
 
       {/* Status Bar */}

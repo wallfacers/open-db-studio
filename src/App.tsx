@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format as formatSql } from 'sql-formatter';
+import { format as formatSql, type SqlLanguage } from 'sql-formatter';
 import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
@@ -10,6 +10,7 @@ import { Toast, type ToastLevel } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
+import { useConnectionStore } from './store/connectionStore';
 import { useAppStore } from './store/appStore';
 import { useToolBridge } from './hooks/useToolBridge';
 import { useMcpBridge } from './hooks/useMcpBridge';
@@ -99,18 +100,50 @@ export default function App() {
   };
 
   const handleFormat = () => {
-    const { activeTabId, sqlContent, setSql } = useQueryStore.getState();
+    const { activeTabId, sqlContent, setSql, tabs } = useQueryStore.getState();
     const current = sqlContent[activeTabId] ?? '';
     if (!current.trim()) return;
+
+    // 根据当前 tab 的连接 driver 选择正确的 sql-formatter 方言
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    const connectionId = activeTab?.queryContext?.connectionId ?? null;
+    const connections = useConnectionStore.getState().connections;
+    const driver = connectionId != null
+      ? (connections.find(c => c.id === connectionId)?.driver ?? '')
+      : '';
+    const driverLanguageMap: Record<string, SqlLanguage> = {
+      mysql: 'mysql',
+      postgres: 'postgresql',
+      mssql: 'tsql',
+      oracle: 'plsql',
+      sqlite: 'sqlite',
+    };
+    const language: SqlLanguage = driverLanguageMap[driver] ?? 'sql';
+
+    const formatOpts = { language, tabWidth: 2, keywordCase: 'upper' } as const;
+
     try {
-      const formatted = formatSql(current, {
-        language: 'sql',
-        tabWidth: 2,
-        keywordCase: 'upper',
-      });
-      setSql(activeTabId, formatted);
+      setSql(activeTabId, formatSql(current, formatOpts));
     } catch {
-      showToast(t('app.sqlFormatFailed'), 'error');
+      // 降级：逐条格式化，失败的语句保持原样
+      try {
+        const parts = current.split(/(?<=;)\s*\n/);
+        const formatted = parts
+          .map(part => {
+            const trimmed = part.trim();
+            if (!trimmed) return part;
+            try { return formatSql(trimmed, formatOpts); } catch { return trimmed; }
+          })
+          .join('\n\n');
+        const anyChanged = formatted !== parts.map(p => p.trim()).join('\n\n');
+        if (anyChanged) {
+          setSql(activeTabId, formatted);
+        } else {
+          showToast(t('app.sqlFormatFailed'), 'error');
+        }
+      } catch {
+        showToast(t('app.sqlFormatFailed'), 'error');
+      }
     }
   };
 

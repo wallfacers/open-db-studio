@@ -14,6 +14,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
   const [doneDuration, setDoneDuration] = useState<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // 首次有内容时启动计时
   useEffect(() => {
@@ -38,6 +39,13 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
   useEffect(() => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
+
+  // 流式时内容更新自动滚到底部
+  useEffect(() => {
+    if (isStreaming && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [content, isStreaming]);
 
   // 无内容时不显示
   if (!content) return null;
@@ -64,7 +72,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
 
       {/* 内容区：左侧竖线引用风格 */}
       {expanded && (
-        <div className="pl-3 border-l-2 border-[#2a3f5a] text-[11px] text-[#4a6480] leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
+        <div ref={scrollRef} className="pl-3 border-l-2 border-[#2a3f5a] text-[11px] text-[#4a6480] leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
           {content}
         </div>
       )}

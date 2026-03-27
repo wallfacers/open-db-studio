@@ -228,14 +228,15 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "graph_search_metrics",
-                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. Unlike fs_search('tab.metric'), this searches graph nodes (node_type=metric); fs_search searches approved MetricsExplorer records.",
+                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. Unlike fs_search('tab.metric'), this searches graph nodes (node_type=metric); fs_search searches approved MetricsExplorer records. To get ALL metrics for a specific table (e.g. '订单表有哪些指标'), pass table_name (exact English table name like 'orders') instead of keyword.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "keyword": { "type": "string", "description": "Search keyword" },
+                        "keyword": { "type": "string", "description": "Fuzzy match against metric name/display_name. Mutually exclusive with table_name." },
+                        "table_name": { "type": "string", "description": "Exact table name (e.g. 'orders'). Returns ALL metrics belonging to this table. Use when user asks 'what metrics does table X have'. Mutually exclusive with keyword." },
                         "connection_id": { "type": "integer", "description": "Database connection ID" }
                     },
-                    "required": ["keyword", "connection_id"]
+                    "required": ["connection_id"]
                 }
             }),
             json!({

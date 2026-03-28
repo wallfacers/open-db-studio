@@ -1,5 +1,4 @@
 use serde_json::Value;
-use std::sync::Arc;
 
 // ─── 共享：标识符引用 ───────────────────────────────────────────────────────
 fn q(name: &str, is_pg: bool) -> String {
@@ -347,21 +346,4 @@ pub async fn cmd_generate_update_comment_sql(params: serde_json::Value) -> Resul
     generate_update_comment_sql(&params).await.map_err(|e| e.to_string())
 }
 
-pub async fn get_column_meta(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let conn_id = args["connection_id"].as_i64()
-        .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
-    let table_name = args["table_name"].as_str()
-        .ok_or_else(|| crate::AppError::Other("missing table_name".into()))?;
-    if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err(crate::AppError::Other("Invalid table name".into()));
-    }
-    let database = args["database"].as_str();
-    let config = crate::db::get_connection_config(conn_id)?;
-    let ds = match database.filter(|s| !s.is_empty()) {
-        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
-        None => crate::datasource::create_datasource(&config).await?,
-    };
-    let columns = ds.get_columns(table_name, None).await?;
-    Ok(serde_json::to_string_pretty(&columns).unwrap_or_default())
-}
 

@@ -2607,19 +2607,6 @@ pub async fn acp_elicitation_respond(
     Ok(())
 }
 
-/// 前端 DiffPanel 用户点击"应用"或"取消"后调用，解除 propose_sql_diff 的阻塞等待。
-/// confirmed=true 表示用户应用了修改，confirmed=false 表示用户取消。
-#[tauri::command]
-pub async fn mcp_diff_respond(
-    confirmed: bool,
-    state: tauri::State<'_, crate::AppState>,
-) -> crate::AppResult<()> {
-    if let Some(tx) = state.pending_diff_response.lock().await.take() {
-        let _ = tx.send(confirmed);
-    }
-    Ok(())
-}
-
 // ============ UI 状态持久化 ============
 
 #[tauri::command]
@@ -2768,26 +2755,6 @@ pub async fn set_auto_mode(
     }
     // 持久化到 app_settings
     crate::db::set_app_setting("auto_mode", if enabled { "true" } else { "false" })?;
-    Ok(())
-}
-
-// ============ MCP 双向桥接回调 ============
-
-#[tauri::command]
-pub async fn mcp_ui_action_respond(
-    state: tauri::State<'_, crate::AppState>,
-    request_id: String,
-    success: bool,
-    data: Option<serde_json::Value>,
-    error: Option<String>,
-) -> AppResult<()> {
-    let tx = {
-        let mut pending = state.pending_ui_actions.lock().await;
-        pending.remove(&request_id)
-    };
-    if let Some(tx) = tx {
-        let _ = tx.send(crate::state::UiActionResponse { success, data, error });
-    }
     Ok(())
 }
 

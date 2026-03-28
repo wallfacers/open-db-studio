@@ -68,8 +68,6 @@ pub fn run() {
                 current_explain_session_id: tokio::sync::Mutex::new(None),
                 editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 last_active_session_id: tokio::sync::Mutex::new(None),
-                pending_diff_response: tokio::sync::Mutex::new(None),
-                pending_ui_actions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 pending_queries: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 auto_mode: tokio::sync::Mutex::new({
                     crate::db::get_app_setting("auto_mode").unwrap_or_default()
@@ -266,7 +264,6 @@ pub fn run() {
             commands::ai_generate_sql_v2,
             commands::acp_permission_respond,
             commands::acp_elicitation_respond,
-            commands::mcp_diff_respond,
             commands::get_ui_state,
             commands::set_ui_state,
             commands::delete_ui_state,
@@ -277,7 +274,6 @@ pub fn run() {
             commands::list_tab_files,
             commands::get_auto_mode,
             commands::set_auto_mode,
-            commands::mcp_ui_action_respond,
             commands::mcp_query_respond,
             commands::agent_create_session,
             commands::agent_delete_session,

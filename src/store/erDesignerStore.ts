@@ -60,18 +60,18 @@ interface ErDesignerState {
   deleteTable: (id: number) => Promise<void>;
 
   // Column operations
-  addColumn: (tableId: number, column: Partial<ErColumn>) => Promise<void>;
+  addColumn: (tableId: number, column: Partial<ErColumn>) => Promise<ErColumn>;
   updateColumn: (id: number, updates: Partial<ErColumn>) => Promise<void>;
   deleteColumn: (id: number, tableId: number) => Promise<void>;
   reorderColumns: (tableId: number, columnIds: number[]) => Promise<void>;
 
   // Relation operations
-  addRelation: (rel: Partial<ErRelation>) => Promise<void>;
+  addRelation: (rel: Partial<ErRelation>) => Promise<ErRelation>;
   updateRelation: (id: number, updates: Partial<ErRelation>) => Promise<void>;
   deleteRelation: (id: number) => Promise<void>;
 
   // Index operations
-  addIndex: (tableId: number, index: Partial<ErIndex>) => Promise<void>;
+  addIndex: (tableId: number, index: Partial<ErIndex>) => Promise<ErIndex>;
   updateIndex: (id: number, updates: Partial<ErIndex>) => Promise<void>;
   deleteIndex: (id: number, tableId: number) => Promise<void>;
 
@@ -262,8 +262,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           [tableId]: [...(s.columns[tableId] ?? []), created],
         },
       }));
+      return created;
     } catch (e) {
       console.error('Failed to add ER column:', e);
+      throw e;
     }
   },
 
@@ -326,8 +328,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         req: { project_id: activeProjectId, ...rel },
       });
       set((s) => ({ relations: [...s.relations, created] }));
+      return created;
     } catch (e) {
       console.error('Failed to add ER relation:', e);
+      throw e;
     }
   },
 
@@ -363,8 +367,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           [tableId]: [...(s.indexes[tableId] ?? []), created],
         },
       }));
+      return created;
     } catch (e) {
       console.error('Failed to add ER index:', e);
+      throw e;
     }
   },
 

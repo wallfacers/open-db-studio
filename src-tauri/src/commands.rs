@@ -42,6 +42,12 @@ pub async fn get_connection_password(id: i64) -> AppResult<String> {
     crate::db::get_connection_password(id)
 }
 
+/// 返回指定连接的明文 Token（仅供编辑弹窗"小眼睛"功能使用）
+#[tauri::command]
+pub async fn get_connection_token(id: i64) -> AppResult<String> {
+    crate::db::get_connection_token(id)
+}
+
 // ============ 查询执行 ============
 
 #[tauri::command]

@@ -15,8 +15,8 @@ import type { ErTable } from '../../../types';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { invoke } from '@tauri-apps/api/core';
-import dagre from 'dagre';
 import type { Node } from '@xyflow/react';
+import { layoutNodesWithDagre } from '../utils/dagreLayout';
 
 export interface ERToolbarProps {
   projectId: number;
@@ -70,42 +70,7 @@ export default function ERToolbar({
     setIsAutoLayouting(true);
 
     try {
-      // 创建 dagre 图
-      const g = new dagre.graphlib.Graph();
-      g.setGraph({
-        rankdir: 'TB',
-        nodesep: 50,
-        ranksep: 50,
-        edgesep: 20,
-      });
-      g.setDefaultEdgeLabel(() => ({}));
-
-      // 添加节点
-      nodes.forEach((node) => {
-        g.setNode(node.id, {
-          width: node.width || 200,
-          height: node.height || 150,
-        });
-      });
-
-      // 计算布局
-      dagre.layout(g);
-
-      // 更新节点位置
-      const layoutedNodes = nodes.map((node) => {
-        const gNode = g.node(node.id);
-        if (gNode) {
-          return {
-            ...node,
-            position: {
-              x: gNode.x - (gNode.width ?? 200) / 2,
-              y: gNode.y - (gNode.height ?? 150) / 2,
-            },
-          };
-        }
-        return node;
-      });
-
+      const layoutedNodes = layoutNodesWithDagre(nodes);
       setNodes(layoutedNodes);
     } catch (e) {
       console.error('Auto layout failed:', e);

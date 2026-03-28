@@ -35,28 +35,52 @@ pub fn get() -> &'static Mutex<Connection> {
     DB.get().expect("DB not initialized. Call db::init() first.")
 }
 
+// ─── Connection 行映射辅助 ──────────────────────────────────────────────────
+
+const CONNECTION_SELECT: &str =
+    "SELECT id, name, group_id, driver, host, port, database_name, username, \
+            extra_params, file_path, \
+            auth_type, token_enc, ssl_mode, ssl_ca_path, ssl_cert_path, ssl_key_path, \
+            connect_timeout_secs, read_timeout_secs, \
+            pool_max_connections, pool_idle_timeout_secs, \
+            sort_order, created_at, updated_at \
+     FROM connections";
+
+fn row_to_connection(row: &rusqlite::Row) -> rusqlite::Result<models::Connection> {
+    Ok(models::Connection {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        group_id: row.get(2)?,
+        driver: row.get(3)?,
+        host: row.get(4)?,
+        port: row.get(5)?,
+        database_name: row.get(6)?,
+        username: row.get(7)?,
+        extra_params: row.get(8)?,
+        file_path: row.get(9)?,
+        auth_type: row.get(10)?,
+        token_enc: row.get(11)?,
+        ssl_mode: row.get(12)?,
+        ssl_ca_path: row.get(13)?,
+        ssl_cert_path: row.get(14)?,
+        ssl_key_path: row.get(15)?,
+        connect_timeout_secs: row.get::<_, Option<i64>>(16)?.map(|v| v as u32),
+        read_timeout_secs: row.get::<_, Option<i64>>(17)?.map(|v| v as u32),
+        pool_max_connections: row.get::<_, Option<i64>>(18)?.map(|v| v as u32),
+        pool_idle_timeout_secs: row.get::<_, Option<i64>>(19)?.map(|v| v as u32),
+        sort_order: row.get(20)?,
+        created_at: row.get(21)?,
+        updated_at: row.get(22)?,
+    })
+}
+
 /// 根据 ID 获取单个连接配置
 pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
     let conn = get().lock().unwrap();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections WHERE id = ?1",
+        &format!("{} WHERE id = ?1", CONNECTION_SELECT),
         [id],
-        |row| Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        }),
+        |row| row_to_connection(row),
     ).optional()?;
     Ok(result)
 }
@@ -65,27 +89,9 @@ pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
 pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     let conn = get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections ORDER BY sort_order, name"
+        &format!("{} ORDER BY sort_order, name", CONNECTION_SELECT)
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        })
-    })?;
-
+    let rows = stmt.query_map([], |row| row_to_connection(row))?;
     let mut results = Vec::new();
     for row in rows {
         results.push(row?);
@@ -106,9 +112,20 @@ pub struct UpdateConnectionRequest {
     pub extra_params: Option<String>,
     pub group_id: Option<i64>,
     pub file_path: Option<String>,
+    // V16 新增字段
+    pub auth_type: Option<String>,
+    pub token: Option<String>,
+    pub ssl_mode: Option<String>,
+    pub ssl_ca_path: Option<String>,
+    pub ssl_cert_path: Option<String>,
+    pub ssl_key_path: Option<String>,
+    pub connect_timeout_secs: Option<u32>,
+    pub read_timeout_secs: Option<u32>,
+    pub pool_max_connections: Option<u32>,
+    pub pool_idle_timeout_secs: Option<u32>,
 }
 
-/// 创建连接，密码加密存储
+/// 创建连接，密码和token 加密存储
 pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<models::Connection> {
     let conn = get().lock().unwrap();
     let now = Utc::now().to_rfc3339();
@@ -118,36 +135,39 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
         _ => None,
     };
 
+    let token_enc = match &req.token {
+        Some(t) if !t.is_empty() => Some(crate::crypto::encrypt(t)?),
+        _ => None,
+    };
+
     conn.execute(
-        "INSERT INTO connections (name, group_id, driver, host, port, database_name, username, password_enc, extra_params, file_path, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+        "INSERT INTO connections (name, group_id, driver, host, port, database_name, username, password_enc, extra_params, file_path, \
+         auth_type, token_enc, ssl_mode, ssl_ca_path, ssl_cert_path, ssl_key_path, \
+         connect_timeout_secs, read_timeout_secs, pool_max_connections, pool_idle_timeout_secs, \
+         created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
+         ?11, ?12, ?13, ?14, ?15, ?16, \
+         ?17, ?18, ?19, ?20, \
+         ?21, ?21)",
         rusqlite::params![
             req.name, req.group_id, req.driver, req.host, req.port,
             req.database_name, req.username, password_enc,
-            req.extra_params, req.file_path, now
+            req.extra_params, req.file_path,
+            req.auth_type, token_enc,
+            req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+            req.connect_timeout_secs.map(|v| v as i64),
+            req.read_timeout_secs.map(|v| v as i64),
+            req.pool_max_connections.map(|v| v as i64),
+            req.pool_idle_timeout_secs.map(|v| v as i64),
+            now
         ],
     )?;
 
     let id = conn.last_insert_rowid();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections WHERE id = ?1",
+        &format!("{} WHERE id = ?1", CONNECTION_SELECT),
         [id],
-        |row| Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        }),
+        |row| row_to_connection(row),
     )?;
     Ok(result)
 }
@@ -162,58 +182,115 @@ pub fn delete_connection(id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// 更新连接，password 为 None 时保留原值
+/// 更新连接,password/token 为 None 时保留原值
 pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<models::Connection> {
     let conn = get().lock().unwrap();
     let now = Utc::now().to_rfc3339();
 
-    match &req.password {
-        Some(pwd) if !pwd.is_empty() => {
-            let password_enc = crate::crypto::encrypt(pwd)?;
+    let password_enc = match &req.password {
+        Some(pwd) if !pwd.is_empty() => Some(crate::crypto::encrypt(pwd)?),
+        _ => None,
+    };
+    let token_enc = match &req.token {
+        Some(t) if !t.is_empty() => Some(crate::crypto::encrypt(t)?),
+        _ => None,
+    };
+
+    match (password_enc, token_enc) {
+        (Some(pw_enc), Some(tok_enc)) => {
             conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
-                 database_name=?5, username=?6, password_enc=?7,
-                 extra_params=?8, group_id=?9, file_path=?10, updated_at=?11 WHERE id=?12",
+                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
+                 database_name=?5, username=?6, password_enc=?7, \
+                 extra_params=?8, group_id=?9, file_path=?10, \
+                 auth_type=?11, token_enc=?12, ssl_mode=?13, ssl_ca_path=?14, ssl_cert_path=?15, ssl_key_path=?16, \
+                 connect_timeout_secs=?17, read_timeout_secs=?18, pool_max_connections=?19, pool_idle_timeout_secs=?20, \
+                 updated_at=?21 WHERE id=?22",
                 rusqlite::params![
                     req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username, password_enc,
-                    req.extra_params, req.group_id, req.file_path, now, id
+                    req.database_name, req.username, pw_enc,
+                    req.extra_params, req.group_id, req.file_path,
+                    req.auth_type, tok_enc,
+                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+                    req.connect_timeout_secs.map(|v| v as i64),
+                    req.read_timeout_secs.map(|v| v as i64),
+                    req.pool_max_connections.map(|v| v as i64),
+                    req.pool_idle_timeout_secs.map(|v| v as i64),
+                    now, id
                 ],
             )?;
         }
-        _ => {
+        (Some(pw_enc), None) => {
             conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
-                 database_name=?5, username=?6,
-                 extra_params=?7, group_id=?8, file_path=?9, updated_at=?10 WHERE id=?11",
+                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
+                 database_name=?5, username=?6, password_enc=?7, \
+                 extra_params=?8, group_id=?9, file_path=?10, \
+                 auth_type=?11, ssl_mode=?12, ssl_ca_path=?13, ssl_cert_path=?14, ssl_key_path=?15, \
+                 connect_timeout_secs=?16, read_timeout_secs=?17, pool_max_connections=?18, pool_idle_timeout_secs=?19, \
+                 updated_at=?20 WHERE id=?21",
+                rusqlite::params![
+                    req.name, req.driver, req.host, req.port,
+                    req.database_name, req.username, pw_enc,
+                    req.extra_params, req.group_id, req.file_path,
+                    req.auth_type,
+                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+                    req.connect_timeout_secs.map(|v| v as i64),
+                    req.read_timeout_secs.map(|v| v as i64),
+                    req.pool_max_connections.map(|v| v as i64),
+                    req.pool_idle_timeout_secs.map(|v| v as i64),
+                    now, id
+                ],
+            )?;
+        }
+        (None, Some(tok_enc)) => {
+            conn.execute(
+                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
+                 database_name=?5, username=?6, \
+                 extra_params=?7, group_id=?8, file_path=?9, \
+                 auth_type=?10, token_enc=?11, ssl_mode=?12, ssl_ca_path=?13, ssl_cert_path=?14, ssl_key_path=?15, \
+                 connect_timeout_secs=?16, read_timeout_secs=?17, pool_max_connections=?18, pool_idle_timeout_secs=?19, \
+                 updated_at=?20 WHERE id=?21",
                 rusqlite::params![
                     req.name, req.driver, req.host, req.port,
                     req.database_name, req.username,
-                    req.extra_params, req.group_id, req.file_path, now, id
+                    req.extra_params, req.group_id, req.file_path,
+                    req.auth_type, tok_enc,
+                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+                    req.connect_timeout_secs.map(|v| v as i64),
+                    req.read_timeout_secs.map(|v| v as i64),
+                    req.pool_max_connections.map(|v| v as i64),
+                    req.pool_idle_timeout_secs.map(|v| v as i64),
+                    now, id
+                ],
+            )?;
+        }
+        (None, None) => {
+            conn.execute(
+                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
+                 database_name=?5, username=?6, \
+                 extra_params=?7, group_id=?8, file_path=?9, \
+                 auth_type=?10, ssl_mode=?11, ssl_ca_path=?12, ssl_cert_path=?13, ssl_key_path=?14, \
+                 connect_timeout_secs=?15, read_timeout_secs=?16, pool_max_connections=?17, pool_idle_timeout_secs=?18, \
+                 updated_at=?19 WHERE id=?20",
+                rusqlite::params![
+                    req.name, req.driver, req.host, req.port,
+                    req.database_name, req.username,
+                    req.extra_params, req.group_id, req.file_path,
+                    req.auth_type,
+                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+                    req.connect_timeout_secs.map(|v| v as i64),
+                    req.read_timeout_secs.map(|v| v as i64),
+                    req.pool_max_connections.map(|v| v as i64),
+                    req.pool_idle_timeout_secs.map(|v| v as i64),
+                    now, id
                 ],
             )?;
         }
     }
 
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections WHERE id = ?1",
+        &format!("{} WHERE id = ?1", CONNECTION_SELECT),
         [id],
-        |row| Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        }),
+        |row| row_to_connection(row),
     )?;
     Ok(result)
 }
@@ -243,27 +320,58 @@ pub fn get_connection_password(id: i64) -> AppResult<String> {
     }
 }
 
-/// 通过 ID 获取连接配置（含解密密码）
+/// 返回指定连接的明文 token（供编辑弹窗使用）
+pub fn get_connection_token(id: i64) -> AppResult<String> {
+    let conn = get().lock().unwrap();
+    let enc: Option<String> = conn.query_row(
+        "SELECT token_enc FROM connections WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    ).optional()?.flatten();
+    match enc {
+        Some(e) if !e.is_empty() => Ok(crate::crypto::decrypt(&e)?),
+        _ => Ok(String::new()),
+    }
+}
+
+/// 通过 ID 获取连接配置（含解密密码和token）
 pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::ConnectionConfig> {
     let conn = get().lock().unwrap();
     let row = conn.query_row(
-        "SELECT driver, host, port, database_name, username, password_enc, extra_params, file_path
+        "SELECT driver, host, port, database_name, username, password_enc, extra_params, file_path, \
+               auth_type, token_enc, ssl_mode, ssl_ca_path, ssl_cert_path, ssl_key_path, \
+               connect_timeout_secs, read_timeout_secs, pool_max_connections, pool_idle_timeout_secs \
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, Option<String>>(1)?,
-            row.get::<_, Option<i64>>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, Option<String>>(4)?,
-            row.get::<_, Option<String>>(5)?,
-            row.get::<_, Option<String>>(6)?,
-            row.get::<_, Option<String>>(7)?,
+            row.get::<_, String>(0)?,                    // driver
+            row.get::<_, Option<String>>(1)?,             // host
+            row.get::<_, Option<i64>>(2)?,                // port
+            row.get::<_, Option<String>>(3)?,             // database_name
+            row.get::<_, Option<String>>(4)?,             // username
+            row.get::<_, Option<String>>(5)?,             // password_enc
+            row.get::<_, Option<String>>(6)?,             // extra_params
+            row.get::<_, Option<String>>(7)?,             // file_path
+            row.get::<_, Option<String>>(8)?,             // auth_type
+            row.get::<_, Option<String>>(9)?,             // token_enc
+            row.get::<_, Option<String>>(10)?,            // ssl_mode
+            row.get::<_, Option<String>>(11)?,            // ssl_ca_path
+            row.get::<_, Option<String>>(12)?,            // ssl_cert_path
+            row.get::<_, Option<String>>(13)?,            // ssl_key_path
+            row.get::<_, Option<i64>>(14)?,               // connect_timeout_secs
+            row.get::<_, Option<i64>>(15)?,               // read_timeout_secs
+            row.get::<_, Option<i64>>(16)?,               // pool_max_connections
+            row.get::<_, Option<i64>>(17)?,               // pool_idle_timeout_secs
         )),
     ).optional()?
     .ok_or_else(|| crate::AppError::Other(format!("Connection {} not found", id)))?;
 
     let password = match row.5 {
+        Some(enc) => crate::crypto::decrypt(&enc)?,
+        None => String::new(),
+    };
+
+    let token = match row.9 {
         Some(enc) => crate::crypto::decrypt(&enc)?,
         None => String::new(),
     };
@@ -276,6 +384,8 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         "doris" => 9030,
         "clickhouse" => 8123,
         "tidb" => 4000,
+        "gaussdb" => 8000,
+        "db2" => 50000,
         _ => 3306, // mysql
     };
     let username = row.4.unwrap_or_default();
@@ -294,6 +404,16 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         password: Some(password),
         extra_params: row.6,
         file_path: row.7,
+        auth_type: row.8,
+        token: if token.is_empty() { None } else { Some(token) },
+        ssl_mode: row.10,
+        ssl_ca_path: row.11,
+        ssl_cert_path: row.12,
+        ssl_key_path: row.13,
+        connect_timeout_secs: row.14.map(|v| v as u32),
+        read_timeout_secs: row.15.map(|v| v as u32),
+        pool_max_connections: row.16.map(|v| v as u32),
+        pool_idle_timeout_secs: row.17.map(|v| v as u32),
     })
 }
 
@@ -1030,4 +1150,3 @@ pub fn delete_all_agent_sessions() -> AppResult<()> {
     conn.execute("DELETE FROM agent_sessions", [])?;
     Ok(())
 }
-

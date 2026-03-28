@@ -15,6 +15,16 @@ pub struct Connection {
     pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
+    pub auth_type: Option<String>,
+    pub token_enc: Option<String>,
+    pub ssl_mode: Option<String>,
+    pub ssl_ca_path: Option<String>,
+    pub ssl_cert_path: Option<String>,
+    pub ssl_key_path: Option<String>,
+    pub connect_timeout_secs: Option<u32>,
+    pub read_timeout_secs: Option<u32>,
+    pub pool_max_connections: Option<u32>,
+    pub pool_idle_timeout_secs: Option<u32>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -35,6 +45,17 @@ pub struct CreateConnectionRequest {
     pub password: Option<String>,
     pub extra_params: Option<String>,
     pub file_path: Option<String>,
+    // V16 新增字段
+    pub auth_type: Option<String>,
+    pub token: Option<String>,
+    pub ssl_mode: Option<String>,
+    pub ssl_ca_path: Option<String>,
+    pub ssl_cert_path: Option<String>,
+    pub ssl_key_path: Option<String>,
+    pub connect_timeout_secs: Option<u32>,
+    pub read_timeout_secs: Option<u32>,
+    pub pool_max_connections: Option<u32>,
+    pub pool_idle_timeout_secs: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

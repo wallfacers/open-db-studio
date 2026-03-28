@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   ReactFlow,
   Background,
@@ -24,6 +25,7 @@ import { ImportTableDialog } from '../dialogs/ImportTableDialog'
 import { useERKeyboard } from '../hooks/useERKeyboard'
 import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
 import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
+import { layoutNodesWithDagre } from '../utils/dagreLayout'
 import type { ErTable, ErColumn } from '../../../types'
 
 const nodeTypes = {
@@ -61,10 +63,11 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   const [showBind, setShowBind] = useState(false)
 
   // Register UIObject for MCP ui_list discovery
+  const projectName = useErDesignerStore(s => s.projects.find(p => p.id === projectId)?.name)
   const erUIObject = useMemo(() => {
     if (!tabId) return null
-    return new ERCanvasAdapter(tabId, `ER Project #${projectId}`)
-  }, [tabId, projectId])
+    return new ERCanvasAdapter(tabId, projectName ?? `ER Project #${projectId}`, projectId)
+  }, [tabId, projectId, projectName])
   useUIObjectRegistry(erUIObject)
 
   // Select only the actions and state values needed (stable references for actions)
@@ -144,6 +147,58 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   useEffect(() => {
     reloadCanvas()
   }, [reloadCanvas])
+
+  // Refs for nodes/edges so MCP event listeners don't re-subscribe on every render
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+  const edgesRef = useRef(edges)
+  edgesRef.current = edges
+
+  // Ref-based listener cleanup to handle async unregistration correctly
+  const unlistenFns = useRef<UnlistenFn[]>([])
+
+  // MCP-triggered canvas operations via Tauri events
+  useEffect(() => {
+    // Cleanup previous listeners before registering new ones
+    unlistenFns.current.forEach(fn => fn())
+    unlistenFns.current = []
+
+    // MCP adapter emits this after any CRUD operation
+    listen('er-canvas-reload', (event: { payload: { projectId: number } }) => {
+      if (event.payload.projectId === projectId) {
+        reloadCanvas()
+      }
+    }).then(fn => { unlistenFns.current.push(fn) })
+
+    // MCP adapter triggers dialog opening
+    listen('er-canvas-open-dialog', (event: { payload: { projectId: number; dialog: string } }) => {
+      if (event.payload.projectId === projectId) {
+        if (event.payload.dialog === 'import') setShowImport(true)
+        else if (event.payload.dialog === 'bind') setShowBind(true)
+      }
+    }).then(fn => { unlistenFns.current.push(fn) })
+
+    // MCP adapter triggers auto-layout via shared dagre utility
+    listen('er-canvas-auto-layout', (event: { payload: { projectId: number } }) => {
+      if (event.payload.projectId !== projectId) return
+
+      const currentNodes = nodesRef.current
+      const currentEdges = edgesRef.current
+      if (currentNodes.length === 0) return
+
+      try {
+        const layoutedNodes = layoutNodesWithDagre(currentNodes, currentEdges) as Node<NodeData>[]
+        setNodes(layoutedNodes)
+      } catch (e) {
+        console.error('MCP auto layout failed:', e)
+      }
+    }).then(fn => { unlistenFns.current.push(fn) })
+
+    return () => {
+      unlistenFns.current.forEach(fn => fn())
+      unlistenFns.current = []
+    }
+  }, [projectId, reloadCanvas, setNodes])
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
     const tableId = parseInt(node.id.replace('table-', ''))

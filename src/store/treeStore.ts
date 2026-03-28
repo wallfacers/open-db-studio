@@ -12,6 +12,8 @@ const CATEGORIES_BY_DRIVER: Record<string, CategoryKey[]> = {
   doris:      ['tables', 'views', 'materialized_views'],
   clickhouse: ['tables', 'views', 'dictionaries'],
   tidb:       ['tables', 'views'],
+  gaussdb:    ['tables', 'views', 'functions', 'procedures', 'triggers', 'sequences', 'materialized_views'],
+  db2:        ['tables', 'views', 'functions', 'procedures', 'triggers', 'materialized_views'],
 };
 
 const CATEGORY_LABELS: Record<CategoryKey, string> = {
@@ -195,7 +197,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           connectionId: node.meta.connectionId,
         });
         const driver = node.meta.driver ?? 'mysql';
-        const needsSchema = ['postgres', 'oracle'].includes(driver);
+        const needsSchema = ['postgres', 'oracle', 'gaussdb'].includes(driver);
 
         if (databases.length === 0) {
           // 无多数据库概念（如 SQLite）：category 直接挂在 connection 节点下
@@ -223,7 +225,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       } else if (node.nodeType === 'database') {
         const driver = node.meta.driver ?? 'postgres';
-        if (['postgres', 'oracle'].includes(driver)) {
+        if (['postgres', 'oracle', 'gaussdb'].includes(driver)) {
           const schemas = await invoke<string[]>('list_schemas', {
             connectionId: node.meta.connectionId,
             database: node.meta.database,

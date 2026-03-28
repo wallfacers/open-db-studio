@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::time::Duration;
 use super::{
     ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities,
     ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo,
@@ -11,6 +12,7 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 pub struct SqlServerDataSource {
     config: tiberius::Config,
+    connect_timeout: Duration,
 }
 
 impl SqlServerDataSource {
@@ -19,24 +21,47 @@ impl SqlServerDataSource {
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
         let port = cfg.port
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
-        let username = cfg.username.as_deref()
-            .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
-        let password = cfg.password.as_deref().unwrap_or("");
         let mut config = Config::new();
         config.host(host);
         config.port(port);
         if let Some(db) = cfg.database.as_deref().filter(|s| !s.is_empty()) {
             config.database(db);
         }
-        config.authentication(AuthMethod::sql_server(username, password));
-        config.trust_cert(); // MVP 阶段跳过证书验证
-        Ok(Self { config })
+
+        // 认证方式
+        let auth_type = cfg.auth_type.as_deref().unwrap_or("password");
+        if auth_type == "os_native" {
+            config.authentication(AuthMethod::Integrated);
+        } else {
+            let username = cfg.username.as_deref()
+                .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+            let password = cfg.password.as_deref().unwrap_or("");
+            config.authentication(AuthMethod::sql_server(username, password));
+        }
+
+        // SSL/加密配置
+        let ssl_mode = cfg.ssl_mode.as_deref().unwrap_or("disable");
+        if ssl_mode != "disable" {
+            config.encrypt(tiberius::Encrypt::On);
+        }
+        if ssl_mode == "require" || ssl_mode == "verify_ca" || ssl_mode == "verify_full" {
+            // TODO: SSL 证书验证 — tiberius 目前不支持自定义 CA 证书路径配置
+            config.trust_cert(); // 暂时信任，待后续支持证书验证时移除
+        } else {
+            config.trust_cert(); // MVP 阶段保持信任
+        }
+
+        // 超时参数
+        let connect_timeout = Duration::from_secs(cfg.connect_timeout_secs.unwrap_or(30) as u64);
+
+        Ok(Self { config, connect_timeout })
     }
 
     async fn connect(&self) -> AppResult<Client<tokio_util::compat::Compat<TcpStream>>> {
-        let tcp = TcpStream::connect(self.config.get_addr())
+        let tcp = TcpStream::connect_addr(self.config.get_addr())
+            .timeout(self.connect_timeout)
             .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?;
+            .map_err(|e| AppError::Datasource(format!("SQL Server connection timeout: {}", e)))?;
         tcp.set_nodelay(true)
             .map_err(|e| AppError::Datasource(e.to_string()))?;
         Client::connect(self.config.clone(), tcp.compat_write())
@@ -86,17 +111,7 @@ fn row_i64(row: &Row, idx: usize) -> i64 {
     row.try_get::<i64, _>(idx).ok().flatten().unwrap_or(0)
 }
 
-fn format_size(bytes: i64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
+use super::utils::format_size;
 
 // ─── DataSource 实现 ──────────────────────────────────────────────────────────
 
@@ -378,6 +393,10 @@ impl DataSource for SqlServerDataSource {
             has_multi_database: true,
             has_partitions: true,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
+            has_pool_config: false,
+            has_timeout_config: true,
+            has_ssl_config: true,
         }
     }
 

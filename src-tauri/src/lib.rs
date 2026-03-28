@@ -179,6 +179,7 @@ pub fn run() {
             commands::delete_connection,
             commands::update_connection,
             commands::get_connection_password,
+            commands::get_connection_token,
             commands::execute_query,
             commands::get_tables,
             commands::get_schema,

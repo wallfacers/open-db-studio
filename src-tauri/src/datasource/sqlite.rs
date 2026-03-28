@@ -344,6 +344,10 @@ impl DataSource for SqliteDataSource {
             has_multi_database: false,
             has_partitions: false,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["os_native".to_string()],
+            has_pool_config: false,
+            has_timeout_config: false,
+            has_ssl_config: false,
         }
     }
 

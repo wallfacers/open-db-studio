@@ -9,6 +9,15 @@ export interface Connection {
   username: string | null;
   extra_params: string | null;
   file_path: string | null;
+  auth_type: string | null;
+  ssl_mode: string | null;
+  ssl_ca_path: string | null;
+  ssl_cert_path: string | null;
+  ssl_key_path: string | null;
+  connect_timeout_secs: number | null;
+  read_timeout_secs: number | null;
+  pool_max_connections: number | null;
+  pool_idle_timeout_secs: number | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -25,6 +34,16 @@ export interface CreateConnectionRequest {
   extra_params?: string;
   group_id?: number | null;
   file_path?: string;
+  auth_type?: string;
+  token?: string;
+  ssl_mode?: string;
+  ssl_ca_path?: string;
+  ssl_cert_path?: string;
+  ssl_key_path?: string;
+  connect_timeout_secs?: number;
+  read_timeout_secs?: number;
+  pool_max_connections?: number;
+  pool_idle_timeout_secs?: number;
 }
 
 export interface QueryResult {

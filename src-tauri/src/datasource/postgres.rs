@@ -284,11 +284,20 @@ impl PostgresDataSource {
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+        // SSL 模式映射
+        let ssl_mode = match config.ssl_mode.as_deref().unwrap_or("disable") {
+            "disable" => PgSslMode::Disable,
+            "prefer" => PgSslMode::Prefer,
+            "require" => PgSslMode::Require,
+            "verify_ca" => PgSslMode::VerifyCa,
+            "verify_full" => PgSslMode::VerifyFull,
+            _ => PgSslMode::Disable,
+        };
         let mut opts = PgConnectOptions::new()
             .host(host)
             .port(port)
             .username(username)
-            .ssl_mode(PgSslMode::Disable);
+            .ssl_mode(ssl_mode);
         if let Some(pw) = config.password.as_deref() {
             opts = opts.password(pw);
         }
@@ -296,14 +305,32 @@ impl PostgresDataSource {
         if let Some(db) = config.database.as_deref().filter(|s| !s.is_empty()) {
             opts = opts.database(db);
         }
+
+        // SSL 证书
+        if let Some(ref ca) = config.ssl_ca_path {
+            if !ca.is_empty() { opts = opts.ssl_ca(ca); }
+        }
+        if let Some(ref cert) = config.ssl_cert_path {
+            if !cert.is_empty() { opts = opts.ssl_client_cert(cert); }
+        }
+        if let Some(ref key) = config.ssl_key_path {
+            if !key.is_empty() { opts = opts.ssl_client_key(key); }
+        }
+
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");
         opts = opts.options([("search_path", search_path)]);
         opts = opts.log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
+
+        // 连接池参数
+        let max_conn = config.pool_max_connections.unwrap_or(5) as u32;
+        let idle_timeout = config.pool_idle_timeout_secs.unwrap_or(300);
+        let acquire_timeout = config.connect_timeout_secs.unwrap_or(30);
+
         let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(Duration::from_secs(30))
-            .idle_timeout(Duration::from_secs(300))
+            .max_connections(max_conn)
+            .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
+            .idle_timeout(Duration::from_secs(idle_timeout as u64))
             .connect_with(opts)
             .await?;
         Ok(Self { pool })
@@ -612,6 +639,10 @@ impl DataSource for PostgresDataSource {
             has_multi_database: true,
             has_partitions: true,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
+            has_pool_config: true,
+            has_timeout_config: true,
+            has_ssl_config: true,
         }
     }
 
@@ -709,6 +740,16 @@ mod tests {
             password: Some(std::env::var("PG_PASSWORD").unwrap_or_else(|_| "123456".to_string())),
             extra_params: None,
             file_path: None,
+            auth_type: None,
+            token: None,
+            ssl_mode: None,
+            ssl_ca_path: None,
+            ssl_cert_path: None,
+            ssl_key_path: None,
+            connect_timeout_secs: None,
+            read_timeout_secs: None,
+            pool_max_connections: None,
+            pool_idle_timeout_secs: None,
         }
     }
 

@@ -94,6 +94,12 @@ tower = "0.4"
 # ClickHouse 官方 HTTP 客户端（port 8123）
 clickhouse = { version = "0.12", features = ["uuid"] }
 
+# GaussDB 驱动（基于 rust-postgres fork，支持 SHA256 认证）
+tokio-gaussdb = "0.1"
+
+# DB2 ODBC 驱动（通用 ODBC 桥接，可选）
+odbc-api = { version = "23", optional = true }
+
 # Oracle 驱动（可选，需要 Oracle Instant Client）
 [target.'cfg(target_os = "windows")'.dependencies]
 oracle = { version = "0.6", optional = true }
@@ -101,3 +107,4 @@ oracle = { version = "0.6", optional = true }
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 oracle-driver = ["oracle"]
+db2-driver = ["odbc-api"]

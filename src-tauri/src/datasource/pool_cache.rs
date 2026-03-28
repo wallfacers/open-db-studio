@@ -18,7 +18,7 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
 
-use super::{ConnectionConfig, DataSource};
+use super::{ConnectionConfig, DataSource, validate_connection_config};
 use crate::AppResult;
 
 type CacheKey = (i64, String, String);
@@ -101,6 +101,7 @@ async fn create_datasource_arc(
     if !database.is_empty() {
         cfg.database = Some(database.to_string());
     }
+    validate_connection_config(&cfg)?;
     let ds: Arc<dyn DataSource> = match cfg.driver.as_str() {
         "mysql" => Arc::new(super::mysql::MySqlDataSource::new(&cfg).await?),
         "postgres" => {
@@ -114,6 +115,11 @@ async fn create_datasource_arc(
         "doris" => Arc::new(super::mysql::MySqlDataSource::new_with_dialect(&cfg, super::mysql::Dialect::Doris).await?),
         "tidb" => Arc::new(super::mysql::MySqlDataSource::new_with_dialect(&cfg, super::mysql::Dialect::TiDB).await?),
         "clickhouse" => Arc::new(super::clickhouse::ClickHouseDataSource::new(&cfg).await?),
+        "gaussdb" => {
+            let s = if schema.is_empty() { None } else { Some(schema) };
+            Arc::new(super::gaussdb::GaussDbDataSource::new_with_schema(&cfg, s).await?)
+        }
+        "db2" => Arc::new(super::db2::Db2DataSource::new(&cfg).await?),
         d => return Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     };
     Ok(ds)

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::sync::Arc;
 
 #[allow(unused_imports)]
 use super::{
@@ -8,17 +9,18 @@ use super::{
 };
 use crate::{AppError, AppResult};
 
-#[allow(unused_imports)]
-use super::utils::quote_identifier;
-
-/// 转义 DB2 SQL 字符串字面值中的单引号，防止 SQL 注入。
-/// DB2 SYSCAT 视图需要单引号包裹的字符串值（非标识符），不能用参数化查询。
+/// Escape special characters in ODBC connection string values.
+/// Values containing `;`, `{`, `}`, or `=` are wrapped in `{...}` with `}` escaped as `}}`.
 #[allow(dead_code)]
-fn escape_sql_string(s: &str) -> String {
-    s.replace('\'', "''")
+fn escape_odbc_value(s: &str) -> String {
+    if s.contains(';') || s.contains('{') || s.contains('}') || s.contains('=') {
+        format!("{{{}}}", s.replace('}', "}}"))
+    } else {
+        s.to_string()
+    }
 }
 
-// ─── 全局 ODBC Environment（进程生命周期，所有 DB2 连接共享） ─────────────────
+// ─── Global ODBC Environment (process lifetime, shared by all DB2 connections) ──
 
 #[cfg(feature = "db2-driver")]
 static ODBC_ENV: once_cell::sync::Lazy<odbc_api::Environment> =
@@ -26,37 +28,34 @@ static ODBC_ENV: once_cell::sync::Lazy<odbc_api::Environment> =
         odbc_api::Environment::new().expect("Failed to initialize ODBC environment")
     });
 
-#[allow(dead_code)]
 pub struct Db2DataSource {
-    conn_str: String,
-    database: String,
-    schema: String,
+    conn_str: Arc<str>,
+    schema: Arc<str>,
     #[cfg(feature = "db2-driver")]
-    conn: std::sync::Arc<std::sync::Mutex<Option<odbc_api::Connection<'static>>>>,
+    conn: Arc<std::sync::Mutex<Option<odbc_api::Connection<'static>>>>,
 }
 
 impl Db2DataSource {
     pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
         let host = config.host.as_deref().unwrap_or("localhost");
         let port = config.port.unwrap_or(50000);
-        let database = config.database.as_deref().unwrap_or("").to_string();
+        let database = config.database.as_deref().unwrap_or("");
         let username = config.username.as_deref().unwrap_or("");
         let password = config.password.as_deref().unwrap_or("");
 
-        // DB2 convention: schema defaults to uppercase username
-        let schema = username.to_uppercase();
+        let schema: Arc<str> = username.to_uppercase().into();
 
-        let conn_str = format!(
+        let conn_str: Arc<str> = format!(
             "Driver={{IBM DB2 ODBC DRIVER}};Database={};Hostname={};Port={};Protocol=TCPIP;Uid={};Pwd={};",
-            database, host, port, username, password
-        );
+            escape_odbc_value(database), escape_odbc_value(host), port,
+            escape_odbc_value(username), escape_odbc_value(password)
+        ).into();
 
         Ok(Self {
             conn_str,
-            database,
             schema,
             #[cfg(feature = "db2-driver")]
-            conn: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            conn: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 }
@@ -66,12 +65,12 @@ impl Db2DataSource {
 #[allow(unused_imports)]
 use super::utils::format_size;
 
-/// 使用持久连接执行操作。首次调用时建立连接，查询失败时自动重连一次。
+/// Use persistent connection to execute operations. Establishes on first call,
+/// reconnects only on connection-level errors (ODBC SQLSTATE 08xxx).
 ///
-/// 通过 Mutex 序列化所有对同一连接的访问（ODBC Connection 不是线程安全的）。
-/// conn_str 仅在需要（重新）建连时使用。
+/// Serializes all access via Mutex (ODBC Connection is not thread-safe).
 #[cfg(feature = "db2-driver")]
-fn with_connection_impl<F, T>(
+fn with_connection<F, T>(
     conn_str: &str,
     conn_mutex: &std::sync::Mutex<Option<odbc_api::Connection<'static>>>,
     f: F,
@@ -85,7 +84,6 @@ where
         AppError::Datasource(format!("DB2 connection mutex poisoned: {}", e))
     })?;
 
-    // 确保连接存在
     if guard.is_none() {
         let c = ODBC_ENV
             .connect_with_connection_string(conn_str, ConnectionOptions::default())
@@ -94,16 +92,24 @@ where
         log::debug!("DB2 persistent connection established");
     }
 
-    // 尝试执行
     let conn = guard.as_ref().unwrap();
     match f(conn) {
         Ok(result) => Ok(result),
         Err(e) => {
-            // 查询失败，尝试重连一次
             let error_msg = e.to_string();
-            log::warn!("DB2 query failed, attempting reconnection: {}", error_msg);
+            let is_connection_error = error_msg.contains("08S01")
+                || error_msg.contains("08003")
+                || error_msg.contains("08007")
+                || error_msg.contains("Communication link failure")
+                || error_msg.contains("connection")
+                    && error_msg.to_lowercase().contains("lost");
 
-            *guard = None; // 丢弃旧连接
+            if !is_connection_error {
+                return Err(e);
+            }
+
+            log::warn!("DB2 connection error, attempting reconnection: {}", error_msg);
+            *guard = None;
 
             let new_conn = ODBC_ENV
                 .connect_with_connection_string(conn_str, ConnectionOptions::default())
@@ -119,17 +125,37 @@ where
     }
 }
 
-/// Execute a SQL query using persistent ODBC connection and return a QueryResult.
-/// Must be called from within `spawn_blocking` via `with_connection_impl`.
 #[cfg(feature = "db2-driver")]
-fn execute_query_with_conn(conn: &odbc_api::Connection<'static>, sql: &str) -> AppResult<QueryResult> {
+impl Db2DataSource {
+    /// Run a blocking closure with the persistent ODBC connection.
+    /// Handles Arc cloning, spawn_blocking, and JoinError mapping.
+    async fn run_blocking<F, T>(&self, f: F) -> AppResult<T>
+    where
+        F: Fn(&odbc_api::Connection<'static>) -> AppResult<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let conn_str = self.conn_str.clone();
+        let conn_mutex = self.conn.clone();
+        tokio::task::spawn_blocking(move || with_connection(&conn_str, &conn_mutex, f))
+            .await
+            .map_err(|e| AppError::Datasource(e.to_string()))?
+    }
+}
+
+/// Execute a SQL query with parameterized bindings and return a QueryResult.
+#[cfg(feature = "db2-driver")]
+fn execute_query<P: odbc_api::ParameterCollectionRef>(
+    conn: &odbc_api::Connection<'static>,
+    sql: &str,
+    params: P,
+) -> AppResult<QueryResult> {
     use std::time::Instant;
     use odbc_api::{buffers::TextRowSet, Cursor, ResultSetMetadata};
 
     let start = Instant::now();
 
     let cursor_opt = conn
-        .execute(sql, (), None)
+        .execute(sql, params, None)
         .map_err(|e| AppError::Datasource(format!("DB2 query error: {}", e)))?;
 
     let duration_ms = start.elapsed().as_millis() as u64;
@@ -149,7 +175,8 @@ fn execute_query_with_conn(conn: &odbc_api::Connection<'static>, sql: &str) -> A
         }
 
         let batch_size = 1000_usize;
-        let buffer = TextRowSet::for_cursor(batch_size, &mut cursor, Some(4096))
+        // 64KB per column to avoid truncating view DDL / CLOB values
+        let buffer = TextRowSet::for_cursor(batch_size, &mut cursor, Some(65536))
             .map_err(|e| AppError::Datasource(format!("DB2 buffer error: {}", e)))?;
         let mut row_set_cursor = cursor
             .bind_buffer(buffer)
@@ -183,7 +210,6 @@ fn execute_query_with_conn(conn: &odbc_api::Connection<'static>, sql: &str) -> A
         let row_count = rows.len();
         Ok(QueryResult { columns, rows, row_count, duration_ms })
     } else {
-        // Non-SELECT statement (INSERT/UPDATE/DELETE/DDL)
         Ok(QueryResult {
             columns: vec![],
             rows: vec![],
@@ -193,16 +219,38 @@ fn execute_query_with_conn(conn: &odbc_api::Connection<'static>, sql: &str) -> A
     }
 }
 
-/// Fetch a single column of strings from a query. Used for list_* helpers.
+/// Fetch a single column of strings from a parameterized query.
 #[cfg(feature = "db2-driver")]
-fn fetch_string_list_with_conn(conn: &odbc_api::Connection<'static>, sql: &str) -> AppResult<Vec<String>> {
-    let result = execute_query_with_conn(conn, sql)?;
+fn fetch_string_list<P: odbc_api::ParameterCollectionRef>(
+    conn: &odbc_api::Connection<'static>,
+    sql: &str,
+    params: P,
+) -> AppResult<Vec<String>> {
+    let result = execute_query(conn, sql, params)?;
     Ok(result
         .rows
         .into_iter()
         .filter_map(|row| row.into_iter().next().and_then(|v| v.as_str().map(String::from)))
         .collect())
 }
+
+/// Parse table stats from a query result row.
+/// Returns (name, row_count, size_bytes). Shared by `list_tables_with_stats` and `get_db_stats`.
+#[cfg(feature = "db2-driver")]
+fn parse_table_stats_row(row: &[serde_json::Value]) -> (String, Option<i64>, Option<i64>) {
+    let name = row.first().and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let row_count = row.get(1).and_then(|v| {
+        v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
+    }).filter(|&n| n >= 0);
+    let size_bytes = row.get(2).and_then(|v| {
+        v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
+    }).filter(|&n| n >= 0);
+    (name, row_count, size_bytes)
+}
+
+#[cfg(feature = "db2-driver")]
+const TABLE_STATS_SQL: &str = "SELECT TABNAME, CARD, NPAGES * PAGESIZE AS SIZE_BYTES \
+    FROM SYSCAT.TABLES WHERE TABSCHEMA = ? AND TYPE = 'T' ORDER BY TABNAME";
 
 // ─── DataSource implementation ───────────────────────────────────────────────
 
@@ -219,15 +267,15 @@ impl DataSource for Db2DataSource {
             let conn_str = self.conn_str.clone();
             let conn_mutex = self.conn.clone();
             tokio::task::spawn_blocking(move || {
-                // 清空缓存连接，强制重新建连以测试连通性
+                // Clear cached connection to force fresh connectivity test
                 {
                     let mut guard = conn_mutex.lock().map_err(|e| {
                         AppError::Datasource(format!("Mutex poisoned: {}", e))
                     })?;
                     *guard = None;
                 }
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    execute_query_with_conn(conn, "SELECT 1 FROM SYSIBM.SYSDUMMY1").map(|_| ())
+                with_connection(&conn_str, &conn_mutex, |conn| {
+                    execute_query(conn, "SELECT 1 FROM SYSIBM.SYSDUMMY1", ()).map(|_| ())
                 })
             })
             .await
@@ -244,16 +292,8 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
             let sql = sql.to_string();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    execute_query_with_conn(conn, &sql)
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(move |conn| execute_query(conn, &sql, ())).await
         }
     }
 
@@ -263,32 +303,27 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
-            let schema = self.schema.clone();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT TABSCHEMA, TABNAME, TYPE FROM SYSCAT.TABLES \
-                         WHERE TABSCHEMA = '{}' AND TYPE IN ('T', 'V') \
-                         ORDER BY TABNAME",
-                        escape_sql_string(&schema)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    Ok(result.rows.into_iter().map(|row| {
-                        let schema_val = row.first().and_then(|v| v.as_str().map(String::from));
-                        let name = row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let type_char = row.get(2).and_then(|v| v.as_str()).unwrap_or("T");
-                        let table_type = match type_char {
-                            "V" => "VIEW".to_string(),
-                            _ => "TABLE".to_string(),
-                        };
-                        TableMeta { schema: schema_val, name, table_type }
-                    }).collect())
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            use odbc_api::IntoParameter;
+            let schema = self.schema.to_string();
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let result = execute_query(
+                    conn,
+                    "SELECT TABSCHEMA, TABNAME, TYPE FROM SYSCAT.TABLES \
+                     WHERE TABSCHEMA = ? AND TYPE IN ('T', 'V') ORDER BY TABNAME",
+                    &schema_param,
+                )?;
+                Ok(result.rows.into_iter().map(|row| {
+                    let schema_val = row.first().and_then(|v| v.as_str().map(String::from));
+                    let name = row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let type_char = row.get(2).and_then(|v| v.as_str()).unwrap_or("T");
+                    let table_type = match type_char {
+                        "V" => "VIEW".to_string(),
+                        _ => "TABLE".to_string(),
+                    };
+                    TableMeta { schema: schema_val, name, table_type }
+                }).collect())
+            }).await
         }
     }
 
@@ -306,50 +341,37 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
+            use odbc_api::IntoParameter;
             let schema = schema.unwrap_or(&self.schema).to_string();
             let table = table.to_string();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT COLNAME, TYPENAME, NULLS, DEFAULT, KEYSEQ, REMARKS \
-                         FROM SYSCAT.COLUMNS \
-                         WHERE TABSCHEMA = '{}' AND TABNAME = '{}' \
-                         ORDER BY COLNO",
-                        escape_sql_string(&schema), escape_sql_string(&table)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    Ok(result.rows.into_iter().map(|row| {
-                        let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let data_type = row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let nulls = row.get(2).and_then(|v| v.as_str()).unwrap_or("N");
-                        let is_nullable = nulls == "Y";
-                        let column_default = row.get(3).and_then(|v| {
-                            if v.is_null() { None } else { v.as_str().map(String::from) }
-                        });
-                        let keyseq = row.get(4).and_then(|v| {
-                            // KEYSEQ can be numeric string or null
-                            v.as_str().and_then(|s| s.trim().parse::<i32>().ok())
-                        }).unwrap_or(0);
-                        let is_primary_key = keyseq > 0;
-                        let comment = row.get(5).and_then(|v| {
-                            if v.is_null() { None } else { v.as_str().map(String::from) }
-                        });
-                        ColumnMeta {
-                            name,
-                            data_type,
-                            is_nullable,
-                            column_default,
-                            is_primary_key,
-                            extra: None,
-                            comment,
-                        }
-                    }).collect())
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let table_param = table.as_str().into_parameter();
+                let result = execute_query(
+                    conn,
+                    "SELECT COLNAME, TYPENAME, NULLS, DEFAULT, KEYSEQ, REMARKS \
+                     FROM SYSCAT.COLUMNS WHERE TABSCHEMA = ? AND TABNAME = ? ORDER BY COLNO",
+                    (&schema_param, &table_param),
+                )?;
+                Ok(result.rows.into_iter().map(|row| {
+                    let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let data_type = row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let is_nullable = row.get(2).and_then(|v| v.as_str()).unwrap_or("N") == "Y";
+                    let column_default = row.get(3).and_then(|v| {
+                        if v.is_null() { None } else { v.as_str().map(String::from) }
+                    });
+                    let is_primary_key = row.get(4).and_then(|v| {
+                        v.as_str().and_then(|s| s.trim().parse::<i32>().ok())
+                    }).unwrap_or(0) > 0;
+                    let comment = row.get(5).and_then(|v| {
+                        if v.is_null() { None } else { v.as_str().map(String::from) }
+                    });
+                    ColumnMeta {
+                        name, data_type, is_nullable, column_default,
+                        is_primary_key, extra: None, comment,
+                    }
+                }).collect())
+            }).await
         }
     }
 
@@ -362,37 +384,33 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
+            use odbc_api::IntoParameter;
             let schema = schema.unwrap_or(&self.schema).to_string();
             let table = table.to_string();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT INDNAME, UNIQUERULE, COLNAMES FROM SYSCAT.INDEXES \
-                         WHERE TABSCHEMA = '{}' AND TABNAME = '{}'",
-                        escape_sql_string(&schema), escape_sql_string(&table)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    let indexes = result.rows.into_iter().map(|row| {
-                        let index_name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let unique_rule = row.get(1).and_then(|v| v.as_str()).unwrap_or("D");
-                        // UNIQUERULE: 'U' = unique user index, 'P' = primary key index, 'D' = non-unique
-                        let is_unique = matches!(unique_rule, "U" | "P");
-                        // COLNAMES format: "+COL1+COL2-COL3" (+ = ASC, - = DESC)
-                        let colnames_raw = row.get(2).and_then(|v| v.as_str()).unwrap_or("");
-                        let columns: Vec<String> = colnames_raw
-                            .split(|c| c == '+' || c == '-')
-                            .filter(|s| !s.is_empty())
-                            .map(|s| s.trim().to_string())
-                            .collect();
-                        IndexMeta { index_name, is_unique, columns }
-                    }).collect();
-                    Ok(indexes)
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let table_param = table.as_str().into_parameter();
+                let result = execute_query(
+                    conn,
+                    "SELECT INDNAME, UNIQUERULE, COLNAMES FROM SYSCAT.INDEXES \
+                     WHERE TABSCHEMA = ? AND TABNAME = ?",
+                    (&schema_param, &table_param),
+                )?;
+                Ok(result.rows.into_iter().map(|row| {
+                    let index_name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let unique_rule = row.get(1).and_then(|v| v.as_str()).unwrap_or("D");
+                    // UNIQUERULE: 'U' = unique, 'P' = primary key, 'D' = non-unique
+                    let is_unique = matches!(unique_rule, "U" | "P");
+                    // COLNAMES format: "+COL1+COL2-COL3" (+ = ASC, - = DESC)
+                    let colnames_raw = row.get(2).and_then(|v| v.as_str()).unwrap_or("");
+                    let columns: Vec<String> = colnames_raw
+                        .split(|c| c == '+' || c == '-')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                    IndexMeta { index_name, is_unique, columns }
+                }).collect())
+            }).await
         }
     }
 
@@ -405,41 +423,37 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
+            use odbc_api::IntoParameter;
             let schema = schema.unwrap_or(&self.schema).to_string();
             let table = table.to_string();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT R.CONSTNAME, FK.COLNAME, R.REFTABNAME, PK.COLNAME AS REFCOLNAME, R.DELETERULE \
-                         FROM SYSCAT.REFERENCES R \
-                         JOIN SYSCAT.KEYCOLUSE FK ON FK.CONSTNAME = R.CONSTNAME AND FK.TABSCHEMA = R.TABSCHEMA \
-                         JOIN SYSCAT.KEYCOLUSE PK ON PK.CONSTNAME = R.REFKEYNAME AND PK.TABSCHEMA = R.REFTABSCHEMA \
-                         WHERE R.TABSCHEMA = '{}' AND R.TABNAME = '{}' \
-                         AND FK.COLSEQ = PK.COLSEQ",
-                        escape_sql_string(&schema), escape_sql_string(&table)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    Ok(result.rows.into_iter().map(|row| {
-                        let constraint_name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let column = row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let referenced_table = row.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let referenced_column = row.get(3).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        // DELETERULE: 'A' = NO ACTION, 'C' = CASCADE, 'N' = SET NULL, 'R' = RESTRICT
-                        let delete_rule = row.get(4).and_then(|v| v.as_str()).unwrap_or("A");
-                        let on_delete = Some(match delete_rule {
-                            "C" => "CASCADE".to_string(),
-                            "N" => "SET NULL".to_string(),
-                            "R" => "RESTRICT".to_string(),
-                            _ => "NO ACTION".to_string(),
-                        });
-                        ForeignKeyMeta { constraint_name, column, referenced_table, referenced_column, on_delete }
-                    }).collect())
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let table_param = table.as_str().into_parameter();
+                let result = execute_query(
+                    conn,
+                    "SELECT R.CONSTNAME, FK.COLNAME, R.REFTABNAME, PK.COLNAME AS REFCOLNAME, R.DELETERULE \
+                     FROM SYSCAT.REFERENCES R \
+                     JOIN SYSCAT.KEYCOLUSE FK ON FK.CONSTNAME = R.CONSTNAME AND FK.TABSCHEMA = R.TABSCHEMA \
+                     JOIN SYSCAT.KEYCOLUSE PK ON PK.CONSTNAME = R.REFKEYNAME AND PK.TABSCHEMA = R.REFTABSCHEMA \
+                     WHERE R.TABSCHEMA = ? AND R.TABNAME = ? AND FK.COLSEQ = PK.COLSEQ",
+                    (&schema_param, &table_param),
+                )?;
+                Ok(result.rows.into_iter().map(|row| {
+                    let constraint_name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let column = row.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let referenced_table = row.get(2).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let referenced_column = row.get(3).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    // DELETERULE: 'A' = NO ACTION, 'C' = CASCADE, 'N' = SET NULL, 'R' = RESTRICT
+                    let delete_rule = row.get(4).and_then(|v| v.as_str()).unwrap_or("A");
+                    let on_delete = Some(match delete_rule {
+                        "C" => "CASCADE".to_string(),
+                        "N" => "SET NULL".to_string(),
+                        "R" => "RESTRICT".to_string(),
+                        _ => "NO ACTION".to_string(),
+                    });
+                    ForeignKeyMeta { constraint_name, column, referenced_table, referenced_column, on_delete }
+                }).collect())
+            }).await
         }
     }
 
@@ -449,28 +463,23 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
-            let schema = self.schema.clone();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT VIEWNAME, TEXT FROM SYSCAT.VIEWS \
-                         WHERE VIEWSCHEMA = '{}' ORDER BY VIEWNAME",
-                        escape_sql_string(&schema)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    Ok(result.rows.into_iter().map(|row| {
-                        let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let definition = row.get(1).and_then(|v| {
-                            if v.is_null() { None } else { v.as_str().map(String::from) }
-                        });
-                        ViewMeta { name, definition }
-                    }).collect())
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            use odbc_api::IntoParameter;
+            let schema = self.schema.to_string();
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let result = execute_query(
+                    conn,
+                    "SELECT VIEWNAME, TEXT FROM SYSCAT.VIEWS WHERE VIEWSCHEMA = ? ORDER BY VIEWNAME",
+                    &schema_param,
+                )?;
+                Ok(result.rows.into_iter().map(|row| {
+                    let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let definition = row.get(1).and_then(|v| {
+                        if v.is_null() { None } else { v.as_str().map(String::from) }
+                    });
+                    ViewMeta { name, definition }
+                }).collect())
+            }).await
         }
     }
 
@@ -480,33 +489,30 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
-            let schema = self.schema.clone();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT PROCNAME, 'PROCEDURE' AS TYPE FROM SYSCAT.PROCEDURES WHERE PROCSCHEMA = '{}' \
-                         UNION ALL \
-                         SELECT FUNCNAME, 'FUNCTION' AS TYPE FROM SYSCAT.FUNCTIONS WHERE FUNCSCHEMA = '{}' \
-                         ORDER BY 1",
-                        escape_sql_string(&schema), escape_sql_string(&schema)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    Ok(result.rows.into_iter().map(|row| {
-                        let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let rt = row.get(1).and_then(|v| v.as_str()).unwrap_or("");
-                        let routine_type = match rt {
-                            "PROCEDURE" => RoutineType::Procedure,
-                            "FUNCTION" => RoutineType::Function,
-                            _ => RoutineType::Unknown,
-                        };
-                        ProcedureMeta { name, routine_type }
-                    }).collect())
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            use odbc_api::IntoParameter;
+            let schema = self.schema.to_string();
+            self.run_blocking(move |conn| {
+                let p1 = schema.as_str().into_parameter();
+                let p2 = schema.as_str().into_parameter();
+                let result = execute_query(
+                    conn,
+                    "SELECT PROCNAME, 'PROCEDURE' AS TYPE FROM SYSCAT.PROCEDURES WHERE PROCSCHEMA = ? \
+                     UNION ALL \
+                     SELECT FUNCNAME, 'FUNCTION' AS TYPE FROM SYSCAT.FUNCTIONS WHERE FUNCSCHEMA = ? \
+                     ORDER BY 1",
+                    (&p1, &p2),
+                )?;
+                Ok(result.rows.into_iter().map(|row| {
+                    let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let rt = row.get(1).and_then(|v| v.as_str()).unwrap_or("");
+                    let routine_type = match rt {
+                        "PROCEDURE" => RoutineType::Procedure,
+                        "FUNCTION" => RoutineType::Function,
+                        _ => RoutineType::Unknown,
+                    };
+                    ProcedureMeta { name, routine_type }
+                }).collect())
+            }).await
         }
     }
 
@@ -528,13 +534,10 @@ impl DataSource for Db2DataSource {
             let columns = self.get_columns(table, Some(&effective_schema)).await?;
 
             if columns.is_empty() {
-                return Ok(format!(
-                    "-- Table \"{}\".\"{}\" not found",
-                    effective_schema, table
-                ));
+                return Ok(format!("-- Table \"{}\".\"{}\" not found", effective_schema, table));
             }
 
-            let mut pk_cols: Vec<String> = columns
+            let pk_cols: Vec<String> = columns
                 .iter()
                 .filter(|c| c.is_primary_key)
                 .map(|c| format!("    {}", c.name))
@@ -567,9 +570,7 @@ impl DataSource for Db2DataSource {
 
             Ok(format!(
                 "CREATE TABLE \"{}\".\"{}\" (\n{}\n)",
-                effective_schema,
-                table,
-                parts.join(",\n")
+                effective_schema, table, parts.join(",\n")
             ))
         }
     }
@@ -581,40 +582,18 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    fetch_string_list_with_conn(
-                        conn,
-                        "SELECT SCHEMANAME FROM SYSCAT.SCHEMATA WHERE OWNERTYPE = 'U' ORDER BY SCHEMANAME",
-                    )
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(|conn| {
+                fetch_string_list(
+                    conn,
+                    "SELECT SCHEMANAME FROM SYSCAT.SCHEMATA WHERE OWNERTYPE = 'U' ORDER BY SCHEMANAME",
+                    (),
+                )
+            }).await
         }
     }
 
     async fn list_schemas(&self, _database: &str) -> AppResult<Vec<String>> {
-        #[cfg(not(feature = "db2-driver"))]
-        return Ok(vec![]);
-
-        #[cfg(feature = "db2-driver")]
-        {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    fetch_string_list_with_conn(
-                        conn,
-                        "SELECT SCHEMANAME FROM SYSCAT.SCHEMATA WHERE OWNERTYPE = 'U' ORDER BY SCHEMANAME",
-                    )
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
-        }
+        self.list_databases().await
     }
 
     async fn list_objects(
@@ -631,45 +610,22 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
+            use odbc_api::IntoParameter;
             let schema = schema.unwrap_or(&self.schema).to_string();
             let category = category.to_string();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let esc_schema = escape_sql_string(&schema);
-                    let sql = match category.as_str() {
-                        "tables" => format!(
-                            "SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = '{}' AND TYPE = 'T' ORDER BY TABNAME",
-                            esc_schema
-                        ),
-                        "views" => format!(
-                            "SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = '{}' AND TYPE = 'V' ORDER BY TABNAME",
-                            esc_schema
-                        ),
-                        "functions" => format!(
-                            "SELECT FUNCNAME FROM SYSCAT.FUNCTIONS WHERE FUNCSCHEMA = '{}' ORDER BY FUNCNAME",
-                            esc_schema
-                        ),
-                        "procedures" => format!(
-                            "SELECT PROCNAME FROM SYSCAT.PROCEDURES WHERE PROCSCHEMA = '{}' ORDER BY PROCNAME",
-                            esc_schema
-                        ),
-                        "triggers" => format!(
-                            "SELECT TRIGNAME FROM SYSCAT.TRIGGERS WHERE TRIGSCHEMA = '{}' ORDER BY TRIGNAME",
-                            esc_schema
-                        ),
-                        "materialized_views" => format!(
-                            "SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = '{}' AND TYPE = 'S' ORDER BY TABNAME",
-                            esc_schema
-                        ),
-                        _ => return Ok(vec![]),
-                    };
-                    fetch_string_list_with_conn(conn, &sql)
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(move |conn| {
+                let sql = match category.as_str() {
+                    "tables" => "SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = ? AND TYPE = 'T' ORDER BY TABNAME",
+                    "views" => "SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = ? AND TYPE = 'V' ORDER BY TABNAME",
+                    "functions" => "SELECT FUNCNAME FROM SYSCAT.FUNCTIONS WHERE FUNCSCHEMA = ? ORDER BY FUNCNAME",
+                    "procedures" => "SELECT PROCNAME FROM SYSCAT.PROCEDURES WHERE PROCSCHEMA = ? ORDER BY PROCNAME",
+                    "triggers" => "SELECT TRIGNAME FROM SYSCAT.TRIGGERS WHERE TRIGSCHEMA = ? ORDER BY TRIGNAME",
+                    "materialized_views" => "SELECT TABNAME FROM SYSCAT.TABLES WHERE TABSCHEMA = ? AND TYPE = 'S' ORDER BY TABNAME",
+                    _ => return Ok(vec![]),
+                };
+                let schema_param = schema.as_str().into_parameter();
+                fetch_string_list(conn, sql, &schema_param)
+            }).await
         }
     }
 
@@ -686,34 +642,16 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
+            use odbc_api::IntoParameter;
             let schema = schema.unwrap_or(&self.schema).to_string();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    let sql = format!(
-                        "SELECT TABNAME, CARD, NPAGES * PAGESIZE AS SIZE_BYTES \
-                         FROM SYSCAT.TABLES WHERE TABSCHEMA = '{}' AND TYPE = 'T' \
-                         ORDER BY TABNAME",
-                        escape_sql_string(&schema)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
-                    Ok(result.rows.into_iter().map(|row| {
-                        let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        // CARD = cardinality (row count estimate), -1 means unknown
-                        let row_count = row.get(1).and_then(|v| {
-                            v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
-                        }).filter(|&n| n >= 0);
-                        let size_bytes = row.get(2).and_then(|v| {
-                            v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
-                        }).filter(|&n| n >= 0);
-                        let size = size_bytes.map(format_size);
-                        TableStatInfo { name, row_count, size }
-                    }).collect())
-                })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let result = execute_query(conn, TABLE_STATS_SQL, &schema_param)?;
+                Ok(result.rows.iter().map(|row| {
+                    let (name, row_count, size_bytes) = parse_table_stats_row(row);
+                    TableStatInfo { name, row_count, size: size_bytes.map(format_size) }
+                }).collect())
+            }).await
         }
     }
 
@@ -747,67 +685,49 @@ impl DataSource for Db2DataSource {
 
         #[cfg(feature = "db2-driver")]
         {
-            let conn_str = self.conn_str.clone();
-            let conn_mutex = self.conn.clone();
-            let schema = self.schema.clone();
-            tokio::task::spawn_blocking(move || {
-                with_connection_impl(&conn_str, &conn_mutex, |conn| {
-                    // Query table stats from SYSCAT.TABLES
-                    let sql = format!(
-                        "SELECT TABNAME, CARD, NPAGES * PAGESIZE AS SIZE_BYTES \
-                         FROM SYSCAT.TABLES WHERE TABSCHEMA = '{}' AND TYPE = 'T' \
-                         ORDER BY TABNAME",
-                        escape_sql_string(&schema)
-                    );
-                    let result = execute_query_with_conn(conn, &sql)?;
+            use odbc_api::IntoParameter;
+            let schema = self.schema.to_string();
+            self.run_blocking(move |conn| {
+                let schema_param = schema.as_str().into_parameter();
+                let result = execute_query(conn, TABLE_STATS_SQL, &schema_param)?;
 
-                    let mut total_bytes: i64 = 0;
-                    let tables: Vec<TableStat> = result.rows.into_iter().map(|row| {
-                        let name = row.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let row_count = row.get(1).and_then(|v| {
-                            v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
-                        }).filter(|&n| n >= 0);
-                        let size_bytes = row.get(2).and_then(|v| {
-                            v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
-                        }).filter(|&n| n >= 0);
-                        if let Some(b) = size_bytes {
-                            total_bytes += b;
-                        }
-                        TableStat {
-                            name,
-                            row_count,
-                            data_size_bytes: size_bytes,
-                            index_size_bytes: None,
-                        }
-                    }).collect();
+                let mut total_bytes: i64 = 0;
+                let tables: Vec<TableStat> = result.rows.iter().map(|row| {
+                    let (name, row_count, size_bytes) = parse_table_stats_row(row);
+                    if let Some(b) = size_bytes {
+                        total_bytes += b;
+                    }
+                    TableStat {
+                        name, row_count,
+                        data_size_bytes: size_bytes,
+                        index_size_bytes: None,
+                    }
+                }).collect();
 
-                    let total_tables = tables.len();
+                let total_tables = tables.len();
 
-                    // Get DB2 version (use same connection — no extra connect overhead)
-                    let ver_result = execute_query_with_conn(
-                        conn,
-                        "SELECT SERVICE_LEVEL FROM SYSIBMADM.ENV_INST_INFO",
-                    );
-                    let db_version = ver_result.ok().and_then(|r| {
-                        r.rows.into_iter().next().and_then(|row| {
-                            row.into_iter().next().and_then(|v| {
-                                if v.is_null() { None } else { v.as_str().map(String::from) }
-                            })
+                let ver_result = execute_query(
+                    conn,
+                    "SELECT SERVICE_LEVEL FROM SYSIBMADM.ENV_INST_INFO",
+                    (),
+                );
+                let db_version = ver_result.ok().and_then(|r| {
+                    r.rows.into_iter().next().and_then(|row| {
+                        row.into_iter().next().and_then(|v| {
+                            if v.is_null() { None } else { v.as_str().map(String::from) }
                         })
-                    });
-
-                    Ok(DbStats {
-                        tables,
-                        db_summary: DbSummary {
-                            total_tables,
-                            total_size_bytes: Some(total_bytes),
-                            db_version,
-                        },
                     })
+                });
+
+                Ok(DbStats {
+                    tables,
+                    db_summary: DbSummary {
+                        total_tables,
+                        total_size_bytes: Some(total_bytes),
+                        db_version,
+                    },
                 })
-            })
-            .await
-            .map_err(|e| AppError::Datasource(e.to_string()))?
+            }).await
         }
     }
 }

@@ -147,6 +147,10 @@ impl DataSource for OracleDataSource {
             has_multi_database: false, // Oracle 使用 Schema 而非多数据库
             has_partitions: true,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["password".to_string(), "os_native".to_string()],
+            has_pool_config: false,
+            has_timeout_config: true,
+            has_ssl_config: false,
         }
     }
 }

@@ -114,6 +114,28 @@ pub async fn collect_text_via_global_events(
                         return Ok(result);
                     }
                 }
+                // permission.updated：自动回复以解除 agent 阻塞（标题生成无需展示）
+                "permission.updated" => {
+                    if props["sessionID"].as_str() != Some(session_id) {
+                        continue;
+                    }
+                    let permission_id = props["id"].as_str().unwrap_or("");
+                    if permission_id.is_empty() {
+                        continue;
+                    }
+                    let port_copy = port;
+                    let sid = session_id.to_string();
+                    let pid = permission_id.to_string();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::agent::client::permission_respond(
+                            port_copy, &sid, &pid, "always", Some(true),
+                        )
+                        .await
+                        {
+                            log::warn!("[stream] auto permission_respond (title) failed: {}", e);
+                        }
+                    });
+                }
                 _ => {}
             }
         }
@@ -280,6 +302,39 @@ pub async fn stream_global_events(
                         let _ = channel.send(StreamEvent::Done);
                         return Ok(());
                     }
+                }
+
+                // permission.updated：将 title 作为普通文本展示，并自动回复解除 agent 阻塞
+                "permission.updated" => {
+                    let perm_session = props["sessionID"].as_str().unwrap_or("");
+                    if perm_session != session_id {
+                        continue;
+                    }
+                    let permission_id = props["id"].as_str().unwrap_or("");
+                    let title = props["title"].as_str().unwrap_or("Tool permission requested");
+                    if permission_id.is_empty() {
+                        continue;
+                    }
+
+                    // 1. 将 permission title 作为普通文本发送给前端
+                    let display = format!("\n> [Permission] {}\n\n", title);
+                    let _ = channel.send(StreamEvent::ContentChunk {
+                        delta: display,
+                    });
+
+                    // 2. 自动回复 "always" 以解除 agent 阻塞
+                    let port_copy = port;
+                    let sid = session_id.to_string();
+                    let pid = permission_id.to_string();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::agent::client::permission_respond(
+                            port_copy, &sid, &pid, "always", Some(true),
+                        )
+                        .await
+                        {
+                            log::warn!("[stream] auto permission_respond failed: {}", e);
+                        }
+                    });
                 }
 
                 _ => {}

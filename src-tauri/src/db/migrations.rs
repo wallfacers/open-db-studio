@@ -540,6 +540,37 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V16: 数据源连接配置增强
+    {
+        let conn_columns: HashSet<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT name FROM pragma_table_info('connections')",
+            )?;
+            let cols: HashSet<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols
+        };
+        let v16_columns = [
+            ("auth_type", "ALTER TABLE connections ADD COLUMN auth_type TEXT DEFAULT 'password'"),
+            ("token_enc", "ALTER TABLE connections ADD COLUMN token_enc TEXT"),
+            ("ssl_mode", "ALTER TABLE connections ADD COLUMN ssl_mode TEXT"),
+            ("ssl_ca_path", "ALTER TABLE connections ADD COLUMN ssl_ca_path TEXT"),
+            ("ssl_cert_path", "ALTER TABLE connections ADD COLUMN ssl_cert_path TEXT"),
+            ("ssl_key_path", "ALTER TABLE connections ADD COLUMN ssl_key_path TEXT"),
+            ("connect_timeout_secs", "ALTER TABLE connections ADD COLUMN connect_timeout_secs INTEGER DEFAULT 30"),
+            ("read_timeout_secs", "ALTER TABLE connections ADD COLUMN read_timeout_secs INTEGER DEFAULT 60"),
+            ("pool_max_connections", "ALTER TABLE connections ADD COLUMN pool_max_connections INTEGER DEFAULT 5"),
+            ("pool_idle_timeout_secs", "ALTER TABLE connections ADD COLUMN pool_idle_timeout_secs INTEGER DEFAULT 300"),
+        ];
+        for (col_name, alter_sql) in &v16_columns {
+            if !conn_columns.contains(*col_name) {
+                conn.execute_batch(alter_sql)?;
+                log::info!("V16: added connections.{} column", col_name);
+            }
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

@@ -331,6 +331,23 @@ pub async fn stream_global_events(
                     spawn_auto_permission_respond(port, session_id, permission_id);
                 }
 
+                // question.asked：AI agent 请求用户输入
+                "question.asked" => {
+                    let q_session = props["sessionID"].as_str().unwrap_or("");
+                    if q_session != session_id {
+                        continue;
+                    }
+                    let question_id = props["id"].as_str().unwrap_or("");
+                    if question_id.is_empty() {
+                        continue;
+                    }
+                    let _ = channel.send(StreamEvent::QuestionRequest {
+                        question_id: question_id.to_string(),
+                        session_id: session_id.to_string(),
+                        questions: props["questions"].clone(),
+                    });
+                }
+
                 _ => {}
             }
         }

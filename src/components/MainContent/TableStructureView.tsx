@@ -336,8 +336,17 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const iconBtn = 'p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#c8daea] transition-colors disabled:opacity-30 disabled:cursor-not-allowed';
   const iconBtnDanger = 'p-0.5 hover:bg-[#243a55] rounded text-red-500/70 hover:text-red-400 transition-colors';
 
+  const connectionName = connections.find(c => c.id === connectionId)?.name ?? `conn_${connectionId}`;
+
   return (
     <div className="flex-1 flex flex-col bg-[#080d12] overflow-hidden min-h-0">
+      {/* Context info bar */}
+      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#0a1018] text-xs flex-shrink-0 gap-1.5 text-[#7a9bb8]">
+        <span className="text-[#009e84]">{connectionName}</span>
+        {database && (<><span className="text-[#3a4f6a]">/</span><span>{database}</span></>)}
+        {schema && (<><span className="text-[#3a4f6a]">/</span><span>{schema}</span></>)}
+        {tableName && (<><span className="text-[#3a4f6a]">/</span><span className="text-[#c8daea]">{tableName}</span></>)}
+      </div>
       {/* Toolbar */}
       {!tableName && (
         <div className="h-10 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs flex-shrink-0">

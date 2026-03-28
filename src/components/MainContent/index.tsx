@@ -783,7 +783,24 @@ export const MainContent: React.FC<MainContentProps> = ({
               tableName={activeTabObj.id.includes('_new_') ? undefined : activeTabObj.title}
               database={activeTabObj.db}
               schema={activeTabObj.schema}
-              onSuccess={() => showToast('操作成功', 'success')}
+              onSuccess={() => {
+                const isNew = activeTabObj.id.includes('_new_');
+
+                // Refresh the tables category node in the tree
+                const connId = activeTabObj.connectionId!;
+                const db = activeTabObj.db;
+                const sch = activeTabObj.schema;
+                let categoryNodeId = `conn_${connId}`;
+                if (db && !db.startsWith('conn_')) categoryNodeId += `/db_${db}`;
+                if (sch) categoryNodeId += `/schema_${sch}`;
+                categoryNodeId += '/cat_tables';
+                useTreeStore.getState().refreshNode(categoryNodeId);
+
+                // Close the tab for new table creation
+                if (isNew) {
+                  useQueryStore.getState().closeTab(activeTabObj.id);
+                }
+              }}
               showToast={showToast}
             />
           </div>

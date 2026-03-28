@@ -197,16 +197,16 @@ impl From<ConfigError> for AppError {
 }
 
 /// 返回指定驱动支持的认证方式列表
-pub fn supported_auth_types(driver: &str) -> Vec<&'static str> {
+pub fn supported_auth_types(driver: &str) -> &'static [&'static str] {
     match driver {
-        "mysql" | "doris" | "tidb" => vec!["password", "ssl_cert", "os_native"],
-        "postgres" | "gaussdb" => vec!["password", "ssl_cert", "os_native"],
-        "sqlite" => vec!["os_native"],
-        "oracle" => vec!["password", "os_native"],
-        "sqlserver" => vec!["password", "ssl_cert", "os_native"],
-        "clickhouse" => vec!["password", "ssl_cert", "token"],
-        "db2" => vec!["password", "os_native"],
-        _ => vec!["password"],
+        "mysql" | "doris" | "tidb" => &["password", "ssl_cert", "os_native"],
+        "postgres" | "gaussdb" => &["password", "ssl_cert", "os_native"],
+        "sqlite" => &["os_native"],
+        "oracle" => &["password", "os_native"],
+        "sqlserver" => &["password", "ssl_cert", "os_native"],
+        "clickhouse" => &["password", "ssl_cert", "token"],
+        "db2" => &["password", "os_native"],
+        _ => &["password"],
     }
 }
 
@@ -275,6 +275,11 @@ pub fn validate_connection_config(config: &ConnectionConfig) -> AppResult<()> {
     if let Some(timeout) = config.connect_timeout_secs {
         if timeout == 0 {
             return Err(AppError::Datasource("连接超时不能为 0".to_string()));
+        }
+    }
+    if let Some(timeout) = config.read_timeout_secs {
+        if timeout == 0 {
+            return Err(AppError::Datasource("读取超时不能为 0".to_string()));
         }
     }
 

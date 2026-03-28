@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+#[cfg(feature = "db2-driver")]
 use std::sync::Arc;
 
 #[allow(unused_imports)]
@@ -29,22 +30,32 @@ static ODBC_ENV: once_cell::sync::Lazy<odbc_api::Environment> =
     });
 
 pub struct Db2DataSource {
+    #[cfg(feature = "db2-driver")]
     conn_str: Arc<str>,
+    #[cfg(feature = "db2-driver")]
     schema: Arc<str>,
     #[cfg(feature = "db2-driver")]
     conn: Arc<std::sync::Mutex<Option<odbc_api::Connection<'static>>>>,
 }
 
 impl Db2DataSource {
+    #[allow(unused_variables)]
     pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
+        #[cfg(feature = "db2-driver")]
         let host = config.host.as_deref().unwrap_or("localhost");
+        #[cfg(feature = "db2-driver")]
         let port = config.port.unwrap_or(50000);
+        #[cfg(feature = "db2-driver")]
         let database = config.database.as_deref().unwrap_or("");
+        #[cfg(feature = "db2-driver")]
         let username = config.username.as_deref().unwrap_or("");
+        #[cfg(feature = "db2-driver")]
         let password = config.password.as_deref().unwrap_or("");
 
+        #[cfg(feature = "db2-driver")]
         let schema: Arc<str> = username.to_uppercase().into();
 
+        #[cfg(feature = "db2-driver")]
         let conn_str: Arc<str> = format!(
             "Driver={{IBM DB2 ODBC DRIVER}};Database={};Hostname={};Port={};Protocol=TCPIP;Uid={};Pwd={};",
             escape_odbc_value(database), escape_odbc_value(host), port,
@@ -52,7 +63,9 @@ impl Db2DataSource {
         ).into();
 
         Ok(Self {
+            #[cfg(feature = "db2-driver")]
             conn_str,
+            #[cfg(feature = "db2-driver")]
             schema,
             #[cfg(feature = "db2-driver")]
             conn: Arc::new(std::sync::Mutex::new(None)),

@@ -16,6 +16,8 @@ pub struct Connection {
     pub created_at: String,
     pub updated_at: String,
     pub auth_type: Option<String>,
+    #[serde(skip_serializing)]
+    #[allow(dead_code)]
     pub token_enc: Option<String>,
     pub ssl_mode: Option<String>,
     pub ssl_ca_path: Option<String>,
@@ -45,7 +47,6 @@ pub struct CreateConnectionRequest {
     pub password: Option<String>,
     pub extra_params: Option<String>,
     pub file_path: Option<String>,
-    // V16 新增字段
     pub auth_type: Option<String>,
     pub token: Option<String>,
     pub ssl_mode: Option<String>,

@@ -112,7 +112,6 @@ pub struct UpdateConnectionRequest {
     pub extra_params: Option<String>,
     pub group_id: Option<i64>,
     pub file_path: Option<String>,
-    // V16 新增字段
     pub auth_type: Option<String>,
     pub token: Option<String>,
     pub ssl_mode: Option<String>,

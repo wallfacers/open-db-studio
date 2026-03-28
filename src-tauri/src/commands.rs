@@ -58,10 +58,11 @@ pub async fn execute_query(
     schema: Option<String>,
 ) -> AppResult<QueryResult> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource_with_context(
+    let ds = crate::datasource::pool_cache::get_or_create(
+        connection_id,
         &config,
-        database.as_deref(),
-        schema.as_deref(),
+        database.as_deref().unwrap_or(""),
+        schema.as_deref().unwrap_or(""),
     ).await?;
 
     let result = ds.execute(&sql).await;

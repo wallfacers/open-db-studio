@@ -5,6 +5,7 @@ use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
+use super::utils::format_size;
 use crate::AppResult;
 
 pub struct PostgresDataSource {
@@ -699,21 +700,9 @@ impl DataSource for PostgresDataSource {
         ).bind(schema).fetch_all(&self.pool).await?;
 
         Ok(rows.into_iter().map(|(name, row_count, bytes)| {
-            let size = Some(format_pg_size(bytes));
+            let size = Some(format_size(bytes));
             TableStatInfo { name, row_count: Some(row_count), size }
         }).collect())
-    }
-}
-
-fn format_pg_size(bytes: i64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

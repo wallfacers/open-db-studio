@@ -609,8 +609,8 @@ impl DataSource for GaussDbDataSource {
             sql_dialect: SqlDialect::Standard,
             supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
             has_pool_config: false,
-            has_timeout_config: true,
-            has_ssl_config: true,
+            has_timeout_config: false,
+            has_ssl_config: false,
         }
     }
 

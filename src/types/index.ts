@@ -390,6 +390,26 @@ export interface PermissionRequest {
   }>
 }
 
+/** OpenCode question.asked — AI agent 请求用户回答选择题/自定义输入 */
+export interface QuestionOption {
+  label: string
+  description: string
+}
+
+export interface QuestionInfo {
+  question: string
+  header: string
+  options: QuestionOption[]
+  multiple?: boolean
+  custom?: boolean    // 默认 true，允许自定义输入
+}
+
+export interface QuestionRequest {
+  question_id: string
+  session_id: string
+  questions: QuestionInfo[]
+}
+
 export interface OpenCodeProviderModel {
   id: string;
   name: string;

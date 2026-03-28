@@ -10,6 +10,11 @@ pub enum StreamEvent {
     ThinkingChunk { delta: String },
     ContentChunk   { delta: String },
     ToolCallRequest { call_id: String, name: String, arguments: String },
+    QuestionRequest {
+        question_id: String,
+        session_id: String,
+        questions: serde_json::Value,
+    },
     Done,
     Error { message: String },
 }

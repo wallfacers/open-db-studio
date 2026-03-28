@@ -1,7 +1,7 @@
 // ── JSON Patch (RFC 6902) ──────────────────────────────────
 
 export interface JsonPatchOp {
-  op: 'add' | 'remove' | 'replace' | 'move' | 'copy'
+  op: 'add' | 'remove' | 'replace' | 'move' | 'copy' | 'test'
   path: string        // JSON Pointer (RFC 6901) or [key=value] extension
   value?: any          // required for add/replace
   from?: string        // required for move/copy
@@ -76,6 +76,7 @@ export interface PendingPatch {
   ops: JsonPatchOp[]
   reason?: string
   currentState: any
+  createdAt: number          // Date.now() — used by PatchConfirmPanel to auto-reject expired patches
   onConfirm: () => void
   onReject?: () => void
 }

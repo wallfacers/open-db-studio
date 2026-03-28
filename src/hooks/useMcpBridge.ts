@@ -41,6 +41,8 @@ export function useMcpBridge() {
   uiRouter.registerInstance('workspace', new WorkspaceAdapter())
   uiRouter.registerInstance('db_tree', new DbTreeAdapter())
   uiRouter.registerInstance('history', new HistoryAdapter())
+  // Inject active tab provider (avoids circular dep between UIRouter and queryStore)
+  uiRouter.setActiveTabIdProvider(() => useQueryStore.getState().activeTabId)
 
   useEffect(() => {
     // 监听 UI 操作（写方向）

@@ -9,9 +9,24 @@ export class WorkspaceAdapter implements UIObject {
   read(mode: 'state' | 'schema' | 'actions') {
     if (mode === 'actions') {
       return [
-        { name: 'open', description: 'Open a new tab', paramsSchema: { type: 'string', connection_id: 'number', database: 'string', table: 'string', metric_id: 'number', project_id: 'number', job_id: 'number' } },
-        { name: 'close', description: 'Close a tab', paramsSchema: { target: 'string' } },
-        { name: 'focus', description: 'Focus/switch to a tab', paramsSchema: { target: 'string' } },
+        {
+          name: 'open', description: 'Open a new tab',
+          paramsSchema: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'er_canvas', 'seatunnel_job'] },
+              connection_id: { type: 'number' },
+              database: { type: 'string' },
+              table: { type: 'string' },
+              metric_id: { type: 'number' },
+              project_id: { type: 'number' },
+              job_id: { type: 'number' },
+            },
+            required: ['type'],
+          },
+        },
+        { name: 'close', description: 'Close a tab', paramsSchema: { type: 'object', properties: { target: { type: 'string' } }, required: ['target'] } },
+        { name: 'focus', description: 'Focus/switch to a tab', paramsSchema: { type: 'object', properties: { target: { type: 'string' } }, required: ['target'] } },
       ]
     }
     return { error: 'workspace does not support read' }

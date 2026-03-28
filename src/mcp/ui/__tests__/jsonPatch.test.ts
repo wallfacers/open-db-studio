@@ -115,3 +115,47 @@ describe('applyPatch - [key=value] addressing', () => {
     ).toThrow()
   })
 })
+
+describe('applyPatch - test op (RFC 6902)', () => {
+  const base = {
+    tableName: 'users',
+    columns: [
+      { name: 'id', dataType: 'INT' },
+      { name: 'email', dataType: 'VARCHAR' },
+    ],
+  }
+
+  it('test passes when value matches', () => {
+    const result = applyPatch(base, [
+      { op: 'test', path: '/tableName', value: 'users' },
+      { op: 'replace', path: '/tableName', value: 'orders' },
+    ])
+    expect(result.tableName).toBe('orders')
+  })
+
+  it('test fails when value differs — atomic rollback', () => {
+    expect(() =>
+      applyPatch(base, [
+        { op: 'test', path: '/tableName', value: 'wrong_name' },
+        { op: 'replace', path: '/tableName', value: 'orders' },
+      ])
+    ).toThrow(/Test failed/)
+    expect(base.tableName).toBe('users')
+  })
+
+  it('test works with nested objects', () => {
+    const result = applyPatch(base, [
+      { op: 'test', path: '/columns/0', value: { name: 'id', dataType: 'INT' } },
+      { op: 'replace', path: '/columns/0/dataType', value: 'BIGINT' },
+    ])
+    expect(result.columns[0].dataType).toBe('BIGINT')
+  })
+
+  it('test works with [name=xxx] addressing', () => {
+    const result = applyPatch(base, [
+      { op: 'test', path: '/columns[name=email]/dataType', value: 'VARCHAR' },
+      { op: 'replace', path: '/columns[name=email]/dataType', value: 'TEXT' },
+    ])
+    expect(result.columns[1].dataType).toBe('TEXT')
+  })
+})

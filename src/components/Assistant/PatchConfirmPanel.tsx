@@ -1,23 +1,27 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Check, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePatchConfirmStore } from '../../store/patchConfirmStore'
 import { Tooltip } from '../common/Tooltip'
 import type { JsonPatchOp } from '../../mcp/ui/types'
 
+const PATCH_TIMEOUT_MS = 60_000 // auto-reject after 60s
+
 function OpLine({ op }: { op: JsonPatchOp }) {
-  const label = { add: '+', remove: '-', replace: '~', move: '>', copy: '=' }[op.op] ?? '?'
+  const label = { add: '+', remove: '-', replace: '~', move: '>', copy: '=', test: '?' }[op.op] ?? '?'
   const colorMap: Record<string, string> = {
     add: 'text-[#4ade80]',
     remove: 'text-[#f87171]',
     replace: 'text-[#60a5fa]',
     move: 'text-[#c084fc]',
     copy: 'text-[#94a3b8]',
+    test: 'text-[#fbbf24]',
   }
   const bgMap: Record<string, string> = {
     add: 'bg-[#0e2a1a]',
     remove: 'bg-[#2a0e0e]',
     replace: 'bg-[#0e1a2a]',
+    test: 'bg-[#2a2a0e]',
   }
   const colorClass = colorMap[op.op] ?? 'text-[#94a3b8]'
   const bgClass = bgMap[op.op] ?? ''
@@ -38,6 +42,16 @@ function OpLine({ op }: { op: JsonPatchOp }) {
 export const PatchConfirmPanel: React.FC = () => {
   const { t } = useTranslation()
   const { pending, confirm, reject } = usePatchConfirmStore()
+
+  // Auto-reject expired patches
+  useEffect(() => {
+    if (!pending) return
+    const remaining = PATCH_TIMEOUT_MS - (Date.now() - pending.createdAt)
+    if (remaining <= 0) { reject(); return }
+    const timer = setTimeout(reject, remaining)
+    return () => clearTimeout(timer)
+  }, [pending, reject])
+
   if (!pending) return null
 
   return (

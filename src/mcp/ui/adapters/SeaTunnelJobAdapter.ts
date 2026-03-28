@@ -59,6 +59,7 @@ export class SeaTunnelJobUIObject implements UIObject {
     usePatchConfirmStore.getState().propose({
       confirmId, objectId: this.objectId, objectType: this.type,
       ops, reason, currentState: this.state,
+      createdAt: Date.now(),
       onConfirm: () => this.patchDirect(ops),
     })
     return { status: 'pending_confirm', confirm_id: confirmId, preview: ops }

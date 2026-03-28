@@ -31,12 +31,33 @@ export function applyPatch<T>(doc: T, ops: JsonPatchOp[]): T {
         result = applyAdd(result, resolvePath(result, op.path), structuredClone(value))
         break
       }
+      case 'test': {
+        const actual = getByPath(result, resolvePath(result, op.path))
+        if (!deepEqual(actual, op.value)) {
+          throw new Error(
+            `Test failed: ${op.path} — expected ${JSON.stringify(op.value)}, got ${JSON.stringify(actual)}`
+          )
+        }
+        break
+      }
       default:
         throw new Error(`Unknown patch op: ${(op as any).op}`)
     }
   }
 
   return result
+}
+
+function deepEqual(a: any, b: any): boolean {
+  if (a === b) return true
+  if (a == null || b == null) return false
+  if (typeof a !== typeof b) return false
+  if (typeof a !== 'object') return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  return keysA.every(k => deepEqual(a[k], b[k]))
 }
 
 function resolvePath(doc: any, path: string): string {

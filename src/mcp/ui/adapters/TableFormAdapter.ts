@@ -87,6 +87,7 @@ export class TableFormUIObject implements UIObject {
       ops,
       reason,
       currentState: this.read('state'),
+      createdAt: Date.now(),
       onConfirm: () => this.patchDirect(ops),
     })
     return { status: 'pending_confirm', confirm_id: confirmId, preview: ops }

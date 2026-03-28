@@ -48,6 +48,23 @@ pub struct GaussDbDataSource {
 }
 ```
 
+### 构造函数
+
+提供两个构造函数，与 PostgreSQL 驱动对齐：
+
+```rust
+impl GaussDbDataSource {
+    pub async fn new(config: &ConnectionConfig) -> AppResult<Self> { ... }
+    pub async fn new_with_schema(config: &ConnectionConfig, schema: &str) -> AppResult<Self> { ... }
+}
+```
+
+`create_datasource_with_context` 工厂函数中 `"gaussdb"` 分支调用 `new_with_schema`，确保跨 schema 导航正常工作。
+
+### 连接生命周期
+
+`tokio-gaussdb` 的 `Client` 需要一个后台 `Connection` 驱动任务。`_conn_handle` 存储其 `JoinHandle`。实现 `Drop` 时调用 `self._conn_handle.abort()` 确保资源释放，或由 pool_cache 管理生命周期。
+
 ### 能力声明
 
 ```rust
@@ -77,11 +94,15 @@ DriverCapabilities {
 | 存储过程 | `information_schema.routines` | 无需 |
 | 触发器 | `information_schema.triggers`（不用 `pg_get_triggerdef()`） | 回退到 information_schema |
 | DDL | 手动拼装（GaussDB 无 `pg_get_create_table_sql`） | 从 columns/constraints 拼装 |
+| 数据库列表 | `SELECT datname FROM pg_database WHERE datistemplate = false` | 与 PG 一致 |
+| Schema 列表 | `SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog', 'information_schema')` | 与 PG 一致 |
 
-### 风险
+### 风险与缓解
 
 - `gaussdb-rust` 项目较新（2 stars），长期维护不确定
+  - **缓解**：crate 基于成熟的 `rust-postgres` fork，API 稳定。若 crate 被弃用，可 fork 维护或切换到直接使用 `rust-postgres` + 自定义认证处理
 - 部分 PG 函数不可用（`pg_get_triggerdef()`、`has_sequence_privilege()` 等）
+  - **缓解**：所有元数据查询均使用 `information_schema` 兜底，不依赖 PG 特有函数
 - 认证边缘情况（非标准配置）
 
 ## DB2 驱动设计
@@ -110,9 +131,13 @@ src-tauri/src/datasource/db2.rs   # 新增
 
 ```rust
 pub struct Db2DataSource {
-    conn_str: String,           // ODBC 连接字符串
+    conn_str: String,                          // ODBC 连接字符串
+    env: Arc<odbc_api::Environment>,           // 全局 ODBC 环境，避免重复创建
+    conn: Arc<Mutex<Option<odbc_api::Connection<'static>>>>,  // 持久连接，Mutex 保护
 }
 ```
+
+V1 版本使用持久连接 + `Mutex`，每次操作复用同一连接。连接断开时自动重连。这避免了每次 `execute()` 都创建新 `Environment` + `Connection` 的性能问题。
 
 ### 连接字符串格式
 
@@ -162,6 +187,9 @@ DB2 使用 `SYSCAT` 系统视图：
 | 视图 | `SYSCAT.VIEWS` |
 | 存储过程 | `SYSCAT.PROCEDURES` |
 | DDL | 手动拼装（DB2 无 `SHOW CREATE TABLE`） |
+| 物化视图 | `SYSCAT.TABLES WHERE TYPE = 'S'`（MQT） |
+| 数据库列表 | `LIST DATABASE DIRECTORY` 或 `SYSCAT.SCHEMATA`（DB2 的 database 概念较弱，以 schema 为主） |
+| Schema 列表 | `SELECT SCHEMANAME FROM SYSCAT.SCHEMATA WHERE OWNERTYPE = 'U'` |
 
 ### 用户体验
 
@@ -169,19 +197,36 @@ DB2 使用 `SYSCAT` 系统视图：
 - 连接测试失败时给出友好的驱动缺失错误信息
 - 文档中说明安装步骤
 
+### 平台支持
+
+DB2 ODBC CLI Driver 可用性因平台而异：
+- **Windows (x86_64)**: 完整支持
+- **Linux (x86_64)**: 完整支持
+- **macOS (Apple Silicon)**: IBM 自 DB2 v11.5.8+ 起不再提供 ARM 版本，**不支持**
+
+前端应根据平台检测，在 macOS ARM 上显示"当前平台不支持 DB2"提示。
+
+### 系统依赖
+
+`odbc-api` 依赖 ODBC Driver Manager：
+- **Windows**: 内置，无需额外安装
+- **Linux**: 需安装 `unixODBC`（`apt install unixodbc-dev` 或 `yum install unixODBC-devel`）
+- **macOS**: `brew install unixodbc`
+
 ### 风险
 
-- 用户需自行安装 IBM ODBC 驱动（~200MB）
+- 用户需自行安装 IBM ODBC 驱动（~200MB）+ 平台 ODBC Driver Manager
 - DDL 拼装逻辑较复杂，初版先支持基础表结构
-- ODBC 驱动在不同平台（Windows/macOS/Linux）的安装方式不同
+- macOS Apple Silicon 不支持
 
 ## 公共变更
 
 ### 工厂函数（`datasource/mod.rs`）
 
 三个工厂函数各增加两个分支：
-- `"gaussdb"` → `GaussDbDataSource::new(config)`
-- `"db2"` → `Db2DataSource::new(config)`
+- `create_datasource`: `"gaussdb"` → `GaussDbDataSource::new(config)`，`"db2"` → `Db2DataSource::new(config)`
+- `create_datasource_with_db`: 同上，覆盖 database 字段
+- `create_datasource_with_context`: `"gaussdb"` → `GaussDbDataSource::new_with_schema(config, schema)`，`"db2"` → `Db2DataSource::new(config)`（DB2 以 schema 为主，在连接字符串中指定）
 
 ### 连接池缓存（`pool_cache.rs`）
 
@@ -190,6 +235,8 @@ DB2 使用 `SYSCAT` 系统视图：
 ### Schema（`schema/init.sql`）
 
 CHECK 约束新增 `'gaussdb'` 和 `'db2'`。
+
+**迁移策略**：SQLite 的 `CREATE TABLE IF NOT EXISTS` 只在首次创建时生效，已有安装的 CHECK 约束不会自动更新。但 SQLite 默认不强制 CHECK 约束对新插入的数据做严格校验（除非显式开启），且项目通过应用层验证 driver 值。因此无需专门的 ALTER TABLE 迁移 — 在 `init.sql` 中更新约束定义即可，新安装会使用新约束，已有安装通过应用层保证数据一致性。
 
 ### 前端连接表单（`ConnectionModal`）
 
@@ -207,13 +254,15 @@ db2:     ['tables', 'views', 'functions', 'procedures', 'triggers', 'materialize
 ### Cargo.toml 依赖
 
 ```toml
-tokio-gaussdb = "0.7"
-odbc-api = "23"
+tokio-gaussdb = "0.7"    # 实现前需在 crates.io 确认实际可用版本
+odbc-api = "23"           # 实现前需确认最新稳定版本
 ```
+
+> **注意**：`tokio-gaussdb` 版本号需在实现前到 crates.io 核实。若该版本不存在，使用实际最新版本。
 
 ## 不做的事
 
-- 不新增 `SqlDialect` 变体 — GaussDB/DB2 都用 `Standard`
+- 不新增 `SqlDialect` 变体 — GaussDB/DB2 都用 `Standard`（AI prompt 管线中已通过 driver 名称区分方言，`SqlDialect` 仅影响前端 UI 适配，两者与标准 SQL 差异不大）
 - 不为 DB2 实现连接池 — 单连接 `spawn_blocking` 模式
 - 不内嵌 IBM ODBC 驱动 — 用户自行安装
 - 不做 GaussDB 降级到 sqlx PG 的兼容模式 — 统一用 `tokio-gaussdb`

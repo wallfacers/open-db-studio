@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult, QueryHistory, Tab, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
+import { parseStatements } from '../utils/sqlParser';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -402,11 +403,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';
     if (!sql.trim()) return;
 
-    // NOTE: 简单按 ; 分割，不支持字符串字面量或注释中的分号，是已知限制
-    const statements = sql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+    const statements = parseStatements(sql).map(s => s.text);
 
     // 写入操作上下文快照（供错误诊断使用）
     useAppStore.getState().setLastOperationContext({

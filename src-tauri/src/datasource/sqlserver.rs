@@ -42,7 +42,7 @@ impl SqlServerDataSource {
         // SSL/加密配置
         let ssl_mode = cfg.ssl_mode.as_deref().unwrap_or("disable");
         if ssl_mode != "disable" {
-            config.encrypt(tiberius::Encrypt::On);
+            config.encryption(tiberius::EncryptionLevel::Required);
         }
         if ssl_mode == "require" || ssl_mode == "verify_ca" || ssl_mode == "verify_full" {
             // TODO: SSL 证书验证 — tiberius 目前不支持自定义 CA 证书路径配置
@@ -58,10 +58,13 @@ impl SqlServerDataSource {
     }
 
     async fn connect(&self) -> AppResult<Client<tokio_util::compat::Compat<TcpStream>>> {
-        let tcp = TcpStream::connect_addr(self.config.get_addr())
-            .timeout(self.connect_timeout)
-            .await
-            .map_err(|e| AppError::Datasource(format!("SQL Server connection timeout: {}", e)))?;
+        let tcp = tokio::time::timeout(
+            self.connect_timeout,
+            TcpStream::connect(self.config.get_addr())
+        )
+        .await
+        .map_err(|_| AppError::Datasource(format!("SQL Server connection timeout after {}s", self.connect_timeout.as_secs())))?
+        .map_err(|e| AppError::Datasource(format!("SQL Server connection failed: {}", e)))?;
         tcp.set_nodelay(true)
             .map_err(|e| AppError::Datasource(e.to_string()))?;
         Client::connect(self.config.clone(), tcp.compat_write())

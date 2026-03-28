@@ -11,6 +11,21 @@ use super::{
 };
 use crate::{AppError, AppResult};
 
+/// Escape a value for use in a PostgreSQL/GaussDB connection string.
+/// Values containing spaces, quotes, or backslashes must be single-quoted,
+/// with internal single quotes and backslashes doubled.
+fn escape_conn_value(val: &str) -> String {
+    if val.is_empty() {
+        return "''".to_string();
+    }
+    if val.contains(|c: char| c == ' ' || c == '\'' || c == '\\' || c == '=') {
+        let escaped = val.replace('\\', "\\\\").replace('\'', "\\'");
+        format!("'{}'", escaped)
+    } else {
+        val.to_string()
+    }
+}
+
 pub struct GaussDbDataSource {
     client: Arc<tokio_gaussdb::Client>,
     #[allow(dead_code)]
@@ -35,7 +50,8 @@ impl GaussDbDataSource {
 
         let conn_str = format!(
             "host={} port={} user={} password={} dbname={}",
-            host, port, username, password, database
+            escape_conn_value(host), port, escape_conn_value(username),
+            escape_conn_value(password), escape_conn_value(&database)
         );
 
         let (client, connection) = tokio_gaussdb::connect(&conn_str, tokio_gaussdb::NoTls)
@@ -592,7 +608,7 @@ impl DataSource for GaussDbDataSource {
             has_partitions: true,
             sql_dialect: SqlDialect::Standard,
             supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
-            has_pool_config: true,
+            has_pool_config: false,
             has_timeout_config: true,
             has_ssl_config: true,
         }

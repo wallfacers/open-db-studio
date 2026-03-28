@@ -308,7 +308,7 @@ impl PostgresDataSource {
 
         // SSL 证书
         if let Some(ref ca) = config.ssl_ca_path {
-            if !ca.is_empty() { opts = opts.ssl_ca(ca); }
+            if !ca.is_empty() { opts = opts.ssl_root_cert(ca); }
         }
         if let Some(ref cert) = config.ssl_cert_path {
             if !cert.is_empty() { opts = opts.ssl_client_cert(cert); }

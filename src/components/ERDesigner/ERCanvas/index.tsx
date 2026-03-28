@@ -154,21 +154,23 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   const edgesRef = useRef(edges)
   edgesRef.current = edges
 
-  // Ref-based listener cleanup to handle async unregistration correctly
-  const unlistenFns = useRef<UnlistenFn[]>([])
-
   // MCP-triggered canvas operations via Tauri events
   useEffect(() => {
-    // Cleanup previous listeners before registering new ones
-    unlistenFns.current.forEach(fn => fn())
-    unlistenFns.current = []
+    let mounted = true
+    const unlistenFns: UnlistenFn[] = []
 
     // MCP adapter emits this after any CRUD operation
     listen('er-canvas-reload', (event: { payload: { projectId: number } }) => {
       if (event.payload.projectId === projectId) {
         reloadCanvas()
       }
-    }).then(fn => { unlistenFns.current.push(fn) })
+    }).then(unlisten => {
+      if (mounted) {
+        unlistenFns.push(unlisten)
+      } else {
+        unlisten()
+      }
+    })
 
     // MCP adapter triggers dialog opening
     listen('er-canvas-open-dialog', (event: { payload: { projectId: number; dialog: string } }) => {
@@ -176,7 +178,13 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         if (event.payload.dialog === 'import') setShowImport(true)
         else if (event.payload.dialog === 'bind') setShowBind(true)
       }
-    }).then(fn => { unlistenFns.current.push(fn) })
+    }).then(unlisten => {
+      if (mounted) {
+        unlistenFns.push(unlisten)
+      } else {
+        unlisten()
+      }
+    })
 
     // MCP adapter triggers auto-layout via shared dagre utility
     listen('er-canvas-auto-layout', (event: { payload: { projectId: number } }) => {
@@ -192,11 +200,17 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
       } catch (e) {
         console.error('MCP auto layout failed:', e)
       }
-    }).then(fn => { unlistenFns.current.push(fn) })
+    }).then(unlisten => {
+      if (mounted) {
+        unlistenFns.push(unlisten)
+      } else {
+        unlisten()
+      }
+    })
 
     return () => {
-      unlistenFns.current.forEach(fn => fn())
-      unlistenFns.current = []
+      mounted = false
+      unlistenFns.forEach(fn => fn())
     }
   }, [projectId, reloadCanvas, setNodes])
 

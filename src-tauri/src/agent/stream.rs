@@ -17,6 +17,22 @@ fn parse_sse_payload(line: &str) -> Option<serde_json::Value> {
     Some(payload)
 }
 
+/// Auto-respond to permission requests to unblock the agent.
+fn spawn_auto_permission_respond(port: u16, session_id: &str, permission_id: &str) {
+    let port_copy = port;
+    let sid = session_id.to_string();
+    let pid = permission_id.to_string();
+    tokio::spawn(async move {
+        if let Err(e) = crate::agent::client::permission_respond(
+            port_copy, &sid, &pid, "always", Some(true),
+        )
+        .await
+        {
+            log::warn!("[stream] auto permission_respond failed: {}", e);
+        }
+    });
+}
+
 // ── 标题生成（阻塞式，不需要流式）────────────────────────────────────────────
 
 /// 通过 `GET /global/event` + `POST /session/:id/message` 收集完整回复文本。
@@ -123,18 +139,7 @@ pub async fn collect_text_via_global_events(
                     if permission_id.is_empty() {
                         continue;
                     }
-                    let port_copy = port;
-                    let sid = session_id.to_string();
-                    let pid = permission_id.to_string();
-                    tokio::spawn(async move {
-                        if let Err(e) = crate::agent::client::permission_respond(
-                            port_copy, &sid, &pid, "always", Some(true),
-                        )
-                        .await
-                        {
-                            log::warn!("[stream] auto permission_respond (title) failed: {}", e);
-                        }
-                    });
+                    spawn_auto_permission_respond(port, session_id, permission_id);
                 }
                 _ => {}
             }
@@ -323,18 +328,7 @@ pub async fn stream_global_events(
                     });
 
                     // 2. 自动回复 "always" 以解除 agent 阻塞
-                    let port_copy = port;
-                    let sid = session_id.to_string();
-                    let pid = permission_id.to_string();
-                    tokio::spawn(async move {
-                        if let Err(e) = crate::agent::client::permission_respond(
-                            port_copy, &sid, &pid, "always", Some(true),
-                        )
-                        .await
-                        {
-                            log::warn!("[stream] auto permission_respond failed: {}", e);
-                        }
-                    });
+                    spawn_auto_permission_respond(port, session_id, permission_id);
                 }
 
                 _ => {}

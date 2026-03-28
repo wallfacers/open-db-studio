@@ -185,7 +185,6 @@ pub fn delete_connection(id: i64) -> AppResult<()> {
 /// 更新连接,password/token 为 None 时保留原值
 pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<models::Connection> {
     let conn = get().lock().unwrap();
-    let now = Utc::now().to_rfc3339();
 
     let password_enc = match &req.password {
         Some(pwd) if !pwd.is_empty() => Some(crate::crypto::encrypt(pwd)?),
@@ -196,96 +195,32 @@ pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<mo
         _ => None,
     };
 
-    match (password_enc, token_enc) {
-        (Some(pw_enc), Some(tok_enc)) => {
-            conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
-                 database_name=?5, username=?6, password_enc=?7, \
-                 extra_params=?8, group_id=?9, file_path=?10, \
-                 auth_type=?11, token_enc=?12, ssl_mode=?13, ssl_ca_path=?14, ssl_cert_path=?15, ssl_key_path=?16, \
-                 connect_timeout_secs=?17, read_timeout_secs=?18, pool_max_connections=?19, pool_idle_timeout_secs=?20, \
-                 updated_at=?21 WHERE id=?22",
-                rusqlite::params![
-                    req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username, pw_enc,
-                    req.extra_params, req.group_id, req.file_path,
-                    req.auth_type, tok_enc,
-                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
-                    req.connect_timeout_secs.map(|v| v as i64),
-                    req.read_timeout_secs.map(|v| v as i64),
-                    req.pool_max_connections.map(|v| v as i64),
-                    req.pool_idle_timeout_secs.map(|v| v as i64),
-                    now, id
-                ],
-            )?;
-        }
-        (Some(pw_enc), None) => {
-            conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
-                 database_name=?5, username=?6, password_enc=?7, \
-                 extra_params=?8, group_id=?9, file_path=?10, \
-                 auth_type=?11, ssl_mode=?12, ssl_ca_path=?13, ssl_cert_path=?14, ssl_key_path=?15, \
-                 connect_timeout_secs=?16, read_timeout_secs=?17, pool_max_connections=?18, pool_idle_timeout_secs=?19, \
-                 updated_at=?20 WHERE id=?21",
-                rusqlite::params![
-                    req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username, pw_enc,
-                    req.extra_params, req.group_id, req.file_path,
-                    req.auth_type,
-                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
-                    req.connect_timeout_secs.map(|v| v as i64),
-                    req.read_timeout_secs.map(|v| v as i64),
-                    req.pool_max_connections.map(|v| v as i64),
-                    req.pool_idle_timeout_secs.map(|v| v as i64),
-                    now, id
-                ],
-            )?;
-        }
-        (None, Some(tok_enc)) => {
-            conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
-                 database_name=?5, username=?6, \
-                 extra_params=?7, group_id=?8, file_path=?9, \
-                 auth_type=?10, token_enc=?11, ssl_mode=?12, ssl_ca_path=?13, ssl_cert_path=?14, ssl_key_path=?15, \
-                 connect_timeout_secs=?16, read_timeout_secs=?17, pool_max_connections=?18, pool_idle_timeout_secs=?19, \
-                 updated_at=?20 WHERE id=?21",
-                rusqlite::params![
-                    req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username,
-                    req.extra_params, req.group_id, req.file_path,
-                    req.auth_type, tok_enc,
-                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
-                    req.connect_timeout_secs.map(|v| v as i64),
-                    req.read_timeout_secs.map(|v| v as i64),
-                    req.pool_max_connections.map(|v| v as i64),
-                    req.pool_idle_timeout_secs.map(|v| v as i64),
-                    now, id
-                ],
-            )?;
-        }
-        (None, None) => {
-            conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4, \
-                 database_name=?5, username=?6, \
-                 extra_params=?7, group_id=?8, file_path=?9, \
-                 auth_type=?10, ssl_mode=?11, ssl_ca_path=?12, ssl_cert_path=?13, ssl_key_path=?14, \
-                 connect_timeout_secs=?15, read_timeout_secs=?16, pool_max_connections=?17, pool_idle_timeout_secs=?18, \
-                 updated_at=?19 WHERE id=?20",
-                rusqlite::params![
-                    req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username,
-                    req.extra_params, req.group_id, req.file_path,
-                    req.auth_type,
-                    req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
-                    req.connect_timeout_secs.map(|v| v as i64),
-                    req.read_timeout_secs.map(|v| v as i64),
-                    req.pool_max_connections.map(|v| v as i64),
-                    req.pool_idle_timeout_secs.map(|v| v as i64),
-                    now, id
-                ],
-            )?;
-        }
-    }
+    conn.execute(
+        "UPDATE connections SET \
+         name=?1, group_id=?2, driver=?3, host=?4, port=?5, \
+         database_name=?6, username=?7, \
+         password_enc=COALESCE(?8, password_enc), \
+         extra_params=?9, file_path=?10, \
+         auth_type=?11, \
+         token_enc=COALESCE(?12, token_enc), \
+         ssl_mode=?13, ssl_ca_path=?14, ssl_cert_path=?15, ssl_key_path=?16, \
+         connect_timeout_secs=?17, read_timeout_secs=?18, \
+         pool_max_connections=?19, pool_idle_timeout_secs=?20, \
+         updated_at=datetime('now') \
+         WHERE id=?21",
+        rusqlite::params![
+            req.name, req.group_id, req.driver, req.host, req.port,
+            req.database_name, req.username, password_enc,
+            req.extra_params, req.file_path,
+            req.auth_type, token_enc,
+            req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+            req.connect_timeout_secs.map(|v| v as i64),
+            req.read_timeout_secs.map(|v| v as i64),
+            req.pool_max_connections.map(|v| v as i64),
+            req.pool_idle_timeout_secs.map(|v| v as i64),
+            id
+        ],
+    )?;
 
     let result = conn.query_row(
         &format!("{} WHERE id = ?1", CONNECTION_SELECT),
@@ -306,11 +241,12 @@ pub fn get_configured_database(id: i64) -> AppResult<Option<String>> {
     Ok(name.filter(|s| !s.is_empty()))
 }
 
-/// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
-pub fn get_connection_password(id: i64) -> AppResult<String> {
+/// 从 connections 表读取指定加密列并解密返回；列为空或不存在时返回空字符串。
+/// 注意：`column` 仅由内部硬编码字面量传入，不存在 SQL 注入风险。
+fn get_encrypted_field(id: i64, column: &str) -> AppResult<String> {
     let conn = get().lock().unwrap();
     let enc: Option<String> = conn.query_row(
-        "SELECT password_enc FROM connections WHERE id = ?1",
+        &format!("SELECT {} FROM connections WHERE id = ?1", column),
         [id],
         |row| row.get(0),
     ).optional()?.flatten();
@@ -320,18 +256,14 @@ pub fn get_connection_password(id: i64) -> AppResult<String> {
     }
 }
 
+/// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
+pub fn get_connection_password(id: i64) -> AppResult<String> {
+    get_encrypted_field(id, "password_enc")
+}
+
 /// 返回指定连接的明文 token（供编辑弹窗使用）
 pub fn get_connection_token(id: i64) -> AppResult<String> {
-    let conn = get().lock().unwrap();
-    let enc: Option<String> = conn.query_row(
-        "SELECT token_enc FROM connections WHERE id = ?1",
-        [id],
-        |row| row.get(0),
-    ).optional()?.flatten();
-    match enc {
-        Some(e) if !e.is_empty() => Ok(crate::crypto::decrypt(&e)?),
-        _ => Ok(String::new()),
-    }
+    get_encrypted_field(id, "token_enc")
 }
 
 /// 通过 ID 获取连接配置（含解密密码和token）

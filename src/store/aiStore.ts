@@ -366,6 +366,11 @@ export const useAiStore = create<AiState>()(
           }));
         }
 
+        // 如果有 pending question，先 reject 以解除服务端阻塞
+        if (state?.pendingQuestion) {
+          invoke('agent_question_reject', { questionId: state.pendingQuestion.question_id }).catch(() => {});
+        }
+
         try {
           await invoke('agent_cancel_session', { sessionId });
         } catch (_) {

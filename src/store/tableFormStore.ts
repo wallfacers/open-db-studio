@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { invoke } from '@tauri-apps/api/core'
 
 export interface TableFormColumn {
   id: string
@@ -35,22 +36,56 @@ interface TableFormStoreState {
   getForm: (tabId: string) => TableFormState | undefined
 }
 
+/** 判断 tabId 是否为新建表（未保存到数据库） */
+function isNewTableTab(tabId: string): boolean {
+  return tabId.includes('_new_')
+}
+
+/** 防抖写入新建表表单状态到文件 */
+const _saveFormTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+function persistFormState(tabId: string, state: TableFormState): void {
+  if (!isNewTableTab(tabId)) return
+  if (_saveFormTimers[tabId]) clearTimeout(_saveFormTimers[tabId])
+  _saveFormTimers[tabId] = setTimeout(() => {
+    invoke('write_tab_file', { tabId, content: JSON.stringify(state) }).catch(() => {})
+  }, 500)
+}
+
+/** 从文件加载新建表表单状态 */
+export async function loadPersistedFormState(tabId: string): Promise<TableFormState | null> {
+  if (!isNewTableTab(tabId)) return null
+  try {
+    const raw = await invoke<string | null>('read_tab_file', { tabId })
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as TableFormState
+    // 基本校验：必须有 columns 数组
+    if (!Array.isArray(parsed.columns)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export const useTableFormStore = create<TableFormStoreState>((set, get) => ({
   forms: {},
 
-  initForm: (tabId, initial) => set(s => ({
-    forms: { ...s.forms, [tabId]: initial },
-  })),
+  initForm: (tabId, initial) => {
+    set(s => ({ forms: { ...s.forms, [tabId]: initial } }))
+    persistFormState(tabId, initial)
+  },
 
   patchForm: (tabId, updater) => set(s => {
     const current = s.forms[tabId]
     if (!current) return s
-    return { forms: { ...s.forms, [tabId]: updater(current) } }
+    const updated = updater(current)
+    persistFormState(tabId, updated)
+    return { forms: { ...s.forms, [tabId]: updated } }
   }),
 
-  setForm: (tabId, state) => set(s => ({
-    forms: { ...s.forms, [tabId]: state },
-  })),
+  setForm: (tabId, state) => {
+    set(s => ({ forms: { ...s.forms, [tabId]: state } }))
+    persistFormState(tabId, state)
+  },
 
   removeForm: (tabId) => set(s => {
     const { [tabId]: _, ...rest } = s.forms

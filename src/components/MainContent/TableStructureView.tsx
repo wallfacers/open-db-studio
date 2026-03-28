@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react';
 import { useConnectionStore } from '../../store/connectionStore';
-import { useTableFormStore } from '../../store/tableFormStore';
+import { useTableFormStore, loadPersistedFormState } from '../../store/tableFormStore';
 import { useUIObjectRegistry } from '../../mcp/ui';
 import { TableFormUIObject } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
@@ -185,15 +185,22 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   // Initialize form state on mount, cleanup on unmount
   useEffect(() => {
     if (!tableName) {
-      // New table mode — start with a default id column (AI can patch more columns later)
-      const initCols: EditableColumn[] = [{
-        id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
-        defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
-      }];
-      initForm(tabId, {
-        tableName: '',
-        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
-        columns: initCols, originalColumns: [], indexes: [], isNewTable: true,
+      // New table mode — try to restore persisted form state first
+      loadPersistedFormState(tabId).then(persisted => {
+        if (persisted) {
+          initForm(tabId, persisted)
+        } else {
+          // No persisted state — start with a default id column
+          const initCols: EditableColumn[] = [{
+            id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
+            defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
+          }];
+          initForm(tabId, {
+            tableName: '',
+            engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+            columns: initCols, originalColumns: [], indexes: [], isNewTable: true,
+          })
+        }
       })
       return;
     }

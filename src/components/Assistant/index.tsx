@@ -509,32 +509,32 @@ export const Assistant: React.FC<AssistantProps> = ({
         </div>
 
         {isChatting ? (
-          isWaitingForAnswer ? (
-            <>
-              {/* 等待回答模式：amber 跳过 + send */}
-              <Tooltip content={t('assistant.rejectQuestion')} className="contents">
-                <button
-                  className="p-1.5 rounded transition-colors bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
-                  onClick={() => {
-                    if (pendingQuestion) {
-                      respondQuestion(currentSessionId, pendingQuestion.question_id, [], true);
-                    }
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              </Tooltip>
-              <Tooltip content={t('assistant.sendMessage')} className="contents">
-                <button
-                  className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
-                  onClick={handleSendMessage}
-                  disabled={!chatInput.trim()}
-                >
-                  <Send size={14} />
-                </button>
-              </Tooltip>
-            </>
+          isWaitingForAnswer && !chatInput.trim() ? (
+            /* 等待回答 + 无输入：显示 X 按钮（拒绝/跳过问题） */
+            <Tooltip content={t('assistant.rejectQuestion')} className="contents">
+              <button
+                className="p-1.5 rounded transition-colors bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                onClick={() => {
+                  if (pendingQuestion) {
+                    respondQuestion(currentSessionId, pendingQuestion.question_id, [], true);
+                  }
+                }}
+              >
+                <X size={14} />
+              </button>
+            </Tooltip>
+          ) : isWaitingForAnswer ? (
+            /* 等待回答 + 有输入：显示发送按钮 */
+            <Tooltip content={t('assistant.sendMessage')} className="contents">
+              <button
+                className="p-1.5 rounded transition-colors bg-[#00c9a7] text-white hover:bg-[#00a98f]"
+                onClick={handleSendMessage}
+              >
+                <Send size={14} />
+              </button>
+            </Tooltip>
           ) : (
+            /* 生成中：显示停止按钮 */
             <Tooltip content={t('assistant.stopGeneration')} className="contents">
               <button
                 className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"

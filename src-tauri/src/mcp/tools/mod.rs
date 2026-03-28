@@ -3,7 +3,3 @@ pub mod metric_edit;
 pub mod table_edit;
 pub mod history;
 pub mod graph;
-pub mod fs_metric;
-pub mod fs_table;
-pub mod fs_history;
-pub mod fs_seatunnel;

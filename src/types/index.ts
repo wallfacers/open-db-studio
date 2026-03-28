@@ -132,12 +132,6 @@ export interface Tab {
   schema?: string;
   queryContext?: QueryContext;
   isNewTable?: boolean;        // table_structure Tab 专用
-  initialTableName?: string;   // table_structure Tab：AI 预填表名
-  initialColumns?: Array<{     // table_structure Tab：AI 预填列定义
-    name: string; data_type: string; length?: string;
-    is_nullable?: boolean; default_value?: string;
-    is_primary_key?: boolean; extra?: string; comment?: string;
-  }>;
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
   erProjectId?: number;        // er_design Tab 专用

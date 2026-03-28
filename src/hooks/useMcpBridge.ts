@@ -6,8 +6,10 @@ import { useAppStore } from '../store/appStore';
 import { useConfirmStore } from '../store/confirmStore';
 import { useSeaTunnelStore } from '../store/seaTunnelStore';
 import { useTreeStore } from '../store/treeStore';
-import { fsRouter, registerFsAdapters } from '../mcp/fs'
-import type { FsOp } from '../mcp/fs'
+import { uiRouter } from '../mcp/ui'
+import { WorkspaceAdapter } from '../mcp/ui/adapters/WorkspaceAdapter'
+import { DbTreeAdapter } from '../mcp/ui/adapters/DbTreeAdapter'
+import { HistoryAdapter } from '../mcp/ui/adapters/HistoryAdapter'
 
 interface UiActionPayload {
   request_id: string;
@@ -17,15 +19,28 @@ interface UiActionPayload {
 
 interface QueryRequestPayload {
   request_id: string;
-  query_type: 'search_tabs' | 'get_tab_content' | 'fs_request' | 'search_db_metadata';
+  query_type: 'search_tabs' | 'get_tab_content' | 'search_db_metadata';
   params: Record<string, unknown>;
+}
+
+interface UIRequestPayload {
+  request_id: string;
+  query_type: string;
+  params: {
+    tool: 'ui_read' | 'ui_patch' | 'ui_exec' | 'ui_list';
+    object: string;
+    target: string;
+    payload: any;
+  };
 }
 
 export function useMcpBridge() {
   const { tabs, activeTabId, setActiveTabId, sqlContent, openTableStructureTab, openMetricTab, openQueryTab, openSeaTunnelJobTab } = useQueryStore();
 
-  // 注册所有 FsAdapter（幂等，可重复调用）
-  registerFsAdapters()
+  // Register singleton UI adapters (idempotent)
+  uiRouter.registerInstance('workspace', new WorkspaceAdapter())
+  uiRouter.registerInstance('db_tree', new DbTreeAdapter())
+  uiRouter.registerInstance('history', new HistoryAdapter())
 
   useEffect(() => {
     // 监听 UI 操作（写方向）
@@ -120,24 +135,20 @@ export function useMcpBridge() {
             });
           }
         } else if (action === 'open_tab') {
-          const { connection_id, type, table_name, database, metric_id, job_id, initial_columns, initial_table_name } = params as {
+          const { connection_id, type, table_name, database, metric_id, job_id } = params as {
             connection_id?: number; type: string; table_name?: string;
             database?: string; metric_id?: number; job_id?: number;
-            initial_columns?: import('../types').Tab['initialColumns'];
-            initial_table_name?: string;
           };
           let newTabId: string | null = null;
 
           if (type === 'table_structure' && connection_id != null) {
-            // table_name 为 null/undefined 时为新建表模式（支持 initial_columns 预填）
             const beforeTabIds = new Set(useQueryStore.getState().tabs.map(t => t.id));
-            openTableStructureTab(connection_id, database, undefined, table_name || undefined, initial_columns, initial_table_name);
-            // Zustand set() 是同步的，状态已更新；优先找新增 tab，其次找同标题的已有 tab（重复防御路径）
+            openTableStructureTab(connection_id, database, undefined, table_name || undefined);
             const stateAfter = useQueryStore.getState();
             const newlyAdded = stateAfter.tabs.find(t => !beforeTabIds.has(t.id) && t.type === 'table_structure');
             const fallback = newlyAdded ?? stateAfter.tabs.find(
               t => t.type === 'table_structure' && t.connectionId === connection_id &&
-              t.title === (initial_table_name || table_name || '新建表')
+              t.title === (table_name || '新建表')
             );
             newTabId = fallback?.id ?? null;
           } else if (type === 'metric' && metric_id) {
@@ -255,16 +266,6 @@ export function useMcpBridge() {
           } else {
             data = null;
           }
-        } else if (query_type === 'fs_request') {
-          const { op, resource, target, payload: fsPayload } = params as {
-            op: FsOp; resource: string; target: string; payload: Record<string, unknown>
-          }
-          try {
-            const resultStr = await fsRouter.handle({ op, resource, target, payload: fsPayload })
-            data = JSON.parse(resultStr) as unknown
-          } catch (fsErr) {
-            data = { error: fsErr instanceof Error ? fsErr.message : String(fsErr) }
-          }
         } else if (query_type === 'search_db_metadata') {
           const { keyword, type: nodeType, connection_id } = params as {
             keyword?: string; type?: string; connection_id?: number;
@@ -289,9 +290,28 @@ export function useMcpBridge() {
       }
     });
 
+    // Listen for UI Object Protocol requests (ui_read, ui_patch, ui_exec, ui_list)
+    const unlistenUIRequest = listen<UIRequestPayload>('mcp://ui-request', async (event) => {
+      const { request_id, params } = event.payload;
+      const { tool, object, target, payload } = params;
+      try {
+        const result = await uiRouter.handle({ tool, object, target, payload });
+        await invoke('mcp_query_respond', {
+          requestId: request_id,
+          data: result,
+        });
+      } catch (e) {
+        await invoke('mcp_query_respond', {
+          requestId: request_id,
+          data: { error: String(e) },
+        });
+      }
+    });
+
     return () => {
       unlistenUiAction.then(fn => fn());
       unlistenQueryRequest.then(fn => fn());
+      unlistenUIRequest.then(fn => fn());
     };
   }, []); // 只挂载一次，内部通过 getState() 读取最新 store
 }

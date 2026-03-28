@@ -3,17 +3,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // ─── Mock Tauri APIs ────────────────────────────────────────────────────────
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
-// ─── Mock fs module（提升到顶层，vitest 会自动 hoist）────────────────────────
-vi.mock('../mcp/fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../mcp/fs')>()
-  return {
-    ...actual,
-    fsRouter: {
-      handle: vi.fn().mockResolvedValue(JSON.stringify({ content: 'SELECT 1', lines: [] })),
-    },
-    registerFsAdapters: vi.fn(),
-  }
-});
+// ─── Mock ui module ────────────────────────────────────────────────────────
+vi.mock('../mcp/ui', () => ({
+  uiRouter: {
+    registerInstance: vi.fn(),
+    handle: vi.fn().mockResolvedValue({ data: { content: 'SELECT 1' } }),
+  },
+}));
+
+vi.mock('../mcp/ui/adapters/WorkspaceAdapter', () => ({
+  WorkspaceAdapter: vi.fn(),
+}));
+vi.mock('../mcp/ui/adapters/DbTreeAdapter', () => ({
+  DbTreeAdapter: vi.fn(),
+}));
+vi.mock('../mcp/ui/adapters/HistoryAdapter', () => ({
+  HistoryAdapter: vi.fn(),
+}));
 
 type ListenCallback<T> = (event: { payload: T }) => void | Promise<void>;
 const capturedListeners: Record<string, ListenCallback<unknown>> = {};
@@ -31,7 +37,7 @@ import { renderHook } from '@testing-library/react';
 import { useQueryStore } from '../store/queryStore';
 import { useTreeStore } from '../store/treeStore';
 import { useMcpBridge } from './useMcpBridge';
-import { fsRouter, registerFsAdapters } from '../mcp/fs';
+import { uiRouter } from '../mcp/ui';
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -160,21 +166,13 @@ describe('mcp://ui-action → open_tab (table_structure)', () => {
         connection_id: 1,
         type: 'table_structure',
         database: 'mydb',
-        initial_table_name: 'operation_logs',
-        initial_columns: [
-          { name: 'id',         data_type: 'BIGINT',      is_primary_key: true, extra: 'auto_increment' },
-          { name: 'user_id',    data_type: 'BIGINT',      is_nullable: true },
-          { name: 'action',     data_type: 'VARCHAR',     length: '50', is_nullable: false },
-          { name: 'created_at', data_type: 'DATETIME',    is_nullable: false },
-        ],
+        table_name: undefined,
       },
     });
 
     const tabs = useQueryStore.getState().tabs;
-    const newTab = tabs.find(t => t.type === 'table_structure' && t.title === 'operation_logs');
+    const newTab = tabs.find(t => t.type === 'table_structure');
     expect(newTab).toBeDefined();
-    expect(newTab!.initialColumns).toHaveLength(4);
-    expect(newTab!.initialColumns![0].name).toBe('id');
     expect(mockInvoke).toHaveBeenCalledWith('mcp_ui_action_respond', expect.objectContaining({
       requestId: 'req-4',
       success: true,
@@ -470,40 +468,29 @@ describe('错误处理', () => {
   });
 });
 
-// ─── 新增：fs_request 场景 ───────────────────────────────────────────────────
+// ─── ui_request 场景 ───────────────────────────────────────────────────
 
-describe('mcp://query-request → fs_request', () => {
-  it('将 fs_request 路由到 fsRouter.handle 并回调 mcp_query_respond', async () => {
+describe('mcp://ui-request → uiRouter', () => {
+  it('将 ui_request 路由到 uiRouter.handle 并回调 mcp_query_respond', async () => {
     mountBridge()
 
-    await emitQueryRequest({
-      request_id: 'fs-1',
-      query_type: 'fs_request',
-      params: { op: 'read', resource: 'tab.query', target: 'active', payload: { mode: 'text' } },
+    const handler = capturedListeners['mcp://ui-request']
+    expect(handler).toBeDefined()
+
+    await handler({
+      payload: {
+        request_id: 'ui-1',
+        query_type: 'ui_request',
+        params: { tool: 'ui_read', object: 'query_editor', target: 'active', payload: { mode: 'state' } },
+      },
     })
 
-    expect(fsRouter.handle).toHaveBeenCalledWith({
-      op: 'read', resource: 'tab.query', target: 'active', payload: { mode: 'text' },
+    expect(uiRouter.handle).toHaveBeenCalledWith({
+      tool: 'ui_read', object: 'query_editor', target: 'active', payload: { mode: 'state' },
     })
     expect(mockInvoke).toHaveBeenCalledWith('mcp_query_respond', {
-      requestId: 'fs-1',
-      data: { content: 'SELECT 1', lines: [] },
-    })
-  })
-
-  it('fsRouter 抛出错误时回调 error 字段', async () => {
-    vi.mocked(fsRouter.handle).mockRejectedValueOnce(new Error('Unknown resource: tab.unknown'))
-    mountBridge()
-
-    await emitQueryRequest({
-      request_id: 'fs-2',
-      query_type: 'fs_request',
-      params: { op: 'read', resource: 'tab.unknown', target: 'active', payload: { mode: 'text' } },
-    })
-
-    expect(mockInvoke).toHaveBeenCalledWith('mcp_query_respond', {
-      requestId: 'fs-2',
-      data: { error: 'Unknown resource: tab.unknown' },
+      requestId: 'ui-1',
+      data: { data: { content: 'SELECT 1' } },
     })
   })
 })

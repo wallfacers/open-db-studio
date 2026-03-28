@@ -318,6 +318,35 @@ pub async fn generate_update_comment_sql(args: &Value) -> crate::AppResult<Strin
     Ok(sql)
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Tauri command wrappers
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tauri::command]
+pub fn cmd_generate_create_table_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_create_table_sql(&params).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn cmd_generate_add_column_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_add_column_sql(&params).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn cmd_generate_drop_column_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_drop_column_sql(&params).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_generate_modify_column_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_modify_column_sql(&params).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_generate_update_comment_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_update_comment_sql(&params).await.map_err(|e| e.to_string())
+}
+
 pub async fn get_column_meta(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
     let conn_id = args["connection_id"].as_i64()
         .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;

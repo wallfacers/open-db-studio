@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
-import { DiffPanel } from './DiffPanel';
+import { PatchConfirmPanel } from './PatchConfirmPanel';
 import { AutoApplyBanner } from './AutoApplyBanner';
 import ElicitationPanel from './ElicitationPanel';
 import { SlashCommandMenu } from './SlashCommandMenu';
@@ -137,7 +137,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     sessions.find((s) => s.id === currentSessionId)?.configId ??
     null;
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
-  const { pendingDiff, applyDiff, cancelDiff, autoApplyBanner } = useQueryStore();
+  const { autoApplyBanner } = useQueryStore();
   const { connections, activeConnectionIds } = useConnectionStore();
 
   const [chatInput, setChatInput] = useState('');
@@ -704,14 +704,8 @@ export const Assistant: React.FC<AssistantProps> = ({
             <div ref={chatEndRef} />
           </div>
 
-          {/* SQL Diff 确认面板 */}
-          {pendingDiff && (
-            <DiffPanel
-              proposal={pendingDiff}
-              onApply={() => { applyDiff(); invoke('mcp_diff_respond', { confirmed: true }).catch(() => {}); }}
-              onCancel={() => { cancelDiff(); invoke('mcp_diff_respond', { confirmed: false }).catch(() => {}); }}
-            />
-          )}
+          {/* Patch 确认面板 */}
+          <PatchConfirmPanel />
           {/* Auto 模式自动应用 Banner */}
           {autoApplyBanner && <AutoApplyBanner reason={autoApplyBanner.reason} />}
 

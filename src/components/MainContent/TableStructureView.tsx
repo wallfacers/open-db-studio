@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useTableFormStore } from '../../store/tableFormStore';
+import { useUIObjectRegistry } from '../../mcp/ui';
+import { TableFormUIObject } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
 
@@ -10,12 +13,12 @@ interface EditableColumn {
   id: string;
   name: string;
   dataType: string;
-  length: string;
-  isNullable: boolean;
-  defaultValue: string;
-  isPrimaryKey: boolean;
-  extra: string;
-  comment: string;
+  length?: string | null;
+  isNullable?: boolean;
+  defaultValue?: string | null;
+  isPrimaryKey?: boolean;
+  extra?: string;
+  comment?: string;
   _originalName?: string;
   _isNew?: boolean;
   _isDeleted?: boolean;
@@ -134,54 +137,64 @@ function generateSql(
 function makeId() { return Math.random().toString(36).slice(2); }
 
 interface TableStructureViewProps {
+  tabId: string;
   connectionId: number;
   tableName?: string;
   database?: string;
   schema?: string;
-  initialColumns?: Array<{
-    name: string; data_type: string; length?: string;
-    is_nullable?: boolean; default_value?: string;
-    is_primary_key?: boolean; extra?: string; comment?: string;
-  }>;
-  initialTableName?: string;
   onSuccess: () => void;
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const TableStructureView: React.FC<TableStructureViewProps> = ({
-  connectionId, tableName, database, schema, initialColumns, initialTableName, onSuccess, showToast
+  tabId, connectionId, tableName, database, schema, onSuccess, showToast
 }) => {
   const { t } = useTranslation();
-  const [columns, setColumns] = useState<EditableColumn[]>([]);
-  const [originalColumns, setOriginalColumns] = useState<EditableColumn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [newTableName, setNewTableName] = useState(initialTableName || tableName || '');
 
   const { connections } = useConnectionStore();
   const driver = connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
 
+  // Zustand store for form state (accessible by AI via UIObject)
+  const formState = useTableFormStore(s => s.forms[tabId])
+  const { initForm, setForm, removeForm } = useTableFormStore()
+
+  const columns = formState?.columns ?? []
+  const originalColumns = formState?.originalColumns ?? []
+  const newTableName = formState?.tableName ?? ''
+
+  const setColumns = useCallback((updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => {
+    useTableFormStore.getState().patchForm(tabId, s => ({
+      ...s,
+      columns: typeof updater === 'function' ? updater(s.columns as EditableColumn[]) : updater,
+    }))
+  }, [tabId])
+
+  const setNewTableName = useCallback((name: string) => {
+    useTableFormStore.getState().patchForm(tabId, s => ({ ...s, tableName: name }))
+  }, [tabId])
+
+  // Register UIObject for AI access
+  const uiObject = useMemo(
+    () => formState ? new TableFormUIObject(tabId, connectionId, database ?? '') : null,
+    [tabId, connectionId, database, formState != null]
+  )
+  useUIObjectRegistry(uiObject)
+
+  // Initialize form state on mount, cleanup on unmount
   useEffect(() => {
     if (!tableName) {
-      const initCols: EditableColumn[] = initialColumns && initialColumns.length > 0
-        ? initialColumns.map(c => ({
-            id: makeId(),
-            name: c.name,
-            dataType: (c.data_type ?? 'VARCHAR').toUpperCase(),
-            length: c.length ?? '',
-            isNullable: c.is_nullable ?? true,
-            defaultValue: c.default_value ?? '',
-            isPrimaryKey: c.is_primary_key ?? false,
-            extra: c.extra ?? '',
-            comment: c.comment ?? '',
-            _isNew: true,
-          }))
-        : [{
-            id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
-            defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
-          }];
-      setColumns(initCols);
-      setOriginalColumns([]);
+      // New table mode — start with a default id column (AI can patch more columns later)
+      const initCols: EditableColumn[] = [{
+        id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
+        defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
+      }];
+      initForm(tabId, {
+        tableName: '',
+        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+        columns: initCols, originalColumns: [], indexes: [], isNewTable: true,
+      })
       return;
     }
     setIsLoadingData(true);
@@ -207,12 +220,17 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         comment: c.comment ?? '',
         _originalName: c.name,
       }));
-      setColumns(cols);
-      setOriginalColumns(cols.map(c => ({ ...c })));
+      initForm(tabId, {
+        tableName: tableName,
+        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+        columns: cols, originalColumns: cols.map(c => ({ ...c })), indexes: [], isNewTable: false,
+      })
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
     }).finally(() => setIsLoadingData(false));
-  }, [tableName, connectionId, database, schema]);
+
+    return () => removeForm(tabId)
+  }, [tableName, connectionId, database, schema, tabId]);
 
   const updateColumn = useCallback((id: string, patch: Partial<EditableColumn>) => {
     setColumns(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
@@ -248,7 +266,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       setColumns(initCols);
       setNewTableName('');
     } else {
-      setColumns(originalColumns.map(c => ({ ...c })));
+      setColumns(originalColumns.map(c => ({ ...c } as EditableColumn)));
     }
   };
 
@@ -342,7 +360,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                   <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
                     <input
                       className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.length}
+                      value={col.length ?? ''}
                       onChange={e => updateColumn(col.id, { length: e.target.value })}
                       placeholder="—"
                     />
@@ -350,7 +368,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                   <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
                     <input
                       type="checkbox"
-                      checked={col.isNullable}
+                      checked={col.isNullable ?? true}
                       onChange={e => updateColumn(col.id, { isNullable: e.target.checked })}
                       className="accent-[#009e84]"
                     />
@@ -358,7 +376,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                   <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
                     <input
                       className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.defaultValue}
+                      value={col.defaultValue ?? ''}
                       onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
                       placeholder="—"
                     />
@@ -366,7 +384,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                   <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
                     <input
                       type="checkbox"
-                      checked={col.isPrimaryKey}
+                      checked={col.isPrimaryKey ?? false}
                       onChange={e => updateColumn(col.id, { isPrimaryKey: e.target.checked })}
                       className="accent-[#3794ff]"
                     />
@@ -374,7 +392,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                   <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
                     <input
                       className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.extra}
+                      value={col.extra ?? ''}
                       onChange={e => updateColumn(col.id, { extra: e.target.value })}
                       placeholder="—"
                     />
@@ -382,7 +400,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                   <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
                     <input
                       className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.comment}
+                      value={col.comment ?? ''}
                       onChange={e => updateColumn(col.id, { comment: e.target.value })}
                       placeholder="—"
                     />

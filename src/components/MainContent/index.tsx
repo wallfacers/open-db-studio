@@ -769,12 +769,11 @@ export const MainContent: React.FC<MainContentProps> = ({
         : activeTabObj.type === 'table_structure' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <TableStructureView
+              tabId={activeTabObj.id}
               connectionId={activeTabObj.connectionId!}
               tableName={activeTabObj.isNewTable ? undefined : activeTabObj.title}
               database={activeTabObj.db}
               schema={activeTabObj.schema}
-              initialColumns={activeTabObj.initialColumns}
-              initialTableName={activeTabObj.initialTableName}
               onSuccess={() => showToast('操作成功', 'success')}
               showToast={showToast}
             />

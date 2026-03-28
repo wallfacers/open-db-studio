@@ -1,4 +1,4 @@
-mod tools;
+pub(crate) mod tools;
 
 use axum::{routing::{get, post}, Router, Json, extract::State};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -174,15 +174,54 @@ fn tool_definitions() -> Value {
                 }
             }),
             json!({
-                "name": "search_tabs",
-                "description": "Search currently opened tabs by type or table name. Results include is_active=true for the currently active tab, job_id for seatunnel_job tabs, and metric_id for metric tabs. Use this to find the active tab.",
+                "name": "ui_read",
+                "description": "Read the current state, schema, or available actions of a UI object.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "table_name": { "type": "string" },
-                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list", "seatunnel_job", "er_design"] }
+                        "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, seatunnel_job, db_tree, history, er_canvas" },
+                        "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
+                        "mode": { "type": "string", "enum": ["state", "schema", "actions"], "default": "state" }
                     },
-                    "required": []
+                    "required": ["object"]
+                }
+            }),
+            json!({
+                "name": "ui_patch",
+                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "object": { "type": "string", "description": "Object type" },
+                        "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
+                        "ops": { "type": "array", "description": "Array of JSON Patch operations", "items": { "type": "object" } },
+                        "reason": { "type": "string", "description": "Human-readable reason for the change" }
+                    },
+                    "required": ["object", "ops"]
+                }
+            }),
+            json!({
+                "name": "ui_exec",
+                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, format).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "object": { "type": "string", "description": "Object type" },
+                        "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
+                        "action": { "type": "string", "description": "Action name" },
+                        "params": { "type": "object", "description": "Action parameters" }
+                    },
+                    "required": ["object", "action"]
+                }
+            }),
+            json!({
+                "name": "ui_list",
+                "description": "List all currently open UI objects, optionally filtered by type.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "filter": { "type": "object", "properties": { "type": { "type": "string" }, "keyword": { "type": "string" } } }
+                    }
                 }
             }),
             json!({
@@ -237,7 +276,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "graph_search_metrics",
-                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. Unlike fs_search('tab.metric'), this searches graph nodes (node_type=metric); fs_search searches approved MetricsExplorer records. To get ALL metrics for a specific table (e.g. '订单表有哪些指标'), pass table_name (exact English table name like 'orders') instead of keyword.",
+                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. This searches graph nodes (node_type=metric). To get ALL metrics for a specific table (e.g. '订单表有哪些指标'), pass table_name (exact English table name like 'orders') instead of keyword.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -260,73 +299,6 @@ fn tool_definitions() -> Value {
                     "required": ["connection_id"]
                 }
             }),
-            json!({
-                "name": "fs_read",
-                "description": "Read content from any tab or panel. mode=text→SQL with line info; mode=struct→structured JSON; mode=error→last SQL error; mode=history→recent query history.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.table | tab.metric | tab.seatunnel | panel.db-tree | panel.history" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.table: table@conn:N. tab.metric: <metric_id>. tab.seatunnel: <job_id>. panel.history: active" },
-                        "mode":     { "type": "string", "description": "tab.query: text|struct|error|history. tab.table/metric/history: struct" }
-                    },
-                    "required": ["resource", "target", "mode"]
-                }
-            }),
-            json!({
-                "name": "fs_write",
-                "description": "Write or patch tab content. SQL editor writes show diff unless Auto mode is on. ⚠️ tab.table ONLY works on EXISTING tables (generates ALTER TABLE SQL to query tab). CANNOT fill the new-table designer form — use fs_open with initial_columns for new tables.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: EXISTING table only, format table@conn:N (e.g. users@conn:1). tab.seatunnel: <job_id>" },
-                        "patch": {
-                            "type": "object",
-                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment} → ALTER SQL to query tab (EXISTING table only). tab.table modify: {action:'modify_column',column_name,changes:{...}} → ALTER SQL to query tab (EXISTING table only). For NEW tables use fs_open with initial_columns."
-                        }
-                    },
-                    "required": ["resource", "target", "patch"]
-                }
-            }),
-            json!({
-                "name": "fs_search",
-                "description": "Search tabs or panels. tab.*=all open tabs; tab.metric=list/search metrics; panel.db-tree=search cached DB tree.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource_pattern": { "type": "string", "description": "tab.* | tab.query | tab.metric | panel.db-tree" },
-                        "filter": { "type": "object", "description": "tab.query/tab.*: {keyword?}. tab.metric: {connection_id, keyword?, status?, limit?}. panel.db-tree: {keyword, type?, connection_id?}" }
-                    },
-                    "required": ["resource_pattern"]
-                }
-            }),
-            json!({
-                "name": "fs_open",
-                "description": "Open a new tab. Returns { target: tab_id }. For new table form with columns: pass initial_columns in params — this is the ONE-SHOT way to pre-fill the form (cannot add columns after opening).",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table NEW: {connection_id,database,initial_table_name?,initial_columns:[...ALL columns...]} — pass ALL columns here, ONE-SHOT, cannot add columns later. tab.table EXISTING: {table,database,connection_id}. tab.seatunnel: {job_id}" }
-                    },
-                    "required": ["resource"]
-                }
-            }),
-            json!({
-                "name": "fs_exec",
-                "description": "Execute an action on a resource target. NOTE: tab.table actions generate SQL and write it to a query tab for user review — they do NOT execute DDL directly.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel | panel.history" },
-                        "target":   { "type": "string", "description": "active | tab_id | new" },
-                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column (writes SQL to query tab). tab.seatunnel: create. panel.history: undo" },
-                        "params":   { "type": "object" }
-                    },
-                    "required": ["resource", "target", "action"]
-                }
-            })
         ]
     })
 }
@@ -388,7 +360,7 @@ fn optimize_tool_definitions() -> Value {
     })
 }
 
-async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, session_id: String) -> crate::AppResult<String> {
+async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _session_id: String) -> crate::AppResult<String> {
     match name {
         "list_connections" => {
             let connections = crate::db::list_connections()?;
@@ -555,8 +527,26 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 }
             }
         }
-        "search_tabs" => {
-            tools::tab_control::search_tabs(Arc::clone(&handle), args).await
+        "ui_read" | "ui_patch" | "ui_exec" | "ui_list" => {
+            let payload = json!({
+                "tool":    name,
+                "object":  args.get("object").and_then(|v| v.as_str()).unwrap_or(""),
+                "target":  args.get("target").and_then(|v| v.as_str()).unwrap_or("active"),
+                "payload": match name {
+                    "ui_read"  => json!({ "mode": args.get("mode").and_then(|v| v.as_str()).unwrap_or("state") }),
+                    "ui_patch" => json!({ "ops": args.get("ops").cloned().unwrap_or(json!([])), "reason": args.get("reason") }),
+                    "ui_exec"  => json!({ "action": args.get("action").and_then(|v| v.as_str()).unwrap_or(""), "params": args.get("params").cloned().unwrap_or(json!({})) }),
+                    "ui_list"  => json!({ "filter": args.get("filter").cloned().unwrap_or(json!({})) }),
+                    _ => json!({})
+                }
+            });
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle,
+                "mcp://ui-request",
+                "ui_request",
+                payload,
+            ).await?;
+            Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
         "graph_query_context" => {
             tools::graph::query_context::handle(Arc::clone(&handle), args).await
@@ -575,52 +565,6 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "graph_debug_links" => {
             tools::graph::debug_links::handle(Arc::clone(&handle), args).await
-        }
-        "fs_read" | "fs_write" | "fs_search" | "fs_open" | "fs_exec" => {
-            let op = name.strip_prefix("fs_").unwrap_or(name);
-            let resource = args
-                .get("resource").or_else(|| args.get("resource_pattern"))
-                .and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let target = args.get("target")
-                .and_then(|v| v.as_str()).unwrap_or("active").to_string();
-            let payload = match op {
-                "search" => args.get("filter").cloned().unwrap_or(json!({})),
-                "write"  => args.get("patch").cloned().unwrap_or(json!({})),
-                "open"   => args.get("params").cloned().unwrap_or(json!({})),
-                "exec"   => json!({
-                    "action": args.get("action").and_then(|v| v.as_str()).unwrap_or(""),
-                    "params": args.get("params").cloned().unwrap_or(json!({}))
-                }),
-                _        => json!({
-                    "mode": args.get("mode").and_then(|v| v.as_str()).unwrap_or("struct")
-                }),
-            };
-
-            // Dispatch by resource: handle in backend vs forward to frontend FsRouter
-            match resource.as_str() {
-                // ── Handled directly in backend (no frontend roundtrip) ──────────────────────────
-                r if r.starts_with("tab.metric") => {
-                    tools::fs_metric::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                r if r.starts_with("tab.table") => {
-                    tools::fs_table::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                r if r.starts_with("tab.seatunnel") => {
-                    tools::fs_seatunnel::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                "panel.history" => {
-                    tools::fs_history::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                // ── Handled by frontend FsRouter (tab.query → QueryTabAdapter, panel.db-tree → DbTreeAdapter)
-                _ => {
-                    let result = crate::mcp::tools::tab_control::query_frontend(
-                        &handle,
-                        "fs_request",
-                        json!({ "op": op, "resource": resource, "target": target, "payload": payload }),
-                    ).await?;
-                    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-                }
-            }
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

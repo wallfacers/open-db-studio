@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-pub(crate) async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &str, params: Value) -> crate::AppResult<Value> {
+pub(crate) async fn query_frontend(handle: &Arc<tauri::AppHandle>, event_channel: &str, query_type: &str, params: Value) -> crate::AppResult<Value> {
     let app_state = handle.state::<crate::AppState>();
     let request_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
@@ -10,7 +10,7 @@ pub(crate) async fn query_frontend(handle: &Arc<tauri::AppHandle>, query_type: &
         let mut pending = app_state.pending_queries.lock().await;
         pending.insert(request_id.clone(), tx);
     }
-    handle.emit("mcp://query-request", json!({
+    handle.emit(event_channel, json!({
         "request_id": request_id,
         "query_type": query_type,
         "params": params
@@ -57,7 +57,7 @@ pub(crate) async fn send_ui_action(handle: &Arc<tauri::AppHandle>, action: &str,
 }
 
 pub async fn search_tabs(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = query_frontend(&handle, "search_tabs", args).await?;
+    let result = query_frontend(&handle, "mcp://query-request", "search_tabs", args).await?;
     Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
 }
 

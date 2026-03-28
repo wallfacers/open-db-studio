@@ -1,5 +1,6 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
 import { applyPatch } from '../jsonPatch'
+import { useMetricFormStore } from '../../../store/metricFormStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
@@ -20,43 +21,29 @@ const METRIC_FORM_SCHEMA = {
   required: ['displayName', 'name'],
 }
 
-export interface MetricFormState {
-  metricId?: number
-  displayName: string
-  name: string
-  metricType: 'atomic' | 'composite'
-  tableName: string
-  columnName: string
-  aggregation: string
-  filterSql: string
-  category: string
-  description: string
-}
-
 export class MetricFormUIObject implements UIObject {
   type = 'metric_form'
   objectId: string
   title: string
   connectionId?: number
-  private state: MetricFormState
-  private setState: (s: MetricFormState) => void
 
-  constructor(objectId: string, state: MetricFormState, setState: (s: MetricFormState) => void, connectionId?: number) {
-    this.objectId = objectId
-    this.title = state.displayName || 'New Metric'
+  constructor(tabId: string, connectionId?: number) {
+    this.objectId = tabId
     this.connectionId = connectionId
-    this.state = state
-    this.setState = setState
+    this.title = useMetricFormStore.getState().getForm(tabId)?.displayName || 'New Metric'
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
     switch (mode) {
-      case 'state': return this.state
-      case 'schema': return METRIC_FORM_SCHEMA
-      case 'actions': return [
-        { name: 'save', description: 'Save metric definition' },
-        { name: 'validate', description: 'Validate metric fields' },
-      ]
+      case 'state':
+        return useMetricFormStore.getState().getForm(this.objectId) ?? {}
+      case 'schema':
+        return METRIC_FORM_SCHEMA
+      case 'actions':
+        return [
+          { name: 'save', description: 'Save metric definition' },
+          { name: 'validate', description: 'Validate metric fields' },
+        ]
     }
   }
 
@@ -67,7 +54,7 @@ export class MetricFormUIObject implements UIObject {
     const confirmId = `patch_${this.objectId}_${Date.now()}`
     usePatchConfirmStore.getState().propose({
       confirmId, objectId: this.objectId, objectType: this.type,
-      ops, reason, currentState: this.state,
+      ops, reason, currentState: this.read('state'),
       createdAt: Date.now(),
       onConfirm: () => this.patchDirect(ops),
     })
@@ -75,9 +62,11 @@ export class MetricFormUIObject implements UIObject {
   }
 
   patchDirect(ops: JsonPatchOp[]): PatchResult {
+    const current = useMetricFormStore.getState().getForm(this.objectId)
+    if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
     try {
-      const patched = applyPatch(this.state, ops)
-      this.setState(patched)
+      const patched = applyPatch(current, ops)
+      useMetricFormStore.getState().setForm(this.objectId, patched)
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }
@@ -85,13 +74,16 @@ export class MetricFormUIObject implements UIObject {
   }
 
   async exec(action: string, _params?: any): Promise<ExecResult> {
+    const state = useMetricFormStore.getState().getForm(this.objectId)
+    if (!state) return { success: false, error: 'No form state' }
+
     switch (action) {
       case 'save': {
         try {
-          if (this.state.metricId) {
-            await invoke('update_metric', { id: this.state.metricId, input: this.state })
+          if (state.metricId) {
+            await invoke('update_metric', { id: state.metricId, input: state })
           } else {
-            await invoke('save_metric', { input: this.state })
+            await invoke('save_metric', { input: state })
           }
           return { success: true }
         } catch (e) {
@@ -100,8 +92,8 @@ export class MetricFormUIObject implements UIObject {
       }
       case 'validate': {
         const errors: string[] = []
-        if (!this.state.displayName) errors.push('displayName is required')
-        if (!this.state.name) errors.push('name is required')
+        if (!state.displayName) errors.push('displayName is required')
+        if (!state.name) errors.push('name is required')
         return { success: errors.length === 0, data: { errors } }
       }
       default:

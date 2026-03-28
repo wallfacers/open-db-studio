@@ -2,26 +2,10 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useQueryStore } from '../store/queryStore';
-import { useAppStore } from '../store/appStore';
-import { useConfirmStore } from '../store/confirmStore';
-import { useSeaTunnelStore } from '../store/seaTunnelStore';
-import { useTreeStore } from '../store/treeStore';
 import { uiRouter } from '../mcp/ui'
 import { WorkspaceAdapter } from '../mcp/ui/adapters/WorkspaceAdapter'
 import { DbTreeAdapter } from '../mcp/ui/adapters/DbTreeAdapter'
 import { HistoryAdapter } from '../mcp/ui/adapters/HistoryAdapter'
-
-interface UiActionPayload {
-  request_id: string;
-  action: 'open_tab' | 'propose_seatunnel_job' | 'focus_tab';
-  params: Record<string, unknown>;
-}
-
-interface QueryRequestPayload {
-  request_id: string;
-  query_type: 'search_tabs' | 'get_tab_content' | 'search_db_metadata';
-  params: Record<string, unknown>;
-}
 
 interface UIRequestPayload {
   request_id: string;
@@ -35,8 +19,6 @@ interface UIRequestPayload {
 }
 
 export function useMcpBridge() {
-  const { tabs, activeTabId, setActiveTabId, sqlContent, openTableStructureTab, openMetricTab, openQueryTab, openSeaTunnelJobTab } = useQueryStore();
-
   // Register singleton UI adapters (idempotent)
   uiRouter.registerInstance('workspace', new WorkspaceAdapter())
   uiRouter.registerInstance('db_tree', new DbTreeAdapter())
@@ -45,253 +27,6 @@ export function useMcpBridge() {
   uiRouter.setActiveTabIdProvider(() => useQueryStore.getState().activeTabId)
 
   useEffect(() => {
-    // 监听 UI 操作（写方向）
-    const unlistenUiAction = listen<UiActionPayload>('mcp://ui-action', async (event) => {
-      const { request_id, action, params } = event.payload;
-      try {
-        if (action === 'focus_tab') {
-          const { tab_id } = params as { tab_id?: string };
-          const tab = useQueryStore.getState().tabs.find(t => t.id === tab_id);
-          if (tab) {
-            setActiveTabId(tab.id);
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: true,
-              data: { tab_id: tab.id }, error: null,
-            });
-          } else {
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: false, data: null,
-              error: `Tab '${tab_id}' not found`,
-            });
-          }
-        } else if (action === 'propose_seatunnel_job') {
-          const { job_name, config_json, category_id, description, job_id } = params as {
-            job_name: string; config_json: string;
-            category_id?: number; description?: string; job_id?: number;
-          };
-          const { autoMode } = useAppStore.getState();
-          const isUpdate = job_id != null;
-
-          let confirmed = false;
-          if (autoMode) {
-            confirmed = true;
-          } else {
-            confirmed = await useConfirmStore.getState().confirm({
-              title: isUpdate
-                ? `更新 SeaTunnel Job：${job_name}`
-                : `创建 SeaTunnel Job：${job_name}`,
-              message: description
-                ? `${description}\n\n是否确认${isUpdate ? '更新' : '创建'}此迁移任务？`
-                : `是否确认${isUpdate ? '更新' : '创建'} SeaTunnel Job「${job_name}」？`,
-              confirmLabel: isUpdate ? '确认更新' : '确认创建',
-              variant: 'default',
-            });
-          }
-
-          if (!confirmed) {
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: false, data: null,
-              error: `用户取消了 Job ${isUpdate ? '更新' : '创建'}`
-            });
-            return;
-          }
-
-          try {
-            if (isUpdate) {
-              // 更新已有 Job：写 DB + 更新 store（已打开的 Tab 会订阅到变化）
-              await invoke('update_st_job', {
-                id: job_id,
-                name: job_name ?? null,
-                categoryId: null,
-                connectionId: null,
-                configJson: config_json,
-              });
-              useSeaTunnelStore.getState().setStJobContent(job_id!, config_json);
-              await invoke('mcp_ui_action_respond', {
-                requestId: request_id, success: true,
-                data: { job_id, job_name }, error: null
-              });
-            } else {
-              // 创建新 Job
-              const newJobId = await invoke<number>('create_st_job', {
-                name: job_name,
-                categoryId: category_id ?? null,
-                connectionId: null,
-              });
-              await invoke('update_st_job', {
-                id: newJobId,
-                name: null,
-                categoryId: null,
-                connectionId: null,
-                configJson: config_json,
-              });
-              await invoke('mcp_ui_action_respond', {
-                requestId: request_id, success: true,
-                data: { job_id: newJobId, job_name }, error: null
-              });
-            }
-          } catch (createErr) {
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: false, data: null,
-              error: String(createErr)
-            });
-          }
-        } else if (action === 'open_tab') {
-          const { connection_id, type, table_name, database, metric_id, job_id } = params as {
-            connection_id?: number; type: string; table_name?: string;
-            database?: string; metric_id?: number; job_id?: number;
-          };
-          let newTabId: string | null = null;
-
-          if (type === 'table_structure' && connection_id != null) {
-            const beforeTabIds = new Set(useQueryStore.getState().tabs.map(t => t.id));
-            openTableStructureTab(connection_id, database, undefined, table_name || undefined);
-            const stateAfter = useQueryStore.getState();
-            const newlyAdded = stateAfter.tabs.find(t => !beforeTabIds.has(t.id) && t.type === 'table_structure');
-            const fallback = newlyAdded ?? stateAfter.tabs.find(
-              t => t.type === 'table_structure' && t.connectionId === connection_id &&
-              t.title === (table_name || '新建表')
-            );
-            newTabId = fallback?.id ?? null;
-          } else if (type === 'metric' && metric_id) {
-            openMetricTab(metric_id, `Metric #${metric_id}`);
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const newTab = useQueryStore.getState().tabs.find(
-              t => t.type === 'metric' && t.metricId === metric_id
-            );
-            newTabId = newTab?.id ?? null;
-          } else if (type === 'seatunnel_job' && job_id != null) {
-            const label = useSeaTunnelStore.getState().nodes.get(`job_${job_id}`)?.label ?? `Job #${job_id}`;
-            openSeaTunnelJobTab(job_id, label);
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const newTab = useQueryStore.getState().tabs.find(
-              t => t.type === 'seatunnel_job' && t.stJobId === job_id
-            );
-            newTabId = newTab?.id ?? null;
-          } else if (type === 'query' && connection_id != null) {
-            const beforeIds = new Set(useQueryStore.getState().tabs.map(t => t.id));
-            openQueryTab(connection_id, `Connection #${connection_id}`, database);
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const newTab = useQueryStore.getState().tabs.find(
-              t => t.type === 'query' && t.connectionId === connection_id && !beforeIds.has(t.id)
-            );
-            newTabId = newTab?.id ?? null;
-          }
-
-          if (newTabId) {
-            setActiveTabId(newTabId);
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: true,
-              data: { tab_id: newTabId }, error: null
-            });
-          } else {
-            await invoke('mcp_ui_action_respond', {
-              requestId: request_id, success: false, data: null,
-              error: 'Failed to open tab'
-            });
-          }
-        }
-      } catch (e) {
-        await invoke('mcp_ui_action_respond', {
-          requestId: request_id, success: false, data: null,
-          error: String(e)
-        }).catch(() => {});
-      }
-    });
-
-    // 监听查询请求（读方向）
-    const unlistenQueryRequest = listen<QueryRequestPayload>('mcp://query-request', async (event) => {
-      const { request_id, query_type, params } = event.payload;
-      try {
-        let data: unknown = null;
-        const currentTabs = useQueryStore.getState().tabs;
-        const currentSqlContent = useQueryStore.getState().sqlContent;
-
-        if (query_type === 'search_tabs') {
-          const { table_name, type: tabType } = params as { table_name?: string; type?: string };
-          const currentActiveTabId = useQueryStore.getState().activeTabId;
-          data = currentTabs.filter(t => {
-            if (tabType && t.type !== tabType) return false;
-            if (table_name) {
-              return t.title.toLowerCase().includes(table_name.toLowerCase());
-            }
-            return true;
-          }).map(t => ({
-            tab_id: t.id,
-            type: t.type,
-            title: t.title,
-            connection_id: t.connectionId,
-            db: t.db,
-            is_active: t.id === currentActiveTabId,
-            // 附带专属 ID，便于 AI 直接引用
-            ...(t.metricId != null && { metric_id: t.metricId }),
-            ...(t.stJobId != null && { job_id: t.stJobId }),
-          }));
-        } else if (query_type === 'get_tab_content') {
-          const tabId = (params as { tab_id?: string }).tab_id;
-          const tab = currentTabs.find(t => t.id === tabId);
-          if (tab) {
-            const base = {
-              tab_id: tab.id,
-              type: tab.type,
-              title: tab.title,
-              connection_id: tab.connectionId,
-              db: tab.db,
-              sql_content: currentSqlContent[tab.id] ?? null,
-            };
-            if (tab.type === 'seatunnel_job' && tab.stJobId != null) {
-              const configJson = useSeaTunnelStore.getState().stJobContent.get(tab.stJobId) ?? null;
-              data = { ...base, config_json: configJson, job_id: tab.stJobId };
-            } else if (tab.type === 'table_structure' && tab.connectionId != null) {
-              // Gap #3：直接从 DB 读列定义填充
-              try {
-                const columns = await invoke('get_column_meta', {
-                  connectionId: tab.connectionId,
-                  tableName: tab.title,
-                  database: tab.db ?? null,
-                });
-                data = { ...base, columns };
-              } catch {
-                data = base;
-              }
-            } else if (tab.type === 'metric' && tab.metricId != null) {
-              // Gap #4：直接从 DB 读指标定义填充
-              try {
-                const metricDef = await invoke('get_metric', { metricId: tab.metricId });
-                data = { ...base, metric: metricDef, metric_id: tab.metricId };
-              } catch {
-                data = { ...base, metric_id: tab.metricId };
-              }
-            } else {
-              data = base;
-            }
-          } else {
-            data = null;
-          }
-        } else if (query_type === 'search_db_metadata') {
-          const { keyword, type: nodeType, connection_id } = params as {
-            keyword?: string; type?: string; connection_id?: number;
-          };
-          const nodes = useTreeStore.getState().nodes;
-          const kw = (keyword ?? '').toLowerCase();
-          data = Array.from(nodes.values()).filter(n => {
-            if (nodeType && n.nodeType !== nodeType) return false;
-            if (connection_id != null && n.meta?.connectionId !== connection_id) return false;
-            if (kw) return n.label.toLowerCase().includes(kw);
-            return true;
-          }).map(n => ({
-            name: n.label,
-            type: n.nodeType,
-            ...(n.meta?.connectionId != null && { connection_id: n.meta.connectionId }),
-          }));
-        }
-
-        await invoke('mcp_query_respond', { requestId: request_id, data });
-      } catch (e) {
-        await invoke('mcp_query_respond', { requestId: request_id, data: null }).catch(() => {});
-      }
-    });
-
     // Listen for UI Object Protocol requests (ui_read, ui_patch, ui_exec, ui_list)
     const unlistenUIRequest = listen<UIRequestPayload>('mcp://ui-request', async (event) => {
       const { request_id, params } = event.payload;
@@ -311,8 +46,6 @@ export function useMcpBridge() {
     });
 
     return () => {
-      unlistenUiAction.then(fn => fn());
-      unlistenQueryRequest.then(fn => fn());
       unlistenUIRequest.then(fn => fn());
     };
   }, []); // 只挂载一次，内部通过 getState() 读取最新 store

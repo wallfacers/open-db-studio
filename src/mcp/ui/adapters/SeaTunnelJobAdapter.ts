@@ -1,5 +1,6 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
 import { applyPatch } from '../jsonPatch'
+import { useSeaTunnelJobFormStore } from '../../../store/seatunnelJobStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
@@ -15,39 +16,31 @@ const SEATUNNEL_JOB_SCHEMA = {
   required: ['jobName', 'configJson'],
 }
 
-export interface SeaTunnelJobState {
-  jobId?: number
-  jobName: string
-  configJson: string
-  connectionId?: number
-  categoryId?: number
-}
-
 export class SeaTunnelJobUIObject implements UIObject {
   type = 'seatunnel_job'
   objectId: string
   title: string
   connectionId?: number
-  private state: SeaTunnelJobState
-  private setState: (s: SeaTunnelJobState) => void
 
-  constructor(objectId: string, state: SeaTunnelJobState, setState: (s: SeaTunnelJobState) => void) {
-    this.objectId = objectId
-    this.title = state.jobName || 'New Job'
-    this.connectionId = state.connectionId
-    this.state = state
-    this.setState = setState
+  constructor(tabId: string) {
+    this.objectId = tabId
+    const form = useSeaTunnelJobFormStore.getState().getForm(tabId)
+    this.title = form?.jobName || 'New Job'
+    this.connectionId = form?.connectionId
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
     switch (mode) {
-      case 'state': return this.state
-      case 'schema': return SEATUNNEL_JOB_SCHEMA
-      case 'actions': return [
-        { name: 'save', description: 'Save job configuration' },
-        { name: 'submit', description: 'Submit job for execution' },
-        { name: 'stop', description: 'Stop running job' },
-      ]
+      case 'state':
+        return useSeaTunnelJobFormStore.getState().getForm(this.objectId) ?? {}
+      case 'schema':
+        return SEATUNNEL_JOB_SCHEMA
+      case 'actions':
+        return [
+          { name: 'save', description: 'Save job configuration' },
+          { name: 'submit', description: 'Submit job for execution' },
+          { name: 'stop', description: 'Stop running job' },
+        ]
     }
   }
 
@@ -58,7 +51,7 @@ export class SeaTunnelJobUIObject implements UIObject {
     const confirmId = `patch_${this.objectId}_${Date.now()}`
     usePatchConfirmStore.getState().propose({
       confirmId, objectId: this.objectId, objectType: this.type,
-      ops, reason, currentState: this.state,
+      ops, reason, currentState: this.read('state'),
       createdAt: Date.now(),
       onConfirm: () => this.patchDirect(ops),
     })
@@ -66,9 +59,11 @@ export class SeaTunnelJobUIObject implements UIObject {
   }
 
   patchDirect(ops: JsonPatchOp[]): PatchResult {
+    const current = useSeaTunnelJobFormStore.getState().getForm(this.objectId)
+    if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
     try {
-      const patched = applyPatch(this.state, ops)
-      this.setState(patched)
+      const patched = applyPatch(current, ops)
+      useSeaTunnelJobFormStore.getState().setForm(this.objectId, patched)
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }
@@ -76,16 +71,19 @@ export class SeaTunnelJobUIObject implements UIObject {
   }
 
   async exec(action: string, _params?: any): Promise<ExecResult> {
+    const state = useSeaTunnelJobFormStore.getState().getForm(this.objectId)
+    if (!state) return { success: false, error: 'No form state' }
+
     switch (action) {
       case 'save': {
         try {
-          if (this.state.jobId) {
+          if (state.jobId) {
             await invoke('update_st_job', {
-              id: this.state.jobId,
-              name: this.state.jobName,
-              configJson: this.state.configJson,
-              categoryId: this.state.categoryId,
-              connectionId: this.state.connectionId,
+              id: state.jobId,
+              name: state.jobName,
+              configJson: state.configJson,
+              categoryId: state.categoryId,
+              connectionId: state.connectionId,
             })
           }
           return { success: true }
@@ -95,8 +93,8 @@ export class SeaTunnelJobUIObject implements UIObject {
       }
       case 'submit': {
         try {
-          if (!this.state.jobId) return { success: false, error: 'Job not saved yet' }
-          const result = await invoke('submit_st_job', { jobId: this.state.jobId })
+          if (!state.jobId) return { success: false, error: 'Job not saved yet' }
+          const result = await invoke('submit_st_job', { jobId: state.jobId })
           return { success: true, data: result }
         } catch (e) {
           return { success: false, error: String(e) }
@@ -104,8 +102,8 @@ export class SeaTunnelJobUIObject implements UIObject {
       }
       case 'stop': {
         try {
-          if (!this.state.jobId) return { success: false, error: 'No job to stop' }
-          await invoke('stop_st_job', { jobId: this.state.jobId })
+          if (!state.jobId) return { success: false, error: 'No job to stop' }
+          await invoke('stop_st_job', { jobId: state.jobId })
           return { success: true }
         } catch (e) {
           return { success: false, error: String(e) }

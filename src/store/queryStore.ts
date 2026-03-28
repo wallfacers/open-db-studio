@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo, MetricScope, QueryContext } from '../types';
+import type { QueryResult, QueryHistory, Tab, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
 
 /** 判断是否为返回结果集的查询语句 */
@@ -78,12 +78,6 @@ interface QueryState {
   removeOtherResults: (tabId: string, idx: number) => void;
   clearResults: (tabId: string) => void;
 
-  // SQL diff 提案（等待用户确认）
-  pendingDiff: SqlDiffProposal | null;
-  proposeSqlDiff: (proposal: SqlDiffProposal) => void;
-  applyDiff: () => void;
-  cancelDiff: () => void;
-
   // Monaco 编辑器光标/选区（由 MainContent 实时写入）
   editorInfo: Record<string, EditorInfo>;
   setEditorInfo: (tabId: string, info: EditorInfo) => void;
@@ -95,10 +89,6 @@ interface QueryState {
   appendExplanationContent: (tabId: string, delta: string) => void;
   clearExplanation: (tabId: string) => void;
   startExplanation: (tabId: string) => void;
-
-  // Auto 模式自动应用 Banner（短暂显示后清除）
-  autoApplyBanner: { reason: string } | null;
-  setAutoApplyBanner: (banner: { reason: string } | null) => void;
 
   // 表数据外部刷新信号（tabId → 递增计数器，TableDataView 订阅后自动刷新）
   tableRefreshSignals: Record<string, number>;
@@ -178,9 +168,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   queryHistory: [],
   error: null,
   diagnosis: null,
-  pendingDiff: null,
-  autoApplyBanner: null,
-  setAutoApplyBanner: (banner) => set({ autoApplyBanner: banner }),
   tableRefreshSignals: {},
   triggerTableRefresh: (tabId) => set(s => ({
     tableRefreshSignals: { ...s.tableRefreshSignals, [tabId]: (s.tableRefreshSignals[tabId] ?? 0) + 1 },
@@ -272,7 +259,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         id, type: 'table_structure',
         title: tableName || '新建表',
         db: dbName, connectionId, schema,
-        isNewTable: isNew,
       };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
@@ -515,31 +501,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   clearResults: (tabId) =>
     set(s => ({ results: { ...s.results, [tabId]: [] } })),
-
-  proposeSqlDiff: (proposal) => set({ pendingDiff: proposal }),
-
-  applyDiff: () => {
-    const { pendingDiff } = get();
-    if (!pendingDiff) return;
-    const full = get().sqlContent[pendingDiff.tabId] ?? '';
-    // endOffset 指向语句末尾（不含分号），若原文紧跟分号则一并消费，
-    // 避免 modified 自带分号时出现双分号
-    const endOffset =
-      full[pendingDiff.endOffset] === ';'
-        ? pendingDiff.endOffset + 1
-        : pendingDiff.endOffset;
-    const newSql =
-      full.slice(0, pendingDiff.startOffset) +
-      pendingDiff.modified +
-      full.slice(endOffset);
-    set((s) => ({
-      sqlContent: { ...s.sqlContent, [pendingDiff.tabId]: newSql },
-      pendingDiff: null,
-    }));
-    persistSqlContent(pendingDiff.tabId, newSql);
-  },
-
-  cancelDiff: () => set({ pendingDiff: null }),
 
   setEditorInfo: (tabId, info) =>
     set((s) => ({ editorInfo: { ...s.editorInfo, [tabId]: info } })),

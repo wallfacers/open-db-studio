@@ -131,7 +131,6 @@ export interface Tab {
   db?: string;
   schema?: string;
   queryContext?: QueryContext;
-  isNewTable?: boolean;        // table_structure Tab 专用
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
   erProjectId?: number;        // er_design Tab 专用
@@ -272,16 +271,6 @@ export interface SqlStatementInfo {
   endOffset: number;    // 结束字符偏移（不含末尾分号）
   startLine: number;    // 0-based 行号（语句起始）
   endLine: number;      // 0-based 行号（语句结束）
-}
-
-/** AI 提出的 SQL 修改提案（等待用户确认） */
-export interface SqlDiffProposal {
-  original: string;     // 原始 SQL（单条语句）
-  modified: string;     // 修改后的 SQL
-  reason: string;       // 修改原因（AI 说明）
-  tabId: string;        // 目标 Tab
-  startOffset: number;  // 原始语句在编辑器中的起始位置
-  endOffset: number;    // 原始语句在编辑器中的结束位置
 }
 
 /** Monaco 编辑器光标/选区信息（由 MainContent 实时写入） */

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import {
   ReactFlow,
   Background,
@@ -22,6 +22,8 @@ import { DiffReportDialog } from '../dialogs/DiffReportDialog'
 import { BindConnectionDialog } from '../dialogs/BindConnectionDialog'
 import { ImportTableDialog } from '../dialogs/ImportTableDialog'
 import { useERKeyboard } from '../hooks/useERKeyboard'
+import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
+import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import type { ErTable, ErColumn } from '../../../types'
 
 const nodeTypes = {
@@ -43,7 +45,12 @@ interface NodeData {
   [key: string]: unknown
 }
 
-export default function ERCanvas({ projectId }: { projectId: number }) {
+interface ERCanvasProps {
+  projectId: number;
+  tabId?: string;
+}
+
+export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const rfInstance = useRef<ReactFlowInstance<Node<NodeData>, Edge> | null>(null)
@@ -52,6 +59,13 @@ export default function ERCanvas({ projectId }: { projectId: number }) {
   const [showDiff, setShowDiff] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
+
+  // Register UIObject for MCP ui_list discovery
+  const erUIObject = useMemo(() => {
+    if (!tabId) return null
+    return new ERCanvasAdapter(tabId, `ER Project #${projectId}`)
+  }, [tabId, projectId])
+  useUIObjectRegistry(erUIObject)
 
   // Select only the actions and state values needed (stable references for actions)
   const loadProject = useErDesignerStore(s => s.loadProject)

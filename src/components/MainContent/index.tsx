@@ -73,6 +73,8 @@ import { askAiWithContext } from '../../utils/askAi';
 import { computeColumnWidths, adjustColumnWidths, ROW_NUM_WIDTH } from '../../utils/columnWidths';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { MarkdownContent } from '../shared/MarkdownContent';
+import { useUIObjectRegistry } from '../../mcp/ui';
+import { QueryEditorAdapter } from '../../mcp/ui/adapters/QueryEditorAdapter';
 
 function getSqlAtCursor(sql: string, cursorOffset: number): string {
   const parts = sql.split(';');
@@ -437,6 +439,13 @@ export const MainContent: React.FC<MainContentProps> = ({
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
   const currentResults = results[activeTab] ?? [];
+
+  // Register UIObject for active query tab
+  const queryUIObject = useMemo(() => {
+    if (!activeTabObj || activeTabObj.type !== 'query') return null
+    return new QueryEditorAdapter(activeTabObj.id, activeTabObj.connectionId, activeTabObj.title)
+  }, [activeTabObj?.id, activeTabObj?.type, activeTabObj?.connectionId, activeTabObj?.title])
+  useUIObjectRegistry(queryUIObject)
   const [selectedResultPane, setSelectedResultPane] = useState<number | 'explanation'>(0);
 
   // Reset selected result index when active editor tab changes
@@ -764,14 +773,14 @@ export const MainContent: React.FC<MainContentProps> = ({
 
       {activeTabObj ? (
         activeTabObj.type === 'er_design' ? (
-          <ERCanvas projectId={activeTabObj.erProjectId!} />
+          <ERCanvas projectId={activeTabObj.erProjectId!} tabId={activeTabObj.id} />
         ) : activeTabObj.type === 'table' ? null
         : activeTabObj.type === 'table_structure' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <TableStructureView
               tabId={activeTabObj.id}
               connectionId={activeTabObj.connectionId!}
-              tableName={activeTabObj.isNewTable ? undefined : activeTabObj.title}
+              tableName={activeTabObj.id.includes('_new_') ? undefined : activeTabObj.title}
               database={activeTabObj.db}
               schema={activeTabObj.schema}
               onSuccess={() => showToast('操作成功', 'success')}
@@ -783,6 +792,8 @@ export const MainContent: React.FC<MainContentProps> = ({
             <MetricTab
               metricId={activeTabObj.metricId}
               newMetricScope={!activeTabObj.metricId ? activeTabObj.metricScope : undefined}
+              tabId={activeTabObj.id}
+              connectionId={activeTabObj.connectionId ?? activeTabObj.metricScope?.connectionId}
               onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(activeTab, id, title)}
               onDelete={() => useQueryStore.getState().closeTab(activeTab)}
             />

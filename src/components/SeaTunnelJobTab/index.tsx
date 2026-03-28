@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Play, Square, Save, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,9 @@ import VisualBuilder, {
 } from './VisualBuilder';
 import JsonEditor from './JsonEditor';
 import JobLogPanel, { type JobLogPanelHandle } from './JobLogPanel';
+import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
+import { SeaTunnelJobUIObject } from '../../mcp/ui/adapters/SeaTunnelJobAdapter';
+import { useSeaTunnelJobFormStore } from '../../store/seatunnelJobStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +109,19 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   // 订阅树节点 label，响应从树侧发起的重命名
   const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(`job_${jobId}`)?.label : undefined);
 
+  const tabId = tab.id;
+
+  // ── Init / cleanup form store for UIObject ──────────────────────────────
+  useEffect(() => {
+    useSeaTunnelJobFormStore.getState().initForm(tabId, {
+      jobId: tab.stJobId ?? undefined,
+      jobName: '',
+      configJson: '',
+      connectionId: tab.stConnectionId ?? undefined,
+    });
+    return () => useSeaTunnelJobFormStore.getState().removeForm(tabId);
+  }, [tabId]);
+
   // Job metadata
   const [jobName, setJobName] = useState('');
   const [connections, setConnections] = useState<StConnection[]>([]);
@@ -173,11 +189,25 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         // 同步到 store，供 MCP bridge 读取
         lastSyncedContentRef.current = finalJson;
         setStJobContent(jobId, finalJson);
+
+        // 同步到 form store，供 SeaTunnelJobUIObject 读取
+        useSeaTunnelJobFormStore.getState().setForm(tabId, {
+          jobId: tab.stJobId ?? undefined,
+          jobName: job.name,
+          configJson: finalJson,
+          connectionId: tab.stConnectionId ?? undefined,
+        });
       } catch (e) {
         showToast?.(String(e), 'error');
       }
     })();
   }, [jobId]);
+
+  // ── Register UIObject with UIRouter ────────────────────────────────────
+  const jobUIObject = useMemo(() => {
+    return new SeaTunnelJobUIObject(tabId);
+  }, [tabId]);
+  useUIObjectRegistry(jobUIObject);
 
   // ── 响应树侧重命名（inline edit）→ 同步 toolbar 输入框 ──────────────────
   useEffect(() => {

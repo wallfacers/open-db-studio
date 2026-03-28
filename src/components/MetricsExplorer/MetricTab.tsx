@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,9 @@ import { DropdownSelect } from '../common/DropdownSelect';
 import { Tooltip } from '../common/Tooltip';
 import { useMetricsTreeStore } from '../../store/metricsTreeStore';
 import { useConfirmStore } from '../../store/confirmStore';
+import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
+import { MetricFormUIObject } from '../../mcp/ui/adapters/MetricFormAdapter';
+import { useMetricFormStore } from '../../store/metricFormStore';
 
 // -------- 预设分类标签 --------
 const PRESET_CATEGORIES = [
@@ -89,7 +92,8 @@ function TagInput({ value, onChange, t }: { value: string; onChange: (v: string)
 interface Props {
   metricId?: number;           // 存在 = 编辑模式；不存在 = 新建模式
   newMetricScope?: MetricScope; // 新建模式必填
-  tabId?: string;              // 新建模式需要，用于保存后更新 tab
+  tabId?: string;              // 用于 UIObject 注册和 store 管理
+  connectionId?: number;       // 关联的连接 ID
   onSaved?: (metricId: number, title: string) => void; // 新建模式保存后回调
   onDelete?: () => void;
 }
@@ -97,7 +101,7 @@ interface Props {
 const inputCls = 'w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#00c9a7] transition-colors';
 const labelCls = 'block text-xs text-[#7a9bb8] mb-1';
 
-export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props) {
+export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSaved, onDelete }: Props) {
   const { t } = useTranslation();
   const isCreateMode = !metricId && !!newMetricScope;
 
@@ -186,6 +190,48 @@ export function MetricTab({ metricId, newMetricScope, onSaved, onDelete }: Props
       loadTablesForCreate();
     }
   }, [metricId]);
+
+  // ── MetricForm store 初始化 & UIObject 注册 ────────────────────────
+  useEffect(() => {
+    if (!tabId) return;
+    useMetricFormStore.getState().initForm(tabId, {
+      displayName: '',
+      name: '',
+      metricType: 'atomic',
+      tableName: '',
+      columnName: '',
+      aggregation: 'COUNT',
+      filterSql: '',
+      category: '',
+      description: '',
+      connectionId,
+    });
+    return () => useMetricFormStore.getState().removeForm(tabId);
+  }, [tabId, connectionId]);
+
+  // 编辑模式加载完 metric 后同步到 metricFormStore
+  useEffect(() => {
+    if (!tabId || !metric) return;
+    useMetricFormStore.getState().setForm(tabId, {
+      metricId: metric.id,
+      displayName: metric.display_name ?? '',
+      name: metric.name ?? '',
+      metricType: metric.metric_type ?? 'atomic',
+      tableName: metric.table_name ?? '',
+      columnName: metric.column_name ?? '',
+      aggregation: metric.aggregation ?? '',
+      filterSql: metric.filter_sql ?? '',
+      category: metric.category ?? '',
+      description: metric.description ?? '',
+      connectionId: metric.connection_id ?? connectionId,
+    });
+  }, [tabId, metric, connectionId]);
+
+  const metricUIObject = useMemo(() => {
+    if (!tabId) return null;
+    return new MetricFormUIObject(tabId, connectionId);
+  }, [tabId, connectionId]);
+  useUIObjectRegistry(metricUIObject);
 
   const handleTableChange = async (tableName: string) => {
     setForm(f => ({ ...f, table_name: tableName || undefined, column_name: undefined }));

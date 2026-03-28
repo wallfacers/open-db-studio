@@ -220,7 +220,7 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "filter": { "type": "object", "properties": { "type": { "type": "string" }, "keyword": { "type": "string" } } }
+                        "filter": { "type": "object", "properties": { "type": { "type": "string" }, "keyword": { "type": "string" }, "connectionId": { "type": "integer" }, "database": { "type": "string" } } }
                     }
                 }
             }),

@@ -8,8 +8,18 @@ import { useQueryStore } from '../../store/queryStore';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue([]) }));
 vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({ writeText: vi.fn() }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string, params?: Record<string, unknown>) => {
+    if (!params) return key;
+    return key + Object.entries(params).map(([k, v]) => ` ${k}=${v}`).join('');
+  } }),
 }));
+
+// jsdom 没有 ResizeObserver，useContainerWidth 的 useEffect 会抛 ReferenceError
+vi.stubGlobal('ResizeObserver', class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+});
 
 // Mock heavy sub-components
 vi.mock('./TableDataView', () => ({ TableDataView: () => React.createElement('div', null, 'TableDataView') }));

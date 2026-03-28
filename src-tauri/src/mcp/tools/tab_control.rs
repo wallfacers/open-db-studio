@@ -56,8 +56,4 @@ pub(crate) async fn send_ui_action(handle: &Arc<tauri::AppHandle>, action: &str,
     }
 }
 
-pub async fn search_tabs(handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let result = query_frontend(&handle, "mcp://query-request", "search_tabs", args).await?;
-    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-}
 

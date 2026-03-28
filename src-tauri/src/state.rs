@@ -34,7 +34,7 @@ pub struct AppState {
     pub pending_ui_actions: tokio::sync::Mutex<
         std::collections::HashMap<String, tokio::sync::oneshot::Sender<UiActionResponse>>
     >,
-    /// MCP 读查询 (search_tabs/get_tab_content) 的 oneshot channel，key=request_id
+    /// MCP 读查询 (ui-request/mcp_query_respond) 的 oneshot channel，key=request_id
     pub pending_queries: tokio::sync::Mutex<
         std::collections::HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>
     >,

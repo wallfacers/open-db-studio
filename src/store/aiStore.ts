@@ -399,16 +399,34 @@ export const useAiStore = create<AiState>()(
       },
 
       respondQuestion: async (sessionId, questionId, answers, cancelled) => {
-        // 立即清空 pendingQuestion，UI 先响应
-        set((s) => ({
-          chatStates: {
-            ...s.chatStates,
-            [sessionId]: {
-              ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
-              pendingQuestion: null,
+        // 将用户答案追加到 chatHistory（cancel 跳过时不追加）
+        const answerText = cancelled ? '' : (answers.flat().join(', ') || '').trim();
+        set((s) => {
+          const isCurrentSession = s.currentSessionId === sessionId;
+          const base: Record<string, unknown> = {
+            chatStates: {
+              ...s.chatStates,
+              [sessionId]: {
+                ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                pendingQuestion: null,
+              },
             },
-          },
-        }));
+          };
+          if (answerText && isCurrentSession) {
+            base.chatHistory = [...s.chatHistory, { role: 'user' as const, content: answerText }];
+          }
+          if (answerText && !isCurrentSession) {
+            const sess = s.sessions.find((se) => se.id === sessionId);
+            if (sess) {
+              base.sessions = s.sessions.map((se) =>
+                se.id === sessionId
+                  ? { ...se, messages: [...se.messages, { role: 'user' as const, content: answerText }], updatedAt: Date.now() }
+                  : se
+              );
+            }
+          }
+          return base;
+        });
         try {
           if (cancelled) {
             await invoke('agent_question_reject', { questionId });

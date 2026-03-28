@@ -69,9 +69,27 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         {thinking && <ThinkingBlock content={thinking} isStreaming={!pendingQuestion} />}
         {content && <MarkdownContent content={content} isStreaming={!pendingQuestion} />}
         {pendingQuestion ? (
-          <div className="flex items-center gap-2 py-1 mt-1">
-            <span className="ai-dot w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-            <span className="text-xs text-amber-400 animate-pulse">{t('assistant.waitingForAnswer')}</span>
+          <div className="mt-2 space-y-1">
+            {/* 从 questions 字段提取问题文本展示 */}
+            {Array.isArray(pendingQuestion.questions) && pendingQuestion.questions.length > 0 && (
+              pendingQuestion.questions.map((q, qi) => (
+                <div key={qi} className="text-[13px] text-amber-300/90 leading-relaxed">
+                  {q.header && <div className="font-medium">{q.header}</div>}
+                  {q.question && <div>{q.question}</div>}
+                  {Array.isArray(q.options) && q.options.length > 0 && (
+                    <div className="mt-1 space-y-0.5 text-xs text-amber-400/70">
+                      {q.options.map((opt, oi) => (
+                        <div key={oi}>• {opt.label}{opt.description ? ` — ${opt.description}` : ''}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            <div className="flex items-center gap-2 py-1">
+              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+              <span className="text-xs text-amber-400 animate-pulse">{t('assistant.waitingForAnswer')}</span>
+            </div>
           </div>
         ) : !hasFirstToken && (
           sessionStatus ? (

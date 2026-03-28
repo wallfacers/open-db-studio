@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react';
@@ -152,6 +152,33 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // SQL Preview panel resizable height
+  const [previewHeight, setPreviewHeight] = useState(140);
+  const [isPreviewResizing, setIsPreviewResizing] = useState(false);
+  const previewResizeRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  const handlePreviewResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = previewHeight;
+    previewResizeRef.current = { startY, startH };
+    setIsPreviewResizing(true);
+
+    const onMove = (ev: MouseEvent) => {
+      if (!previewResizeRef.current) return;
+      const delta = previewResizeRef.current.startY - ev.clientY;
+      setPreviewHeight(Math.max(80, Math.min(400, previewResizeRef.current.startH + delta)));
+    };
+    const onUp = () => {
+      previewResizeRef.current = null;
+      setIsPreviewResizing(false);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [previewHeight]);
 
   const { connections } = useConnectionStore();
   const driver = connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
@@ -447,14 +474,24 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         </button>
       </div>
 
+      {/* Resize Handle */}
+      <div
+        className="flex-shrink-0 h-[4.5px] cursor-row-resize hover:bg-[#00c9a7] z-10 transition-colors border-t border-[#1e2d42]"
+        style={isPreviewResizing ? { backgroundColor: '#00c9a7' } : undefined}
+        onMouseDown={handlePreviewResizeStart}
+      />
+
       {/* SQL Preview + Actions */}
-      <div className="flex-shrink-0 border-t border-[#1e2d42] px-3 py-2 bg-[#080d12]">
+      <div
+        className="flex-shrink-0 flex flex-col px-3 py-2 bg-[#080d12]"
+        style={{ height: previewHeight, transition: isPreviewResizing ? 'none' : 'height 150ms ease' }}
+      >
         <div className="text-xs text-[#7a9bb8] mb-1">
           {tableName ? t('tableManage.alterPreview') : t('tableManage.createPreview')}
         </div>
         <textarea
           readOnly
-          className="w-full bg-[#0d1520] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#c8daea] outline-none resize-none h-[72px]"
+          className="w-full flex-1 min-h-0 bg-[#0d1520] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#c8daea] outline-none resize-none"
           value={previewSql}
           spellCheck={false}
         />

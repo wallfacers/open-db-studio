@@ -284,6 +284,8 @@ pub fn run() {
             commands::agent_clear_session_history,
             commands::agent_cancel_session,
             commands::agent_permission_respond,
+            commands::agent_question_reply,
+            commands::agent_question_reject,
             commands::agent_chat,
             commands::agent_request_ai_title,
             commands::agent_apply_config,

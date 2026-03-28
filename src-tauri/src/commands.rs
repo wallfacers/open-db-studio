@@ -3144,6 +3144,26 @@ pub async fn agent_permission_respond(
     .await
 }
 
+/// Reply to a question from the AI agent.
+/// answers: array of arrays, e.g. [["选项1"], ["自定义输入"]]
+#[tauri::command]
+pub async fn agent_question_reply(
+    question_id: String,
+    answers: serde_json::Value,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::question_reply(state.serve_port, &question_id, answers).await
+}
+
+/// Reject a question from the AI agent.
+#[tauri::command]
+pub async fn agent_question_reject(
+    question_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::question_reject(state.serve_port, &question_id).await
+}
+
 /// Agent 对话（Serve 模式）
 /// 1. 写入 editor_sql_map 和 last_active_session_id
 /// 2. 构建 prompt_text

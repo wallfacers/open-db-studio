@@ -57,6 +57,8 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const content = useAiStore((s) => s.chatStates[sessionId]?.streamingContent ?? '');
   const thinking = useAiStore((s) => s.chatStates[sessionId]?.streamingThinkingContent ?? '');
   const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
+  const pendingQuestion = useAiStore((s) => s.chatStates[sessionId]?.pendingQuestion ?? null);
+  const { t } = useTranslation();
 
   // 已收到任何内容（包含深度思考）则不再显示等待动画
   const hasFirstToken = !!(content || thinking);
@@ -64,9 +66,14 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   return (
     <div className="flex flex-col items-start">
       <div className="text-[#c8daea] text-[13px] w-full">
-        {thinking && <ThinkingBlock content={thinking} isStreaming={true} />}
-        {content && <MarkdownContent content={content} isStreaming={true} />}
-        {!hasFirstToken && (
+        {thinking && <ThinkingBlock content={thinking} isStreaming={!pendingQuestion} />}
+        {content && <MarkdownContent content={content} isStreaming={!pendingQuestion} />}
+        {pendingQuestion ? (
+          <div className="flex items-center gap-2 py-1 mt-1">
+            <span className="ai-dot w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+            <span className="text-xs text-amber-400 animate-pulse">{t('assistant.waitingForAnswer')}</span>
+          </div>
+        ) : !hasFirstToken && (
           sessionStatus ? (
             <div className="flex items-center gap-2 py-1">
               <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
@@ -109,13 +116,15 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondQuestion, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const lastUserMessageId = useAiStore((s) => s.chatStates[currentSessionId]?.lastUserMessageId ?? null);
   const canRedo = useAiStore((s) => s.chatStates[currentSessionId]?.canRedo ?? false);
   const isCompacting = useAiStore((s) => s.chatStates[currentSessionId]?.isCompacting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
+  const pendingQuestion = useAiStore((s) => s.chatStates[currentSessionId]?.pendingQuestion ?? null);
+  const isWaitingForAnswer = isChatting && !!pendingQuestion;
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -260,7 +269,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   );
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, streamingContent, streamingThinking, pendingPermission, currentSessionId]);
+  }, [chatHistory, streamingContent, streamingThinking, pendingPermission, pendingQuestion, currentSessionId]);
 
   useEffect(() => {
     loadConfigs();
@@ -268,9 +277,23 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || isChatting) return;
+    if (!chatInput.trim()) return;
+
+    // 如果有 pending question，发送答案而非新消息
+    if (isWaitingForAnswer && pendingQuestion) {
+      const answer = chatInput.trim();
+      setChatInput('');
+      await respondQuestion(
+        currentSessionId,
+        pendingQuestion.question_id,
+        [[answer]],  // 单个答案包装为 answers 格式
+        false,
+      );
+      return;
+    }
+
+    if (isChatting) return;
     const prompt = chatInput.trim();
-    // 并发上限检查
     const activeChatCount = Object.values(useAiStore.getState().chatStates).filter((s) => s.isChatting).length;
     if (activeChatCount >= 10) {
       showToast(t('assistant.concurrentChatLimit'), 'warning');
@@ -369,7 +392,7 @@ export const Assistant: React.FC<AssistantProps> = ({
       </div>
       <textarea
         className="bg-transparent text-[13px] text-[#c8daea] outline-none resize-none h-16 w-full placeholder-[#7a9bb8]"
-        placeholder={t('assistant.inputPlaceholder')}
+        placeholder={isWaitingForAnswer ? t('assistant.answerPlaceholder') : t('assistant.inputPlaceholder')}
         value={chatInput}
         onChange={(e) => {
           const val = e.target.value;
@@ -382,7 +405,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           }
         }}
         onKeyDown={handleKeyDown}
-        disabled={isChatting}
+        disabled={isChatting && !isWaitingForAnswer}
       />
       <div className="flex items-center justify-between mt-2 relative">
         {/* 模型选择器 + Auto 开关 */}
@@ -468,14 +491,41 @@ export const Assistant: React.FC<AssistantProps> = ({
         </div>
 
         {isChatting ? (
-          <Tooltip content={t('assistant.stopGeneration')} className="contents">
-            <button
-              className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
-              onClick={() => cancelChat(currentSessionId)}
-            >
-              <Square size={14} />
-            </button>
-          </Tooltip>
+          isWaitingForAnswer ? (
+            <>
+              {/* 等待回答模式：amber 跳过 + send */}
+              <Tooltip content={t('assistant.rejectQuestion')} className="contents">
+                <button
+                  className="p-1.5 rounded transition-colors bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                  onClick={() => {
+                    if (pendingQuestion) {
+                      respondQuestion(currentSessionId, pendingQuestion.question_id, [], true);
+                    }
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </Tooltip>
+              <Tooltip content={t('assistant.sendMessage')} className="contents">
+                <button
+                  className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim()}
+                >
+                  <Send size={14} />
+                </button>
+              </Tooltip>
+            </>
+          ) : (
+            <Tooltip content={t('assistant.stopGeneration')} className="contents">
+              <button
+                className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                onClick={() => cancelChat(currentSessionId)}
+              >
+                <Square size={14} />
+              </button>
+            </Tooltip>
+          )
         ) : (
           <Tooltip content={t('assistant.sendMessage')} className="contents">
             <button

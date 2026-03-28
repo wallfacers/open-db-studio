@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, PermissionRequest } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, PermissionRequest, QuestionRequest } from '../types';
 import { useAppStore } from './appStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -50,6 +50,7 @@ interface SessionRuntimeState {
   activeToolName: string | null;
   sessionStatus: string | null;
   pendingPermission: PermissionRequest | null;          // permission 路径（isChatting=true）
+  pendingQuestion: QuestionRequest | null;              // question.asked 路径（isChatting=true, 输入框启用）
   pendingConfigId: number | null;                       // 切换模型时暂存（session 尚未进入 sessions 列表）
   lastUserMessageId: string | null;                     // OpenCode message ID，undo 用
   canRedo: boolean;                                     // redo 可用标志
@@ -63,6 +64,7 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   activeToolName: null,
   sessionStatus: null,
   pendingPermission: null,
+  pendingQuestion: null,
   pendingConfigId: null,
   lastUserMessageId: null,
   canRedo: false,
@@ -111,6 +113,7 @@ interface AiState {
   redoMessage: (sessionId: string) => Promise<void>;
   compactSession: (sessionId: string, modelId: string, providerId: string) => Promise<void>;
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
+  respondQuestion: (sessionId: string, questionId: string, answers: string[][], cancelled: boolean) => Promise<void>;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
@@ -387,6 +390,28 @@ export const useAiStore = create<AiState>()(
           });
         } catch (e) {
           console.error('[permission] agent_permission_respond failed:', e);
+        }
+      },
+
+      respondQuestion: async (sessionId, questionId, answers, cancelled) => {
+        // 立即清空 pendingQuestion，UI 先响应
+        set((s) => ({
+          chatStates: {
+            ...s.chatStates,
+            [sessionId]: {
+              ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+              pendingQuestion: null,
+            },
+          },
+        }));
+        try {
+          if (cancelled) {
+            await invoke('agent_question_reject', { questionId });
+          } else {
+            await invoke('agent_question_reply', { questionId, answers });
+          }
+        } catch (e) {
+          console.error('[question] respond failed:', e);
         }
       },
 
@@ -718,7 +743,7 @@ export const useAiStore = create<AiState>()(
         try {
           const { Channel } = await import('@tauri-apps/api/core');
           const channel = new Channel<{
-            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest';
+            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest' | 'QuestionRequest';
             data?: {
               delta?: string;
               message?: string;
@@ -728,6 +753,10 @@ export const useAiStore = create<AiState>()(
               // PermissionRequest 字段
               permission_id?: string;
               options?: Array<{ option_id: string; label: string; kind: string }>;
+              // QuestionRequest 字段
+              question_id?: string;
+              session_id?: string;
+              questions?: Array<{ question: string; header: string; options: Array<{ label: string; description: string }>; multiple?: boolean; custom?: boolean }>;
             };
           }>();
 
@@ -811,6 +840,18 @@ export const useAiStore = create<AiState>()(
                     kind: o.kind as 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | 'deny',
                   })),
                 },
+              });
+            } else if (event.type === 'QuestionRequest' && event.data?.question_id) {
+              // question.asked 到达：flush 当前 streaming 内容，展示 question 面板
+              flushNow();
+              setChatStateField({
+                pendingQuestion: {
+                  question_id: event.data.question_id,
+                  session_id: event.data.session_id ?? sessionId,
+                  questions: event.data.questions ?? [],
+                },
+                activeToolName: null,
+                sessionStatus: null,
               });
             } else if (event.type === 'Done') {
               flushNow();

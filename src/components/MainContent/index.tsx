@@ -550,7 +550,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
         return { items: [] };
       },
-      freeInlineCompletions: () => {},
+      disposeInlineCompletions: () => {},
     });
   };
 

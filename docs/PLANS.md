@@ -70,7 +70,7 @@
 - [x] AI 模型配置多配置列表（CRUD + 默认标记 + 持久化测试状态 + AI 面板选择器）
 - [x] 安全修复：api_key 不暴露前端（list_llm_configs 遮蔽，get_llm_config_key 按需获取）
 - [x] 安全修复：DB 密码按需获取（get_connection_password），编辑弹窗 isDirty 机制防覆盖
-- [x] 移除 page-agent，改为工具驱动 Agent 架构（见 docs/plans/2026-03-12-agent-tool-catalog-design.md）
+- [x] 移除 page-agent，改为工具驱动 Agent 架构
 - [x] ACP + OpenCode 集成（用 opencode ACP 协议替换自建 Agent Loop，支持真正的工具调用）
 - [x] 智能错误上下文（操作前写入上下文快照；Toast/TaskCenter/查询区"问 AI"一键填入助手）
 - [x] AI 助手全局常驻 Tab（右边缘浮动 Tab，多会话历史，AI 自动生成会话标题）
@@ -139,7 +139,7 @@
 - [x] SeaTunnel 前端集成（连接配置 + Job 状态展示面板，基础 UI 就绪）
 - [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / SeaTunnel）
 
-### 未实现（有设计文档，待开始）
+### 未实现（唯一未完成项，设计文档保留）
 - [ ] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）
 - [x] LLM 配置供应商优先重设计（opencode_provider_id + config_mode 已入 DB；agent_list_providers 命令已实现；LlmSettings.tsx 已动态加载供应商列表）
 - [x] UI 状态全量持久化至 SQLite（标签页、树展开状态、连接列表、分页大小均已迁移至 SQLite）

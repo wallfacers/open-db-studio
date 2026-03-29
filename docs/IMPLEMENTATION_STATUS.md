@@ -1,7 +1,7 @@
 # Open-DB-Studio 功能实现状态总览
 
 > 本文档记录 docs/plans/ 中设计文档的实现状态
-> 最后更新: 2026-03-16
+> 最后更新: 2026-03-29
 
 ---
 
@@ -174,19 +174,13 @@
 | AI 助手删除/清空确认框 + 代码块放大弹框 | `common/ConfirmDialog.tsx`, `shared/MarkdownContent.tsx` (`CodeExpandModal`) | `docs/superpowers/plans/2026-03-20-ai-assistant-confirm-and-code-expand.md` |
 | Auto 模式直接应用 SQL Diff（跳过 DiffPanel，显示 Banner） | `Assistant/AutoApplyBanner.tsx`, `hooks/useToolBridge.ts`, `store/appStore.ts` | `docs/superpowers/plans/2026-03-20-auto-mode-direct-apply.md` |
 | Knowledge Graph Palantir Ontology 改造（Link Node + Object Type） | `GraphExplorer/index.tsx`, `graph/builder.rs`, `graph/traversal.rs`, FK→LinkNode | `docs/superpowers/plans/2026-03-20-knowledge-graph-palantir-redesign.md` |
-| GraphCacheStore + JoinPath 内存图缓存（BFS 多跳缓存） | `src-tauri/src/graph/cache.rs` | `docs/superpowers/specs/2026-03-20-graph-virtual-relation-design.md` |
+| GraphCacheStore + JoinPath 内存图缓存（BFS 多跳缓存） | `src-tauri/src/graph/cache.rs` | - |
 | 5 个 graph_* MCP 工具注册（Phase 1） | `src-tauri/src/mcp/mod.rs`（`graph_get_node_list` 等） | `docs/superpowers/specs/2026-03-20-graph-mcp-skill-design.md` |
 | find_join_paths_structured + link 节点过滤（规则 1+2） | `src-tauri/src/graph/traversal.rs` | commit `36563e2` |
 | 全局连接池缓存（消除树导航重复握手） | `src-tauri/src/datasource/pool.rs` 或 `mod.rs` | commit `bb1e492` |
 | SeaTunnel 完整实现（连接管理 CRUD、分类/Job 管理、REST API 提交/停止/状态轮询、日志流式拉取） | `src-tauri/src/seatunnel/client.rs`, `src-tauri/src/seatunnel/commands.rs`, `SeaTunnelExplorer/`, `SeaTunnelJobTab/` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
 | i18n 全量国际化（Assistant/GraphExplorer/MetricsExplorer/SeaTunnel） | `src/i18n/` | commits `7eccf9d`, `0baae87` |
 
-### 废弃/超时计划 ⚠️
-
-| 计划文档 | 状态 | 说明 |
-|---------|------|------|
-| `docs/plans/2026-03-12-agent-phase2-tool-loop.md` | ⚠️ 部分废弃 | Rust 侧（Tasks 1-5）已实现；前端 Agent Loop 不执行，已由 ACP 接管 |
-| `docs/superpowers/plans/2026-03-12-ai-agent-sql-chat.md` | ⚠️ 已超时 | Page Agent 架构已移除，功能由 ACP + propose_sql_diff 实现 |
 
 ### docs/superpowers/plans/ 新增已完成文档清单
 
@@ -224,12 +218,6 @@
 | `docs/superpowers/plans/2026-03-18-llm-config-provider-first.md` | 从 opencode `/config/providers` 动态加载供应商和模型 | `opencode_provider_id`+`config_mode` 已入 DB；`agent_list_providers` 命令已注册；`LlmSettings.tsx` 已动态加载 |
 | `docs/superpowers/plans/2026-03-17-ui-state-persistence.md` | UI 状态全量迁移到 SQLite | `get_ui_state` / `set_ui_state` 命令已实现，前端已迁移至 SQLite |
 
-## 已废弃计划 ⚠️
-
-| 计划文档 | 目标 | 废弃原因 |
-|---------|------|---------|
-| `docs/superpowers/plans/2026-03-12-acp-persistent-session.md` | 复用 opencode-cli 进程消除冷启动 | ACP 协议已整体替换为 Serve 模式；`serve_child` 长驻进程实现同等效果；`ai_chat_acp` 已降为废弃桩 |
-
 ---
 
 ## 下一步：V3 阶段（2027）
@@ -253,3 +241,4 @@
 | 2026-03-16 | 全面代码评估：补录 Oracle/SQL Server 驱动、数据导入、DML 报告、可视化编辑器；MVP + V1 阶段 100% 完成；文档整体重整 |
 | 2026-03-16 | V2 阶段全部实现：图谱/指标/迁移/pipeline 模块 + 前端三大面板 + SQL ACP + propose_sql_diff；ActivityBar 重构；启动恢复连接 |
 | 2026-03-20 | V2 后期增强全面追踪：AI 流式/思考模型、Palantir 图改造、MCP graph 工具、GraphCacheStore、Unified Tab、ACP Elicitation、Auto 模式、ECharts chart、SeaTunnel 前端、i18n 全量化；标记 4 个未实现计划 |
+| 2026-03-29 | 文档清理：删除 25 个过时/废弃/已替代的设计文档（ACP 持久化、Agent Loop、page-agent、FS Abstraction、UI Object Protocol、ER Canvas MCP、Graph Virtual Relation、Graph Search、SeaTunnel Tree Redesign、opencode Sidecar、Copy/Import Connection、Datasource Config Enhancement、DB2/GaussDB、Multi-Datasource Extension、E-commerce Test DB、Question Deadlock Fix）；保留 SQL Ghost Text 为唯一未实现计划 |

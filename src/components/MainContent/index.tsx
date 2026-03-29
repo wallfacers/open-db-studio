@@ -386,6 +386,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const pendingResultRef = useRef<{ sqlBefore: string; result: string } | null>(null);
   const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inlineProviderRef = useRef<{ dispose(): void } | null>(null);
+  const [ghostTextLoading, setGhostTextLoading] = useState(false);
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
@@ -522,6 +523,7 @@ export const MainContent: React.FC<MainContentProps> = ({
         const hint = lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
 
         try {
+          setGhostTextLoading(true);
           const result = await invoke<string>('ai_inline_complete', {
             connectionId: tab.queryContext.connectionId,
             sqlBefore,
@@ -538,6 +540,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           }
         } catch (err) {
           console.warn('[ghost-text] prefetch error:', err);
+        } finally {
+          setGhostTextLoading(false);
         }
       }, delay);
     });
@@ -1065,12 +1069,18 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <button
                     onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
                     className={`p-1 rounded transition-colors ${
-                      isGhostTextEnabled
-                        ? 'text-[#00c9a7] hover:bg-[#003d2f]'
-                        : 'text-[#4a6a85] hover:bg-[#1a2639]'
+                      ghostTextLoading
+                        ? 'text-[#00c9a7]'
+                        : isGhostTextEnabled
+                          ? 'text-[#00c9a7] hover:bg-[#003d2f]'
+                          : 'text-[#4a6a85] hover:bg-[#1a2639]'
                     }`}
                   >
-                    <Sparkles size={16} />
+                    <Sparkles
+                      size={16}
+                      className={ghostTextLoading ? 'animate-spin' : ''}
+                      style={ghostTextLoading ? { animationDuration: '1.5s' } : undefined}
+                    />
                   </button>
                 </Tooltip>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>

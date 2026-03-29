@@ -243,17 +243,23 @@ function ConfigFormDialog({
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
-    let effectiveApiKey = form.api_key;
-    if (editId && !apiKeyDirty) {
-      try { effectiveApiKey = await invoke<string>('get_llm_config_key', { id: editId }); } catch {}
-    }
     try {
-      await invoke('test_llm_config_inline', {
-        model: form.model,
-        apiType: form.api_type,
-        baseUrl: form.base_url,
-        apiKey: effectiveApiKey,
-      });
+      if (isCustomMode) {
+        // 自定义模式：直接使用内联测试
+        let effectiveApiKey = form.api_key;
+        if (editId && !apiKeyDirty) {
+          try { effectiveApiKey = await invoke<string>('get_llm_config_key', { id: editId }); } catch {}
+        }
+        await invoke('test_llm_config_inline', {
+          model: form.model,
+          apiType: form.api_type,
+          baseUrl: form.base_url,
+          apiKey: effectiveApiKey,
+        });
+      } else if (editId) {
+        // opencode 编辑模式：通过已保存的配置 ID 测试
+        await invoke('test_llm_config', { id: editId });
+      }
       setTestResult({ ok: true });
     } catch (e) {
       setTestResult({ ok: false, msg: String(e) });
@@ -430,8 +436,8 @@ function ConfigFormDialog({
           )}
         </div>
 
-        {/* 测试结果（仅自定义模式） */}
-        {isCustomMode && testResult && (
+        {/* 测试结果 */}
+        {testResult && (
           <div className={`flex items-center gap-1.5 text-xs ${testResult.ok ? 'text-[#4ade80]' : 'text-red-400'}`}>
             {testResult.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
             {testResult.ok ? '连接成功' : testResult.msg}
@@ -439,17 +445,23 @@ function ConfigFormDialog({
         )}
 
         {/* 操作按钮 */}
-        <div className={`flex items-center pt-2 ${isCustomMode ? 'justify-between' : 'justify-end gap-2'}`}>
-          {isCustomMode && (
-            <button
-              onClick={handleTest}
-              disabled={testing || !form.model || !form.base_url}
-              className="px-3 py-1.5 text-xs border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {testing && <Loader2 size={12} className="animate-spin" />}
-              {testing ? '测试中…' : '测试连接'}
-            </button>
-          )}
+        <div className="flex items-center pt-2 justify-between">
+          {(() => {
+            const canTest = isCustomMode
+              ? !!form.model && !!form.base_url
+              : !!editId && !!form.model;
+            return (
+              <button
+                onClick={handleTest}
+                disabled={testing || !canTest}
+                title={!isCustomMode && !editId ? '请先保存后再测试' : undefined}
+                className="px-3 py-1.5 text-xs border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {testing && <Loader2 size={12} className="animate-spin" />}
+                {testing ? '测试中…' : '测试连接'}
+              </button>
+            );
+          })()}
           <div className="flex gap-2">
             <button
               onClick={onCancel}
@@ -638,16 +650,14 @@ export function LlmSettingsPanel() {
                     {t('llmSettings.setDefault')}
                   </button>
                 )}
-                {config.config_mode === 'custom' && (
-                  <button
-                    onClick={() => testConfig(config.id)}
-                    disabled={config.test_status === 'testing'}
-                    className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
-                  >
-                    {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
-                    {t('llmSettings.test')}
-                  </button>
-                )}
+                <button
+                  onClick={() => testConfig(config.id)}
+                  disabled={config.test_status === 'testing'}
+                  className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
+                >
+                  {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
+                  {t('llmSettings.test')}
+                </button>
                 <button
                   onClick={() => handleOpenEdit(config)}
                   className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1"

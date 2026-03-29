@@ -209,6 +209,18 @@ pub fn upsert_provider_entry(
                         }
                     }
                     merged["models"] = serde_json::Value::Object(existing_models);
+                } else if k == "options" {
+                    let mut existing_opts = existing
+                        .get("options")
+                        .and_then(|o| o.as_object())
+                        .cloned()
+                        .unwrap_or_default();
+                    if let Some(new_opts) = v.as_object() {
+                        for (ok, ov) in new_opts {
+                            existing_opts.insert(ok.clone(), ov.clone());
+                        }
+                    }
+                    merged["options"] = serde_json::Value::Object(existing_opts);
                 } else {
                     merged[k] = v.clone();
                 }
@@ -237,7 +249,7 @@ pub fn upsert_provider_entry(
 /// - 按 opencode_provider_id 分组，每组写一个 provider 条目
 /// - models 键为 model ID，值保留文件中已有的 options/modalities 等字段，只更新 name
 /// - provider 下不在 DB 中的 model 条目会被移除（保持文件与配置一致）
-/// - opencode 模式（config_mode != "custom"）的配置跳过
+/// - 所有具有 opencode_provider_id 的配置均会处理（不限 config_mode）
 pub fn sync_all_providers(
     opencode_dir: &std::path::Path,
     configs: &[crate::db::models::LlmConfig],
@@ -259,11 +271,11 @@ pub fn sync_all_providers(
         root["provider"] = serde_json::json!({});
     }
 
-    // 按 provider_id 分组，只处理 custom 模式且有 provider_id 的配置
+    // 按 provider_id 分组，处理所有有 provider_id 的配置
     let mut by_provider: std::collections::HashMap<String, Vec<&crate::db::models::LlmConfig>> =
         std::collections::HashMap::new();
     for cfg in configs {
-        if cfg.config_mode == "custom" && !cfg.opencode_provider_id.is_empty() {
+        if !cfg.opencode_provider_id.is_empty() {
             by_provider.entry(cfg.opencode_provider_id.clone()).or_default().push(cfg);
         }
     }
@@ -288,15 +300,16 @@ pub fn sync_all_providers(
             .map(|s| serde_json::json!(s))
             .unwrap_or(serde_json::json!(serde_json::Value::Null));
 
-        let effective_base_url = if cfgs[0].api_type == "anthropic" {
-            let trimmed = primary.base_url.trim_end_matches('/');
-            if trimmed.ends_with("/v1") {
-                trimmed.to_string()
+        let effective_base_url = {
+            let raw = primary.base_url.trim_end_matches('/');
+            if raw.is_empty() {
+                root["provider"][provider_id.as_str()]["options"]["baseURL"]
+                    .as_str().unwrap_or("").to_string()
+            } else if cfgs[0].api_type == "anthropic" {
+                if raw.ends_with("/v1") { raw.to_string() } else { format!("{}/v1", raw) }
             } else {
-                format!("{}/v1", trimmed)
+                raw.to_string()
             }
-        } else {
-            primary.base_url.trim_end_matches('/').to_string()
         };
 
         // 模型条目：合并 DB 新字段 + 文件已有字段
@@ -337,12 +350,20 @@ pub fn sync_all_providers(
             provider_name
         };
 
+        let mut options = serde_json::json!({});
+        if let Some(existing_opts) = root["provider"][provider_id.as_str()]["options"].as_object() {
+            for (ok, ov) in existing_opts {
+                options[ok] = ov.clone();
+            }
+        }
+        options["apiKey"] = serde_json::json!(primary.api_key);
+        if !effective_base_url.is_empty() {
+            options["baseURL"] = serde_json::json!(effective_base_url);
+        }
+
         let mut provider_entry = serde_json::json!({
             "npm": npm_pkg,
-            "options": {
-                "apiKey": primary.api_key,
-                "baseURL": effective_base_url
-            },
+            "options": options,
             "models": serde_json::Value::Object(models)
         });
         if !resolved_provider_name.is_null() {
@@ -362,4 +383,17 @@ pub fn sync_all_providers(
 
     log::info!("Synced {} provider(s) with {} config(s) into opencode.json", by_provider.len(), configs.len());
     Ok(())
+}
+
+/// 从 opencode.json 读取指定 provider 的完整条目。
+pub fn read_provider_entry(
+    opencode_dir: &std::path::Path,
+    provider_id: &str,
+) -> AppResult<serde_json::Value> {
+    let path = opencode_dir.join("opencode.json");
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| crate::AppError::Other(format!("Failed to read opencode.json: {}", e)))?;
+    let root: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| crate::AppError::Other(format!("Failed to parse opencode.json: {}", e)))?;
+    Ok(root["provider"][provider_id].clone())
 }

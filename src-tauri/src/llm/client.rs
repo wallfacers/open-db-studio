@@ -109,22 +109,6 @@ pub struct ChatContext {
     pub model: Option<String>,
 }
 
-#[derive(serde::Serialize)]
-struct AnthropicRequest {
-    model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
-    messages: Vec<ChatMessage>,
-    max_tokens: u32,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenAIRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    stream: bool,
-}
-
 #[derive(Debug, Deserialize)]
 struct OpenAIResponse {
     choices: Vec<OpenAIChoice>,
@@ -173,27 +157,40 @@ impl LlmClient {
         }
     }
 
-    /// 通用对话（OpenAI 协议）
-    async fn chat_openai(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
-        let req = OpenAIRequest {
-            model: self.model.clone(),
-            messages,
-            stream: false,
-        };
-
+    /// OpenAI 协议对话，支持可选参数覆盖
+    async fn chat_openai(&self, messages: Vec<ChatMessage>, params: Option<ChatParams>) -> AppResult<String> {
         let base = self.base_url.trim_end_matches('/');
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+            "stream": false,
+        });
+
+        if let Some(p) = params {
+            if let Some(temp) = p.temperature {
+                body["temperature"] = serde_json::json!(temp);
+            }
+            if let Some(max_tok) = p.max_tokens {
+                body["max_tokens"] = serde_json::json!(max_tok);
+            }
+            if let Some(stop) = p.stop {
+                body["stop"] = serde_json::json!(stop);
+            }
+        }
+
         let http_resp = self
             .client
             .post(format!("{}/chat/completions", base))
             .bearer_auth(&self.api_key)
-            .json(&req)
+            .json(&body)
             .send()
             .await?;
 
         if !http_resp.status().is_success() {
             let status = http_resp.status();
-            let body = http_resp.text().await.unwrap_or_default();
-            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body)));
+            let body_text = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
         }
 
         let resp: OpenAIResponse = http_resp.json().await
@@ -206,7 +203,8 @@ impl LlmClient {
             .ok_or_else(|| crate::AppError::Llm("Empty response from LLM".into()))
     }
 
-    async fn chat_anthropic(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
+    /// Anthropic 协议对话，支持可选参数覆盖
+    async fn chat_anthropic(&self, messages: Vec<ChatMessage>, params: Option<ChatParams>) -> AppResult<String> {
         let mut user_messages: Vec<ChatMessage> = Vec::new();
         let mut system_content: Option<String> = None;
         for msg in messages {
@@ -216,12 +214,28 @@ impl LlmClient {
                 user_messages.push(msg);
             }
         }
-        let req = AnthropicRequest {
-            model: self.model.clone(),
-            system: system_content,
-            messages: user_messages,
-            max_tokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
-        };
+
+        let max_tokens = params.as_ref()
+            .and_then(|p| p.max_tokens)
+            .unwrap_or(DEFAULT_ANTHROPIC_MAX_TOKENS);
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": user_messages,
+            "max_tokens": max_tokens,
+        });
+
+        if let Some(system) = system_content {
+            body["system"] = serde_json::json!(system);
+        }
+        if let Some(p) = params {
+            if let Some(temp) = p.temperature {
+                body["temperature"] = serde_json::json!(temp);
+            }
+            if let Some(stop_seqs) = p.stop {
+                body["stop_sequences"] = serde_json::json!(stop_seqs);
+            }
+        }
 
         let base = self.base_url.trim_end_matches('/');
         let http_resp = self
@@ -230,14 +244,14 @@ impl LlmClient {
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("user-agent", "claude-code/1.0.0")
-            .json(&req)
+            .json(&body)
             .send()
             .await?;
 
         if !http_resp.status().is_success() {
             let status = http_resp.status();
-            let body = http_resp.text().await.unwrap_or_default();
-            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body)));
+            let body_text = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
         }
 
         let resp: AnthropicResponse = http_resp
@@ -254,116 +268,15 @@ impl LlmClient {
 
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
         match self.api_type {
-            ApiType::Openai => self.chat_openai(messages).await,
-            ApiType::Anthropic => self.chat_anthropic(messages).await,
+            ApiType::Openai => self.chat_openai(messages, None).await,
+            ApiType::Anthropic => self.chat_anthropic(messages, None).await,
         }
-    }
-
-    async fn chat_openai_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
-        let base = self.base_url.trim_end_matches('/');
-
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "messages": messages,
-            "stream": false,
-        });
-
-        if let Some(temp) = params.temperature {
-            body["temperature"] = serde_json::json!(temp);
-        }
-        if let Some(max_tok) = params.max_tokens {
-            body["max_tokens"] = serde_json::json!(max_tok);
-        }
-        if let Some(stop) = params.stop {
-            body["stop"] = serde_json::json!(stop);
-        }
-
-        let http_resp = self
-            .client
-            .post(format!("{}/chat/completions", base))
-            .bearer_auth(&self.api_key)
-            .json(&body)
-            .send()
-            .await?;
-
-        if !http_resp.status().is_success() {
-            let status = http_resp.status();
-            let body_text = http_resp.text().await.unwrap_or_default();
-            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
-        }
-
-        let resp: OpenAIResponse = http_resp.json().await
-            .map_err(|e| crate::AppError::Llm(format!("Failed to parse response: {}", e)))?;
-
-        resp.choices
-            .into_iter()
-            .next()
-            .map(|c| c.message.content)
-            .ok_or_else(|| crate::AppError::Llm("Empty response from LLM".into()))
-    }
-
-    async fn chat_anthropic_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
-        let mut user_messages: Vec<ChatMessage> = Vec::new();
-        let mut system_content: Option<String> = None;
-        for msg in messages {
-            if msg.role == "system" {
-                system_content = Some(msg.content);
-            } else {
-                user_messages.push(msg);
-            }
-        }
-
-        let max_tokens = params.max_tokens.unwrap_or(DEFAULT_ANTHROPIC_MAX_TOKENS);
-
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "messages": user_messages,
-            "max_tokens": max_tokens,
-        });
-
-        if let Some(system) = system_content {
-            body["system"] = serde_json::json!(system);
-        }
-        if let Some(temp) = params.temperature {
-            body["temperature"] = serde_json::json!(temp);
-        }
-        if let Some(stop_seqs) = params.stop {
-            body["stop_sequences"] = serde_json::json!(stop_seqs);
-        }
-
-        let base = self.base_url.trim_end_matches('/');
-        let http_resp = self
-            .client
-            .post(format!("{}/v1/messages", base))
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("user-agent", "claude-code/1.0.0")
-            .json(&body)
-            .send()
-            .await?;
-
-        if !http_resp.status().is_success() {
-            let status = http_resp.status();
-            let body_text = http_resp.text().await.unwrap_or_default();
-            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
-        }
-
-        let resp: AnthropicResponse = http_resp
-            .json()
-            .await
-            .map_err(|e| crate::AppError::Llm(format!("Failed to parse Anthropic response: {}", e)))?;
-
-        resp.content
-            .into_iter()
-            .find(|b| b.block_type == "text")
-            .and_then(|b| b.text)
-            .ok_or_else(|| crate::AppError::Llm("Empty response from Anthropic LLM".into()))
     }
 
     pub async fn chat_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
         match self.api_type {
-            ApiType::Openai => self.chat_openai_with_params(messages, params).await,
-            ApiType::Anthropic => self.chat_anthropic_with_params(messages, params).await,
+            ApiType::Openai => self.chat_openai(messages, Some(params)).await,
+            ApiType::Anthropic => self.chat_anthropic(messages, Some(params)).await,
         }
     }
 

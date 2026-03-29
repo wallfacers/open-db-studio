@@ -160,25 +160,23 @@ pub async fn update_last_request(
 pub fn postprocess_completion(raw: &str, sql_before: &str) -> String {
     let mut result = raw.to_string();
 
-    // Step 1: Strip code block wrappers
+    // LLMs sometimes wrap output in markdown code blocks
     if result.starts_with("```") {
-        // Remove opening fence (with optional language tag)
         if let Some(end) = result.find('\n') {
             result = result[end + 1..].to_string();
         }
-        // Remove closing fence
         if let Some(pos) = result.rfind("```") {
             result = result[..pos].to_string();
         }
     }
 
-    // Step 2: Remove duplicated prefix (overlap with last 50 chars of sql_before)
-    let tail = if sql_before.len() > 50 {
-        &sql_before[sql_before.len() - 50..]
+    // Remove overlap where LLM repeats the end of sql_before
+    const OVERLAP_WINDOW: usize = 50;
+    let tail = if sql_before.len() > OVERLAP_WINDOW {
+        &sql_before[sql_before.len() - OVERLAP_WINDOW..]
     } else {
         sql_before
     };
-    // Find the longest suffix of tail that is a prefix of result
     for i in 0..tail.len() {
         let suffix = &tail[i..];
         if result.starts_with(suffix) {
@@ -187,9 +185,7 @@ pub fn postprocess_completion(raw: &str, sql_before: &str) -> String {
         }
     }
 
-    // Step 3: Strip leading newlines
     result = result.trim_start_matches('\n').to_string();
-
     result
 }
 
@@ -310,6 +306,7 @@ pub async fn build_layered_context(
     connection_id: i64,
 ) -> String {
     // === Hot Zone ===
+    // Check cache first (short lock), then fetch missing data outside the lock
     let hot_tables_names: Vec<&str> = mentioned.iter().take(10).map(|s| s.as_str()).collect();
     let mut hot_details: Vec<(
         String,
@@ -319,38 +316,52 @@ pub async fn build_layered_context(
         Vec<IndexMeta>,
     )> = Vec::new();
 
+    // Phase 1: check cache for columns
+    let mut hot_cache_misses: Vec<&str> = Vec::new();
+    let mut hot_cached_cols: HashMap<String, Vec<ColumnMeta>> = HashMap::new();
     {
+        let cache = META_CACHE.lock().await;
+        if let Some(mc) = cache.get(&connection_id) {
+            for &table_name in &hot_tables_names {
+                match mc.get_columns(current_schema, table_name) {
+                    Some(c) => { hot_cached_cols.insert(table_name.to_string(), c.clone()); }
+                    None => { hot_cache_misses.push(table_name); }
+                }
+            }
+        } else {
+            hot_cache_misses.extend_from_slice(&hot_tables_names);
+        }
+    } // lock released
+
+    // Phase 2: fetch missing data without holding the lock
+    let mut hot_fetched_cols: HashMap<String, Vec<ColumnMeta>> = HashMap::new();
+    for table_name in &hot_cache_misses {
+        let c = ds.get_columns(table_name, Some(current_schema)).await.unwrap_or_default();
+        hot_fetched_cols.insert(table_name.to_string(), c);
+    }
+
+    // Phase 3: update cache with fetched data
+    if !hot_fetched_cols.is_empty() {
         let mut cache = META_CACHE.lock().await;
         let mc = cache.entry(connection_id).or_insert_with(MetaCache::new);
-
-        for table_name in &hot_tables_names {
-            let cols = match mc.get_columns(current_schema, table_name) {
-                Some(c) => c.clone(),
-                None => {
-                    let c = ds
-                        .get_columns(table_name, Some(current_schema))
-                        .await
-                        .unwrap_or_default();
-                    mc.set_columns(current_schema, table_name, c.clone());
-                    c
-                }
-            };
-            let fks = ds
-                .get_foreign_keys(table_name, Some(current_schema))
-                .await
-                .unwrap_or_default();
-            let idxs = ds
-                .get_indexes(table_name, Some(current_schema))
-                .await
-                .unwrap_or_default();
-            hot_details.push((
-                table_name.to_string(),
-                Some(current_schema.to_string()),
-                cols,
-                fks,
-                idxs,
-            ));
+        for (name, cols) in &hot_fetched_cols {
+            mc.set_columns(current_schema, name, cols.clone());
         }
+    }
+
+    // Phase 4: assemble hot details (FKs and indexes are not cached)
+    for &table_name in &hot_tables_names {
+        let cols = hot_cached_cols.get(table_name)
+            .or_else(|| hot_fetched_cols.get(table_name))
+            .cloned()
+            .unwrap_or_default();
+        let fks = ds.get_foreign_keys(table_name, Some(current_schema)).await.unwrap_or_default();
+        let idxs = ds.get_indexes(table_name, Some(current_schema)).await.unwrap_or_default();
+        hot_details.push((
+            table_name.to_string(),
+            Some(current_schema.to_string()),
+            cols, fks, idxs,
+        ));
     }
 
     let hot_set: HashSet<String> = hot_details.iter().map(|(n, ..)| n.clone()).collect();
@@ -360,7 +371,6 @@ pub async fn build_layered_context(
 
     if !mentioned.is_empty() {
         if let Ok(subgraph) = find_relevant_subgraph(connection_id, mentioned, 1).await {
-            // Filter out hot tables, sort by max edge weight desc
             let mut warm_candidates: Vec<(&crate::graph::query::GraphNode, f64)> = subgraph
                 .nodes
                 .iter()
@@ -378,34 +388,67 @@ pub async fn build_layered_context(
             warm_candidates
                 .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-            let mut cache = META_CACHE.lock().await;
-            let mc = cache.entry(connection_id).or_insert_with(MetaCache::new);
+            // Collect warm table info: check cache, then fetch outside lock
+            let warm_selected: Vec<_> = warm_candidates.into_iter().take(15).collect();
+            let mut warm_cache_misses: Vec<(String, String)> = Vec::new(); // (schema, name)
+            let mut warm_cached_cols: HashMap<String, Vec<ColumnMeta>> = HashMap::new();
+            {
+                let cache = META_CACHE.lock().await;
+                if let Some(mc) = cache.get(&connection_id) {
+                    for (node, _) in &warm_selected {
+                        let schema_hint = node.metadata.as_ref()
+                            .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+                            .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)));
+                        let schema_ref = schema_hint.as_deref().unwrap_or(current_schema);
+                        match mc.get_columns(schema_ref, &node.name) {
+                            Some(c) => { warm_cached_cols.insert(node.name.clone(), c.clone()); }
+                            None => { warm_cache_misses.push((schema_ref.to_string(), node.name.clone())); }
+                        }
+                    }
+                } else {
+                    for (node, _) in &warm_selected {
+                        let schema_hint = node.metadata.as_ref()
+                            .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+                            .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)));
+                        let schema_ref = schema_hint.as_deref().unwrap_or(current_schema);
+                        warm_cache_misses.push((schema_ref.to_string(), node.name.clone()));
+                    }
+                }
+            } // lock released
 
-            for (node, _weight) in warm_candidates.into_iter().take(15) {
-                let schema_hint = node
-                    .metadata
-                    .as_ref()
+            // Fetch missing warm columns
+            let mut warm_fetched_cols: HashMap<String, Vec<ColumnMeta>> = HashMap::new();
+            for (schema_ref, name) in &warm_cache_misses {
+                let c = ds.get_columns(name, Some(schema_ref)).await.unwrap_or_default();
+                warm_fetched_cols.insert(name.clone(), c);
+            }
+
+            // Update cache
+            if !warm_fetched_cols.is_empty() {
+                let mut cache = META_CACHE.lock().await;
+                let mc = cache.entry(connection_id).or_insert_with(MetaCache::new);
+                for (schema_ref, name) in &warm_cache_misses {
+                    if let Some(cols) = warm_fetched_cols.get(name) {
+                        mc.set_columns(schema_ref, name, cols.clone());
+                    }
+                }
+            }
+
+            // Assemble warm details
+            for (node, _weight) in &warm_selected {
+                let schema_hint = node.metadata.as_ref()
                     .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
                     .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)));
-                let schema_ref = schema_hint.as_deref().unwrap_or(current_schema);
+                let cols = warm_cached_cols.get(&node.name)
+                    .or_else(|| warm_fetched_cols.get(&node.name))
+                    .cloned()
+                    .unwrap_or_default();
 
-                let cols = match mc.get_columns(schema_ref, &node.name) {
-                    Some(c) => c.clone(),
-                    None => {
-                        let c = ds
-                            .get_columns(&node.name, Some(schema_ref))
-                            .await
-                            .unwrap_or_default();
-                        mc.set_columns(schema_ref, &node.name, c.clone());
-                        c
-                    }
-                };
-
-                // Build a join path hint from edges
+                // Use node.id for exact matching instead of contains()
                 let join_hint = subgraph
                     .edges
                     .iter()
-                    .find(|e| e.from_node.contains(&node.name) || e.to_node.contains(&node.name))
+                    .find(|e| e.from_node == node.id || e.to_node == node.id)
                     .map(|e| format!("related via {}", e.edge_type))
                     .unwrap_or_else(|| "related".to_string());
 
@@ -423,41 +466,43 @@ pub async fn build_layered_context(
         match mc.get_tables() {
             Some(t) => t.clone(),
             None => {
+                drop(cache); // release lock before await
                 let t = ds.get_tables().await.unwrap_or_default();
+                let mut cache = META_CACHE.lock().await;
+                let mc = cache.entry(connection_id).or_insert_with(MetaCache::new);
                 mc.set_tables(t.clone());
                 t
             }
         }
     };
 
+    // === Assemble with progressive truncation ===
+    let hot_str = format_hot_zone(&hot_details, current_schema);
+    let warm_str = format_warm_zone(&warm_details, current_schema);
+    let hot_warm_len = hot_str.len() + warm_str.len();
+
+    // Start with full cold, reduce if over token budget (4000 tokens ≈ 16000 chars)
+    const TOKEN_BUDGET_CHARS: usize = 16000;
+    let cold_limit = if hot_warm_len / 4 > TOKEN_BUDGET_CHARS / 4 { 50 } else { 200 };
     let cold_tables: Vec<(String, Option<String>)> = all_tables
         .iter()
         .filter(|t| !hot_set.contains(&t.name) && !warm_set.contains(&t.name))
-        .take(200)
+        .take(cold_limit)
         .map(|t| (t.name.clone(), t.schema.clone()))
         .collect();
-
-    // === Assemble ===
-    let hot_str = format_hot_zone(&hot_details, current_schema);
-    let warm_str = format_warm_zone(&warm_details, current_schema);
     let cold_str = format_cold_zone(&cold_tables, current_schema);
 
     let mut result = format!("{}{}{}", hot_str, warm_str, cold_str);
 
-    // Token budget: if result.len() / 4 > 4000, truncate
+    // Further truncation if still over budget
     if result.len() / 4 > 4000 {
-        // Reduce cold to 50
-        let cold_tables_reduced: Vec<(String, Option<String>)> = all_tables
-            .iter()
-            .filter(|t| !hot_set.contains(&t.name) && !warm_set.contains(&t.name))
-            .take(50)
-            .map(|t| (t.name.clone(), t.schema.clone()))
-            .collect();
-        let cold_str_reduced = format_cold_zone(&cold_tables_reduced, current_schema);
+        let cold_str_reduced = format_cold_zone(
+            &cold_tables.iter().take(50).cloned().collect::<Vec<_>>(),
+            current_schema,
+        );
         result = format!("{}{}{}", hot_str, warm_str, cold_str_reduced);
 
         if result.len() / 4 > 4000 {
-            // Reduce warm to 5
             let warm_reduced: Vec<_> = warm_details.into_iter().take(5).collect();
             let warm_str_reduced = format_warm_zone(&warm_reduced, current_schema);
             result = format!("{}{}{}", hot_str, warm_str_reduced, cold_str_reduced);

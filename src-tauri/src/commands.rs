@@ -26,18 +26,20 @@ pub async fn test_connection(config: ConnectionConfig) -> AppResult<bool> {
 
 #[tauri::command]
 pub async fn delete_connection(id: i64) -> AppResult<()> {
-    crate::datasource::pool_cache::invalidate(id).await;
-    crate::llm::inline_complete::invalidate_meta_cache(id).await;
-    crate::llm::inline_complete::invalidate_timeout_tracker(id).await;
+    invalidate_all_caches(id).await;
     crate::db::delete_connection(id)
 }
 
 #[tauri::command]
 pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest) -> AppResult<crate::db::models::Connection> {
-    crate::datasource::pool_cache::invalidate(id).await;
-    crate::llm::inline_complete::invalidate_meta_cache(id).await;
-    crate::llm::inline_complete::invalidate_timeout_tracker(id).await;
+    invalidate_all_caches(id).await;
     crate::db::update_connection(id, &req)
+}
+
+async fn invalidate_all_caches(connection_id: i64) {
+    crate::datasource::pool_cache::invalidate(connection_id).await;
+    crate::llm::inline_complete::invalidate_meta_cache(connection_id).await;
+    crate::llm::inline_complete::invalidate_timeout_tracker(connection_id).await;
 }
 
 /// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）

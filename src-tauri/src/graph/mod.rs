@@ -643,22 +643,24 @@ fn build_comment_links(
 pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) -> crate::AppResult<()> {
     use sha2::{Sha256, Digest};
 
-    // 1. Get connection config and create datasource
-    let mut config = match crate::db::get_connection_config(connection_id) {
+    // 1. Get connection config and reuse pooled datasource
+    let config = match crate::db::get_connection_config(connection_id) {
         Ok(c) => c,
         Err(e) => {
             log::warn!("[refresh_schema_graph] Failed to get config: {}", e);
             return Ok(());
         }
     };
-    if let Some(db) = database.filter(|s| !s.is_empty()) {
-        config.database = Some(db);
-    }
+    let db_name = database.filter(|s| !s.is_empty())
+        .or_else(|| config.database.clone())
+        .unwrap_or_default();
 
-    let ds = match crate::datasource::create_datasource(&config).await {
+    let ds = match crate::datasource::pool_cache::get_or_create(
+        connection_id, &config, &db_name, "",
+    ).await {
         Ok(ds) => ds,
         Err(e) => {
-            log::warn!("[refresh_schema_graph] Failed to connect: {}", e);
+            log::warn!("[refresh_schema_graph] Failed to get datasource: {}", e);
             return Ok(());
         }
     };

@@ -274,6 +274,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const { explainSql, isExplaining: isExplainingMap, cancelExplainSql } = useAiStore();
   const isExecuting = isExecutingMap[activeTab] ?? false;
   const isExplaining = isExplainingMap[activeTab] ?? false;
+  const isGhostTextEnabled = useQueryStore((s) => s.isGhostTextEnabled(activeTab));
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   const [explanationContextMenu, setExplanationContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -1033,7 +1034,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
                   title="AI Completion (Tab to accept)"
                   className={`p-1 rounded transition-colors ${
-                    useQueryStore.getState().isGhostTextEnabled(activeTab)
+                    isGhostTextEnabled
                       ? 'text-[#00c9a7] hover:bg-[#003d2f]'
                       : 'text-[#4a6a85] hover:bg-[#1a2639]'
                   }`}

@@ -4,22 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2, ChevronUp, ChevronDown, Sparkles } from 'lucide-react';
 import { useEscClose } from '../../hooks/useEscClose';
 import { useConnectionStore } from '../../store/connectionStore';
+import { generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
-
-interface EditableColumn {
-  id: string;
-  name: string;
-  dataType: string;
-  length: string;
-  isNullable: boolean;
-  defaultValue: string;
-  isPrimaryKey: boolean;
-  extra: string;
-  _originalName?: string;
-  _isNew?: boolean;
-  _isDeleted?: boolean;
-}
+import type { EditableColumn } from '../../store/tableFormStore';
 
 interface AiColumnDef {
   name: string;
@@ -46,99 +34,6 @@ const getTypeOptions = (dataType: string) => {
   }
   return opts;
 };
-
-function generateSql(
-  tableName: string,
-  original: EditableColumn[],
-  edited: EditableColumn[],
-  driver: string,
-  isNew: boolean
-): string {
-  const isPostgres = driver === 'postgres' || driver === 'postgresql';
-  const q = (name: string) => isPostgres ? `"${name}"` : `\`${name}\``;
-
-  const colDef = (col: EditableColumn) => {
-    const type = col.length ? `${col.dataType}(${col.length})` : col.dataType;
-    const nullable = col.isNullable ? 'NULL' : 'NOT NULL';
-    const def = col.defaultValue ? `DEFAULT ${col.defaultValue}` : '';
-    const extra = col.extra && !isPostgres ? col.extra.toUpperCase() : '';
-    return [q(col.name), type, nullable, def, extra].filter(Boolean).join(' ');
-  };
-
-  if (isNew) {
-    const activeCols = edited.filter(c => !c._isDeleted);
-    const pkCols = activeCols.filter(c => c.isPrimaryKey).map(c => q(c.name));
-    const lines = activeCols.map(c => `  ${colDef(c)}`);
-    if (pkCols.length > 0) lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
-    return `CREATE TABLE ${q(tableName)} (\n${lines.join(',\n')}\n);`;
-  }
-
-  const tbl = q(tableName);
-  const statements: string[] = [];
-  const existingEdited = edited.filter(c => !c._isNew && !c._isDeleted);
-  const orderChanged = !isPostgres && existingEdited.some((c, i) => {
-    if (i === 0) return false;
-    const prevOrigIdx = original.findIndex(o => o.name === (existingEdited[i - 1]._originalName ?? existingEdited[i - 1].name));
-    const currOrigIdx = original.findIndex(o => o.name === (c._originalName ?? c.name));
-    return prevOrigIdx > currOrigIdx; // 前一列在原始顺序中比当前列靠后，说明发生了重排
-  });
-
-  for (const col of edited) {
-    if (col._isDeleted && !col._isNew) {
-      statements.push(`ALTER TABLE ${tbl} DROP COLUMN ${q(col._originalName ?? col.name)};`);
-    } else if (col._isNew && !col._isDeleted) {
-      statements.push(`ALTER TABLE ${tbl} ADD COLUMN ${colDef(col)};`);
-    } else if (!col._isNew && !col._isDeleted) {
-      const orig = original.find(o => o.name === (col._originalName ?? col.name));
-      if (!orig) continue;
-      const changed = orig.name !== col.name
-        || orig.dataType !== col.dataType
-        || orig.length !== col.length
-        || orig.isNullable !== col.isNullable
-        || orig.defaultValue !== col.defaultValue
-        || orig.extra !== col.extra
-        || (orderChanged && !isPostgres);
-      if (changed) {
-        if (isPostgres) {
-          if (orig.dataType !== col.dataType || orig.length !== col.length) {
-            const type = col.length ? `${col.dataType}(${col.length})` : col.dataType;
-            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} TYPE ${type};`);
-          }
-          if (orig.isNullable !== col.isNullable) {
-            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} ${col.isNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`);
-          }
-          if (orig.defaultValue !== col.defaultValue) {
-            statements.push(col.defaultValue
-              ? `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} SET DEFAULT ${col.defaultValue};`
-              : `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} DROP DEFAULT;`
-            );
-          }
-        } else {
-          const activeEdited = edited.filter(c => !c._isDeleted);
-          const idx = activeEdited.indexOf(col);
-          const after = idx <= 0 ? 'FIRST' : `AFTER ${q(activeEdited[idx - 1].name)}`;
-          statements.push(`ALTER TABLE ${tbl} MODIFY COLUMN ${colDef(col)} ${after};`);
-        }
-      }
-    }
-  }
-
-  // 主键变化
-  const origPks = original.filter(c => c.isPrimaryKey).map(c => q(c.name));
-  const newPks = edited.filter(c => c.isPrimaryKey && !c._isDeleted).map(c => q(c.name));
-  const pkChanged = JSON.stringify([...origPks].sort()) !== JSON.stringify([...newPks].sort());
-  if (pkChanged) {
-    if (isPostgres) {
-      statements.push(`ALTER TABLE ${tbl} DROP CONSTRAINT IF EXISTS ${tbl}_pkey;`);
-      if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`);
-    } else {
-      statements.push(`ALTER TABLE ${tbl} DROP PRIMARY KEY;`);
-      if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`);
-    }
-  }
-
-  return statements.length > 0 ? statements.join('\n') : '-- 无变更';
-}
 
 function makeId() { return Math.random().toString(36).slice(2); }
 
@@ -323,7 +218,13 @@ export const TableManageDialog: React.FC<Props> = ({
 
   const isAiBusy = aiState === 'loading' || aiState === 'confirming' || aiState === 'filling';
 
-  const previewSql = generateSql(tableName ?? (localTableName || 'new_table'), originalColumns, columns, driver, !tableName);
+  const effectiveTableName = tableName ?? (localTableName || 'new_table');
+  const previewSql = generateTableSql({
+    tableName: effectiveTableName,
+    engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+    columns, originalColumns: tableName ? originalColumns : undefined,
+    indexes: [], isNewTable: !tableName,
+  }, driver);
 
   const handleExecute = async () => {
     if (previewSql.startsWith('-- ')) return;
@@ -455,7 +356,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     <td className="py-1 px-2">
                       <input
                         className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
-                        value={col.length}
+                        value={col.length ?? ''}
                         onChange={e => updateColumn(col.id, { length: e.target.value })}
                         placeholder="—"
                         disabled={isAiBusy}
@@ -473,7 +374,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     <td className="py-1 px-2">
                       <input
                         className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
-                        value={col.defaultValue}
+                        value={col.defaultValue ?? ''}
                         onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
                         placeholder="—"
                         disabled={isAiBusy}

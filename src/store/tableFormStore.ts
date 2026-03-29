@@ -16,6 +16,8 @@ export interface TableFormColumn {
   _originalName?: string
 }
 
+export type EditableColumn = TableFormColumn
+
 export interface TableFormState {
   tableName: string
   engine: string

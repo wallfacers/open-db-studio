@@ -8,21 +8,7 @@ import { useUIObjectRegistry } from '../../mcp/ui';
 import { TableFormUIObject, generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
-
-interface EditableColumn {
-  id: string;
-  name: string;
-  dataType: string;
-  length?: string | null;
-  isNullable?: boolean;
-  defaultValue?: string | null;
-  isPrimaryKey?: boolean;
-  extra?: string;
-  comment?: string;
-  _originalName?: string;
-  _isNew?: boolean;
-  _isDeleted?: boolean;
-}
+import type { EditableColumn } from '../../store/tableFormStore';
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
 
@@ -206,14 +192,15 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
 
   const visibleColumns = columns.filter(c => !c._isDeleted);
   const effectiveTableName = tableName ?? newTableName;
-  const previewSql = effectiveTableName.trim()
+  const previewSql = useMemo(() => effectiveTableName.trim()
     ? generateTableSql({
         tableName: effectiveTableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns, originalColumns: tableName ? originalColumns : undefined,
         indexes: [], isNewTable: !tableName,
       }, driver)
-    : '-- 请先填写表名';
+    : '-- 请先填写表名',
+    [effectiveTableName, columns, originalColumns, tableName, driver]);
 
   const hasChanges = !previewSql.startsWith('-- ');
 

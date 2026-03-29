@@ -1044,15 +1044,16 @@ pub async fn ai_inline_complete(
         return Ok(String::new());
     }
 
-    // Use a closure to ensure release_slot is always called
     let result = async {
         // 2. Check TimeoutTracker
         if inline_complete::should_skip(connection_id).await {
+            log::debug!("[ai_inline_complete] skip: timeout backoff active for connection {}", connection_id);
             return Ok(String::new());
         }
 
         // 3. Check request deduplication
         if inline_complete::is_duplicate_request(connection_id, &sql_before, &mentioned_tables).await {
+            log::debug!("[ai_inline_complete] skip: duplicate request");
             return Ok(String::new());
         }
 
@@ -1061,7 +1062,10 @@ pub async fn ai_inline_complete(
             .map_err(|e| e.to_string())?
         {
             Some(c) => c,
-            None => return Ok(String::new()),
+            None => {
+                log::warn!("[ai_inline_complete] skip: no LLM config with test_status='success'");
+                return Ok(String::new());
+            }
         };
 
         // 5. Get dialect from connection config
@@ -2455,8 +2459,13 @@ pub async fn build_schema_graph(
 pub async fn get_graph_nodes(
     connection_id: i64,
     node_type: Option<String>,
+    database: Option<String>,
 ) -> AppResult<Vec<crate::graph::GraphNode>> {
-    crate::graph::query::get_nodes(connection_id, node_type.as_deref())
+    crate::graph::query::get_nodes_filtered(
+        connection_id,
+        node_type.as_deref(),
+        database.as_deref(),
+    )
 }
 
 #[tauri::command]

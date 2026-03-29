@@ -14,66 +14,100 @@ use std::collections::{HashMap, HashSet};
 ///   table_name -> column_names (空集合表示仅有表节点，无列节点)
 /// 以及 Link 节点 ID 集合（用于 ADD_FK 去重）：
 ///   HashSet<link_node_id>
+/// 执行带可选 database 过滤的 1 列查询
+fn query_strings_with_db(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    connection_id: i64,
+    database: Option<&str>,
+) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(sql)?;
+    let mut results = Vec::new();
+    let mut rows = match database {
+        Some(db) => stmt.query(rusqlite::params![connection_id, db])?,
+        None => stmt.query([connection_id])?,
+    };
+    while let Some(row) = rows.next()? {
+        results.push(row.get::<_, String>(0)?);
+    }
+    Ok(results)
+}
+
+/// 执行带可选 database 过滤的 2 列查询
+fn query_pairs_with_db(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    connection_id: i64,
+    database: Option<&str>,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(sql)?;
+    let mut results = Vec::new();
+    let mut rows = match database {
+        Some(db) => stmt.query(rusqlite::params![connection_id, db])?,
+        None => stmt.query([connection_id])?,
+    };
+    while let Some(row) = rows.next()? {
+        results.push((row.get::<_, String>(0)?, row.get::<_, String>(1)?));
+    }
+    Ok(results)
+}
+
 fn load_existing_nodes(
     conn: &rusqlite::Connection,
     connection_id: i64,
+    database: Option<&str>,
 ) -> rusqlite::Result<(HashMap<String, HashSet<String>>, HashSet<String>)> {
-    // 读取 table/column 节点（source != 'user'）
     let mut tables: HashMap<String, HashSet<String>> = HashMap::new();
 
+    let db_filter = match database {
+        Some(_) => " AND (database=?2 OR database IS NULL)",
+        None => "",
+    };
+
+    // 读取 table 节点
     {
-        let mut stmt = conn.prepare(
+        let sql = format!(
             "SELECT name FROM graph_nodes
              WHERE connection_id=?1 AND node_type='table'
                AND (source IS NULL OR source != 'user')
-               AND is_deleted=0",
-        )?;
-        let table_names = stmt.query_map([connection_id], |row| {
-            let name: String = row.get(0)?;
-            Ok(name)
-        })?;
-        for t in table_names {
-            tables.entry(t?).or_default();
+               AND is_deleted=0{}",
+            db_filter
+        );
+        for name in query_strings_with_db(conn, &sql, connection_id, database)? {
+            tables.entry(name).or_default();
         }
     }
 
+    // 读取 column 节点（通过 has_column 边关联到表）
     {
-        // column 节点的 name 格式为 "<col_name>"，父表通过 graph_edges has_column 关联。
-        // 为简化，直接从 graph_edges 关联查出表名与列名。
-        let mut stmt = conn.prepare(
+        let sql = format!(
             "SELECT t.name AS table_name, c.name AS col_name
              FROM graph_nodes c
              JOIN graph_edges e ON e.to_node = c.id AND e.edge_type = 'has_column'
              JOIN graph_nodes t ON t.id = e.from_node
              WHERE c.connection_id=?1 AND c.node_type='column'
                AND (c.source IS NULL OR c.source != 'user')
-               AND c.is_deleted=0 AND t.is_deleted=0",
-        )?;
-        let pairs = stmt.query_map([connection_id], |row| {
-            let table_name: String = row.get(0)?;
-            let col_name: String = row.get(1)?;
-            Ok((table_name, col_name))
-        })?;
-        for pair in pairs {
-            let (tname, cname) = pair?;
+               AND c.is_deleted=0 AND t.is_deleted=0{}",
+            db_filter
+        );
+        for (tname, cname) in query_pairs_with_db(conn, &sql, connection_id, database)? {
             tables.entry(tname).or_default().insert(cname);
         }
     }
 
     // 读取已有 Link 节点的 ID（source != 'user'，未软删除）
-    let mut existing_link_ids: HashSet<String> = HashSet::new();
-    {
-        let mut stmt = conn.prepare(
+    let existing_link_ids: HashSet<String> = {
+        let sql = format!(
             "SELECT id FROM graph_nodes
              WHERE connection_id=?1 AND node_type='link'
                AND (source IS NULL OR source != 'user')
-               AND is_deleted=0",
-        )?;
-        let ids = stmt.query_map([connection_id], |row| row.get::<_, String>(0))?;
-        for id in ids {
-            existing_link_ids.insert(id?);
-        }
-    }
+               AND is_deleted=0{}",
+            db_filter
+        );
+        query_strings_with_db(conn, &sql, connection_id, database)?
+            .into_iter()
+            .collect()
+    };
 
     Ok((tables, existing_link_ids))
 }
@@ -86,18 +120,22 @@ fn insert_change_log(
     table_name: &str,
     column_name: Option<&str>,
     metadata: Option<&str>,
+    database: Option<&str>,
+    schema: Option<&str>,
     created_at: &str,
 ) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO schema_change_log
-           (connection_id, event_type, table_name, column_name, metadata, processed, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
+           (connection_id, event_type, table_name, column_name, metadata, database, schema, processed, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
         rusqlite::params![
             connection_id,
             event_type,
             table_name,
             column_name,
             metadata,
+            database,
+            schema,
             created_at
         ],
     )?;
@@ -120,17 +158,25 @@ pub fn detect_and_log_changes(
     current_schema: &SchemaInfo,
     table_columns: &HashMap<String, Vec<crate::datasource::ColumnMeta>>,
     table_fks: &HashMap<String, Vec<crate::datasource::ForeignKeyMeta>>,
+    database: Option<&str>,
 ) -> Result<usize> {
     let db_conn = crate::db::get()
         .lock()
         .map_err(|e| anyhow::anyhow!("DB mutex poisoned: {e}"))?;
     let created_at = Utc::now().to_rfc3339();
 
-    // 1. 加载已有节点
+    // 1. 加载已有节点（按 database 过滤，防止跨库误删）
     let (existing_tables, existing_link_ids) =
-        load_existing_nodes(&db_conn, connection_id)?;
+        load_existing_nodes(&db_conn, connection_id, database)?;
 
     let mut event_count = 0usize;
+
+    // 建立表名 → schema 映射（PG 等多 schema 数据源）
+    let table_schema_map: HashMap<String, Option<String>> = current_schema
+        .tables
+        .iter()
+        .map(|t| (t.name.clone(), t.schema.clone()))
+        .collect();
 
     // 2. 当前 schema 中的表名集合
     let current_table_names: HashSet<String> =
@@ -147,6 +193,7 @@ pub fn detect_and_log_changes(
             .find(|t| &t.name == tname)
             .map(|t| t.table_type.as_str())
             .unwrap_or("BASE TABLE");
+        let tbl_schema = table_schema_map.get(tname).and_then(|s| s.as_deref());
         let meta = serde_json::json!({"table_type": table_type}).to_string();
         insert_change_log(
             &db_conn,
@@ -155,6 +202,8 @@ pub fn detect_and_log_changes(
             tname,
             None,
             Some(&meta),
+            database,
+            tbl_schema,
             &created_at,
         )?;
         event_count += 1;
@@ -176,6 +225,8 @@ pub fn detect_and_log_changes(
                     tname,
                     Some(&col.name),
                     Some(&col_meta),
+                    database,
+                    tbl_schema,
                     &created_at,
                 )?;
                 event_count += 1;
@@ -205,6 +256,8 @@ pub fn detect_and_log_changes(
                         tname,
                         Some(&fk.column),
                         Some(&fk_meta),
+                        database,
+                        tbl_schema,
                         &created_at,
                     )?;
                     event_count += 1;
@@ -222,6 +275,8 @@ pub fn detect_and_log_changes(
             tname,
             None,
             None,
+            database,
+            None,
             &created_at,
         )?;
         event_count += 1;
@@ -233,6 +288,7 @@ pub fn detect_and_log_changes(
             .get(tname)
             .cloned()
             .unwrap_or_default();
+        let tbl_schema = table_schema_map.get(tname).and_then(|s| s.as_deref());
 
         // --- 列对比 ---
         if let Some(current_cols) = table_columns.get(tname) {
@@ -256,6 +312,8 @@ pub fn detect_and_log_changes(
                         tname,
                         Some(&col.name),
                         Some(&meta),
+                        database,
+                        tbl_schema,
                         &created_at,
                     )?;
                     event_count += 1;
@@ -271,6 +329,8 @@ pub fn detect_and_log_changes(
                     tname,
                     Some(col_name),
                     None,
+                    database,
+                    tbl_schema,
                     &created_at,
                 )?;
                 event_count += 1;
@@ -300,6 +360,8 @@ pub fn detect_and_log_changes(
                         tname,
                         Some(&fk.column),
                         Some(&meta),
+                        database,
+                        tbl_schema,
                         &created_at,
                     )?;
                     event_count += 1;

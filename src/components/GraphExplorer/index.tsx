@@ -209,7 +209,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       .finally(() => setDbLoading(false));
   }, [internalConnId]);
 
-  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId);
+  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId, internalDb);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);

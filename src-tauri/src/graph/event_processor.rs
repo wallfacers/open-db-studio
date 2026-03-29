@@ -27,6 +27,8 @@ struct PendingEvent {
     table_name: String,
     column_name: Option<String>,
     metadata: Option<String>,
+    database: Option<String>,
+    schema: Option<String>,
 }
 
 /// 查询 source 字段（仅在需要时）
@@ -87,7 +89,7 @@ pub async fn process_pending_events(
         let db_conn = crate::db::get().lock()
             .map_err(|e| anyhow::anyhow!("DB mutex poisoned: {e}"))?;
         let mut stmt = db_conn.prepare(
-            "SELECT id, event_type, table_name, column_name, metadata
+            "SELECT id, event_type, table_name, column_name, metadata, database, schema
              FROM schema_change_log
              WHERE processed = 0 AND connection_id = ?1
              ORDER BY id ASC",
@@ -99,6 +101,8 @@ pub async fn process_pending_events(
                 table_name: row.get(2)?,
                 column_name: row.get(3)?,
                 metadata: row.get(4)?,
+                database: row.get(5)?,
+                schema: row.get(6)?,
             })
         })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -169,11 +173,13 @@ pub async fn process_pending_events(
                             // 新节点 → INSERT
                             db_conn.execute(
                                 "INSERT INTO graph_nodes
-                                   (id, node_type, connection_id, name, display_name, metadata, source)
-                                 VALUES (?1, 'table', ?2, ?3, ?4, ?5, 'schema')",
+                                   (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source)
+                                 VALUES (?1, 'table', ?2, ?3, ?4, ?5, ?6, ?7, 'schema')",
                                 rusqlite::params![
                                     node_id,
                                     conn_id,
+                                    ev.database,
+                                    ev.schema,
                                     ev.table_name,
                                     ev.table_name,
                                     ev.metadata,
@@ -188,9 +194,10 @@ pub async fn process_pending_events(
                         _ => {
                             // source='schema' 或 source='ai' → UPDATE（含软删除节点复活）
                             db_conn.execute(
-                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema', is_deleted = 0
+                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema', is_deleted = 0,
+                                        database = COALESCE(?3, database), schema_name = COALESCE(?4, schema_name)
                                  WHERE id = ?2",
-                                rusqlite::params![ev.metadata, node_id],
+                                rusqlite::params![ev.metadata, node_id, ev.database, ev.schema],
                             )?;
                             stats.updated += 1;
                         }
@@ -210,11 +217,13 @@ pub async fn process_pending_events(
                             // 新列节点 → INSERT
                             db_conn.execute(
                                 "INSERT INTO graph_nodes
-                                   (id, node_type, connection_id, name, display_name, metadata, source)
-                                 VALUES (?1, 'column', ?2, ?3, NULL, ?4, 'schema')",
+                                   (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source)
+                                 VALUES (?1, 'column', ?2, ?3, ?4, ?5, NULL, ?6, 'schema')",
                                 rusqlite::params![
                                     col_node_id,
                                     conn_id,
+                                    ev.database,
+                                    ev.schema,
                                     col_name,
                                     ev.metadata,
                                 ],
@@ -371,8 +380,8 @@ pub async fn process_pending_events(
                             // 使用 UPSERT 代替 INSERT OR IGNORE，确保 link 节点一定被创建或更新
                             match db_conn.execute(
                                 "INSERT INTO graph_nodes
-                                   (id, node_type, connection_id, name, display_name, metadata, source)
-                                 VALUES (?1, 'link', ?2, ?3, ?4, ?5, 'schema')
+                                   (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source)
+                                 VALUES (?1, 'link', ?2, ?6, ?7, ?3, ?4, ?5, 'schema')
                                  ON CONFLICT(id) DO UPDATE SET
                                    metadata = excluded.metadata,
                                    display_name = excluded.display_name,
@@ -383,6 +392,8 @@ pub async fn process_pending_events(
                                     "fk",
                                     display_name,
                                     link_metadata.to_string(),
+                                    ev.database,
+                                    ev.schema,
                                 ],
                             ) {
                                 Ok(n) => {

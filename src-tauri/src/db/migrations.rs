@@ -179,6 +179,48 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("Migrated graph_nodes: added is_deleted column");
     }
 
+    // V17: graph_nodes 新增 database / schema_name 列（多库/多 schema 支持）
+    if !graph_nodes_columns.contains("database") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN database TEXT",
+        )?;
+        log::info!("V17: added graph_nodes.database column");
+    }
+    if !graph_nodes_columns.contains("schema_name") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN schema_name TEXT",
+        )?;
+        log::info!("V17: added graph_nodes.schema_name column");
+    }
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_graph_nodes_db ON graph_nodes(connection_id, database)",
+        [],
+    );
+
+    // V17: 回填存量数据的 database 列（从 connections 表读取默认 database）
+    {
+        let backfill_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM graph_nodes WHERE database IS NULL AND connection_id IS NOT NULL",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+        if backfill_count > 0 {
+            conn.execute(
+                "UPDATE graph_nodes SET database = (
+                    SELECT c.database_name FROM connections c WHERE c.id = graph_nodes.connection_id
+                ) WHERE database IS NULL AND connection_id IS NOT NULL",
+                [],
+            )?;
+            // 回填 PG schema_name（从 metadata JSON 中提取 $.schema）
+            conn.execute(
+                "UPDATE graph_nodes SET schema_name = json_extract(metadata, '$.schema')
+                 WHERE schema_name IS NULL AND metadata IS NOT NULL AND json_extract(metadata, '$.schema') IS NOT NULL",
+                [],
+            )?;
+            log::info!("V17: backfilled database/schema_name for {} existing nodes", backfill_count);
+        }
+    }
+
     // V4: agent_sessions 表（opencode HTTP Serve 模式）
     // init.sql 使用 IF NOT EXISTS，新安装自动创建；存量数据库通过此处幂等建表
     let _ = conn.execute_batch(
@@ -552,7 +594,7 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             cols
         };
         let v16_columns = [
-            ("auth_type", "ALTER TABLE connections ADD COLUMN auth_type TEXT DEFAULT 'password'"),
+            ("auth_type", "ALTER TABLE connections ADD COLUMN auth_type TEXT"),
             ("token_enc", "ALTER TABLE connections ADD COLUMN token_enc TEXT"),
             ("ssl_mode", "ALTER TABLE connections ADD COLUMN ssl_mode TEXT"),
             ("ssl_ca_path", "ALTER TABLE connections ADD COLUMN ssl_ca_path TEXT"),
@@ -568,6 +610,17 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                 conn.execute_batch(alter_sql)?;
                 log::info!("V16: added connections.{} column", col_name);
             }
+        }
+    }
+
+    // V17: 修复 SQLite 连接的 auth_type（旧默认值 'password' 不正确，应为 'os_native'）
+    {
+        let fixed = conn.execute(
+            "UPDATE connections SET auth_type = 'os_native' WHERE driver = 'sqlite' AND (auth_type IS NULL OR auth_type = 'password')",
+            [],
+        )?;
+        if fixed > 0 {
+            log::info!("V17: fixed {} sqlite connection(s) auth_type from 'password' to 'os_native'", fixed);
         }
     }
 

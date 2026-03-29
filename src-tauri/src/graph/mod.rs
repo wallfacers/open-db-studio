@@ -122,6 +122,111 @@ fn emit_failed(app: &tauri::AppHandle, task_id: &str, error: &str, logs: &[TaskL
 }
 
 /// 协调整个知识图谱构建流程（全量 detect + 增量 process）
+/// 构建单个数据库的图谱（schema fetch + change detect + event process + comment links）
+async fn build_single_database(
+    app: &tauri::AppHandle,
+    task_id: &str,
+    logs: &mut Vec<TaskLogLine>,
+    connection_id: i64,
+    config: &crate::datasource::ConnectionConfig,
+) -> Result<(), String> {
+    macro_rules! log_emit_inner {
+        ($level:expr, $msg:expr) => {{
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            logs.push(TaskLogLine {
+                level: $level.to_string(),
+                message: $msg.to_string(),
+                timestamp_ms: ts,
+            });
+            emit_log(app, task_id, $level, $msg);
+        }};
+    }
+
+    let ds = crate::datasource::create_datasource(config)
+        .await
+        .map_err(|e| format!("连接数据源失败: {}", e))?;
+
+    let db_label = config.database.as_deref().unwrap_or("(default)");
+    log_emit_inner!("INFO", &format!("已连接数据源 [{}]，正在获取 Schema...", db_label));
+
+    let schema = ds.get_schema().await.map_err(|e| format!("获取 Schema 失败: {}", e))?;
+    log_emit_inner!("INFO", &format!("Schema 获取完成，共 {} 张表", schema.tables.len()));
+
+    let mut table_columns = HashMap::new();
+    let mut table_fks = HashMap::new();
+    let is_pg = config.driver == "postgres" || config.driver == "gaussdb";
+
+    for table in &schema.tables {
+        let cols = match ds.get_columns(&table.name, table.schema.as_deref()).await {
+            Ok(c) => c,
+            Err(e) => {
+                log_emit_inner!("WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
+                vec![]
+            }
+        };
+        let fks = match ds.get_foreign_keys(&table.name, table.schema.as_deref()).await {
+            Ok(f) => f,
+            Err(e) => {
+                log_emit_inner!("WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));
+                vec![]
+            }
+        };
+        // PG/GaussDB: 使用 schema.table_name 作为 key，避免不同 schema 同名表冲突
+        let key = if is_pg {
+            match &table.schema {
+                Some(s) => format!("{}.{}", s, table.name),
+                None => table.name.clone(),
+            }
+        } else {
+            table.name.clone()
+        };
+        table_columns.insert(key.clone(), cols);
+        table_fks.insert(key, fks);
+    }
+
+    // 对 PG，schema 也要重写到 SchemaInfo 中使 detect_and_log_changes 使用限定名
+    let schema_for_detect = if is_pg {
+        let tables = schema.tables.iter().map(|t| {
+            let mut t2 = t.clone();
+            if let Some(s) = &t.schema {
+                t2.name = format!("{}.{}", s, t.name);
+            }
+            t2
+        }).collect();
+        crate::datasource::SchemaInfo { tables }
+    } else {
+        schema
+    };
+
+    // 解析列注释生成虚拟关系 Link Node
+    let known_tables: std::collections::HashSet<String> =
+        schema_for_detect.tables.iter().map(|t| t.name.clone()).collect();
+    match build_comment_links(connection_id, &table_columns, &known_tables, config.database.as_deref(), None) {
+        Ok(n) => log_emit_inner!("INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
+        Err(e) => log_emit_inner!("WARN", &format!("注释关系解析失败: {}", e)),
+    }
+
+    // 检测变更并写入 schema_change_log
+    crate::graph::change_detector::detect_and_log_changes(
+        connection_id,
+        &schema_for_detect,
+        &table_columns,
+        &table_fks,
+        config.database.as_deref(),
+    )
+    .map_err(|e| format!("变更检测失败: {}", e))?;
+
+    // 处理待消费事件
+    event_processor::process_pending_events(app, connection_id, task_id)
+        .await
+        .map_err(|e| format!("增量更新失败: {}", e))?;
+
+    Ok(())
+}
+
 pub async fn run_graph_build(
     app: tauri::AppHandle,
     task_id: String,
@@ -163,113 +268,73 @@ pub async fn run_graph_build(
         config.database = Some(db);
     }
 
-    // 安全检查：MySQL/PostgreSQL 等必须指定数据库，否则 get_schema() 返回空导致全部表被误删
+    // 判断是否需要遍历多数据库（连接维度构建）
     let effective_db = config.database.as_deref().unwrap_or("");
-    if effective_db.is_empty() && matches!(config.driver.as_str(), "mysql" | "postgres" | "doris" | "tidb") {
-        let msg = "构建失败：未指定数据库名。请在构建图谱时选择目标数据库。".to_string();
-        log_emit!("ERROR", &msg);
-        emit_failed(&app, &task_id, &msg, &logs);
-        return;
-    }
+    let is_multi_db_driver = matches!(config.driver.as_str(), "mysql" | "postgres" | "doris" | "tidb" | "clickhouse" | "gaussdb");
 
-    let ds = match crate::datasource::create_datasource(&config).await {
-        Ok(ds) => ds,
-        Err(e) => {
-            let msg = format!("连接数据源失败: {}", e);
-            log_emit!("ERROR", &msg);
-            emit_failed(&app, &task_id, &msg, &logs);
-            return;
-        }
-    };
+    if effective_db.is_empty() && is_multi_db_driver {
+        // ── 连接维度构建：遍历所有数据库 ──────────────────────────────────
+        log_emit!("INFO", "未指定数据库，将遍历所有数据库进行构建...");
 
-    log_emit!("INFO", "已连接数据源，正在获取 Schema...");
-
-    // 2. 获取 SchemaInfo
-    let schema = match ds.get_schema().await {
-        Ok(s) => s,
-        Err(e) => {
-            let msg = format!("获取 Schema 失败: {}", e);
-            log_emit!("ERROR", &msg);
-            emit_failed(&app, &task_id, &msg, &logs);
-            return;
-        }
-    };
-
-    log_emit!("INFO", &format!("Schema 获取完成，共 {} 张表", schema.tables.len()));
-
-    // 3. 拉取各表的列和外键信息（await 在锁外完成）
-    let mut table_columns = HashMap::new();
-    let mut table_fks = HashMap::new();
-
-    log::info!(
-        "[run_graph_build] connection={} schema has {} tables: {:?}",
-        connection_id,
-        schema.tables.len(),
-        schema.tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>()
-    );
-
-    for table in &schema.tables {
-        let cols = match ds.get_columns(&table.name, table.schema.as_deref()).await {
-            Ok(c) => c,
+        // 先用默认配置创建临时 datasource 获取数据库列表
+        let tmp_ds = match crate::datasource::create_datasource(&config).await {
+            Ok(ds) => ds,
             Err(e) => {
-                log_emit!("WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
-                vec![]
+                let msg = format!("连接数据源失败: {}", e);
+                log_emit!("ERROR", &msg);
+                emit_failed(&app, &task_id, &msg, &logs);
+                return;
             }
         };
-        let fks = match ds.get_foreign_keys(&table.name, table.schema.as_deref()).await {
-            Ok(f) => f,
+
+        let all_dbs = match tmp_ds.list_databases().await {
+            Ok(dbs) => dbs,
             Err(e) => {
-                log_emit!("WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));
-                vec![]
+                let msg = format!("获取数据库列表失败: {}", e);
+                log_emit!("ERROR", &msg);
+                emit_failed(&app, &task_id, &msg, &logs);
+                return;
             }
         };
-        table_columns.insert(table.name.clone(), cols);
-        table_fks.insert(table.name.clone(), fks);
-    }
+        drop(tmp_ds);
 
-    // 步骤 3.5：解析列注释生成虚拟关系 Link Node（先于 change_detector）
-    log_emit!("INFO", "正在解析列注释虚拟关系...");
-    let known_tables: std::collections::HashSet<String> =
-        schema.tables.iter().map(|t| t.name.clone()).collect();
-    match build_comment_links(connection_id, &table_columns, &known_tables) {
-        Ok(n) => log_emit!("INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
-        Err(e) => log_emit!("WARN", &format!("注释关系解析失败（不影响主流程）: {}", e)),
-    }
+        // 过滤系统库
+        const SYSTEM_DBS: &[&str] = &[
+            "information_schema", "pg_catalog", "performance_schema",
+            "sys", "mysql", "template0", "template1",
+        ];
+        let user_dbs: Vec<String> = all_dbs
+            .into_iter()
+            .filter(|d| !SYSTEM_DBS.contains(&d.as_str()))
+            .collect();
 
-    // 4. 检测变更并写入 schema_change_log
-    log_emit!("INFO", "正在检测 Schema 变更...");
-    match crate::graph::change_detector::detect_and_log_changes(
-        connection_id,
-        &schema,
-        &table_columns,
-        &table_fks,
-    ) {
-        Ok(n) => {
-            log_emit!("INFO", &format!("变更检测完成，共 {} 条变更事件", n));
-        }
-        Err(e) => {
-            let msg = format!("变更检测失败: {}", e);
-            log_emit!("ERROR", &msg);
-            emit_failed(&app, &task_id, &msg, &logs);
+        if user_dbs.is_empty() {
+            log_emit!("WARN", "未发现用户数据库，跳过构建");
+            emit_completed(&app, &task_id, &logs);
             return;
         }
-    }
 
-    // 5. 处理待消费事件（增量更新 graph_nodes + FTS5）
-    log_emit!("INFO", "正在增量更新图谱节点...");
-    match event_processor::process_pending_events(&app, connection_id, &task_id).await {
-        Ok(stats) => {
-            log::info!(
-                "[run_graph_build] connection={} done: inserted={} updated={} skipped={} fts={}",
-                connection_id,
-                stats.inserted,
-                stats.updated,
-                stats.skipped,
-                stats.fts_updated
-            );
+        let total = user_dbs.len();
+        log_emit!("INFO", &format!("发现 {} 个数据库，开始逐一构建...", total));
+
+        for (i, db_name) in user_dbs.iter().enumerate() {
+            log_emit!("INFO", &format!("正在构建数据库 {} ({}/{})...", db_name, i + 1, total));
+
+            let mut db_config = config.clone();
+            db_config.database = Some(db_name.clone());
+
+            if let Err(msg) = build_single_database(
+                &app, &task_id, &mut logs, connection_id, &db_config,
+            ).await {
+                log_emit!("WARN", &format!("数据库 {} 构建失败: {}", db_name, msg));
+                // 不中断整体流程，继续下一个数据库
+            }
         }
-        Err(e) => {
-            let msg = format!("增量更新失败: {}", e);
+    } else {
+        // ── 单数据库构建（原有逻辑）────────────────────────────────────────
+        if let Err(msg) = build_single_database(
+            &app, &task_id, &mut logs, connection_id, &config,
+        ).await {
             log_emit!("ERROR", &msg);
             emit_failed(&app, &task_id, &msg, &logs);
             return;
@@ -496,6 +561,8 @@ fn build_comment_links(
     connection_id: i64,
     table_columns: &std::collections::HashMap<String, Vec<crate::datasource::ColumnMeta>>,
     known_tables: &std::collections::HashSet<String>,
+    database: Option<&str>,
+    _schema_name: Option<&str>,
 ) -> crate::AppResult<usize> {
     let conn = crate::db::get().lock().unwrap();
 
@@ -592,14 +659,15 @@ fn build_comment_links(
                 // 插入 Link Node
                 conn.execute(
                     "INSERT OR REPLACE INTO graph_nodes
-                       (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
-                     VALUES (?1, 'link', ?2, ?3, ?4, ?5, 'comment', 0)",
+                       (id, node_type, connection_id, database, name, display_name, metadata, source, is_deleted)
+                     VALUES (?1, 'link', ?2, ?6, ?3, ?4, ?5, 'comment', 0)",
                     rusqlite::params![
                         link_node_id,
                         connection_id,
                         link_node_id,
                         format!("{}.{} → {}.{}", table_name, col.name, r.target_table, r.target_column),
                         metadata,
+                        database,
                     ],
                 )?;
 
@@ -683,9 +751,20 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
         }
     };
 
-    // Build lookup maps
+    // Build lookup maps (PG: use schema.table_name as key)
+    let is_pg = config.driver == "postgres" || config.driver == "gaussdb";
     let current_set: std::collections::HashMap<String, &crate::datasource::TableMeta> =
-        current_tables.iter().map(|t| (t.name.clone(), t)).collect();
+        current_tables.iter().map(|t| {
+            let key = if is_pg {
+                match &t.schema {
+                    Some(s) => format!("{}.{}", s, t.name),
+                    None => t.name.clone(),
+                }
+            } else {
+                t.name.clone()
+            };
+            (key, t)
+        }).collect();
     let existing_set: std::collections::HashMap<String, &crate::graph::query::GraphNode> =
         existing_nodes.iter()
             .filter(|n| n.is_deleted.unwrap_or(0) == 0)
@@ -703,10 +782,10 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
                     "table_type": table.table_type,
                 }).to_string();
                 conn.execute(
-                    "INSERT INTO graph_nodes (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
-                     VALUES (?1, 'table', ?2, ?3, ?3, ?4, 'schema', 0)
+                    "INSERT INTO graph_nodes (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source, is_deleted)
+                     VALUES (?1, 'table', ?2, ?5, ?6, ?3, ?3, ?4, 'schema', 0)
                      ON CONFLICT(id) DO UPDATE SET is_deleted = 0, metadata = excluded.metadata",
-                    rusqlite::params![node_id, connection_id, name, metadata],
+                    rusqlite::params![node_id, connection_id, name, metadata, db_name, table.schema],
                 ).unwrap_or(0);
                 log::info!("[refresh_schema_graph] Added table node: {}", name);
             }

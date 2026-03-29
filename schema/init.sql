@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS connections (
     password_enc TEXT,
     extra_params TEXT,
     file_path TEXT,
-    auth_type TEXT DEFAULT 'password',
+    auth_type TEXT,
     token_enc TEXT,
     ssl_mode TEXT,
     ssl_ca_path TEXT,
@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
     id            TEXT PRIMARY KEY,
     node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias','link')),
     connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
+    database      TEXT,
+    schema_name   TEXT,
     name          TEXT NOT NULL,
     display_name  TEXT,
     aliases       TEXT,
@@ -124,6 +126,7 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
 );
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_db   ON graph_nodes(connection_id, database);
 
 -- 图谱边
 CREATE TABLE IF NOT EXISTS graph_edges (

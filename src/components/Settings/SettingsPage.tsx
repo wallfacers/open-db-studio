@@ -63,7 +63,7 @@ function AiSection() {
   return (
     <div className="w-full flex flex-col items-center">
       <LlmSettingsPanel />
-      <div className="w-full max-w-lg px-8 pb-8 space-y-4">
+      <div className="w-full max-w-2xl px-8 pb-8 space-y-4">
         <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">
           {t('settings.aiInlineCompletion')}
         </h3>

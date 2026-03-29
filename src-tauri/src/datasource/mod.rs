@@ -230,8 +230,9 @@ pub fn validate_connection_config(config: &ConnectionConfig) -> AppResult<()> {
         return Err(AppError::Datasource(format!("不支持的驱动: {}", config.driver)));
     }
 
-    // 2. auth_type 兼容性
-    let auth_type = config.auth_type.as_deref().unwrap_or("password");
+    // 2. auth_type 兼容性（根据 driver 选择默认值，而非硬编码 "password"）
+    let default_auth = supported_auth_types(&config.driver).first().unwrap_or(&"password");
+    let auth_type = config.auth_type.as_deref().unwrap_or(default_auth);
     validate_auth_compatibility(&config.driver, auth_type)?;
 
     // 3. 必填字段完整性（根据 driver）

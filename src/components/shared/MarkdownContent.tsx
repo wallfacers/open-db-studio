@@ -185,13 +185,13 @@ function makeMdComponents(isStreaming: boolean) {
     return <p className="leading-relaxed mb-2 last:mb-0">{children}</p>;
   },
   ul({ children }: React.ComponentPropsWithoutRef<'ul'>) {
-    return <ul className="list-disc list-inside space-y-1 mb-2 pl-2">{children}</ul>;
+    return <ul className="list-disc space-y-1 mb-2 pl-5">{children}</ul>;
   },
   ol({ children }: React.ComponentPropsWithoutRef<'ol'>) {
-    return <ol className="list-decimal list-inside space-y-1 mb-2 pl-2">{children}</ol>;
+    return <ol className="list-decimal space-y-1 mb-2 pl-5">{children}</ol>;
   },
   li({ children }: React.ComponentPropsWithoutRef<'li'>) {
-    return <li className="text-[#c8daea]">{children}</li>;
+    return <li className="text-[#c8daea] [&>p]:inline">{children}</li>;
   },
   h1({ children }: React.ComponentPropsWithoutRef<'h1'>) {
     return <h1 className="text-base font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h1>;
@@ -234,7 +234,7 @@ function ensureCodeFenceOnNewLine(content: string): string {
 
 /** 确保段落与列表项之间有空行，否则 remark 会将列表项当作段落续行 */
 function ensureListBlankLine(content: string): string {
-  return content.replace(/([^\n])\n(\s{0,3})([-*] |\d+\. )/g, '$1\n\n$2$3');
+  return content.replace(/([^\n])\n([^\S\n]{0,3})([-*] |\d+\. )/g, '$1\n\n$2$3');
 }
 
 export const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = memo(({ content, isStreaming = false }) => {

@@ -24,10 +24,12 @@ export class QueryEditorAdapter implements UIObject {
         const tab = tabs.find(t => t.id === this.objectId)
         if (!tab) return {}
         const content = sqlContent[this.objectId] ?? ''
+        const ctx = tab.queryContext ?? { connectionId: null, database: null, schema: null }
         return {
           content,
-          connectionId: tab.connectionId ?? null,
-          database: tab.db ?? null,
+          connectionId: ctx.connectionId,
+          database: ctx.database,
+          schema: ctx.schema,
         }
       }
       case 'schema':
@@ -35,8 +37,9 @@ export class QueryEditorAdapter implements UIObject {
           type: 'object',
           properties: {
             content: { type: 'string', description: 'SQL content' },
-            connectionId: { type: 'number' },
-            database: { type: 'string' },
+            connectionId: { type: 'number', description: 'Connection ID for query execution' },
+            database: { type: 'string', description: 'Target database name' },
+            schema: { type: 'string', description: 'Target schema name (PostgreSQL/Oracle)' },
           },
         }
       case 'actions':
@@ -45,6 +48,7 @@ export class QueryEditorAdapter implements UIObject {
           { name: 'format', description: 'Format/beautify the SQL' },
           { name: 'undo', description: 'Undo last change' },
           { name: 'focus', description: 'Switch to this tab' },
+          { name: 'set_context', description: 'Set connection/database/schema context. Params: { connectionId?: number, database?: string, schema?: string }' },
         ]
     }
   }
@@ -70,13 +74,32 @@ export class QueryEditorAdapter implements UIObject {
   }
 
   patchDirect(ops: JsonPatchOp[]): PatchResult {
-    const { sqlContent, setSql } = useQueryStore.getState()
+    const store = useQueryStore.getState()
+    const tab = store.tabs.find(t => t.id === this.objectId)
+    const ctx = tab?.queryContext ?? { connectionId: null, database: null, schema: null }
     const currentState = {
-      content: sqlContent[this.objectId] ?? '',
+      content: store.sqlContent[this.objectId] ?? '',
+      connectionId: ctx.connectionId,
+      database: ctx.database,
+      schema: ctx.schema,
     }
     try {
       const patched = applyPatch(currentState, ops)
-      setSql(this.objectId, patched.content)
+
+      // Apply SQL content change
+      if (patched.content !== currentState.content) {
+        store.setSql(this.objectId, patched.content)
+      }
+
+      // Apply queryContext changes
+      const ctxUpdate: Partial<{ connectionId: number | null; database: string | null; schema: string | null }> = {}
+      if (patched.connectionId !== currentState.connectionId) ctxUpdate.connectionId = patched.connectionId
+      if (patched.database !== currentState.database) ctxUpdate.database = patched.database
+      if (patched.schema !== currentState.schema) ctxUpdate.schema = patched.schema
+      if (Object.keys(ctxUpdate).length > 0) {
+        store.updateTabContext(this.objectId, ctxUpdate)
+      }
+
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }
@@ -100,6 +123,19 @@ export class QueryEditorAdapter implements UIObject {
       case 'focus':
         useQueryStore.getState().setActiveTabId(this.objectId)
         return { success: true }
+
+      case 'set_context': {
+        const { connectionId, database, schema } = _params ?? {}
+        const ctx: Partial<{ connectionId: number | null; database: string | null; schema: string | null }> = {}
+        if (connectionId !== undefined) ctx.connectionId = connectionId
+        if (database !== undefined) ctx.database = database
+        if (schema !== undefined) ctx.schema = schema
+        if (Object.keys(ctx).length === 0) {
+          return { success: false, error: 'No context fields provided. Use connectionId, database, or schema.' }
+        }
+        useQueryStore.getState().updateTabContext(this.objectId, ctx)
+        return { success: true }
+      }
 
       default:
         return { success: false, error: `Unknown action: ${action}` }

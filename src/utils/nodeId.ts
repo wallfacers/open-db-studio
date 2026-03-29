@@ -5,7 +5,6 @@
 // ---- 共享 ID（跨树通用） ----
 
 export function connNodeId(id: number): string { return `conn_${id}`; }
-export function parseConnNodeId(nodeId: string): number { return parseInt(nodeId.replace('conn_', ''), 10); }
 
 export function groupNodeId(id: number): string { return `group_${id}`; }
 export function parseGroupNodeId(nodeId: string): number { return parseInt(nodeId.replace('group_', ''), 10); }

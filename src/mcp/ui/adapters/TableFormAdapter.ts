@@ -46,7 +46,8 @@ const TABLE_FORM_SCHEMA = {
 }
 
 // ── Frontend SQL generation (eliminates nested IPC for preview_sql) ──────
-// Mirrors Rust generate_create_table_sql in src-tauri/src/mcp/tools/table_edit.rs
+// Shared logic for both TableFormAdapter and TableStructureView.
+// Supports CREATE TABLE (new) and ALTER TABLE (existing) generation.
 
 /** Reason prefix used by init_table_form to bypass patch confirmation */
 export const INIT_TABLE_FORM_REASON_PREFIX = 'init_table_form:'
@@ -62,7 +63,9 @@ function q(name: string, isPg: boolean): string {
   return isPg ? `"${name}"` : `\`${name}\``
 }
 
-function colDef(c: TableFormState['columns'][0], isPg: boolean): string {
+type Column = TableFormState['columns'][0]
+
+function colDef(c: Column, isPg: boolean): string {
   const typ = c.length ? `${c.dataType}(${c.length})` : c.dataType
   const nullable = (c.isNullable ?? true) ? 'NULL' : 'NOT NULL'
   const def = c.defaultValue ? `DEFAULT ${c.defaultValue}` : ''
@@ -71,26 +74,110 @@ function colDef(c: TableFormState['columns'][0], isPg: boolean): string {
   return [q(c.name, isPg), typ, nullable, def, extra, comment].filter(Boolean).join(' ')
 }
 
-function generateCreateTableSql(state: TableFormState, driver: string): string {
-  validateIdent(state.tableName, 'table name')
-  for (const c of state.columns) validateIdent(c.name, 'column name')
-
-  const isPg = driver === 'postgres'
-  const pkCols = state.columns
-    .filter(c => c.isPrimaryKey)
-    .map(c => q(c.name, isPg))
-  const lines = state.columns.map(c => `  ${colDef(c, isPg)}`)
+function generateCreateSql(state: TableFormState, isPg: boolean): string {
+  const activeCols = state.columns.filter(c => !c._isDeleted)
+  const pkCols = activeCols.filter(c => c.isPrimaryKey).map(c => q(c.name, isPg))
+  const lines = activeCols.map(c => `  ${colDef(c, isPg)}`)
   if (pkCols.length) lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`)
 
-  const stmts = [`CREATE TABLE ${q(state.tableName, isPg)} (\n${lines.join(',\n')}\n)`]
+  const stmts = [`CREATE TABLE ${q(state.tableName, isPg)} (\n${lines.join(',\n')}\n);`]
   if (isPg) {
-    for (const c of state.columns) {
+    for (const c of activeCols) {
       if (c.comment) {
-        stmts.push(`COMMENT ON COLUMN ${q(state.tableName, true)}.${q(c.name, true)} IS '${esc(c.comment)}'`)
+        stmts.push(`COMMENT ON COLUMN ${q(state.tableName, true)}.${q(c.name, true)} IS '${esc(c.comment)}';`)
       }
     }
   }
-  return stmts.join(';\n')
+  return stmts.join('\n')
+}
+
+function generateAlterSql(state: TableFormState, original: Column[], isPg: boolean): string {
+  const tbl = q(state.tableName, isPg)
+  const statements: string[] = []
+  const edited = state.columns
+
+  const existingEdited = edited.filter(c => !c._isNew && !c._isDeleted)
+  const orderChanged = !isPg && existingEdited.some((c, i) => {
+    if (i === 0) return false
+    const prevOrigIdx = original.findIndex(o => o.name === (existingEdited[i - 1]._originalName ?? existingEdited[i - 1].name))
+    const currOrigIdx = original.findIndex(o => o.name === (c._originalName ?? c.name))
+    return prevOrigIdx > currOrigIdx
+  })
+
+  for (const col of edited) {
+    if (col._isDeleted && !col._isNew) {
+      statements.push(`ALTER TABLE ${tbl} DROP COLUMN ${q(col._originalName ?? col.name, isPg)};`)
+    } else if (col._isNew && !col._isDeleted) {
+      statements.push(`ALTER TABLE ${tbl} ADD COLUMN ${colDef(col, isPg)};`)
+    } else if (!col._isNew && !col._isDeleted) {
+      const orig = original.find(o => o.name === (col._originalName ?? col.name))
+      if (!orig) continue
+      const changed = orig.name !== col.name
+        || orig.dataType !== col.dataType
+        || orig.length !== col.length
+        || orig.isNullable !== col.isNullable
+        || orig.defaultValue !== col.defaultValue
+        || orig.extra !== col.extra
+        || orig.comment !== col.comment
+        || (orderChanged && !isPg)
+      if (changed) {
+        if (isPg) {
+          if (orig.dataType !== col.dataType || orig.length !== col.length) {
+            const type = col.length ? `${col.dataType}(${col.length})` : col.dataType
+            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name, isPg)} TYPE ${type};`)
+          }
+          if (orig.isNullable !== col.isNullable) {
+            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name, isPg)} ${col.isNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`)
+          }
+          if (orig.defaultValue !== col.defaultValue) {
+            statements.push(col.defaultValue
+              ? `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name, isPg)} SET DEFAULT ${col.defaultValue};`
+              : `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name, isPg)} DROP DEFAULT;`)
+          }
+          if (orig.comment !== col.comment) {
+            statements.push(col.comment
+              ? `COMMENT ON COLUMN ${tbl}.${q(col.name, isPg)} IS '${esc(col.comment)}';`
+              : `COMMENT ON COLUMN ${tbl}.${q(col.name, isPg)} IS NULL;`)
+          }
+        } else {
+          const activeEdited = edited.filter(c => !c._isDeleted)
+          const idx = activeEdited.indexOf(col)
+          const after = idx <= 0 ? 'FIRST' : `AFTER ${q(activeEdited[idx - 1].name, isPg)}`
+          statements.push(`ALTER TABLE ${tbl} MODIFY COLUMN ${colDef(col, isPg)} ${after};`)
+        }
+      }
+    }
+  }
+
+  const origPks = original.filter(c => c.isPrimaryKey).map(c => q(c.name, isPg))
+  const newPks = edited.filter(c => c.isPrimaryKey && !c._isDeleted).map(c => q(c.name, isPg))
+  const pkChanged = JSON.stringify([...origPks].sort()) !== JSON.stringify([...newPks].sort())
+  if (pkChanged) {
+    if (isPg) {
+      statements.push(`ALTER TABLE ${tbl} DROP CONSTRAINT IF EXISTS "${state.tableName}_pkey";`)
+    } else {
+      statements.push(`ALTER TABLE ${tbl} DROP PRIMARY KEY;`)
+    }
+    if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`)
+  }
+
+  return statements.length > 0 ? statements.join('\n') : '-- No changes'
+}
+
+/**
+ * Generate SQL for a table form state.
+ * - isNewTable=true (or no originalColumns): CREATE TABLE
+ * - isNewTable=false with originalColumns: ALTER TABLE (diff-based)
+ */
+export function generateTableSql(state: TableFormState, driver: string): string {
+  validateIdent(state.tableName, 'table name')
+  for (const c of state.columns) {
+    if (!c._isDeleted) validateIdent(c.name, 'column name')
+  }
+
+  const isPg = driver === 'postgres' || driver === 'postgresql'
+  const isNew = state.isNewTable !== false || !state.originalColumns?.length
+  return isNew ? generateCreateSql(state, isPg) : generateAlterSql(state, state.originalColumns!, isPg)
 }
 
 export class TableFormUIObject implements UIObject {
@@ -169,7 +256,7 @@ export class TableFormUIObject implements UIObject {
     switch (action) {
       case 'preview_sql': {
         try {
-          const sql = generateCreateTableSql(state, this.getDriver())
+          const sql = generateTableSql(state, this.getDriver())
           return { success: true, data: { sql } }
         } catch (e) {
           return { success: false, error: String(e) }

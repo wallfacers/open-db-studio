@@ -5,7 +5,7 @@ import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-r
 import { useConnectionStore } from '../../store/connectionStore';
 import { useTableFormStore, loadPersistedFormState } from '../../store/tableFormStore';
 import { useUIObjectRegistry } from '../../mcp/ui';
-import { TableFormUIObject } from '../../mcp/ui/adapters/TableFormAdapter';
+import { TableFormUIObject, generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
 
@@ -33,106 +33,6 @@ const getTypeOptions = (dataType: string) => {
   }
   return opts;
 };
-
-function generateSql(
-  tableName: string,
-  original: EditableColumn[],
-  edited: EditableColumn[],
-  driver: string,
-  isNew: boolean
-): string {
-  const isPostgres = driver === 'postgres' || driver === 'postgresql';
-  const q = (name: string) => isPostgres ? `"${name}"` : `\`${name}\``;
-
-  const colDef = (col: EditableColumn) => {
-    const type = col.length ? `${col.dataType}(${col.length})` : col.dataType;
-    const nullable = col.isNullable ? 'NULL' : 'NOT NULL';
-    const def = col.defaultValue ? `DEFAULT ${col.defaultValue}` : '';
-    const extra = col.extra && !isPostgres ? col.extra.toUpperCase() : '';
-    const comment = col.comment && !isPostgres ? `COMMENT '${col.comment.replace(/'/g, "\\'")}'` : '';
-    return [q(col.name), type, nullable, def, extra, comment].filter(Boolean).join(' ');
-  };
-
-  if (isNew) {
-    const activeCols = edited.filter(c => !c._isDeleted);
-    const pkCols = activeCols.filter(c => c.isPrimaryKey).map(c => q(c.name));
-    const lines = activeCols.map(c => `  ${colDef(c)}`);
-    if (pkCols.length > 0) lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
-    return `CREATE TABLE ${q(tableName)} (\n${lines.join(',\n')}\n);`;
-  }
-
-  const tbl = q(tableName);
-  const statements: string[] = [];
-  const existingEdited = edited.filter(c => !c._isNew && !c._isDeleted);
-  const orderChanged = !isPostgres && existingEdited.some((c, i) => {
-    if (i === 0) return false;
-    const prevOrigIdx = original.findIndex(o => o.name === (existingEdited[i - 1]._originalName ?? existingEdited[i - 1].name));
-    const currOrigIdx = original.findIndex(o => o.name === (c._originalName ?? c.name));
-    return prevOrigIdx > currOrigIdx;
-  });
-
-  for (const col of edited) {
-    if (col._isDeleted && !col._isNew) {
-      statements.push(`ALTER TABLE ${tbl} DROP COLUMN ${q(col._originalName ?? col.name)};`);
-    } else if (col._isNew && !col._isDeleted) {
-      statements.push(`ALTER TABLE ${tbl} ADD COLUMN ${colDef(col)};`);
-    } else if (!col._isNew && !col._isDeleted) {
-      const orig = original.find(o => o.name === (col._originalName ?? col.name));
-      if (!orig) continue;
-      const changed = orig.name !== col.name
-        || orig.dataType !== col.dataType
-        || orig.length !== col.length
-        || orig.isNullable !== col.isNullable
-        || orig.defaultValue !== col.defaultValue
-        || orig.extra !== col.extra
-        || orig.comment !== col.comment
-        || (orderChanged && !isPostgres);
-      if (changed) {
-        if (isPostgres) {
-          if (orig.dataType !== col.dataType || orig.length !== col.length) {
-            const type = col.length ? `${col.dataType}(${col.length})` : col.dataType;
-            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} TYPE ${type};`);
-          }
-          if (orig.isNullable !== col.isNullable) {
-            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} ${col.isNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`);
-          }
-          if (orig.defaultValue !== col.defaultValue) {
-            statements.push(col.defaultValue
-              ? `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} SET DEFAULT ${col.defaultValue};`
-              : `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} DROP DEFAULT;`
-            );
-          }
-          if (orig.comment !== col.comment) {
-            statements.push(col.comment
-              ? `COMMENT ON COLUMN ${tbl}.${q(col.name)} IS '${col.comment.replace(/'/g, "''")}';`
-              : `COMMENT ON COLUMN ${tbl}.${q(col.name)} IS NULL;`
-            );
-          }
-        } else {
-          const activeEdited = edited.filter(c => !c._isDeleted);
-          const idx = activeEdited.indexOf(col);
-          const after = idx <= 0 ? 'FIRST' : `AFTER ${q(activeEdited[idx - 1].name)}`;
-          statements.push(`ALTER TABLE ${tbl} MODIFY COLUMN ${colDef(col)} ${after};`);
-        }
-      }
-    }
-  }
-
-  const origPks = original.filter(c => c.isPrimaryKey).map(c => q(c.name));
-  const newPks = edited.filter(c => c.isPrimaryKey && !c._isDeleted).map(c => q(c.name));
-  const pkChanged = JSON.stringify([...origPks].sort()) !== JSON.stringify([...newPks].sort());
-  if (pkChanged) {
-    if (isPostgres) {
-      statements.push(`ALTER TABLE ${tbl} DROP CONSTRAINT IF EXISTS ${tbl}_pkey;`);
-      if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`);
-    } else {
-      statements.push(`ALTER TABLE ${tbl} DROP PRIMARY KEY;`);
-      if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`);
-    }
-  }
-
-  return statements.length > 0 ? statements.join('\n') : '-- 无变更';
-}
 
 function makeId() { return Math.random().toString(36).slice(2); }
 
@@ -307,7 +207,12 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const visibleColumns = columns.filter(c => !c._isDeleted);
   const effectiveTableName = tableName ?? newTableName;
   const previewSql = effectiveTableName.trim()
-    ? generateSql(effectiveTableName, originalColumns, columns, driver, !tableName)
+    ? generateTableSql({
+        tableName: effectiveTableName,
+        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+        columns, originalColumns: tableName ? originalColumns : undefined,
+        indexes: [], isNewTable: !tableName,
+      }, driver)
     : '-- 请先填写表名';
 
   const hasChanges = !previewSql.startsWith('-- ');

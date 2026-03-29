@@ -69,6 +69,9 @@ Execute an action on a UI object.
 - `ui_exec(object="table_form", action="save")` — Generate SQL for the table form
 - `ui_exec(object="db_tree", action="search", params={keyword:"users", type:"table"})` — Search database tree
 - `ui_exec(object="db_tree", action="refresh")` — Refresh database tree
+- `ui_exec(object="db_tree", action="expand", params={nodeId:"conn_1/db_app/cat_tables"})` — Expand a specific tree node
+- `ui_exec(object="db_tree", action="select", params={nodeId:"conn_1/db_app/cat_tables/table_users"})` — Select/highlight a tree node
+- `ui_exec(object="db_tree", action="locate_table", params={connection_id:1, database:"app", table:"users"})` — Expand tree path to a table and select it (auto-loads all ancestors)
 - `ui_exec(object="history", action="list")` — List change history
 - `ui_exec(object="history", action="undo")` — Undo last change
 
@@ -119,6 +122,33 @@ List all currently open UI objects. Use this to discover what's available.
 - Use `[name=xxx]` to address columns by name: `/columns[name=email]/dataType`
 - You can batch multiple operations in a single `ui_patch` call
 - Each patch is atomic — if any op fails, none are applied
+
+---
+
+## Editing an Existing Table (ALTER TABLE workflow)
+
+When the user asks to edit an existing table's structure:
+
+1. Locate the table in the tree (provides visual feedback):
+   `ui_exec(object="db_tree", action="locate_table", params={connection_id:1, database:"app", table:"users"})`
+
+2. Open the table for editing:
+   `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app", table:"users"})`
+
+3. The form loads with the existing columns. Modify as needed:
+   ```
+   ui_patch(object="table_form", ops=[
+     {op:"add", path:"/columns/-", value:{name:"phone", dataType:"VARCHAR", length:"20"}},
+     {op:"replace", path:"/columns[name=email]/dataType", value:"TEXT"},
+     {op:"remove", path:"/columns[name=temp_field]"}
+   ])
+   ```
+
+4. Preview generates ALTER TABLE SQL (not CREATE TABLE):
+   `ui_exec(object="table_form", action="preview_sql")`
+   → Returns `ALTER TABLE ... ADD COLUMN ...`, `ALTER TABLE ... MODIFY COLUMN ...`, etc.
+
+**Note:** For existing tables, `preview_sql` automatically generates diff-based ALTER TABLE statements comparing current state against original columns.
 
 ---
 

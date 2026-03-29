@@ -206,20 +206,31 @@ async fn build_layered_context(
 
 ```typescript
 function extractMentionedTables(sql: string): string[] {
-  // Covers: FROM, JOIN, INTO, UPDATE, DELETE FROM, MERGE INTO
-  // Also handles comma-separated table lists: FROM users, orders
-  const pattern = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
-  // Secondary pattern for comma-separated tables after FROM
-  const commaPattern = /FROM\s+(?:[\w.`"']+\s*,\s*)*([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
-
   const tables = new Set<string>();
+
+  // Pattern 1: keyword-based extraction
+  // Covers: FROM, JOIN, INTO, UPDATE, DELETE FROM, MERGE INTO
+  const keywordPattern = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(sql)) !== null) {
+  while ((match = keywordPattern.exec(sql)) !== null) {
     const name = match[1].replace(/[`"']/g, '');
     if (!SQL_KEYWORDS.has(name.toUpperCase())) {
       tables.add(name);
     }
   }
+
+  // Pattern 2: comma-separated tables after FROM (e.g., FROM users, orders, logs)
+  const commaListPattern = /FROM\s+([\w.`"']+(?:\s*,\s*[\w.`"']+)*)/gi;
+  while ((match = commaListPattern.exec(sql)) !== null) {
+    const list = match[1];
+    for (const item of list.split(',')) {
+      const name = item.trim().replace(/[`"']/g, '');
+      if (name && !SQL_KEYWORDS.has(name.toUpperCase())) {
+        tables.add(name);
+      }
+    }
+  }
+
   return Array.from(tables);
 }
 ```

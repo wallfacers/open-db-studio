@@ -18,7 +18,7 @@
 | File | Responsibility |
 |------|---------------|
 | `prompts/sql_inline_complete.txt` | LLM prompt template for inline completion |
-| `src-tauri/src/llm/inline_complete.rs` | Layered context assembly, postprocessing, MetaCache, TimeoutTracker |
+| `src-tauri/src/llm/inline_complete.rs` | Layered context assembly, postprocessing, MetaCache, TimeoutTracker. **Deviation from spec:** spec places MetaCache in `datasource/mod.rs`, but we co-locate it here with its sole consumer for locality and encapsulation. |
 
 ### Modified Files
 | File | Changes |
@@ -741,7 +741,7 @@ inlineProviderRef.current = monacoInstance.languages.registerInlineCompletionsPr
     if (selection && !selection.isEmpty()) return { items: [] };
 
     // 4. Prefix cache check
-    const cached = tryPrefixCache(sqlBefore);
+    const cached = tryPrefixCache(sqlBefore, ghostCacheRef);
     if (cached) return { items: [{ insertText: cached, range: new monacoInstance.Range(position.lineNumber, position.column, position.lineNumber, position.column) }] };
 
     // 5. Request ID guard

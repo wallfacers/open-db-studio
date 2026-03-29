@@ -58,6 +58,7 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const thinking = useAiStore((s) => s.chatStates[sessionId]?.streamingThinkingContent ?? '');
   const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
   const pendingQuestion = useAiStore((s) => s.chatStates[sessionId]?.pendingQuestion ?? null);
+  const isChatting = useAiStore((s) => s.chatStates[sessionId]?.isChatting ?? false);
   const { t } = useTranslation();
 
   // 已收到任何内容（包含深度思考）则不再显示等待动画
@@ -66,18 +67,19 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   return (
     <div className="flex flex-col items-start">
       <div className="text-[#c8daea] text-[13px] w-full">
-        {thinking && <ThinkingBlock content={thinking} isStreaming={!pendingQuestion} />}
+        {/* ThinkingBlock 使用 isChatting：Q&A 期间保持展开，仅 AI 完成后才自动折叠 */}
+        {thinking && <ThinkingBlock content={thinking} isStreaming={isChatting} />}
         {content && <MarkdownContent content={content} isStreaming={!pendingQuestion} />}
         {pendingQuestion ? (
           <div className="mt-2 space-y-1">
             {/* 从 questions 字段提取问题文本展示 */}
             {Array.isArray(pendingQuestion.questions) && pendingQuestion.questions.length > 0 && (
               pendingQuestion.questions.map((q, qi) => (
-                <div key={qi} className="text-[13px] text-amber-300/90 leading-relaxed">
-                  {q.header && <div className="font-medium">{q.header}</div>}
-                  {q.question && <div>{q.question}</div>}
+                <div key={qi} className="text-[13px] leading-relaxed">
+                  {q.header && <div className="font-medium text-[#4ac9c0]">{q.header}</div>}
+                  {q.question && <div className="text-[#8ec8e0]">{q.question}</div>}
                   {Array.isArray(q.options) && q.options.length > 0 && (
-                    <div className="mt-1 space-y-0.5 text-xs text-amber-400/70">
+                    <div className="mt-1 space-y-0.5 text-xs text-[#6aadcc]">
                       {q.options.map((opt, oi) => (
                         <div key={oi}>• {opt.label}{opt.description ? ` — ${opt.description}` : ''}</div>
                       ))}
@@ -87,8 +89,8 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               ))
             )}
             <div className="flex items-center gap-2 py-1">
-              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-              <span className="text-xs text-amber-400 animate-pulse">{t('assistant.waitingForAnswer')}</span>
+              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+              <span className="text-xs text-[#00c9a7] animate-pulse">{t('assistant.waitingForAnswer')}</span>
             </div>
           </div>
         ) : !hasFirstToken && (
@@ -513,7 +515,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             /* 等待回答 + 无输入：显示 X 按钮（拒绝/跳过问题） */
             <Tooltip content={t('assistant.rejectQuestion')} className="contents">
               <button
-                className="p-1.5 rounded transition-colors bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                className="p-1.5 rounded transition-colors bg-[#00c9a7]/20 text-[#00c9a7] hover:bg-[#00c9a7]/30"
                 onClick={() => {
                   if (pendingQuestion) {
                     respondQuestion(currentSessionId, pendingQuestion.question_id, [], true);

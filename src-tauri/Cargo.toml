@@ -75,6 +75,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # 正则表达式（注释解析器）
 regex = "1"
 
+# SHA-256（知识图谱列哈希）
+sha2 = "0.10"
+
 # 其他
 lru = "0.12"
 once_cell = "1"

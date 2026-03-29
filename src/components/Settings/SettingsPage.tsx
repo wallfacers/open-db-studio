@@ -39,12 +39,54 @@ export function SettingsPage() {
 
       {/* 右侧内容 */}
       <div className="flex-1 overflow-y-auto flex flex-col items-center">
-        {activeSection === 'ai' && <LlmSettingsPanel />}
+        {activeSection === 'ai' && <AiSection />}
         {activeSection === 'appearance' && <AppearanceSection t={t} />}
         {activeSection === 'shortcuts' && (
           <PlaceholderSection title={t('settings.shortcuts')} description={t('settings.shortcutsDesc')} />
         )}
         {activeSection === 'about' && <AboutSection t={t} />}
+      </div>
+    </div>
+  );
+}
+
+function AiSection() {
+  const ghostTextDefault = useAppStore((s) => s.ghostTextDefault);
+  const setGhostTextDefault = useAppStore((s) => s.setGhostTextDefault);
+  const initGhostTextDefault = useAppStore((s) => s.initGhostTextDefault);
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    initGhostTextDefault();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="w-full flex flex-col items-center">
+      <LlmSettingsPanel />
+      <div className="w-full max-w-lg px-8 pb-8 space-y-4">
+        <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">
+          {t('settings.aiInlineCompletion')}
+        </h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.ghostText')}</p>
+            <p className="text-xs text-[#7a9bb8]">
+              {t('settings.ghostTextDesc')}
+            </p>
+          </div>
+          <button
+            onClick={() => setGhostTextDefault(!ghostTextDefault)}
+            className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ml-4 ${
+              ghostTextDefault ? 'bg-[#00c9a7]' : 'bg-[#2a3f5a]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                ghostTextDefault ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
       </div>
     </div>
   );

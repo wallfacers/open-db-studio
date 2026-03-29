@@ -636,3 +636,150 @@ fn build_comment_links(
 
     result
 }
+
+/// Lightweight incremental schema graph refresh.
+/// Detects table additions/removals and column changes, updates graph nodes accordingly.
+/// Does NOT re-parse comment links, sync metrics, or sync aliases.
+pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) -> crate::AppResult<()> {
+    use sha2::{Sha256, Digest};
+
+    // 1. Get connection config and create datasource
+    let mut config = match crate::db::get_connection_config(connection_id) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[refresh_schema_graph] Failed to get config: {}", e);
+            return Ok(());
+        }
+    };
+    if let Some(db) = database.filter(|s| !s.is_empty()) {
+        config.database = Some(db);
+    }
+
+    let ds = match crate::datasource::create_datasource(&config).await {
+        Ok(ds) => ds,
+        Err(e) => {
+            log::warn!("[refresh_schema_graph] Failed to connect: {}", e);
+            return Ok(());
+        }
+    };
+
+    // 2. Fetch current tables from datasource
+    let current_tables = match ds.get_tables().await {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[refresh_schema_graph] Failed to get tables: {}", e);
+            return Ok(());
+        }
+    };
+
+    // 3. Fetch existing graph table nodes
+    let existing_nodes = match crate::graph::query::get_nodes(connection_id, Some("table")) {
+        Ok(n) => n,
+        Err(e) => {
+            log::warn!("[refresh_schema_graph] Failed to get graph nodes: {}", e);
+            return Ok(());
+        }
+    };
+
+    // Build lookup maps
+    let current_set: std::collections::HashMap<String, &crate::datasource::TableMeta> =
+        current_tables.iter().map(|t| (t.name.clone(), t)).collect();
+    let existing_set: std::collections::HashMap<String, &crate::graph::query::GraphNode> =
+        existing_nodes.iter()
+            .filter(|n| n.is_deleted.unwrap_or(0) == 0)
+            .map(|n| (n.name.clone(), n))
+            .collect();
+
+    // 4. Detect added tables — insert new nodes (sync DB block, drop before await)
+    {
+        let conn = crate::db::get().lock().unwrap();
+        for (name, table) in &current_set {
+            if !existing_set.contains_key(name) {
+                let node_id = format!("{}:table:{}", connection_id, name);
+                let metadata = serde_json::json!({
+                    "schema": table.schema,
+                    "table_type": table.table_type,
+                }).to_string();
+                conn.execute(
+                    "INSERT INTO graph_nodes (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
+                     VALUES (?1, 'table', ?2, ?3, ?3, ?4, 'schema', 0)
+                     ON CONFLICT(id) DO UPDATE SET is_deleted = 0, metadata = excluded.metadata",
+                    rusqlite::params![node_id, connection_id, name, metadata],
+                ).unwrap_or(0);
+                log::info!("[refresh_schema_graph] Added table node: {}", name);
+            }
+        }
+
+        // 5. Detect removed tables — soft delete
+        for name in existing_set.keys() {
+            if !current_set.contains_key(name) {
+                let node_id = format!("{}:table:{}", connection_id, name);
+                conn.execute(
+                    "UPDATE graph_nodes SET is_deleted = 1 WHERE id = ?1",
+                    [&node_id],
+                ).unwrap_or(0);
+                log::info!("[refresh_schema_graph] Soft-deleted table node: {}", name);
+            }
+        }
+    } // conn dropped here — safe to await below
+
+    // 6. For unchanged tables, check column hash changes (async fetch + sync update)
+    // Collect column hashes asynchronously first
+    let mut hash_updates: Vec<(String, String, serde_json::Value)> = Vec::new(); // (node_id, new_hash, table_meta)
+    for (name, _node) in &existing_set {
+        if !current_set.contains_key(name) {
+            continue;
+        }
+        let schema_hint = current_set[name].schema.as_deref();
+        let cols = match ds.get_columns(name, schema_hint).await {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let mut col_names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
+        col_names.sort();
+        let mut hasher = Sha256::new();
+        for cn in &col_names {
+            hasher.update(cn.as_bytes());
+            hasher.update(b"|");
+        }
+        let new_hash = format!("{:x}", hasher.finalize());
+        let node_id = format!("{}:table:{}", connection_id, name);
+        let table = current_set[name];
+        let meta = serde_json::json!({
+            "schema": table.schema,
+            "table_type": table.table_type,
+            "col_hash": new_hash,
+        });
+        hash_updates.push((node_id, new_hash, meta));
+    }
+
+    // Now do sync DB updates with a fresh lock
+    {
+        let conn = crate::db::get().lock().unwrap();
+        for (node_id, new_hash, meta) in &hash_updates {
+            let stored_hash: Option<String> = conn.query_row(
+                "SELECT metadata FROM graph_nodes WHERE id = ?1",
+                [node_id.as_str()],
+                |row| row.get::<_, Option<String>>(0),
+            ).unwrap_or(None).and_then(|m| {
+                serde_json::from_str::<serde_json::Value>(&m).ok()
+                    .and_then(|v| v.get("col_hash").and_then(|h| h.as_str().map(String::from)))
+            });
+
+            if stored_hash.as_deref() != Some(new_hash.as_str()) {
+                let metadata_str = meta.to_string();
+                conn.execute(
+                    "UPDATE graph_nodes SET metadata = ?1 WHERE id = ?2",
+                    rusqlite::params![metadata_str, node_id],
+                ).unwrap_or(0);
+                log::info!("[refresh_schema_graph] Updated column hash for table node: {}", node_id);
+            }
+        }
+
+        // 7. Rebuild FTS index
+        let _ = conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')");
+    }
+
+    Ok(())
+}

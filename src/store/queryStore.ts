@@ -95,6 +95,8 @@ interface QueryState {
   // 表数据外部刷新信号（tabId → 递增计数器，TableDataView 订阅后自动刷新）
   tableRefreshSignals: Record<string, number>;
   triggerTableRefresh: (tabId: string) => void;
+  toggleGhostText: (tabId: string) => void;
+  isGhostTextEnabled: (tabId: string) => boolean;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -536,6 +538,21 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     } catch (e) {
       set({ error: String(e) });
     }
+  },
+
+  toggleGhostText: (tabId) => {
+    const { tabs } = get();
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    const currentlyEnabled = tab.ghostTextEnabled ?? useAppStore.getState().ghostTextDefault;
+    set({
+      tabs: tabs.map(t => t.id === tabId ? { ...t, ghostTextEnabled: !currentlyEnabled } : t),
+    });
+  },
+  isGhostTextEnabled: (tabId) => {
+    const tab = get().tabs.find(t => t.id === tabId);
+    if (!tab) return false;
+    return tab.ghostTextEnabled ?? useAppStore.getState().ghostTextDefault;
   },
 }));
 

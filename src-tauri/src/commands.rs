@@ -27,12 +27,16 @@ pub async fn test_connection(config: ConnectionConfig) -> AppResult<bool> {
 #[tauri::command]
 pub async fn delete_connection(id: i64) -> AppResult<()> {
     crate::datasource::pool_cache::invalidate(id).await;
+    crate::llm::inline_complete::invalidate_meta_cache(id).await;
+    crate::llm::inline_complete::invalidate_timeout_tracker(id).await;
     crate::db::delete_connection(id)
 }
 
 #[tauri::command]
 pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest) -> AppResult<crate::db::models::Connection> {
     crate::datasource::pool_cache::invalidate(id).await;
+    crate::llm::inline_complete::invalidate_meta_cache(id).await;
+    crate::llm::inline_complete::invalidate_timeout_tracker(id).await;
     crate::db::update_connection(id, &req)
 }
 
@@ -86,6 +90,21 @@ pub async fn execute_query(
                 None,
                 Some(&e.to_string()),
             );
+        }
+    }
+
+    // Auto-trigger schema graph refresh on DDL changes
+    if result.is_ok() {
+        let sql_upper = sql.trim().to_uppercase();
+        if sql_upper.starts_with("CREATE")
+            || sql_upper.starts_with("ALTER")
+            || sql_upper.starts_with("DROP")
+        {
+            let conn_id = connection_id;
+            let db = database.clone();
+            tokio::spawn(async move {
+                let _ = crate::graph::refresh_schema_graph(conn_id, db).await;
+            });
         }
     }
 
@@ -1002,6 +1021,138 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Op
     };
 
     client.diagnose_error(&sql, &error_msg, &schema_context, &driver).await
+}
+
+// ============ AI 内联补全 ============
+
+#[tauri::command]
+pub async fn ai_inline_complete(
+    connection_id: i64,
+    sql_before: String,
+    sql_after: String,
+    mentioned_tables: Vec<String>,
+    current_schema: String,
+    hint: String,
+    database: Option<String>,
+) -> Result<String, String> {
+    use crate::llm::inline_complete;
+
+    // 1. Check concurrency — only 1 in-flight request per connection
+    if !inline_complete::acquire_slot(connection_id).await {
+        return Ok(String::new());
+    }
+
+    // Use a closure to ensure release_slot is always called
+    let result = async {
+        // 2. Check TimeoutTracker
+        if inline_complete::should_skip(connection_id).await {
+            return Ok(String::new());
+        }
+
+        // 3. Check request deduplication
+        if inline_complete::is_duplicate_request(connection_id, &sql_before, &mentioned_tables).await {
+            return Ok(String::new());
+        }
+
+        // 4. Get best LLM config (prefer tested+default, then any tested)
+        let config = match crate::db::get_best_llm_config()
+            .map_err(|e| e.to_string())?
+        {
+            Some(c) => c,
+            None => return Ok(String::new()),
+        };
+
+        // 5. Get dialect from connection config
+        let conn_config = crate::db::get_connection_config(connection_id)
+            .map_err(|e| e.to_string())?;
+        let dialect = conn_config.driver.clone();
+
+        // 6. Get DataSource for context assembly
+        let ds = crate::datasource::pool_cache::get_or_create(
+            connection_id,
+            &conn_config,
+            database.as_deref().unwrap_or(""),
+            "",
+        ).await.map_err(|e| e.to_string())?;
+
+        // 7. Build layered context
+        let schema_context = inline_complete::build_layered_context(
+            ds.as_ref(),
+            &mentioned_tables,
+            &current_schema,
+            connection_id,
+        ).await;
+
+        // 8. Assemble prompt from template
+        let mode_instruction = match hint.as_str() {
+            "single_line" => "Complete the current line only. Do not add newlines.",
+            _ => "Complete the full SQL statement from the cursor position. Use newlines for readability.",
+        };
+
+        let sql_before_trimmed = if sql_before.len() > 2000 {
+            &sql_before[sql_before.len() - 2000..]
+        } else {
+            &sql_before
+        };
+        let sql_after_trimmed = if sql_after.len() > 500 {
+            &sql_after[..500]
+        } else {
+            &sql_after
+        };
+
+        let prompt = include_str!("../../prompts/sql_inline_complete.txt")
+            .replace("{{DIALECT}}", &dialect)
+            .replace("{{MODE_INSTRUCTION}}", mode_instruction)
+            .replace("{{SCHEMA_CONTEXT}}", &schema_context)
+            .replace("{{SQL_BEFORE}}", sql_before_trimmed)
+            .replace("{{SQL_AFTER}}", sql_after_trimmed);
+
+        // 9. Create LLM client and call with 5s timeout
+        let api_type = parse_api_type(&config.api_type);
+        let client = crate::llm::client::LlmClient::new(
+            config.api_key,
+            Some(config.base_url),
+            Some(config.model),
+            Some(api_type),
+        );
+
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            client.inline_complete(prompt, &hint),
+        ).await {
+            Ok(Ok(raw)) => {
+                inline_complete::record_success(connection_id).await;
+                let processed = inline_complete::postprocess_completion(&raw, &sql_before);
+                inline_complete::update_last_request(connection_id, sql_before.clone(), mentioned_tables.clone()).await;
+                Ok(processed)
+            }
+            Ok(Err(e)) => {
+                log::warn!("[ai_inline_complete] LLM error: {}", e);
+                inline_complete::record_timeout(connection_id).await;
+                Ok(String::new())
+            }
+            Err(_) => {
+                log::warn!("[ai_inline_complete] Request timed out (5s)");
+                inline_complete::record_timeout(connection_id).await;
+                Ok(String::new())
+            }
+        }
+    }.await;
+
+    // Always release the slot
+    inline_complete::release_slot(connection_id).await;
+
+    result
+}
+
+#[tauri::command]
+pub async fn refresh_schema_graph(
+    connection_id: i64,
+    database: Option<String>,
+) -> Result<(), String> {
+    crate::graph::refresh_schema_graph(connection_id, database)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ============ 导航树查询命令 ============

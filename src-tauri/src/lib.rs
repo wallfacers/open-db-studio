@@ -210,6 +210,8 @@ pub fn run() {
             commands::ai_create_table,
             commands::ai_generate_table_schema,
             commands::ai_diagnose_error,
+            commands::ai_inline_complete,
+            commands::refresh_schema_graph,
             commands::list_groups,
             commands::create_group,
             commands::update_group,

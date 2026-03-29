@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3, Sparkles,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -76,6 +76,53 @@ import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { useUIObjectRegistry } from '../../mcp/ui';
 import { QueryEditorAdapter } from '../../mcp/ui/adapters/QueryEditorAdapter';
+
+const SQL_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'ON',
+  'AS', 'SET', 'VALUES', 'INTO', 'NULL', 'IS', 'LIKE', 'BETWEEN',
+  'EXISTS', 'HAVING', 'GROUP', 'BY', 'ORDER', 'LIMIT', 'OFFSET',
+  'UNION', 'ALL', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CROSS', 'FULL', 'NATURAL',
+  'ASC', 'DESC', 'WITH', 'RECURSIVE', 'IF', 'BEGIN', 'COMMIT',
+  'ROLLBACK', 'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW',
+  'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'TRUNCATE',
+]);
+
+function extractMentionedTables(sql: string): string[] {
+  const tables = new Set<string>();
+  const keywordPattern = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = keywordPattern.exec(sql)) !== null) {
+    const name = match[1].replace(/[`"']/g, '');
+    if (!SQL_KEYWORDS.has(name.toUpperCase())) {
+      tables.add(name);
+    }
+  }
+  const commaListPattern = /FROM\s+([\w.`"']+(?:\s*,\s*[\w.`"']+)*)/gi;
+  while ((match = commaListPattern.exec(sql)) !== null) {
+    const list = match[1];
+    for (const item of list.split(',')) {
+      const name = item.trim().replace(/[`"']/g, '');
+      if (name && !SQL_KEYWORDS.has(name.toUpperCase())) {
+        tables.add(name);
+      }
+    }
+  }
+  return Array.from(tables);
+}
+
+function tryPrefixCache(
+  currentSqlBefore: string,
+  cacheRef: React.MutableRefObject<{ sqlBefore: string; result: string; timestamp: number } | null>
+): string | null {
+  const cache = cacheRef.current;
+  if (!cache || !cache.result) return null;
+  if (Date.now() - cache.timestamp > 30_000) return null;
+  if (!currentSqlBefore.startsWith(cache.sqlBefore)) return null;
+  const typed = currentSqlBefore.slice(cache.sqlBefore.length);
+  if (!cache.result.startsWith(typed)) return null;
+  return cache.result.slice(typed.length);
+}
 
 function getSqlAtCursor(sql: string, cursorOffset: number): string {
   const parts = sql.split(';');
@@ -334,6 +381,9 @@ export const MainContent: React.FC<MainContentProps> = ({
   // Register Monaco completion provider once (module-level guard)
   const completionProviderRegistered = useRef(false);
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
+  const ghostCacheRef = useRef<{ sqlBefore: string; result: string; timestamp: number } | null>(null);
+  const requestIdRef = useRef<number>(0);
+  const inlineProviderRef = useRef<{ dispose(): void } | null>(null);
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
@@ -435,7 +485,79 @@ export const MainContent: React.FC<MainContentProps> = ({
         return { suggestions };
       },
     });
+
+    // Ghost Text - InlineCompletionsProvider
+    inlineProviderRef.current = monaco.languages.registerInlineCompletionsProvider('sql', {
+      provideInlineCompletions: async (model: any, position: any, _context: any, token: any) => {
+        const currentState = useQueryStore.getState();
+        const tab = currentState.tabs.find(t => t.id === currentState.activeTabId);
+        if (!tab?.queryContext?.connectionId) return { items: [] };
+        if (!currentState.isGhostTextEnabled(tab.id)) return { items: [] };
+
+        const fullText = model.getValue();
+        const offset = model.getOffsetAt(position);
+        const sqlBefore = fullText.slice(0, offset);
+        const sqlAfter = fullText.slice(offset);
+
+        if (sqlBefore.trim().length < 2) return { items: [] };
+        const selection = editor.getSelection();
+        if (selection && !selection.isEmpty()) return { items: [] };
+
+        const cached = tryPrefixCache(sqlBefore, ghostCacheRef);
+        if (cached) {
+          return {
+            items: [{
+              insertText: cached,
+              range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+            }],
+          };
+        }
+
+        const thisRequestId = ++requestIdRef.current;
+        if (token.isCancellationRequested) return { items: [] };
+
+        const mentionedTables = extractMentionedTables(sqlBefore + sqlAfter);
+        const lineBeforeCursor = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+        const hint = lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
+
+        try {
+          const result = await invoke<string>('ai_inline_complete', {
+            connectionId: tab.queryContext.connectionId,
+            sqlBefore,
+            sqlAfter,
+            mentionedTables,
+            currentSchema: tab.schema || 'public',
+            hint,
+            database: tab.db || null,
+          });
+
+          if (requestIdRef.current !== thisRequestId) return { items: [] };
+          if (token.isCancellationRequested) return { items: [] };
+
+          if (result) {
+            ghostCacheRef.current = { sqlBefore, result, timestamp: Date.now() };
+            return {
+              items: [{
+                insertText: result,
+                range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+              }],
+            };
+          }
+        } catch {
+          // Silent degradation
+        }
+
+        return { items: [] };
+      },
+      freeInlineCompletions: () => {},
+    });
   };
+
+  useEffect(() => {
+    return () => {
+      inlineProviderRef.current?.dispose();
+    };
+  }, []);
 
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
@@ -907,6 +1029,17 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </div>
                   )}
                 </div>
+                <button
+                  onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
+                  title="AI Completion (Tab to accept)"
+                  className={`p-1 rounded transition-colors ${
+                    useQueryStore.getState().isGhostTextEnabled(activeTab)
+                      ? 'text-[#00c9a7] hover:bg-[#003d2f]'
+                      : 'text-[#4a6a85] hover:bg-[#1a2639]'
+                  }`}
+                >
+                  <Sparkles size={16} />
+                </button>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <Tooltip content={t('mainContent.formatSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>

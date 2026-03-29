@@ -721,6 +721,29 @@ pub fn get_default_llm_config() -> AppResult<Option<models::LlmConfig>> {
     }
 }
 
+pub fn get_best_llm_config() -> AppResult<Option<models::LlmConfig>> {
+    let conn = get().lock().unwrap();
+    // Priority 1: default + tested successfully
+    let result = conn.query_row(
+        &format!("{} WHERE is_default = 1 AND test_status = 'success' LIMIT 1", LLM_CONFIG_SELECT),
+        [],
+        |row| row_to_llm_config_raw(row),
+    ).optional()?;
+    if let Some(r) = result {
+        return Ok(Some(decrypt_llm_config(r)?));
+    }
+    // Priority 2: any config tested successfully
+    let result = conn.query_row(
+        &format!("{} WHERE test_status = 'success' LIMIT 1", LLM_CONFIG_SELECT),
+        [],
+        |row| row_to_llm_config_raw(row),
+    ).optional()?;
+    match result {
+        Some(r) => Ok(Some(decrypt_llm_config(r)?)),
+        None => Ok(None),
+    }
+}
+
 pub fn get_llm_config_by_id(id: i64) -> AppResult<Option<models::LlmConfig>> {
     let conn = get().lock().unwrap();
     let raw = conn.query_row(

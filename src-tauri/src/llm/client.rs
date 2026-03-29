@@ -143,6 +143,15 @@ pub struct LlmClient {
     pub api_type: ApiType,
 }
 
+/// Parameter overrides for LLM calls (used by inline completion)
+#[derive(Default)]
+pub struct ChatParams {
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    /// OpenAI: maps to "stop" field. Anthropic: maps to "stop_sequences" field.
+    pub stop: Option<Vec<String>>,
+}
+
 impl LlmClient {
     pub fn new(
         api_key: String,
@@ -248,6 +257,130 @@ impl LlmClient {
             ApiType::Openai => self.chat_openai(messages).await,
             ApiType::Anthropic => self.chat_anthropic(messages).await,
         }
+    }
+
+    async fn chat_openai_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
+        let base = self.base_url.trim_end_matches('/');
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+            "stream": false,
+        });
+
+        if let Some(temp) = params.temperature {
+            body["temperature"] = serde_json::json!(temp);
+        }
+        if let Some(max_tok) = params.max_tokens {
+            body["max_tokens"] = serde_json::json!(max_tok);
+        }
+        if let Some(stop) = params.stop {
+            body["stop"] = serde_json::json!(stop);
+        }
+
+        let http_resp = self
+            .client
+            .post(format!("{}/chat/completions", base))
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await?;
+
+        if !http_resp.status().is_success() {
+            let status = http_resp.status();
+            let body_text = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
+        }
+
+        let resp: OpenAIResponse = http_resp.json().await
+            .map_err(|e| crate::AppError::Llm(format!("Failed to parse response: {}", e)))?;
+
+        resp.choices
+            .into_iter()
+            .next()
+            .map(|c| c.message.content)
+            .ok_or_else(|| crate::AppError::Llm("Empty response from LLM".into()))
+    }
+
+    async fn chat_anthropic_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
+        let mut user_messages: Vec<ChatMessage> = Vec::new();
+        let mut system_content: Option<String> = None;
+        for msg in messages {
+            if msg.role == "system" {
+                system_content = Some(msg.content);
+            } else {
+                user_messages.push(msg);
+            }
+        }
+
+        let max_tokens = params.max_tokens.unwrap_or(DEFAULT_ANTHROPIC_MAX_TOKENS);
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": user_messages,
+            "max_tokens": max_tokens,
+        });
+
+        if let Some(system) = system_content {
+            body["system"] = serde_json::json!(system);
+        }
+        if let Some(temp) = params.temperature {
+            body["temperature"] = serde_json::json!(temp);
+        }
+        if let Some(stop_seqs) = params.stop {
+            body["stop_sequences"] = serde_json::json!(stop_seqs);
+        }
+
+        let base = self.base_url.trim_end_matches('/');
+        let http_resp = self
+            .client
+            .post(format!("{}/v1/messages", base))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("user-agent", "claude-code/1.0.0")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !http_resp.status().is_success() {
+            let status = http_resp.status();
+            let body_text = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
+        }
+
+        let resp: AnthropicResponse = http_resp
+            .json()
+            .await
+            .map_err(|e| crate::AppError::Llm(format!("Failed to parse Anthropic response: {}", e)))?;
+
+        resp.content
+            .into_iter()
+            .find(|b| b.block_type == "text")
+            .and_then(|b| b.text)
+            .ok_or_else(|| crate::AppError::Llm("Empty response from Anthropic LLM".into()))
+    }
+
+    pub async fn chat_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
+        match self.api_type {
+            ApiType::Openai => self.chat_openai_with_params(messages, params).await,
+            ApiType::Anthropic => self.chat_anthropic_with_params(messages, params).await,
+        }
+    }
+
+    pub async fn inline_complete(&self, prompt: String, hint: &str) -> AppResult<String> {
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: prompt,
+        }];
+        let stop = match hint {
+            "single_line" => vec!["\n".to_string()],
+            _ => vec!["\n\n".to_string(), ";\n".to_string()],
+        };
+        self.chat_with_params(messages, ChatParams {
+            temperature: Some(0.1),
+            max_tokens: Some(200),
+            stop: Some(stop),
+        }).await
     }
 
     /// 自然语言 → SQL

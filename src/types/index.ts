@@ -153,6 +153,7 @@ export interface Tab {
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
   erProjectId?: number;        // er_design Tab 专用
+  ghostTextEnabled?: boolean;  // undefined = use global default
 }
 
 export interface ColumnMeta {

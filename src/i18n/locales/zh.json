@@ -492,7 +492,10 @@
     "languageZh": "中文",
     "languageEn": "英文 (English)",
     "tablePageSizeLimit": "表数据每页最大行数",
-    "tablePageSizeLimitDesc": "设置表数据视图的分页上限，支持最大 5000 行（已启用虚拟滚动）。"
+    "tablePageSizeLimitDesc": "设置表数据视图的分页上限，支持最大 5000 行（已启用虚拟滚动）。",
+    "aiInlineCompletion": "AI 内联补全",
+    "ghostText": "幽灵文本",
+    "ghostTextDesc": "在 SQL 编辑器中启用 AI 驱动的幽灵文本建议。新建标签页将默认使用此设置。"
   },
   "erDiagram": {
     "addTable": "添加表",

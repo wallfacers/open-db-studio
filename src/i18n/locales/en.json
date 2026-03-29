@@ -491,7 +491,10 @@
     "languageZh": "Chinese (中文)",
     "languageEn": "English",
     "tablePageSizeLimit": "Max Rows Per Page",
-    "tablePageSizeLimitDesc": "Set the pagination limit for table data view. Up to 5000 rows supported with virtual scrolling enabled."
+    "tablePageSizeLimitDesc": "Set the pagination limit for table data view. Up to 5000 rows supported with virtual scrolling enabled.",
+    "aiInlineCompletion": "AI Inline Completion",
+    "ghostText": "Ghost Text",
+    "ghostTextDesc": "Enable AI-powered ghost text suggestions in SQL editor. New tabs will use this setting by default."
   },
   "erDiagram": {
     "addTable": "Add Table",

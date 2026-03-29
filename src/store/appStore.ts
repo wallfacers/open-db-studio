@@ -25,6 +25,9 @@ interface AppState {
   tablePageSizeLimit: number;
   setTablePageSizeLimit: (size: number) => Promise<void>;
   initTablePageSizeLimit: () => Promise<void>;
+  ghostTextDefault: boolean;
+  setGhostTextDefault: (v: boolean) => void;
+  initGhostTextDefault: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -68,5 +71,20 @@ export const useAppStore = create<AppState>((set) => ({
     } catch (e) {
       console.error('Failed to get table_page_size_limit:', e);
     }
+  },
+  ghostTextDefault: true,
+  setGhostTextDefault: async (v) => {
+    set({ ghostTextDefault: v });
+    try {
+      await invoke('set_ui_state', { key: 'ghost_text_default', value: String(v) });
+    } catch (e) {
+      console.error('Failed to set ghost_text_default:', e);
+    }
+  },
+  initGhostTextDefault: async () => {
+    try {
+      const saved = await invoke<string | null>('get_ui_state', { key: 'ghost_text_default' });
+      if (saved !== null) set({ ghostTextDefault: saved === 'true' });
+    } catch { /* silent — use default true */ }
   },
 }));

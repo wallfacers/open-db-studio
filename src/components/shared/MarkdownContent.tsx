@@ -232,9 +232,14 @@ function ensureCodeFenceOnNewLine(content: string): string {
   return content.replace(/([^\n])(```)/g, '$1\n$2');
 }
 
+/** 确保段落与列表项之间有空行，否则 remark 会将列表项当作段落续行 */
+function ensureListBlankLine(content: string): string {
+  return content.replace(/([^\n])\n(\s{0,3})([-*] |\d+\. )/g, '$1\n\n$2$3');
+}
+
 export const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = memo(({ content, isStreaming = false }) => {
   const components = isStreaming ? streamingMdComponents : staticMdComponents;
-  const processed = ensureCodeFenceOnNewLine(content);
+  const processed = ensureListBlankLine(ensureCodeFenceOnNewLine(content));
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {processed}

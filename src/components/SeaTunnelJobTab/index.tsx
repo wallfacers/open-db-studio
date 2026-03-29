@@ -17,6 +17,7 @@ import JobLogPanel, { type JobLogPanelHandle } from './JobLogPanel';
 import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
 import { SeaTunnelJobUIObject } from '../../mcp/ui/adapters/SeaTunnelJobAdapter';
 import { useSeaTunnelJobFormStore } from '../../store/seatunnelJobStore';
+import { stJobNodeId } from '../../utils/nodeId';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const lastSyncedContentRef = useRef<string>('');
   const updateSeaTunnelJobTabTitle = useQueryStore(s => s.updateSeaTunnelJobTabTitle);
   // 订阅树节点 label，响应从树侧发起的重命名
-  const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(`job_${jobId}`)?.label : undefined);
+  const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(stJobNodeId(jobId))?.label : undefined);
 
   const tabId = tab.id;
 

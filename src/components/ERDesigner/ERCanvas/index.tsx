@@ -27,6 +27,7 @@ import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
 import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import { layoutNodesWithDagre } from '../utils/dagreLayout'
 import type { ErTable, ErColumn } from '../../../types'
+import { erTableNodeId, erEdgeNodeId, parseErTableNodeId } from '../../../utils/nodeId'
 
 const nodeTypes = {
   erTable: ERTableNode,
@@ -107,16 +108,16 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
     onDeleteColumn: (colId: number) => {
       deleteColumn(colId, table.id)
       setNodes(nds => nds.map(n =>
-        n.id === `table-${table.id}`
+        n.id === erTableNodeId(table.id)
           ? { ...n, data: { ...n.data, columns: (n.data.columns as ErColumn[]).filter(c => c.id !== colId) } }
           : n
       ))
     },
     onDeleteTable: () => {
       deleteTable(table.id)
-      setNodes(nds => nds.filter(n => n.id !== `table-${table.id}`))
+      setNodes(nds => nds.filter(n => n.id !== erTableNodeId(table.id)))
       setEdges(eds => eds.filter(e =>
-        e.source !== `table-${table.id}` && e.target !== `table-${table.id}`
+        e.source !== erTableNodeId(table.id) && e.target !== erTableNodeId(table.id)
       ))
     },
   }), [updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
@@ -125,16 +126,16 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
     loadProject(projectId).then(() => {
       const state = useErDesignerStore.getState()
       const newNodes: Node<NodeData>[] = state.tables.map((table) => ({
-        id: `table-${table.id}`,
+        id: erTableNodeId(table.id),
         type: 'erTable',
         position: { x: table.position_x, y: table.position_y },
         data: buildNodeData(table, state.columns[table.id] || []),
       }))
       const newEdges = state.relations.map((rel) => ({
-        id: `edge-${rel.id}`,
-        source: `table-${rel.source_table_id}`,
+        id: erEdgeNodeId(rel.id),
+        source: erTableNodeId(rel.source_table_id),
         sourceHandle: `${rel.source_column_id}-source`,
-        target: `table-${rel.target_table_id}`,
+        target: erTableNodeId(rel.target_table_id),
         targetHandle: `${rel.target_column_id}-target`,
         type: 'erEdge',
         data: { relation_type: rel.relation_type, source_type: rel.source },
@@ -215,7 +216,7 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   }, [projectId, reloadCanvas, setNodes])
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
-    const tableId = parseInt(node.id.replace('table-', ''))
+    const tableId = parseErTableNodeId(node.id)!
     updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
   }, [updateTable])
 
@@ -228,8 +229,8 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
     }, eds))
     const sourceColumnId = parseInt(connection.sourceHandle!.replace('-source', ''))
     const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))
-    const sourceTableId = parseInt(connection.source!.replace('table-', ''))
-    const targetTableId = parseInt(connection.target!.replace('table-', ''))
+    const sourceTableId = parseErTableNodeId(connection.source!)!
+    const targetTableId = parseErTableNodeId(connection.target!)!
     addRelation({
       source_table_id: sourceTableId,
       source_column_id: sourceColumnId,
@@ -242,7 +243,7 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
 
   const handleTableAdded = useCallback((table: ErTable) => {
     setNodes(nds => [...nds, {
-      id: `table-${table.id}`,
+      id: erTableNodeId(table.id),
       type: 'erTable',
       position: { x: table.position_x, y: table.position_y },
       data: buildNodeData(table, []),

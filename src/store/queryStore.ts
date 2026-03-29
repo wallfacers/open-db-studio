@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult, QueryHistory, Tab, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
 import { parseStatements } from '../utils/sqlParser';
+import { metricTabId, newMetricTabId, metricListTabId, queryTabId, tableDataTabId, tableStructureTabId, newTableStructureTabId, stJobTabId, erDesignTabId } from '../utils/nodeId';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -187,13 +188,13 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     set(s => {
       const existing = s.tabs.find(t => t.type === 'metric' && t.metricId === metricId);
       if (existing) return { activeTabId: existing.id };
-      const id = `metric_${metricId}_${Date.now()}`;
+      const id = metricTabId(metricId, Date.now());
       const tab: Tab = { id, type: 'metric', title, metricId, connectionId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },
   openNewMetricTab: (scope, scopeTitle) => {
-    const id = `metric_new_${Date.now()}`;
+    const id = newMetricTabId(Date.now());
     const tab: Tab = { id, type: 'metric', title: `新建指标`, metricScope: scope };
     set(s => ({ tabs: [...s.tabs, tab], activeTabId: id }));
   },
@@ -205,7 +206,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   },
 
   openMetricListTab: (scope, title) => {
-    const key = `ml_${scope.connectionId}_${scope.database ?? ''}_${scope.schema ?? ''}`;
+    const key = metricListTabId(scope.connectionId, scope.database ?? '', scope.schema ?? '');
     set(s => {
       const existing = s.tabs.find(t => t.id === key);
       if (existing) return { activeTabId: key };
@@ -223,7 +224,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   openQueryTab: (connId, connName, database, schema, initialSql) => {
     let newTabId = '';
     set(s => {
-      const id = `query_${connId}_${Date.now()}`;
+      const id = queryTabId(connId, Date.now());
       const queryCount = s.tabs.filter(t => t.type === 'query').length + 1;
       const tab: Tab = {
         id,
@@ -240,7 +241,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   openTableDataTab: (tableName, connectionId, database, schema) => {
     const dbName = database ?? `conn_${connectionId}`;
-    const id = `table_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+    const id = tableDataTabId(connectionId, dbName, schema ?? '', tableName);
     set(s => {
       if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
       const tab: Tab = { id, type: 'table', title: tableName, db: dbName, connectionId, schema };
@@ -252,8 +253,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const dbName = database ?? `conn_${connectionId}`;
     const isNew = !tableName;
     const id = isNew
-      ? `table_structure_new_${connectionId}_${dbName}_${schema ?? ''}_${Date.now()}`
-      : `table_structure_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+      ? newTableStructureTabId(connectionId, dbName, schema ?? '', Date.now())
+      : tableStructureTabId(connectionId, dbName, schema ?? '', tableName!);
     set(s => {
       if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
       const tab: Tab = {
@@ -269,7 +270,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     set(s => {
       const existing = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
       if (existing) return { activeTabId: existing.id };
-      const id = `st_job_${jobId}_${Date.now()}`;
+      const id = stJobTabId(jobId, Date.now());
       const tab: Tab = { id, type: 'seatunnel_job', title, stJobId: jobId, stConnectionId: connectionId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
@@ -299,7 +300,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     set(s => {
       const existing = s.tabs.find(t => t.type === 'er_design' && t.erProjectId === projectId);
       if (existing) return { activeTabId: existing.id };
-      const id = `er_design_${projectId}_${Date.now()}`;
+      const id = erDesignTabId(projectId, Date.now());
       const tab: Tab = { id, type: 'er_design', title: projectName, erProjectId: projectId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });

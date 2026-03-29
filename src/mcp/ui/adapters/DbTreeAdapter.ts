@@ -1,5 +1,6 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
 import { useTreeStore } from '../../../store/treeStore'
+import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId, objectNodeId } from '../../../utils/nodeId'
 
 export class DbTreeAdapter implements UIObject {
   type = 'db_tree'
@@ -111,21 +112,18 @@ export class DbTreeAdapter implements UIObject {
         if (!connId || !table) return { success: false, error: 'connection_id and table are required' }
 
         // Build the expected node path and expand each ancestor
-        const connNodeId = `conn_${connId}`
-        const expandAndLoad = async (nodeId: string) => {
+        const connNidVal = connNid(connId)
+        const expandAndLoad = async (nodeId: string): Promise<string | true> => {
           const s = useTreeStore.getState()
-          if (!s.nodes.has(nodeId)) return false
+          if (!s.nodes.has(nodeId)) return `Node not found: ${nodeId}`
           if (!s.expandedIds.has(nodeId)) {
             s.toggleExpand(nodeId)
-            // Wait for children to load (with 10s timeout)
             await new Promise<void>((resolve) => {
-              let elapsed = 0
-              const check = () => {
-                if (!useTreeStore.getState().loadingIds.has(nodeId) || elapsed >= 10000) { resolve(); return }
-                elapsed += 50
-                setTimeout(check, 50)
-              }
-              check()
+              if (!useTreeStore.getState().loadingIds.has(nodeId)) { resolve(); return }
+              const timeout = setTimeout(() => { unsub(); resolve() }, 10000)
+              const unsub = useTreeStore.subscribe((state) => {
+                if (!state.loadingIds.has(nodeId)) { unsub(); clearTimeout(timeout); resolve() }
+              })
             })
           } else if (!s.nodes.get(nodeId)!.loaded) {
             await s.loadChildren(nodeId)
@@ -133,36 +131,29 @@ export class DbTreeAdapter implements UIObject {
           return true
         }
 
-        // 1. Expand connection
-        if (!(await expandAndLoad(connNodeId))) return { success: false, error: `Connection node not found: ${connNodeId}` }
+        let result = await expandAndLoad(connNidVal)
+        if (result !== true) return { success: false, error: `Connection node not found: ${connNidVal}` }
 
-        // 2. Expand database (if provided)
-        let parentId = connNodeId
+        let parentId = connNidVal
         if (database) {
-          const dbNodeId = `${connNodeId}/db_${database}`
-          if (!useTreeStore.getState().nodes.has(dbNodeId)) {
-            return { success: false, error: `Database not found: ${database}` }
-          }
-          if (!(await expandAndLoad(dbNodeId))) return { success: false, error: `Failed to expand database: ${database}` }
-          parentId = dbNodeId
+          const dbNid = dbNodeId(connNidVal, database)
+          result = await expandAndLoad(dbNid)
+          if (result !== true) return { success: false, error: `Database not found: ${database}` }
+          parentId = dbNid
         }
 
-        // 3. Expand schema (if provided, for postgres/oracle)
         if (schema) {
-          const schemaNodeId = `${parentId}/schema_${schema}`
-          if (!useTreeStore.getState().nodes.has(schemaNodeId)) {
-            return { success: false, error: `Schema not found: ${schema}` }
-          }
-          if (!(await expandAndLoad(schemaNodeId))) return { success: false, error: `Failed to expand schema: ${schema}` }
-          parentId = schemaNodeId
+          const schemaNid = schemaNodeId(parentId, schema)
+          result = await expandAndLoad(schemaNid)
+          if (result !== true) return { success: false, error: `Schema not found: ${schema}` }
+          parentId = schemaNid
         }
 
-        // 4. Expand "Tables" category
-        const catNodeId = `${parentId}/cat_tables`
-        if (!(await expandAndLoad(catNodeId))) return { success: false, error: `Tables category not found under ${parentId}` }
+        const catNid = catNodeId(parentId, 'tables')
+        result = await expandAndLoad(catNid)
+        if (result !== true) return { success: false, error: `Tables category not found under ${parentId}` }
 
-        // 5. Select the table node
-        const tableNodeId = `${catNodeId}/table_${table}`
+        const tableNodeId = objectNodeId(catNid, 'table', table)
         if (!useTreeStore.getState().nodes.has(tableNodeId)) {
           return { success: false, error: `Table node not found: ${table}` }
         }

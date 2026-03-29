@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Metric } from '../types';
 import { useQueryStore } from './queryStore';
+import { connNodeId, groupNodeId, metricsDbNodeId, metricsSchemaNodeId, metricsMetricNodeId } from '../utils/nodeId';
 
 let _persistMetricsTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -76,7 +77,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
 
     // 分组节点（根节点）
     for (const g of groups) {
-      const id = `group_${g.id}`;
+      const id = groupNodeId(g.id);
       nodes.set(id, {
         id,
         nodeType: 'group',
@@ -90,8 +91,8 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
 
     // 连接节点：属于分组的挂分组下，无分组的挂根节点
     for (const c of conns) {
-      const id = `conn_${c.id}`;
-      const parentId = c.group_id ? `group_${c.group_id}` : null;
+      const id = connNodeId(c.id);
+      const parentId = c.group_id ? groupNodeId(c.group_id) : null;
       nodes.set(id, {
         id,
         nodeType: 'connection',
@@ -165,7 +166,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
         });
         const newCounts = new Map(get().metricCounts);
         for (const db of dbs) {
-          const id = `db_${connectionId}_${db}`;
+          const id = metricsDbNodeId(connectionId!, db);
           newNodes.set(id, {
             id,
             nodeType: 'database',
@@ -196,7 +197,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
           });
           const newCounts = new Map(get().metricCounts);
           for (const sc of schemas) {
-            const id = `schema_${connectionId}_${database}_${sc}`;
+            const id = metricsSchemaNodeId(connectionId!, database!, sc);
             newNodes.set(id, {
               id,
               nodeType: 'schema',
@@ -218,7 +219,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
             status: null,
           });
           for (const m of metrics) {
-            const id = `metric_${m.id}`;
+            const id = metricsMetricNodeId(m.id);
             newNodes.set(id, {
               id,
               nodeType: 'metric',
@@ -244,7 +245,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
           status: null,
         });
         for (const m of metrics) {
-          const id = `metric_${m.id}`;
+          const id = metricsMetricNodeId(m.id);
           newNodes.set(id, {
             id,
             nodeType: 'metric',

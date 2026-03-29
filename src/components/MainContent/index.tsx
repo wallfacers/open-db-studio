@@ -66,6 +66,7 @@ import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
 import SeaTunnelJobTab from '../SeaTunnelJobTab';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
+import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId } from '../../utils/nodeId';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 import { buildErrorContext } from '../../utils/errorContext';
@@ -790,11 +791,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                 const connId = activeTabObj.connectionId!;
                 const db = activeTabObj.db;
                 const sch = activeTabObj.schema;
-                let categoryNodeId = `conn_${connId}`;
-                if (db && !db.startsWith('conn_')) categoryNodeId += `/db_${db}`;
-                if (sch) categoryNodeId += `/schema_${sch}`;
-                categoryNodeId += '/cat_tables';
-                useTreeStore.getState().refreshNode(categoryNodeId);
+                let catNid = connNid(connId);
+                if (db && !db.startsWith('conn_')) catNid = dbNodeId(catNid, db);
+                if (sch) catNid = schemaNodeId(catNid, sch);
+                catNid = catNodeId(catNid, 'tables');
+                useTreeStore.getState().refreshNode(catNid);
 
                 // Close the tab for new table creation
                 if (isNew) {

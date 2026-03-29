@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { TreeNode, NodeType, CategoryKey, ConnectionGroup, Metric } from '../types';
+import { connNodeId, groupNodeId, dbNodeId, schemaNodeId, catNodeId, objectNodeId, colNodeId, metricsFolderNodeId, treeMetricNodeId } from '../utils/nodeId';
 
 // 各数据库方言支持的 Category 列表
 const CATEGORIES_BY_DRIVER: Record<string, CategoryKey[]> = {
@@ -56,7 +57,7 @@ function persistTreeExpandedIds(ids: Set<string>): void {
 function makeCategoryNodes(parentId: string, driver: string, meta: TreeNode['meta']): TreeNode[] {
   const cats = CATEGORIES_BY_DRIVER[driver] ?? ['tables', 'views'];
   return cats.map((cat): TreeNode => ({
-    id: `${parentId}/cat_${cat}`,
+    id: catNodeId(parentId, cat),
     nodeType: 'category',
     label: CATEGORY_LABELS[cat],
     parentId,
@@ -68,7 +69,7 @@ function makeCategoryNodes(parentId: string, driver: string, meta: TreeNode['met
 
 function makeMetricsFolderNode(parentId: string, meta: TreeNode['meta']): TreeNode {
   return {
-    id: `${parentId}/metrics_folder`,
+    id: metricsFolderNodeId(parentId),
     nodeType: 'metrics_folder',
     label: 'dbTree.metrics',   // i18n key，DBTree 渲染时调用 t()
     parentId,
@@ -120,7 +121,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
       for (const g of groups) {
         const node: TreeNode = {
-          id: `group_${g.id}`,
+          id: groupNodeId(g.id),
           nodeType: 'group',
           label: g.name,
           parentId: null,
@@ -132,9 +133,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }
 
       for (const c of connections) {
-        const parentId = c.group_id ? `group_${c.group_id}` : null;
+        const parentId = c.group_id ? groupNodeId(c.group_id) : null;
         const node: TreeNode = {
-          id: `conn_${c.id}`,
+          id: connNodeId(c.id),
           nodeType: 'connection',
           label: c.name,
           parentId,
@@ -205,7 +206,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
         } else {
           for (const db of databases) {
-            const dbId = `${nodeId}/db_${db}`;
+            const dbId = dbNodeId(nodeId, db);
             const dbNode: TreeNode = {
               id: dbId,
               nodeType: 'database',
@@ -231,7 +232,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
             database: node.meta.database,
           });
           for (const schema of schemas) {
-            const schemaId = `${nodeId}/schema_${schema}`;
+            const schemaId = schemaNodeId(nodeId, schema);
             const schemaNode: TreeNode = {
               id: schemaId,
               nodeType: 'schema',
@@ -261,7 +262,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const hasChildren = ['table', 'view', 'materialized_view'].includes(leafType);
         for (const name of objects) {
           children.push({
-            id: `${nodeId}/${leafType}_${name}`,
+            id: objectNodeId(nodeId, leafType, name),
             nodeType: leafType,
             label: name,
             parentId: nodeId,
@@ -280,7 +281,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         });
         for (const m of metrics) {
           children.push({
-            id: `${nodeId}/metric_${m.id}`,
+            id: treeMetricNodeId(nodeId, m.id),
             nodeType: 'metric',
             label: m.display_name,
             parentId: nodeId,
@@ -296,7 +297,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         );
         for (const col of detail.columns) {
           children.push({
-            id: `${nodeId}/col_${col.name}`,
+            id: colNodeId(nodeId, col.name),
             nodeType: 'column',
             label: col.name,
             parentId: nodeId,

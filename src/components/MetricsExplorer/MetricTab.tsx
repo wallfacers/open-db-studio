@@ -10,6 +10,7 @@ import { useConfirmStore } from '../../store/confirmStore';
 import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
 import { MetricFormUIObject } from '../../mcp/ui/adapters/MetricFormAdapter';
 import { useMetricFormStore } from '../../store/metricFormStore';
+import { metricsDbNodeId, metricsSchemaNodeId } from '../../utils/nodeId';
 
 // -------- 预设分类标签 --------
 const PRESET_CATEGORIES = [
@@ -294,9 +295,9 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
         },
       });
       const parentNodeId = newMetricScope.schema
-        ? `schema_${newMetricScope.connectionId}_${newMetricScope.database}_${newMetricScope.schema}`
+        ? metricsSchemaNodeId(newMetricScope.connectionId, newMetricScope.database!, newMetricScope.schema)
         : newMetricScope.database
-          ? `db_${newMetricScope.connectionId}_${newMetricScope.database}`
+          ? metricsDbNodeId(newMetricScope.connectionId, newMetricScope.database)
           : null;
       if (parentNodeId) await notifyMetricAdded(parentNodeId);
       onSaved?.(m.id, m.display_name);
@@ -324,9 +325,9 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
     try {
       await invoke('delete_metric', { id: metricId });
       const parentNodeId = metric.scope_schema
-        ? `schema_${metric.connection_id}_${metric.scope_database}_${metric.scope_schema}`
+        ? metricsSchemaNodeId(metric.connection_id, metric.scope_database!, metric.scope_schema)
         : metric.scope_database
-          ? `db_${metric.connection_id}_${metric.scope_database}`
+          ? metricsDbNodeId(metric.connection_id, metric.scope_database)
           : null;
       if (parentNodeId) await refreshNode(parentNodeId);
       onDelete?.();

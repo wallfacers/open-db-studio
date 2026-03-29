@@ -96,6 +96,7 @@ function generateAlterSql(state: TableFormState, original: Column[], isPg: boole
   const statements: string[] = []
   const edited = state.columns
 
+  const activeEdited = edited.filter(c => !c._isDeleted)
   const existingEdited = edited.filter(c => !c._isNew && !c._isDeleted)
   const orderChanged = !isPg && existingEdited.some((c, i) => {
     if (i === 0) return false
@@ -140,7 +141,6 @@ function generateAlterSql(state: TableFormState, original: Column[], isPg: boole
               : `COMMENT ON COLUMN ${tbl}.${q(col.name, isPg)} IS NULL;`)
           }
         } else {
-          const activeEdited = edited.filter(c => !c._isDeleted)
           const idx = activeEdited.indexOf(col)
           const after = idx <= 0 ? 'FIRST' : `AFTER ${q(activeEdited[idx - 1].name, isPg)}`
           statements.push(`ALTER TABLE ${tbl} MODIFY COLUMN ${colDef(col, isPg)} ${after};`)

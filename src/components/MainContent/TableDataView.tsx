@@ -13,6 +13,7 @@ import { RowContextMenu, type ClickTarget } from './RowContextMenu';
 import { usePendingChanges, type RowData } from './usePendingChanges';
 import { CellEditorModal } from './CellEditorModal';
 import { AutoCompleteInput } from './AutoCompleteInput';
+import { tableDataTabId } from '../../utils/nodeId';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { VirtualTable } from './VirtualTable';
 import { NormalTable } from './NormalTable';
@@ -117,7 +118,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const initTablePageSizeLimit = useAppStore((s) => s.initTablePageSizeLimit);
 
   // 订阅外部刷新信号（如截断表后触发）
-  const tabId = `table_${activeConnectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+  const tabId = tableDataTabId(activeConnectionId!, dbName, schema ?? '', tableName);
   const externalRefreshSignal = useQueryStore(s => s.tableRefreshSignals[tabId] ?? 0);
 
   const [data, setData] = useState<QueryResult | null>(null);

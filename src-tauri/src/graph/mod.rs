@@ -11,6 +11,12 @@ pub use query::{GraphNode, GraphEdge, search_graph, SubGraph};
 use std::collections::HashMap;
 use tauri::Emitter;
 
+/// 系统库/系统 schema 名，构建图谱和指标列表时统一过滤
+pub const SYSTEM_SCHEMAS: &[&str] = &[
+    "information_schema", "pg_catalog", "performance_schema",
+    "sys", "mysql", "template0", "template1",
+];
+
 // ─── 事件结构（复用 task-progress 格式）─────────────────────────────────────
 
 #[derive(serde::Serialize, Clone)]
@@ -93,6 +99,39 @@ fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine]) {
     });
 }
 
+/// 判断 driver 是否为 PostgreSQL 兼容类型
+fn is_pg_driver(driver: &str) -> bool {
+    matches!(driver, "postgres" | "gaussdb")
+}
+
+/// 生成 schema 限定名（PG 等多 schema 数据源使用 schema.table 格式）
+fn schema_qualified_name(schema: Option<&str>, name: &str) -> String {
+    match schema {
+        Some(s) => format!("{}.{}", s, name),
+        None => name.to_string(),
+    }
+}
+
+/// 向 logs Vec 追加一行并同时 emit 到前端
+fn log_and_emit(
+    app: &tauri::AppHandle,
+    task_id: &str,
+    logs: &mut Vec<TaskLogLine>,
+    level: &str,
+    msg: &str,
+) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    logs.push(TaskLogLine {
+        level: level.to_string(),
+        message: msg.to_string(),
+        timestamp_ms: ts,
+    });
+    emit_log(app, task_id, level, msg);
+}
+
 fn emit_failed(app: &tauri::AppHandle, task_id: &str, error: &str, logs: &[TaskLogLine]) {
     let now = chrono::Utc::now().to_rfc3339();
     let logs_json = serde_json::to_string(logs).unwrap_or_default();
@@ -130,56 +169,37 @@ async fn build_single_database(
     connection_id: i64,
     config: &crate::datasource::ConnectionConfig,
 ) -> Result<(), String> {
-    macro_rules! log_emit_inner {
-        ($level:expr, $msg:expr) => {{
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
-            logs.push(TaskLogLine {
-                level: $level.to_string(),
-                message: $msg.to_string(),
-                timestamp_ms: ts,
-            });
-            emit_log(app, task_id, $level, $msg);
-        }};
-    }
-
     let ds = crate::datasource::create_datasource(config)
         .await
         .map_err(|e| format!("连接数据源失败: {}", e))?;
 
     let db_label = config.database.as_deref().unwrap_or("(default)");
-    log_emit_inner!("INFO", &format!("已连接数据源 [{}]，正在获取 Schema...", db_label));
+    log_and_emit(app, task_id, logs, "INFO", &format!("已连接数据源 [{}]，正在获取 Schema...", db_label));
 
     let schema = ds.get_schema().await.map_err(|e| format!("获取 Schema 失败: {}", e))?;
-    log_emit_inner!("INFO", &format!("Schema 获取完成，共 {} 张表", schema.tables.len()));
+    log_and_emit(app, task_id, logs, "INFO", &format!("Schema 获取完成，共 {} 张表", schema.tables.len()));
 
     let mut table_columns = HashMap::new();
     let mut table_fks = HashMap::new();
-    let is_pg = config.driver == "postgres" || config.driver == "gaussdb";
+    let is_pg = is_pg_driver(&config.driver);
 
     for table in &schema.tables {
         let cols = match ds.get_columns(&table.name, table.schema.as_deref()).await {
             Ok(c) => c,
             Err(e) => {
-                log_emit_inner!("WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
+                log_and_emit(app, task_id, logs, "WARN", &format!("获取表 {} 列信息失败: {}", table.name, e));
                 vec![]
             }
         };
         let fks = match ds.get_foreign_keys(&table.name, table.schema.as_deref()).await {
             Ok(f) => f,
             Err(e) => {
-                log_emit_inner!("WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));
+                log_and_emit(app, task_id, logs, "WARN", &format!("获取表 {} 外键信息失败: {}", table.name, e));
                 vec![]
             }
         };
-        // PG/GaussDB: 使用 schema.table_name 作为 key，避免不同 schema 同名表冲突
         let key = if is_pg {
-            match &table.schema {
-                Some(s) => format!("{}.{}", s, table.name),
-                None => table.name.clone(),
-            }
+            schema_qualified_name(table.schema.as_deref(), &table.name)
         } else {
             table.name.clone()
         };
@@ -191,9 +211,7 @@ async fn build_single_database(
     let schema_for_detect = if is_pg {
         let tables = schema.tables.iter().map(|t| {
             let mut t2 = t.clone();
-            if let Some(s) = &t.schema {
-                t2.name = format!("{}.{}", s, t.name);
-            }
+            t2.name = schema_qualified_name(t.schema.as_deref(), &t.name);
             t2
         }).collect();
         crate::datasource::SchemaInfo { tables }
@@ -204,9 +222,9 @@ async fn build_single_database(
     // 解析列注释生成虚拟关系 Link Node
     let known_tables: std::collections::HashSet<String> =
         schema_for_detect.tables.iter().map(|t| t.name.clone()).collect();
-    match build_comment_links(connection_id, &table_columns, &known_tables, config.database.as_deref(), None) {
-        Ok(n) => log_emit_inner!("INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
-        Err(e) => log_emit_inner!("WARN", &format!("注释关系解析失败: {}", e)),
+    match build_comment_links(connection_id, &table_columns, &known_tables, config.database.as_deref()) {
+        Ok(n) => log_and_emit(app, task_id, logs, "INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
+        Err(e) => log_and_emit(app, task_id, logs, "WARN", &format!("注释关系解析失败: {}", e)),
     }
 
     // 检测变更并写入 schema_change_log
@@ -298,14 +316,9 @@ pub async fn run_graph_build(
         };
         drop(tmp_ds);
 
-        // 过滤系统库
-        const SYSTEM_DBS: &[&str] = &[
-            "information_schema", "pg_catalog", "performance_schema",
-            "sys", "mysql", "template0", "template1",
-        ];
         let user_dbs: Vec<String> = all_dbs
             .into_iter()
-            .filter(|d| !SYSTEM_DBS.contains(&d.as_str()))
+            .filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str()))
             .collect();
 
         if user_dbs.is_empty() {
@@ -562,7 +575,6 @@ fn build_comment_links(
     table_columns: &std::collections::HashMap<String, Vec<crate::datasource::ColumnMeta>>,
     known_tables: &std::collections::HashSet<String>,
     database: Option<&str>,
-    _schema_name: Option<&str>,
 ) -> crate::AppResult<usize> {
     let conn = crate::db::get().lock().unwrap();
 
@@ -660,14 +672,14 @@ fn build_comment_links(
                 conn.execute(
                     "INSERT OR REPLACE INTO graph_nodes
                        (id, node_type, connection_id, database, name, display_name, metadata, source, is_deleted)
-                     VALUES (?1, 'link', ?2, ?6, ?3, ?4, ?5, 'comment', 0)",
+                     VALUES (?1, 'link', ?2, ?3, ?4, ?5, ?6, 'comment', 0)",
                     rusqlite::params![
                         link_node_id,
                         connection_id,
+                        database,
                         link_node_id,
                         format!("{}.{} → {}.{}", table_name, col.name, r.target_table, r.target_column),
                         metadata,
-                        database,
                     ],
                 )?;
 
@@ -752,14 +764,11 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
     };
 
     // Build lookup maps (PG: use schema.table_name as key)
-    let is_pg = config.driver == "postgres" || config.driver == "gaussdb";
+    let is_pg = is_pg_driver(&config.driver);
     let current_set: std::collections::HashMap<String, &crate::datasource::TableMeta> =
         current_tables.iter().map(|t| {
             let key = if is_pg {
-                match &t.schema {
-                    Some(s) => format!("{}.{}", s, t.name),
-                    None => t.name.clone(),
-                }
+                schema_qualified_name(t.schema.as_deref(), &t.name)
             } else {
                 t.name.clone()
             };
@@ -783,9 +792,9 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
                 }).to_string();
                 conn.execute(
                     "INSERT INTO graph_nodes (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source, is_deleted)
-                     VALUES (?1, 'table', ?2, ?5, ?6, ?3, ?3, ?4, 'schema', 0)
+                     VALUES (?1, 'table', ?2, ?3, ?4, ?5, ?5, ?6, 'schema', 0)
                      ON CONFLICT(id) DO UPDATE SET is_deleted = 0, metadata = excluded.metadata",
-                    rusqlite::params![node_id, connection_id, name, metadata, db_name, table.schema],
+                    rusqlite::params![node_id, connection_id, db_name, table.schema, name, metadata],
                 ).unwrap_or(0);
                 log::info!("[refresh_schema_graph] Added table node: {}", name);
             }

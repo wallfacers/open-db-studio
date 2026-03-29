@@ -33,6 +33,36 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // ── 前置修复 2：V15 迁移重建 graph_nodes 时遗漏了 database/schema_name 列，
+    // 导致 init.sql 的 idx_graph_nodes_db 索引因缺少 database 列而 panic。
+    // 在 execute_batch 之前补回缺失列。
+    let graph_nodes_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='graph_nodes'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if graph_nodes_exists {
+        for col in &["database", "schema_name"] {
+            let has_col: bool = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM pragma_table_info('graph_nodes') WHERE name='{}'", col),
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has_col {
+                let _ = conn.execute_batch(
+                    &format!("ALTER TABLE graph_nodes ADD COLUMN {} TEXT", col),
+                );
+                log::info!("Pre-migration: added graph_nodes.{} column before execute_batch(schema)", col);
+            }
+        }
+    }
+
     let schema = include_str!("../../../schema/init.sql");
     conn.execute_batch(schema)?;
 
@@ -554,12 +584,16 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         if !gn_sql.contains("'link'") {
             let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
 
+            // 重建时必须包含 database 和 schema_name 列，否则 init.sql 的
+            // idx_graph_nodes_db 索引会因缺少 database 列而失败
             let rebuild_result = conn.execute_batch(
                 "BEGIN;
                  CREATE TABLE graph_nodes_new (
                      id            TEXT PRIMARY KEY,
                      node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias','link')),
                      connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
+                     database      TEXT,
+                     schema_name   TEXT,
                      name          TEXT NOT NULL,
                      display_name  TEXT,
                      aliases       TEXT,
@@ -568,11 +602,16 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                      metadata      TEXT,
                      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
                  );
-                 INSERT INTO graph_nodes_new SELECT * FROM graph_nodes;
+                 INSERT INTO graph_nodes_new
+                     SELECT id, node_type, connection_id, database, schema_name,
+                            name, display_name, aliases, source, is_deleted,
+                            metadata, created_at
+                     FROM graph_nodes;
                  DROP TABLE graph_nodes;
                  ALTER TABLE graph_nodes_new RENAME TO graph_nodes;
                  CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);
                  CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+                 CREATE INDEX IF NOT EXISTS idx_graph_nodes_db   ON graph_nodes(connection_id, database);
                  COMMIT;"
             );
 

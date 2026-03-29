@@ -332,6 +332,7 @@
     "aiChattingBlockTabSwitch": "AI 正在回答中，请等待完成后再切换标签页",
     "openAiAssistant": "打开 AI 助手",
     "formatSql": "格式化 SQL",
+    "aiCompletionTooltip": "AI 补全（Tab 接受）",
     "closeTab": "关闭标签页",
     "closeResult": "关闭结果",
     "dmlReport": "执行报告",

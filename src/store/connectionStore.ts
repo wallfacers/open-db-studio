@@ -112,6 +112,12 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         password: req.password ?? '',
         extra_params: req.extra_params,
         file_path: req.file_path,
+        auth_type: req.auth_type,
+        token: req.token,
+        ssl_mode: req.ssl_mode,
+        ssl_ca_path: req.ssl_ca_path,
+        ssl_cert_path: req.ssl_cert_path,
+        ssl_key_path: req.ssl_key_path,
       },
     });
   },

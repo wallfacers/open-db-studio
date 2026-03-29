@@ -128,31 +128,35 @@ pub async fn release_slot(connection_id: i64) {
     set.remove(&connection_id);
 }
 
-// ─── Request Deduplication ──────────────────────────────────────────────────
+// ─── Request Deduplication (with result cache) ─────────────────────────────
 
-static LAST_REQUEST: Lazy<Mutex<HashMap<i64, (String, Vec<String>)>>> =
+/// (sql_before, mentioned_tables, last_result)
+static LAST_REQUEST: Lazy<Mutex<HashMap<i64, (String, Vec<String>, String)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub async fn is_duplicate_request(
+/// 检查是否为重复请求。如果是，直接返回上一次的缓存结果。
+pub async fn check_duplicate_request(
     connection_id: i64,
     sql_before: &str,
     mentioned: &[String],
-) -> bool {
+) -> Option<String> {
     let cache = LAST_REQUEST.lock().await;
-    if let Some((prev_sql, prev_tables)) = cache.get(&connection_id) {
-        prev_sql == sql_before && prev_tables.as_slice() == mentioned
-    } else {
-        false
+    if let Some((prev_sql, prev_tables, prev_result)) = cache.get(&connection_id) {
+        if prev_sql == sql_before && prev_tables.as_slice() == mentioned {
+            return Some(prev_result.clone());
+        }
     }
+    None
 }
 
 pub async fn update_last_request(
     connection_id: i64,
     sql_before: String,
     mentioned: Vec<String>,
+    result: String,
 ) {
     let mut cache = LAST_REQUEST.lock().await;
-    cache.insert(connection_id, (sql_before, mentioned));
+    cache.insert(connection_id, (sql_before, mentioned, result));
 }
 
 // ─── postprocess_completion ─────────────────────────────────────────────────

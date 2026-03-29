@@ -3,6 +3,19 @@ use serde::{Deserialize, Serialize};
 use crate::AppResult;
 use futures_util::StreamExt;
 use tauri::ipc::Channel;
+use once_cell::sync::Lazy;
+
+/// 全局共享 HTTP 客户端，避免每次请求重新初始化 TLS
+static SHARED_CLIENT: Lazy<Client> = Lazy::new(|| {
+    Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap_or_else(|e| {
+            log::warn!("[llm] Failed to build HTTP client: {}, falling back to default", e);
+            Client::new()
+        })
+});
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", content = "data")]
@@ -149,7 +162,7 @@ impl LlmClient {
             ApiType::Openai => "https://api.openai.com/v1",
         };
         Self {
-            client: Client::new(),
+            client: SHARED_CLIENT.clone(),
             api_key,
             base_url: base_url.unwrap_or_else(|| default_base.to_string()),
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
@@ -179,13 +192,23 @@ impl LlmClient {
             }
         }
 
+        let url = format!("{}/chat/completions", base);
+        log::debug!("[llm] POST {} model={}", url, self.model);
+        let t0 = std::time::Instant::now();
+
         let http_resp = self
             .client
-            .post(format!("{}/chat/completions", base))
+            .post(&url)
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                log::warn!("[llm] request failed after {:?}: {}", t0.elapsed(), e);
+                e
+            })?;
+
+        log::debug!("[llm] response {} in {:?}", http_resp.status(), t0.elapsed());
 
         if !http_resp.status().is_success() {
             let status = http_resp.status();
@@ -235,18 +258,33 @@ impl LlmClient {
             if let Some(stop_seqs) = p.stop {
                 body["stop_sequences"] = serde_json::json!(stop_seqs);
             }
+            // 当 max_tokens 较小时（inline complete 等轻量场景），
+            // 显式禁用深度思考以加速响应
+            if p.max_tokens.map_or(false, |t| t <= 200) {
+                body["thinking"] = serde_json::json!({"type": "disabled"});
+            }
         }
 
         let base = self.base_url.trim_end_matches('/');
+        let url = format!("{}/v1/messages", base);
+        log::debug!("[llm] POST {} model={}", url, self.model);
+        let t0 = std::time::Instant::now();
+
         let http_resp = self
             .client
-            .post(format!("{}/v1/messages", base))
+            .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("user-agent", "claude-code/1.0.0")
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                log::warn!("[llm] request failed after {:?}: {}", t0.elapsed(), e);
+                e
+            })?;
+
+        log::debug!("[llm] response {} in {:?}", http_resp.status(), t0.elapsed());
 
         if !http_resp.status().is_success() {
             let status = http_resp.status();
@@ -285,14 +323,16 @@ impl LlmClient {
             role: "user".to_string(),
             content: prompt,
         }];
-        let stop = match hint {
-            "single_line" => vec!["\n".to_string()],
-            _ => vec!["\n\n".to_string(), ";\n".to_string()],
+        let max_tokens = match hint {
+            "single_line" => 60,
+            _ => 200,
         };
+        // NOTE: 部分兼容接口（如 DashScope）不支持 stop/stop_sequences，
+        // 改用 prompt 指令 + max_tokens 控制生成长度
         self.chat_with_params(messages, ChatParams {
             temperature: Some(0.1),
-            max_tokens: Some(200),
-            stop: Some(stop),
+            max_tokens: Some(max_tokens),
+            stop: None,
         }).await
     }
 

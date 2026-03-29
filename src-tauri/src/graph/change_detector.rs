@@ -14,40 +14,22 @@ use std::collections::{HashMap, HashSet};
 ///   table_name -> column_names (空集合表示仅有表节点，无列节点)
 /// 以及 Link 节点 ID 集合（用于 ADD_FK 去重）：
 ///   HashSet<link_node_id>
-/// 执行带可选 database 过滤的 1 列查询
-fn query_strings_with_db(
+/// 执行带可选 database 过滤的查询，通过 `map_row` 将每行映射为结果项。
+fn query_with_db<T>(
     conn: &rusqlite::Connection,
     sql: &str,
     connection_id: i64,
     database: Option<&str>,
-) -> rusqlite::Result<Vec<String>> {
+    map_row: impl Fn(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> rusqlite::Result<Vec<T>> {
     let mut stmt = conn.prepare(sql)?;
-    let mut results = Vec::new();
     let mut rows = match database {
         Some(db) => stmt.query(rusqlite::params![connection_id, db])?,
         None => stmt.query([connection_id])?,
     };
-    while let Some(row) = rows.next()? {
-        results.push(row.get::<_, String>(0)?);
-    }
-    Ok(results)
-}
-
-/// 执行带可选 database 过滤的 2 列查询
-fn query_pairs_with_db(
-    conn: &rusqlite::Connection,
-    sql: &str,
-    connection_id: i64,
-    database: Option<&str>,
-) -> rusqlite::Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(sql)?;
     let mut results = Vec::new();
-    let mut rows = match database {
-        Some(db) => stmt.query(rusqlite::params![connection_id, db])?,
-        None => stmt.query([connection_id])?,
-    };
     while let Some(row) = rows.next()? {
-        results.push((row.get::<_, String>(0)?, row.get::<_, String>(1)?));
+        results.push(map_row(row)?);
     }
     Ok(results)
 }
@@ -73,7 +55,7 @@ fn load_existing_nodes(
                AND is_deleted=0{}",
             db_filter
         );
-        for name in query_strings_with_db(conn, &sql, connection_id, database)? {
+        for name in query_with_db(conn, &sql, connection_id, database, |r| r.get::<_, String>(0))? {
             tables.entry(name).or_default();
         }
     }
@@ -90,7 +72,7 @@ fn load_existing_nodes(
                AND c.is_deleted=0 AND t.is_deleted=0{}",
             db_filter
         );
-        for (tname, cname) in query_pairs_with_db(conn, &sql, connection_id, database)? {
+        for (tname, cname) in query_with_db(conn, &sql, connection_id, database, |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
             tables.entry(tname).or_default().insert(cname);
         }
     }
@@ -104,7 +86,7 @@ fn load_existing_nodes(
                AND is_deleted=0{}",
             db_filter
         );
-        query_strings_with_db(conn, &sql, connection_id, database)?
+        query_with_db(conn, &sql, connection_id, database, |r| r.get::<_, String>(0))?
             .into_iter()
             .collect()
     };
@@ -112,16 +94,21 @@ fn load_existing_nodes(
     Ok((tables, existing_link_ids))
 }
 
+/// 变更事件数据（用于写入 schema_change_log）
+struct ChangeEvent<'a> {
+    event_type: &'a str,
+    table_name: &'a str,
+    column_name: Option<&'a str>,
+    metadata: Option<&'a str>,
+    database: Option<&'a str>,
+    schema: Option<&'a str>,
+}
+
 /// 向 schema_change_log 插入一条变更记录。
 fn insert_change_log(
     conn: &rusqlite::Connection,
     connection_id: i64,
-    event_type: &str,
-    table_name: &str,
-    column_name: Option<&str>,
-    metadata: Option<&str>,
-    database: Option<&str>,
-    schema: Option<&str>,
+    ev: &ChangeEvent<'_>,
     created_at: &str,
 ) -> rusqlite::Result<()> {
     conn.execute(
@@ -130,12 +117,12 @@ fn insert_change_log(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
         rusqlite::params![
             connection_id,
-            event_type,
-            table_name,
-            column_name,
-            metadata,
-            database,
-            schema,
+            ev.event_type,
+            ev.table_name,
+            ev.column_name,
+            ev.metadata,
+            ev.database,
+            ev.schema,
             created_at
         ],
     )?;
@@ -195,17 +182,10 @@ pub fn detect_and_log_changes(
             .unwrap_or("BASE TABLE");
         let tbl_schema = table_schema_map.get(tname).and_then(|s| s.as_deref());
         let meta = serde_json::json!({"table_type": table_type}).to_string();
-        insert_change_log(
-            &db_conn,
-            connection_id,
-            "ADD_TABLE",
-            tname,
-            None,
-            Some(&meta),
-            database,
-            tbl_schema,
-            &created_at,
-        )?;
+        insert_change_log(&db_conn, connection_id, &ChangeEvent {
+            event_type: "ADD_TABLE", table_name: tname,
+            column_name: None, metadata: Some(&meta), database, schema: tbl_schema,
+        }, &created_at)?;
         event_count += 1;
 
         // 新表的列：直接生成 ADD_COLUMN（无需等下一次构建）
@@ -218,17 +198,10 @@ pub fn detect_and_log_changes(
                     "column_default": col.column_default
                 })
                 .to_string();
-                insert_change_log(
-                    &db_conn,
-                    connection_id,
-                    "ADD_COLUMN",
-                    tname,
-                    Some(&col.name),
-                    Some(&col_meta),
-                    database,
-                    tbl_schema,
-                    &created_at,
-                )?;
+                insert_change_log(&db_conn, connection_id, &ChangeEvent {
+                    event_type: "ADD_COLUMN", table_name: tname,
+                    column_name: Some(&col.name), metadata: Some(&col_meta), database, schema: tbl_schema,
+                }, &created_at)?;
                 event_count += 1;
             }
         }
@@ -249,17 +222,10 @@ pub fn detect_and_log_changes(
                         "on_delete": fk.on_delete
                     })
                     .to_string();
-                    insert_change_log(
-                        &db_conn,
-                        connection_id,
-                        "ADD_FK",
-                        tname,
-                        Some(&fk.column),
-                        Some(&fk_meta),
-                        database,
-                        tbl_schema,
-                        &created_at,
-                    )?;
+                    insert_change_log(&db_conn, connection_id, &ChangeEvent {
+                        event_type: "ADD_FK", table_name: tname,
+                        column_name: Some(&fk.column), metadata: Some(&fk_meta), database, schema: tbl_schema,
+                    }, &created_at)?;
                     event_count += 1;
                 }
             }
@@ -268,17 +234,10 @@ pub fn detect_and_log_changes(
 
     // 4. 检测删除表（DROP_TABLE）
     for tname in existing_table_names.difference(&current_table_names) {
-        insert_change_log(
-            &db_conn,
-            connection_id,
-            "DROP_TABLE",
-            tname,
-            None,
-            None,
-            database,
-            None,
-            &created_at,
-        )?;
+        insert_change_log(&db_conn, connection_id, &ChangeEvent {
+            event_type: "DROP_TABLE", table_name: tname,
+            column_name: None, metadata: None, database, schema: None,
+        }, &created_at)?;
         event_count += 1;
     }
 
@@ -305,34 +264,20 @@ pub fn detect_and_log_changes(
                         "column_default": col.column_default
                     })
                     .to_string();
-                    insert_change_log(
-                        &db_conn,
-                        connection_id,
-                        "ADD_COLUMN",
-                        tname,
-                        Some(&col.name),
-                        Some(&meta),
-                        database,
-                        tbl_schema,
-                        &created_at,
-                    )?;
+                    insert_change_log(&db_conn, connection_id, &ChangeEvent {
+                        event_type: "ADD_COLUMN", table_name: tname,
+                        column_name: Some(&col.name), metadata: Some(&meta), database, schema: tbl_schema,
+                    }, &created_at)?;
                     event_count += 1;
                 }
             }
 
             // 删除列（DROP_COLUMN）
             for col_name in existing_cols.difference(&current_col_names) {
-                insert_change_log(
-                    &db_conn,
-                    connection_id,
-                    "DROP_COLUMN",
-                    tname,
-                    Some(col_name),
-                    None,
-                    database,
-                    tbl_schema,
-                    &created_at,
-                )?;
+                insert_change_log(&db_conn, connection_id, &ChangeEvent {
+                    event_type: "DROP_COLUMN", table_name: tname,
+                    column_name: Some(col_name), metadata: None, database, schema: tbl_schema,
+                }, &created_at)?;
                 event_count += 1;
             }
         }
@@ -353,17 +298,10 @@ pub fn detect_and_log_changes(
                         "on_delete": fk.on_delete
                     })
                     .to_string();
-                    insert_change_log(
-                        &db_conn,
-                        connection_id,
-                        "ADD_FK",
-                        tname,
-                        Some(&fk.column),
-                        Some(&meta),
-                        database,
-                        tbl_schema,
-                        &created_at,
-                    )?;
+                    insert_change_log(&db_conn, connection_id, &ChangeEvent {
+                        event_type: "ADD_FK", table_name: tname,
+                        column_name: Some(&fk.column), metadata: Some(&meta), database, schema: tbl_schema,
+                    }, &created_at)?;
                     event_count += 1;
                 }
             }

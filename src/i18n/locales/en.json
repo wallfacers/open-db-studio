@@ -332,6 +332,7 @@
     "aiChattingBlockTabSwitch": "AI is responding, please wait before switching tabs",
     "openAiAssistant": "Open AI Assistant",
     "formatSql": "Format SQL",
+    "aiCompletionTooltip": "AI Completion (Tab to accept)",
     "closeTab": "Close Tab",
     "closeResult": "Close Result",
     "dmlReport": "Exec Report",

@@ -383,7 +383,8 @@ export const MainContent: React.FC<MainContentProps> = ({
   const completionProviderRegistered = useRef(false);
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
   const ghostCacheRef = useRef<{ sqlBefore: string; result: string; timestamp: number } | null>(null);
-  const requestIdRef = useRef<number>(0);
+  const pendingResultRef = useRef<{ sqlBefore: string; result: string } | null>(null);
+  const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inlineProviderRef = useRef<{ dispose(): void } | null>(null);
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
@@ -426,9 +427,6 @@ export const MainContent: React.FC<MainContentProps> = ({
     editor.onDidChangeCursorSelection(syncEditorInfo);
     doSyncEditorInfo(); // 初始化一次（同步执行）
 
-    if (completionProviderRegistered.current) return;
-    completionProviderRegistered.current = true;
-
     // 阻止浏览器原生右键菜单（Monaco 的 e.event.preventDefault 只影响 Monaco 内部事件）
     editor.getDomNode()?.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -449,73 +447,75 @@ export const MainContent: React.FC<MainContentProps> = ({
       });
     });
 
-    monaco.languages.registerCompletionItemProvider('sql', {
-      provideCompletionItems: (
-        model: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[0],
-        position: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[1],
-      ) => {
-        const word = model.getWordUntilPosition(position);
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn,
-        };
-        const schema = schemaRef.current;
-        if (!schema) return { suggestions: [] };
+    // 全局 language provider 只注册一次
+    if (!completionProviderRegistered.current) {
+      completionProviderRegistered.current = true;
 
-        const suggestions: MonacoLanguages.CompletionItem[] = [];
-        schema.tables.forEach(t => {
-          suggestions.push({
-            label: t.name,
-            kind: monaco.languages.CompletionItemKind.Class,
-            insertText: t.name,
-            range,
-            detail: 'Table',
-          });
-          t.columns.forEach(c => {
+      monaco.languages.registerCompletionItemProvider('sql', {
+        provideCompletionItems: (
+          model: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[0],
+          position: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[1],
+        ) => {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+          const schema = schemaRef.current;
+          if (!schema) return { suggestions: [] };
+
+          const suggestions: MonacoLanguages.CompletionItem[] = [];
+          schema.tables.forEach(t => {
             suggestions.push({
-              label: `${t.name}.${c.name}`,
-              kind: monaco.languages.CompletionItemKind.Field,
-              insertText: c.name,
+              label: t.name,
+              kind: monaco.languages.CompletionItemKind.Class,
+              insertText: t.name,
               range,
-              detail: `${t.name} (${c.data_type})`,
+              detail: 'Table',
+            });
+            t.columns.forEach(c => {
+              suggestions.push({
+                label: `${t.name}.${c.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                insertText: c.name,
+                range,
+                detail: `${t.name} (${c.data_type})`,
+              });
             });
           });
-        });
-        return { suggestions };
-      },
-    });
+          return { suggestions };
+        },
+      });
+    }
 
-    // Ghost Text - InlineCompletionsProvider
-    inlineProviderRef.current = monaco.languages.registerInlineCompletionsProvider('sql', {
-      provideInlineCompletions: async (model: any, position: any, _context: any, token: any) => {
+    // Ghost Text — 监听光标位置变化（覆盖打字、点击、箭头导航、粘贴等）
+    editor.onDidChangeCursorPosition((e: any) => {
+      if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
+      // 点击/导航用稍长防抖，打字用短防抖
+      const delay = e.reason === 3 /* CursorChangeReason.Explicit */ ? 800 : 600;
+      ghostDebounceRef.current = setTimeout(async () => {
+        const ed = editorRef.current;
+        if (!ed) return;
         const currentState = useQueryStore.getState();
         const tab = currentState.tabs.find(t => t.id === currentState.activeTabId);
-        if (!tab?.queryContext?.connectionId) return { items: [] };
-        if (!currentState.isGhostTextEnabled(tab.id)) return { items: [] };
+        if (!tab?.queryContext?.connectionId) return;
+        if (!currentState.isGhostTextEnabled(tab.id)) return;
+
+        const sel = ed.getSelection();
+        if (sel && !sel.isEmpty()) return;
+
+        const model = ed.getModel();
+        const position = ed.getPosition();
+        if (!model || !position) return;
 
         const fullText = model.getValue();
         const offset = model.getOffsetAt(position);
         const sqlBefore = fullText.slice(0, offset);
         const sqlAfter = fullText.slice(offset);
 
-        if (sqlBefore.trim().length < 2) return { items: [] };
-        const selection = editor.getSelection();
-        if (selection && !selection.isEmpty()) return { items: [] };
-
-        const cached = tryPrefixCache(sqlBefore, ghostCacheRef);
-        if (cached) {
-          return {
-            items: [{
-              insertText: cached,
-              range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
-            }],
-          };
-        }
-
-        const thisRequestId = ++requestIdRef.current;
-        if (token.isCancellationRequested) return { items: [] };
+        if (sqlBefore.trim().length < 2) return;
 
         const mentionedTables = extractMentionedTables(sqlBefore + sqlAfter);
         const lineBeforeCursor = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
@@ -527,31 +527,62 @@ export const MainContent: React.FC<MainContentProps> = ({
             sqlBefore,
             sqlAfter,
             mentionedTables,
-            currentSchema: tab.schema || 'public',
+            currentSchema: tab.queryContext.schema || tab.schema || 'public',
             hint,
-            database: tab.db || null,
+            database: tab.queryContext.database || tab.db || null,
           });
-
-          if (requestIdRef.current !== thisRequestId) return { items: [] };
-          if (token.isCancellationRequested) return { items: [] };
-
           if (result) {
+            pendingResultRef.current = { sqlBefore, result };
             ghostCacheRef.current = { sqlBefore, result, timestamp: Date.now() };
+            ed.trigger('ghost-text', 'editor.action.inlineSuggest.trigger', {});
+          }
+        } catch (err) {
+          console.warn('[ghost-text] prefetch error:', err);
+        }
+      }, delay);
+    });
+
+    // Inline provider 全局注册一次（读取 ref 共享数据）
+    if (!inlineProviderRef.current) {
+      inlineProviderRef.current = monaco.languages.registerInlineCompletionsProvider('sql', {
+        provideInlineCompletions: (model: any, position: any) => {
+          const currentState = useQueryStore.getState();
+          const tab = currentState.tabs.find(t => t.id === currentState.activeTabId);
+          if (!tab?.queryContext?.connectionId) return { items: [] };
+          if (!currentState.isGhostTextEnabled(tab.id)) return { items: [] };
+
+          const fullText = model.getValue();
+          const offset = model.getOffsetAt(position);
+          const sqlBefore = fullText.slice(0, offset);
+
+          // 1. 检查预取结果
+          const pending = pendingResultRef.current;
+          if (pending && pending.sqlBefore === sqlBefore) {
+            pendingResultRef.current = null;
             return {
               items: [{
-                insertText: result,
+                insertText: pending.result,
                 range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
               }],
             };
           }
-        } catch {
-          // Silent degradation
-        }
 
-        return { items: [] };
-      },
-      disposeInlineCompletions: () => {},
-    });
+          // 2. 检查前缀缓存
+          const cached = tryPrefixCache(sqlBefore, ghostCacheRef);
+          if (cached) {
+            return {
+              items: [{
+                insertText: cached,
+                range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+              }],
+            };
+          }
+
+          return { items: [] };
+        },
+        disposeInlineCompletions: () => {},
+      });
+    }
   };
 
   useEffect(() => {
@@ -1030,17 +1061,18 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
-                  title="AI Completion (Tab to accept)"
-                  className={`p-1 rounded transition-colors ${
-                    isGhostTextEnabled
-                      ? 'text-[#00c9a7] hover:bg-[#003d2f]'
-                      : 'text-[#4a6a85] hover:bg-[#1a2639]'
-                  }`}
-                >
-                  <Sparkles size={16} />
-                </button>
+                <Tooltip content={t('mainContent.aiCompletionTooltip')}>
+                  <button
+                    onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
+                    className={`p-1 rounded transition-colors ${
+                      isGhostTextEnabled
+                        ? 'text-[#00c9a7] hover:bg-[#003d2f]'
+                        : 'text-[#4a6a85] hover:bg-[#1a2639]'
+                    }`}
+                  >
+                    <Sparkles size={16} />
+                  </button>
+                </Tooltip>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <Tooltip content={t('mainContent.formatSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
@@ -1151,6 +1183,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   overviewRulerLanes: 0,
                   hideCursorInOverviewRuler: true,
                   contextmenu: false,
+                  inlineSuggest: { enabled: true },
                 }}
               />
             </div>

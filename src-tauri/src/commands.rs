@@ -281,23 +281,39 @@ pub async fn set_llm_config_test_status(id: i64, status: String, error: Option<S
 }
 
 #[tauri::command]
-pub async fn test_llm_config(id: i64) -> AppResult<()> {
+pub async fn test_llm_config(
+    id: i64,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
     crate::db::update_llm_config_test_status(id, "testing", None)?;
     let config = crate::db::get_llm_config_by_id(id)?
         .ok_or_else(|| crate::AppError::Other(format!("LlmConfig {} not found", id)))?;
-    let api_type = parse_api_type(&config.api_type);
-    let client = crate::llm::client::LlmClient::new(
-        config.api_key,
-        Some(config.base_url),
-        Some(config.model),
-        Some(api_type),
-    );
-    let messages = vec![crate::llm::ChatMessage {
-        role: "user".into(),
-        content: "hi".into(),
-    }];
-    match client.chat(messages).await {
-        Ok(_) => {
+
+    let result = if config.config_mode != "custom" {
+        // opencode 模式：走 opencode serve sidecar 测试（与 Agent 对话同一链路）
+        test_via_serve(
+            state.serve_port,
+            &config.model,
+            &config.opencode_provider_id,
+        ).await
+    } else {
+        // custom 模式：直连 LLM API
+        let api_type = parse_api_type(&config.api_type);
+        let client = crate::llm::client::LlmClient::new(
+            config.api_key,
+            Some(config.base_url),
+            Some(config.model),
+            Some(api_type),
+        );
+        let messages = vec![crate::llm::ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }];
+        client.chat(messages).await.map(|_| ())
+    };
+
+    match result {
+        Ok(()) => {
             crate::db::update_llm_config_test_status(id, "success", None)?;
         }
         Err(e) => {
@@ -307,6 +323,40 @@ pub async fn test_llm_config(id: i64) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+/// 通过 opencode serve 测试连接：创建临时 session → 发 "hi" → 检查回复 → 清理。
+async fn test_via_serve(
+    port: u16,
+    model_id: &str,
+    provider_id: &str,
+) -> AppResult<()> {
+    let session_id = crate::agent::client::create_session(port, Some("__connection_test__"))
+        .await
+        .map_err(|e| crate::AppError::Other(format!(
+            "opencode serve not available (is it running?): {}", e
+        )))?;
+
+    let result = crate::agent::stream::collect_text_via_global_events(
+        port,
+        &session_id,
+        "hi",
+        Some(model_id),
+        Some(provider_id),
+    ).await;
+
+    // 清理临时 session（无论成功失败）
+    let _ = crate::agent::client::abort_session(port, &session_id).await;
+    let _ = crate::agent::client::delete_session(port, &session_id).await;
+    let _ = crate::db::delete_agent_session(&session_id);
+
+    match result {
+        Ok(text) if text.trim().is_empty() => {
+            Err(crate::AppError::Other("Model returned empty response".into()))
+        }
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 // ============ 历史 & 收藏 ============
@@ -1039,21 +1089,21 @@ pub async fn ai_inline_complete(
 ) -> Result<String, String> {
     use crate::llm::inline_complete;
 
-    // 1. Check concurrency — only 1 in-flight request per connection
+    // 1. Check request deduplication — return cached result immediately (no slot needed)
+    if let Some(cached) = inline_complete::check_duplicate_request(connection_id, &sql_before, &mentioned_tables).await {
+        log::debug!("[ai_inline_complete] duplicate request, returning cached result (len={})", cached.len());
+        return Ok(cached);
+    }
+
+    // 2. Check concurrency — only 1 in-flight request per connection
     if !inline_complete::acquire_slot(connection_id).await {
         return Ok(String::new());
     }
 
     let result = async {
-        // 2. Check TimeoutTracker
+        // 3. Check TimeoutTracker
         if inline_complete::should_skip(connection_id).await {
             log::debug!("[ai_inline_complete] skip: timeout backoff active for connection {}", connection_id);
-            return Ok(String::new());
-        }
-
-        // 3. Check request deduplication
-        if inline_complete::is_duplicate_request(connection_id, &sql_before, &mentioned_tables).await {
-            log::debug!("[ai_inline_complete] skip: duplicate request");
             return Ok(String::new());
         }
 
@@ -1082,12 +1132,14 @@ pub async fn ai_inline_complete(
         ).await.map_err(|e| e.to_string())?;
 
         // 7. Build layered context
+        let ctx_t0 = std::time::Instant::now();
         let schema_context = inline_complete::build_layered_context(
             ds.as_ref(),
             &mentioned_tables,
             &current_schema,
             connection_id,
         ).await;
+        log::debug!("[ai_inline_complete] context built in {:?}, len={}", ctx_t0.elapsed(), schema_context.len());
 
         // 8. Assemble prompt from template
         let mode_instruction = match hint.as_str() {
@@ -1106,6 +1158,11 @@ pub async fn ai_inline_complete(
             &sql_after
         };
 
+        // Fast-path: statement already complete, skip LLM call
+        if sql_before_trimmed.trim_end().ends_with(';') && sql_after_trimmed.trim().is_empty() {
+            return Ok(String::new());
+        }
+
         let prompt = include_str!("../../prompts/sql_inline_complete.txt")
             .replace("{{DIALECT}}", &dialect)
             .replace("{{MODE_INSTRUCTION}}", mode_instruction)
@@ -1113,7 +1170,7 @@ pub async fn ai_inline_complete(
             .replace("{{SQL_BEFORE}}", sql_before_trimmed)
             .replace("{{SQL_AFTER}}", sql_after_trimmed);
 
-        // 9. Create LLM client and call with 5s timeout
+        // 9. Create LLM client and call with 20s timeout
         let api_type = parse_api_type(&config.api_type);
         let client = crate::llm::client::LlmClient::new(
             config.api_key,
@@ -1123,13 +1180,15 @@ pub async fn ai_inline_complete(
         );
 
         match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(20),
             client.inline_complete(prompt, &hint),
         ).await {
             Ok(Ok(raw)) => {
                 inline_complete::record_success(connection_id).await;
                 let processed = inline_complete::postprocess_completion(&raw, &sql_before);
-                inline_complete::update_last_request(connection_id, sql_before.clone(), mentioned_tables.clone()).await;
+                log::debug!("[ai_inline_complete] raw_len={} processed_len={} processed={:?}",
+                    raw.len(), processed.len(), &processed[..processed.len().min(100)]);
+                inline_complete::update_last_request(connection_id, sql_before.clone(), mentioned_tables.clone(), processed.clone()).await;
                 Ok(processed)
             }
             Ok(Err(e)) => {
@@ -1138,7 +1197,7 @@ pub async fn ai_inline_complete(
                 Ok(String::new())
             }
             Err(_) => {
-                log::warn!("[ai_inline_complete] Request timed out (5s)");
+                log::warn!("[ai_inline_complete] Request timed out (20s)");
                 inline_complete::record_timeout(connection_id).await;
                 Ok(String::new())
             }
@@ -1181,10 +1240,7 @@ pub async fn list_schemas(connection_id: i64, database: String) -> AppResult<Vec
     ds.list_schemas(&database).await
 }
 
-const SYSTEM_SCHEMAS: &[&str] = &[
-    "information_schema", "pg_catalog",
-    "performance_schema", "sys", "mysql",
-];
+use crate::graph::SYSTEM_SCHEMAS;
 
 #[tauri::command]
 pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
@@ -3477,6 +3533,15 @@ async fn apply_llm_config_to_opencode(
     }
 
     if !cfg.model.is_empty() && !effective_provider.is_empty() {
+        // 先注册 provider entry（含 models 定义）到运行时，确保模型存在。
+        // opencode serve 重启后运行时配置丢失，仅靠 patch_config 切换模型会
+        // 因模型未注册而报 "Model not found"。
+        let entry = build_provider_entry_for_json(cfg);
+        let body = serde_json::json!({ "provider": { &effective_provider: entry } });
+        if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
+            log::warn!("[apply_llm_config] patch_config_json (register model) failed: {}", e);
+        }
+
         if let Err(e) = crate::agent::client::patch_config(
             state.serve_port, &cfg.model, &effective_provider,
         ).await {

@@ -381,7 +381,7 @@ pub async fn process_pending_events(
                             match db_conn.execute(
                                 "INSERT INTO graph_nodes
                                    (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source)
-                                 VALUES (?1, 'link', ?2, ?6, ?7, ?3, ?4, ?5, 'schema')
+                                 VALUES (?1, 'link', ?2, ?3, ?4, ?5, ?6, ?7, 'schema')
                                  ON CONFLICT(id) DO UPDATE SET
                                    metadata = excluded.metadata,
                                    display_name = excluded.display_name,
@@ -389,11 +389,11 @@ pub async fn process_pending_events(
                                 rusqlite::params![
                                     link_id,
                                     conn_id,
+                                    ev.database,
+                                    ev.schema,
                                     "fk",
                                     display_name,
                                     link_metadata.to_string(),
-                                    ev.database,
-                                    ev.schema,
                                 ],
                             ) {
                                 Ok(n) => {

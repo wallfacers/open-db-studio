@@ -216,7 +216,7 @@
 
 ## docs/superpowers/ 完整文档状态（2026-03-29 更新）
 
-### specs/ 已实现 ✅（25 篇）
+### specs/ 已实现 ✅（23 篇）
 
 | 文档 | 功能 |
 |------|------|
@@ -246,13 +246,6 @@
 | `2026-03-25-metrics-in-db-tree-design.md` | 指标嵌入数据库树 |
 | `2026-03-25-graph-node-click-highlight-design.md` | 图谱节点点击高亮 |
 
-### specs/ 已废弃但功能已实现 ✅（2 篇，架构已迭代升级）
-
-| 文档 | 代码验证 |
-|------|---------|
-| `2026-03-17-ai-mcp-tab-integration-design.md` | ✅ 14 个 MCP 工具 + UI Object Protocol 已实现（`mcp/tools/`） |
-| `2026-03-19-knowledge-graph-redesign.md` | ✅ GraphExplorer + change_detector + event_processor 完整实现 |
-
 ### specs/ 代码验证后修正为已实现 ✅（8 篇）
 
 | 文档 | 功能 | 代码证据 |
@@ -266,11 +259,10 @@
 | `2026-03-22-release-workflow-design.md` | 发版工作流 | `.github/workflows/release.yml` 三平台构建 + 自动 Release |
 | `2026-03-25-er-designer-design.md` | ER 设计器 | 20+ 前端文件 + 30+ Rust 命令 + `er_*` 5 张表 |
 
-### specs/ 确认未实现 ❌（2 篇）
+### specs/ 确认未实现 ❌（1 篇）
 
 | 文档 | 功能 | 原因 |
 |------|------|------|
-| `2026-03-12-ai-agent-page-interaction-design.md` | AI Agent 页面交互 | 无 PageAgent / UI 交互工具代码 |
 | `2026-03-21-sql-ghost-text-design.md` | SQL Ghost Text 补全 | 无 `registerInlineCompletionsProvider` / `ai_inline_complete` |
 
 ### plans/ 已实现 ✅（24 篇）
@@ -289,14 +281,7 @@
 
 ### 已实现 ✅（25 篇）
 
-全部 `docs/plans/` 下 2026-03-10 ~ 2026-03-12 期间的 25 篇设计和实现文档均已实现。
-
-### 已废弃但功能已实现 ✅（2 篇，架构已迭代升级）
-
-| 文档 | 代码验证 |
-|------|---------|
-| `2026-03-12-acp-opencode-integration-design.md` | ✅ `agent/server.rs` 实现 HTTP Serve 模式替代原 ACP stdio |
-| `2026-03-12-acp-opencode-integration-plan.md` | ✅ 同上 |
+全部 `docs/plans/` 下 2026-03-10 ~ 2026-03-12 期间的设计和实现文档均已实现（原 27 篇，已清理 2 篇废弃的 ACP 集成文档）。
 
 ### 未实现 ❌（2 篇）
 
@@ -311,13 +296,14 @@
 
 | 分类 | 状态 | 数量 |
 |------|------|------|
-| docs/plans/ | ✅ 已实现 | 27（含 2 篇架构已升级的废弃文档） |
+| docs/plans/ | ✅ 已实现 | 25 |
 | docs/plans/ | ❌ 未实现 | 2（SQL Ghost Text） |
-| superpowers/specs/ | ✅ 已实现 | 33（含 2 篇架构升级 + 8 篇代码验证修正） |
-| superpowers/specs/ | ❌ 未实现 | 2（AI Agent 页面交互、SQL Ghost Text） |
+| superpowers/specs/ | ✅ 已实现 | 31（含 8 篇代码验证修正） |
+| superpowers/specs/ | ❌ 未实现 | 1（SQL Ghost Text） |
 | superpowers/plans/ | ✅ 已实现 | 24 |
 | superpowers/plans/ | ❌ 未实现 | 1（SQL Ghost Text） |
-| **总计** | | **91** |
+| **已删除（废弃）** | | **5**（ACP 集成 ×2、MCP Tab 集成、图谱重构、AI Agent 页面交互） |
+| **总计** | | **86**（现存）+ 5（已清理）= 91 |
 
 ---
 

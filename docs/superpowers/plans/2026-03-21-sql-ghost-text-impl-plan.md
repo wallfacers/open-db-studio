@@ -1,3 +1,4 @@
+<!-- STATUS: ❌ 未实现 -->
 # SQL 编辑器 AI Ghost Text 补全 实现计划
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # propose_sql_diff — MCP 工具 + Tauri 全局事件桥接 设计文档
 
 **日期：** 2026-03-13

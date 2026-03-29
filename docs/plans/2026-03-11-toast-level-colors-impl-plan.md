@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # Toast 多级别消息提示色彩 实现计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

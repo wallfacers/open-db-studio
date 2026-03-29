@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # AI 流式输出 + 思考模型 Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

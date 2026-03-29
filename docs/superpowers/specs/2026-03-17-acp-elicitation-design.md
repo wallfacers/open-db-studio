@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # ACP Elicitation 统一 UI 层设计文档
 
 **日期：** 2026-03-17

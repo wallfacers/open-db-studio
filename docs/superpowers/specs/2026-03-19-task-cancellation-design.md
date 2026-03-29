@@ -1,3 +1,4 @@
+<!-- STATUS: ❌ 未实现 -->
 # 任务取消（Backend Cancellation）设计文档
 
 **日期**：2026-03-19

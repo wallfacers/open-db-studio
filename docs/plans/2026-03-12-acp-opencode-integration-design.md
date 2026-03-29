@@ -1,3 +1,4 @@
+<!-- STATUS: ⚠️ 已废弃 — 原始 ACP stdio 架构已被 opencode HTTP Serve 模式取代 -->
 # ACP + opencode 集成设计文档
 
 **日期：** 2026-03-12  

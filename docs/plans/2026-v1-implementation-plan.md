@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # V1 阶段实施计划（Q3 2026）
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

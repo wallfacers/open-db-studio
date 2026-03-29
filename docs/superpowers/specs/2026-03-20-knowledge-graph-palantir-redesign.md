@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # Knowledge Graph — Palantir Ontology 风格改造设计文档
 
 **日期**: 2026-03-20

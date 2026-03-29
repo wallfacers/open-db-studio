@@ -246,27 +246,32 @@
 | `2026-03-25-metrics-in-db-tree-design.md` | 指标嵌入数据库树 |
 | `2026-03-25-graph-node-click-highlight-design.md` | 图谱节点点击高亮 |
 
-### specs/ 已废弃 ⚠️（2 篇）
+### specs/ 已废弃但功能已实现 ✅（2 篇，架构已迭代升级）
 
-| 文档 | 原因 |
-|------|------|
-| `2026-03-17-ai-mcp-tab-integration-design.md` | 被 opencode Serve 模式取代 |
-| `2026-03-19-knowledge-graph-redesign.md` | 被 Palantir 重设计方案取代 |
+| 文档 | 代码验证 |
+|------|---------|
+| `2026-03-17-ai-mcp-tab-integration-design.md` | ✅ 14 个 MCP 工具 + UI Object Protocol 已实现（`mcp/tools/`） |
+| `2026-03-19-knowledge-graph-redesign.md` | ✅ GraphExplorer + change_detector + event_processor 完整实现 |
 
-### specs/ 未实现 ❌（10 篇）
+### specs/ 代码验证后修正为已实现 ✅（8 篇）
 
-| 文档 | 功能 |
-|------|------|
-| `2026-03-12-ai-agent-page-interaction-design.md` | AI Agent 页面交互 |
-| `2026-03-18-opencode-serve-migration-design.md` | opencode Serve 模式迁移 |
-| `2026-03-19-metrics-ai-generate-redesign.md` | 指标 AI 生成重设计 |
-| `2026-03-19-sql-editor-context-menu-design.md` | SQL 编辑器右键菜单 |
-| `2026-03-19-metric-list-pagination-design.md` | 指标列表分页 |
-| `2026-03-19-task-cancellation-design.md` | 任务取消 |
-| `2026-03-19-unified-task-protocol-design.md` | 统一任务协议 |
-| `2026-03-21-sql-ghost-text-design.md` | SQL Ghost Text 内联补全 |
-| `2026-03-22-release-workflow-design.md` | 发版工作流 |
-| `2026-03-25-er-designer-design.md` | ER 设计器 V2 修订 |
+| 文档 | 功能 | 代码证据 |
+|------|------|---------|
+| `2026-03-18-opencode-serve-migration-design.md` | opencode Serve 迁移 | `agent/server.rs`：`start_serve()` / `monitor_and_restart()` |
+| `2026-03-19-metrics-ai-generate-redesign.md` | 指标 AI 批量生成 | `ai_generate_metrics` 命令 + `metrics/ai_draft.rs` |
+| `2026-03-19-sql-editor-context-menu-design.md` | SQL 编辑器右键菜单 | `handleEditorContextMenu` 6 项操作 |
+| `2026-03-19-metric-list-pagination-design.md` | 指标列表分页 | `page` + `page_size` 参数 + 分页 UI |
+| `2026-03-19-task-cancellation-design.md` | 任务取消 | `cancel_task` 命令 + 前端取消按钮 |
+| `2026-03-19-unified-task-protocol-design.md` | 统一任务协议 | `task_records` 表统一 import/export/AI metrics（migration 仍独立） |
+| `2026-03-22-release-workflow-design.md` | 发版工作流 | `.github/workflows/release.yml` 三平台构建 + 自动 Release |
+| `2026-03-25-er-designer-design.md` | ER 设计器 | 20+ 前端文件 + 30+ Rust 命令 + `er_*` 5 张表 |
+
+### specs/ 确认未实现 ❌（2 篇）
+
+| 文档 | 功能 | 原因 |
+|------|------|------|
+| `2026-03-12-ai-agent-page-interaction-design.md` | AI Agent 页面交互 | 无 PageAgent / UI 交互工具代码 |
+| `2026-03-21-sql-ghost-text-design.md` | SQL Ghost Text 补全 | 无 `registerInlineCompletionsProvider` / `ai_inline_complete` |
 
 ### plans/ 已实现 ✅（24 篇）
 
@@ -286,12 +291,12 @@
 
 全部 `docs/plans/` 下 2026-03-10 ~ 2026-03-12 期间的 25 篇设计和实现文档均已实现。
 
-### 已废弃 ⚠️（2 篇）
+### 已废弃但功能已实现 ✅（2 篇，架构已迭代升级）
 
-| 文档 | 原因 |
-|------|------|
-| `2026-03-12-acp-opencode-integration-design.md` | 原始 ACP stdio 架构已被 opencode HTTP Serve 模式取代 |
-| `2026-03-12-acp-opencode-integration-plan.md` | 同上 |
+| 文档 | 代码验证 |
+|------|---------|
+| `2026-03-12-acp-opencode-integration-design.md` | ✅ `agent/server.rs` 实现 HTTP Serve 模式替代原 ACP stdio |
+| `2026-03-12-acp-opencode-integration-plan.md` | ✅ 同上 |
 
 ### 未实现 ❌（2 篇）
 
@@ -306,14 +311,12 @@
 
 | 分类 | 状态 | 数量 |
 |------|------|------|
-| docs/plans/ | ✅ 已实现 | 25 |
-| docs/plans/ | ⚠️ 已废弃 | 2 |
-| docs/plans/ | ❌ 未实现 | 2 |
-| superpowers/specs/ | ✅ 已实现 | 25 |
-| superpowers/specs/ | ⚠️ 已废弃 | 2 |
-| superpowers/specs/ | ❌ 未实现 | 10 |
+| docs/plans/ | ✅ 已实现 | 27（含 2 篇架构已升级的废弃文档） |
+| docs/plans/ | ❌ 未实现 | 2（SQL Ghost Text） |
+| superpowers/specs/ | ✅ 已实现 | 33（含 2 篇架构升级 + 8 篇代码验证修正） |
+| superpowers/specs/ | ❌ 未实现 | 2（AI Agent 页面交互、SQL Ghost Text） |
 | superpowers/plans/ | ✅ 已实现 | 24 |
-| superpowers/plans/ | ❌ 未实现 | 1 |
+| superpowers/plans/ | ❌ 未实现 | 1（SQL Ghost Text） |
 | **总计** | | **91** |
 
 ---

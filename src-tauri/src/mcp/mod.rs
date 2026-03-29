@@ -188,13 +188,13 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_patch",
-                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements.",
+                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements. IMPORTANT: Always batch ALL changes into a single ui_patch call with multiple ops. For table_form, set tableName AND add ALL columns in one call. Example: [{\"op\":\"replace\",\"path\":\"/tableName\",\"value\":\"users\"},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"id\",\"dataType\":\"INT\",...}},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"email\",\"dataType\":\"VARCHAR\",...}}]",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "object": { "type": "string", "description": "Object type" },
                         "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
-                        "ops": { "type": "array", "description": "Array of JSON Patch operations", "items": { "type": "object" } },
+                        "ops": { "type": "array", "description": "Array of JSON Patch operations. Batch all changes into one call for best performance.", "items": { "type": "object" } },
                         "reason": { "type": "string", "description": "Human-readable reason for the change" }
                     },
                     "required": ["object", "ops"]
@@ -222,6 +222,53 @@ fn tool_definitions() -> Value {
                     "properties": {
                         "filter": { "type": "object", "properties": { "type": { "type": "string" }, "keyword": { "type": "string" }, "connectionId": { "type": "integer" }, "database": { "type": "string" } } }
                     }
+                }
+            }),
+            json!({
+                "name": "init_table_form",
+                "description": "Initialize a new table design form with a complete table definition in one call. This is much faster than using ui_patch multiple times. Opens a new table_form tab and populates it with the given table name, columns, and indexes. Returns the new tab objectId.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer", "description": "Database connection ID" },
+                        "database": { "type": "string", "description": "Target database name" },
+                        "table_name": { "type": "string", "description": "Table name" },
+                        "columns": {
+                            "type": "array",
+                            "description": "Column definitions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "dataType": { "type": "string" },
+                                    "length": { "type": "string" },
+                                    "isNullable": { "type": "boolean", "default": true },
+                                    "defaultValue": { "type": "string" },
+                                    "isPrimaryKey": { "type": "boolean", "default": false },
+                                    "extra": { "type": "string" },
+                                    "comment": { "type": "string" }
+                                },
+                                "required": ["name", "dataType"]
+                            }
+                        },
+                        "indexes": {
+                            "type": "array",
+                            "description": "Index definitions (optional)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "columns": { "type": "array", "items": { "type": "string" } },
+                                    "unique": { "type": "boolean", "default": false }
+                                },
+                                "required": ["name", "columns"]
+                            }
+                        },
+                        "comment": { "type": "string", "description": "Table comment" },
+                        "engine": { "type": "string", "default": "InnoDB" },
+                        "charset": { "type": "string", "default": "utf8mb4" }
+                    },
+                    "required": ["connection_id", "database", "table_name", "columns"]
                 }
             }),
             json!({
@@ -526,6 +573,77 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                     Ok(serde_json::to_string_pretty(&detail).unwrap_or_default())
                 }
             }
+        }
+        "init_table_form" => {
+            // Single-IPC fast path: open a table_form tab and populate it with a complete definition.
+            // Step 1: Ask frontend to open a new table_form tab via workspace.exec('open')
+            let conn_id = args["connection_id"].as_i64().unwrap_or(0);
+            let database = args["database"].as_str().unwrap_or("");
+            let open_payload = json!({
+                "tool": "ui_exec",
+                "object": "workspace",
+                "target": "workspace",
+                "payload": {
+                    "action": "open",
+                    "params": {
+                        "type": "table_form",
+                        "connection_id": conn_id,
+                        "database": database
+                    }
+                }
+            });
+            let open_result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", open_payload,
+            ).await?;
+
+            let object_id = open_result["data"]["objectId"].as_str().unwrap_or("").to_string();
+            if object_id.is_empty() {
+                return Err(crate::AppError::Other("Failed to open table_form tab".into()));
+            }
+
+            // Step 2: Build a single batch patch with tableName + all columns + indexes
+            let mut ops: Vec<Value> = Vec::new();
+            ops.push(json!({"op": "replace", "path": "/tableName", "value": args["table_name"]}));
+            if let Some(comment) = args.get("comment").and_then(|v| v.as_str()) {
+                ops.push(json!({"op": "replace", "path": "/comment", "value": comment}));
+            }
+            if let Some(engine) = args.get("engine").and_then(|v| v.as_str()) {
+                ops.push(json!({"op": "replace", "path": "/engine", "value": engine}));
+            }
+            if let Some(charset) = args.get("charset").and_then(|v| v.as_str()) {
+                ops.push(json!({"op": "replace", "path": "/charset", "value": charset}));
+            }
+            if let Some(columns) = args["columns"].as_array() {
+                for col in columns {
+                    ops.push(json!({"op": "add", "path": "/columns/-", "value": col}));
+                }
+            }
+            if let Some(indexes) = args["indexes"].as_array() {
+                for idx in indexes {
+                    ops.push(json!({"op": "add", "path": "/indexes/-", "value": idx}));
+                }
+            }
+
+            let patch_payload = json!({
+                "tool": "ui_patch",
+                "object": "table_form",
+                "target": object_id,
+                "payload": {
+                    "ops": ops,
+                    "reason": "init_table_form: batch initialization"
+                }
+            });
+            let patch_result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", patch_payload,
+            ).await?;
+
+            let result = json!({
+                "objectId": object_id,
+                "table_name": args["table_name"],
+                "columns_count": args["columns"].as_array().map(|a| a.len()).unwrap_or(0),
+                "patch_status": patch_result.get("data").and_then(|d| d.get("status")).unwrap_or(&json!("unknown")),
+            });
+            Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
         "ui_read" | "ui_patch" | "ui_exec" | "ui_list" => {
             let payload = json!({

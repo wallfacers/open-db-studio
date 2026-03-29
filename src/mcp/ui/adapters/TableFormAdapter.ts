@@ -1,9 +1,9 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
 import { applyPatch } from '../jsonPatch'
-import { useTableFormStore } from '../../../store/tableFormStore'
+import { useTableFormStore, type TableFormState } from '../../../store/tableFormStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
-import { invoke } from '@tauri-apps/api/core'
+import { useConnectionStore } from '../../../store/connectionStore'
 
 const TABLE_FORM_SCHEMA = {
   type: 'object',
@@ -45,6 +45,54 @@ const TABLE_FORM_SCHEMA = {
   },
 }
 
+// ── Frontend SQL generation (eliminates nested IPC for preview_sql) ──────
+// Mirrors Rust generate_create_table_sql in src-tauri/src/mcp/tools/table_edit.rs
+
+/** Reason prefix used by init_table_form to bypass patch confirmation */
+export const INIT_TABLE_FORM_REASON_PREFIX = 'init_table_form:'
+
+const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+function validateIdent(name: string, label: string): void {
+  if (!name || !IDENT_RE.test(name)) throw new Error(`Invalid ${label}: ${name}`)
+}
+
+function esc(s: string): string { return s.replace(/'/g, "''") }
+function q(name: string, isPg: boolean): string {
+  return isPg ? `"${name}"` : `\`${name}\``
+}
+
+function colDef(c: TableFormState['columns'][0], isPg: boolean): string {
+  const typ = c.length ? `${c.dataType}(${c.length})` : c.dataType
+  const nullable = (c.isNullable ?? true) ? 'NULL' : 'NOT NULL'
+  const def = c.defaultValue ? `DEFAULT ${c.defaultValue}` : ''
+  const extra = (!isPg && c.extra) ? c.extra.toUpperCase() : ''
+  const comment = (!isPg && c.comment) ? `COMMENT '${esc(c.comment)}'` : ''
+  return [q(c.name, isPg), typ, nullable, def, extra, comment].filter(Boolean).join(' ')
+}
+
+function generateCreateTableSql(state: TableFormState, driver: string): string {
+  validateIdent(state.tableName, 'table name')
+  for (const c of state.columns) validateIdent(c.name, 'column name')
+
+  const isPg = driver === 'postgres'
+  const pkCols = state.columns
+    .filter(c => c.isPrimaryKey)
+    .map(c => q(c.name, isPg))
+  const lines = state.columns.map(c => `  ${colDef(c, isPg)}`)
+  if (pkCols.length) lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`)
+
+  const stmts = [`CREATE TABLE ${q(state.tableName, isPg)} (\n${lines.join(',\n')}\n)`]
+  if (isPg) {
+    for (const c of state.columns) {
+      if (c.comment) {
+        stmts.push(`COMMENT ON COLUMN ${q(state.tableName, true)}.${q(c.name, true)} IS '${esc(c.comment)}'`)
+      }
+    }
+  }
+  return stmts.join(';\n')
+}
+
 export class TableFormUIObject implements UIObject {
   type = 'table_form'
   objectId: string
@@ -75,7 +123,7 @@ export class TableFormUIObject implements UIObject {
 
   patch(ops: JsonPatchOp[], reason?: string): PatchResult {
     const autoMode = useAppStore.getState().autoMode
-    if (autoMode) {
+    if (autoMode || reason?.startsWith(INIT_TABLE_FORM_REASON_PREFIX)) {
       return this.patchDirect(ops)
     }
 
@@ -105,6 +153,15 @@ export class TableFormUIObject implements UIObject {
     }
   }
 
+  private getDriver(): string {
+    const { metaCache, connections } = useConnectionStore.getState()
+    const cached = metaCache[this.connectionId]?.driver
+    if (cached) return cached
+    // Fallback: look up driver from the connection list
+    const conn = connections.find(c => c.id === this.connectionId)
+    return conn?.driver ?? 'mysql'
+  }
+
   async exec(action: string, _params?: any): Promise<ExecResult> {
     const state = useTableFormStore.getState().getForm(this.objectId)
     if (!state) return { success: false, error: 'No form state' }
@@ -112,18 +169,7 @@ export class TableFormUIObject implements UIObject {
     switch (action) {
       case 'preview_sql': {
         try {
-          const sql = await invoke<string>('cmd_generate_create_table_sql', {
-            params: {
-              connection_id: this.connectionId,
-              table_name: state.tableName,
-              database: this.database,
-              columns: state.columns.map(c => ({
-                name: c.name, data_type: c.dataType, length: c.length,
-                is_nullable: c.isNullable ?? true, default_value: c.defaultValue,
-                is_primary_key: c.isPrimaryKey ?? false, extra: c.extra ?? '', comment: c.comment ?? '',
-              })),
-            },
-          })
+          const sql = generateCreateTableSql(state, this.getDriver())
           return { success: true, data: { sql } }
         } catch (e) {
           return { success: false, error: String(e) }

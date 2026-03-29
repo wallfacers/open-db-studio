@@ -61,7 +61,7 @@ User stops typing (600ms debounce)
 1. **Silent degradation** — any failure (no LLM config, graph not ready, timeout, API error) returns empty string. Ghost Text never shows error messages.
 2. **Single IPC** — one `invoke` call from frontend to backend per request.
 3. **Prefix cache on frontend** — pure string comparison, no backend involved.
-4. **Dual cancellation** — frontend `CancellationToken` + `AbortController`, Rust `tokio::select!`.
+4. **Dual-layer cancellation** — Rust `tokio::select!` with 5s timeout is the real cancellation mechanism. Frontend uses a `requestId` guard to discard stale responses (Tauri `invoke()` does not support `AbortSignal`, so frontend cannot cancel the IPC call itself — it can only ignore the result).
 
 ## Layered Metadata Assembly
 
@@ -103,7 +103,7 @@ User stops typing (600ms debounce)
 
 **Includes:** table name, join path description, all column names + types (no comments/indexes).
 
-**Limit:** Max 15 tables, ordered by graph edge weight descending.
+**Limit:** Max 15 tables. Ordering: for each candidate node, find its highest-weight edge in `SubGraph.edges` (where the node is source or target), use that as sort key descending. Nodes with no matching edges default to weight 0. See pseudocode in Rust Assembly section for implementation.
 
 #### Cold Zone — Remaining visible tables
 
@@ -152,27 +152,46 @@ async fn build_layered_context(
     connection_id: i64,
 ) -> String {
     // 1. Hot zone
-    let hot_tables = mentioned.iter().take(10);
+    // Note: DataSource::get_columns signature is get_columns(&self, table: &str, schema: Option<&str>)
+    let schema_opt = Some(current_schema);
+    let hot_tables: Vec<_> = mentioned.iter().take(10).collect();
     let hot_details = futures::join_all(
-        hot_tables.map(|t| ds.get_columns(t, current_schema))
+        hot_tables.iter().map(|t| ds.get_columns(t, schema_opt))
     ).await;
 
     // 2. Warm zone
+    // find_relevant_subgraph returns SubGraph { nodes, edges }
+    // Sort nodes by max edge weight: for each node, find its highest-weight
+    // edge in SubGraph.edges and use that as sort key (descending).
+    // Nodes with no matching edges default to weight 0.
     let warm_tables = match find_relevant_subgraph(connection_id, mentioned, 1).await {
-        Ok(sg) if !sg.nodes.is_empty() => sg.nodes
-            .into_iter()
-            .filter(|n| !mentioned.contains(&n.name))
-            .take(15)
-            .collect(),
+        Ok(sg) if !sg.nodes.is_empty() => {
+            let mut candidates: Vec<_> = sg.nodes
+                .into_iter()
+                .filter(|n| !mentioned.contains(&n.name))
+                .map(|n| {
+                    let max_weight = sg.edges.iter()
+                        .filter(|e| e.source_id == n.id || e.target_id == n.id)
+                        .map(|e| e.weight)
+                        .max()
+                        .unwrap_or(0);
+                    (n, max_weight)
+                })
+                .collect();
+            candidates.sort_by(|a, b| b.1.cmp(&a.1));
+            candidates.into_iter().map(|(n, _)| n).take(15).collect()
+        },
         _ => vec![],  // Graph not ready → empty warm zone
     };
 
     // 3. Cold zone
+    // Use (schema, name) tuples as dedup keys to handle cross-schema
+    // tables with identical names correctly.
     let all_tables = ds.get_tables().await.unwrap_or_default();
-    let hot_warm_set: HashSet<_> = /* hot + warm table names */;
+    let hot_warm_set: HashSet<(Option<&str>, &str)> = /* (schema, name) from hot + warm */;
     let cold_tables: Vec<_> = all_tables
         .iter()
-        .filter(|t| !hot_warm_set.contains(&t.name))
+        .filter(|t| !hot_warm_set.contains(&(t.schema.as_deref(), &t.name)))
         .take(200)
         .collect();
 
@@ -187,7 +206,11 @@ async fn build_layered_context(
 
 ```typescript
 function extractMentionedTables(sql: string): string[] {
-  const pattern = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
+  // Covers: FROM, JOIN, INTO, UPDATE, DELETE FROM, MERGE INTO
+  // Also handles comma-separated table lists: FROM users, orders
+  const pattern = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
+  // Secondary pattern for comma-separated tables after FROM
+  const commaPattern = /FROM\s+(?:[\w.`"']+\s*,\s*)*([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
 
   const tables = new Set<string>();
   let match: RegExpExecArray | null;
@@ -212,10 +235,13 @@ function extractMentionedTables(sql: string): string[] {
 | `INSERT INTO logs` | `['logs']` |
 | `UPDATE products SET ...` | `['products']` |
 | `DELETE FROM sessions` | `['sessions']` |
+| `MERGE INTO targets` | `['targets']` |
+| `FROM users, orders` | `['users', 'orders']` |
 
 **Edge cases:**
 - Subquery tables: naturally captured (`FROM (SELECT * FROM inner_table)` → `['inner_table']`)
 - CTE names: extracted at `FROM cte`, backend silently skips when no metadata found
+- Comma-separated tables: secondary regex pattern captures additional tables after commas
 - Incomplete/invalid SQL: regex is syntax-agnostic, extracts what it can, empty list on failure (degrades to Cold-only)
 
 ### Prefix Cache
@@ -250,28 +276,35 @@ function tryPrefixCache(currentSqlBefore: string): string | null {
 3. User types `"M "` → prefix hit → return `"users WHERE id = 1"`
 4. User types `"p"` (diverges) → cache miss → new LLM request after 600ms debounce
 
-### Concurrent Cancellation
+### Concurrent Cancellation & Stale Response Guard
+
+Tauri `invoke()` does not support `AbortSignal` — once sent, the IPC call cannot be cancelled from JS. The real cancellation happens Rust-side via `tokio::time::timeout`. Frontend uses a **requestId guard** to discard stale responses.
 
 ```typescript
-const abortRef = useRef<AbortController | null>(null);
+const requestIdRef = useRef<number>(0);
 
 async function provideInlineCompletions(model, position, context, token) {
-  // 1. Cancel previous request
-  abortRef.current?.abort();
-  abortRef.current = new AbortController();
+  // 1. Increment request ID (invalidates any in-flight response)
+  const thisRequestId = ++requestIdRef.current;
 
   // 2. Prefix cache check
   const cached = tryPrefixCache(sqlBefore);
   if (cached) return { items: [{ insertText: cached }] };
 
-  // 3. Monaco cancellation listener
-  token.onCancellationRequested(() => abortRef.current?.abort());
+  // 3. Monaco cancellation — if triggered, just return empty
+  if (token.isCancellationRequested) return { items: [] };
 
-  // 4. Backend call
+  // 4. Backend call (cannot be cancelled, but result may be discarded)
   const result = await invoke('ai_inline_complete', { ... });
 
-  // 5. Update cache
-  ghostCacheRef.current = { sqlBefore, result, timestamp: Date.now() };
+  // 5. Stale response guard — only update cache if this is still the latest request
+  if (requestIdRef.current !== thisRequestId) return { items: [] };
+  if (token.isCancellationRequested) return { items: [] };
+
+  // 6. Update cache (safe — guarded by requestId check above)
+  if (result) {
+    ghostCacheRef.current = { sqlBefore, result, timestamp: Date.now() };
+  }
 
   return result ? { items: [{ insertText: result }] } : { items: [] };
 }
@@ -305,7 +338,7 @@ Rules:
 
 | Placeholder | Source | Truncation |
 |-------------|--------|-----------|
-| `{{DIALECT}}` | Connection config driver field | — |
+| `{{DIALECT}}` | Connection config `driver` string (e.g., `"mysql"`, `"postgres"`, `"sqlite"`, `"clickhouse"`, `"sqlserver"`, `"gaussdb"`, `"oracle"`, `"db2"`). Note: this is the raw driver string, NOT the `SqlDialect` enum which only has `Standard`/`Doris`/`ClickHouse` variants. The driver string provides more specific dialect info to the LLM. | — |
 | `{{MODE_INSTRUCTION}}` | Frontend `hint` parameter | See table below |
 | `{{SCHEMA_CONTEXT}}` | `build_layered_context()` output | 4000 token hard limit |
 | `{{SQL_BEFORE}}` | Frontend, text before cursor | Last 2000 chars |
@@ -343,20 +376,61 @@ pub async fn ai_inline_complete(
 
 ### LlmClient Extension
 
+**New types and methods to be created** (not existing in current codebase):
+
 ```rust
-pub async fn inline_complete(&self, prompt: String) -> AppResult<String> {
+/// New struct — parameter overrides for LLM calls
+pub struct ChatParams {
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub stop: Option<Vec<String>>,  // OpenAI: "stop", Anthropic: "stop_sequences"
+}
+
+/// New method on LlmClient — routes to chat_openai or chat_anthropic
+/// with parameter overrides applied
+pub async fn chat_with_params(
+    &self,
+    messages: Vec<ChatMessage>,
+    params: ChatParams,
+) -> AppResult<String> {
+    match self.api_type {
+        ApiType::Openai => {
+            // Add temperature, max_tokens, stop to request body
+            self.chat_openai_with_params(messages, params).await
+        },
+        ApiType::Anthropic => {
+            // Map stop → stop_sequences, respect existing DEFAULT_ANTHROPIC_MAX_TOKENS
+            // when params.max_tokens is None
+            self.chat_anthropic_with_params(messages, params).await
+        },
+    }
+}
+
+pub async fn inline_complete(&self, prompt: String, hint: &str) -> AppResult<String> {
     let messages = vec![ChatMessage {
         role: "user".to_string(),
         content: prompt,
     }];
 
+    // Stop sequences differ by mode:
+    // - single_line: stop at first newline (complete current line only)
+    // - multi_line: stop at double newline or semicolon (complete full statement)
+    let stop = match hint {
+        "single_line" => vec!["\n".to_string()],
+        _ => vec!["\n\n".to_string(), ";\n".to_string()],
+    };
+
     self.chat_with_params(messages, ChatParams {
-        temperature: Some(0.1),   // High determinism
-        max_tokens: Some(200),    // Limit output length
-        stop: Some(vec!["\n\n".to_string(), ";".to_string()]),
+        temperature: Some(0.1),   // High determinism, avoid flickering
+        max_tokens: Some(200),    // Limit output length for speed
+        stop: Some(stop),
     }).await
 }
 ```
+
+**API-type specific handling:**
+- **OpenAI:** `stop` field maps directly to `"stop"` in request JSON
+- **Anthropic:** `stop` maps to `"stop_sequences"` field; `max_tokens` overrides `DEFAULT_ANTHROPIC_MAX_TOKENS` when provided
 
 ### LLM Config Selection
 
@@ -411,6 +485,8 @@ fn postprocess_completion(raw: &str, sql_before: &str) -> String {
 | Switch database/schema | Check if target graph exists, build if not |
 
 ### Incremental Detection
+
+**New function** `refresh_schema_graph` — a lightweight incremental variant of the existing `run_graph_build()`. Unlike `run_graph_build` which performs a full rebuild (including comment link parsing, metric sync, alias sync, and cache invalidation), `refresh_schema_graph` only detects table/column differences and updates the graph incrementally. It does NOT re-parse comment links or sync metrics/aliases — those are handled by the existing full-build path.
 
 ```rust
 async fn refresh_schema_graph(connection_id: i64, database: Option<String>) {
@@ -580,6 +656,67 @@ impl TimeoutTracker {
 }
 ```
 
+**TimeoutTracker storage:** Global `lazy_static! { static ref TIMEOUT_TRACKERS: Mutex<HashMap<i64, TimeoutTracker>> }` keyed by `connection_id`. Entries are removed when `pool_cache::invalidate(connection_id)` is called (connection deleted/updated). No cleanup needed on app exit (in-memory only).
+
+6. **Token counting** — Use character-based estimation: `token_count ≈ chars / 4`. This is a rough heuristic but sufficient for budget enforcement. No external crate dependency needed. The 4000-token hard limit translates to ~16000 characters of schema context. If more precise counting is needed in the future, the `tiktoken-rs` crate can be added.
+
+7. **Metadata cache (MetaCache)** — Rust-side per-connection cache to avoid repeated database queries during high-frequency Ghost Text triggers.
+
+```rust
+use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use tokio::sync::Mutex;
+
+/// Cache key: (connection_id, schema_name)
+/// Stored in a global lazy_static, similar to POOL_CACHE pattern.
+lazy_static! {
+    static ref META_CACHE: Mutex<HashMap<i64, MetaCache>> = Mutex::new(HashMap::new());
+}
+
+struct MetaCache {
+    /// Cached get_tables() result, keyed by schema
+    tables: Option<(Vec<TableMeta>, Instant)>,
+    /// Cached get_columns() results, keyed by (schema, table_name)
+    columns: HashMap<(String, String), (Vec<ColumnMeta>, Instant)>,
+    /// TTL for all entries
+    ttl: Duration,  // 30 seconds
+}
+
+impl MetaCache {
+    fn new() -> Self {
+        Self {
+            tables: None,
+            columns: HashMap::new(),
+            ttl: Duration::from_secs(30),
+        }
+    }
+
+    fn get_tables(&self) -> Option<&Vec<TableMeta>> {
+        self.tables.as_ref()
+            .filter(|(_, ts)| ts.elapsed() < self.ttl)
+            .map(|(v, _)| v)
+    }
+
+    fn set_tables(&mut self, tables: Vec<TableMeta>) {
+        self.tables = Some((tables, Instant::now()));
+    }
+
+    fn get_columns(&self, schema: &str, table: &str) -> Option<&Vec<ColumnMeta>> {
+        let key = (schema.to_string(), table.to_string());
+        self.columns.get(&key)
+            .filter(|(_, ts)| ts.elapsed() < self.ttl)
+            .map(|(v, _)| v)
+    }
+
+    fn set_columns(&mut self, schema: &str, table: &str, columns: Vec<ColumnMeta>) {
+        let key = (schema.to_string(), table.to_string());
+        self.columns.insert(key, (columns, Instant::now()));
+    }
+}
+```
+
+**Lifecycle:** Cache entries created on first Ghost Text request per connection. Invalidated alongside `pool_cache::invalidate(connection_id)`. No periodic cleanup — stale entries naturally expire via TTL check.
+
 ## File Change Manifest
 
 ### New Files
@@ -595,10 +732,10 @@ impl TimeoutTracker {
 | **Rust Backend** | |
 | `src-tauri/src/commands.rs` | Add `ai_inline_complete` command + DDL post-exec `refresh_schema_graph` trigger |
 | `src-tauri/src/lib.rs` | Register `ai_inline_complete` in `generate_handler!` |
-| `src-tauri/src/llm/client.rs` | Add `inline_complete()` method + `ChatParams` (temperature/max_tokens/stop) |
+| `src-tauri/src/llm/client.rs` | Add new `ChatParams` struct, `chat_with_params()`, `chat_openai_with_params()`, `chat_anthropic_with_params()`, and `inline_complete()` methods |
 | `src-tauri/src/db/mod.rs` | Add `get_best_llm_config()` function |
-| `src-tauri/src/datasource/mod.rs` | Add `MetaCache` struct (30s TTL metadata cache) |
-| `src-tauri/src/graph/mod.rs` | Add `refresh_schema_graph()` incremental refresh |
+| `src-tauri/src/datasource/mod.rs` | Add `MetaCache` struct with `get_tables()`/`set_tables()`/`get_columns()`/`set_columns()` methods, global `META_CACHE` lazy_static |
+| `src-tauri/src/graph/mod.rs` | Add `refresh_schema_graph()` — lightweight incremental variant of `run_graph_build()` (table/column diff only, no comment link re-parsing or metric/alias sync) |
 | **Frontend** | |
 | `src/components/MainContent/index.tsx` | InlineCompletionsProvider + regex extraction + prefix cache + cancellation + toolbar button |
 | `src/types/index.ts` | Tab interface: add `ghostTextEnabled?: boolean` |
@@ -626,7 +763,7 @@ This spec supersedes `2026-03-21-sql-ghost-text-design.md`. Key differences:
 | Cross-schema | Not addressed | Cold zone includes all schemas, `schema.table` format |
 | Graph refresh | Manual trigger | Timed incremental + DDL auto-trigger |
 | Prefix cache | Not addressed | Frontend prefix matching, zero-latency on hit |
-| Cancellation | Monaco CancellationToken only | CancellationToken + AbortController dual insurance |
+| Cancellation | Monaco CancellationToken only | CancellationToken + requestId guard (frontend) + tokio timeout (backend) |
 | Metadata cache | None | Rust-side 30s TTL cache |
 | Timeout adaptation | Fixed 5s | 3 consecutive timeouts → 60s pause |
 | Result postprocessing | None | Strip code blocks + remove duplicated prefix |

@@ -250,9 +250,10 @@ pub async fn process_pending_events(
                         }
                         _ => {
                             db_conn.execute(
-                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema', is_deleted = 0
+                                "UPDATE graph_nodes SET metadata = ?1, source = 'schema', is_deleted = 0,
+                                        database = COALESCE(?3, database), schema_name = COALESCE(?4, schema_name)
                                  WHERE id = ?2",
-                                rusqlite::params![ev.metadata, col_node_id],
+                                rusqlite::params![ev.metadata, col_node_id, ev.database, ev.schema],
                             )?;
                             stats.updated += 1;
                         }
@@ -391,7 +392,9 @@ pub async fn process_pending_events(
                                  ON CONFLICT(id) DO UPDATE SET
                                    metadata = excluded.metadata,
                                    display_name = excluded.display_name,
-                                   is_deleted = 0",
+                                   is_deleted = 0,
+                                   database = COALESCE(excluded.database, database),
+                                   schema_name = COALESCE(excluded.schema_name, schema_name)",
                                 rusqlite::params![
                                     link_id,
                                     conn_id,

@@ -48,11 +48,22 @@ const LINK_NODE_W = 260;
 const LINK_NODE_H = 70;
 const CLUSTER_THRESHOLD = 200;
 
+/** 节点是否拥有已保存的坐标（position_x/position_y 非 null） */
+function hasSavedPosition(n: Node): boolean {
+  const d = n.data as Record<string, unknown> | undefined;
+  return d?.position_x != null && d?.position_y != null;
+}
+
 function buildLayout(
   nodes: Node[],
   edges: Edge[],
   direction: 'LR' | 'TB' = 'LR',
+  forceRelayout = false,
 ): { nodes: Node[]; edges: Edge[] } {
+  // 如果所有节点都有已保存坐标且不是强制重排，直接使用保存的坐标
+  const allSaved = !forceRelayout && nodes.length > 0 && nodes.every(hasSavedPosition);
+  if (allSaved) return { nodes, edges };
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
@@ -68,6 +79,8 @@ function buildLayout(
   dagre.layout(g);
 
   const laid = nodes.map((n) => {
+    // 有已保存坐标且非强制重排时保持原位
+    if (!forceRelayout && hasSavedPosition(n)) return n;
     const pos = g.node(n.id);
     const isLink = n.type === 'link';
     const w = isLink ? LINK_NODE_W : NODE_W;
@@ -115,6 +128,8 @@ function clusterByConnection(rawNodes: GraphNode[]): GraphNode[] {
         connection_id: Number(cid),
         is_deleted: 0,
         source: 'cluster',
+        position_x: null,
+        position_y: null,
       });
     }
   });
@@ -140,7 +155,10 @@ function toFlowNodes(
   return rawNodes.map((n) => ({
     id: n.id,
     type: NODE_TYPE_MAP[n.node_type] ?? 'table',
-    position: { x: 0, y: 0 },
+    position: {
+      x: n.position_x ?? 0,
+      y: n.position_y ?? 0,
+    },
     data: {
       ...n,
       onAddAlias,
@@ -500,9 +518,25 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     }
   }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId, selfRefLinkIds]);
 
+  // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────
+  const onNodeDragStop: NodeMouseHandler = useCallback((_event, node) => {
+    invoke('save_graph_node_position', {
+      nodeId: node.id,
+      x: node.position.x,
+      y: node.position.y,
+    }).catch((err) => console.warn('[GraphExplorer] save position failed:', err));
+  }, []);
+
   // ── Auto-layout button ──────────────────────────────────────────────────────
-  const handleAutoLayout = useCallback(() => {
-    const { nodes: laid, edges: laidEdges } = buildLayout(rfNodes, rfEdges);
+  const handleAutoLayout = useCallback(async () => {
+    // 清除数据库中的已保存坐标
+    if (internalConnId !== null) {
+      await invoke('clear_graph_node_positions', {
+        connectionId: internalConnId,
+        database: internalDb ?? null,
+      }).catch((err) => console.warn('[GraphExplorer] clear positions failed:', err));
+    }
+    const { nodes: laid, edges: laidEdges } = buildLayout(rfNodes, rfEdges, 'LR', true);
     setRfNodes([...laid]);
     setRfEdges([...laidEdges]);
     if (layoutTimerRef.current !== null) clearTimeout(layoutTimerRef.current);
@@ -510,7 +544,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
       layoutTimerRef.current = null;
     }, 50);
-  }, [rfNodes, rfEdges, setRfNodes, setRfEdges, fitView]);
+  }, [rfNodes, rfEdges, setRfNodes, setRfEdges, fitView, internalConnId, internalDb]);
 
   // ── Build schema graph (with TaskBar integration) ───────────────────────────
   const handleBuildGraph = useCallback(async () => {
@@ -890,6 +924,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             edges={rfEdges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeDragStop={onNodeDragStop}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             onEdgeMouseEnter={onEdgeMouseEnter}

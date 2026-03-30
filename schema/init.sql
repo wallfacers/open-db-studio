@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
     source        TEXT DEFAULT 'schema',
     is_deleted    INTEGER NOT NULL DEFAULT 0,
     metadata      TEXT,
+    position_x    REAL,
+    position_y    REAL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);

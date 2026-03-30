@@ -663,6 +663,31 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V18: graph_nodes 新增 position_x / position_y 列（知识图谱节点坐标持久化）
+    {
+        let cols = [("position_x", "REAL"), ("position_y", "REAL")];
+        for (col_name, col_type) in &cols {
+            let has_col: bool = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('graph_nodes') WHERE name='{}'",
+                        col_name
+                    ),
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has_col {
+                conn.execute_batch(&format!(
+                    "ALTER TABLE graph_nodes ADD COLUMN {} {}",
+                    col_name, col_type
+                ))?;
+                log::info!("V18: added graph_nodes.{} column", col_name);
+            }
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

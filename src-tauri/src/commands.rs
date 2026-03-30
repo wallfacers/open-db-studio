@@ -2661,6 +2661,25 @@ pub async fn update_graph_node_metadata(
     Ok(())
 }
 
+// ============ 图谱节点坐标持久化 ============
+
+#[tauri::command]
+pub async fn save_graph_node_position(
+    node_id: String,
+    x: f64,
+    y: f64,
+) -> AppResult<()> {
+    crate::graph::query::save_node_position(&node_id, x, y)
+}
+
+#[tauri::command]
+pub async fn clear_graph_node_positions(
+    connection_id: i64,
+    database: Option<String>,
+) -> AppResult<()> {
+    crate::graph::query::clear_node_positions(connection_id, database.as_deref())
+}
+
 // ============ 跨数据源迁移 ============
 
 #[allow(dead_code)]

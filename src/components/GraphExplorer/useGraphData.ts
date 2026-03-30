@@ -11,6 +11,8 @@ export interface GraphNode {
   connection_id: number;
   is_deleted: number;
   source: string;
+  position_x: number | null;
+  position_y: number | null;
 }
 
 export interface GraphEdge {

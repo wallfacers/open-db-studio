@@ -14,6 +14,8 @@ pub struct GraphNode {
     pub aliases: Option<String>,
     pub is_deleted: Option<i32>,
     pub source: Option<String>,
+    pub position_x: Option<f64>,
+    pub position_y: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -47,11 +49,13 @@ fn row_to_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
         aliases: row.get::<_, Option<String>>(8)?,
         is_deleted: row.get::<_, Option<i32>>(9)?,
         source: row.get::<_, Option<String>>(10)?,
+        position_x: row.get::<_, Option<f64>>(11)?,
+        position_y: row.get::<_, Option<f64>>(12)?,
     })
 }
 
 /// Column list for SELECT queries on graph_nodes
-const GN_COLS: &str = "id,node_type,connection_id,database,schema_name,name,display_name,metadata,aliases,is_deleted,source";
+const GN_COLS: &str = "id,node_type,connection_id,database,schema_name,name,display_name,metadata,aliases,is_deleted,source,position_x,position_y";
 
 pub fn get_nodes(connection_id: i64, node_type: Option<&str>) -> AppResult<Vec<GraphNode>> {
     get_nodes_filtered(connection_id, node_type, None)
@@ -102,7 +106,8 @@ pub fn search_graph(connection_id: i64, keyword: &str) -> AppResult<Vec<GraphNod
     let fts_query = format!("\"{}\"*", escaped);
     let mut stmt = conn.prepare(
         "SELECT gn.id, gn.node_type, gn.connection_id, gn.database, gn.schema_name,
-                gn.name, gn.display_name, gn.metadata, gn.aliases, gn.is_deleted, gn.source
+                gn.name, gn.display_name, gn.metadata, gn.aliases, gn.is_deleted, gn.source,
+                gn.position_x, gn.position_y
          FROM graph_nodes_fts fts
          JOIN graph_nodes gn ON gn.rowid = fts.rowid
          WHERE graph_nodes_fts MATCH ?1
@@ -209,6 +214,33 @@ pub async fn find_relevant_subgraph(
     edges.dedup_by_key(|e| e.id.clone());
 
     Ok(SubGraph { nodes: all_nodes, edges, join_paths })
+}
+
+/// 保存单个节点的坐标
+pub fn save_node_position(node_id: &str, x: f64, y: f64) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "UPDATE graph_nodes SET position_x = ?1, position_y = ?2 WHERE id = ?3",
+        rusqlite::params![x, y, node_id],
+    )?;
+    Ok(())
+}
+
+/// 清除指定连接下所有节点的坐标（自动布局时调用）
+pub fn clear_node_positions(connection_id: i64, database: Option<&str>) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    if let Some(db) = database {
+        conn.execute(
+            "UPDATE graph_nodes SET position_x = NULL, position_y = NULL WHERE connection_id = ?1 AND (database = ?2 OR database IS NULL)",
+            rusqlite::params![connection_id, db],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE graph_nodes SET position_x = NULL, position_y = NULL WHERE connection_id = ?1",
+            rusqlite::params![connection_id],
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

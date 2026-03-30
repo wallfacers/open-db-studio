@@ -63,6 +63,17 @@ impl DataSource for SqliteDataSource {
         tokio::task::spawn_blocking(move || -> AppResult<QueryResult> {
             let guard = conn.blocking_lock();
             let start = Instant::now();
+
+            // Non-SELECT statements: use execute() to get affected row count
+            let trimmed = sql.trim_start().to_uppercase();
+            if !trimmed.starts_with("SELECT") && !trimmed.starts_with("PRAGMA") && !trimmed.starts_with("EXPLAIN") {
+                let row_count = guard
+                    .execute(&sql, [])
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+                let duration_ms = start.elapsed().as_millis() as u64;
+                return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+            }
+
             let mut stmt = guard
                 .prepare(&sql)
                 .map_err(|e| AppError::Datasource(e.to_string()))?;

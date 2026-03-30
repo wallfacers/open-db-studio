@@ -1,10 +1,10 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -260,6 +260,18 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
     onExportDDL: () => setShowDDL(true),
   })
 
+  // Listen for sidebar context menu requesting bind dialog
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.projectId === projectId) {
+        setShowBind(true)
+      }
+    }
+    window.addEventListener('er-open-bind-dialog', handler)
+    return () => window.removeEventListener('er-open-bind-dialog', handler)
+  }, [projectId])
+
   // connectionInfo for DiffReportDialog
   const connectionInfo = activeProject?.connection_id
     ? { name: `Connection ${activeProject.connection_id}`, database: activeProject.database_name ?? '' }
@@ -294,7 +306,6 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         >
           <Background color="#253347" gap={20} />
           <Controls />
-          <MiniMap nodeColor="#111922" nodeStrokeColor="#253347" />
         </ReactFlow>
       </div>
 
@@ -303,14 +314,29 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         projectId={projectId}
         hasConnection={hasConnection}
         onClose={() => setShowDDL(false)}
-        onExecute={(_ddl) => { /* TODO: invoke execute_query */ }}
+        onExecute={async (ddl) => {
+          if (!activeProject?.connection_id) return
+          try {
+            await invoke('execute_query', {
+              connectionId: activeProject.connection_id,
+              sql: ddl,
+              database: activeProject.database_name ?? null,
+              schema: activeProject.schema_name ?? null,
+            })
+          } catch (e) {
+            console.error('Failed to execute DDL:', e)
+          }
+        }}
       />
       <DiffReportDialog
         visible={showDiff}
         projectId={projectId}
         connectionInfo={connectionInfo}
         onClose={() => setShowDiff(false)}
-        onSyncToDb={(_changes) => { /* Phase 3 stub */ }}
+        onSyncToDb={(_changes) => {
+          // Phase 3: requires backend er_sync_to_database command
+          console.warn('Sync to database is not yet implemented')
+        }}
         onSyncFromDb={(_changes) => { syncFromDatabase(projectId).then(reloadCanvas) }}
       />
       <BindConnectionDialog

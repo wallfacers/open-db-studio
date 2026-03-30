@@ -531,7 +531,8 @@
     "import": "导入",
     "copy": "复制",
     "bind": "绑定",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "open": "打开"
   },
   "groupModal": {
     "createTitle": "新建分组",

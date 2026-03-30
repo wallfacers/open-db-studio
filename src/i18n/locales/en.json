@@ -530,7 +530,8 @@
     "import": "Import",
     "copy": "Copy",
     "bind": "Bind",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "open": "Open"
   },
   "groupModal": {
     "createTitle": "New Group",

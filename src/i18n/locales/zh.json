@@ -140,8 +140,9 @@
   "connectionModal": {
     "editConnection": "编辑连接",
     "newConnection": "新建连接",
-    "connectionName": "连接名称 *",
-    "namePlaceholder": "我的 MySQL 数据库",
+    "connectionName": "连接名称",
+    "namePlaceholder": "可选，留空将自动命名为「我的 {{driver}} 数据库」",
+    "defaultName": "我的 {{driver}} 数据库",
     "dbType": "数据库类型",
     "host": "主机",
     "port": "端口",

@@ -194,13 +194,16 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) return;
     setSaving(true);
+    const driverLabel = DRIVERS.find(d => d.value === form.driver)?.label ?? form.driver;
+    const finalForm = form.name.trim()
+      ? form
+      : { ...form, name: t('connectionModal.defaultName', { driver: driverLabel }) };
     try {
       if (isEdit && connection) {
-        await updateConnection(connection.id, form);
+        await updateConnection(connection.id, finalForm);
       } else {
-        await createConnection(form);
+        await createConnection(finalForm);
       }
       if (onSuccess) {
         onSuccess();
@@ -263,7 +266,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
             <label className={labelClass}>{t('connectionModal.connectionName')}</label>
             <input className={inputClass} value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder={t('connectionModal.namePlaceholder')} />
+              placeholder={t('connectionModal.namePlaceholder', { driver: DRIVERS.find(d => d.value === form.driver)?.label ?? form.driver })} />
           </div>
 
           <div>
@@ -556,7 +559,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
               className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">
               {t('connectionModal.cancel')}
             </button>
-            <button onClick={handleSave} disabled={saving || !form.name.trim()}
+            <button onClick={handleSave} disabled={saving}
               className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
               {saving ? t('connectionModal.saving') : isEdit ? t('connectionModal.saveChanges') : t('connectionModal.save')}
             </button>

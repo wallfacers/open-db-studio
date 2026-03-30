@@ -140,8 +140,9 @@
   "connectionModal": {
     "editConnection": "Edit Connection",
     "newConnection": "New Connection",
-    "connectionName": "Connection Name *",
-    "namePlaceholder": "My MySQL Database",
+    "connectionName": "Connection Name",
+    "namePlaceholder": "Optional, defaults to \"My {{driver}} Database\"",
+    "defaultName": "My {{driver}} Database",
     "dbType": "Database Type",
     "host": "Host",
     "port": "Port",

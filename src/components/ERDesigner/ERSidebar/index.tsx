@@ -254,11 +254,20 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
       )}
 
       {/* Context Menu */}
-      {contextMenu && (
+      {contextMenu?.type === 'project' && contextMenu.projectId && (
         <ProjectContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          projectId={contextMenu.projectId!}
+          projectId={contextMenu.projectId}
+          onClose={closeContextMenu}
+        />
+      )}
+      {contextMenu?.type === 'table' && contextMenu.projectId && contextMenu.tableId && (
+        <TableContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          projectId={contextMenu.projectId}
+          tableId={contextMenu.tableId}
           onClose={closeContextMenu}
         />
       )}

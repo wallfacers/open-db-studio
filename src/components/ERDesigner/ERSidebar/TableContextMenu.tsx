@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Edit3, Trash2, Plus, Copy, LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { useQueryStore } from '../../../store/queryStore';
 
 interface TableContextMenuProps {
   x: number;
@@ -23,7 +24,10 @@ interface MenuItem {
 export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projectId, tableId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { deleteTable } = useErDesignerStore();
+  const { tables, columns, deleteTable, loadProject, addTable, addColumn } = useErDesignerStore();
+  const { openERDesignTab } = useQueryStore();
+
+  const table = tables.find(t => t.id === tableId);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -42,17 +46,33 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   };
 
   const handleEdit = () => {
-    // TODO: Open table edit dialog
+    // Open ER canvas tab to view/edit this table
+    openERDesignTab(projectId, table?.name || '');
     onClose();
   };
 
-  const handleAddColumn = () => {
-    // TODO: Open add column dialog
+  const handleAddColumn = async () => {
+    const cols = columns[tableId] || [];
+    await addColumn(tableId, {
+      name: `column_${cols.length + 1}`,
+      data_type: 'VARCHAR',
+      nullable: true,
+      default_value: null,
+      is_primary_key: false,
+      is_auto_increment: false,
+      comment: null,
+      sort_order: cols.length,
+    });
     onClose();
   };
 
-  const handleDuplicate = () => {
-    // TODO: Duplicate table
+  const handleDuplicate = async () => {
+    if (!table) return;
+    await loadProject(projectId);
+    await addTable(`${table.name}_copy`, {
+      x: table.position_x + 50,
+      y: table.position_y + 50,
+    });
     onClose();
   };
 

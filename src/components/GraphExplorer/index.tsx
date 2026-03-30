@@ -151,17 +151,30 @@ function toFlowNodes(
   }));
 }
 
-function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string; edge_type: string; weight: number; source?: string }[]): Edge[] {
-  return rawEdges.map((e) => ({
-    id: e.id,
-    source: e.from_node,
-    target: e.to_node,
-    type: e.from_node === e.to_node ? 'selfLoop' : 'relation',
-    animated: false,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
-    style: getEdgeStyleBySource(e.source ?? 'schema'),
-    data: { edge_type: e.edge_type, weight: e.weight },
-  }));
+function toFlowEdges(
+  rawEdges: { id: string; from_node: string; to_node: string; edge_type: string; weight: number; source?: string }[],
+  selfRefLinkIds?: Set<string>,
+): Edge[] {
+  return rawEdges.map((e) => {
+    // 自引用 link 边：to_link 用 Top handles，from_link 用 Bottom handles
+    const isSelfRefToLink = selfRefLinkIds?.has(e.to_node) && e.edge_type === 'to_link';
+    const isSelfRefFromLink = selfRefLinkIds?.has(e.from_node) && e.edge_type === 'from_link';
+
+    return {
+      id: e.id,
+      source: e.from_node,
+      target: e.to_node,
+      type: e.from_node === e.to_node ? 'selfLoop' : 'relation',
+      animated: false,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
+      style: getEdgeStyleBySource(e.source ?? 'schema'),
+      data: { edge_type: e.edge_type, weight: e.weight },
+      // 自引用 to_link: Table(top-source) → Link(self-target)
+      ...(isSelfRefToLink ? { sourceHandle: 'top-source', targetHandle: 'self-target' } : {}),
+      // 自引用 from_link: Link(self-source) → Table(bottom-target)
+      ...(isSelfRefFromLink ? { sourceHandle: 'self-source', targetHandle: 'bottom-target' } : {}),
+    };
+  });
 }
 
 // ── Edge Tooltip ──────────────────────────────────────────────────────────────
@@ -389,6 +402,20 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   }, [rawNodes]);
   const visibleNodeIds = useMemo(() => new Set(clustered.map((n) => n.id)), [clustered]);
 
+  // 自引用 Link Node ID 集合（source_table === target_table）
+  const selfRefLinkIds = useMemo(() => {
+    const ids = new Set<string>();
+    filteredRaw.filter(n => n.node_type === 'link').forEach(n => {
+      try {
+        const meta = JSON.parse(n.metadata || '{}');
+        if (meta.source_table && meta.source_table === meta.target_table) {
+          ids.add(n.id);
+        }
+      } catch { /* ignore */ }
+    });
+    return ids;
+  }, [filteredRaw]);
+
   const filteredEdges = useMemo(() => {
     // 正常两段式边（Link Node 开启时）
     const normal = rawEdges.filter(
@@ -441,7 +468,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         isPathTo: pathTo?.id === n.id,
       },
     }));
-    const flowEdges = toFlowEdges(filteredEdges).map(e => {
+    const flowEdges = toFlowEdges(filteredEdges, selfRefLinkIds).map(e => {
       const isHighlighted = highlightedEdgeIds.has(e.id);
       const isDimmed = highlightedEdgeIds.size > 0 && !highlightedEdgeIds.has(e.id);
       return {
@@ -471,7 +498,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       }, 80);
       return () => clearTimeout(timerId);
     }
-  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId]);
+  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId, selfRefLinkIds]);
 
   // ── Auto-layout button ──────────────────────────────────────────────────────
   const handleAutoLayout = useCallback(() => {

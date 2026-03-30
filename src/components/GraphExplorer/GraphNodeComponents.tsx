@@ -181,6 +181,9 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
     >
       <NodeRoleBadge isPathFrom={nodeData.isPathFrom as boolean | undefined} isPathTo={nodeData.isPathTo as boolean | undefined} />
       <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      {/* 自引用 FK 额外 handles：to_link 从 Top 出发，from_link 从 Bottom 返回 */}
+      <Handle type="source" position={Position.Top} id="top-source" className="!bg-[#1e2d42] !border-[#f59e0b]" />
+      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-[#1e2d42] !border-[#f59e0b]" />
 
       {/* Header */}
       <div className="px-3 py-2 border-b border-[#1e2d42] flex items-center gap-2">
@@ -319,7 +322,12 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
       className={`w-64 rounded-md border bg-[#111922] shadow-lg ${borderClass} transition-opacity`}
       style={{ opacity: isDimmed ? 0.3 : 1 }}
     >
-      <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      {/* Handles: 自引用用 Top/Bottom 避免边交叉，普通用 Left/Right */}
+      {isSelfRef ? (
+        <Handle type="target" position={Position.Top} id="self-target" className="!bg-[#1e2d42] !border-[#f59e0b]" />
+      ) : (
+        <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      )}
 
       {/* Row 1: edge_type + cardinality */}
       <div className="px-3 py-1.5 border-b border-[#1e2d42] flex items-center gap-2">
@@ -369,7 +377,11 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
         </div>
       )}
 
-      <Handle type="source" position={Position.Right} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      {isSelfRef ? (
+        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-[#1e2d42] !border-[#f59e0b]" />
+      ) : (
+        <Handle type="source" position={Position.Right} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      )}
     </div>
   );
 });

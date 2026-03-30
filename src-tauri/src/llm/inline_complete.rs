@@ -394,15 +394,20 @@ pub async fn build_layered_context(
 
             // Collect warm table info: check cache, then fetch outside lock
             let warm_selected: Vec<_> = warm_candidates.into_iter().take(15).collect();
+            let warm_schema_hints: Vec<Option<String>> = warm_selected
+                .iter()
+                .map(|(node, _)| {
+                    node.metadata.as_ref()
+                        .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+                        .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)))
+                })
+                .collect();
             let mut warm_cache_misses: Vec<(String, String)> = Vec::new(); // (schema, name)
             let mut warm_cached_cols: HashMap<String, Vec<ColumnMeta>> = HashMap::new();
             {
                 let cache = META_CACHE.lock().await;
                 if let Some(mc) = cache.get(&connection_id) {
-                    for (node, _) in &warm_selected {
-                        let schema_hint = node.metadata.as_ref()
-                            .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
-                            .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)));
+                    for ((node, _), schema_hint) in warm_selected.iter().zip(&warm_schema_hints) {
                         let schema_ref = schema_hint.as_deref().unwrap_or(current_schema);
                         match mc.get_columns(schema_ref, &node.name) {
                             Some(c) => { warm_cached_cols.insert(node.name.clone(), c.clone()); }
@@ -410,10 +415,7 @@ pub async fn build_layered_context(
                         }
                     }
                 } else {
-                    for (node, _) in &warm_selected {
-                        let schema_hint = node.metadata.as_ref()
-                            .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
-                            .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)));
+                    for ((node, _), schema_hint) in warm_selected.iter().zip(&warm_schema_hints) {
                         let schema_ref = schema_hint.as_deref().unwrap_or(current_schema);
                         warm_cache_misses.push((schema_ref.to_string(), node.name.clone()));
                     }
@@ -439,10 +441,7 @@ pub async fn build_layered_context(
             }
 
             // Assemble warm details
-            for (node, _weight) in &warm_selected {
-                let schema_hint = node.metadata.as_ref()
-                    .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
-                    .and_then(|v| v.get("schema").and_then(|s| s.as_str().map(String::from)));
+            for ((node, _weight), schema_hint) in warm_selected.iter().zip(warm_schema_hints) {
                 let cols = warm_cached_cols.get(&node.name)
                     .or_else(|| warm_fetched_cols.get(&node.name))
                     .cloned()

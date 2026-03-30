@@ -41,13 +41,12 @@ fn load_existing_nodes(
 ) -> rusqlite::Result<(HashMap<String, HashSet<String>>, HashSet<String>)> {
     let mut tables: HashMap<String, HashSet<String>> = HashMap::new();
 
-    let db_filter = match database {
-        Some(_) => " AND (database=?2 OR database IS NULL)",
-        None => "",
-    };
-
     // 读取 table 节点
     {
+        let db_filter = match database {
+            Some(_) => " AND (graph_nodes.database=?2 OR graph_nodes.database IS NULL)",
+            None => "",
+        };
         let sql = format!(
             "SELECT name FROM graph_nodes
              WHERE connection_id=?1 AND node_type='table'
@@ -61,7 +60,12 @@ fn load_existing_nodes(
     }
 
     // 读取 column 节点（通过 has_column 边关联到表）
+    // JOIN 多个 graph_nodes 别名，database 列必须用别名限定以避免歧义
     {
+        let db_filter = match database {
+            Some(_) => " AND (c.database=?2 OR c.database IS NULL)",
+            None => "",
+        };
         let sql = format!(
             "SELECT t.name AS table_name, c.name AS col_name
              FROM graph_nodes c
@@ -79,6 +83,10 @@ fn load_existing_nodes(
 
     // 读取已有 Link 节点的 ID（source != 'user'，未软删除）
     let existing_link_ids: HashSet<String> = {
+        let db_filter = match database {
+            Some(_) => " AND (graph_nodes.database=?2 OR graph_nodes.database IS NULL)",
+            None => "",
+        };
         let sql = format!(
             "SELECT id FROM graph_nodes
              WHERE connection_id=?1 AND node_type='link'
@@ -94,9 +102,52 @@ fn load_existing_nodes(
     Ok((tables, existing_link_ids))
 }
 
+/// 强类型的 schema 变更事件类型。
+/// 字符串表示与 schema_change_log 表中的 TEXT 值保持一致。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeEventType {
+    AddTable,
+    DropTable,
+    AddColumn,
+    DropColumn,
+    AddFk,
+}
+
+impl ChangeEventType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AddTable => "ADD_TABLE",
+            Self::DropTable => "DROP_TABLE",
+            Self::AddColumn => "ADD_COLUMN",
+            Self::DropColumn => "DROP_COLUMN",
+            Self::AddFk => "ADD_FK",
+        }
+    }
+}
+
+impl std::fmt::Display for ChangeEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ChangeEventType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ADD_TABLE" => Ok(Self::AddTable),
+            "DROP_TABLE" => Ok(Self::DropTable),
+            "ADD_COLUMN" => Ok(Self::AddColumn),
+            "DROP_COLUMN" => Ok(Self::DropColumn),
+            "ADD_FK" => Ok(Self::AddFk),
+            other => Err(format!("unknown event type: {}", other)),
+        }
+    }
+}
+
 /// 变更事件数据（用于写入 schema_change_log）
 struct ChangeEvent<'a> {
-    event_type: &'a str,
+    event_type: ChangeEventType,
     table_name: &'a str,
     column_name: Option<&'a str>,
     metadata: Option<&'a str>,
@@ -117,7 +168,7 @@ fn insert_change_log(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
         rusqlite::params![
             connection_id,
-            ev.event_type,
+            ev.event_type.as_str(),
             ev.table_name,
             ev.column_name,
             ev.metadata,
@@ -183,7 +234,7 @@ pub fn detect_and_log_changes(
         let tbl_schema = table_schema_map.get(tname).and_then(|s| s.as_deref());
         let meta = serde_json::json!({"table_type": table_type}).to_string();
         insert_change_log(&db_conn, connection_id, &ChangeEvent {
-            event_type: "ADD_TABLE", table_name: tname,
+            event_type: ChangeEventType::AddTable, table_name: tname,
             column_name: None, metadata: Some(&meta), database, schema: tbl_schema,
         }, &created_at)?;
         event_count += 1;
@@ -199,7 +250,7 @@ pub fn detect_and_log_changes(
                 })
                 .to_string();
                 insert_change_log(&db_conn, connection_id, &ChangeEvent {
-                    event_type: "ADD_COLUMN", table_name: tname,
+                    event_type: ChangeEventType::AddColumn, table_name: tname,
                     column_name: Some(&col.name), metadata: Some(&col_meta), database, schema: tbl_schema,
                 }, &created_at)?;
                 event_count += 1;
@@ -223,7 +274,7 @@ pub fn detect_and_log_changes(
                     })
                     .to_string();
                     insert_change_log(&db_conn, connection_id, &ChangeEvent {
-                        event_type: "ADD_FK", table_name: tname,
+                        event_type: ChangeEventType::AddFk, table_name: tname,
                         column_name: Some(&fk.column), metadata: Some(&fk_meta), database, schema: tbl_schema,
                     }, &created_at)?;
                     event_count += 1;
@@ -235,7 +286,7 @@ pub fn detect_and_log_changes(
     // 4. 检测删除表（DROP_TABLE）
     for tname in existing_table_names.difference(&current_table_names) {
         insert_change_log(&db_conn, connection_id, &ChangeEvent {
-            event_type: "DROP_TABLE", table_name: tname,
+            event_type: ChangeEventType::DropTable, table_name: tname,
             column_name: None, metadata: None, database, schema: None,
         }, &created_at)?;
         event_count += 1;
@@ -265,7 +316,7 @@ pub fn detect_and_log_changes(
                     })
                     .to_string();
                     insert_change_log(&db_conn, connection_id, &ChangeEvent {
-                        event_type: "ADD_COLUMN", table_name: tname,
+                        event_type: ChangeEventType::AddColumn, table_name: tname,
                         column_name: Some(&col.name), metadata: Some(&meta), database, schema: tbl_schema,
                     }, &created_at)?;
                     event_count += 1;
@@ -275,7 +326,7 @@ pub fn detect_and_log_changes(
             // 删除列（DROP_COLUMN）
             for col_name in existing_cols.difference(&current_col_names) {
                 insert_change_log(&db_conn, connection_id, &ChangeEvent {
-                    event_type: "DROP_COLUMN", table_name: tname,
+                    event_type: ChangeEventType::DropColumn, table_name: tname,
                     column_name: Some(col_name), metadata: None, database, schema: tbl_schema,
                 }, &created_at)?;
                 event_count += 1;
@@ -299,7 +350,7 @@ pub fn detect_and_log_changes(
                     })
                     .to_string();
                     insert_change_log(&db_conn, connection_id, &ChangeEvent {
-                        event_type: "ADD_FK", table_name: tname,
+                        event_type: ChangeEventType::AddFk, table_name: tname,
                         column_name: Some(&fk.column), metadata: Some(&meta), database, schema: tbl_schema,
                     }, &created_at)?;
                     event_count += 1;
@@ -324,17 +375,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_event_type_strings() {
-        // 确认事件类型字符串与 schema 约定一致
-        let valid_types = [
-            "ADD_TABLE",
-            "DROP_TABLE",
-            "ADD_COLUMN",
-            "DROP_COLUMN",
-            "ADD_FK",
+    fn test_event_type_roundtrip() {
+        use std::str::FromStr;
+        let variants = [
+            ChangeEventType::AddTable,
+            ChangeEventType::DropTable,
+            ChangeEventType::AddColumn,
+            ChangeEventType::DropColumn,
+            ChangeEventType::AddFk,
         ];
-        for t in &valid_types {
-            assert!(!t.is_empty());
+        let expected_strs = ["ADD_TABLE", "DROP_TABLE", "ADD_COLUMN", "DROP_COLUMN", "ADD_FK"];
+        for (variant, expected) in variants.iter().zip(&expected_strs) {
+            assert_eq!(variant.as_str(), *expected);
+            assert_eq!(variant.to_string(), *expected);
+            assert_eq!(ChangeEventType::from_str(expected).unwrap(), *variant);
         }
+        assert!(ChangeEventType::from_str("UNKNOWN").is_err());
     }
 }

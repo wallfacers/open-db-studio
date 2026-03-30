@@ -6,6 +6,7 @@ pub mod query;
 pub mod traversal;
 
 pub use cache::{JoinPath, GraphCacheStore};
+pub use change_detector::ChangeEventType;
 pub use query::{GraphNode, GraphEdge, search_graph, SubGraph};
 
 use std::collections::HashMap;
@@ -100,7 +101,7 @@ fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine]) {
 }
 
 /// 判断 driver 是否为 PostgreSQL 兼容类型
-fn is_pg_driver(driver: &str) -> bool {
+pub fn is_pg_driver(driver: &str) -> bool {
     matches!(driver, "postgres" | "gaussdb")
 }
 
@@ -253,30 +254,14 @@ pub async fn run_graph_build(
 ) {
     let mut logs: Vec<TaskLogLine> = Vec::new();
 
-    // 同时 emit 事件到前端 + 追加到 logs Vec（完成后持久化）
-    macro_rules! log_emit {
-        ($level:expr, $msg:expr) => {{
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
-            logs.push(TaskLogLine {
-                level: $level.to_string(),
-                message: $msg.to_string(),
-                timestamp_ms: ts,
-            });
-            emit_log(&app, &task_id, $level, $msg);
-        }};
-    }
-
-    log_emit!("INFO", "开始构建知识图谱...");
+    log_and_emit(&app, &task_id, &mut logs, "INFO", "开始构建知识图谱...");
 
     // 1. 获取连接配置并连接外部数据源
     let mut config = match crate::db::get_connection_config(connection_id) {
         Ok(c) => c,
         Err(e) => {
             let msg = format!("获取连接配置失败: {}", e);
-            log_emit!("ERROR", &msg);
+            log_and_emit(&app, &task_id, &mut logs, "ERROR", &msg);
             emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
@@ -292,14 +277,14 @@ pub async fn run_graph_build(
 
     if effective_db.is_empty() && is_multi_db_driver {
         // ── 连接维度构建：遍历所有数据库 ──────────────────────────────────
-        log_emit!("INFO", "未指定数据库，将遍历所有数据库进行构建...");
+        log_and_emit(&app, &task_id, &mut logs, "INFO", "未指定数据库，将遍历所有数据库进行构建...");
 
         // 先用默认配置创建临时 datasource 获取数据库列表
         let tmp_ds = match crate::datasource::create_datasource(&config).await {
             Ok(ds) => ds,
             Err(e) => {
                 let msg = format!("连接数据源失败: {}", e);
-                log_emit!("ERROR", &msg);
+                log_and_emit(&app, &task_id, &mut logs, "ERROR", &msg);
                 emit_failed(&app, &task_id, &msg, &logs);
                 return;
             }
@@ -309,7 +294,7 @@ pub async fn run_graph_build(
             Ok(dbs) => dbs,
             Err(e) => {
                 let msg = format!("获取数据库列表失败: {}", e);
-                log_emit!("ERROR", &msg);
+                log_and_emit(&app, &task_id, &mut logs, "ERROR", &msg);
                 emit_failed(&app, &task_id, &msg, &logs);
                 return;
             }
@@ -322,16 +307,16 @@ pub async fn run_graph_build(
             .collect();
 
         if user_dbs.is_empty() {
-            log_emit!("WARN", "未发现用户数据库，跳过构建");
+            log_and_emit(&app, &task_id, &mut logs, "WARN", "未发现用户数据库，跳过构建");
             emit_completed(&app, &task_id, &logs);
             return;
         }
 
         let total = user_dbs.len();
-        log_emit!("INFO", &format!("发现 {} 个数据库，开始逐一构建...", total));
+        log_and_emit(&app, &task_id, &mut logs, "INFO", &format!("发现 {} 个数据库，开始逐一构建...", total));
 
         for (i, db_name) in user_dbs.iter().enumerate() {
-            log_emit!("INFO", &format!("正在构建数据库 {} ({}/{})...", db_name, i + 1, total));
+            log_and_emit(&app, &task_id, &mut logs, "INFO", &format!("正在构建数据库 {} ({}/{})...", db_name, i + 1, total));
 
             let mut db_config = config.clone();
             db_config.database = Some(db_name.clone());
@@ -339,7 +324,7 @@ pub async fn run_graph_build(
             if let Err(msg) = build_single_database(
                 &app, &task_id, &mut logs, connection_id, &db_config,
             ).await {
-                log_emit!("WARN", &format!("数据库 {} 构建失败: {}", db_name, msg));
+                log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("数据库 {} 构建失败: {}", db_name, msg));
                 // 不中断整体流程，继续下一个数据库
             }
         }
@@ -348,24 +333,24 @@ pub async fn run_graph_build(
         if let Err(msg) = build_single_database(
             &app, &task_id, &mut logs, connection_id, &config,
         ).await {
-            log_emit!("ERROR", &msg);
+            log_and_emit(&app, &task_id, &mut logs, "ERROR", &msg);
             emit_failed(&app, &task_id, &msg, &logs);
             return;
         }
     }
 
     // 6. 同步指标节点
-    log_emit!("INFO", "同步指标节点到图谱...");
+    log_and_emit(&app, &task_id, &mut logs, "INFO", "同步指标节点到图谱...");
     match sync_metrics_to_graph(connection_id) {
-        Ok(n) => log_emit!("INFO", &format!("指标节点同步完成，共 {} 个", n)),
-        Err(e) => log_emit!("WARN", &format!("指标同步失败（不影响主流程）: {}", e)),
+        Ok(n) => log_and_emit(&app, &task_id, &mut logs, "INFO", &format!("指标节点同步完成，共 {} 个", n)),
+        Err(e) => log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("指标同步失败（不影响主流程）: {}", e)),
     }
 
     // 7. 同步语义别名节点
-    log_emit!("INFO", "同步语义别名节点到图谱...");
+    log_and_emit(&app, &task_id, &mut logs, "INFO", "同步语义别名节点到图谱...");
     match sync_aliases_to_graph(connection_id) {
-        Ok(n) => log_emit!("INFO", &format!("别名节点同步完成，共 {} 个", n)),
-        Err(e) => log_emit!("WARN", &format!("别名同步失败（不影响主流程）: {}", e)),
+        Ok(n) => log_and_emit(&app, &task_id, &mut logs, "INFO", &format!("别名节点同步完成，共 {} 个", n)),
+        Err(e) => log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("别名同步失败（不影响主流程）: {}", e)),
     }
 
     // 8. 失效图缓存，确保下次 find_join_paths 使用最新数据
@@ -373,7 +358,7 @@ pub async fn run_graph_build(
         use tauri::Manager;
         let app_state = app.state::<crate::AppState>();
         app_state.graph_cache.invalidate(connection_id).await;
-        log_emit!("INFO", "图缓存已失效，下次查询将重新加载");
+        log_and_emit(&app, &task_id, &mut logs, "INFO", "图缓存已失效，下次查询将重新加载");
     }
 
     emit_completed(&app, &task_id, &logs);

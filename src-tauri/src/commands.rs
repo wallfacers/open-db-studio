@@ -136,15 +136,29 @@ fn parse_api_type(s: &str) -> crate::llm::ApiType {
     }
 }
 
+/// 解析 LlmConfig 的有效 base_url：DB 有值就用 DB，否则从 opencode.json 读。
+fn resolve_base_url(config: &crate::db::models::LlmConfig) -> String {
+    if !config.base_url.is_empty() {
+        return config.base_url.clone();
+    }
+    if !config.opencode_provider_id.is_empty() {
+        if let Some(url) = crate::agent::config::resolve_opencode_base_url(&config.opencode_provider_id) {
+            return url;
+        }
+    }
+    String::new()
+}
+
 fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let config = crate::db::get_default_llm_config()?
         .ok_or_else(|| crate::AppError::Other(
             "No AI model configured. Please add one in Settings → AI Model.".into()
         ))?;
     let api_type = parse_api_type(&config.api_type);
+    let base_url = resolve_base_url(&config);
     Ok(crate::llm::client::LlmClient::new(
         config.api_key,
-        Some(config.base_url),
+        Some(base_url),
         Some(config.model),
         Some(api_type),
     ))
@@ -299,9 +313,10 @@ pub async fn test_llm_config(
     } else {
         // custom 模式：直连 LLM API
         let api_type = parse_api_type(&config.api_type);
+        let base_url = resolve_base_url(&config);
         let client = crate::llm::client::LlmClient::new(
             config.api_key,
-            Some(config.base_url),
+            Some(base_url),
             Some(config.model),
             Some(api_type),
         );
@@ -346,9 +361,7 @@ async fn test_via_serve(
     ).await;
 
     // 清理临时 session（无论成功失败）
-    let _ = crate::agent::client::abort_session(port, &session_id).await;
-    let _ = crate::agent::client::delete_session(port, &session_id).await;
-    let _ = crate::db::delete_agent_session(&session_id);
+    cleanup_temp_sql_session(port, &session_id).await;
 
     match result {
         Ok(text) if text.trim().is_empty() => {
@@ -1148,12 +1161,16 @@ pub async fn ai_inline_complete(
         };
 
         let sql_before_trimmed = if sql_before.len() > 200 {
-            &sql_before[sql_before.len() - 200..]
+            let mut start = sql_before.len() - 200;
+            while !sql_before.is_char_boundary(start) { start += 1; }
+            &sql_before[start..]
         } else {
             &sql_before
         };
         let sql_after_trimmed = if sql_after.len() > 100 {
-            &sql_after[..100]
+            let mut end = 100;
+            while !sql_after.is_char_boundary(end) { end -= 1; }
+            &sql_after[..end]
         } else {
             &sql_after
         };
@@ -1172,9 +1189,10 @@ pub async fn ai_inline_complete(
 
         // 9. Create LLM client and call with 20s timeout
         let api_type = parse_api_type(&config.api_type);
+        let base_url = resolve_base_url(&config);
         let client = crate::llm::client::LlmClient::new(
             config.api_key,
-            Some(config.base_url),
+            Some(base_url),
             Some(config.model),
             Some(api_type),
         );
@@ -1229,8 +1247,14 @@ pub async fn list_databases(connection_id: i64) -> AppResult<Vec<String>> {
         return Ok(vec![db]);
     }
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
-    ds.list_databases().await
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
+        ds.list_databases().await
+    }).await;
+    match result {
+        Ok(r) => r,
+        Err(_) => Err(AppError::Datasource("获取数据库列表超时，请检查连接配置".into())),
+    }
 }
 
 #[tauri::command]
@@ -1249,9 +1273,16 @@ pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<Str
         return Ok(vec![db]);
     }
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
-    let dbs = ds.list_databases().await?;
-    Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect())
+    // 带超时保护：避免连接创建或 SHOW DATABASES 长时间挂起导致前端 spinner 永转
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
+        ds.list_databases().await
+    }).await;
+    match result {
+        Ok(Ok(dbs)) => Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(AppError::Datasource("获取数据库列表超时，请检查连接配置".into())),
+    }
 }
 
 #[tauri::command]
@@ -3427,29 +3458,38 @@ async fn sync_on_config_save(
         return;
     }
 
-    // 1a. 全量同步（保证同 provider 下所有 model 条目完整，含 opencode 和 custom 两种模式）
-    {
-        match crate::db::list_llm_configs() {
-            Ok(all_configs) => {
-                if let Err(e) = crate::agent::config::sync_all_providers(&opencode_dir, &all_configs) {
-                    log::warn!("[sync_on_config_save] sync_all_providers failed: {}", e);
-                }
+    // 1. 全量同步（保证同 provider 下所有 model 条目完整，含 opencode 和 custom 两种模式）
+    let mut root_after_sync: Option<serde_json::Value> = None;
+    match crate::db::list_llm_configs() {
+        Ok(all_configs) => {
+            match crate::agent::config::sync_all_providers(&opencode_dir, &all_configs) {
+                Ok(root) => { root_after_sync = Some(root); }
+                Err(e) => log::warn!("[sync_on_config_save] sync_all_providers failed: {}", e),
             }
-            Err(e) => log::warn!("[sync_on_config_save] list_llm_configs failed: {}", e),
         }
+        Err(e) => log::warn!("[sync_on_config_save] list_llm_configs failed: {}", e),
     }
 
-    // 1b. 将当前 config 的 provider 条目写入 opencode.json（两种模式均执行）
-    //     自定义模式：npm + options + 当前 model 条目；opencode 模式：options + 当前 model 条目
-    let entry = build_provider_entry_for_json(cfg);
-    if let Err(e) = crate::agent::config::upsert_provider_entry(&opencode_dir, &provider_id, &entry) {
-        log::warn!("[sync_on_config_save] upsert_provider_entry failed: {}", e);
-    }
+    // 2. 获取 provider 条目用于 PATCH 热更新
+    let full_entry = if !cfg.opencode_provider_id.is_empty() {
+        // sync_all_providers 已处理该 provider，直接从返回的 root 中提取
+        root_after_sync
+            .as_ref()
+            .map(|r| r["provider"][&provider_id].clone())
+            .filter(|v| !v.is_null())
+    } else {
+        // opencode_provider_id 为空，降级到 api_type，sync_all_providers 未处理，需单独 upsert
+        let entry = build_provider_entry_for_json(cfg);
+        match crate::agent::config::upsert_provider_entry(&opencode_dir, &provider_id, &entry) {
+            Ok(provider_val) => Some(provider_val).filter(|v| !v.is_null()),
+            Err(e) => { log::warn!("[sync_on_config_save] upsert_provider_entry failed: {}", e); None }
+        }
+    };
 
-    // 2. PATCH /config 热更新运行时配置（从文件读回完整 provider 条目，含 npm/baseURL/所有 models）
+    // 3. PATCH /config 热更新运行时配置
     if !cfg.model.is_empty() {
-        if let Ok(full_entry) = crate::agent::config::read_provider_entry(&opencode_dir, &provider_id) {
-            let body = serde_json::json!({ "provider": { &provider_id: full_entry } });
+        if let Some(entry) = full_entry {
+            let body = serde_json::json!({ "provider": { &provider_id: entry } });
             if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
                 log::warn!("[sync_on_config_save] patch_config_json failed (ignored): {}", e);
             }
@@ -3535,19 +3575,19 @@ async fn apply_llm_config_to_opencode(
     }
 
     if !cfg.model.is_empty() && !effective_provider.is_empty() {
-        // 先写入 opencode.json（深合并保留已有 npm/baseURL/其他 models）
+        // 写入 opencode.json（深合并保留已有 npm/baseURL/其他 models），返回值即完整 provider 条目
         let opencode_dir = state.app_data_dir.join("opencode");
         let entry = build_provider_entry_for_json(cfg);
-        if let Err(e) = crate::agent::config::upsert_provider_entry(&opencode_dir, &effective_provider, &entry) {
-            log::warn!("[apply_llm_config] upsert_provider_entry failed: {}", e);
-        }
-
-        // 从文件读回完整 provider 条目（含 npm/baseURL/所有 models），PATCH 到运行时
-        if let Ok(full_entry) = crate::agent::config::read_provider_entry(&opencode_dir, &effective_provider) {
-            let body = serde_json::json!({ "provider": { &effective_provider: full_entry } });
-            if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
-                log::warn!("[apply_llm_config] patch_config_json failed: {}", e);
+        match crate::agent::config::upsert_provider_entry(&opencode_dir, &effective_provider, &entry) {
+            Ok(full_entry) => {
+                if !full_entry.is_null() {
+                    let body = serde_json::json!({ "provider": { &effective_provider: full_entry } });
+                    if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
+                        log::warn!("[apply_llm_config] patch_config_json failed: {}", e);
+                    }
+                }
             }
+            Err(e) => log::warn!("[apply_llm_config] upsert_provider_entry failed: {}", e),
         }
 
         if let Err(e) = crate::agent::client::patch_config(

@@ -94,7 +94,7 @@ pub fn run() {
                     Ok(configs) => {
                         if let Err(e) = crate::agent::config::sync_all_providers(&opencode_dir, &configs) {
                             log::warn!("Failed to sync providers to opencode.json: {}", e);
-                        }
+                        } // 返回的 root 值在启动阶段不需要
                     }
                     Err(e) => log::warn!("Failed to list llm_configs for sync: {}", e),
                 }

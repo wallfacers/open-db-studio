@@ -169,7 +169,7 @@ pub fn upsert_provider_entry(
     opencode_dir: &std::path::Path,
     provider_id: &str,
     entry: &serde_json::Value,
-) -> AppResult<()> {
+) -> AppResult<serde_json::Value> {
     std::fs::create_dir_all(opencode_dir)
         .map_err(|e| crate::AppError::Other(format!("Failed to create opencode dir: {}", e)))?;
 
@@ -240,7 +240,7 @@ pub fn upsert_provider_entry(
         .map_err(|e| crate::AppError::Other(format!("Failed to rename opencode.json.tmp: {}", e)))?;
 
     log::info!("Upserted provider entry '{}' in opencode.json", provider_id);
-    Ok(())
+    Ok(root["provider"][provider_id].clone())
 }
 
 /// 启动时将 DB 中所有 custom LlmConfig 同步到 opencode.json 的 provider.models。
@@ -253,7 +253,7 @@ pub fn upsert_provider_entry(
 pub fn sync_all_providers(
     opencode_dir: &std::path::Path,
     configs: &[crate::db::models::LlmConfig],
-) -> AppResult<()> {
+) -> AppResult<serde_json::Value> {
     std::fs::create_dir_all(opencode_dir)
         .map_err(|e| crate::AppError::Other(format!("Failed to create opencode dir: {}", e)))?;
 
@@ -382,18 +382,20 @@ pub fn sync_all_providers(
         .map_err(|e| crate::AppError::Other(format!("Failed to rename opencode.json.tmp: {}", e)))?;
 
     log::info!("Synced {} provider(s) with {} config(s) into opencode.json", by_provider.len(), configs.len());
-    Ok(())
+    Ok(root)
 }
 
-/// 从 opencode.json 读取指定 provider 的完整条目。
-pub fn read_provider_entry(
-    opencode_dir: &std::path::Path,
-    provider_id: &str,
-) -> AppResult<serde_json::Value> {
-    let path = opencode_dir.join("opencode.json");
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| crate::AppError::Other(format!("Failed to read opencode.json: {}", e)))?;
-    let root: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| crate::AppError::Other(format!("Failed to parse opencode.json: {}", e)))?;
-    Ok(root["provider"][provider_id].clone())
+/// 从 opencode.json 解析指定 provider 的 base_url。
+/// 如果 opencode.json 不存在或 provider/options/baseURL 缺失，返回 None。
+pub fn resolve_opencode_base_url(provider_id: &str) -> Option<String> {
+    let app_data_dir = crate::db::get_app_data_dir();
+    let path = std::path::Path::new(app_data_dir).join("opencode").join("opencode.json");
+    let content = std::fs::read_to_string(&path).ok()?;
+    let root: serde_json::Value = serde_json::from_str(&content).ok()?;
+    root.get("provider")?
+        .get(provider_id)?
+        .get("options")?
+        .get("baseURL")?
+        .as_str()
+        .map(|s| s.to_string())
 }

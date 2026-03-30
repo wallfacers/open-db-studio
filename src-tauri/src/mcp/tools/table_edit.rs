@@ -114,7 +114,7 @@ pub fn generate_create_table_sql(args: &Value) -> crate::AppResult<String> {
     let cols: Vec<ColInput> = cols_arr.iter().map(ColInput::from_json).collect::<Result<_, _>>()?;
 
     let driver = get_driver(conn_id)?;
-    let is_pg = driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&driver);
 
     let pk_cols: Vec<String> = cols.iter().filter(|c| c.is_primary_key).map(|c| q(&c.name, is_pg)).collect();
     let col_lines: Vec<String> = cols.iter().map(|c| {
@@ -152,7 +152,7 @@ pub fn generate_add_column_sql(args: &Value) -> crate::AppResult<String> {
     let after_col = args["after_column"].as_str().unwrap_or("");
 
     let driver = get_driver(conn_id)?;
-    let is_pg = driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&driver);
 
     let mut stmts = Vec::new();
     if is_pg {
@@ -183,7 +183,7 @@ pub fn generate_drop_column_sql(args: &Value) -> crate::AppResult<String> {
     validate_ident(column_name, "column name")?;
 
     let driver = get_driver(conn_id)?;
-    let is_pg = driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&driver);
 
     Ok(format!("ALTER TABLE {} DROP COLUMN {}", q(table_name, is_pg), q(column_name, is_pg)))
 }
@@ -203,7 +203,7 @@ pub async fn generate_modify_column_sql(args: &Value) -> crate::AppResult<String
     let changes = &args["changes"];
 
     let (config, ds) = get_ds(conn_id, database).await?;
-    let is_pg = config.driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&config.driver);
 
     let columns = ds.get_columns(table_name, None).await?;
     let old_col = columns.iter().find(|c| c.name == column_name)

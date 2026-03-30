@@ -189,6 +189,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const [internalDb, setInternalDb] = useState<string | null>(() => database ?? null);
   const [databases, setDatabases] = useState<string[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Ensure connections are loaded
   useEffect(() => {
@@ -200,13 +201,35 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   useEffect(() => {
     if (internalConnId === null) {
       setDatabases([]);
+      setDbError(null);
       return;
     }
+    let cancelled = false;
     setDbLoading(true);
+    setDbError(null);
+
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) {
+        cancelled = true;
+        setDbLoading(false);
+        setDbError('加载超时');
+      }
+    }, 15000);
+
     invoke<string[]>('list_databases_for_metrics', { connectionId: internalConnId })
-      .then(dbs => setDatabases(dbs))
-      .catch(() => setDatabases([]))
-      .finally(() => setDbLoading(false));
+      .then(dbs => { if (!cancelled) setDatabases(dbs); })
+      .catch((err) => {
+        if (!cancelled) {
+          setDatabases([]);
+          setDbError(typeof err === 'string' ? err : '加载失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDbLoading(false);
+        clearTimeout(timeoutId);
+      });
+
+    return () => { cancelled = true; clearTimeout(timeoutId); };
   }, [internalConnId]);
 
   const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId, internalDb);
@@ -678,6 +701,9 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         )}
         {internalConnId !== null && dbLoading && (
           <Loader2 size={14} className="animate-spin text-[#7a9bb8]" />
+        )}
+        {internalConnId !== null && !dbLoading && dbError && (
+          <span className="text-[11px] text-red-400" title={dbError}>{dbError}</span>
         )}
 
         {/* Type filter */}

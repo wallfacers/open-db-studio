@@ -9,9 +9,16 @@ use std::sync::Mutex;
 use crate::AppResult;
 
 static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
+static APP_DATA_DIR: OnceCell<String> = OnceCell::new();
+
+/// 获取 app_data_dir（db::init 时缓存）
+pub fn get_app_data_dir() -> &'static str {
+    APP_DATA_DIR.get().expect("APP_DATA_DIR not initialized")
+}
 
 /// 初始化内置 SQLite 数据库
 pub fn init(app_data_dir: &str) -> AppResult<()> {
+    APP_DATA_DIR.set(app_data_dir.to_string()).ok();
     // 确保目录存在（Windows 上 Tauri 不一定自动创建）
     std::fs::create_dir_all(app_data_dir)
         .map_err(|e| crate::AppError::Other(format!("Failed to create app data dir: {}", e)))?;
@@ -323,7 +330,7 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
     // PostgreSQL 数据库名为空时默认使用用户名（pg 规范），避免连接到 pg_catalog
     let database = match row.3 {
         Some(db) if !db.is_empty() => db,
-        _ => if driver == "postgres" { username.clone() } else { String::new() },
+        _ => if crate::graph::is_pg_driver(&driver) { username.clone() } else { String::new() },
     };
 
     Ok(crate::datasource::ConnectionConfig {

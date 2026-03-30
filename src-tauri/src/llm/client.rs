@@ -164,7 +164,7 @@ impl LlmClient {
         Self {
             client: SHARED_CLIENT.clone(),
             api_key,
-            base_url: base_url.unwrap_or_else(|| default_base.to_string()),
+            base_url: base_url.filter(|b| !b.is_empty()).unwrap_or_else(|| default_base.to_string()),
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
             api_type: resolved_type,
         }

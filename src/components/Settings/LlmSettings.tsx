@@ -80,7 +80,7 @@ function ModelCombobox({
         <ChevronDown size={13} className="text-[#4a6480]" />
       </button>
       {open && (
-        <div className="absolute z-10 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-52 overflow-y-auto">
+        <div className="absolute z-50 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-52 overflow-y-auto">
           {models.length > 0 && (
             <div className="px-3 pt-2 pb-1 text-[10px] text-[#4a6480] uppercase tracking-wide">供应商模型</div>
           )}
@@ -159,7 +159,7 @@ function ProviderDropdown({
         <ChevronDown size={13} className="text-[#4a6480]" />
       </button>
       {open && (
-        <div className="absolute z-10 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-64 overflow-y-auto">
+        <div className="absolute z-50 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-64 overflow-y-auto">
           {providers.map((p) => (
             <button
               key={p.id}
@@ -193,7 +193,7 @@ interface ConfigFormDialogProps {
   editId?: number;
   providers: OpenCodeProvider[];
   providersLoading: boolean;
-  onSave: (input: CreateLlmConfigInput, testPassed: boolean) => Promise<void>;
+  onSave: (input: CreateLlmConfigInput & { _skipCreate?: boolean }, testPassed: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -259,6 +259,22 @@ function ConfigFormDialog({
       } else if (editId) {
         // opencode 编辑模式：通过已保存的配置 ID 测试
         await invoke('test_llm_config', { id: editId });
+      } else {
+        // opencode 新建模式：先自动保存，再用返回的 ID 测试
+        const created = await invoke<LlmConfig>('create_llm_config', { input: form });
+        try {
+          await invoke('test_llm_config', { id: created.id });
+          // 测试成功：设置状态并通知父组件关闭弹框（配置已创建，跳过重复创建）
+          await invoke('set_llm_config_test_status', { id: created.id, status: 'success', error: null });
+          setTestResult({ ok: true });
+          await onSave({ ...form, _skipCreate: true }, true);
+          return;
+        } catch (e) {
+          // 测试失败：通知父组件刷新列表（配置已创建）
+          await onSave({ ...form, _skipCreate: true }, false);
+          setTestResult({ ok: false, msg: String(e) });
+          return;
+        }
       }
       setTestResult({ ok: true });
     } catch (e) {
@@ -278,6 +294,9 @@ function ConfigFormDialog({
   };
 
   const isCustomMode = form.config_mode === 'custom';
+  const canTest = isCustomMode
+    ? !!form.model && !!form.base_url
+    : !!form.model && !!form.opencode_provider_id;
   const dropdownValue = isCustomMode ? 'custom' : form.opencode_provider_id;
 
   return (
@@ -285,12 +304,15 @@ function ConfigFormDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
-      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md p-6 space-y-4 min-h-[480px] max-h-[90vh] overflow-y-auto">
-        {/* 标题 */}
-        <div className="flex items-center justify-between">
+      {/* 外层容器：不限制 overflow，让下拉框弹出部分正常显示 */}
+      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md min-h-[480px] max-h-[90vh] flex flex-col">
+        {/* 标题行：固定在顶部 */}
+        <div className="flex items-center justify-between p-6 pb-0">
           <h3 className="text-[#e8f4ff] font-semibold text-sm">{title}</h3>
           <button onClick={onCancel} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16} /></button>
         </div>
+        {/* 内容区域：可滚动 */}
+        <div className="flex-1 overflow-y-auto p-6 pt-4 space-y-4">
 
         {/* 配置名称 */}
         <div>
@@ -446,22 +468,15 @@ function ConfigFormDialog({
 
         {/* 操作按钮 */}
         <div className="flex items-center pt-2 justify-between">
-          {(() => {
-            const canTest = isCustomMode
-              ? !!form.model && !!form.base_url
-              : !!editId && !!form.model;
-            return (
-              <button
-                onClick={handleTest}
-                disabled={testing || !canTest}
-                title={!isCustomMode && !editId ? '请先保存后再测试' : undefined}
-                className="px-3 py-1.5 text-xs border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {testing && <Loader2 size={12} className="animate-spin" />}
-                {testing ? '测试中…' : '测试连接'}
-              </button>
-            );
-          })()}
+          <button
+            onClick={handleTest}
+            disabled={testing || !canTest}
+            title={!canTest ? '请填写必填字段后再测试' : undefined}
+            className="px-3 py-1.5 text-xs border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {testing && <Loader2 size={12} className="animate-spin" />}
+            {testing ? '测试中…' : '测试连接'}
+          </button>
           <div className="flex gap-2">
             <button
               onClick={onCancel}
@@ -477,6 +492,7 @@ function ConfigFormDialog({
               {saving ? '保存中…' : '保存'}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -550,10 +566,13 @@ export function LlmSettingsPanel() {
     setEditTarget(config);
   };
 
-  const handleCreate = async (input: CreateLlmConfigInput, testPassed: boolean) => {
-    const created = await invoke<LlmConfig>('create_llm_config', { input });
-    if (testPassed) {
-      await invoke('set_llm_config_test_status', { id: created.id, status: 'success', error: null });
+  const handleCreate = async (input: CreateLlmConfigInput & { _skipCreate?: boolean }, testPassed: boolean) => {
+    // 如果 _skipCreate 为 true，说明配置已在测试时创建，只需刷新列表并关闭弹框
+    if (!input._skipCreate) {
+      const created = await invoke<LlmConfig>('create_llm_config', { input });
+      if (testPassed) {
+        await invoke('set_llm_config_test_status', { id: created.id, status: 'success', error: null });
+      }
     }
     await loadConfigs();
     setShowCreate(false);

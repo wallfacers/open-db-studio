@@ -386,6 +386,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const pendingResultRef = useRef<{ sqlBefore: string; result: string } | null>(null);
   const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inlineProviderRef = useRef<{ dispose(): void } | null>(null);
+  const editorDisposablesRef = useRef<{ dispose(): void }[]>([]);
   const [ghostTextLoading, setGhostTextLoading] = useState(false);
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
@@ -424,14 +425,14 @@ export const MainContent: React.FC<MainContentProps> = ({
         doSyncEditorInfo();
       }, 100);
     };
-    editor.onDidChangeCursorPosition(syncEditorInfo);
-    editor.onDidChangeCursorSelection(syncEditorInfo);
+    editorDisposablesRef.current.push(editor.onDidChangeCursorPosition(syncEditorInfo));
+    editorDisposablesRef.current.push(editor.onDidChangeCursorSelection(syncEditorInfo));
     doSyncEditorInfo(); // 初始化一次（同步执行）
 
     // 阻止浏览器原生右键菜单（Monaco 的 e.event.preventDefault 只影响 Monaco 内部事件）
     editor.getDomNode()?.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    editor.onContextMenu((e) => {
+    editorDisposablesRef.current.push(editor.onContextMenu((e) => {
       e.event.preventDefault();
       const sel = editor.getSelection();
       const selectedSql = (sel && !sel.isEmpty())
@@ -446,7 +447,7 @@ export const MainContent: React.FC<MainContentProps> = ({
         cursorOffset,
         selectionRange: (sel && !sel.isEmpty()) ? sel : null,
       });
-    });
+    }));
 
     // 全局 language provider 只注册一次
     if (!completionProviderRegistered.current) {
@@ -492,7 +493,7 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
 
     // Ghost Text — 监听光标位置变化（覆盖打字、点击、箭头导航、粘贴等）
-    editor.onDidChangeCursorPosition((e: any) => {
+    editorDisposablesRef.current.push(editor.onDidChangeCursorPosition((e: any) => {
       if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
       // 点击/导航用稍长防抖，打字用短防抖
       const delay = e.reason === 3 /* CursorChangeReason.Explicit */ ? 800 : 600;
@@ -544,7 +545,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           setGhostTextLoading(false);
         }
       }, delay);
-    });
+    }));
 
     // Inline provider 全局注册一次（读取 ref 共享数据）
     if (!inlineProviderRef.current) {
@@ -592,6 +593,9 @@ export const MainContent: React.FC<MainContentProps> = ({
   useEffect(() => {
     return () => {
       inlineProviderRef.current?.dispose();
+      editorDisposablesRef.current.forEach(d => d.dispose());
+      editorDisposablesRef.current = [];
+      if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
     };
   }, []);
 

@@ -132,14 +132,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   // 已应用的条件（只有点击搜索时才更新）
   const [appliedWhere, setAppliedWhere] = useState('');
   const [appliedOrder, setAppliedOrder] = useState('');
-  // 用于强制刷新的 key（解决条件不变时多次点击无反应的问题）
-  const [refreshKey, setRefreshKey] = useState(0);
   // 使用 ref 存储最新条件值，解决 setState 异步导致 loadData 使用旧值的问题
   const appliedWhereRef = useRef('');
   const appliedOrderRef = useRef('');
   // 追踪输入框最新值（onChange 立即同步，绕过 React state 异步问题）
   const latestWhereRef = useRef('');
   const latestOrderRef = useRef('');
+  // 追踪最新页码（解决搜索时 setPage(1) 异步导致 loadData 使用旧 page 的问题）
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const [isLoading, setIsLoading] = useState(false);
   const [showExport, setShowExport] = useState(false);
   // 可视化查询行状态
@@ -153,7 +154,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const [isCommitting, setIsCommitting] = useState(false);
   const [cellEditor, setCellEditor] = useState<{ rowIdx: number; colIdx: number; value: string | null; columnName: string } | null>(null);
 
-  const { pending, editCell, cloneRow, addEmptyRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount } = usePendingChanges();
+  const { pending, editCell, cloneRow, addEmptyRow, removeClonedRow, markDelete, unmarkDelete, discard, hasPending, totalCount, findRowIdxByPkValue } = usePendingChanges();
 
   // 虚拟滚动行数（已移入 TableScrollContainer，此处仅做数量计算传递）
   const virtualRowCount = data ? data.rows.length + pending.clonedRows.length : 0;
@@ -165,28 +166,44 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   // columns ref：避免 columns state 变化导致 loadData 重建进而触发二次请求
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
+  // pageSize ref：解决 loadData 依赖问题
+  const pageSizeRef = useRef(pageSize);
+  pageSizeRef.current = pageSize;
+  // 搜索条件 ref：用于搜索时立即生效
+  const filterFieldRef = useRef(filterField);
+  filterFieldRef.current = filterField;
+  const filterOpRef = useRef(filterOp);
+  filterOpRef.current = filterOp;
+  const filterValueRef = useRef(filterValue);
+  filterValueRef.current = filterValue;
+  const sortColRef = useRef(sortCol);
+  sortColRef.current = sortCol;
+  const sortDirRef = useRef(sortDir);
+  sortDirRef.current = sortDir;
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (forcePage?: number) => {
     if (!activeConnectionId || !tableName) return;
     const reqId = ++requestIdRef.current;
     setIsLoading(true);
     try {
+      // forcePage 用于搜索时强制使用指定页码，否则使用当前页码
+      const currentPage = forcePage ?? pageRef.current;
       const resp = await invoke<{ data: QueryResult; total_rows: number }>('get_table_data', {
         params: {
           connection_id: activeConnectionId,
           database: dbName || null,
           table: tableName,
           schema: schema || null,
-          page,
-          page_size: pageSize,
+          page: currentPage,
+          page_size: pageSizeRef.current,
           where_clause: appliedWhereRef.current || null,
           order_clause: appliedOrderRef.current || null,
-          filter_column: filterField || null,
-          filter_operator: filterOp || null,
-          filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOp)) ? null : (filterValue || null),
-          filter_data_type: columnsRef.current.find(c => c.name === filterField)?.data_type || null,
-          sort_column: sortCol,
-          sort_direction: sortDir,
+          filter_column: filterFieldRef.current || null,
+          filter_operator: filterOpRef.current || null,
+          filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOpRef.current)) ? null : (filterValueRef.current || null),
+          filter_data_type: columnsRef.current.find(c => c.name === filterFieldRef.current)?.data_type || null,
+          sort_column: sortColRef.current,
+          sort_direction: sortDirRef.current,
         }
       });
       if (reqId !== requestIdRef.current) return;
@@ -200,7 +217,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema, page, pageSize, refreshKey, externalRefreshSignal, filterField, filterOp, filterValue, sortCol, sortDir]);
+  }, [activeConnectionId, dbName, tableName, schema]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
@@ -232,30 +249,46 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // 分页变化时触发加载
+  useEffect(() => {
+    if (activeConnectionId && tableName) {
+      loadData();
+    }
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 外部刷新信号触发加载
+  useEffect(() => {
+    if (externalRefreshSignal > 0 && activeConnectionId && tableName) {
+      loadData();
+    }
+  }, [externalRefreshSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSearch = () => {
+    // 先同步更新 ref（立即生效）
     appliedWhereRef.current = latestWhereRef.current;
     appliedOrderRef.current = latestOrderRef.current;
+    pageRef.current = 1;
+    // 再更新 state（用于 UI 显示）
     setAppliedWhere(latestWhereRef.current);
     setAppliedOrder(latestOrderRef.current);
     setPage(1);
-    setRefreshKey(k => k + 1);
+    // 直接调用 loadData，传入强制页码 1
+    loadData(1);
   };
 
   const handleCommit = async () => {
     if (!activeConnectionId || !data) return;
     setIsCommitting(true);
     try {
-      // 1. DELETE
-      for (const rowIdx of pending.deletedRowIdxs) {
-        const pkColIdx = data.columns.indexOf(pkColumn);
-        const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
+      // 1. DELETE - 使用记录的 pkValue（稳定标识）
+      for (const delRec of pending.deletedRecords) {
         await invoke('delete_row', {
           connectionId: activeConnectionId,
           database: dbName || null,
           table: tableName,
           schema: schema || null,
           pkColumn,
-          pkValue,
+          pkValue: delRec.pkValue,
         });
       }
       // 2. UPDATE（按行分组，逐列调用 update_row）
@@ -265,9 +298,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         editsByRow.get(edit.rowIdx)!.push(edit);
       }
       for (const [rowIdx, edits] of editsByRow.entries()) {
-        if (pending.deletedRowIdxs.includes(rowIdx)) continue;
+        // 检查该行的 pkValue 是否在删除列表中
         const pkColIdx = data.columns.indexOf(pkColumn);
-        const pkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
+        const rowPkValue = pkColIdx >= 0 ? String(data.rows[rowIdx][pkColIdx] ?? '') : '';
+        if (pending.deletedRecords.some(r => r.pkValue === rowPkValue)) continue;
         for (const edit of edits) {
           await invoke('update_row', {
             connectionId: activeConnectionId,
@@ -275,7 +309,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
             table: tableName,
             schema: schema || null,
             pkColumn,
-            pkValue,
+            pkValue: rowPkValue,
             column: data.columns[edit.colIdx],
             newValue: edit.newValue ?? '',
           });
@@ -307,7 +341,14 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     return edit ? edit.newValue : undefined;
   }, [pending.edits]);
 
-  const isRowDeleted = useCallback((rowIdx: number) => pending.deletedRowIdxs.includes(rowIdx), [pending.deletedRowIdxs]);
+  // 判断某行是否被标记删除：通过 pkValue 匹配（rowIdx 不稳定）
+  const isRowDeleted = useCallback((rowIdx: number) => {
+    if (!data || rowIdx >= data.rows.length) return false;
+    const pkColIdx = data.columns.indexOf(pkColumn);
+    if (pkColIdx < 0) return false;
+    const pkValue = String(data.rows[rowIdx][pkColIdx] ?? '');
+    return pending.deletedRecords.some(r => r.pkValue === pkValue);
+  }, [data, pkColumn, pending.deletedRecords]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, rowIdx: number, colIdx: number, target: ClickTarget) => {
     e.preventDefault();
@@ -359,10 +400,10 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   };
 
   const rowBgClass = useCallback((rowIdx: number) => {
-    if (pending.deletedRowIdxs.includes(rowIdx)) return 'bg-red-900/20';
+    if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
     if (pending.edits.some(e => e.rowIdx === rowIdx)) return 'bg-yellow-900/20';
     return '';
-  }, [pending.edits, pending.deletedRowIdxs]);
+  }, [pending.edits, isRowDeleted]);
 
   // ─── 稳定化 renderRow，确保滚动期间不重建行内容 ─────────────────────────────
   const renderRow = useCallback((ri: number) => {
@@ -678,10 +719,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           onSetNull={() => editCell(contextMenu.rowIdx, contextMenu.colIdx, null)}
           onCloneRow={() => cloneRow(data.rows[contextMenu.rowIdx] as RowData)}
           onDeleteRow={() => {
+            const pkColIdx = data.columns.indexOf(pkColumn);
+            const pkValue = pkColIdx >= 0 ? String(data.rows[contextMenu.rowIdx][pkColIdx] ?? '') : '';
             if (isRowDeleted(contextMenu.rowIdx)) {
-              unmarkDelete(contextMenu.rowIdx);
+              unmarkDelete(pkValue);
             } else {
-              markDelete(contextMenu.rowIdx);
+              markDelete(contextMenu.rowIdx, pkValue);
             }
           }}
           onOpenEditor={contextMenu.colIdx >= 0 ? () => openCellEditor(contextMenu.rowIdx, contextMenu.colIdx) : undefined}

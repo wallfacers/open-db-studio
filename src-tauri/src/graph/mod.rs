@@ -368,9 +368,10 @@ pub async fn run_graph_build(
 pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
     let conn = crate::db::get().lock().unwrap();
 
-    // 查询所有未拒绝的指标
+    // 查询所有未拒绝的指标（含 scope_database 和 scope_schema）
     let mut stmt = conn.prepare(
-        "SELECT id, name, display_name, table_name, aggregation, description, status
+        "SELECT id, name, display_name, table_name, aggregation, description, status,
+                scope_database, scope_schema
          FROM metrics
          WHERE connection_id = ?1 AND status != 'rejected'",
     )?;
@@ -382,6 +383,8 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
         aggregation: Option<String>,
         description: Option<String>,
         status: String,
+        scope_database: Option<String>,
+        scope_schema: Option<String>,
     }
     let metrics: Vec<MetricRow> = stmt
         .query_map([connection_id], |row| {
@@ -393,6 +396,8 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
                 aggregation: row.get(4)?,
                 description: row.get(5)?,
                 status: row.get(6)?,
+                scope_database: row.get(7)?,
+                scope_schema: row.get(8)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -419,14 +424,16 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
 
         conn.execute(
             "INSERT INTO graph_nodes
-               (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
-             VALUES (?1, 'metric', ?2, ?3, ?4, ?5, 'schema', 0)
+               (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source, is_deleted)
+             VALUES (?1, 'metric', ?2, ?3, ?4, ?5, ?6, ?7, 'schema', 0)
              ON CONFLICT(id) DO UPDATE SET
                name        = excluded.name,
                display_name = excluded.display_name,
                metadata    = excluded.metadata,
-               is_deleted  = 0",
-            rusqlite::params![node_id, connection_id, m.name, m.display_name, metadata],
+               is_deleted  = 0,
+               database    = COALESCE(excluded.database, database),
+               schema_name = COALESCE(excluded.schema_name, schema_name)",
+            rusqlite::params![node_id, connection_id, m.scope_database, m.scope_schema, m.name, m.display_name, metadata],
         )?;
 
         // 先删除该指标的旧 metric_ref 边，避免 table_name 变更后留下死链
@@ -491,39 +498,59 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
 pub fn sync_aliases_to_graph(connection_id: i64) -> crate::AppResult<usize> {
     let conn = crate::db::get().lock().unwrap();
 
+    // 查询别名及其关联目标节点的 database/schema_name
     let mut stmt = conn.prepare(
-        "SELECT id, alias, node_id FROM semantic_aliases WHERE connection_id = ?1",
+        "SELECT sa.id, sa.alias, sa.node_id, gn.database, gn.schema_name
+         FROM semantic_aliases sa
+         LEFT JOIN graph_nodes gn ON gn.id = sa.node_id
+         WHERE sa.connection_id = ?1",
     )?;
-    let aliases: Vec<(i64, String, String)> = stmt
-        .query_map([connection_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-        .unwrap()
+    struct AliasRow {
+        id: i64,
+        alias: String,
+        node_id: String,
+        target_database: Option<String>,
+        target_schema: Option<String>,
+    }
+    let aliases: Vec<AliasRow> = stmt
+        .query_map([connection_id], |row| {
+            Ok(AliasRow {
+                id: row.get(0)?,
+                alias: row.get(1)?,
+                node_id: row.get(2)?,
+                target_database: row.get(3)?,
+                target_schema: row.get(4)?,
+            })
+        })?
         .collect::<Result<Vec<_>, _>>()?;
 
     let count = aliases.len();
     let active_node_ids: Vec<String> = aliases
         .iter()
-        .map(|(id, ..)| format!("{}:alias:{}", connection_id, id))
+        .map(|a| format!("{}:alias:{}", connection_id, a.id))
         .collect();
 
-    for (alias_id, alias_text, source_node_id) in &aliases {
-        let node_id = format!("{}:alias:{}", connection_id, alias_id);
+    for a in &aliases {
+        let node_id = format!("{}:alias:{}", connection_id, a.id);
 
         conn.execute(
             "INSERT INTO graph_nodes
-               (id, node_type, connection_id, name, display_name, metadata, source, is_deleted)
-             VALUES (?1, 'alias', ?2, ?3, ?3, NULL, 'user', 0)
+               (id, node_type, connection_id, database, schema_name, name, display_name, metadata, source, is_deleted)
+             VALUES (?1, 'alias', ?2, ?3, ?4, ?5, ?5, NULL, 'user', 0)
              ON CONFLICT(id) DO UPDATE SET
                name         = excluded.name,
                display_name = excluded.display_name,
-               is_deleted   = 0",
-            rusqlite::params![node_id, connection_id, alias_text],
+               is_deleted   = 0,
+               database     = COALESCE(excluded.database, database),
+               schema_name  = COALESCE(excluded.schema_name, schema_name)",
+            rusqlite::params![node_id, connection_id, a.target_database, a.target_schema, a.alias],
         )?;
 
-        let edge_id = format!("{}=>{}", node_id, source_node_id);
+        let edge_id = format!("{}=>{}", node_id, a.node_id);
         conn.execute(
             "INSERT OR IGNORE INTO graph_edges (id, from_node, to_node, edge_type, weight)
              VALUES (?1, ?2, ?3, 'alias_of', 0.8)",
-            rusqlite::params![edge_id, node_id, source_node_id],
+            rusqlite::params![edge_id, node_id, a.node_id],
         )?;
     }
 

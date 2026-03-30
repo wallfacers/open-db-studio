@@ -688,7 +688,11 @@ export const MainContent: React.FC<MainContentProps> = ({
   const handleExecute = useCallback(() => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     const database = activeTabObj?.queryContext?.database ?? null;
-    if (!connId || !database) {
+    const currentDriver = (() => {
+      const connNode = Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === connId);
+      return connNode?.meta.driver;
+    })();
+    if (!connId || (!database && currentDriver !== 'sqlite')) {
       showToast(t('mainContent.selectConnectionAndDatabase'), 'warning');
       return;
     }
@@ -700,7 +704,7 @@ export const MainContent: React.FC<MainContentProps> = ({
       : undefined;
     const schema = activeTabObj?.queryContext?.schema ?? null;
     executeQuery(connId, activeTab, selectedSql || undefined, database, schema);
-  }, [activeTabObj, activeTab, showToast, executeQuery, t]);
+  }, [activeTabObj, activeTab, showToast, executeQuery, t, nodes]);
 
   const handleClear = () => {
     setSql(activeTab, '');
@@ -794,20 +798,22 @@ export const MainContent: React.FC<MainContentProps> = ({
   const selectedConnNode = queryCtx?.connectionId != null
     ? Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === queryCtx.connectionId)
     : undefined;
-  const needsSchema = selectedConnNode?.meta.driver === 'postgres' || selectedConnNode?.meta.driver === 'oracle';
+  const driver = selectedConnNode?.meta.driver;
+  const isSqlite = driver === 'sqlite';
+  const needsSchema = driver === 'postgres' || driver === 'oracle';
   const contextSchemaKey = queryCtx?.connectionId != null && queryCtx?.database
     ? `${queryCtx.connectionId}/${queryCtx.database}`
     : null;
 
-  // 切换 tab 时，若 tab 已绑定连接但数据库列表还未缓存，自动加载
+  // 切换 tab 时，若 tab 已绑定连接但数据库列表还未缓存，自动加载（SQLite 无多数据库概念，跳过）
   useEffect(() => {
     const connId = queryCtx?.connectionId;
-    if (connId && !contextDatabases[connId]) {
+    if (connId && !isSqlite && !contextDatabases[connId]) {
       invoke<string[]>('list_databases', { connectionId: connId })
         .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
         .catch((err) => console.warn('[list_databases]', err));
     }
-  }, [queryCtx?.connectionId]);
+  }, [queryCtx?.connectionId, isSqlite]);
 
   // 切换 tab 时，若已有数据库但 schema 列表未缓存，自动加载
   useEffect(() => {
@@ -1108,29 +1114,36 @@ export const MainContent: React.FC<MainContentProps> = ({
                     const connId = val ? Number(val) : null;
                     updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
                     if (connId && !contextDatabases[connId]) {
-                      invoke<string[]>('list_databases', { connectionId: connId })
-                        .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
-                        .catch((err) => console.warn('[list_databases]', err));
+                      const connNode = Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === connId);
+                      if (connNode?.meta.driver !== 'sqlite') {
+                        invoke<string[]>('list_databases', { connectionId: connId })
+                          .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
+                          .catch((err) => console.warn('[list_databases]', err));
+                      }
                     }
                   }}
                 />
-                <span className="text-[#7a9bb8] text-xs">›</span>
-                <DropdownSelect
-                  value={activeTabObj?.queryContext?.database ?? ''}
-                  placeholder={t('mainContent.selectDatabase')}
-                  className="w-28"
-                  options={availableDatabases.map(db => ({ value: db, label: db }))}
-                  onChange={(val) => {
-                    const db = val || null;
-                    updateTabContext(activeTab, { database: db, schema: null });
-                    const connId = activeTabObj?.queryContext?.connectionId;
-                    if (db && connId) {
-                      invoke<string[]>('list_schemas', { connectionId: connId, database: db })
-                        .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
-                        .catch((err) => console.warn('[list_schemas]', err));
-                    }
-                  }}
-                />
+                {!isSqlite && (
+                  <>
+                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <DropdownSelect
+                      value={activeTabObj?.queryContext?.database ?? ''}
+                      placeholder={t('mainContent.selectDatabase')}
+                      className="w-28"
+                      options={availableDatabases.map(db => ({ value: db, label: db }))}
+                      onChange={(val) => {
+                        const db = val || null;
+                        updateTabContext(activeTab, { database: db, schema: null });
+                        const connId = activeTabObj?.queryContext?.connectionId;
+                        if (db && connId) {
+                          invoke<string[]>('list_schemas', { connectionId: connId, database: db })
+                            .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
+                            .catch((err) => console.warn('[list_schemas]', err));
+                        }
+                      }}
+                    />
+                  </>
+                )}
                 {needsSchema && availableSchemas.length > 0 && (
                   <>
                     <span className="text-[#7a9bb8] text-xs">›</span>

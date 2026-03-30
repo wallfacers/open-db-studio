@@ -4,6 +4,7 @@ import { useMetricFormStore } from '../../../store/metricFormStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
+import { useHighlightStore } from '../../../store/highlightStore'
 
 const METRIC_FORM_SCHEMA = {
   type: 'object',
@@ -67,6 +68,16 @@ export class MetricFormUIObject implements UIObject {
     try {
       const patched = applyPatch(current, ops)
       useMetricFormStore.getState().setForm(this.objectId, patched)
+      // Extract changed paths by comparing old vs new field values
+      const paths: string[] = []
+      for (const key of Object.keys(patched) as Array<keyof typeof patched>) {
+        if (current[key] !== patched[key]) {
+          paths.push(key)
+        }
+      }
+      if (paths.length > 0) {
+        useHighlightStore.getState().addHighlights(this.objectId, paths)
+      }
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }

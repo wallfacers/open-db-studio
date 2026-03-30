@@ -4,6 +4,7 @@ import { useTableFormStore, type TableFormState } from '../../../store/tableForm
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { useConnectionStore } from '../../../store/connectionStore'
+import { useHighlightStore } from '../../../store/highlightStore'
 
 const TABLE_FORM_SCHEMA = {
   type: 'object',
@@ -228,12 +229,57 @@ export class TableFormUIObject implements UIObject {
     return { status: 'pending_confirm', confirm_id: confirmId, preview: ops }
   }
 
+  private extractChangedPaths(ops: JsonPatchOp[], patched: TableFormState): string[] {
+    const paths: string[] = []
+    for (const op of ops) {
+      const segments = op.path.replace(/^\//, '').split('/')
+      const topKey = segments[0]
+
+      if (topKey === 'columns' && segments.length >= 2) {
+        // Column field change → merge to row level by column name
+        const addressable = segments[1]
+        const nameMatch = addressable.match(/^\[name=(.+)\]$/)
+        if (nameMatch) {
+          // /columns/[name=id]/dataType → "columns.id"
+          paths.push(`columns.${nameMatch[1]}`)
+        } else if (/^\d+$/.test(addressable)) {
+          // /columns/3/comment → resolve index to column name
+          const col = patched.columns[Number(addressable)]
+          if (col) paths.push(`columns.${col.name}`)
+        } else if (addressable === '-') {
+          // /columns/- (append) → last column in patched array
+          const last = patched.columns[patched.columns.length - 1]
+          if (last) paths.push(`columns.${last.name}`)
+        }
+      } else if (topKey === 'indexes' && segments.length >= 2) {
+        // Index change → merge to index level by name
+        const addressable = segments[1]
+        const nameMatch = addressable.match(/^\[name=(.+)\]$/)
+        if (nameMatch) {
+          paths.push(`indexes.${nameMatch[1]}`)
+        } else if (/^\d+$/.test(addressable)) {
+          const idx = patched.indexes?.[Number(addressable)]
+          if (idx?.name) paths.push(`indexes.${idx.name}`)
+        }
+      } else {
+        // Top-level field: /tableName, /engine, /charset, /comment
+        paths.push(topKey)
+      }
+    }
+    return [...new Set(paths)]
+  }
+
   patchDirect(ops: JsonPatchOp[]): PatchResult {
     const current = useTableFormStore.getState().getForm(this.objectId)
     if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
     try {
       const patched = applyPatch(current, ops)
       useTableFormStore.getState().setForm(this.objectId, patched)
+      // Extract changed paths and trigger highlights
+      const paths = this.extractChangedPaths(ops, patched)
+      if (paths.length > 0) {
+        useHighlightStore.getState().addHighlights(this.objectId, paths)
+      }
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }

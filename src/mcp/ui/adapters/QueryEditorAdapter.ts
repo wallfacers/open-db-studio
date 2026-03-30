@@ -4,6 +4,7 @@ import { applyPatch } from '../jsonPatch'
 import { useQueryStore } from '../../../store/queryStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
+import { useHighlightStore } from '../../../store/highlightStore'
 
 export class QueryEditorAdapter implements UIObject {
   type = 'query_editor'
@@ -98,6 +99,16 @@ export class QueryEditorAdapter implements UIObject {
       if (patched.schema !== currentState.schema) ctxUpdate.schema = patched.schema
       if (Object.keys(ctxUpdate).length > 0) {
         store.updateTabContext(this.objectId, ctxUpdate)
+      }
+
+      // Extract changed paths and trigger highlights
+      const paths: string[] = []
+      if (patched.content !== currentState.content) paths.push('content')
+      if (patched.connectionId !== currentState.connectionId) paths.push('connectionId')
+      if (patched.database !== currentState.database) paths.push('database')
+      if (patched.schema !== currentState.schema) paths.push('schema')
+      if (paths.length > 0) {
+        useHighlightStore.getState().addHighlights(this.objectId, paths)
       }
 
       return { status: 'applied' }

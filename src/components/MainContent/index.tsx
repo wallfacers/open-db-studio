@@ -76,6 +76,9 @@ import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { useUIObjectRegistry } from '../../mcp/ui';
 import { QueryEditorAdapter } from '../../mcp/ui/adapters/QueryEditorAdapter';
+import { useMonacoHighlight } from '../../hooks/useMonacoHighlight';
+import { useFieldHighlight } from '../../hooks/useFieldHighlight';
+import { useHighlightStore } from '../../store/highlightStore';
 
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'ON',
@@ -382,6 +385,8 @@ export const MainContent: React.FC<MainContentProps> = ({
   // Register Monaco completion provider once (module-level guard)
   const completionProviderRegistered = useRef(false);
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
+  const { notifyContentChange } = useMonacoHighlight(editorRef);
+  const prevSqlRef = useRef<string>('');
   const ghostCacheRef = useRef<{ sqlBefore: string; result: string; timestamp: number } | null>(null);
   const pendingResultRef = useRef<{ sqlBefore: string; result: string } | null>(null);
   const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -599,6 +604,31 @@ export const MainContent: React.FC<MainContentProps> = ({
     };
   }, []);
 
+  // Detect AI-driven SQL changes and trigger Monaco line highlights
+  useEffect(() => {
+    const sql = sqlContent[activeTab] ?? '';
+    const prev = prevSqlRef.current;
+    prevSqlRef.current = sql;
+
+    if (!prev || prev === sql) return;
+
+    // Only trigger line highlight if the highlight store has a 'content' pulse for this tab
+    const highlights = useHighlightStore.getState().highlights.get(activeTab);
+    const hasContentPulse = highlights?.some(e => e.path === 'content' && e.phase === 'pulse');
+    if (hasContentPulse) {
+      notifyContentChange(prev, sql);
+    }
+  }, [sqlContent[activeTab], activeTab, notifyContentChange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clean up highlights when tab changes or unmounts
+  useEffect(() => {
+    return () => {
+      if (activeTab) {
+        useHighlightStore.getState().clearAll(activeTab);
+      }
+    };
+  }, [activeTab]);
+
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
   const currentResults = results[activeTab] ?? [];
@@ -609,6 +639,11 @@ export const MainContent: React.FC<MainContentProps> = ({
     return new QueryEditorAdapter(activeTabObj.id, activeTabObj.connectionId, activeTabObj.title)
   }, [activeTabObj?.id, activeTabObj?.type, activeTabObj?.connectionId, activeTabObj?.title])
   useUIObjectRegistry(queryUIObject)
+
+  const connHighlight = useFieldHighlight(activeTab, 'connectionId');
+  const dbHighlight = useFieldHighlight(activeTab, 'database');
+  const schemaHighlight = useFieldHighlight(activeTab, 'schema');
+
   const [selectedResultPane, setSelectedResultPane] = useState<number | 'explanation'>(0);
 
   // Reset selected result index when active editor tab changes
@@ -1103,57 +1138,65 @@ export const MainContent: React.FC<MainContentProps> = ({
 
               {/* 上下文选择器（右侧） */}
               <div className="flex items-center gap-1.5">
-                <DropdownSelect
-                  value={String(activeTabObj?.queryContext?.connectionId ?? '')}
-                  placeholder={t('mainContent.selectConnection')}
-                  className="w-32"
-                  options={Array.from(nodes.values())
-                    .filter(n => n.nodeType === 'connection')
-                    .map(n => ({ value: String(n.meta.connectionId ?? ''), label: n.label }))}
-                  onChange={(val) => {
-                    const connId = val ? Number(val) : null;
-                    updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
-                    if (connId && !contextDatabases[connId]) {
-                      const connNode = Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === connId);
-                      if (connNode?.meta.driver !== 'sqlite') {
-                        invoke<string[]>('list_databases', { connectionId: connId })
-                          .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
-                          .catch((err) => console.warn('[list_databases]', err));
+                <div className={connHighlight.className}>
+                  <DropdownSelect
+                    value={String(activeTabObj?.queryContext?.connectionId ?? '')}
+                    placeholder={t('mainContent.selectConnection')}
+                    className="w-32"
+                    options={Array.from(nodes.values())
+                      .filter(n => n.nodeType === 'connection')
+                      .map(n => ({ value: String(n.meta.connectionId ?? ''), label: n.label }))}
+                    onChange={(val) => {
+                      connHighlight.onUserEdit();
+                      const connId = val ? Number(val) : null;
+                      updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
+                      if (connId && !contextDatabases[connId]) {
+                        const connNode = Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === connId);
+                        if (connNode?.meta.driver !== 'sqlite') {
+                          invoke<string[]>('list_databases', { connectionId: connId })
+                            .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
+                            .catch((err) => console.warn('[list_databases]', err));
+                        }
                       }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </div>
                 {!isSqlite && (
                   <>
                     <span className="text-[#7a9bb8] text-xs">›</span>
-                    <DropdownSelect
-                      value={activeTabObj?.queryContext?.database ?? ''}
-                      placeholder={t('mainContent.selectDatabase')}
-                      className="w-28"
-                      options={availableDatabases.map(db => ({ value: db, label: db }))}
-                      onChange={(val) => {
-                        const db = val || null;
-                        updateTabContext(activeTab, { database: db, schema: null });
-                        const connId = activeTabObj?.queryContext?.connectionId;
-                        if (db && connId) {
-                          invoke<string[]>('list_schemas', { connectionId: connId, database: db })
-                            .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
-                            .catch((err) => console.warn('[list_schemas]', err));
-                        }
-                      }}
-                    />
+                    <div className={dbHighlight.className}>
+                      <DropdownSelect
+                        value={activeTabObj?.queryContext?.database ?? ''}
+                        placeholder={t('mainContent.selectDatabase')}
+                        className="w-28"
+                        options={availableDatabases.map(db => ({ value: db, label: db }))}
+                        onChange={(val) => {
+                          dbHighlight.onUserEdit();
+                          const db = val || null;
+                          updateTabContext(activeTab, { database: db, schema: null });
+                          const connId = activeTabObj?.queryContext?.connectionId;
+                          if (db && connId) {
+                            invoke<string[]>('list_schemas', { connectionId: connId, database: db })
+                              .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
+                              .catch((err) => console.warn('[list_schemas]', err));
+                          }
+                        }}
+                      />
+                    </div>
                   </>
                 )}
                 {needsSchema && availableSchemas.length > 0 && (
                   <>
                     <span className="text-[#7a9bb8] text-xs">›</span>
-                    <DropdownSelect
-                      value={queryCtx?.schema ?? ''}
-                      placeholder={t('mainContent.selectSchema')}
-                      className="w-24"
-                      options={availableSchemas.map(s => ({ value: s, label: s }))}
-                      onChange={(val) => updateTabContext(activeTab, { schema: val || null })}
-                    />
+                    <div className={schemaHighlight.className}>
+                      <DropdownSelect
+                        value={queryCtx?.schema ?? ''}
+                        placeholder={t('mainContent.selectSchema')}
+                        className="w-24"
+                        options={availableSchemas.map(s => ({ value: s, label: s }))}
+                        onChange={(val) => { schemaHighlight.onUserEdit(); updateTabContext(activeTab, { schema: val || null }); }}
+                      />
+                    </div>
                   </>
                 )}
               </div>
@@ -1205,6 +1248,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   formatOnPaste: true,
                   tabSize: 2,
                   padding: { top: 12, bottom: 12 },
+                  glyphMargin: true,
                   automaticLayout: true,
                   overviewRulerBorder: false,
                   overviewRulerLanes: 0,

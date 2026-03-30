@@ -11,6 +11,8 @@ import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
 import { MetricFormUIObject } from '../../mcp/ui/adapters/MetricFormAdapter';
 import { useMetricFormStore } from '../../store/metricFormStore';
 import { metricsDbNodeId, metricsSchemaNodeId } from '../../utils/nodeId';
+import { useFieldHighlight } from '../../hooks/useFieldHighlight';
+import { useHighlightStore } from '../../store/highlightStore';
 
 // -------- 预设分类标签 --------
 const PRESET_CATEGORIES = [
@@ -88,6 +90,15 @@ function TagInput({ value, onChange, t }: { value: string; onChange: (v: string)
     </div>
   );
 }
+
+const HighlightedField: React.FC<{
+  scopeId: string;
+  path: string;
+  children: (onUserEdit: () => void) => React.ReactNode;
+}> = ({ scopeId, path, children }) => {
+  const { className, onUserEdit } = useFieldHighlight(scopeId, path);
+  return <div className={className}>{children(onUserEdit)}</div>;
+};
 
 // -------- 主组件 --------
 interface Props {
@@ -207,7 +218,10 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
       description: '',
       connectionId,
     });
-    return () => useMetricFormStore.getState().removeForm(tabId);
+    return () => {
+      useMetricFormStore.getState().removeForm(tabId);
+      useHighlightStore.getState().clearAll(tabId);
+    };
   }, [tabId, connectionId]);
 
   // 编辑模式加载完 metric 后同步到 metricFormStore
@@ -389,140 +403,184 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
         <div className="max-w-xl mx-auto px-4 space-y-4">
 
           {/* 指标类型切换 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.metricType')}</label>
-            <div className="flex gap-4">
-              {(['atomic', 'composite'] as const).map(mt => (
-                <label key={mt} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    value={mt}
-                    checked={currentType === mt}
-                    onChange={() => setForm(f => ({ ...f, metric_type: mt }))}
-                    className="accent-[#00c9a7]"
-                  />
-                  <span className="text-xs text-[#a0b4c8]">
-                    {mt === 'atomic' ? t('metricsExplorer.metricTab.atomicMetric') : t('metricsExplorer.metricTab.compositeMetric')}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
+          <HighlightedField scopeId={tabId!} path="metricType">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.metricType')}</label>
+                <div className="flex gap-4">
+                  {(['atomic', 'composite'] as const).map(mt => (
+                    <label key={mt} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        value={mt}
+                        checked={currentType === mt}
+                        onChange={() => { onUserEdit(); setForm(f => ({ ...f, metric_type: mt })); }}
+                        className="accent-[#00c9a7]"
+                      />
+                      <span className="text-xs text-[#a0b4c8]">
+                        {mt === 'atomic' ? t('metricsExplorer.metricTab.atomicMetric') : t('metricsExplorer.metricTab.compositeMetric')}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </HighlightedField>
 
           {/* 显示名称 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.displayName')} <span className="text-red-400">*</span></label>
-            <input
-              className={inputCls}
-              value={(form.display_name as string | undefined) ?? ''}
-              onChange={e => setValue('display_name', e.target.value)}
-            />
-          </div>
+          <HighlightedField scopeId={tabId!} path="displayName">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.displayName')} <span className="text-red-400">*</span></label>
+                <input
+                  className={inputCls}
+                  value={(form.display_name as string | undefined) ?? ''}
+                  onChange={e => { onUserEdit(); setValue('display_name', e.target.value); }}
+                />
+              </div>
+            )}
+          </HighlightedField>
 
           {/* 英文标识 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.englishName')} <span className="text-red-400">*</span></label>
-            <input
-              className={inputCls}
-              value={(form.name as string | undefined) ?? ''}
-              onChange={e => setValue('name', e.target.value)}
-            />
-          </div>
+          <HighlightedField scopeId={tabId!} path="name">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.englishName')} <span className="text-red-400">*</span></label>
+                <input
+                  className={inputCls}
+                  value={(form.name as string | undefined) ?? ''}
+                  onChange={e => { onUserEdit(); setValue('name', e.target.value); }}
+                />
+              </div>
+            )}
+          </HighlightedField>
 
           {/* 分类标签 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.categoryTags')}</label>
-            <TagInput
-              value={(form.category as string | undefined) ?? ''}
-              onChange={v => setForm(f => ({ ...f, category: v || undefined }))}
-              t={t}
-            />
-          </div>
+          <HighlightedField scopeId={tabId!} path="category">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.categoryTags')}</label>
+                <TagInput
+                  value={(form.category as string | undefined) ?? ''}
+                  onChange={v => { onUserEdit(); setForm(f => ({ ...f, category: v || undefined })); }}
+                  t={t}
+                />
+              </div>
+            )}
+          </HighlightedField>
 
           {/* 版本号 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.version')}</label>
-            <input
-              className={inputCls}
-              value={(form.version as string | undefined) ?? ''}
-              onChange={e => setValue('version', e.target.value)}
-            />
-          </div>
+          <HighlightedField scopeId={tabId!} path="version">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.version')}</label>
+                <input
+                  className={inputCls}
+                  value={(form.version as string | undefined) ?? ''}
+                  onChange={e => { onUserEdit(); setValue('version', e.target.value); }}
+                />
+              </div>
+            )}
+          </HighlightedField>
 
           {/* 原子指标专有字段 */}
           {currentType === 'atomic' && (
             <>
-              <div>
-                <label className={labelCls}>{t('metricsExplorer.metricTab.relatedTable')} <span className="text-red-400">*</span></label>
-                <DropdownSelect
-                  className="w-full"
-                  value={form.table_name ?? ''}
-                  placeholder={tables.length === 0 ? t('metricsExplorer.metricTab.noTables') : t('metricsExplorer.metricTab.selectTable')}
-                  options={tables.map(tbl => ({ value: tbl, label: tbl }))}
-                  onChange={handleTableChange}
-                />
-              </div>
+              <HighlightedField scopeId={tabId!} path="tableName">
+                {(onUserEdit) => (
+                  <div>
+                    <label className={labelCls}>{t('metricsExplorer.metricTab.relatedTable')} <span className="text-red-400">*</span></label>
+                    <DropdownSelect
+                      className="w-full"
+                      value={form.table_name ?? ''}
+                      placeholder={tables.length === 0 ? t('metricsExplorer.metricTab.noTables') : t('metricsExplorer.metricTab.selectTable')}
+                      options={tables.map(tbl => ({ value: tbl, label: tbl }))}
+                      onChange={v => { onUserEdit(); handleTableChange(v); }}
+                    />
+                  </div>
+                )}
+              </HighlightedField>
 
-              <div>
-                <label className={labelCls}>{t('metricsExplorer.metricTab.relatedColumn')}</label>
-                <DropdownSelect
-                  className="w-full"
-                  value={form.column_name ?? ''}
-                  placeholder={columns.length === 0 ? t('metricsExplorer.metricTab.selectColumnFirst') : t('metricsExplorer.metricTab.selectColumn')}
-                  options={columns.map(c => ({ value: c.name, label: `${c.name} (${c.data_type})` }))}
-                  onChange={v => setValue('column_name', v)}
-                />
-              </div>
+              <HighlightedField scopeId={tabId!} path="columnName">
+                {(onUserEdit) => (
+                  <div>
+                    <label className={labelCls}>{t('metricsExplorer.metricTab.relatedColumn')}</label>
+                    <DropdownSelect
+                      className="w-full"
+                      value={form.column_name ?? ''}
+                      placeholder={columns.length === 0 ? t('metricsExplorer.metricTab.selectColumnFirst') : t('metricsExplorer.metricTab.selectColumn')}
+                      options={columns.map(c => ({ value: c.name, label: `${c.name} (${c.data_type})` }))}
+                      onChange={v => { onUserEdit(); setValue('column_name', v); }}
+                    />
+                  </div>
+                )}
+              </HighlightedField>
 
-              <div>
-                <label className={labelCls}>{t('metricsExplorer.metricTab.aggregationMethod')}</label>
-                <DropdownSelect
-                  className="w-full"
-                  value={form.aggregation ?? metric?.aggregation ?? ''}
-                  placeholder={t('metricsExplorer.metricTab.noAggregation')}
-                  options={['SUM', 'COUNT', 'AVG', 'MAX', 'MIN', 'COUNT_DISTINCT'].map(a => ({ value: a, label: a }))}
-                  onChange={v => setForm(f => ({ ...f, aggregation: v || undefined }))}
-                />
-              </div>
+              <HighlightedField scopeId={tabId!} path="aggregation">
+                {(onUserEdit) => (
+                  <div>
+                    <label className={labelCls}>{t('metricsExplorer.metricTab.aggregationMethod')}</label>
+                    <DropdownSelect
+                      className="w-full"
+                      value={form.aggregation ?? metric?.aggregation ?? ''}
+                      placeholder={t('metricsExplorer.metricTab.noAggregation')}
+                      options={['SUM', 'COUNT', 'AVG', 'MAX', 'MIN', 'COUNT_DISTINCT'].map(a => ({ value: a, label: a }))}
+                      onChange={v => { onUserEdit(); setForm(f => ({ ...f, aggregation: v || undefined })); }}
+                    />
+                  </div>
+                )}
+              </HighlightedField>
             </>
           )}
 
           {/* 描述 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.description')}</label>
-            <textarea
-              className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
-                         text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
-              value={(form.description as string | undefined) ?? ''}
-              onChange={e => setValue('description', e.target.value)}
-            />
-          </div>
+          <HighlightedField scopeId={tabId!} path="description">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.description')}</label>
+                <textarea
+                  className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
+                             text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
+                  value={(form.description as string | undefined) ?? ''}
+                  onChange={e => { onUserEdit(); setValue('description', e.target.value); }}
+                />
+              </div>
+            )}
+          </HighlightedField>
 
           {/* 数据口径说明 */}
-          <div>
-            <label className={labelCls}>{t('metricsExplorer.metricTab.dataCaliber')}</label>
-            <textarea
-              className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
-                         text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
-              value={(form.data_caliber as string | undefined) ?? ''}
-              onChange={e => setValue('data_caliber', e.target.value)}
-            />
-          </div>
+          <HighlightedField scopeId={tabId!} path="data_caliber">
+            {(onUserEdit) => (
+              <div>
+                <label className={labelCls}>{t('metricsExplorer.metricTab.dataCaliber')}</label>
+                <textarea
+                  className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
+                             text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
+                  value={(form.data_caliber as string | undefined) ?? ''}
+                  onChange={e => { onUserEdit(); setValue('data_caliber', e.target.value); }}
+                />
+              </div>
+            )}
+          </HighlightedField>
 
           {/* filter_sql（仅原子指标） */}
           {currentType === 'atomic' && (
-            <div className="border border-[#2a3f5a] rounded overflow-hidden">
-              <div className="px-3 py-1.5 bg-[#1a2a3a] border-b border-[#2a3f5a] text-xs text-[#7a9bb8]">
-                {t('metricsExplorer.metricTab.filterSql')}
-              </div>
-              <textarea
-                className="w-full bg-[#0d1821] px-3 py-2 text-xs text-white font-mono
-                           focus:outline-none resize-none h-36"
-                placeholder="created_at >= '2024-01-01' AND status = 'active'"
-                value={(form.filter_sql as string | undefined) ?? ''}
-                onChange={e => setForm(f => ({ ...f, filter_sql: e.target.value || undefined }))}
-              />
-            </div>
+            <HighlightedField scopeId={tabId!} path="filterSql">
+              {(onUserEdit) => (
+                <div className="border border-[#2a3f5a] rounded overflow-hidden">
+                  <div className="px-3 py-1.5 bg-[#1a2a3a] border-b border-[#2a3f5a] text-xs text-[#7a9bb8]">
+                    {t('metricsExplorer.metricTab.filterSql')}
+                  </div>
+                  <textarea
+                    className="w-full bg-[#0d1821] px-3 py-2 text-xs text-white font-mono
+                               focus:outline-none resize-none h-36"
+                    placeholder="created_at >= '2024-01-01' AND status = 'active'"
+                    value={(form.filter_sql as string | undefined) ?? ''}
+                    onChange={e => { onUserEdit(); setForm(f => ({ ...f, filter_sql: e.target.value || undefined })); }}
+                  />
+                </div>
+              )}
+            </HighlightedField>
           )}
 
           {currentType === 'composite' && (

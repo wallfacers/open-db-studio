@@ -9,6 +9,22 @@ import { TableFormUIObject, generateTableSql } from '../../mcp/ui/adapters/Table
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
 import type { EditableColumn } from '../../store/tableFormStore';
+import { useFieldHighlight } from '../../hooks/useFieldHighlight';
+import { useHighlightStore } from '../../store/highlightStore';
+
+const HighlightedField: React.FC<{
+  scopeId: string;
+  path: string;
+  children: (onUserEdit: () => void) => React.ReactNode;
+}> = ({ scopeId, path, children }) => {
+  const { className, onUserEdit } = useFieldHighlight(scopeId, path);
+  return <div className={className}>{children(onUserEdit)}</div>;
+};
+
+/** Wraps a <tr> with highlight className — returns className string, not a wrapper div */
+function useRowHighlight(scopeId: string, columnName: string) {
+  return useFieldHighlight(scopeId, `columns.${columnName}`);
+}
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
 
@@ -21,6 +37,112 @@ const getTypeOptions = (dataType: string) => {
 };
 
 function makeId() { return Math.random().toString(36).slice(2); }
+
+const ColumnRow: React.FC<{
+  col: EditableColumn;
+  idx: number;
+  tabId: string;
+  visibleCount: number;
+  updateColumn: (id: string, updates: Partial<EditableColumn>) => void;
+  moveColumn: (id: string, dir: 'up' | 'down') => void;
+  setColumns: (updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => void;
+  iconBtn: string;
+  iconBtnDanger: string;
+}> = ({ col, idx, tabId, visibleCount, updateColumn, moveColumn, setColumns, iconBtn, iconBtnDanger }) => {
+  const { className: hlClass, onUserEdit } = useRowHighlight(tabId, col.name);
+
+  return (
+    <tr className={`hover:bg-[#1a2639] border-b border-[#1e2d42] group ${col._isNew ? 'bg-green-900/10' : ''} ${hlClass}`}>
+      <td className="w-[30px] px-1 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none">
+        {idx + 1}
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.name}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { name: e.target.value }); }}
+        />
+      </td>
+      <td className="px-1.5 py-1 border-r border-[#1e2d42]">
+        <DropdownSelect
+          value={col.dataType}
+          options={getTypeOptions(col.dataType)}
+          onChange={v => { onUserEdit(); updateColumn(col.id, { dataType: v }); }}
+          className="w-full"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.length ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { length: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
+        <input
+          type="checkbox"
+          checked={col.isNullable ?? true}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { isNullable: e.target.checked }); }}
+          className="accent-[#009e84]"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.defaultValue ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { defaultValue: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
+        <input
+          type="checkbox"
+          checked={col.isPrimaryKey ?? false}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { isPrimaryKey: e.target.checked }); }}
+          className="accent-[#3794ff]"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.extra ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { extra: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.comment ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { comment: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="px-1.5 py-1">
+        <div className="flex items-center gap-0.5 justify-center">
+          <button
+            onClick={() => moveColumn(col.id, 'up')}
+            disabled={idx === 0}
+            className={iconBtn}
+          ><ChevronUp size={12} /></button>
+          <button
+            onClick={() => moveColumn(col.id, 'down')}
+            disabled={idx === visibleCount - 1}
+            className={iconBtn}
+          ><ChevronDown size={12} /></button>
+          <button
+            onClick={() => col._isNew
+              ? setColumns(prev => prev.filter(c => c.id !== col.id))
+              : updateColumn(col.id, { _isDeleted: true })
+            }
+            className={iconBtnDanger}
+          ><Trash2 size={12} /></button>
+        </div>
+      </td>
+    </tr>
+  );
+};
 
 interface TableStructureViewProps {
   tabId: string;
@@ -149,7 +271,10 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
     }).finally(() => setIsLoadingData(false));
 
-    return () => removeForm(tabId)
+    return () => {
+      removeForm(tabId);
+      useHighlightStore.getState().clearAll(tabId);
+    }
   }, [tableName, connectionId, database, schema, tabId]);
 
   const updateColumn = useCallback((id: string, patch: Partial<EditableColumn>) => {
@@ -242,12 +367,16 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       {/* Toolbar */}
       {!tableName && (
         <div className="h-10 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs flex-shrink-0">
-          <input
-            className="bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] w-40"
-            placeholder={t('tableManage.tableName') + '...'}
-            value={newTableName}
-            onChange={e => setNewTableName(e.target.value)}
-          />
+          <HighlightedField scopeId={tabId} path="tableName">
+            {(onUserEdit) => (
+              <input
+                className="bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] w-40"
+                placeholder={t('tableManage.tableName') + '...'}
+                value={newTableName}
+                onChange={e => { onUserEdit(); setNewTableName(e.target.value); }}
+              />
+            )}
+          </HighlightedField>
         </div>
       )}
 
@@ -273,95 +402,18 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
             </thead>
             <tbody>
               {visibleColumns.map((col, idx) => (
-                <tr key={col.id} className={`hover:bg-[#1a2639] border-b border-[#1e2d42] group ${col._isNew ? 'bg-green-900/10' : ''}`}>
-                  <td className="w-[30px] px-1 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none">
-                    {idx + 1}
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.name}
-                      onChange={e => updateColumn(col.id, { name: e.target.value })}
-                    />
-                  </td>
-                  <td className="px-1.5 py-1 border-r border-[#1e2d42]">
-                    <DropdownSelect
-                      value={col.dataType}
-                      options={getTypeOptions(col.dataType)}
-                      onChange={v => updateColumn(col.id, { dataType: v })}
-                      className="w-full"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.length ?? ''}
-                      onChange={e => updateColumn(col.id, { length: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
-                    <input
-                      type="checkbox"
-                      checked={col.isNullable ?? true}
-                      onChange={e => updateColumn(col.id, { isNullable: e.target.checked })}
-                      className="accent-[#009e84]"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.defaultValue ?? ''}
-                      onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
-                    <input
-                      type="checkbox"
-                      checked={col.isPrimaryKey ?? false}
-                      onChange={e => updateColumn(col.id, { isPrimaryKey: e.target.checked })}
-                      className="accent-[#3794ff]"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.extra ?? ''}
-                      onChange={e => updateColumn(col.id, { extra: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.comment ?? ''}
-                      onChange={e => updateColumn(col.id, { comment: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1">
-                    <div className="flex items-center gap-0.5 justify-center">
-                      <button
-                        onClick={() => moveColumn(col.id, 'up')}
-                        disabled={idx === 0}
-                        className={iconBtn}
-                      ><ChevronUp size={12} /></button>
-                      <button
-                        onClick={() => moveColumn(col.id, 'down')}
-                        disabled={idx === visibleColumns.length - 1}
-                        className={iconBtn}
-                      ><ChevronDown size={12} /></button>
-                      <button
-                        onClick={() => col._isNew
-                          ? setColumns(prev => prev.filter(c => c.id !== col.id))
-                          : updateColumn(col.id, { _isDeleted: true })
-                        }
-                        className={iconBtnDanger}
-                      ><Trash2 size={12} /></button>
-                    </div>
-                  </td>
-                </tr>
+                <ColumnRow
+                  key={col.id}
+                  col={col}
+                  idx={idx}
+                  tabId={tabId}
+                  visibleCount={visibleColumns.length}
+                  updateColumn={updateColumn}
+                  moveColumn={moveColumn}
+                  setColumns={setColumns}
+                  iconBtn={iconBtn}
+                  iconBtnDanger={iconBtnDanger}
+                />
               ))}
             </tbody>
           </table>

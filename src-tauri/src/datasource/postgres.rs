@@ -302,10 +302,10 @@ impl PostgresDataSource {
         if let Some(pw) = config.password.as_deref() {
             opts = opts.password(pw);
         }
-        // database 为空时不设置，sqlx 默认使用用户名作为库名（PG 规范）
-        if let Some(db) = config.database.as_deref().filter(|s| !s.is_empty()) {
-            opts = opts.database(db);
-        }
+        // database 为空时显式使用用户名（PG 规范：默认库 = 用户名）
+        // 不能省略，否则 sqlx PgConnectOptions::new() 可能读取 PGDATABASE 环境变量导致连接到错误的库
+        let db = config.database.as_deref().filter(|s| !s.is_empty()).unwrap_or(username);
+        opts = opts.database(db);
 
         // SSL 证书
         if let Some(ref ca) = config.ssl_ca_path {
@@ -868,5 +868,32 @@ mod tests {
             "public schema 应存在, 实际: {:?}", schemas);
 
         println!("过滤规则验证通过");
+    }
+
+    /// 模拟新建连接：database 为空串时应自动回退到用户名，连接成功
+    #[tokio::test]
+    async fn pg_empty_database_falls_back_to_username() {
+        let mut cfg = base_config();
+        cfg.database = Some("".to_string()); // 模拟前端新建连接发送的空 database
+
+        let ds = PostgresDataSource::new(&cfg).await
+            .expect("database 为空时连接应成功（回退到用户名）");
+        ds.test_connection().await.expect("test_connection 应成功");
+
+        let dbs = ds.list_databases().await.expect("list_databases 应成功");
+        assert!(!dbs.is_empty(), "数据库列表不应为空");
+        println!("database='' 回退测试通过，数据库列表: {:?}", dbs);
+    }
+
+    /// 模拟新建连接：database 为 None 时也应连接成功
+    #[tokio::test]
+    async fn pg_none_database_falls_back_to_username() {
+        let mut cfg = base_config();
+        cfg.database = None;
+
+        let ds = PostgresDataSource::new(&cfg).await
+            .expect("database 为 None 时连接应成功（回退到用户名）");
+        ds.test_connection().await.expect("test_connection 应成功");
+        println!("database=None 回退测试通过");
     }
 }

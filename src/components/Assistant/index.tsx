@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { createPortal } from 'react-dom';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
@@ -183,6 +184,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     return () => window.removeEventListener('mousedown', handler);
   }, [isModelMenuOpen]);
   const [isConnectionMenuOpen, setIsConnectionMenuOpen] = useState(false);
+  const [connectionMenuPos, setConnectionMenuPos] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null);
   // 连接切换确认对话框：当 session 有内容时，Tab 切换触发
   const [pendingConnectionSwitch, setPendingConnectionSwitch] = useState<{
     oldConnectionId: number | null;
@@ -257,15 +259,36 @@ export const Assistant: React.FC<AssistantProps> = ({
     }
   }, [isChatting]);
   const connectionMenuRef = useRef<HTMLDivElement>(null);
+  const connectionDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭：排除触发器和弹出层
   useEffect(() => {
     if (!isConnectionMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (connectionMenuRef.current && !connectionMenuRef.current.contains(e.target as Node)) {
-        setIsConnectionMenuOpen(false);
-      }
+      const target = e.target as Node;
+      if (
+        connectionMenuRef.current?.contains(target) ||
+        connectionDropdownRef.current?.contains(target)
+      ) return;
+      setIsConnectionMenuOpen(false);
     };
     window.addEventListener('mousedown', handler);
     return () => window.removeEventListener('mousedown', handler);
+  }, [isConnectionMenuOpen]);
+
+  // 滚动或 resize 时关闭（下拉层内部滚动不触发）
+  useEffect(() => {
+    if (!isConnectionMenuOpen) return;
+    const handleScroll = (e: Event) => {
+      if (connectionDropdownRef.current?.contains(e.target as Node)) return;
+      setIsConnectionMenuOpen(false);
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', () => setIsConnectionMenuOpen(false));
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', () => setIsConnectionMenuOpen(false));
+    };
   }, [isConnectionMenuOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -370,15 +393,39 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="relative mb-2 w-fit" ref={connectionMenuRef}>
         <div
           className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea]"
-          onClick={(e) => { e.stopPropagation(); setIsConnectionMenuOpen(!isConnectionMenuOpen); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isConnectionMenuOpen && connectionMenuRef.current) {
+              const rect = connectionMenuRef.current.getBoundingClientRect();
+              setConnectionMenuPos({
+                top: rect.bottom,
+                bottom: window.innerHeight - rect.top,
+                left: Math.min(rect.left, window.innerWidth - 208 - 8),
+                width: rect.width,
+              });
+            }
+            setIsConnectionMenuOpen(!isConnectionMenuOpen);
+          }}
         >
           <DatabaseZap size={12} className="mr-1 text-[#00c9a7]" />
           <span className="max-w-[120px] truncate">{effectiveConnectionName ?? t('assistant.noConnectionSelected')}</span>
           <ChevronDown size={12} className="ml-1 flex-shrink-0" />
         </div>
 
-        {isConnectionMenuOpen && (
-          <div className="absolute left-0 top-full mt-1 w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
+        {/* 下拉列表：Portal 到 body，fixed 定位，自适应展开方向 */}
+        {isConnectionMenuOpen && connectionMenuPos && createPortal(
+          <div
+            ref={connectionDropdownRef}
+            className="fixed z-[200] w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg overflow-y-auto"
+            style={{
+              // 根据视窗位置决定展开方向：底部空间不足时向上展开
+              ...(connectionMenuPos.top + 240 > window.innerHeight
+                ? { bottom: connectionMenuPos.bottom + 4 }
+                : { top: connectionMenuPos.top + 4 }),
+              left: connectionMenuPos.left,
+              maxHeight: 240,
+            }}
+          >
             {/* 跟随标签页选项 */}
             <div
               className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[#1e2d42] ${
@@ -407,7 +454,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                 );
               })
             )}
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
       <textarea

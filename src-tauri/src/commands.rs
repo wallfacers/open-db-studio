@@ -1355,6 +1355,15 @@ pub async fn count_metrics_batch(
 }
 
 #[tauri::command]
+pub async fn count_metrics_by_node(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+) -> AppResult<i64> {
+    crate::metrics::crud::count_metrics_by_node(connection_id, database.as_deref(), schema.as_deref())
+}
+
+#[tauri::command]
 pub async fn list_objects(
     connection_id: i64,
     database: Option<String>,

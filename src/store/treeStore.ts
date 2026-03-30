@@ -311,6 +311,63 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
       get()._addNodes(children);
 
+      // 在创建 metrics_folder 节点后立即获取指标计数（未展开时也显示徽章）
+      const metricsFolderNodes = children.filter(c => c.nodeType === 'metrics_folder');
+      if (metricsFolderNodes.length > 0) {
+        const newCounts = new Map(get().metricCounts);
+        const newNodes = new Map(get().nodes);
+
+        if (node.nodeType === 'connection') {
+          // connection 分支：使用 count_metrics_batch 批量获取
+          const driver = node.meta.driver ?? 'mysql';
+          const needsSchema = ['postgres', 'oracle', 'gaussdb'].includes(driver);
+          if (!needsSchema && metricsFolderNodes.length > 1) {
+            // 多数据库（MySQL 等）：一次批量获取
+            const counts: Record<string, number> = await invoke('count_metrics_batch', {
+              connectionId: node.meta.connectionId,
+              database: null,
+            });
+            for (const folder of metricsFolderNodes) {
+              const db = folder.meta.database;
+              const cnt = db ? (counts[db] ?? 0) : 0;
+              newCounts.set(folder.id, cnt);
+              const f = newNodes.get(folder.id);
+              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+            }
+          } else {
+            // 单数据库（SQLite）或 schema 型驱动在 connection 层无 metrics_folder
+            for (const folder of metricsFolderNodes) {
+              try {
+                const cnt = await invoke<number>('count_metrics_by_node', {
+                  connectionId: folder.meta.connectionId,
+                  database: folder.meta.database ?? null,
+                  schema: null,
+                });
+                newCounts.set(folder.id, cnt);
+                const f = newNodes.get(folder.id);
+                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+              } catch { /* ignore */ }
+            }
+          }
+        } else {
+          // database 分支（PG/Oracle）：逐个获取计数
+          for (const folder of metricsFolderNodes) {
+            try {
+              const cnt = await invoke<number>('count_metrics_by_node', {
+                connectionId: folder.meta.connectionId,
+                database: folder.meta.database ?? null,
+                schema: null,
+              });
+              newCounts.set(folder.id, cnt);
+              const f = newNodes.get(folder.id);
+              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+            } catch { /* ignore */ }
+          }
+        }
+
+        set({ metricCounts: newCounts, nodes: newNodes });
+      }
+
       // metrics_folder 节点加载后更新 metricCounts 和 hasChildren
       if (node.nodeType === 'metrics_folder') {
         const metrics = children.filter(c => c.nodeType === 'metric');

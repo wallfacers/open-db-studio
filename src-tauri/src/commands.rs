@@ -4062,10 +4062,10 @@ pub async fn add_user_edge(
     edge_type: String,
     weight: Option<f64>,
 ) -> AppResult<String> {
-    let allowed_edge_types = ["foreign_key", "join_path", "user_defined"];
+    let allowed_edge_types = ["join_path", "user_defined"];
     if !allowed_edge_types.contains(&edge_type.as_str()) {
         return Err(crate::AppError::Other(format!(
-            "edge_type '{}' 不合法，允许值: foreign_key, join_path, user_defined", edge_type
+            "edge_type '{}' 不合法，允许值: join_path, user_defined", edge_type
         )));
     }
     let w = weight.unwrap_or(1.0);
@@ -4121,7 +4121,7 @@ pub async fn update_graph_edge(
                 ));
             }
             if let Some(ref et) = edge_type {
-                let allowed = ["foreign_key", "join_path", "user_defined"];
+                let allowed = ["join_path", "user_defined"];
                 if !allowed.contains(&et.as_str()) {
                     return Err(crate::AppError::Other(format!(
                         "edge_type '{}' 不合法", et

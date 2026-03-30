@@ -1,14 +1,19 @@
 use crate::AppResult;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-/// 从 graph_edges 读取 foreign_key 边的邻接表
+/// 从 graph_edges 通过 Link Node 两段式边（to_link → link → from_link）读取 FK 邻接表
 fn load_fk_adjacency(connection_id: i64) -> AppResult<Vec<(String, String)>> {
     let conn = crate::db::get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT e.from_node, e.to_node
-         FROM graph_edges e
-         JOIN graph_nodes n ON n.id = e.from_node
-         WHERE n.connection_id = ?1 AND e.edge_type = 'foreign_key'"
+        "SELECT e1.from_node, e2.to_node
+         FROM graph_edges e1
+         JOIN graph_nodes ln ON ln.id = e1.to_node
+         JOIN graph_edges e2 ON e2.from_node = ln.id
+         WHERE ln.connection_id = ?1
+           AND ln.node_type = 'link'
+           AND ln.is_deleted = 0
+           AND e1.edge_type = 'to_link'
+           AND e2.edge_type = 'from_link'"
     )?;
     let rows = stmt.query_map([connection_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))

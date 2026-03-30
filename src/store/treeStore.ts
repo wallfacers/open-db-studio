@@ -95,7 +95,8 @@ interface TreeStore {
   selectNode: (nodeId: string) => void;
   refreshNode: (nodeId: string) => Promise<void>;
   search: (query: string) => TreeNode[];
-  deleteMetricNode: (nodeId: string) => void;  // 新增
+  deleteMetricNode: (nodeId: string) => void;
+  deleteMetricById: (metricId: number) => void;
   _addNodes: (nodes: TreeNode[]) => void;
   _removeSubtree: (nodeId: string) => void;
 }
@@ -480,6 +481,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
       return { nodes, searchIndex, expandedIds };
     });
+  },
+
+  deleteMetricById: (metricId: number) => {
+    const { nodes } = get();
+    for (const [id, node] of nodes) {
+      if (node.nodeType === 'metric' && node.meta.objectName === String(metricId)) {
+        get().deleteMetricNode(id);
+        return;
+      }
+    }
   },
 
   _addNodes: (newNodes: TreeNode[]) => {

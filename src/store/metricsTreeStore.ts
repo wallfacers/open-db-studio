@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Metric } from '../types';
 import { useQueryStore } from './queryStore';
+import { useTreeStore } from './treeStore';
 import { connNodeId, groupNodeId, metricsDbNodeId, metricsSchemaNodeId, metricsMetricNodeId } from '../utils/nodeId';
 
 let _persistMetricsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -342,6 +343,8 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
       }
       return { nodes, metricCounts };
     });
+    // 同步更新左侧数据库浏览树
+    useTreeStore.getState().deleteMetricById(metricId);
     useQueryStore.getState().closeMetricTabById(metricId);
   },
 

@@ -290,14 +290,13 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     if (!editMode || !params.source || !params.target) return;
     // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
     const choice = window.prompt(
-      '选择边类型（输入数字）:\n1. user_defined（用户自定义）\n2. foreign_key（外键关系）\n3. join_path（连接路径）',
+      '选择边类型（输入数字）:\n1. user_defined（用户自定义）\n2. join_path（连接路径）',
       '1'
     );
     if (choice === null) return; // 用户取消，不创建边
     const edgeTypeMap: Record<string, string> = {
       '1': 'user_defined',
-      '2': 'foreign_key',
-      '3': 'join_path',
+      '2': 'join_path',
     };
     const edgeType = edgeTypeMap[choice] ?? 'user_defined';
     try {

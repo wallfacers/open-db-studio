@@ -39,6 +39,8 @@ import { DropdownSelect } from '../common/DropdownSelect';
 import type { GraphNode } from './useGraphData';
 import { GraphSearchPanel } from './GraphSearchPanel';
 import { Tooltip } from '../common/Tooltip';
+import { useConfirmStore } from '../../store/confirmStore';
+import { BaseModal } from '../common/BaseModal';
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
@@ -186,7 +188,7 @@ function toFlowEdges(
       animated: false,
       markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
       style: getEdgeStyleBySource(e.source ?? 'schema'),
-      data: { edge_type: e.edge_type, weight: e.weight },
+      data: { edge_type: e.edge_type, weight: e.weight, edgeSource: e.source ?? 'schema' },
       // 自引用 to_link: Table(top-source) → Link(self-target)
       ...(isSelfRefToLink ? { sourceHandle: 'top-source', targetHandle: 'self-target' } : {}),
       // 自引用 from_link: Link(self-source) → Table(bottom-target)
@@ -288,7 +290,17 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   const [editMode, setEditMode] = useState(false);
 
+  // ── 编辑模式弹框状态 ──────────────────────────────────────────────────────
+  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+  const [addNodeName, setAddNodeName] = useState('');
+  const [addNodeLoading, setAddNodeLoading] = useState(false);
+  const [pendingConnect, setPendingConnect] = useState<{ source: string; target: string } | null>(null);
+  const [connectEdgeType, setConnectEdgeType] = useState<'user_defined' | 'join_path'>('user_defined');
+
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+
+  // 本次会话中拖拽过的节点位置（避免 useEffect 重建时被覆盖）
+  const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // ── Node click focus state (1-hop neighbor highlight) ────────────────────────
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -298,10 +310,15 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   }, []);
 
   // ── Edit mode: add virtual node ─────────────────────────────────────────────
-  const handleAddVirtualNode = useCallback(async () => {
-    // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
-    const name = window.prompt('输入虚拟节点名称');
+  const handleAddVirtualNode = useCallback(() => {
+    setAddNodeName('');
+    setShowAddNodeModal(true);
+  }, []);
+
+  const handleAddNodeSubmit = useCallback(async () => {
+    const name = addNodeName.trim();
     if (!name || !internalConnId) return;
+    setAddNodeLoading(true);
     try {
       await invoke('add_user_node', {
         connectionId: internalConnId,
@@ -309,40 +326,39 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         displayName: name,
         nodeType: 'table',
       });
+      setShowAddNodeModal(false);
       refetch();
     } catch (e) {
       console.error('添加虚拟节点失败', e);
       alert(`添加节点失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAddNodeLoading(false);
     }
-  }, [internalConnId, refetch]);
+  }, [addNodeName, internalConnId, refetch]);
 
   // ── Edit mode: manual connect ───────────────────────────────────────────────
-  const onConnect = useCallback(async (params: Connection) => {
+  const onConnect = useCallback((params: Connection) => {
     if (!editMode || !params.source || !params.target) return;
-    // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
-    const choice = window.prompt(
-      '选择边类型（输入数字）:\n1. user_defined（用户自定义）\n2. join_path（连接路径）',
-      '1'
-    );
-    if (choice === null) return; // 用户取消，不创建边
-    const edgeTypeMap: Record<string, string> = {
-      '1': 'user_defined',
-      '2': 'join_path',
-    };
-    const edgeType = edgeTypeMap[choice] ?? 'user_defined';
+    setConnectEdgeType('user_defined');
+    setPendingConnect({ source: params.source, target: params.target });
+  }, [editMode]);
+
+  const handleConnectSubmit = useCallback(async () => {
+    if (!pendingConnect) return;
     try {
       await invoke('add_user_edge', {
-        fromNode: params.source,
-        toNode: params.target,
-        edgeType,
+        fromNode: pendingConnect.source,
+        toNode: pendingConnect.target,
+        edgeType: connectEdgeType,
         weight: 1.0,
       });
+      setPendingConnect(null);
       refetch();
     } catch (e) {
       console.error('添加边失败', e);
       alert(`添加边失败: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [editMode, refetch]);
+  }, [pendingConnect, connectEdgeType, refetch]);
 
   const { fitView, setCenter, getZoom } = useReactFlow();
   const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
@@ -412,6 +428,13 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     [filteredRaw, subgraphMode, subgraphNodeIds],
   );
   const clustered = useMemo(() => clusterByConnection(sourceNodes), [sourceNodes]);
+
+  // 数据重新加载后清除拖拽缓存（rawNodes 已包含最新 position_x/position_y）
+  const prevClusteredRef = useRef(clustered);
+  if (prevClusteredRef.current !== clustered) {
+    prevClusteredRef.current = clustered;
+    draggedPositionsRef.current.clear();
+  }
 
   const nodeNameMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
@@ -505,7 +528,13 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         animated: isHighlighted,
       };
     });
-    const { nodes: laid, edges: laidEdges } = buildLayout(flowNodes, flowEdges);
+    // 合并本次会话拖拽过的坐标，防止高亮/焦点等状态变化导致位置回弹
+    const mergedNodes = flowNodes.map(n => {
+      const dragged = draggedPositionsRef.current.get(n.id);
+      if (dragged) return { ...n, position: dragged };
+      return n;
+    });
+    const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
     // Defer fitView until layout is painted, but skip when a node is focused
@@ -520,6 +549,8 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────
   const onNodeDragStop: NodeMouseHandler = useCallback((_event, node) => {
+    // 同时保存到 ref（防止 useEffect 重建时覆盖）和数据库
+    draggedPositionsRef.current.set(node.id, { x: node.position.x, y: node.position.y });
     invoke('save_graph_node_position', {
       nodeId: node.id,
       x: node.position.x,
@@ -529,7 +560,8 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   // ── Auto-layout button ──────────────────────────────────────────────────────
   const handleAutoLayout = useCallback(async () => {
-    // 清除数据库中的已保存坐标
+    // 清除本次拖拽缓存和数据库中的已保存坐标
+    draggedPositionsRef.current.clear();
     if (internalConnId !== null) {
       await invoke('clear_graph_node_positions', {
         connectionId: internalConnId,
@@ -545,6 +577,47 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       layoutTimerRef.current = null;
     }, 50);
   }, [rfNodes, rfEdges, setRfNodes, setRfEdges, fitView, internalConnId, internalDb]);
+
+  // ── Delete/Backspace 键删除拦截 ────────────────────────────────────────────
+  const onBeforeDelete = useCallback(async ({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) => {
+    if (!editMode) return false;
+
+    // 筛选可删除项：节点仅 source='user'，边仅 source='user'|'comment'
+    const deletableNodes = nodes.filter(n => (n.data as Record<string, unknown>)?.source === 'user');
+    const deletableEdges = edges.filter(e => {
+      const s = String((e.data as Record<string, unknown>)?.edgeSource ?? 'schema');
+      return s === 'user' || s === 'comment';
+    });
+
+    if (deletableNodes.length === 0 && deletableEdges.length === 0) return false;
+
+    const parts: string[] = [];
+    if (deletableNodes.length > 0) parts.push(`${deletableNodes.length} 个节点`);
+    if (deletableEdges.length > 0) parts.push(`${deletableEdges.length} 条边`);
+
+    const ok = await useConfirmStore.getState().confirm({
+      title: '删除确认',
+      message: `确认删除选中的 ${parts.join(' 和 ')}？此操作不可撤销。`,
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      variant: 'danger',
+    });
+    if (!ok) return false;
+
+    try {
+      for (const n of deletableNodes) {
+        await invoke('delete_graph_node', { nodeId: n.id });
+      }
+      for (const e of deletableEdges) {
+        await invoke('delete_graph_edge', { edgeId: e.id });
+      }
+      refetch();
+    } catch (err) {
+      console.error('删除失败', err);
+      alert(`删除失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return false; // 由 refetch 刷新，不需要 React Flow 自行移除
+  }, [editMode, refetch]);
 
   // ── Build schema graph (with TaskBar integration) ───────────────────────────
   const handleBuildGraph = useCallback(async () => {
@@ -715,6 +788,82 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const onEdgeMouseLeave: EdgeMouseHandler = useCallback(() => {
     setEdgeTooltip(null);
   }, []);
+
+  // ── 右键菜单状态 ─────────────────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number;
+    type: 'edge' | 'node';
+    id: string;
+    edgeSource?: string;
+    nodeSource?: string;
+    label?: string;
+  } | null>(null);
+
+  // 点击其他区域关闭右键菜单
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // 编辑模式下右键边 → 弹出上下文菜单
+  const onEdgeContextMenu: EdgeMouseHandler = useCallback((evt, edge) => {
+    evt.preventDefault();
+    if (!editMode) return;
+    const edgeSource = String(edge.data?.edgeSource ?? 'schema');
+    if (edgeSource !== 'user' && edgeSource !== 'comment') return;
+    setContextMenu({
+      x: evt.clientX,
+      y: evt.clientY,
+      type: 'edge',
+      id: edge.id,
+      edgeSource,
+      label: String(edge.data?.edge_type ?? ''),
+    });
+  }, [editMode]);
+
+  // 编辑模式下右键节点 → 弹出上下文菜单
+  const onNodeContextMenu: NodeMouseHandler = useCallback((evt, node) => {
+    evt.preventDefault();
+    if (!editMode) return;
+    const nodeSource = String((node.data as Record<string, unknown>)?.source ?? 'schema');
+    if (nodeSource !== 'user') return;
+    setContextMenu({
+      x: evt.clientX,
+      y: evt.clientY,
+      type: 'node',
+      id: node.id,
+      nodeSource,
+      label: String((node.data as Record<string, unknown>)?.display_name || (node.data as Record<string, unknown>)?.name || ''),
+    });
+  }, [editMode]);
+
+  const handleContextMenuDelete = useCallback(async () => {
+    if (!contextMenu) return;
+    const { type, id, edgeSource, nodeSource, label } = contextMenu;
+    setContextMenu(null);
+
+    const itemLabel = type === 'edge'
+      ? `${edgeSource === 'user' ? '用户自定义' : '注释推断'}关系`
+      : `用户节点「${label}」`;
+
+    const ok = await useConfirmStore.getState().confirm({
+      title: type === 'edge' ? '删除关系' : '删除节点',
+      message: `确认删除${itemLabel}？${type === 'node' ? '该节点相关的自定义边也将一并删除。' : ''}此操作不可撤销。`,
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      if (type === 'edge') {
+        await invoke('delete_graph_edge', { edgeId: id });
+      } else {
+        await invoke('delete_graph_node', { nodeId: id });
+      }
+      refetch();
+    } catch (e) {
+      console.error(`删除${type === 'edge' ? '边' : '节点'}失败`, e);
+      alert(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [contextMenu, refetch]);
 
   // ── Type filter toggle ──────────────────────────────────────────────────────
   const toggleType = (type: string) => {
@@ -925,11 +1074,15 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStop={onNodeDragStop}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
+            onNodeClick={(e, n) => { closeContextMenu(); onNodeClick(e, n); }}
+            onNodeContextMenu={onNodeContextMenu}
+            onPaneClick={(e) => { closeContextMenu(); onPaneClick(e); }}
+            onEdgeContextMenu={onEdgeContextMenu}
             onEdgeMouseEnter={onEdgeMouseEnter}
             onEdgeMouseLeave={onEdgeMouseLeave}
             onConnect={onConnect}
+            onBeforeDelete={onBeforeDelete}
+            deleteKeyCode={editMode ? 'Delete' : null}
             nodesConnectable={editMode}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
@@ -969,6 +1122,21 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
               <span className="text-[#7a9bb8]">{t('graphExplorer.edgeTooltipType')}: </span>{edgeTooltip.edge_type}
               <span className="mx-2 text-[#1e2d42]">|</span>
               <span className="text-[#7a9bb8]">{t('graphExplorer.edgeTooltipWeight')}: </span>{edgeTooltip.weight.toFixed(2)}
+            </div>
+          )}
+
+          {/* 右键上下文菜单 */}
+          {contextMenu && (
+            <div
+              className="fixed z-[9999] min-w-[120px] bg-[#151d28] border border-[#2a3f5a] rounded-md shadow-xl py-1"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
+              <button
+                onClick={handleContextMenuDelete}
+                className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-600/20 transition-colors"
+              >
+                删除{contextMenu.type === 'edge' ? '关系' : '节点'}
+              </button>
             </div>
           )}
         </div>
@@ -1023,6 +1191,71 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           />
         );
       })()}
+
+      {/* 添加虚拟节点弹框 */}
+      {showAddNodeModal && (
+        <BaseModal
+          title="添加虚拟节点"
+          onClose={() => setShowAddNodeModal(false)}
+          width={400}
+          footerButtons={[
+            { label: '取消', onClick: () => setShowAddNodeModal(false), variant: 'secondary' },
+            { label: '添加', onClick: handleAddNodeSubmit, variant: 'primary', loading: addNodeLoading, disabled: !addNodeName.trim() },
+          ]}
+        >
+          <div className="px-1">
+            <label className="block text-xs text-[#7a9bb8] mb-1.5 uppercase tracking-wide">节点名称</label>
+            <input
+              autoFocus
+              type="text"
+              value={addNodeName}
+              onChange={(e) => setAddNodeName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && addNodeName.trim()) handleAddNodeSubmit(); }}
+              placeholder="请输入节点名称"
+              className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#4a5e75] focus:outline-none focus:border-[#009e84] transition-colors"
+            />
+          </div>
+        </BaseModal>
+      )}
+
+      {/* 添加边类型选择弹框 */}
+      {pendingConnect && (
+        <BaseModal
+          title="添加关系"
+          onClose={() => setPendingConnect(null)}
+          width={400}
+          footerButtons={[
+            { label: '取消', onClick: () => setPendingConnect(null), variant: 'secondary' },
+            { label: '添加', onClick: handleConnectSubmit, variant: 'primary' },
+          ]}
+        >
+          <div className="px-1">
+            <label className="block text-xs text-[#7a9bb8] mb-1.5 uppercase tracking-wide">边类型</label>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#c8daea]">
+                <input
+                  type="radio"
+                  name="edgeType"
+                  checked={connectEdgeType === 'user_defined'}
+                  onChange={() => setConnectEdgeType('user_defined')}
+                  className="accent-[#009e84]"
+                />
+                用户自定义 <span className="text-[#4a5e75] text-xs">(user_defined)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#c8daea]">
+                <input
+                  type="radio"
+                  name="edgeType"
+                  checked={connectEdgeType === 'join_path'}
+                  onChange={() => setConnectEdgeType('join_path')}
+                  className="accent-[#009e84]"
+                />
+                连接路径 <span className="text-[#4a5e75] text-xs">(join_path)</span>
+              </label>
+            </div>
+          </div>
+        </BaseModal>
+      )}
     </div>
   );
 }

@@ -472,7 +472,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       {/* ── Editor area ── */}
       <div className="flex-1 overflow-hidden">
         {mode === 'visual' ? (
-          <VisualBuilder value={builderState} onChange={handleBuilderChange} />
+          <VisualBuilder value={builderState} onChange={handleBuilderChange} scopeId={tabId} />
         ) : (
           <JsonEditor value={configJson} onChange={handleJsonChange} />
         )}

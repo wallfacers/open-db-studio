@@ -1147,13 +1147,13 @@ pub async fn ai_inline_complete(
             _ => "Complete the full SQL statement from the cursor position. Use newlines for readability.",
         };
 
-        let sql_before_trimmed = if sql_before.len() > 2000 {
-            &sql_before[sql_before.len() - 2000..]
+        let sql_before_trimmed = if sql_before.len() > 200 {
+            &sql_before[sql_before.len() - 200..]
         } else {
             &sql_before
         };
-        let sql_after_trimmed = if sql_after.len() > 500 {
-            &sql_after[..500]
+        let sql_after_trimmed = if sql_after.len() > 100 {
+            &sql_after[..100]
         } else {
             &sql_after
         };

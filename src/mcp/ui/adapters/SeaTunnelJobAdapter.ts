@@ -1,6 +1,7 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
 import { applyPatch } from '../jsonPatch'
 import { useSeaTunnelJobFormStore } from '../../../store/seatunnelJobStore'
+import { useSeaTunnelStore } from '../../../store/seaTunnelStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
@@ -64,6 +65,10 @@ export class SeaTunnelJobUIObject implements UIObject {
     try {
       const patched = applyPatch(current, ops)
       useSeaTunnelJobFormStore.getState().setForm(this.objectId, patched)
+      // 同步到 seaTunnelStore.stJobContent，触发 SeaTunnelJobTab 的 externalContent 订阅
+      if (patched.jobId && patched.configJson) {
+        useSeaTunnelStore.getState().setStJobContent(patched.jobId, patched.configJson)
+      }
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }

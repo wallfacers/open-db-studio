@@ -13,9 +13,13 @@ import { useHighlightStore } from '../store/highlightStore'
  *   </div>
  */
 export function useFieldHighlight(scopeId: string, path: string) {
-  const phase = useHighlightStore(
-    s => s.getPhase(scopeId, path)
-  )
+  const phase = useHighlightStore(s => {
+    const list = s.highlights.get(scopeId)
+    if (!list) return null
+    const wildcard = list.find(e => e.path === '*')
+    if (wildcard) return wildcard.phase
+    return list.find(e => e.path === path)?.phase ?? null
+  })
   const clearHighlight = useHighlightStore(s => s.clearHighlight)
 
   const className =

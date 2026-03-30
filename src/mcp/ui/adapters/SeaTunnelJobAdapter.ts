@@ -5,6 +5,8 @@ import { useSeaTunnelStore } from '../../../store/seaTunnelStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
+import { useHighlightStore } from '../../../store/highlightStore'
+import { diffJsonStringPaths } from '../../../utils/jsonDiff'
 
 const SEATUNNEL_JOB_SCHEMA = {
   type: 'object',
@@ -62,6 +64,7 @@ export class SeaTunnelJobUIObject implements UIObject {
   patchDirect(ops: JsonPatchOp[]): PatchResult {
     const current = useSeaTunnelJobFormStore.getState().getForm(this.objectId)
     if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
+    const oldConfigJson = current.configJson
     try {
       const patched = applyPatch(current, ops)
       useSeaTunnelJobFormStore.getState().setForm(this.objectId, patched)
@@ -69,10 +72,37 @@ export class SeaTunnelJobUIObject implements UIObject {
       if (patched.jobId && patched.configJson) {
         useSeaTunnelStore.getState().setStJobContent(patched.jobId, patched.configJson)
       }
+
+      // 提取变更路径并触发高亮
+      const changedPaths = this.extractChangedPaths(ops, oldConfigJson, patched.configJson)
+      if (changedPaths.length > 0) {
+        useHighlightStore.getState().addHighlights(this.objectId, changedPaths)
+      }
+
       return { status: 'applied' }
     } catch (e) {
       return { status: 'error', message: String(e) }
     }
+  }
+
+  private extractChangedPaths(
+    ops: JsonPatchOp[],
+    oldConfigJson: string,
+    newConfigJson: string,
+  ): string[] {
+    const paths: string[] = []
+    for (const op of ops) {
+      const segments = op.path.replace(/^\//, '').split('/')
+      const topKey = segments[0]
+      if (topKey === 'configJson') {
+        // Diff the JSON content to get specific field paths
+        paths.push(...diffJsonStringPaths(oldConfigJson, newConfigJson))
+      } else {
+        // Direct field (e.g. /jobName) → map as-is
+        paths.push(segments.join('.'))
+      }
+    }
+    return paths
   }
 
   async exec(action: string, _params?: any): Promise<ExecResult> {

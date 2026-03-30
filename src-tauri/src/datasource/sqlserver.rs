@@ -129,6 +129,17 @@ impl DataSource for SqlServerDataSource {
         let mut client = self.connect().await?;
         let start = std::time::Instant::now();
 
+        // Non-SELECT statements: use execute() to get affected row count
+        let trimmed = sql.trim_start().to_uppercase();
+        if !trimmed.starts_with("SELECT") && !trimmed.starts_with("EXEC") && !trimmed.starts_with("WITH") {
+            let result = client.execute(sql, &[])
+                .await
+                .map_err(|e| AppError::Datasource(e.to_string()))?;
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let row_count = result.total() as usize;
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+        }
+
         let stream = client.query(sql, &[])
             .await
             .map_err(|e| AppError::Datasource(e.to_string()))?;

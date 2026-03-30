@@ -76,6 +76,22 @@ impl DataSource for OracleDataSource {
             tokio::task::spawn_blocking(move || {
                 let conn = oracle_crate::Connection::connect(&user, &pass, &conn_str)
                     .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+                // Non-SELECT statements: use execute() to get affected row count
+                let trimmed = sql.trim_start().to_uppercase();
+                if !trimmed.starts_with("SELECT") && !trimmed.starts_with("WITH") {
+                    let mut stmt = conn.statement(&sql).build()
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    stmt.execute(&[])
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    let row_count = stmt.row_count()
+                        .map_err(|e| AppError::Datasource(e.to_string()))? as usize;
+                    conn.commit()
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+                }
+
                 let mut stmt = conn.statement(&sql).build()
                     .map_err(|e| AppError::Datasource(e.to_string()))?;
                 let rows = stmt.query(&[])

@@ -327,10 +327,12 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         _ => 3306, // mysql
     };
     let username = row.4.unwrap_or_default();
-    // PostgreSQL 数据库名为空时默认使用用户名（pg 规范），避免连接到 pg_catalog
+    // 保留原始 database_name 值（可为空）。
+    // PG 连接层（postgres.rs）会在建连时自行处理空值（默认 = 用户名），
+    // 这里不填充默认值，以便图谱构建层通过空值判断是否需要遍历所有数据库。
     let database = match row.3 {
         Some(db) if !db.is_empty() => db,
-        _ => if crate::graph::is_pg_driver(&driver) { username.clone() } else { String::new() },
+        _ => String::new(),
     };
 
     Ok(crate::datasource::ConnectionConfig {

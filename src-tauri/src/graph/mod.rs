@@ -15,7 +15,7 @@ use tauri::Emitter;
 /// 系统库/系统 schema 名，构建图谱和指标列表时统一过滤
 pub const SYSTEM_SCHEMAS: &[&str] = &[
     "information_schema", "pg_catalog", "performance_schema",
-    "sys", "mysql", "template0", "template1",
+    "sys", "mysql", "template0", "template1", "postgres",
 ];
 
 // ─── 事件结构（复用 task-progress 格式）─────────────────────────────────────
@@ -453,17 +453,22 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
 
             // PG 等多 schema 数据源：指标 table_name 可能是裸名（如 "orders"），
             // 而图谱节点 ID 使用 schema 限定名（如 "public.orders"）。
-            // 通过 name 字段 fallback 查找实际节点 ID。
+            // 通过后缀匹配 fallback 查找实际节点 ID。
             let resolved_node_id = if table_exists {
                 Some(table_node_id.clone())
-            } else {
+            } else if !table_name.contains('.') {
+                // 裸名 fallback: "orders" → 匹配 "public.orders" 等 schema 限定名
                 conn.query_row(
                     "SELECT id FROM graph_nodes
-                     WHERE connection_id = ?1 AND node_type = 'table' AND name = ?2 AND is_deleted = 0
+                     WHERE connection_id = ?1 AND node_type = 'table'
+                       AND name LIKE '%.' || ?2
+                       AND is_deleted = 0
                      LIMIT 1",
                     rusqlite::params![connection_id, table_name],
                     |row| row.get::<_, String>(0),
                 ).ok()
+            } else {
+                None
             };
 
             if let Some(target_id) = resolved_node_id {
@@ -639,7 +644,22 @@ fn build_comment_links(
 
             for r in &refs {
                 // 目标表不存在于当前 Schema → 跳过
-                if !known_tables.contains(&r.target_table) {
+                // 注释中的 target_table 可能是裸名（如 "ai_trace"），
+                // 而 known_tables 在 PG 中使用 schema 限定名（如 "public.ai_trace"）。
+                // 先精确匹配，再尝试后缀匹配。
+                let resolved_target = if known_tables.contains(&r.target_table) {
+                    r.target_table.clone()
+                } else {
+                    // 裸名 fallback：查找 "*.target_table" 形式
+                    known_tables.iter()
+                        .find(|kt| {
+                            kt.ends_with(&format!(".{}", r.target_table))
+                        })
+                        .cloned()
+                        .unwrap_or_default()
+                };
+
+                if resolved_target.is_empty() {
                     log::warn!(
                         "[comment_links] 目标表 '{}' 不存在，跳过注释引用 ({}.{})",
                         r.target_table, table_name, col.name
@@ -647,7 +667,7 @@ fn build_comment_links(
                     continue;
                 }
 
-                let target_node_id = format!("{}:table:{}", connection_id, r.target_table);
+                let target_node_id = format!("{}:table:{}", connection_id, resolved_target);
 
                 // 检查是否已有 source='schema' 的 Link Node 连接这两张表
                 let schema_link_exists: bool = match conn.query_row(

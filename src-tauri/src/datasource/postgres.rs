@@ -347,6 +347,16 @@ impl DataSource for PostgresDataSource {
 
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let start = Instant::now();
+
+        // Non-SELECT statements: use execute() to get affected row count
+        let trimmed = sql.trim_start().to_uppercase();
+        if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
+            let result = sqlx::query(sql).execute(&self.pool).await?;
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let row_count = result.rows_affected() as usize;
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+        }
+
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -471,7 +481,7 @@ impl DataSource for PostgresDataSource {
              JOIN information_schema.key_column_usage kcu
                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
              JOIN information_schema.constraint_column_usage ccu
-                 ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+                 ON ccu.constraint_name = tc.constraint_name AND ccu.constraint_schema = tc.constraint_schema
              LEFT JOIN information_schema.referential_constraints rc
                  ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
              WHERE tc.constraint_type = 'FOREIGN KEY'

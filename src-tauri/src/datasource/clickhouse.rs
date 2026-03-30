@@ -120,12 +120,20 @@ impl DataSource for ClickHouseDataSource {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         // ClickHouse HTTP 接口：附加 FORMAT JSONEachRow，用 reqwest 发送原始 JSON
         let start = Instant::now();
-        let query_sql = format!("{} FORMAT JSONEachRow", sql);
 
         let http_client = reqwest::Client::builder()
             .timeout(self.connect_timeout)
             .build()
             .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+        // Non-SELECT statements: send without FORMAT suffix, return success
+        let trimmed = sql.trim_start().to_uppercase();
+        let is_query = trimmed.starts_with("SELECT") || trimmed.starts_with("SHOW") || trimmed.starts_with("DESCRIBE") || trimmed.starts_with("EXPLAIN") || trimmed.starts_with("WITH") || trimmed.starts_with("EXISTS");
+        let query_sql = if is_query {
+            format!("{} FORMAT JSONEachRow", sql)
+        } else {
+            sql.to_string()
+        };
 
         let mut req = http_client
             .post(&self.http_url)
@@ -150,6 +158,11 @@ impl DataSource for ClickHouseDataSource {
 
         if !status.is_success() {
             return Err(AppError::Datasource(body));
+        }
+
+        // DML succeeded — ClickHouse HTTP doesn't report affected rows
+        if !is_query {
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: 1, duration_ms });
         }
 
         // JSONEachRow 每行一个 JSON 对象（换行分隔）

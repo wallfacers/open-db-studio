@@ -112,6 +112,16 @@ impl DataSource for MySqlDataSource {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         use sqlx::Column;
         let start = Instant::now();
+
+        // Non-SELECT statements: use execute() to get affected row count
+        let trimmed = sql.trim_start().to_uppercase();
+        if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("DESCRIBE") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
+            let result = sqlx::query(sql).execute(&self.pool).await?;
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let row_count = result.rows_affected() as usize;
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+        }
+
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
 

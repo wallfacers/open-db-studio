@@ -223,10 +223,13 @@ fn execute_query<P: odbc_api::ParameterCollectionRef>(
         let row_count = rows.len();
         Ok(QueryResult { columns, rows, row_count, duration_ms })
     } else {
+        // DML (INSERT/UPDATE/DELETE) — no result set returned.
+        // ODBC high-level API doesn't expose affected row count here,
+        // so return 1 to indicate success.
         Ok(QueryResult {
             columns: vec![],
             rows: vec![],
-            row_count: 0,
+            row_count: 1,
             duration_ms,
         })
     }

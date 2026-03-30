@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './i18n';
 import App from './App.tsx';
 import './index.css';
+import './styles/ai-highlight.css';
 
 // 全局过滤 Monaco Editor 的 "Canceled" Promise 错误（无害，编辑器卸载时的正常行为）
 window.addEventListener('unhandledrejection', (event) => {

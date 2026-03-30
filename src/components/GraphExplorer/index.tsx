@@ -156,7 +156,7 @@ function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string;
     id: e.id,
     source: e.from_node,
     target: e.to_node,
-    type: 'relation',
+    type: e.from_node === e.to_node ? 'selfLoop' : 'relation',
     animated: false,
     markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
     style: getEdgeStyleBySource(e.source ?? 'schema'),

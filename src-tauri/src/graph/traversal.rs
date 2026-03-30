@@ -28,13 +28,25 @@ pub(crate) fn bfs_paths(
     max_hops: u8,
 ) -> Vec<Vec<String>> {
     let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    // 记录自引用边（from == to），单独处理
+    let mut self_loops: HashSet<String> = HashSet::new();
     for (from, to) in edges {
+        if from == to {
+            self_loops.insert(from.clone());
+        }
         adj.entry(from.clone()).or_default().push(to.clone());
-        adj.entry(to.clone()).or_default().push(from.clone()); // 双向
+        if from != to {
+            adj.entry(to.clone()).or_default().push(from.clone()); // 双向（非自引用）
+        }
     }
 
     let mut paths = Vec::new();
     for start in start_ids {
+        // 自引用边：添加 [start, start] 路径
+        if self_loops.contains(start) {
+            paths.push(vec![start.clone(), start.clone()]);
+        }
+
         let mut visited: HashSet<String> = HashSet::new();
         let mut queue: VecDeque<(String, Vec<String>, u8)> = VecDeque::new();
         queue.push_back((start.clone(), vec![start.clone()], 0));

@@ -27,6 +27,8 @@ pub fn init(app_data_dir: &str) -> AppResult<()> {
 
     // 开启 WAL 模式提升并发性能
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    // 开启外键约束，确保 CASCADE / SET NULL 规则生效
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
     migrations::run_migrations(&conn)?;
 
@@ -178,9 +180,15 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
     Ok(result)
 }
 
-/// 删除连接（CASCADE 删除关联历史）
+/// 删除连接及所有关联资源
 pub fn delete_connection(id: i64) -> AppResult<()> {
     let conn = get().lock().unwrap();
+    // 显式清理缺少 CASCADE 约束的关联表
+    conn.execute("DELETE FROM migration_tasks WHERE src_connection_id = ?1 OR dst_connection_id = ?1", [id])?;
+    conn.execute("DELETE FROM schema_change_log WHERE connection_id = ?1", [id])?;
+    conn.execute("DELETE FROM task_records WHERE connection_id = ?1", [id])?;
+    conn.execute("UPDATE er_projects SET connection_id = NULL WHERE connection_id = ?1", [id])?;
+    // 删除连接本体（query_history / graph_nodes / metrics / semantic_aliases 由 CASCADE 自动清理）
     let affected = conn.execute("DELETE FROM connections WHERE id = ?1", [id])?;
     if affected == 0 {
         return Err(crate::AppError::Other(format!("Connection {} not found", id)));

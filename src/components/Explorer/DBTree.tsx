@@ -357,7 +357,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           onDeleteConnection={async () => {
             if (!await confirm({ message: t('dbTree.confirmDeleteConnection'), variant: 'danger' })) return;
             const connId = getConnectionId(contextMenu.node);
-            await invoke('delete_connection', { id: connId });
+            await useConnectionStore.getState().deleteConnection(connId);
             useTreeStore.getState().init();
             useQueryStore.getState().closeTabsByConnectionId(connId);
             showToast(t('dbTree.connectionDeleted'), 'success');

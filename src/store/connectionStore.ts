@@ -87,10 +87,22 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
   deleteConnection: async (id) => {
     await invoke('delete_connection', { id });
-    set((s) => ({
-      connections: s.connections.filter((c) => c.id !== id),
-      activeConnectionId: s.activeConnectionId === id ? null : s.activeConnectionId,
-    }));
+    // 停止该连接的图刷新定时器
+    get().stopGraphRefreshTimer(id);
+    set((s) => {
+      // 清理已打开连接集合并持久化
+      const newActiveIds = new Set(s.activeConnectionIds);
+      newActiveIds.delete(id);
+      saveOpenedConnectionIds(newActiveIds);
+      // 清理元数据缓存
+      const { [id]: _, ...restMeta } = s.metaCache;
+      return {
+        connections: s.connections.filter((c) => c.id !== id),
+        activeConnectionId: s.activeConnectionId === id ? null : s.activeConnectionId,
+        activeConnectionIds: newActiveIds,
+        metaCache: restMeta,
+      };
+    });
   },
 
   updateConnection: async (id, req) => {

@@ -451,12 +451,27 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
                 |row| row.get::<_, i64>(0),
             ).unwrap_or(0) > 0;
 
-            if table_exists {
-                let edge_id = format!("{}=>{}", node_id, table_node_id);
+            // PG 等多 schema 数据源：指标 table_name 可能是裸名（如 "orders"），
+            // 而图谱节点 ID 使用 schema 限定名（如 "public.orders"）。
+            // 通过 name 字段 fallback 查找实际节点 ID。
+            let resolved_node_id = if table_exists {
+                Some(table_node_id.clone())
+            } else {
+                conn.query_row(
+                    "SELECT id FROM graph_nodes
+                     WHERE connection_id = ?1 AND node_type = 'table' AND name = ?2 AND is_deleted = 0
+                     LIMIT 1",
+                    rusqlite::params![connection_id, table_name],
+                    |row| row.get::<_, String>(0),
+                ).ok()
+            };
+
+            if let Some(target_id) = resolved_node_id {
+                let edge_id = format!("{}=>{}", node_id, target_id);
                 conn.execute(
                     "INSERT OR IGNORE INTO graph_edges (id, from_node, to_node, edge_type, weight)
                      VALUES (?1, ?2, ?3, 'metric_ref', 0.9)",
-                    rusqlite::params![edge_id, node_id, table_node_id],
+                    rusqlite::params![edge_id, node_id, target_id],
                 )?;
             } else {
                 log::warn!(

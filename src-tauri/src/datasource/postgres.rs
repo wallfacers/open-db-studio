@@ -464,6 +464,7 @@ impl DataSource for PostgresDataSource {
         let schema = schema.unwrap_or("public");
         let rows = sqlx::query(
             "SELECT tc.constraint_name, kcu.column_name,
+                    ccu.table_schema AS referenced_schema,
                     ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
                     rc.delete_rule
              FROM information_schema.table_constraints tc
@@ -481,12 +482,17 @@ impl DataSource for PostgresDataSource {
         .bind(schema)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| ForeignKeyMeta {
-            constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
-            column: r.try_get::<String, _>(1).unwrap_or_default(),
-            referenced_table: r.try_get::<String, _>(2).unwrap_or_default(),
-            referenced_column: r.try_get::<String, _>(3).unwrap_or_default(),
-            on_delete: r.try_get::<Option<String>, _>(4).ok().flatten(),
+        Ok(rows.iter().map(|r| {
+            let ref_schema: String = r.try_get::<String, _>(2).unwrap_or_default();
+            let ref_table: String = r.try_get::<String, _>(3).unwrap_or_default();
+            ForeignKeyMeta {
+                constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
+                column: r.try_get::<String, _>(1).unwrap_or_default(),
+                // schema-qualified: "public.orders" — 与图谱节点 ID 格式一致
+                referenced_table: format!("{}.{}", ref_schema, ref_table),
+                referenced_column: r.try_get::<String, _>(4).unwrap_or_default(),
+                on_delete: r.try_get::<Option<String>, _>(5).ok().flatten(),
+            }
         }).collect())
     }
 

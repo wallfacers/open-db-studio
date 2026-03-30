@@ -17,6 +17,7 @@ import JobLogPanel, { type JobLogPanelHandle } from './JobLogPanel';
 import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
 import { SeaTunnelJobUIObject } from '../../mcp/ui/adapters/SeaTunnelJobAdapter';
 import { useSeaTunnelJobFormStore } from '../../store/seatunnelJobStore';
+import { useHighlightStore } from '../../store/highlightStore';
 import { stJobNodeId } from '../../utils/nodeId';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -121,6 +122,11 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       connectionId: tab.stConnectionId ?? undefined,
     });
     return () => useSeaTunnelJobFormStore.getState().removeForm(tabId);
+  }, [tabId]);
+
+  // ── Cleanup highlights on unmount ─────────────────────────────
+  useEffect(() => {
+    return () => useHighlightStore.getState().clearAll(tabId);
   }, [tabId]);
 
   // Job metadata
@@ -474,7 +480,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         {mode === 'visual' ? (
           <VisualBuilder value={builderState} onChange={handleBuilderChange} scopeId={tabId} />
         ) : (
-          <JsonEditor value={configJson} onChange={handleJsonChange} />
+          <JsonEditor value={configJson} onChange={handleJsonChange} externalValue={externalContent} />
         )}
       </div>
 

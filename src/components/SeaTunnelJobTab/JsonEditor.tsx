@@ -1,10 +1,14 @@
-import React from 'react';
-import MonacoEditor, { type BeforeMount } from '@monaco-editor/react';
+import React, { useRef, useEffect } from 'react';
+import MonacoEditor, { type BeforeMount, type OnMount } from '@monaco-editor/react';
+import type * as Monaco from 'monaco-editor';
+import { useMonacoHighlight } from '../../hooks/useMonacoHighlight';
 
 interface JsonEditorProps {
   value: string;
   onChange: (v: string) => void;
   readOnly?: boolean;
+  /** When set, AI-driven external changes will be highlighted */
+  externalValue?: string;
 }
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
@@ -38,7 +42,25 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
   }
 };
 
-const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnly = false }) => {
+const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnly = false, externalValue }) => {
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const prevExternalRef = useRef<string>('');
+  const { notifyContentChange } = useMonacoHighlight(editorRef);
+
+  const handleMount: OnMount = (editor) => {
+    editorRef.current = editor;
+  };
+
+  // Watch for external (AI) value changes and trigger highlight
+  useEffect(() => {
+    if (externalValue === undefined) return;
+    const prev = prevExternalRef.current;
+    prevExternalRef.current = externalValue;
+    if (prev && prev !== externalValue) {
+      notifyContentChange(prev, externalValue);
+    }
+  }, [externalValue, notifyContentChange]);
+
   return (
     <MonacoEditor
       height="100%"
@@ -46,6 +68,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnly = fal
       theme="odb-dark-json"
       value={value}
       beforeMount={handleEditorWillMount}
+      onMount={handleMount}
       onChange={(v) => {
         if (!readOnly && v !== undefined) onChange(v);
       }}
@@ -61,6 +84,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, readOnly = fal
         formatOnPaste: true,
         formatOnType: false,
         automaticLayout: true,
+        glyphMargin: true,
         scrollbar: {
           verticalScrollbarSize: 6,
           horizontalScrollbarSize: 6,

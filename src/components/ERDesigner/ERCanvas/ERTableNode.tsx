@@ -166,7 +166,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {isEditingName ? (
             <input
               ref={nameInputRef}
-              className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] w-[150px] h-[20px] leading-[18px]"
+              className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] w-[100px] h-[20px] leading-[18px]"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -174,7 +174,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             />
           ) : (
             <span
-              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate w-[150px]"
+              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate w-[100px]"
               title={t('erDesigner.dblClickToEdit')}
               onDoubleClick={() => setIsEditingName(true)}
             >
@@ -184,11 +184,12 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </div>
 
         {/* Type Dropdown */}
-        <div className="z-0 shrink-0 ml-2">
+        <div className="z-0 shrink-0 ml-1">
           <DropdownSelect
             value={col.data_type}
             options={SQL_TYPES}
             onChange={(value) => onUpdateColumn(col.id, { data_type: value })}
+            className="w-[70px]"
             plain
           />
         </div>
@@ -196,7 +197,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         {/* Delete Column Button */}
         <X
           size={14}
-          className="cursor-pointer text-gray-500 hover:text-red-400 shrink-0 ml-1 z-10"
+          className="cursor-pointer text-gray-500 hover:text-red-400 shrink-0 z-10"
           onClick={(e) => { e.stopPropagation(); onDeleteColumn(col.id); }}
         />
 
@@ -217,7 +218,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   };
 
   return (
-    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible w-[360px] font-sans">
+    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible w-[280px] font-sans">
       {/* Header */}
       <div className="bg-[#1a2639] px-3 py-1.5 border-b border-[#253347] rounded-t-lg flex justify-between items-center">
         {isEditingName ? (
@@ -275,7 +276,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
       </div>
 
       {/* Columns */}
-      <div className="flex flex-col max-h-[400px] overflow-y-auto overflow-x-hidden">
+      <div className="flex flex-col">
         {columns.map((col) => (
           <ColumnRow key={col.id} col={col} />
         ))}

@@ -204,7 +204,28 @@ pub struct CreateColumnRequest {
 
 - [ ] **Step 3: 扩展 UpdateColumnRequest**
 
-同样追加 8 个 Option 字段（与 Create 相同结构）。
+```rust
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateColumnRequest {
+    pub name: Option<String>,
+    pub data_type: Option<String>,
+    pub nullable: Option<bool>,
+    pub default_value: Option<String>,
+    pub is_primary_key: Option<bool>,
+    pub is_auto_increment: Option<bool>,
+    pub comment: Option<String>,
+    pub sort_order: Option<i64>,
+    // 新增
+    pub length: Option<i64>,
+    pub scale: Option<i64>,
+    pub is_unique: Option<bool>,
+    pub unsigned: Option<bool>,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub on_update: Option<String>,
+    pub enum_values: Option<String>,
+}
+```
 
 - [ ] **Step 4: 编译检查**
 
@@ -410,6 +431,42 @@ if let Some(ref dv) = col.default_value {
 if let Some(ref ou) = col.on_update {
     col_def.push_str(&format!(" ON UPDATE {}", ou));
 }
+// ENUM 值列表（MySQL）
+if let Some(ref ev) = col.enum_values {
+    if let Ok(vals) = serde_json::from_str::<Vec<String>>(ev) {
+        if !vals.is_empty() && col.data_type.to_uppercase() == "ENUM" {
+            let quoted: Vec<String> = vals.iter().map(|v| format!("'{}'", v)).collect();
+            // 替换类型定义为 ENUM('a','b','c')
+            // 注意：这段逻辑需在 map_column_type 返回前处理
+        }
+    }
+}
+```
+
+同时在各方言的 `inline_column_comment()` 方法中（当前 MySQL 已实现，返回 `COMMENT 'xxx'`），确保 `col.comment` 能正确输出。当前实现已读取 `col.comment`，无需额外修改。
+
+对于 ENUM 类型的 DDL 输出，更精确的做法是在 MySQL 方言的 `map_column_type()` 中处理：
+
+```rust
+// 在 MySqlDialect 中覆盖 map_column_type
+fn map_column_type(&self, col: &ErColumn) -> String {
+    let upper = col.data_type.to_uppercase();
+    if upper == "ENUM" || upper == "SET" {
+        if let Some(ref ev) = col.enum_values {
+            if let Ok(vals) = serde_json::from_str::<Vec<String>>(ev) {
+                let quoted: Vec<String> = vals.iter().map(|v| format!("'{}'", v)).collect();
+                return format!("{}({})", upper, quoted.join(","));
+            }
+        }
+        return upper;
+    }
+    let base = self.map_type(&col.data_type);
+    match (col.length, col.scale) {
+        (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+        (Some(l), None)    => format!("{}({})", base, l),
+        _                  => base,
+    }
+}
 ```
 
 - [ ] **Step 6: 编译检查**
@@ -489,7 +546,43 @@ addColumn: async (tableId, column) => {
 },
 ```
 
-对 `updateColumn` 做类似处理。对 `loadProject` 中接收的列数据也做 `enum_values` 反序列化。
+对 `updateColumn` 做同样的序列化/反序列化处理：
+
+```typescript
+updateColumn: async (id, updates) => {
+  try {
+    const req = { ...updates };
+    if (req.enum_values && Array.isArray(req.enum_values)) {
+      (req as any).enum_values = JSON.stringify(req.enum_values);
+    }
+    await invoke('er_update_column', { id, req });
+    set((s) => {
+      const newColumns = { ...s.columns };
+      for (const tableId of Object.keys(newColumns)) {
+        const tid = Number(tableId);
+        newColumns[tid] = newColumns[tid].map((c) =>
+          c.id === id ? { ...c, ...updates } : c
+        );
+      }
+      return { columns: newColumns };
+    });
+  } catch (e) {
+    console.error('Failed to update ER column:', e);
+  }
+},
+```
+
+对 `loadProject` 中接收的列数据做批量反序列化：
+
+```typescript
+// 在 loadProject action 中，从 Rust 获取 full 数据后
+for (const tf of full.tables) {
+  tf.columns = tf.columns.map((col: any) => ({
+    ...col,
+    enum_values: col.enum_values ? JSON.parse(col.enum_values) : null,
+  }));
+}
+```
 
 - [ ] **Step 3: 更新 Store state 接口添加 drawer 和兼容性状态**
 
@@ -1275,7 +1368,7 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
       ))}
       {/* 添加列按钮 */}
       <button
-        onClick={() => addColumn(tableId, { name: `column_${cols.length + 1}`, data_type: 'VARCHAR', nullable: true, is_primary_key: false, is_auto_increment: false, sort_order: cols.length })}
+        onClick={() => addColumn(tableId, { name: `column_${cols.length + 1}`, data_type: 'VARCHAR', nullable: true, default_value: null, is_primary_key: false, is_auto_increment: false, comment: null, length: null, scale: null, is_unique: false, unsigned: false, charset: null, collation: null, on_update: null, enum_values: null, sort_order: cols.length })}
         className="mt-2 w-full py-1 text-[12px] text-[#4a6480] hover:text-[#00c9a7] hover:bg-[#1a2639] rounded transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={12} /> 添加列
@@ -1531,28 +1624,45 @@ clearDialectWarnings: () => set({ dialectWarnings: {} }),
 
 - [ ] **Step 2: 在 bindConnection 中触发检查**
 
-在现有 `bindConnection` action 成功后追加：
+在现有 `bindConnection` action 中，`await get().loadProject(projectId)` 之后追加方言推导。从 `connectionStore` 获取连接的 `driver` 字段（值为 `'mysql'`、`'postgres'`、`'oracle'`、`'sqlserver'`、`'sqlite'` 等）：
 
 ```typescript
-// 推导方言
-const dialect = /* 从 connection driver 推导 */;
+// 在 bindConnection action 中，loadProject 之后追加
+import { useConnectionStore } from '@/store/connectionStore';
+// ...
+const conn = useConnectionStore.getState().connections.find(c => c.id === connectionId);
+const driverToDialect: Record<string, string> = {
+  mysql: 'mysql', postgres: 'postgresql', oracle: 'oracle',
+  sqlserver: 'sqlserver', sqlite: 'sqlite',
+};
+const dialect = conn ? (driverToDialect[conn.driver] ?? null) : null;
 set({ boundDialect: dialect });
 get().checkDialectCompatibility();
 ```
 
-在 `unbindConnection` 中清除：
+在 `unbindConnection` action 中，`set(...)` 之后追加清除：
 
 ```typescript
 set({ boundDialect: null });
 get().clearDialectWarnings();
 ```
 
-- [ ] **Step 3: 在 updateColumn 中触发单列检查**
+- [ ] **Step 3: 在 updateColumn 和 deleteColumn 中触发兼容性更新**
 
 在 `updateColumn` action 的 set() 之后追加：
 
 ```typescript
 get().checkColumnCompatibility(id);
+```
+
+在 `deleteColumn` action 的 set() 之后追加移除该列的警告：
+
+```typescript
+set((s) => {
+  const next = { ...s.dialectWarnings };
+  delete next[id];
+  return { dialectWarnings: next };
+});
 ```
 
 - [ ] **Step 4: TypeScript 类型检查**
@@ -1568,7 +1678,68 @@ git commit -m "feat(er): integrate dialect compatibility checking"
 
 ---
 
-### Task 20: 全量编译验证与端到端测试
+### Task 20: syncFromDatabase 类型解析更新
+
+**Files:**
+- Modify: `src-tauri/src/er/repository.rs`（或 `src-tauri/src/er/commands.rs` 中 sync 相关函数）
+
+- [ ] **Step 1: 更新数据库同步时的类型拆分逻辑**
+
+当 `syncFromDatabase` 从真实数据库导入列信息时，数据库返回的类型格式包含长度（如 MySQL 返回 `varchar(255)`、PostgreSQL 返回 `character varying(255)`）。需在导入时拆分为 `data_type` + `length` + `scale`。
+
+在 Rust 层的同步逻辑中，添加类型解析函数：
+
+```rust
+/// 解析数据库返回的类型字符串，拆分为 (base_type, length, scale)
+fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>) {
+    let normalized = raw.trim().to_uppercase();
+    // 处理括号内的长度/精度
+    if let Some(paren_start) = normalized.find('(') {
+        let base = normalized[..paren_start].trim().to_string();
+        let params = &normalized[paren_start + 1..normalized.len() - 1];
+        let parts: Vec<&str> = params.split(',').collect();
+        let length = parts.first().and_then(|s| s.trim().parse::<i64>().ok());
+        let scale = parts.get(1).and_then(|s| s.trim().parse::<i64>().ok());
+        // 标准化 PostgreSQL 别名
+        let base = match base.as_str() {
+            "CHARACTER VARYING" => "VARCHAR".to_string(),
+            "CHARACTER" => "CHAR".to_string(),
+            "INT4" => "INTEGER".to_string(),
+            "INT8" => "BIGINT".to_string(),
+            _ => base,
+        };
+        (base, length, scale)
+    } else {
+        let base = match normalized.as_str() {
+            "CHARACTER VARYING" => "VARCHAR".to_string(),
+            "CHARACTER" => "CHAR".to_string(),
+            "INT4" | "INT" => "INTEGER".to_string(),
+            "INT8" => "BIGINT".to_string(),
+            "DOUBLE PRECISION" => "DOUBLE".to_string(),
+            _ => normalized,
+        };
+        (base, None, None)
+    }
+}
+```
+
+在同步创建列时，调用 `parse_db_type()` 设置 `data_type`、`length`、`scale` 字段。
+
+- [ ] **Step 2: 编译检查**
+
+Run: `cd src-tauri && cargo check`
+Expected: 编译通过
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src-tauri/src/er/
+git commit -m "feat(er): parse type length/scale during database sync"
+```
+
+---
+
+### Task 21: 全量编译验证与端到端测试
 
 **Files:** 无新文件
 

@@ -255,7 +255,7 @@ pub async fn run_graph_build(
     database: Option<String>,
 ) {
     let mut logs: Vec<TaskLogLine> = Vec::new();
-    let mut table_count: i64 = 0;
+    let table_count: i64;
 
     log_and_emit(&app, &task_id, &mut logs, "INFO", "开始构建知识图谱...");
 

@@ -35,9 +35,16 @@ pub fn run() {
                 if let Ok(img) = image::load_from_memory(icon_bytes) {
                     let rgba = img.into_rgba8();
                     let (w, h) = rgba.dimensions();
+                    log::info!("Setting window icon: {}x{}", w, h);
                     let icon = tauri::image::Image::new_owned(rgba.into_raw(), w, h);
-                    let _ = window.set_icon(icon);
+                    if let Err(e) = window.set_icon(icon) {
+                        log::error!("Failed to set window icon: {}", e);
+                    }
+                } else {
+                    log::error!("Failed to decode icon.png");
                 }
+            } else {
+                log::error!("Could not find 'main' window for icon");
             }
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data dir");

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import type { ErIndex, ErColumn } from '@/types';
 import { DropdownSelect } from '@/components/common/DropdownSelect';
+import { Tooltip } from '@/components/common/Tooltip';
 
 interface IndexEditorProps {
   indexes: ErIndex[];
@@ -89,15 +90,20 @@ function IndexRow({
         {expanded ? <ChevronUp size={12} className="text-[#7a9bb8] shrink-0" /> : <ChevronDown size={12} className="text-[#7a9bb8] shrink-0" />}
         <span className="text-[13px] text-[#b5cfe8] truncate flex-1">{index.name}</span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${badgeClass} shrink-0`}>{index.type}</span>
-        <span className="text-[11px] text-[#7a9bb8] truncate max-w-[120px]" title={colNames}>{colNames || '-'}</span>
-        <button
-          type="button"
-          className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-red-400 transition-colors"
-          onClick={(e) => { e.stopPropagation(); onDelete(index.id, tableId); }}
-          title="删除索引"
-        >
-          <Trash2 size={12} />
-        </button>
+        <Tooltip content={colNames} className="flex-shrink-0 max-w-[120px]">
+          <span className="text-[11px] text-[#7a9bb8] truncate">
+            {colNames || '-'}
+          </span>
+        </Tooltip>
+        <Tooltip content="删除索引">
+          <button
+            type="button"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-red-400 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onDelete(index.id, tableId); }}
+          >
+            <Trash2 size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Expanded details */}

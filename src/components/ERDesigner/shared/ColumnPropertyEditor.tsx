@@ -3,9 +3,41 @@ import { createPortal } from 'react-dom';
 import { Key, Zap, MoreVertical, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ErColumn } from '@/types';
 import { DropdownSelect } from '@/components/common/DropdownSelect';
+import { Tooltip } from '@/components/common/Tooltip';
 import TypeLengthDisplay from './TypeLengthDisplay';
 import CompatibilityWarning from './CompatibilityWarning';
 import { findTypeDef, type DialectName } from './dataTypes';
+
+function DebouncedInput({ value, onChange, placeholder, className, onKeyDown }: any) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+
+  return (
+    <input
+      className={className}
+      value={local}
+      placeholder={placeholder}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onChange(local); }}
+      onKeyDown={onKeyDown}
+    />
+  );
+}
+
+function DebouncedTextarea({ value, onChange, placeholder, className }: any) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+
+  return (
+    <textarea
+      className={className}
+      value={local}
+      placeholder={placeholder}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onChange(local); }}
+    />
+  );
+}
 
 interface ColumnPropertyEditorProps {
   column: ErColumn;
@@ -86,167 +118,181 @@ function CompactRow({
   };
 
   return (
-    <div className="flex items-center gap-1 px-2 h-[24px] hover:bg-[#1a2639] transition-colors group text-[13px] text-[#b5cfe8]">
-      {/* PK icon */}
-      <button
-        type="button"
-        className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-600 hover:text-gray-400'}`}
-        onClick={() => onUpdate(column.id, { is_primary_key: !column.is_primary_key })}
-        title={column.is_primary_key ? 'Primary Key' : 'Set as PK'}
-      >
-        <Key size={12} />
-      </button>
+    <div className="flex items-center gap-1.5 px-2 h-[32px] py-1 hover:bg-[#1a2639] transition-colors group text-[13px] text-[#b5cfe8]" style={onOpenDrawer ? { paddingLeft: '60px' } : undefined}>
+      {/* PK / AI icons container */}
+      <div className="flex items-center gap-1.5 w-[40px] shrink-0">
+        <Tooltip content={column.is_primary_key ? 'Primary Key' : 'Set as PK'}>
+          <button
+            type="button"
+            className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-600 hover:text-gray-400'}`}
+            onClick={() => onUpdate(column.id, { is_primary_key: !column.is_primary_key })}
+          >
+            <Key size={12} />
+          </button>
+        </Tooltip>
 
-      {/* AI icon */}
-      {column.is_primary_key && (
-        <button
-          type="button"
-          className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'}`}
-          onClick={() => onUpdate(column.id, { is_auto_increment: !column.is_auto_increment })}
-          title={column.is_auto_increment ? 'Auto Increment' : 'Set Auto Increment'}
-        >
-          <Zap size={12} />
-        </button>
-      )}
-
-      {/* Field name */}
-      {isEditingName ? (
-        <input
-          ref={nameRef}
-          className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] w-[80px] h-[18px] leading-[16px]"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-          onBlur={handleNameSave}
-          onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
-        />
-      ) : (
-        <span
-          className="truncate w-[80px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-0.5 rounded text-[13px]"
-          onDoubleClick={() => setIsEditingName(true)}
-          title={column.name}
-        >
-          {column.name}
-        </span>
-      )}
-
-      {/* Type + length */}
-      <div className="shrink-0">
-        <TypeLengthDisplay column={column} dialect={dialect} mode="edit" onChange={(u) => onUpdate(column.id, u)} />
+        {column.is_primary_key && (
+          <Tooltip content={column.is_auto_increment ? 'Auto Increment' : 'Set Auto Increment'}>
+            <button
+              type="button"
+              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'}`}
+              onClick={() => onUpdate(column.id, { is_auto_increment: !column.is_auto_increment })}
+            >
+              <Zap size={12} />
+            </button>
+          </Tooltip>
+        )}
       </div>
 
-      {/* Compatibility warning */}
-      <CompatibilityWarning typeName={column.data_type} dialect={dialect} />
+      {/* Field name */}
+      <div className="flex-1 min-w-0 flex items-center">
+        {isEditingName ? (
+          <input
+            ref={nameRef}
+            className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 py-px leading-[20px] rounded outline-none border border-[#00c9a7] w-full"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleNameSave}
+            onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
+          />
+        ) : (
+          <Tooltip content={column.name} className="w-full">
+            <span
+              className="truncate cursor-text hover:bg-[#253347] px-1 py-px leading-[20px] rounded text-[13px] block w-full border border-transparent"
+              onDoubleClick={() => setIsEditingName(true)}
+            >
+              {column.name}
+            </span>
+          </Tooltip>
+        )}
+      </div>
+
+      {/* Type + length */}
+      <div className="w-[130px] shrink-0 flex items-center gap-1">
+        <TypeLengthDisplay column={column} dialect={dialect} mode="edit" onChange={(u) => onUpdate(column.id, u)} />
+        <CompatibilityWarning typeName={column.data_type} dialect={dialect} />
+      </div>
 
       {/* NN checkbox */}
-      <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="NOT NULL">
-        <input
-          type="checkbox"
-          className="accent-[#00c9a7] w-3 h-3 cursor-pointer"
-          checked={!column.nullable}
-          onChange={() => onUpdate(column.id, { nullable: !column.nullable })}
-        />
-        <span>NN</span>
-      </label>
-
-      {/* UQ checkbox */}
-      {vis.unique && (
-        <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="UNIQUE">
+      <div className="w-[28px] shrink-0 flex justify-center">
+        <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="NOT NULL">
           <input
             type="checkbox"
             className="accent-[#00c9a7] w-3 h-3 cursor-pointer"
-            checked={column.is_unique}
-            onChange={() => onUpdate(column.id, { is_unique: !column.is_unique })}
+            checked={!column.nullable}
+            onChange={() => onUpdate(column.id, { nullable: !column.nullable })}
           />
-          <span>UQ</span>
         </label>
+      </div>
+
+      {/* UQ checkbox */}
+      {vis.unique && (
+        <div className="w-[28px] shrink-0 flex justify-center">
+          <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="UNIQUE">
+            <input
+              type="checkbox"
+              className="accent-[#00c9a7] w-3 h-3 cursor-pointer"
+              checked={column.is_unique}
+              onChange={() => onUpdate(column.id, { is_unique: !column.is_unique })}
+            />
+          </label>
+        </div>
       )}
 
       {/* Default value */}
       {vis.defaultValue && (
-        isEditingDefault ? (
-          <input
-            ref={defaultRef}
-            className="bg-[#151d28] text-[#b5cfe8] text-[12px] px-1 rounded outline-none border border-[#00c9a7] w-[60px] h-[18px] leading-[16px]"
-            value={editDefault}
-            onChange={(e) => setEditDefault(e.target.value)}
-            onBlur={handleDefaultSave}
-            onKeyDown={(e) => e.key === 'Enter' && handleDefaultSave()}
-            placeholder="默认值"
-          />
-        ) : (
-          <span
-            className="truncate w-[60px] text-[12px] text-[#7a9bb8] cursor-text hover:bg-[#253347] px-1 py-0.5 rounded"
-            onDoubleClick={() => setIsEditingDefault(true)}
-            title={column.default_value ?? '默认值'}
-          >
-            {column.default_value || '-'}
-          </span>
-        )
+        <div className="w-[80px] shrink-0 flex items-center">
+          {isEditingDefault ? (
+            <input
+              ref={defaultRef}
+              className="bg-[#151d28] text-[#b5cfe8] text-[12px] px-1 py-px leading-[20px] rounded outline-none border border-[#00c9a7] w-full"
+              value={editDefault}
+              onChange={(e) => setEditDefault(e.target.value)}
+              onBlur={handleDefaultSave}
+              onKeyDown={(e) => e.key === 'Enter' && handleDefaultSave()}
+              placeholder="默认值"
+            />
+          ) : (
+            <Tooltip content={column.default_value ?? '默认值'} className="w-full">
+              <span
+                className="truncate w-full text-[12px] text-[#7a9bb8] cursor-text hover:bg-[#253347] px-1 py-px leading-[20px] rounded block border border-transparent"
+                onDoubleClick={() => setIsEditingDefault(true)}
+              >
+                {column.default_value || '-'}
+              </span>
+            </Tooltip>
+          )}
+        </div>
       )}
 
       {/* Comment icon */}
       {vis.comment && (
-        <button
-          type="button"
-          className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.comment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'}`}
-          title={column.comment || '添加注释'}
-          onClick={() => onOpenDrawer?.(tableId, column.id)}
-        >
-          <MessageSquare size={11} />
-        </button>
+        <div className="w-[60px] shrink-0 flex items-center justify-center">
+          <Tooltip content={column.comment || '添加注释'}>
+            <button
+              type="button"
+              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.comment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'}`}
+              onClick={() => onOpenDrawer?.(tableId, column.id)}
+            >
+              <MessageSquare size={13} />
+            </button>
+          </Tooltip>
+        </div>
       )}
 
       {/* More menu */}
-      <button
-        ref={menuTriggerRef}
-        type="button"
-        className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={() => setShowMenu(!showMenu)}
-      >
-        <MoreVertical size={12} />
-      </button>
-
-      {showMenu && createPortal(
-        <div
-          ref={menuRef}
-          className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-[200] py-1 min-w-[120px]"
-          style={{ top: menuPos.top, left: menuPos.left }}
+      <div className="w-[24px] shrink-0 flex justify-end relative">
+        <button
+          ref={menuTriggerRef}
+          type="button"
+          className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={() => setShowMenu(!showMenu)}
         >
-          {onDelete && (
-            <div
-              className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-red-400"
-              onClick={() => { onDelete(column.id, tableId); setShowMenu(false); }}
-            >
-              删除
-            </div>
-          )}
-          {onMoveUp && (
-            <div
-              className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-              onClick={() => { onMoveUp(); setShowMenu(false); }}
-            >
-              上移
-            </div>
-          )}
-          {onMoveDown && (
-            <div
-              className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-              onClick={() => { onMoveDown(); setShowMenu(false); }}
-            >
-              下移
-            </div>
-          )}
-          {onOpenDrawer && (
-            <div
-              className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-              onClick={() => { onOpenDrawer(tableId, column.id); setShowMenu(false); }}
-            >
-              在抽屉中编辑
-            </div>
-          )}
-        </div>,
-        document.body,
-      )}
+          <MoreVertical size={13} />
+        </button>
+
+        {showMenu && createPortal(
+          <div
+            ref={menuRef}
+            className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-[200] py-1 min-w-[120px]"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
+            {onDelete && (
+              <div
+                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-red-400"
+                onClick={() => { onDelete(column.id, tableId); setShowMenu(false); }}
+              >
+                删除
+              </div>
+            )}
+            {onMoveUp && (
+              <div
+                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
+                onClick={() => { onMoveUp(); setShowMenu(false); }}
+              >
+                上移
+              </div>
+            )}
+            {onMoveDown && (
+              <div
+                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
+                onClick={() => { onMoveDown(); setShowMenu(false); }}
+              >
+                下移
+              </div>
+            )}
+            {onOpenDrawer && (
+              <div
+                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
+                onClick={() => { onOpenDrawer(tableId, column.id); setShowMenu(false); }}
+              >
+                在抽屉中编辑
+              </div>
+            )}
+          </div>,
+          document.body,
+        )}
+      </div>
     </div>
   );
 }
@@ -254,7 +300,6 @@ function CompactRow({
 // ─── Full Mode ──────────────────────────────────────────────────────────────
 
 const CHARSET_OPTIONS = [
-  { value: '', label: '默认' },
   { value: 'utf8', label: 'utf8' },
   { value: 'utf8mb4', label: 'utf8mb4' },
   { value: 'latin1', label: 'latin1' },
@@ -262,7 +307,6 @@ const CHARSET_OPTIONS = [
 ];
 
 const COLLATION_OPTIONS = [
-  { value: '', label: '默认' },
   { value: 'utf8mb4_general_ci', label: 'utf8mb4_general_ci' },
   { value: 'utf8mb4_unicode_ci', label: 'utf8mb4_unicode_ci' },
   { value: 'utf8_general_ci', label: 'utf8_general_ci' },
@@ -308,10 +352,10 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
       {/* Field name */}
       <div>
         <div className={labelClass}>字段名</div>
-        <input
+        <DebouncedInput
           className={inputClass}
           value={column.name}
-          onChange={(e) => onUpdate(column.id, { name: e.target.value })}
+          onChange={(val: string) => onUpdate(column.id, { name: val })}
         />
       </div>
 
@@ -358,10 +402,10 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
       {/* Default value */}
       <div>
         <div className={labelClass}>默认值</div>
-        <input
+        <DebouncedInput
           className={inputClass}
           value={column.default_value ?? ''}
-          onChange={(e) => onUpdate(column.id, { default_value: e.target.value || null })}
+          onChange={(val: string) => onUpdate(column.id, { default_value: val || null })}
           placeholder="NULL"
         />
       </div>
@@ -370,11 +414,11 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
       {typeDef?.hasEnumValues && (
         <div>
           <div className={labelClass}>ENUM / SET 值 (每行一个)</div>
-          <textarea
+          <DebouncedTextarea
             className={`${inputClass} min-h-[60px] resize-y`}
             value={(column.enum_values ?? []).join('\n')}
-            onChange={(e) => {
-              const vals = e.target.value.split('\n').filter(v => v.trim() !== '');
+            onChange={(val: string) => {
+              const vals = val.split('\n').filter(v => v.trim() !== '');
               onUpdate(column.id, { enum_values: vals.length > 0 ? vals : null });
             }}
             placeholder="value1&#10;value2&#10;value3"
@@ -407,10 +451,10 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
       {/* ON UPDATE */}
       <div>
         <div className={labelClass}>ON UPDATE</div>
-        <input
+        <DebouncedInput
           className={inputClass}
           value={column.on_update ?? ''}
-          onChange={(e) => onUpdate(column.id, { on_update: e.target.value || null })}
+          onChange={(val: string) => onUpdate(column.id, { on_update: val || null })}
           placeholder="例如 CURRENT_TIMESTAMP"
         />
       </div>
@@ -418,10 +462,10 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
       {/* Comment */}
       <div>
         <div className={labelClass}>注释</div>
-        <textarea
+        <DebouncedTextarea
           className={`${inputClass} min-h-[40px] resize-y`}
           value={column.comment ?? ''}
-          onChange={(e) => onUpdate(column.id, { comment: e.target.value || null })}
+          onChange={(val: string) => onUpdate(column.id, { comment: val || null })}
           placeholder="字段注释..."
         />
       </div>

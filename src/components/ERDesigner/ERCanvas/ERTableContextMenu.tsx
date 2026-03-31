@@ -1,15 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Edit3, Trash2, Plus, Copy, LucideIcon } from 'lucide-react';
+import { Edit3, Trash2, Plus, Copy, type LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
-import { useQueryStore } from '../../../store/queryStore';
 import { useConfirmStore } from '../../../store/confirmStore';
 
-interface TableContextMenuProps {
+interface ERTableContextMenuProps {
   x: number;
   y: number;
-  projectId: number;
   tableId: number;
   onClose: () => void;
 }
@@ -22,11 +20,10 @@ interface MenuItem {
   type?: 'divider';
 }
 
-export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projectId, tableId, onClose }) => {
+export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableContextMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { tables, columns, deleteTable, loadProject, addTable, addColumn, openDrawer } = useErDesignerStore();
-  const { openERDesignTab } = useQueryStore();
+  const { tables, columns, deleteTable, addColumn, activeProjectId, loadProject, addTable, openDrawer } = useErDesignerStore();
 
   const table = tables.find(t => t.id === tableId);
 
@@ -40,19 +37,7 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  const handleDelete = async () => {
-    const ok = await useConfirmStore.getState().confirm({
-      title: t('common.delete') || '删除',
-      message: t('erDesigner.confirmDeleteTable') || '确定删除此表？',
-      variant: 'danger',
-    });
-    if (!ok) return;
-    await deleteTable(tableId);
-    onClose();
-  };
-
   const handleEdit = () => {
-    openERDesignTab(projectId, table?.name || '');
     openDrawer(tableId);
     onClose();
   };
@@ -81,7 +66,7 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   };
 
   const handleDuplicate = async () => {
-    if (!table) return;
+    if (!table || !activeProjectId) return;
     const srcCols = columns[tableId] || [];
     const newTable = await addTable(`${table.name}_copy`, {
       x: table.position_x + 50,
@@ -111,6 +96,17 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
     onClose();
   };
 
+  const handleDelete = async () => {
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('common.delete') || '删除',
+      message: t('erDesigner.confirmDeleteTable') || '确定删除此表？',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    await deleteTable(tableId);
+    onClose();
+  };
+
   const menuItems: MenuItem[] = [
     { icon: Edit3, label: t('common.edit') || '编辑', onClick: handleEdit },
     { icon: Plus, label: t('erDesigner.addColumn') || '添加列', onClick: handleAddColumn },
@@ -118,11 +114,6 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
     { type: 'divider' },
     { icon: Trash2, label: t('common.delete') || '删除', onClick: handleDelete, danger: true },
   ];
-
-  const renderIcon = (Icon: LucideIcon | undefined) => {
-    if (!Icon) return null;
-    return <Icon size={14} className="mr-2 flex-shrink-0" />;
-  };
 
   return createPortal(
     <div
@@ -144,7 +135,7 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
             }`}
             onClick={item.onClick}
           >
-            {renderIcon(item.icon)}
+            {item.icon && <item.icon size={14} className="mr-2 flex-shrink-0" />}
             {item.label}
           </div>
         );
@@ -152,6 +143,4 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
     </div>,
     document.body
   );
-};
-
-export default TableContextMenu;
+}

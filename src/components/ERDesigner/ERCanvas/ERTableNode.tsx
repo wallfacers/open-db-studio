@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Handle, Position, useNodeConnections } from '@xyflow/react';
-import { Key, Hash, X, MoreVertical, TableProperties, Edit3 } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { Key, Hash, X, TableProperties } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
+import { Tooltip } from '../../common/Tooltip';
 import { getTypeOptions, formatTypeDisplay, findTypeDef } from '../shared/dataTypes';
 import type { DialectName } from '../shared/dataTypes';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
@@ -21,17 +21,13 @@ interface ERTableNodeData {
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
   const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
-  const { boundDialect, openDrawer } = useErDesignerStore();
+  const { boundDialect } = useErDesignerStore();
   const typeOptions = useMemo(() => getTypeOptions(boundDialect as DialectName | null), [boundDialect]);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(table.name);
-  const [showMenu, setShowMenu] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
 
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
@@ -39,33 +35,13 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
     }
   }, [isEditingName]);
 
-  useLayoutEffect(() => {
-    if (showMenu && menuTriggerRef.current) {
-      const rect = menuTriggerRef.current.getBoundingClientRect();
-      const dropdownHeight = 80;
-      const openUpward = rect.bottom + dropdownHeight > window.innerHeight;
-      setMenuPos({
-        top: openUpward ? rect.top + window.scrollY : rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX,
-      });
-    }
-  }, [showMenu]);
-
-  useEffect(() => {
-    if (showMenu) {
-      const handleClickOutside = (e: MouseEvent) => {
-        const target = e.target as Node;
-        if (!menuRef.current?.contains(target) && !menuTriggerRef.current?.contains(target)) {
-          setShowMenu(false);
-        }
-      };
-      const timer = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 10);
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [showMenu]);
+  const dispatchContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent('er-table-context-menu', {
+      detail: { tableId: table.id, x: e.clientX, y: e.clientY },
+    }));
+  };
 
   const handleNameSave = () => {
     setIsEditingName(false);
@@ -74,10 +50,6 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
     } else {
       setEditName(table.name);
     }
-  };
-
-  const handleDeleteTable = () => {
-    onDeleteTable();
   };
 
   const ColumnRow = ({ col }: { col: typeof columns[number] }) => {
@@ -119,7 +91,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
     return (
       <div
-        className="flex items-center justify-between px-4 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[24px]"
+        className="flex items-center justify-between px-4 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[32px] py-1"
       >
         {/* Target Handle (Left) */}
         <Handle
@@ -136,21 +108,22 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
         {/* PK Icon / Column Name */}
         <div className="flex items-center gap-1.5 z-0 shrink-0">
-          <button
-            type="button"
-            className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleTogglePrimaryKey();
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            title={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}
-          >
-            <Key size={13} />
-          </button>
+          <Tooltip content={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}>
+            <button
+              type="button"
+              className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleTogglePrimaryKey();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <Key size={13} />
+            </button>
+          </Tooltip>
           {col.is_primary_key && (
-            <span title={col.is_auto_increment ? t('erDesigner.autoIncrement') : t('erDesigner.clickToSetAI')}>
+            <Tooltip content={col.is_auto_increment ? t('erDesigner.autoIncrement') : t('erDesigner.clickToSetAI')}>
               <button
                 type="button"
                 className={`nodrag cursor-pointer shrink-0 p-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
@@ -163,13 +136,13 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
               >
                 <Hash size={13} />
               </button>
-            </span>
+            </Tooltip>
           )}
 
           {isEditingName ? (
             <input
               ref={nameInputRef}
-              className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] w-[100px] h-[20px] leading-[18px]"
+              className="nodrag bg-[#151d28] text-[#b5cfe8] text-[13px] px-1.5 py-0 leading-[20px] rounded outline-none border border-[#00c9a7] w-[110px] flex-shrink-0"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -177,8 +150,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             />
           ) : (
             <span
-              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate w-[100px]"
-              title={t('erDesigner.dblClickToEdit')}
+              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1.5 py-0 leading-[20px] rounded truncate w-[110px] inline-block border border-transparent hover:border-[#3a5a7a] transition-colors flex-shrink-0"
               onDoubleClick={() => setIsEditingName(true)}
             >
               {col.name}
@@ -239,15 +211,29 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   };
 
   return (
-    <div className="group/table bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible w-[280px] font-sans">
+    <div
+      className="group/table bg-[#111922] rounded-lg border shadow-xl overflow-visible w-[280px] font-sans transition-all"
+      style={{
+        borderColor: table.color || '#253347',
+        boxShadow: table.color ? `0 4px 12px ${table.color}20` : undefined,
+      }}
+      onContextMenu={dispatchContextMenu}
+    >
       {/* Header */}
-      <div className="bg-[#1a2639] px-3 py-1.5 border-b border-[#253347] rounded-t-lg flex justify-between items-center">
+      <div 
+        className="px-3 py-1.5 border-b rounded-t-[7px] flex justify-between items-center transition-colors"
+        style={{
+          backgroundColor: table.color ? `${table.color}15` : '#1a2639',
+          borderColor: table.color || '#253347',
+        }}
+      >
         {isEditingName ? (
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <TableProperties size={14} className="text-[#00c9a7] shrink-0" />
+            <TableProperties size={14} className="shrink-0" style={{ color: table.color || '#00c9a7' }} />
             <input
               ref={nameInputRef}
-              className="bg-[#253347] text-gray-200 text-[13px] font-medium px-1.5 py-0.5 rounded outline-none border border-[#00c9a7] flex-1 min-w-0"
+              className="bg-[#253347] text-gray-200 text-[13px] font-medium px-1.5 py-0.5 rounded outline-none border flex-1 min-w-0"
+              style={{ borderColor: table.color || '#00c9a7' }}
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -255,61 +241,16 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             />
           </div>
         ) : (
-          <h3
-            className="text-gray-200 text-[13px] font-medium truncate cursor-text hover:bg-[#253347] px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex-1 flex items-center gap-1.5"
-            title={t('erDesigner.dblClickToEditName')}
-            onDoubleClick={() => setIsEditingName(true)}
-          >
-            <TableProperties size={14} className="text-[#00c9a7] shrink-0" />
-            <span className="truncate">{table.name}</span>
-          </h3>
-        )}
-
-        {/* Edit (open drawer) */}
-        <button
-          className="nodrag opacity-0 group-hover/table:opacity-100 p-0.5 text-[#7a9bb8] hover:text-[#00c9a7] transition-all shrink-0 outline-none cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); openDrawer(table.id); }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <Edit3 size={12} />
-        </button>
-
-        {/* Menu Trigger */}
-        <div ref={menuTriggerRef} className="relative shrink-0 ml-1">
-          <button
-            type="button"
-            className="nodrag text-gray-500 hover:text-gray-300 cursor-pointer p-1.5 -my-1.5 -mr-1.5 rounded-sm hover:bg-[#253347] transition-colors flex items-center justify-center outline-none"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setShowMenu(!showMenu);
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <MoreVertical size={13} />
-          </button>
-          {showMenu && createPortal(
-            <div
-              ref={menuRef}
-              className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-[200] py-1 min-w-[120px]"
-              style={{
-                top: menuPos.top + 4,
-                left: menuPos.left - 100,
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              onWheel={(e) => e.stopPropagation()}
+          <Tooltip content={t('erDesigner.dblClickToEditName')} className="flex-1 min-w-0">
+            <h3
+              className="text-gray-200 text-[13px] font-medium truncate cursor-text hover:bg-[#253347] px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex items-center gap-1.5"
+              onDoubleClick={() => setIsEditingName(true)}
             >
-              <div
-                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-                onClick={() => { handleDeleteTable(); setShowMenu(false); }}
-              >
-                {t('erDesigner.deleteTable')}
-              </div>
-            </div>,
-            document.body
-          )}
-        </div>
+              <TableProperties size={14} className="shrink-0" style={{ color: table.color || '#00c9a7' }} />
+              <span className="truncate">{table.name}</span>
+            </h3>
+          </Tooltip>
+        )}
       </div>
 
       {/* Columns */}

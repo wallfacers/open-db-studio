@@ -204,9 +204,8 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                             </div>
                             <TableProperties
                               size={14}
-                              className={`mr-1.5 flex-shrink-0 ${
-                                isTableExpanded ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'
-                              }`}
+                              className={`mr-1.5 flex-shrink-0 ${table.color ? '' : (isTableExpanded ? 'text-[#00c9a7]' : 'text-[#7a9bb8]')}`}
+                              style={table.color ? { color: table.color } : undefined}
                             />
                             <span className="text-[13px] text-[#b5cfe8] flex-1 truncate">{table.name}</span>
                             <span className="text-[11px] text-[#7a9bb8] mr-1">
@@ -228,18 +227,17 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
 
                           {/* Column Header */}
                           {isTableExpanded && (
-                            <div className="flex items-center px-2 h-[20px] text-[11px] text-[#4a6480] select-none" style={{ paddingLeft: '60px' }}>
-                              <span className="w-[40px]"></span>
+                            <div className="flex items-center gap-1.5 px-2 h-[20px] text-[11px] text-[#4a6480] select-none" style={{ paddingLeft: '60px' }}>
+                              <span className="w-[40px] shrink-0"></span>
                               <span className="flex-1 min-w-0">列名</span>
                               <span className="w-[130px] shrink-0">类型</span>
                               <span className="w-[28px] shrink-0 text-center">NN</span>
-                              {visibleColumns.unique && <span className="w-[28px] shrink-0 text-center">UQ</span>}
-                              {visibleColumns.defaultValue && <span className="w-[80px] shrink-0">默认值</span>}
-                              {visibleColumns.comment && <span className="w-[60px] shrink-0">注释</span>}
+                              {visibleColumns.unique && <span className="w-[28px] shrink-0 text-center">UQ</span>}   
+                              {visibleColumns.defaultValue && <span className="w-[80px] shrink-0">默认值</span>}     
+                              {visibleColumns.comment && <span className="w-[60px] shrink-0 text-center">注释</span>}
                               <span className="w-[24px] shrink-0"></span>
                             </div>
                           )}
-
                           {/* Column Rows */}
                           {isTableExpanded && getTableColumns(table.id).map(column => (
                             <ColumnPropertyEditor

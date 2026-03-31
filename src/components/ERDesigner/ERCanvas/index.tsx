@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
 import ERTableNode from './ERTableNode'
+import ERTableContextMenu from './ERTableContextMenu'
 import EREdge from './EREdge'
 import ERToolbar from './ERToolbar'
 import ERPropertyDrawer from '../ERPropertyDrawer'
@@ -66,6 +67,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const [showDiff, setShowDiff] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tableId: number } | null>(null)
 
   // Register UIObject for MCP ui_list discovery
   const projectName = useErDesignerStore(s => s.projects.find(p => p.id === projectId)?.name)
@@ -405,6 +407,27 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     return () => window.removeEventListener('er-open-bind-dialog', handler)
   }, [projectId])
 
+  // Listen for table node context menu (from MoreVertical button or right-click)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { tableId, x, y } = (e as CustomEvent).detail
+      setContextMenu({ x, y, tableId })
+    }
+    window.addEventListener('er-table-context-menu', handler)
+    return () => window.removeEventListener('er-table-context-menu', handler)
+  }, [])
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault()
+    const tableId = parseErTableNodeId(node.id)
+    if (tableId == null) return
+    setContextMenu({ x: event.clientX, y: event.clientY, tableId })
+  }, [])
+
+  const onPaneClick = useCallback(() => {
+    setContextMenu(null)
+  }, [])
+
   // connectionInfo for DiffReportDialog
   const connectionInfo = activeProject?.connection_id
     ? { name: `Connection ${activeProject.connection_id}`, database: activeProject.database_name ?? '' }
@@ -437,6 +460,8 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           onNodeDragStop={onNodeDragStop}
           onEdgesDelete={onEdgesDelete}
           onNodesDelete={onNodesDelete}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={onPaneClick}
           onInit={(i) => { rfInstance.current = i }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -450,6 +475,15 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           <Controls />
         </ReactFlow>
       </div>
+
+      {contextMenu && (
+        <ERTableContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          tableId={contextMenu.tableId}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
 
       <DDLPreviewDialog
         visible={showDDL}

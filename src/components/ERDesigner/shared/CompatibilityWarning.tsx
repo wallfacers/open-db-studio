@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
 import { checkTypeCompatibility, type DialectName } from './dataTypes';
+import { Tooltip } from '@/components/common/Tooltip';
 
 interface CompatibilityWarningProps {
   typeName: string;
@@ -11,8 +12,10 @@ export default function CompatibilityWarning({ typeName, dialect }: Compatibilit
   const warning = checkTypeCompatibility(typeName, dialect);
   if (!warning) return null;
   return (
-    <span className="relative group" title={warning}>
-      <AlertTriangle size={12} className="text-[#f59e0b]" />
-    </span>
+    <Tooltip content={warning}>
+      <span className="inline-flex">
+        <AlertTriangle size={12} className="text-[#f59e0b]" />
+      </span>
+    </Tooltip>
   );
 }

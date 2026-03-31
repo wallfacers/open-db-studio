@@ -1,6 +1,7 @@
+<!-- STATUS: ✅ 已实现 -->
 # Ghost Text with Layered Metadata — Design Spec
 
-**Status:** Approved
+**Status:** Implemented
 **Date:** 2026-03-29
 **Supersedes:** `2026-03-21-sql-ghost-text-design.md` (original ghost text spec)
 

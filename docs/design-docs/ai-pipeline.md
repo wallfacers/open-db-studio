@@ -64,7 +64,7 @@
 | `ai_diagnose_error` | 错误诊断 | ✅ |
 | `ai_chat_stream` | AI 助手流式对话 | ✅ |
 | `ai_explain_sql_acp` | SQL Explain ACP（流式） | ✅ |
-| `ai_inline_complete` | Ghost Text 内联补全 | ❌ 未实现 |
+| `ai_inline_complete` | Ghost Text 内联补全 | ✅ 已实现 |
 
 ## AI 流式输出
 

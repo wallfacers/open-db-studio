@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # AI Change Highlight Expansion Design
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task.

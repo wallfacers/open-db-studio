@@ -1,7 +1,8 @@
+<!-- STATUS: ✅ 已实现 -->
 # SQL 编辑器 AI Ghost Text 补全设计
 
 **日期**：2026-03-12
-**状态**：已批准
+**状态**：已实现
 **功能**：SQL 编辑器内联 AI 推荐（Copilot/Cursor 风格 Ghost Text）
 
 ---

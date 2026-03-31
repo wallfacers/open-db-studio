@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # SQL 编辑器 AI Ghost Text 补全实现计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

@@ -1,7 +1,7 @@
 # Open-DB-Studio 功能实现状态总览
 
 > 本文档记录 docs/plans/ 中设计文档的实现状态
-> 最后更新: 2026-03-29
+> 最后更新: 2026-03-31
 
 ---
 
@@ -258,22 +258,22 @@
 | `2026-03-19-unified-task-protocol-design.md` | 统一任务协议 | `task_records` 表统一 import/export/AI metrics（migration 仍独立） |
 | `2026-03-22-release-workflow-design.md` | 发版工作流 | `.github/workflows/release.yml` 三平台构建 + 自动 Release |
 | `2026-03-25-er-designer-design.md` | ER 设计器 | 20+ 前端文件 + 30+ Rust 命令 + `er_*` 5 张表 |
+| `2026-03-21-sql-ghost-text-design.md` | SQL Ghost Text 补全 | Monaco InlineCompletionsProvider + `ai_inline_complete` 命令 |
+| `2026-03-29-ghost-text-layered-metadata-design.md` | Ghost Text 分层元数据 | Hot/Warm/Cold 三区 + 知识图谱集成 + 前缀缓存 |
+| `2026-03-31-ai-change-highlight-design.md` | AI 变更高亮特效 | `highlightStore` + `useFieldHighlight` + `useMonacoHighlight` |
+| `2026-03-31-adapter-highlight-expansion-design.md` | 高亮扩展到更多适配器 | QueryEditorAdapter / MetricFormAdapter / TableFormAdapter |
 
-### specs/ 确认未实现 ❌（1 篇）
+### specs/ 确认未实现 ❌（0 篇）
 
-| 文档 | 功能 | 原因 |
-|------|------|------|
-| `2026-03-21-sql-ghost-text-design.md` | SQL Ghost Text 补全 | 无 `registerInlineCompletionsProvider` / `ai_inline_complete` |
+全部已实现 ✅
 
-### plans/ 已实现 ✅（24 篇）
+### plans/ 已实现 ✅（27 篇）
 
-全部 `docs/superpowers/plans/` 下的计划文档均已实现（完整列表见上方 V2 后期增强表格），唯一例外：
+全部 `docs/superpowers/plans/` 下的计划文档均已实现（完整列表见上方 V2 后期增强表格），包括 Ghost Text 和 AI 变更高亮。
 
-### plans/ 未实现 ❌（1 篇）
+### plans/ 未实现 ❌（0 篇）
 
-| 文档 | 功能 |
-|------|------|
-| `2026-03-21-sql-ghost-text-impl-plan.md` | SQL Ghost Text 实现计划（`ai_inline_complete` 命令未实现） |
+全部已实现 ✅
 
 ---
 
@@ -283,12 +283,9 @@
 
 全部 `docs/plans/` 下 2026-03-10 ~ 2026-03-12 期间的设计和实现文档均已实现（原 27 篇，已清理 2 篇废弃的 ACP 集成文档）。
 
-### 未实现 ❌（2 篇）
+### 未实现 ❌（0 篇）
 
-| 文档 | 功能 |
-|------|------|
-| `2026-03-12-sql-editor-ai-ghost-text-design.md` | SQL Ghost Text 补全设计 |
-| `2026-03-12-sql-editor-ai-ghost-text.md` | SQL Ghost Text 实现计划（被 `superpowers/` 下更新的版本替代，仍未实现） |
+全部已实现 ✅（原 Ghost Text 相关 2 篇已在 2026-03-31 实现）
 
 ---
 
@@ -296,14 +293,14 @@
 
 | 分类 | 状态 | 数量 |
 |------|------|------|
-| docs/plans/ | ✅ 已实现 | 25 |
-| docs/plans/ | ❌ 未实现 | 2（SQL Ghost Text） |
-| superpowers/specs/ | ✅ 已实现 | 31（含 8 篇代码验证修正） |
-| superpowers/specs/ | ❌ 未实现 | 1（SQL Ghost Text） |
-| superpowers/plans/ | ✅ 已实现 | 24 |
-| superpowers/plans/ | ❌ 未实现 | 1（SQL Ghost Text） |
+| docs/plans/ | ✅ 已实现 | 27 |
+| docs/plans/ | ❌ 未实现 | 0 |
+| superpowers/specs/ | ✅ 已实现 | 37（含 Ghost Text + AI 高亮） |
+| superpowers/specs/ | ❌ 未实现 | 0 |
+| superpowers/plans/ | ✅ 已实现 | 27 |
+| superpowers/plans/ | ❌ 未实现 | 0 |
 | **已删除（废弃）** | | **5**（ACP 集成 ×2、MCP Tab 集成、图谱重构、AI Agent 页面交互） |
-| **总计** | | **86**（现存）+ 5（已清理）= 91 |
+| **总计** | | **91**（现存）+ 5（已清理）= 96 |
 
 ---
 
@@ -330,3 +327,4 @@
 | 2026-03-20 | V2 后期增强全面追踪：AI 流式/思考模型、Palantir 图改造、MCP graph 工具、GraphCacheStore、Unified Tab、ACP Elicitation、Auto 模式、ECharts chart、SeaTunnel 前端、i18n 全量化；标记 4 个未实现计划 |
 | 2026-03-29 | 文档清理：删除 25 个过时/废弃/已替代的设计文档（ACP 持久化、Agent Loop、page-agent、FS Abstraction、UI Object Protocol、ER Canvas MCP、Graph Virtual Relation、Graph Search、SeaTunnel Tree Redesign、opencode Sidecar、Copy/Import Connection、Datasource Config Enhancement、DB2/GaussDB、Multi-Datasource Extension、E-commerce Test DB、Question Deadlock Fix）；保留 SQL Ghost Text 为唯一未实现计划 |
 | 2026-03-29 | 全量文档状态标注：为 docs/plans/（29 篇）、docs/superpowers/specs/（37 篇）、docs/superpowers/plans/（25 篇）共 91 篇文档添加 STATUS 标记（✅ 已实现 / ⚠️ 已废弃 / ❌ 未实现）；更新 schema-design.md（5→25 张表）、ai-pipeline.md（V2 pipeline）；补充 IMPLEMENTATION_STATUS.md 完整文档状态索引 |
+| 2026-03-31 | 状态更新：SQL Ghost Text 补全（`ai_inline_complete` 命令 + Monaco InlineCompletionsProvider）已实现；AI 变更高亮系统（`highlightStore` + `useFieldHighlight` + `useMonacoHighlight`）已实现；扩展到 QueryEditorAdapter / MetricFormAdapter / TableFormAdapter；所有计划文档 100% 已实现 |

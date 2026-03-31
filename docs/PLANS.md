@@ -140,7 +140,8 @@
 - [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / SeaTunnel）
 
 ### 未实现（唯一未完成项，设计文档保留）
-- [ ] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）
+- [x] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）— `ai_inline_complete` 命令 + Monaco InlineCompletionsProvider 已实现
+- [x] AI 变更高亮系统（`highlightStore` + `useFieldHighlight` + `useMonacoHighlight` 已实现，扩展到 QueryEditorAdapter / MetricFormAdapter / TableFormAdapter）
 - [x] LLM 配置供应商优先重设计（opencode_provider_id + config_mode 已入 DB；agent_list_providers 命令已实现；LlmSettings.tsx 已动态加载供应商列表）
 - [x] UI 状态全量持久化至 SQLite（标签页、树展开状态、连接列表、分页大小均已迁移至 SQLite）
 - [x] ACP 持久化 Session（目标已通过 Serve 模式实现；ACP 协议已废弃，serve_child 长驻进程取代）

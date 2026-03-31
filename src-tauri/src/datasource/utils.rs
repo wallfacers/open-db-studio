@@ -17,3 +17,45 @@ pub fn format_size(bytes: i64) -> String {
 pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
+
+/// 将可能包含多条语句的 SQL 字符串按分号拆分，正确跳过单引号字符串内的分号。
+/// 返回的每个元素均已 trim，空语句被过滤。
+pub fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quote = false;
+    let mut chars = sql.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_single_quote => {
+                in_single_quote = true;
+                current.push(c);
+            }
+            '\'' if in_single_quote => {
+                current.push(c);
+                // '' 是 SQL 标准的单引号转义，不结束字符串
+                if chars.peek() == Some(&'\'') {
+                    current.push(chars.next().unwrap());
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            ';' if !in_single_quote => {
+                let stmt = current.trim().to_string();
+                if !stmt.is_empty() {
+                    statements.push(stmt);
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+
+    let remaining = current.trim().to_string();
+    if !remaining.is_empty() {
+        statements.push(remaining);
+    }
+
+    statements
+}

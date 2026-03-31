@@ -348,13 +348,17 @@ impl DataSource for PostgresDataSource {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let start = Instant::now();
 
-        // Non-SELECT statements: use execute() to get affected row count
+        // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
         let trimmed = sql.trim_start().to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
-            let result = sqlx::query(sql).execute(&self.pool).await?;
+            let stmts = crate::datasource::utils::split_sql_statements(sql);
+            let mut total_affected = 0usize;
+            for stmt in &stmts {
+                let result = sqlx::query(stmt).execute(&self.pool).await?;
+                total_affected += result.rows_affected() as usize;
+            }
             let duration_ms = start.elapsed().as_millis() as u64;
-            let row_count = result.rows_affected() as usize;
-            return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: total_affected, duration_ms });
         }
 
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
@@ -399,7 +403,21 @@ impl DataSource for PostgresDataSource {
     async fn get_columns(&self, table: &str, schema: Option<&str>) -> AppResult<Vec<ColumnMeta>> {
         let schema = schema.unwrap_or("public");
         let rows = sqlx::query(
-            "SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
+            "SELECT c.column_name,
+                    CASE
+                      WHEN c.data_type = 'character varying' AND c.character_maximum_length IS NOT NULL
+                        THEN 'varchar(' || c.character_maximum_length || ')'
+                      WHEN c.data_type = 'character varying' THEN 'varchar'
+                      WHEN c.data_type = 'character' AND c.character_maximum_length IS NOT NULL
+                        THEN 'char(' || c.character_maximum_length || ')'
+                      WHEN c.data_type = 'character' THEN 'char'
+                      WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL AND c.numeric_scale IS NOT NULL
+                        THEN 'numeric(' || c.numeric_precision || ',' || c.numeric_scale || ')'
+                      WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL
+                        THEN 'numeric(' || c.numeric_precision || ')'
+                      ELSE c.data_type
+                    END AS data_type,
+                    c.is_nullable, c.column_default,
                     COALESCE(
                         (SELECT true FROM information_schema.table_constraints tc
                          JOIN information_schema.key_column_usage kcu

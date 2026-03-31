@@ -217,15 +217,20 @@ impl DataSource for GaussDbDataSource {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let start = Instant::now();
 
-        // Non-SELECT statements: use execute() to get affected row count
+        // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
         let trimmed = sql.trim_start().to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
-            let rows_affected = self.client
-                .execute(sql, &[])
-                .await
-                .map_err(|e| AppError::Datasource(format!("GaussDB execute failed: {}", e)))?;
+            let stmts = crate::datasource::utils::split_sql_statements(sql);
+            let mut total_affected = 0usize;
+            for stmt in &stmts {
+                let rows_affected = self.client
+                    .execute(stmt.as_str(), &[])
+                    .await
+                    .map_err(|e| AppError::Datasource(format!("GaussDB execute failed: {}", e)))?;
+                total_affected += rows_affected as usize;
+            }
             let duration_ms = start.elapsed().as_millis() as u64;
-            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: rows_affected as usize, duration_ms });
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: total_affected, duration_ms });
         }
 
         let rows = self.client

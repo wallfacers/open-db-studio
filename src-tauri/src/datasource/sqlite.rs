@@ -64,14 +64,15 @@ impl DataSource for SqliteDataSource {
             let guard = conn.blocking_lock();
             let start = Instant::now();
 
-            // Non-SELECT statements: use execute() to get affected row count
+            // Non-SELECT statements: use execute_batch() which supports multiple
+            // semicolon-separated statements in a single call.
             let trimmed = sql.trim_start().to_uppercase();
             if !trimmed.starts_with("SELECT") && !trimmed.starts_with("PRAGMA") && !trimmed.starts_with("EXPLAIN") {
-                let row_count = guard
-                    .execute(&sql, [])
+                guard
+                    .execute_batch(&sql)
                     .map_err(|e| AppError::Datasource(e.to_string()))?;
                 let duration_ms = start.elapsed().as_millis() as u64;
-                return Ok(QueryResult { columns: vec![], rows: vec![], row_count, duration_ms });
+                return Ok(QueryResult { columns: vec![], rows: vec![], row_count: 0, duration_ms });
             }
 
             let mut stmt = guard

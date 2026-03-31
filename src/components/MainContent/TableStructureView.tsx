@@ -254,7 +254,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         id: makeId(),
         name: c.name,
         dataType: c.data_type.toUpperCase().split('(')[0],
-        length: c.data_type.match(/\((\d+)\)/)?.[1] ?? '',
+        length: c.data_type.match(/\(([^)]+)\)/)?.[1] ?? '',
         isNullable: c.is_nullable,
         defaultValue: c.column_default ?? '',
         isPrimaryKey: c.is_primary_key,

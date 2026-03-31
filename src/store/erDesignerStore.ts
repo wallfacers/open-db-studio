@@ -417,6 +417,38 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateColumn: async (id, updates) => {
     try {
+      // When removing primary key, also clear auto_increment
+      if (updates.is_primary_key === false) {
+        updates = { ...updates, is_auto_increment: false };
+      }
+      // When setting primary key, clear PK (and auto_increment) from other columns in the same table
+      if (updates.is_primary_key === true) {
+        const state = get();
+        for (const tableId of Object.keys(state.columns)) {
+          const cols = state.columns[Number(tableId)];
+          const target = cols?.find((c) => c.id === id);
+          if (target) {
+            const otherPks = cols.filter((c) => c.id !== id && c.is_primary_key);
+            for (const pk of otherPks) {
+              const clearReq: any = { is_primary_key: false, is_auto_increment: false };
+              await invoke('er_update_column', { id: pk.id, req: clearReq });
+            }
+            if (otherPks.length > 0) {
+              set((s) => {
+                const newColumns = { ...s.columns };
+                const tid = Number(tableId);
+                newColumns[tid] = newColumns[tid].map((c) =>
+                  c.id !== id && c.is_primary_key
+                    ? { ...c, is_primary_key: false, is_auto_increment: false }
+                    : c
+                );
+                return { columns: newColumns };
+              });
+            }
+            break;
+          }
+        }
+      }
       // Serialize enum_values to JSON string for Rust
       const req: any = { ...updates };
       if (req.enum_values !== undefined && req.enum_values != null) {

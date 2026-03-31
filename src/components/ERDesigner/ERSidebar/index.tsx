@@ -1,156 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, FolderOpen, Plus, Database, TableProperties, Key, Hash, Link2, MoreVertical, ChevronRight, ChevronDown, X, Grid3x3 } from 'lucide-react';
+import { Folder, FolderOpen, Plus, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import type { ErProject, ErTable, ErColumn } from '../../../types';
 import { Tooltip } from '../../common/Tooltip';
-import { DropdownSelect } from '../../common/DropdownSelect';
 import { ProjectContextMenu } from './ProjectContextMenu';
 import { TableContextMenu } from './TableContextMenu';
-
-const SQL_TYPES = [
-  { value: 'INT', label: 'INT' },
-  { value: 'BIGINT', label: 'BIGINT' },
-  { value: 'VARCHAR', label: 'VARCHAR' },
-  { value: 'TEXT', label: 'TEXT' },
-  { value: 'CHAR', label: 'CHAR' },
-  { value: 'DATETIME', label: 'DATETIME' },
-  { value: 'DATE', label: 'DATE' },
-  { value: 'TIMESTAMP', label: 'TIMESTAMP' },
-  { value: 'BOOLEAN', label: 'BOOLEAN' },
-  { value: 'DECIMAL', label: 'DECIMAL' },
-  { value: 'FLOAT', label: 'FLOAT' },
-  { value: 'DOUBLE', label: 'DOUBLE' },
-];
-
-// ColumnRow 组件 - 字段行编辑 UI
-interface ColumnRowProps {
-  column: ErColumn;
-  tableId: number;
-}
-
-const ColumnRow = ({ column, tableId }: ColumnRowProps) => {
-  const { updateColumn, deleteColumn } = useErDesignerStore();
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editName, setEditName] = useState(column.name);
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  // 外部更新时同步 editName（画布编辑 → 侧边栏同步）
-  useEffect(() => {
-    if (!isEditingName) {
-      setEditName(column.name);
-    }
-  }, [column.name, isEditingName]);
-
-  // 自动聚焦字段名输入框
-  useEffect(() => {
-    if (isEditingName && nameInputRef.current) {
-      nameInputRef.current.focus();
-    }
-  }, [isEditingName]);
-
-  // 保存字段名
-  const handleNameSave = () => {
-    setIsEditingName(false);
-    if (editName.trim() && editName !== column.name) {
-      updateColumn(column.id, { name: editName.trim() });
-    } else {
-      setEditName(column.name);
-    }
-  };
-
-  // 主键切换
-  const handleTogglePrimaryKey = () => {
-    updateColumn(column.id, { is_primary_key: !column.is_primary_key });
-  };
-
-  // 自动递增切换（仅主键可用）
-  const handleToggleAutoIncrement = () => {
-    if (!column.is_primary_key) return;
-    updateColumn(column.id, { is_auto_increment: !column.is_auto_increment });
-  };
-
-  return (
-    <div
-      className="flex items-center py-1 group hover:bg-[#1a2639] cursor-default"
-      style={{ paddingLeft: '60px' }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-      }}
-    >
-      {/* 主键图标 */}
-      <span title={column.is_primary_key ? '主键' : '点击设置为主键'}>
-        <Key
-          size={14}
-          className={`mr-1 flex-shrink-0 cursor-pointer ${
-            column.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'
-          }`}
-          onClick={handleTogglePrimaryKey}
-        />
-      </span>
-
-      {/* 自动递增图标（仅主键显示） */}
-      {column.is_primary_key && (
-        <span title={column.is_auto_increment ? '自动递增' : '点击设置自动递增'}>
-          <Hash
-            size={14}
-            className={`mr-1 flex-shrink-0 cursor-pointer ${
-              column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'
-            }`}
-            onClick={handleToggleAutoIncrement}
-          />
-        </span>
-      )}
-
-      {/* 字段名 - 可编辑 */}
-      {isEditingName ? (
-        <input
-          ref={nameInputRef}
-          className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] min-w-[40px]"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-          onBlur={handleNameSave}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleNameSave();
-            if (e.key === 'Escape') {
-              setEditName(column.name);
-              setIsEditingName(false);
-            }
-          }}
-          style={{ width: `${Math.max(editName.length * 7, 40)}px` }}
-        />
-      ) : (
-        <span
-          className="text-[13px] text-[#b5cfe8] truncate cursor-text hover:bg-[#253347] px-0.5 rounded"
-          onDoubleClick={() => setIsEditingName(true)}
-          title="双击编辑"
-        >
-          {column.name}
-        </span>
-      )}
-
-      {/* 类型 */}
-      <div className="ml-1 shrink-0">
-        <DropdownSelect
-          value={column.data_type}
-          options={SQL_TYPES}
-          onChange={(value) => updateColumn(column.id, { data_type: value })}
-          plain
-        />
-      </div>
-
-      {/* 删除按钮 - hover 显示 */}
-      <span title="删除字段">
-        <X
-          size={14}
-          className="ml-1 cursor-pointer text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 shrink-0"
-          onClick={() => deleteColumn(column.id, tableId)}
-        />
-      </span>
-    </div>
-  );
-};
+import ColumnPropertyEditor from '../shared/ColumnPropertyEditor';
+import type { DialectName } from '../shared/dataTypes';
 
 interface ERSidebarProps {
   width: number;
@@ -170,6 +28,9 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(450);
+
   const {
     projects,
     loadProjects,
@@ -183,9 +44,30 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     toggleProjectExpand,
     toggleTableExpand,
     restoreExpandedState,
+    boundDialect,
+    openDrawer,
+    updateColumn,
+    deleteColumn,
   } = useErDesignerStore();
 
   const { openERDesignTab } = useQueryStore();
+
+  useEffect(() => {
+    if (!sidebarRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setSidebarWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(sidebarRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const visibleColumns = {
+    comment: sidebarWidth >= 450,
+    defaultValue: sidebarWidth >= 380,
+    unique: sidebarWidth >= 300,
+  };
 
   useEffect(() => {
     loadProjects();
@@ -230,6 +112,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
 
   return (
     <div
+      ref={sidebarRef}
       style={{ width }}
       className="flex-shrink-0 bg-[#0d1117] border-r border-[#1e2d42] flex flex-col h-full"
       onClick={closeContextMenu}
@@ -334,14 +217,41 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                                 <Link2 size={10} className="text-[#a855f7] mr-1" />
                               </Tooltip>
                             )}
+                            <button
+                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[#00c9a7] transition-all"
+                              onClick={(e) => { e.stopPropagation(); openDrawer(table.id); }}
+                              title="在属性面板中编辑"
+                            >
+                              <Edit3 size={12} />
+                            </button>
                           </div>
 
-                          {/* Column Nodes */}
+                          {/* Column Header */}
+                          {isTableExpanded && (
+                            <div className="flex items-center px-2 h-[20px] text-[11px] text-[#4a6480] select-none" style={{ paddingLeft: '60px' }}>
+                              <span className="w-[40px]"></span>
+                              <span className="flex-1 min-w-0">列名</span>
+                              <span className="w-[130px] shrink-0">类型</span>
+                              <span className="w-[28px] shrink-0 text-center">NN</span>
+                              {visibleColumns.unique && <span className="w-[28px] shrink-0 text-center">UQ</span>}
+                              {visibleColumns.defaultValue && <span className="w-[80px] shrink-0">默认值</span>}
+                              {visibleColumns.comment && <span className="w-[60px] shrink-0">注释</span>}
+                              <span className="w-[24px] shrink-0"></span>
+                            </div>
+                          )}
+
+                          {/* Column Rows */}
                           {isTableExpanded && getTableColumns(table.id).map(column => (
-                            <ColumnRow
+                            <ColumnPropertyEditor
                               key={column.id}
                               column={column}
                               tableId={table.id}
+                              dialect={boundDialect as DialectName | null}
+                              mode="compact"
+                              onUpdate={updateColumn}
+                              onDelete={deleteColumn}
+                              onOpenDrawer={openDrawer}
+                              visibleColumns={visibleColumns}
                             />
                           ))}
                         </div>

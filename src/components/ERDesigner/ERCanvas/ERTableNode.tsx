@@ -129,7 +129,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
     return (
       <div
-        className="flex items-center justify-between px-4 py-1 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[24px]"
+        className="flex items-center justify-between px-4 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[24px]"
       >
         {/* Target Handle (Left) */}
         <Handle
@@ -145,7 +145,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </Handle>
 
         {/* PK Icon / Column Name */}
-        <div className="flex items-center gap-1 z-0 flex-1 min-w-0">
+        <div className="flex items-center gap-1 z-0 shrink-0">
           <div
             className={`cursor-pointer shrink-0 ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
             onClick={handleTogglePrimaryKey}
@@ -166,16 +166,15 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {isEditingName ? (
             <input
               ref={nameInputRef}
-              className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 py-0.5 rounded outline-none border border-[#00c9a7]"
+              className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] w-[150px] h-[20px] leading-[18px]"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
               onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
-              style={{ width: `${Math.max(editName.length * 7, 40)}px` }}
             />
           ) : (
             <span
-              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate"
+              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate w-[150px]"
               title={t('erDesigner.dblClickToEdit')}
               onDoubleClick={() => setIsEditingName(true)}
             >
@@ -185,7 +184,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </div>
 
         {/* Type Dropdown */}
-        <div className="z-0 shrink-0">
+        <div className="z-0 shrink-0 ml-2">
           <DropdownSelect
             value={col.data_type}
             options={SQL_TYPES}

@@ -145,21 +145,34 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </Handle>
 
         {/* PK Icon / Column Name */}
-        <div className="flex items-center gap-1 z-0 shrink-0">
-          <div
-            className={`cursor-pointer shrink-0 ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
-            onClick={handleTogglePrimaryKey}
+        <div className="flex items-center gap-1.5 z-0 shrink-0">
+          <button
+            type="button"
+            className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleTogglePrimaryKey();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
             title={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}
           >
-            <Key size={14} />
-          </div>
+            <Key size={13} />
+          </button>
           {col.is_primary_key && (
             <span title={col.is_auto_increment ? t('erDesigner.autoIncrement') : t('erDesigner.clickToSetAI')}>
-              <Hash
-                size={14}
-                className={`cursor-pointer shrink-0 ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
-                onClick={handleToggleAutoIncrement}
-              />
+              <button
+                type="button"
+                className={`nodrag cursor-pointer shrink-0 p-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleToggleAutoIncrement();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <Hash size={13} />
+              </button>
             </span>
           )}
 
@@ -195,11 +208,18 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </div>
 
         {/* Delete Column Button */}
-        <X
-          size={14}
-          className="cursor-pointer text-gray-500 hover:text-red-400 shrink-0 z-10"
-          onClick={(e) => { e.stopPropagation(); onDeleteColumn(col.id); }}
-        />
+        <button
+          type="button"
+          className="nodrag cursor-pointer text-gray-500 hover:text-red-400 shrink-0 z-10 p-1.5 ml-2 -my-1.5 -mr-1.5 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDeleteColumn(col.id);
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <X size={13} />
+        </button>
 
         {/* Source Handle (Right) */}
         <Handle
@@ -246,11 +266,18 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
         {/* Menu Trigger */}
         <div ref={menuTriggerRef} className="relative shrink-0 ml-1">
-          <MoreVertical
-            size={14}
-            className="text-gray-500 hover:text-gray-300 cursor-pointer"
-            onClick={() => setShowMenu(!showMenu)}
-          />
+          <button
+            type="button"
+            className="nodrag text-gray-500 hover:text-gray-300 cursor-pointer p-1.5 -my-1.5 -mr-1.5 rounded-sm hover:bg-[#253347] transition-colors flex items-center justify-center outline-none"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <MoreVertical size={13} />
+          </button>
           {showMenu && createPortal(
             <div
               ref={menuRef}
@@ -283,12 +310,18 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
       </div>
 
       {/* Add Column Button */}
-      <div
-        className="px-3 py-1.5 border-t border-[#253347] text-center cursor-pointer hover:bg-[#1a2639] transition-colors"
-        onClick={onAddColumn}
+      <button
+        type="button"
+        className="nodrag w-full px-3 py-2 border-t border-[#253347] text-center cursor-pointer hover:bg-[#1a2639] transition-colors outline-none block"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onAddColumn();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <span className="text-[11px] text-[#00c9a7]">+ {t('erDesigner.addColumnBtn')}</span>
-      </div>
+        <span className="text-[11px] font-medium text-[#00c9a7]">+ {t('erDesigner.addColumnBtn')}</span>
+      </button>
     </div>
   );
 }

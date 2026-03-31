@@ -419,11 +419,44 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
     set(s => ({ isExecuting: { ...s.isExecuting, [tabId]: true }, error: null, diagnosis: null }));
 
-    const selectResults: StmtResult[] = [];
-    const dmlResults: StmtResult[] = [];
+    // 逐条执行，按顺序收集成功/失败结果
+    const orderedResults: QueryResult[] = [];
+    const dmlBatch: { idx: number; stmt: string; result: QueryResult }[] = [];
 
-    try {
-      for (const stmt of statements) {
+    const flushDmlBatch = () => {
+      if (dmlBatch.length === 0) return;
+      if (dmlBatch.length === 1) {
+        // 单条 DML 不聚合，保持原位
+        orderedResults[dmlBatch[0].idx] = dmlBatch[0].result;
+      } else {
+        const totalDuration = dmlBatch.reduce((sum, r) => sum + r.result.duration_ms, 0);
+        const dmlReport: QueryResult = {
+          columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
+          rows: dmlBatch.map((item, i) => [
+            String(i + 1),
+            getSqlType(item.stmt),
+            truncateSql(item.stmt),
+            String(item.result.row_count),
+            String(item.result.duration_ms),
+            '✓ 成功',
+          ]),
+          row_count: dmlBatch.reduce((sum, r) => sum + r.result.row_count, 0),
+          duration_ms: totalDuration,
+          kind: 'dml-report',
+          sql: `-- DML batch (${dmlBatch.length} statements)`,
+        };
+        // 放在 batch 首位 index，后续位置标记为 null 待清理
+        orderedResults[dmlBatch[0].idx] = dmlReport;
+        for (let i = 1; i < dmlBatch.length; i++) {
+          orderedResults[dmlBatch[i].idx] = null as unknown as QueryResult;
+        }
+      }
+      dmlBatch.length = 0;
+    };
+
+    for (let i = 0; i < statements.length; i++) {
+      const stmt = statements[i];
+      try {
         const result = await invoke<QueryResult>('execute_query', {
           connectionId,
           sql: stmt,
@@ -437,42 +470,33 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           kind: isSelect ? 'select' : undefined,
         };
         if (isSelect) {
-          selectResults.push({ stmt, result: enriched });
+          flushDmlBatch();
+          orderedResults[i] = enriched;
         } else {
-          dmlResults.push({ stmt, result: enriched });
+          dmlBatch.push({ idx: i, stmt, result: enriched });
         }
-      }
-
-      const finalList: QueryResult[] = selectResults.map(r => r.result);
-
-      if (dmlResults.length > 0) {
-        const totalDuration = dmlResults.reduce((sum, r) => sum + r.result.duration_ms, 0);
-        const dmlReport: QueryResult = {
-          columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
-          rows: dmlResults.map((item, i) => [
-            String(i + 1),
-            getSqlType(item.stmt),
-            truncateSql(item.stmt),
-            String(item.result.row_count),
-            String(item.result.duration_ms),
-            '✓ 成功',
-          ]),
-          row_count: dmlResults.reduce((sum, r) => sum + r.result.row_count, 0),
-          duration_ms: totalDuration,
-          kind: 'dml-report',
-          sql: `-- DML batch (${dmlResults.length} statements)`,
+      } catch (e) {
+        flushDmlBatch();
+        orderedResults[i] = {
+          columns: [],
+          rows: [],
+          row_count: 0,
+          duration_ms: 0,
+          kind: 'error',
+          sql: stmt,
+          error_message: String(e),
         };
-        finalList.push(dmlReport);
       }
-
-      set(s => ({ results: { ...s.results, [tabId]: finalList }, isExecuting: { ...s.isExecuting, [tabId]: false } }));
-    } catch (e) {
-      const errorMsg = String(e);
-      set(s => ({ error: errorMsg, isExecuting: { ...s.isExecuting, [tabId]: false } }));
-      invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId })
-        .then(diagnosis => set({ diagnosis }))
-        .catch(() => {});
     }
+    flushDmlBatch();
+
+    // 过滤掉 null 占位（被聚合的 DML）
+    const finalList = orderedResults.filter(Boolean);
+
+    set(s => ({
+      results: { ...s.results, [tabId]: finalList },
+      isExecuting: { ...s.isExecuting, [tabId]: false },
+    }));
   },
 
   removeResult: (tabId, idx) =>

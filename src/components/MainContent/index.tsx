@@ -268,7 +268,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const { tabs, activeTabId: activeTab, setActiveTabId: setActiveTab,
           closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
           updateTabContext,
-          sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results, error, diagnosis,
+          sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results,
           removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults,
           explanationContent, explanationStreaming,
           appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
@@ -674,17 +674,6 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
   }, [explanationStreaming, explanationContent, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Toast on execution error so user gets immediate feedback
-  useEffect(() => {
-    if (error) {
-      const ctx = buildErrorContext('sql_execute', { rawError: error });
-      if (showError) {
-        showError(ctx.userMessage, ctx.markdownContext);
-      } else {
-        showToast(ctx.userMessage, 'error');
-      }
-    }
-  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 结果集右键菜单：SQL 构建与复制
   const resultCopyToClipboard = async (text: string) => {
@@ -1623,7 +1612,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               </div>
 
               {/* Status Bar */}
-              {!isExecuting && !error && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
+              {!isExecuting && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
                 <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
                   <span>{currentResults[selectedResultPane]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultPane]?.duration_ms}ms</span>
                 </div>

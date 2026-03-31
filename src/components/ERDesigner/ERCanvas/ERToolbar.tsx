@@ -55,8 +55,14 @@ export default function ERToolbar({
   // 新建表
   const handleAddTable = async () => {
     try {
+      const existing = new Set(tables.map(t => (t as any).name));
+      let name = 'new_table';
+      let i = 1;
+      while (existing.has(name)) {
+        name = `new_table_${++i}`;
+      }
       const pos = { x: Math.random() * 300 + 100, y: Math.random() * 300 + 100 };
-      const table = await addTable('new_table', pos);
+      const table = await addTable(name, pos);
       onTableAdded?.(table);
     } catch (e) {
       console.error('Failed to add table:', e);

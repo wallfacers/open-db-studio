@@ -1095,7 +1095,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
             }}
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="#1e2d42" gap={20} size={1} />
+            <Background id="graph-explorer-bg" color="#1e2d42" gap={20} size={1} />
             <Controls
               className="!bg-[#111922] border border-[#2a3f5a] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[#111922] [&_button]:!border-b [&_button]:!border-[#2a3f5a] [&_button:last-child]:!border-b-0 [&_button]:!fill-[#c8daea] hover:[&_button]:!bg-[#1e2d42]"
             />

@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
   useNodesState,
   useEdgesState,
@@ -12,6 +13,7 @@ import {
   type Node,
   type Edge,
   type ReactFlowInstance,
+  ReactFlowProvider,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
@@ -27,7 +29,7 @@ import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
 import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import { layoutNodesWithDagre } from '../utils/dagreLayout'
 import type { ErTable, ErColumn } from '../../../types'
-import { erTableNodeId, erEdgeNodeId, parseErTableNodeId } from '../../../utils/nodeId'
+import { erTableNodeId, erEdgeNodeId, parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId'
 
 const nodeTypes = {
   erTable: ERTableNode,
@@ -53,7 +55,7 @@ interface ERCanvasProps {
   tabId?: string;
 }
 
-export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
+function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const rfInstance = useRef<ReactFlowInstance<Node<NodeData>, Edge> | null>(null)
@@ -290,6 +292,17 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
     updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
   }, [updateTable])
 
+  // Sync edge deletion to store/backend
+  const deleteRelation = useErDesignerStore(s => s.deleteRelation)
+  const onEdgesDelete = useCallback((deletedEdges: Edge[]) => {
+    for (const edge of deletedEdges) {
+      const relationId = parseErEdgeNodeId(edge.id)
+      if (relationId != null) {
+        deleteRelation(relationId)
+      }
+    }
+  }, [deleteRelation])
+
   // IMPORTANT: relation_type must be 'one_to_many' (not '1:N')
   const onConnect = useCallback((connection: Connection) => {
     setEdges((eds) => addEdge({
@@ -360,14 +373,16 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         nodes={nodes}
         tables={tables}
       />
-      <div className="flex-1 min-h-0 bg-[#0d1117] overflow-hidden relative">
+      <div className="flex-1 overflow-hidden relative graph-canvas-container">
         <ReactFlow
+          className="graph-canvas-container"
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
+          onEdgesDelete={onEdgesDelete}
           onInit={(i) => { rfInstance.current = i }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -376,9 +391,8 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
           fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
           minZoom={0.1}
           maxZoom={2}
-          className="graph-canvas-container"
         >
-          <Background color="#1e2d42" gap={20} size={1} />
+          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="#1e2d42" bgColor="#0d1117" gap={20} size={1} />
           <Controls />
         </ReactFlow>
       </div>
@@ -428,5 +442,13 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         onImported={() => { setShowImport(false); reloadCanvas() }}
       />
     </div>
+  )
+}
+
+export default function ERCanvas(props: ERCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <ERCanvasInner {...props} />
+    </ReactFlowProvider>
   )
 }

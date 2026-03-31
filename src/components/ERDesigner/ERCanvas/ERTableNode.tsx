@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Handle, Position, useNodeConnections } from '@xyflow/react';
-import { Key, Hash, X, MoreVertical } from 'lucide-react';
+import { Key, Hash, X, MoreVertical, TableProperties } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
@@ -131,7 +131,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
       <div
         className="flex items-center justify-between px-4 py-1 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[24px]"
       >
-        {/* Target Handle (Left) - For incoming connections */}
+        {/* Target Handle (Left) */}
         <Handle
           type="target"
           position={Position.Left}
@@ -141,7 +141,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           `}
           style={{ width: '10px', height: '10px', left: '-5px', top: '50%', transform: 'translateY(-50%)' }}
         >
-          <div className="w-full h-full bg-[#4ade80] rounded-full transition-transform duration-150 hover:scale-[2] hover:shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
+          <div className="w-full h-full bg-[#4ade80] rounded-full transition-transform duration-150 group-hover:scale-[2] hover:scale-[2] hover:shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
         </Handle>
 
         {/* PK Icon / Column Name */}
@@ -151,12 +151,13 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             onClick={handleTogglePrimaryKey}
             title={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}
           >
-            <Key className="w-3 h-3" />
+            <Key size={14} />
           </div>
           {col.is_primary_key && (
             <span title={col.is_auto_increment ? t('erDesigner.autoIncrement') : t('erDesigner.clickToSetAI')}>
               <Hash
-                className={`w-3 h-3 cursor-pointer shrink-0 ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+                size={14}
+                className={`cursor-pointer shrink-0 ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
                 onClick={handleToggleAutoIncrement}
               />
             </span>
@@ -165,7 +166,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {isEditingName ? (
             <input
               ref={nameInputRef}
-              className="bg-[#151d28] text-gray-200 text-xs px-1 py-0.5 rounded outline-none border border-[#00c9a7]"
+              className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 py-0.5 rounded outline-none border border-[#00c9a7]"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -174,7 +175,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             />
           ) : (
             <span
-              className="text-gray-300 text-xs cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate"
+              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1 py-0.5 -mx-1 rounded truncate"
               title={t('erDesigner.dblClickToEdit')}
               onDoubleClick={() => setIsEditingName(true)}
             >
@@ -200,7 +201,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           onClick={(e) => { e.stopPropagation(); onDeleteColumn(col.id); }}
         />
 
-        {/* Source Handle (Right) - For outgoing connections */}
+        {/* Source Handle (Right) */}
         <Handle
           type="source"
           position={Position.Right}
@@ -210,32 +211,36 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           `}
           style={{ width: '10px', height: '10px', right: '-5px', top: '50%', transform: 'translateY(-50%)' }}
         >
-          <div className="w-full h-full bg-[#f43f5e] rounded-full transition-transform duration-150 hover:scale-[2] hover:shadow-[0_0_8px_rgba(244,63,94,0.6)]" />
+          <div className="w-full h-full bg-[#f43f5e] rounded-full transition-transform duration-150 group-hover:scale-[2] hover:scale-[2] hover:shadow-[0_0_8px_rgba(244,63,94,0.6)]" />
         </Handle>
       </div>
     );
   };
 
   return (
-    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible min-w-[260px] max-w-[338px] font-sans">
+    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible w-[360px] font-sans">
       {/* Header */}
       <div className="bg-[#1a2639] px-3 py-1.5 border-b border-[#253347] rounded-t-lg flex justify-between items-center">
         {isEditingName ? (
-          <input
-            ref={nameInputRef}
-            className="bg-[#253347] text-gray-200 text-xs font-medium px-1.5 py-0.5 rounded outline-none border border-[#00c9a7] flex-1"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onBlur={handleNameSave}
-            onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
-          />
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <TableProperties size={14} className="text-[#00c9a7] shrink-0" />
+            <input
+              ref={nameInputRef}
+              className="bg-[#253347] text-gray-200 text-[13px] font-medium px-1.5 py-0.5 rounded outline-none border border-[#00c9a7] flex-1 min-w-0"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleNameSave}
+              onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
+            />
+          </div>
         ) : (
           <h3
-            className="text-gray-200 text-xs font-medium truncate cursor-text hover:bg-[#253347] px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex-1"
+            className="text-gray-200 text-[13px] font-medium truncate cursor-text hover:bg-[#253347] px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex-1 flex items-center gap-1.5"
             title={t('erDesigner.dblClickToEditName')}
             onDoubleClick={() => setIsEditingName(true)}
           >
-            {table.name}
+            <TableProperties size={14} className="text-[#00c9a7] shrink-0" />
+            <span className="truncate">{table.name}</span>
           </h3>
         )}
 

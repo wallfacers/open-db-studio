@@ -26,7 +26,7 @@ interface MenuItem {
 export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, projectId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { projects, deleteProject, loadProject, addTable, updateProject, unbindConnection, exportJson } = useErDesignerStore();
+  const { projects, tables, deleteProject, loadProject, addTable, updateProject, unbindConnection, exportJson } = useErDesignerStore();
   const { openERDesignTab } = useQueryStore();
 
   const project = projects.find(p => p.id === projectId);
@@ -106,7 +106,13 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
 
   const handleAddTable = async () => {
     await loadProject(projectId);
-    await addTable('new_table', { x: 100, y: 100 });
+    const existing = new Set(tables.map(t => t.name));
+    let name = 'new_table';
+    let i = 1;
+    while (existing.has(name)) {
+      name = `new_table_${++i}`;
+    }
+    await addTable(name, { x: 100, y: 100 });
     // Open the ER design tab so the user can see the new table
     openERDesignTab(projectId, project?.name || '');
     onClose();

@@ -94,8 +94,8 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       {/* 触发器 */}
       {plain ? (
         <span
-          className={`text-xs cursor-pointer select-none hover:text-[#00c9a7] transition-colors
-                      ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#c8daea]'}`}
+          className={`text-[12px] cursor-pointer select-none hover:text-[#00c9a7] transition-colors
+                      ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#b5cfe8]'}`}
           onClick={handleToggle}
         >
           {displayLabel}
@@ -142,8 +142,8 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
           {options.map(opt => (
             <div
               key={opt.value}
-              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#1e2d42]
-                          ${value === opt.value ? 'text-[#009e84]' : 'text-[#c8daea]'}`}
+              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#1e2d42]
+                          ${value === opt.value ? 'text-[#009e84]' : 'text-[#b5cfe8]'}`}
               onClick={() => { onChange(opt.value); close(); }}
             >
               {opt.label}

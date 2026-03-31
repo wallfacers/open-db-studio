@@ -339,6 +339,7 @@ pub fn run() {
             commands::get_driver_capabilities,
             commands::get_db_stats,
             commands::read_text_file,
+            commands::write_text_file,
             mcp::tools::table_edit::cmd_generate_create_table_sql,
             mcp::tools::table_edit::cmd_generate_add_column_sql,
             mcp::tools::table_edit::cmd_generate_drop_column_sql,

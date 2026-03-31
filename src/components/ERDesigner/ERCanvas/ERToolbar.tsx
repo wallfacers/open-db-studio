@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Plus,
   LayoutGrid,
+  Database,
   Download,
   Upload,
   FileCode,
@@ -12,8 +13,7 @@ import {
 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import type { ErTable } from '../../../types';
-import { open } from '@tauri-apps/plugin-dialog';
-import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import type { Node, Edge } from '@xyflow/react';
 import { layoutNodesWithDagre } from '../utils/dagreLayout';
@@ -126,8 +126,12 @@ export default function ERToolbar({
   const handleExportJson = async () => {
     try {
       const json = await exportJson(projectId);
-      await writeText(json);
-      console.log('JSON copied to clipboard');
+      const path = await save({
+        defaultPath: 'er-project.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (!path) return;
+      await invoke('write_text_file', { path, content: json });
     } catch (e) {
       console.error('Export JSON failed:', e);
     }
@@ -182,7 +186,7 @@ export default function ERToolbar({
         className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.importTables')}
       >
-        <Download size={14} />
+        <Database size={14} />
         <span>{t('erDesigner.importTables')}</span>
       </button>
 

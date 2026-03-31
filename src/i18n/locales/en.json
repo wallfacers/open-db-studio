@@ -1140,7 +1140,7 @@
     "importFailed": "Failed to import tables",
     "autoLayout": "Auto Layout",
     "layouting": "Laying out...",
-    "importTables": "Import",
+    "importTables": "Sync from DB",
     "ddlPreview": "DDL",
     "diffCheck": "DB Diff",
     "syncDB": "Sync DB",

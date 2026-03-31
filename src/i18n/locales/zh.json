@@ -1141,7 +1141,7 @@
     "importFailed": "导入表失败",
     "autoLayout": "自动布局",
     "layouting": "布局中...",
-    "importTables": "导入",
+    "importTables": "从数据库同步",
     "ddlPreview": "DDL",
     "diffCheck": "数据库差异",
     "syncDB": "同步数据库",

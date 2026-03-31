@@ -4254,3 +4254,9 @@ pub async fn get_db_stats(connection_id: i64, database: Option<String>) -> AppRe
 pub async fn read_text_file(path: String) -> AppResult<String> {
     std::fs::read_to_string(&path).map_err(|e| crate::error::AppError::Other(e.to_string()))
 }
+
+/// 写入文本文件（用于 JSON 导出）
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> AppResult<()> {
+    std::fs::write(&path, content).map_err(|e| crate::error::AppError::Other(e.to_string()))
+}

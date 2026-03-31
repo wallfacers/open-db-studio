@@ -16,6 +16,7 @@ interface DropdownSelectProps {
   direction?: 'up' | 'down';  // 默认 'down'
   maxHeight?: number;         // 下拉列表最大高度px，默认 240
   plain?: boolean;            // 纯文字触发器，无边框/背景/箭头
+  displayValue?: string;      // 自定义显示文本，覆盖默认的 label 查找
 }
 
 interface DropdownPos {
@@ -38,6 +39,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   direction = 'down',
   maxHeight = 240,
   plain = false,
+  displayValue,
 }) => {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<DropdownPos | null>(null);
@@ -112,8 +114,8 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   };
 
   const selected = options.find(o => o.value === value);
-  const displayLabel = selected?.label ?? placeholder;
-  const isPlaceholder = !selected;
+  const displayLabel = displayValue ?? selected?.label ?? placeholder;
+  const isPlaceholder = !selected && !displayValue;
 
   return (
     <div ref={triggerRef} className={`relative ${className}`}>

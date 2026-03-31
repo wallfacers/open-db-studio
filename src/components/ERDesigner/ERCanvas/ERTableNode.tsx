@@ -1,24 +1,12 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Handle, Position, useNodeConnections } from '@xyflow/react';
 import { Key, Hash, X, MoreVertical, TableProperties } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
-
-const SQL_TYPES = [
-  { value: 'INT', label: 'INT' },
-  { value: 'BIGINT', label: 'BIGINT' },
-  { value: 'VARCHAR', label: 'VARCHAR' },
-  { value: 'TEXT', label: 'TEXT' },
-  { value: 'CHAR', label: 'CHAR' },
-  { value: 'DATETIME', label: 'DATETIME' },
-  { value: 'DATE', label: 'DATE' },
-  { value: 'TIMESTAMP', label: 'TIMESTAMP' },
-  { value: 'BOOLEAN', label: 'BOOLEAN' },
-  { value: 'DECIMAL', label: 'DECIMAL' },
-  { value: 'FLOAT', label: 'FLOAT' },
-  { value: 'DOUBLE', label: 'DOUBLE' },
-];
+import { getTypeOptions, formatTypeDisplay, findTypeDef } from '../shared/dataTypes';
+import type { DialectName } from '../shared/dataTypes';
+import { useErDesignerStore } from '../../../store/erDesignerStore';
 
 interface ERTableNodeData {
   table: import('../../../types').ErTable;
@@ -33,6 +21,8 @@ interface ERTableNodeData {
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
   const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
+  const { boundDialect } = useErDesignerStore();
+  const typeOptions = useMemo(() => getTypeOptions(boundDialect as DialectName | null), [boundDialect]);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(table.name);
@@ -199,11 +189,19 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         {/* Right controls: Type + Delete */}
         <div className="flex items-center gap-1 shrink-0 ml-auto">
           {/* Type Dropdown */}
-          <div className="z-0 w-[75px] flex justify-end">
+          <div className="z-0 w-[95px] flex justify-end">
             <DropdownSelect
               value={col.data_type}
-              options={SQL_TYPES}
-              onChange={(value) => onUpdateColumn(col.id, { data_type: value })}
+              options={typeOptions}
+              displayValue={formatTypeDisplay(col)}
+              onChange={(value) => {
+                const typeDef = findTypeDef(value, boundDialect as DialectName | null);
+                onUpdateColumn(col.id, {
+                  data_type: value,
+                  length: typeDef?.defaultLength ?? null,
+                  scale: typeDef?.defaultScale ?? null,
+                });
+              }}
               className="w-full text-right"
               plain
             />

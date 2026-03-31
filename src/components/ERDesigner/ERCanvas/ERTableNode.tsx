@@ -196,30 +196,33 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           )}
         </div>
 
-        {/* Type Dropdown */}
-        <div className="z-0 shrink-0 ml-1">
-          <DropdownSelect
-            value={col.data_type}
-            options={SQL_TYPES}
-            onChange={(value) => onUpdateColumn(col.id, { data_type: value })}
-            className="w-[70px]"
-            plain
-          />
-        </div>
+        {/* Right controls: Type + Delete */}
+        <div className="flex items-center gap-1 shrink-0 ml-auto">
+          {/* Type Dropdown */}
+          <div className="z-0 w-[75px] flex justify-end">
+            <DropdownSelect
+              value={col.data_type}
+              options={SQL_TYPES}
+              onChange={(value) => onUpdateColumn(col.id, { data_type: value })}
+              className="w-full text-right"
+              plain
+            />
+          </div>
 
-        {/* Delete Column Button */}
-        <button
-          type="button"
-          className="nodrag cursor-pointer text-gray-500 hover:text-red-400 shrink-0 z-10 p-1.5 ml-2 -my-1.5 -mr-1.5 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDeleteColumn(col.id);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <X size={13} />
-        </button>
+          {/* Delete Column Button */}
+          <button
+            type="button"
+            className="nodrag cursor-pointer text-gray-500 hover:text-red-400 shrink-0 z-10 p-1.5 -my-1.5 -mr-1.5 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDeleteColumn(col.id);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <X size={13} />
+          </button>
+        </div>
 
         {/* Source Handle (Right) */}
         <Handle

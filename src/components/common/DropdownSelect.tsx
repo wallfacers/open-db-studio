@@ -25,6 +25,10 @@ interface DropdownPos {
   width: number;
 }
 
+// 全局唯一标识，用于关闭其他下拉菜单
+let dropdownIdCounter = 0;
+const DROPDOWN_OPEN_EVENT = 'dropdown-select-open';
+
 export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   value,
   options,
@@ -39,8 +43,21 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   const [pos, setPos] = useState<DropdownPos | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownId = useRef(++dropdownIdCounter);
 
   const close = useCallback(() => setOpen(false), []);
+
+  // 监听其他下拉菜单打开事件，关闭当前下拉
+  useEffect(() => {
+    const handleOtherDropdownOpen = (e: Event) => {
+      const customEvent = e as CustomEvent<number>;
+      if (customEvent.detail !== dropdownId.current) {
+        close();
+      }
+    };
+    document.addEventListener(DROPDOWN_OPEN_EVENT, handleOtherDropdownOpen);
+    return () => document.removeEventListener(DROPDOWN_OPEN_EVENT, handleOtherDropdownOpen);
+  }, [close]);
 
   // 点击外部关闭：同时排除触发器和弹出层
   useEffect(() => {
@@ -53,8 +70,8 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       ) return;
       close();
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
   }, [open, close]);
 
   // 外部滚动或窗口大小变化时关闭（下拉层内部滚动不触发）
@@ -72,17 +89,26 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
     };
   }, [open, close]);
 
-  const handleToggle = () => {
-    if (!open && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setPos({
-        top: rect.bottom,
-        bottom: window.innerHeight - rect.top,
-        left: Math.min(rect.left, window.innerWidth - rect.width - 8),
-        width: rect.width,
-      });
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (open) {
+      close();
+    } else {
+      // 通知其他下拉菜单关闭
+      document.dispatchEvent(new CustomEvent(DROPDOWN_OPEN_EVENT, { detail: dropdownId.current }));
+      // 先计算位置，再打开，确保 pos 已准备好
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        const newPos = {
+          top: rect.bottom,
+          bottom: window.innerHeight - rect.top,
+          left: Math.min(rect.left, window.innerWidth - rect.width - 8),
+          width: rect.width,
+        };
+        setPos(newPos);
+        setOpen(true);
+      }
     }
-    setOpen(o => !o);
   };
 
   const selected = options.find(o => o.value === value);
@@ -94,7 +120,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       {/* 触发器 */}
       {plain ? (
         <span
-          className={`text-[12px] cursor-pointer select-none hover:text-[#00c9a7] transition-colors
+          className={`inline-block px-2.5 py-1.5 -mx-2.5 -my-1.5 rounded-sm text-[12px] cursor-pointer select-none hover:text-[#00c9a7] hover:bg-[#1e2d42]/50 transition-colors
                       ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#b5cfe8]'}`}
           onClick={handleToggle}
         >

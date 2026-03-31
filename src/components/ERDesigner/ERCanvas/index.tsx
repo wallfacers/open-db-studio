@@ -12,6 +12,7 @@ import {
   type Connection,
   type Node,
   type Edge,
+  type EdgeChange,
   type ReactFlowInstance,
   ReactFlowProvider,
 } from '@xyflow/react'
@@ -292,6 +293,14 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
   }, [updateTable])
 
+  // Elevate selected edge to top (zIndex) so it renders above others
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    onEdgesChange(changes)
+    if (changes.some(c => c.type === 'select')) {
+      setEdges(eds => eds.map(e => ({ ...e, zIndex: e.selected ? 1000 : 0 })))
+    }
+  }, [onEdgesChange, setEdges])
+
   // Sync edge deletion to store/backend
   const deleteRelation = useErDesignerStore(s => s.deleteRelation)
   const onEdgesDelete = useCallback((deletedEdges: Edge[]) => {
@@ -379,7 +388,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
+          onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onEdgesDelete={onEdgesDelete}

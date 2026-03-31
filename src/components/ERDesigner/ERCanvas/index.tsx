@@ -271,6 +271,13 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       try {
         const layoutedNodes = layoutNodesWithDagre(currentNodes, currentEdges) as Node<NodeData>[]
         setNodes(layoutedNodes)
+
+        const positions = layoutedNodes.map(node => {
+          const tableId = parseErTableNodeId(node.id)
+          return tableId ? { id: tableId, x: node.position.x, y: node.position.y } : null
+        }).filter((p): p is NonNullable<typeof p> => p !== null)
+        
+        useErDesignerStore.getState().updateTablePositions(positions)
       } catch (e) {
         console.error('MCP auto layout failed:', e)
       }
@@ -288,10 +295,16 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     }
   }, [projectId, reloadCanvas, setNodes])
 
-  const onNodeDragStop = useCallback((_: unknown, node: Node) => {
-    const tableId = parseErTableNodeId(node.id)!
-    updateTable(tableId, { position_x: node.position.x, position_y: node.position.y })
-  }, [updateTable])
+  const onNodeDragStop = useCallback((_: unknown, __: Node, draggedNodes: Node[]) => {
+    const positions = draggedNodes.map(n => {
+      const tableId = parseErTableNodeId(n.id)
+      return tableId ? { id: tableId, x: n.position.x, y: n.position.y } : null
+    }).filter((p): p is NonNullable<typeof p> => p !== null)
+    
+    if (positions.length > 0) {
+      useErDesignerStore.getState().updateTablePositions(positions)
+    }
+  }, [])
 
   // Elevate selected edge to top (zIndex) so it renders above others
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -311,6 +324,16 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       }
     }
   }, [deleteRelation])
+
+  // Sync node deletion to store/backend
+  const onNodesDelete = useCallback((deletedNodes: Node[]) => {
+    for (const node of deletedNodes) {
+      const tableId = parseErTableNodeId(node.id)
+      if (tableId != null) {
+        deleteTable(tableId)
+      }
+    }
+  }, [deleteTable])
 
   // IMPORTANT: relation_type must be 'one_to_many' (not '1:N')
   const onConnect = useCallback((connection: Connection) => {
@@ -342,13 +365,30 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     }])
   }, [setNodes, buildNodeData])
 
-  // Integrate keyboard shortcuts
+  const handleAutoLayout = useCallback(() => {
+    if (nodes.length === 0) return
+    try {
+      const layoutedNodes = layoutNodesWithDagre(nodes, edges) as Node<NodeData>[]
+      setNodes(layoutedNodes)
+      
+      const positions = layoutedNodes.map(node => {
+        const tableId = parseErTableNodeId(node.id)
+        return tableId ? { id: tableId, x: node.position.x, y: node.position.y } : null
+      }).filter((p): p is NonNullable<typeof p> => p !== null)
+      
+      useErDesignerStore.getState().updateTablePositions(positions)
+    } catch (e) {
+      console.error('Auto layout failed:', e)
+    }
+  }, [nodes, edges, setNodes])
+
+  // Custom keyboard shortcuts
   useERKeyboard({
     nodes,
     edges,
     selectedNodes: [],
     selectedEdges: [],
-    onAutoLayout: () => {},
+    onAutoLayout: handleAutoLayout,
     onExportDDL: () => setShowDDL(true),
   })
 
@@ -380,7 +420,9 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         onTableAdded={handleTableAdded}
         setNodes={setNodes as (nodes: Node[]) => void}
         nodes={nodes}
+        edges={edges}
         tables={tables}
+        onAutoLayout={handleAutoLayout}
       />
       <div className="flex-1 overflow-hidden relative graph-canvas-container">
         <ReactFlow
@@ -392,6 +434,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onEdgesDelete={onEdgesDelete}
+          onNodesDelete={onNodesDelete}
           onInit={(i) => { rfInstance.current = i }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}

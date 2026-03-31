@@ -2,10 +2,10 @@ import dagre from 'dagre'
 import type { Node, Edge } from '@xyflow/react'
 
 const DAGRE_CONFIG = {
-  rankdir: 'TB',
-  nodesep: 50,
-  ranksep: 50,
-  edgesep: 20,
+  rankdir: 'LR',
+  nodesep: 80,
+  ranksep: 200,
+  edgesep: 40,
 } as const
 
 const DEFAULT_NODE_SIZE = { width: 260, height: 120 }
@@ -28,31 +28,35 @@ export function layoutNodesWithDagre(
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of nodes) {
+    const width = node.measured?.width ?? node.width ?? DEFAULT_NODE_SIZE.width;
+    const height = node.measured?.height ?? node.height ?? DEFAULT_NODE_SIZE.height;
     g.setNode(node.id, {
-      width: node.width || DEFAULT_NODE_SIZE.width,
-      height: node.height || DEFAULT_NODE_SIZE.height,
-    })
+      width,
+      height,
+    });
   }
 
   if (edges) {
     for (const edge of edges) {
-      g.setEdge(edge.source, edge.target)
+      g.setEdge(edge.source, edge.target);
     }
   }
 
-  dagre.layout(g)
+  dagre.layout(g);
 
   return nodes.map((node) => {
-    const gNode = g.node(node.id)
+    const gNode = g.node(node.id);
     if (gNode) {
+      const width = node.measured?.width ?? node.width ?? DEFAULT_NODE_SIZE.width;
+      const height = node.measured?.height ?? node.height ?? DEFAULT_NODE_SIZE.height;
       return {
         ...node,
         position: {
-          x: gNode.x - (gNode.width ?? DEFAULT_NODE_SIZE.width) / 2,
-          y: gNode.y - (gNode.height ?? DEFAULT_NODE_SIZE.height) / 2,
+          x: gNode.x - width / 2,
+          y: gNode.y - height / 2,
         },
-      }
+      };
     }
-    return node
-  })
+    return node;
+  });
 }

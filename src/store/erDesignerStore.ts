@@ -66,6 +66,7 @@ interface ErDesignerState {
   // Table operations
   addTable: (name: string, position: { x: number; y: number }) => Promise<ErTable>;
   updateTable: (id: number, updates: Partial<ErTable>) => Promise<void>;
+  updateTablePositions: (positions: { id: number; x: number; y: number }[]) => Promise<void>;
   deleteTable: (id: number) => Promise<void>;
 
   // Column operations
@@ -314,6 +315,30 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       }));
     } catch (e) {
       console.error('Failed to update ER table:', e);
+    }
+  },
+
+  updateTablePositions: async (positions) => {
+    set((s) => {
+      const posMap = new Map(positions.map((p) => [p.id, p]));
+      return {
+        tables: s.tables.map((t) => {
+          const p = posMap.get(t.id);
+          return p ? { ...t, position_x: p.x, position_y: p.y } : t;
+        }),
+      };
+    });
+    try {
+      await Promise.all(
+        positions.map((p) =>
+          invoke('er_update_table', {
+            id: p.id,
+            req: { position_x: p.x, position_y: p.y },
+          })
+        )
+      );
+    } catch (e) {
+      console.error('Failed to save auto layout positions:', e);
     }
   },
 

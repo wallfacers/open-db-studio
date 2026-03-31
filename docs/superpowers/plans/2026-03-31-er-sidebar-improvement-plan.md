@@ -1,5 +1,7 @@
 # ER 侧边栏改进实现计划
 
+> **Status: ✅ IMPLEMENTED** — 2026-03-31
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 改进 ER 设计器侧边栏的图标、动画效果和字段编辑功能，实现与画布节点的双向联动。

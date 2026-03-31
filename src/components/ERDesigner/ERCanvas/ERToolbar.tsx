@@ -15,7 +15,7 @@ import type { ErTable } from '../../../types';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { invoke } from '@tauri-apps/api/core';
-import type { Node } from '@xyflow/react';
+import type { Node, Edge } from '@xyflow/react';
 import { layoutNodesWithDagre } from '../utils/dagreLayout';
 
 export interface ERToolbarProps {
@@ -26,8 +26,10 @@ export interface ERToolbarProps {
   setNodes?: (nodes: Node[]) => void;
   tables?: Array<{ id: number; position_x: number; position_y: number }>;
   nodes?: Node[];
+  edges?: Edge[];
   onTableAdded?: (table: ErTable) => void;
   onOpenBind?: () => void;
+  onAutoLayout?: () => void;
 }
 
 export default function ERToolbar({
@@ -38,8 +40,10 @@ export default function ERToolbar({
   setNodes,
   tables = [],
   nodes = [],
+  edges = [],
   onTableAdded,
   onOpenBind,
+  onAutoLayout,
 }: ERToolbarProps) {
   const { t } = useTranslation();
   const {
@@ -71,12 +75,17 @@ export default function ERToolbar({
 
   // 自动布局 - 使用 dagre
   const handleAutoLayout = () => {
+    if (onAutoLayout) {
+      onAutoLayout();
+      return;
+    }
+
     if (!setNodes || nodes.length === 0) return;
 
     setIsAutoLayouting(true);
 
     try {
-      const layoutedNodes = layoutNodesWithDagre(nodes);
+      const layoutedNodes = layoutNodesWithDagre(nodes, edges);
       setNodes(layoutedNodes);
     } catch (e) {
       console.error('Auto layout failed:', e);

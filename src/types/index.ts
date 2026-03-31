@@ -51,10 +51,12 @@ export interface QueryResult {
   rows: (string | number | boolean | null)[][];
   row_count: number;
   duration_ms: number;
-  /** 前端附加：select=查询结果, dml-report=DML聚合报告 */
-  kind?: 'select' | 'dml-report';
+  /** 前端附加：select=查询结果, dml-report=DML聚合报告, error=执行错误 */
+  kind?: 'select' | 'dml-report' | 'error';
   /** 前端附加：产生该结果的原始 SQL */
   sql?: string;
+  /** 前端附加：错误信息（仅 kind='error' 时存在） */
+  error_message?: string;
 }
 
 export interface TableMeta {

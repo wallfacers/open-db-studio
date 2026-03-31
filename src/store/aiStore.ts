@@ -135,6 +135,14 @@ interface AiState {
   cancelExplainSql: (tabId: string) => Promise<void>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
+
+  // SQL 错误诊断（per result, 流式内容）
+  diagnosisContent: Record<string, string>;     // key -> 诊断内容
+  diagnosisStreaming: Record<string, boolean>;   // key -> 是否正在流式输出
+
+  diagnoseSqlError: (sql: string, errorMsg: string, connectionId: number | null, database: string | null, diagKey: string) => Promise<void>;
+  cancelDiagnosis: (diagKey: string) => Promise<void>;
+  clearDiagnosis: (diagKey: string) => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -154,6 +162,8 @@ export const useAiStore = create<AiState>()(
       error: null,
       draftMessage: '',
       linkedConnectionId: null,
+      diagnosisContent: {},
+      diagnosisStreaming: {},
 
       setLinkedConnectionId: (id) => set({ linkedConnectionId: id }),
 
@@ -989,6 +999,99 @@ export const useAiStore = create<AiState>()(
         } finally {
           set({ isDiagnosing: false });
         }
+      },
+
+      diagnoseSqlError: async (sql, errorMsg, connectionId, database, diagKey) => {
+        set(s => ({
+          diagnosisContent: { ...s.diagnosisContent, [diagKey]: '' },
+          diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: true },
+        }));
+        try {
+          const { Channel } = await import('@tauri-apps/api/core');
+          const channel = new Channel<{
+            type: 'ContentChunk' | 'ThinkingChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
+            data?: { delta?: string; message?: string };
+          }>();
+
+          // RAF 缓冲
+          let buffer = '';
+          let rafPending = false;
+
+          channel.onmessage = (event) => {
+            if (!get().diagnosisStreaming[diagKey]) return;
+            if (event.type === 'ContentChunk' && event.data?.delta) {
+              buffer += event.data.delta;
+              if (!rafPending) {
+                rafPending = true;
+                requestAnimationFrame(() => {
+                  rafPending = false;
+                  if (buffer) {
+                    set(s => ({
+                      diagnosisContent: {
+                        ...s.diagnosisContent,
+                        [diagKey]: (s.diagnosisContent[diagKey] ?? '') + buffer,
+                      },
+                    }));
+                    buffer = '';
+                  }
+                });
+              }
+            } else if (event.type === 'Done') {
+              // flush remaining buffer
+              if (buffer) {
+                set(s => ({
+                  diagnosisContent: {
+                    ...s.diagnosisContent,
+                    [diagKey]: (s.diagnosisContent[diagKey] ?? '') + buffer,
+                  },
+                }));
+                buffer = '';
+              }
+              set(s => ({ diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false } }));
+            } else if (event.type === 'Error') {
+              const errMsg = event.data?.message ?? 'Unknown error';
+              set(s => ({
+                diagnosisContent: {
+                  ...s.diagnosisContent,
+                  [diagKey]: (s.diagnosisContent[diagKey] ?? '') + `\n\n**Error:** ${errMsg}`,
+                },
+                diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false },
+              }));
+            }
+          };
+
+          await invoke('agent_diagnose_error', {
+            sql,
+            errorMsg,
+            connectionId,
+            database,
+            channel,
+          });
+        } catch (e) {
+          const isCancelledError = String(e).includes('thread dropped') || String(e).includes('cancelled');
+          if (!isCancelledError) {
+            set(s => ({
+              diagnosisContent: {
+                ...s.diagnosisContent,
+                [diagKey]: `**Error:** ${String(e)}`,
+              },
+            }));
+          }
+          set(s => ({ diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false } }));
+        }
+      },
+
+      cancelDiagnosis: async (diagKey) => {
+        await invoke('cancel_diagnose_error').catch(() => {});
+        set(s => ({ diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false } }));
+      },
+
+      clearDiagnosis: (diagKey) => {
+        set(s => {
+          const { [diagKey]: _c, ...restContent } = s.diagnosisContent;
+          const { [diagKey]: _s, ...restStreaming } = s.diagnosisStreaming;
+          return { diagnosisContent: restContent, diagnosisStreaming: restStreaming };
+        });
       },
     }),
     {

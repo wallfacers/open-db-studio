@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Edit3, Trash2, Link2, Unlink, Download, Table2, LucideIcon, FolderOpen } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { emit } from '@tauri-apps/api/event';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
+import { useConfirmStore } from '../../../store/confirmStore';
 
 interface ProjectContextMenuProps {
   x: number;
@@ -51,7 +53,12 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   }, [renaming]);
 
   const handleDelete = async () => {
-    if (!confirm(t('erDesigner.confirmDeleteProject') || '确定删除此项目？')) return;
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('common.delete') || '删除',
+      message: t('erDesigner.confirmDeleteProject') || '确定删除此项目？',
+      variant: 'danger',
+    });
+    if (!ok) return;
     await deleteProject(projectId);
     onClose();
   };
@@ -87,7 +94,12 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   };
 
   const handleUnbind = async () => {
-    if (!confirm(t('erDesigner.confirmUnbind') || '确定解除绑定？')) return;
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('erDesigner.unbindConnection') || '解除绑定',
+      message: t('erDesigner.confirmUnbind') || '确定解除绑定？',
+      variant: 'danger',
+    });
+    if (!ok) return;
     await unbindConnection(projectId);
     onClose();
   };
@@ -95,7 +107,11 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   const handleAddTable = async () => {
     await loadProject(projectId);
     await addTable('new_table', { x: 100, y: 100 });
+    // Open the ER design tab so the user can see the new table
+    openERDesignTab(projectId, project?.name || '');
     onClose();
+    // If canvas was already mounted, trigger reload to show the new node
+    emit('er-canvas-reload', { projectId });
   };
 
   const handleExport = async () => {

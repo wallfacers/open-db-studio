@@ -20,7 +20,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   showToast
 }) => {
   const { t } = useTranslation();
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   return (
     <div className={`flex flex-col py-2 border-r border-[#1e2d42] bg-[#0d1117] justify-between flex-shrink-0 z-20 transition-all duration-300 ${isExpanded ? 'w-48' : 'w-14'}`}>

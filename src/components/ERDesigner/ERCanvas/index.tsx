@@ -84,6 +84,8 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   // State values for rendering
   const projects = useErDesignerStore(s => s.projects)
   const tables = useErDesignerStore(s => s.tables)
+  const relations = useErDesignerStore(s => s.relations)
+  const columns = useErDesignerStore(s => s.columns)
 
   const activeProject = projects.find(p => p.id === projectId) ?? null
   const hasConnection = !!activeProject?.connection_id
@@ -148,6 +150,74 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
   useEffect(() => {
     reloadCanvas()
   }, [reloadCanvas])
+
+  // Sync store changes to ReactFlow nodes/edges (for sidebar operations)
+  useEffect(() => {
+    // Only sync when we have loaded data (activeProjectId matches)
+    const state = useErDesignerStore.getState()
+    if (state.activeProjectId !== projectId) return
+
+    // Update nodes based on current tables (sync table name, columns, etc.)
+    setNodes(nds => {
+      const currentTableIds = new Set(tables.map(t => t.id))
+      // Update existing nodes and remove deleted ones
+      const updated = nds
+        .filter(n => currentTableIds.has(parseErTableNodeId(n.id)!))
+        .map(n => {
+          const tableId = parseErTableNodeId(n.id)!
+          const table = tables.find(t => t.id === tableId)
+          if (!table) return n
+          const cols = columns[tableId] || []
+          // Update node data with latest table and columns
+          return {
+            ...n,
+            position: { x: table.position_x, y: table.position_y },
+            data: {
+              ...n.data,
+              table,
+              columns: cols,
+            },
+          }
+        })
+      // Add new nodes for tables not yet on canvas
+      const existingIds = new Set(updated.map(n => n.id))
+      const newNodes = tables
+        .filter(t => !existingIds.has(erTableNodeId(t.id)))
+        .map(table => ({
+          id: erTableNodeId(table.id),
+          type: 'erTable',
+          position: { x: table.position_x, y: table.position_y },
+          data: buildNodeData(table, columns[table.id] || []),
+        }))
+      return [...updated, ...newNodes]
+    })
+
+    // Update edges based on current relations
+    setEdges(eds => {
+      const currentRelIds = new Set(relations.map(r => r.id))
+      const currentTableIds = new Set(tables.map(t => t.id))
+      // Remove edges for deleted relations or deleted tables
+      const filtered = eds.filter(e =>
+        currentRelIds.has(parseInt(e.id)) &&
+        currentTableIds.has(parseErTableNodeId(e.source)!) &&
+        currentTableIds.has(parseErTableNodeId(e.target)!)
+      )
+      // Add edges for new relations
+      const existingIds = new Set(filtered.map(e => e.id))
+      const newEdges = relations
+        .filter(r => !existingIds.has(erEdgeNodeId(r.id)))
+        .map(rel => ({
+          id: erEdgeNodeId(rel.id),
+          source: erTableNodeId(rel.source_table_id),
+          sourceHandle: `${rel.source_column_id}-source`,
+          target: erTableNodeId(rel.target_table_id),
+          targetHandle: `${rel.target_column_id}-target`,
+          type: 'erEdge',
+          data: { relation_type: rel.relation_type, source_type: rel.source },
+        }))
+      return [...filtered, ...newEdges]
+    })
+  }, [projectId, tables, relations, columns, buildNodeData, setNodes, setEdges])
 
   // Refs for nodes/edges so MCP event listeners don't re-subscribe on every render
   const nodesRef = useRef(nodes)
@@ -290,7 +360,7 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         nodes={nodes}
         tables={tables}
       />
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 bg-[#0d1117] overflow-hidden">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -303,8 +373,12 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
           edgeTypes={edgeTypes}
           deleteKeyCode={['Backspace', 'Delete']}
           fitView
+          fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+          minZoom={0.1}
+          maxZoom={2}
+          style={{ backgroundColor: '#0d1117' }}
         >
-          <Background color="#253347" gap={20} />
+          <Background color="#1e2d42" gap={20} size={1} />
           <Controls />
         </ReactFlow>
       </div>

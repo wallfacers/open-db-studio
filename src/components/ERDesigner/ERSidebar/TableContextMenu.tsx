@@ -4,6 +4,7 @@ import { Edit3, Trash2, Plus, Copy, LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
+import { useConfirmStore } from '../../../store/confirmStore';
 
 interface TableContextMenuProps {
   x: number;
@@ -40,7 +41,12 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   }, [onClose]);
 
   const handleDelete = async () => {
-    if (!confirm(t('erDesigner.confirmDeleteTable') || '确定删除此表？')) return;
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('common.delete') || '删除',
+      message: t('erDesigner.confirmDeleteTable') || '确定删除此表？',
+      variant: 'danger',
+    });
+    if (!ok) return;
     await deleteTable(tableId);
     onClose();
   };

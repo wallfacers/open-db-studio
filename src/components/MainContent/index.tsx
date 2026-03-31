@@ -1242,6 +1242,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                   scrollBeyondLastLine: false,
                   wordWrap: 'on',
                   lineNumbers: 'on',
+                  lineNumbersMinChars: 3,
                   renderLineHighlight: 'line',
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',

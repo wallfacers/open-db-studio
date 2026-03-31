@@ -13,6 +13,8 @@ pub struct AppState {
     pub serve_port: u16,
     /// 当前 SQL 解释专用的 opencode session ID
     pub current_explain_session_id: tokio::sync::Mutex<Option<String>>,
+    /// 当前 SQL 错误诊断专用的 opencode session ID
+    pub current_diagnose_session_id: tokio::sync::Mutex<Option<String>>,
 
     // ── 共享字段 ─────────────────────────────────────────────────────────────
     /// 编辑器 SQL per session，供 MCP get_editor_sql 工具读取

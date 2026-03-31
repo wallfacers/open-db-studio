@@ -3972,6 +3972,118 @@ pub async fn cancel_explain_sql(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn agent_diagnose_error(
+    sql: String,
+    error_msg: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let result = agent_diagnose_error_inner(sql, error_msg, connection_id, database, &channel, &state).await;
+    if let Err(ref e) = result {
+        let _ = channel.send(crate::llm::StreamEvent::Error { message: e.to_string() });
+    }
+    result
+}
+
+async fn agent_diagnose_error_inner(
+    sql: String,
+    error_msg: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: &tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let port = state.serve_port;
+
+    // 1. 并发处理：若上次诊断仍在进行，先 abort 旧 session
+    {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        if let Some(old_id) = guard.take() {
+            log::info!("[agent_diagnose_error] Aborting previous diagnose session: {}", old_id);
+            cleanup_temp_sql_session(port, &old_id).await;
+        }
+    }
+
+    // 2. 获取当前 LLM 配置
+    let config = crate::db::get_default_llm_config()?
+        .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
+
+    // 3. 构建 prompt_text
+    let conn_context = if let Some(conn_id) = connection_id {
+        let driver = crate::db::get_connection_config(conn_id)
+            .map(|c| c.driver)
+            .unwrap_or_else(|_| "mysql".to_string());
+        let db_line = match &database {
+            Some(db) if !db.is_empty() => format!("当前数据库: {}\n", db),
+            _ => String::new(),
+        };
+        format!("当前数据库连接 ID: {}\n数据库类型: {}\n{}\n", conn_id, driver, db_line)
+    } else {
+        String::new()
+    };
+    let prompt_text = format!(
+        "{}请诊断以下 SQL 执行错误：\n\nSQL:\n```sql\n{}\n```\n\n错误信息:\n```\n{}\n```\n\n请分析错误原因并给出修复建议。",
+        conn_context, sql, error_msg
+    );
+
+    // 4. 创建临时 session
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let title = format!("sql-diagnose-{}", ts);
+    let session_id = crate::agent::client::create_session(port, Some(&title)).await?;
+    crate::db::insert_agent_session(&session_id, Some(&title), None, true)?;
+
+    // 5. 存入 AppState
+    {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        *guard = Some(session_id.clone());
+    }
+
+    // 6. 通过 /event SSE 流式输出
+    let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
+    let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
+    let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
+    let stream_result = crate::agent::stream::stream_global_events(
+        port,
+        &session_id,
+        &prompt_text,
+        model_opt,
+        provider_opt,
+        Some("sql-diagnose"),
+        channel,
+    )
+    .await;
+
+    // 7. 清理 session
+    cleanup_temp_sql_session(port, &session_id).await;
+    {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        if guard.as_deref() == Some(&session_id) {
+            *guard = None;
+        }
+    }
+
+    stream_result
+}
+
+#[tauri::command]
+pub async fn cancel_diagnose_error(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let session_id = {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        guard.take()
+    };
+    if let Some(id) = session_id {
+        log::info!("[cancel_diagnose_error] Cancelling diagnose session: {}", id);
+        cleanup_temp_sql_session(state.serve_port, &id).await;
+    }
+    Ok(())
+}
+
 // ============ Agent Session 操作（undo / redo / compact）============
 
 /// 撤销最后一轮对话

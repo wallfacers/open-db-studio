@@ -274,7 +274,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
   const { activeConnectionId, connections } = useConnectionStore();
   const { nodes } = useTreeStore();
-  const { explainSql, isExplaining: isExplainingMap, cancelExplainSql } = useAiStore();
+  const { explainSql, isExplaining: isExplainingMap, cancelExplainSql,
+          diagnoseSqlError, diagnosisContent: diagnosisContentMap, diagnosisStreaming: diagnosisStreamingMap, cancelDiagnosis } = useAiStore();
   const isExecuting = isExecutingMap[activeTab] ?? false;
   const isExplaining = isExplainingMap[activeTab] ?? false;
   const isGhostTextEnabled = useQueryStore((s) => s.isGhostTextEnabled(activeTab));
@@ -1349,25 +1350,76 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <>
                     {isExecuting ? (
                       <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
-                    ) : error ? (
-                      <div className="p-3 text-red-400 text-xs font-mono">
-                        {error}
-                        {diagnosis && (
-                          <div className="mt-2 p-2 bg-[#1a2639] rounded text-[#c8daea] whitespace-pre-wrap font-sans">
-                            <span className="text-[#3794ff]">{t('mainContent.aiDiagnosis')}</span>{diagnosis}
-                          </div>
-                        )}
-                      </div>
                     ) : currentResults.length === 0 ? (
                       <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
-                    ) : (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.kind === 'select' && (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.length === 0 ? (
-                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>
                     ) : (() => {
                       const activeResult = typeof selectedResultPane === 'number'
                         ? currentResults[selectedResultPane]
                         : undefined;
 
                       if (!activeResult) return null;
+
+                      // ── 错误面板 ──
+                      if (activeResult.kind === 'error') {
+                        const diagKey = `${activeTab}_${selectedResultPane}`;
+                        const diagContent = diagnosisContentMap[diagKey] ?? '';
+                        const diagStreaming = diagnosisStreamingMap[diagKey] ?? false;
+                        const connId = activeTabObj?.queryContext?.connectionId ?? null;
+                        const db = activeTabObj?.queryContext?.database ?? null;
+
+                        return (
+                          <div className="p-4 h-full overflow-auto">
+                            <div className="mb-3">
+                              <div className="flex items-center gap-2 text-red-400 text-sm font-medium mb-2">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                  <path d="M12 9v4" /><path d="M12 17h.01" />
+                                </svg>
+                                {t('mainContent.sqlExecutionError')}
+                              </div>
+                              {activeResult.sql && (
+                                <pre className="bg-[#0d1117] border border-[#1e2d42] rounded p-2 text-xs text-[#7a9bb8] font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
+                              )}
+                              <div className="text-xs">
+                                <span className="text-[#7a9bb8]">{t('mainContent.errorMessage')}：</span>
+                                <span className="text-red-400 font-mono">{activeResult.error_message}</span>
+                              </div>
+                            </div>
+
+                            <div className="border-t border-[#1e2d42] pt-3">
+                              {!diagContent && !diagStreaming ? (
+                                <button
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-[#1a2639] text-[#00c9a7] hover:bg-[#1e2d42] transition-colors"
+                                  onClick={() => diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey)}
+                                >
+                                  <Sparkles size={13} />
+                                  {t('mainContent.aiDiagnoseBtn')}
+                                </button>
+                              ) : (
+                                <div>
+                                  <div className="flex items-center gap-1.5 text-xs text-[#00c9a7] mb-2">
+                                    <Sparkles size={13} />
+                                    <span>{t('mainContent.aiDiagnoseBtn')}</span>
+                                    {diagStreaming && (
+                                      <svg className="animate-spin ml-1" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                  <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                                    <MarkdownContent content={diagContent} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // ── 以下是原有的 select / dml-report 渲染 ──
+                      if (activeResult.kind === 'select' && activeResult.columns.length === 0) {
+                        return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>;
+                      }
 
                       const allRows = activeResult.rows;
 

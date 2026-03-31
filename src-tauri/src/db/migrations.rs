@@ -688,6 +688,45 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // ── V8: ER column extended properties ──
+    {
+        let new_cols = [
+            ("length",      "INTEGER"),
+            ("scale",       "INTEGER"),
+            ("is_unique",   "INTEGER NOT NULL DEFAULT 0"),
+            ("unsigned",    "INTEGER NOT NULL DEFAULT 0"),
+            ("charset",     "TEXT"),
+            ("collation",   "TEXT"),
+            ("on_update",   "TEXT"),
+            ("enum_values", "TEXT"),
+        ];
+        for (col_name, col_type) in &new_cols {
+            let sql = format!("ALTER TABLE er_columns ADD COLUMN {} {}", col_name, col_type);
+            match conn.execute(&sql, []) {
+                Ok(_) => log::info!("Migration V8: added er_columns.{}", col_name),
+                Err(e) if e.to_string().contains("duplicate column name") => {}
+                Err(e) => log::warn!("Migration V8: failed to add er_columns.{}: {}", col_name, e),
+            }
+        }
+
+        // 数据清洗：解析已有 data_type 中的括号部分，拆分到 length/scale
+        let _ = conn.execute_batch("
+            UPDATE er_columns
+            SET length = CAST(SUBSTR(data_type, INSTR(data_type, '(') + 1,
+                    CASE WHEN INSTR(data_type, ',') > 0
+                         THEN INSTR(data_type, ',') - INSTR(data_type, '(') - 1
+                         ELSE INSTR(data_type, ')') - INSTR(data_type, '(') - 1
+                    END) AS INTEGER),
+                scale = CASE WHEN INSTR(data_type, ',') > 0
+                    THEN CAST(SUBSTR(data_type, INSTR(data_type, ',') + 1,
+                              INSTR(data_type, ')') - INSTR(data_type, ',') - 1) AS INTEGER)
+                    ELSE NULL END,
+                data_type = SUBSTR(data_type, 1, INSTR(data_type, '(') - 1)
+            WHERE INSTR(data_type, '(') > 0 AND length IS NULL;
+        ");
+        log::info!("Migration V8: data_type cleanup completed");
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

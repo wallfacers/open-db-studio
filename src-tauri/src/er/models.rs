@@ -39,6 +39,16 @@ pub struct ErColumn {
     pub is_primary_key: bool,
     pub is_auto_increment: bool,
     pub comment: Option<String>,
+    // ── 新增字段 ──
+    pub length: Option<i64>,
+    pub scale: Option<i64>,
+    pub is_unique: bool,
+    pub unsigned: bool,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub on_update: Option<String>,
+    pub enum_values: Option<String>,  // JSON 数组字符串
+    // ──────────────
     pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -134,6 +144,14 @@ pub struct CreateColumnRequest {
     pub is_primary_key: Option<bool>,
     pub is_auto_increment: Option<bool>,
     pub comment: Option<String>,
+    pub length: Option<i64>,
+    pub scale: Option<i64>,
+    pub is_unique: Option<bool>,
+    pub unsigned: Option<bool>,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub on_update: Option<String>,
+    pub enum_values: Option<String>,
     pub sort_order: Option<i64>,
 }
 
@@ -146,6 +164,14 @@ pub struct UpdateColumnRequest {
     pub is_primary_key: Option<bool>,
     pub is_auto_increment: Option<bool>,
     pub comment: Option<String>,
+    pub length: Option<i64>,
+    pub scale: Option<i64>,
+    pub is_unique: Option<bool>,
+    pub unsigned: Option<bool>,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub on_update: Option<String>,
+    pub enum_values: Option<String>,
     pub sort_order: Option<i64>,
 }
 

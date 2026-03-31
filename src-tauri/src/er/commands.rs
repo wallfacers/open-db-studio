@@ -301,6 +301,14 @@ pub async fn er_sync_from_database(
                         is_primary_key: Some(db_col.is_primary_key),
                         is_auto_increment: None, // preserve existing
                         comment: db_col.comment.clone(),
+                        length: None,
+                        scale: None,
+                        is_unique: None,
+                        unsigned: None,
+                        charset: None,
+                        collation: None,
+                        on_update: None,
+                        enum_values: None,
                         sort_order: Some(i as i64),
                     };
                     crate::er::repository::update_column(er_col.id, &req)?;
@@ -321,6 +329,14 @@ pub async fn er_sync_from_database(
                                 .unwrap_or(false),
                         ),
                         comment: db_col.comment.clone(),
+                        length: None,
+                        scale: None,
+                        is_unique: None,
+                        unsigned: None,
+                        charset: None,
+                        collation: None,
+                        on_update: None,
+                        enum_values: None,
                         sort_order: Some(i as i64),
                     };
                     crate::er::repository::create_column(&req)?;
@@ -375,6 +391,14 @@ pub async fn er_sync_from_database(
                             .unwrap_or(false),
                     ),
                     comment: db_col.comment.clone(),
+                    length: None,
+                    scale: None,
+                    is_unique: None,
+                    unsigned: None,
+                    charset: None,
+                    collation: None,
+                    on_update: None,
+                    enum_values: None,
                     sort_order: Some(i as i64),
                 };
                 crate::er::repository::create_column(&col_req)?;
@@ -563,6 +587,14 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
                 is_primary_key: Some(export_col.is_primary_key),
                 is_auto_increment: Some(export_col.is_auto_increment),
                 comment: export_col.comment.clone(),
+                length: None,
+                scale: None,
+                is_unique: None,
+                unsigned: None,
+                charset: None,
+                collation: None,
+                on_update: None,
+                enum_values: None,
                 sort_order: Some(i as i64),
             })?;
 

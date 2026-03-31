@@ -107,11 +107,11 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </Handle>
 
         {/* PK Icon / Column Name */}
-        <div className="flex items-center gap-1.5 z-0 shrink-0">
+        <div className="flex items-center gap-1.5 z-0 flex-1 min-w-0">
           <Tooltip content={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}>
             <button
               type="button"
-              className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+              className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-500 hover:text-gray-300'}`}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -142,7 +142,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {isEditingName ? (
             <input
               ref={nameInputRef}
-              className="nodrag bg-[#151d28] text-[#b5cfe8] text-[13px] px-1.5 py-0 leading-[20px] rounded outline-none border border-[#00c9a7] w-[110px] flex-shrink-0"
+              className="nodrag bg-[#151d28] text-[#b5cfe8] text-[13px] px-1.5 py-0 leading-[20px] rounded outline-none border border-[#00c9a7] flex-1 min-w-0"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -150,7 +150,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             />
           ) : (
             <span
-              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1.5 py-0 leading-[20px] rounded truncate w-[110px] inline-block border border-transparent hover:border-[#3a5a7a] transition-colors flex-shrink-0"
+              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1.5 py-0 leading-[20px] rounded truncate flex-1 min-w-0 inline-block border border-transparent hover:border-[#3a5a7a] transition-colors"
               onDoubleClick={() => setIsEditingName(true)}
             >
               {col.name}

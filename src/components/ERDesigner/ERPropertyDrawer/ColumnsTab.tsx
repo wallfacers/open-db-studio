@@ -48,6 +48,7 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
                 mode="compact"
                 onUpdate={updateColumn}
                 onDelete={deleteColumn}
+                visibleColumns={{ defaultValue: false, comment: false, unique: false }}
               />
             </div>
           </div>

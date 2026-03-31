@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, FolderOpen, Plus, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3 } from 'lucide-react';
+import { Folder, FolderOpen, Plus, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3, Key } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import type { ErProject, ErTable, ErColumn } from '../../../types';
 import { Tooltip } from '../../common/Tooltip';
 import { ProjectContextMenu } from './ProjectContextMenu';
 import { TableContextMenu } from './TableContextMenu';
-import ColumnPropertyEditor from '../shared/ColumnPropertyEditor';
-import type { DialectName } from '../shared/dataTypes';
+import { formatTypeDisplay } from '../shared/dataTypes';
 
 interface ERSidebarProps {
   width: number;
@@ -29,7 +28,6 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   const [newProjectName, setNewProjectName] = useState('');
 
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(450);
 
   const {
     projects,
@@ -44,30 +42,10 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     toggleProjectExpand,
     toggleTableExpand,
     restoreExpandedState,
-    boundDialect,
     openDrawer,
-    updateColumn,
-    deleteColumn,
   } = useErDesignerStore();
 
   const { openERDesignTab } = useQueryStore();
-
-  useEffect(() => {
-    if (!sidebarRef.current) return;
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setSidebarWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(sidebarRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const visibleColumns = {
-    comment: sidebarWidth >= 450,
-    defaultValue: sidebarWidth >= 380,
-    unique: sidebarWidth >= 300,
-  };
 
   useEffect(() => {
     loadProjects();
@@ -225,32 +203,22 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                             </button>
                           </div>
 
-                          {/* Column Header */}
-                          {isTableExpanded && (
-                            <div className="flex items-center gap-1.5 px-2 h-[20px] text-[11px] text-[#4a6480] select-none" style={{ paddingLeft: '60px' }}>
-                              <span className="w-[40px] shrink-0"></span>
-                              <span className="flex-1 min-w-0">列名</span>
-                              <span className="w-[130px] shrink-0">类型</span>
-                              <span className="w-[28px] shrink-0 text-center">NN</span>
-                              {visibleColumns.unique && <span className="w-[28px] shrink-0 text-center">UQ</span>}   
-                              {visibleColumns.defaultValue && <span className="w-[80px] shrink-0">默认值</span>}     
-                              {visibleColumns.comment && <span className="w-[60px] shrink-0 text-center">注释</span>}
-                              <span className="w-[24px] shrink-0"></span>
-                            </div>
-                          )}
                           {/* Column Rows */}
                           {isTableExpanded && getTableColumns(table.id).map(column => (
-                            <ColumnPropertyEditor
+                            <div
                               key={column.id}
-                              column={column}
-                              tableId={table.id}
-                              dialect={boundDialect as DialectName | null}
-                              mode="compact"
-                              onUpdate={updateColumn}
-                              onDelete={deleteColumn}
-                              onOpenDrawer={openDrawer}
-                              visibleColumns={visibleColumns}
-                            />
+                              className="flex items-center gap-1.5 py-0.5 px-2 h-[26px] hover:bg-[#1a2639] transition-colors text-[13px] text-[#b5cfe8] cursor-default"
+                              style={{ paddingLeft: '56px' }}
+                              onDoubleClick={() => openDrawer(table.id, column.id)}
+                            >
+                              <div className="w-[14px] shrink-0 flex items-center justify-center">
+                                {column.is_primary_key && (
+                                  <Key size={12} className="text-[#f59e0b]" />
+                                )}
+                              </div>
+                              <span className="truncate">{column.name}</span>
+                              <span className="ml-auto shrink-0 text-[11px] text-[#4a6480]">{formatTypeDisplay(column)}</span>
+                            </div>
                           ))}
                         </div>
                       );

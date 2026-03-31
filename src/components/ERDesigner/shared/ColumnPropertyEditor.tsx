@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { Key, Zap, MoreVertical, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Key, Zap, X, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ErColumn } from '@/types';
 import { DropdownSelect } from '@/components/common/DropdownSelect';
 import { Tooltip } from '@/components/common/Tooltip';
@@ -61,13 +60,8 @@ function CompactRow({
   const [editName, setEditName] = useState(column.name);
   const [isEditingDefault, setIsEditingDefault] = useState(false);
   const [editDefault, setEditDefault] = useState(column.default_value ?? '');
-  const [showMenu, setShowMenu] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
-
   const nameRef = useRef<HTMLInputElement>(null);
   const defaultRef = useRef<HTMLInputElement>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const vis = visibleColumns ?? { defaultValue: true, comment: true, unique: true };
 
@@ -81,24 +75,6 @@ function CompactRow({
 
   useEffect(() => { setEditName(column.name); }, [column.name]);
   useEffect(() => { setEditDefault(column.default_value ?? ''); }, [column.default_value]);
-
-  useLayoutEffect(() => {
-    if (showMenu && menuTriggerRef.current) {
-      const rect = menuTriggerRef.current.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 4, left: rect.left - 100 });
-    }
-  }, [showMenu]);
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (menuRef.current?.contains(target) || menuTriggerRef.current?.contains(target)) return;
-      setShowMenu(false);
-    };
-    const timer = setTimeout(() => document.addEventListener('mousedown', handler, true), 10);
-    return () => { clearTimeout(timer); document.removeEventListener('mousedown', handler, true); };
-  }, [showMenu]);
 
   const handleNameSave = () => {
     setIsEditingName(false);
@@ -120,32 +96,33 @@ function CompactRow({
   return (
     <div className="flex items-center gap-1.5 px-2 h-[32px] py-1 hover:bg-[#1a2639] transition-colors group text-[13px] text-[#b5cfe8]" style={onOpenDrawer ? { paddingLeft: '60px' } : undefined}>
       {/* PK / AI icons container */}
-      <div className="flex items-center gap-1.5 w-[40px] shrink-0">
+      <div className="flex items-center shrink-0" style={{ width: 36 }}>
         <Tooltip content={column.is_primary_key ? 'Primary Key' : 'Set as PK'}>
           <button
             type="button"
-            className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-600 hover:text-gray-400'}`}
+            className={`shrink-0 w-[16px] h-[16px] flex items-center justify-center rounded-sm cursor-pointer outline-none ${column.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-600 hover:text-gray-400'}`}
             onClick={() => onUpdate(column.id, { is_primary_key: !column.is_primary_key })}
           >
             <Key size={12} />
           </button>
         </Tooltip>
 
-        {column.is_primary_key && (
-          <Tooltip content={column.is_auto_increment ? 'Auto Increment' : 'Set Auto Increment'}>
-            <button
-              type="button"
-              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'}`}
-              onClick={() => onUpdate(column.id, { is_auto_increment: !column.is_auto_increment })}
-            >
-              <Zap size={12} />
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip content={column.is_auto_increment ? 'Auto Increment' : 'Set Auto Increment'}>
+          <button
+            type="button"
+            className={`shrink-0 w-[16px] h-[16px] flex items-center justify-center rounded-sm cursor-pointer outline-none ${
+              !column.is_primary_key ? 'invisible' : column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'
+            }`}
+            onClick={() => onUpdate(column.id, { is_auto_increment: !column.is_auto_increment })}
+            tabIndex={column.is_primary_key ? 0 : -1}
+          >
+            <Zap size={12} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Field name */}
-      <div className="flex-1 min-w-0 flex items-center">
+      <div className="w-[100px] shrink-0 min-w-0 flex items-center">
         {isEditingName ? (
           <input
             ref={nameRef}
@@ -168,13 +145,13 @@ function CompactRow({
       </div>
 
       {/* Type + length */}
-      <div className="w-[130px] shrink-0 flex items-center gap-1">
+      <div className="flex-1 min-w-0 flex items-center gap-1">
         <TypeLengthDisplay column={column} dialect={dialect} mode="edit" onChange={(u) => onUpdate(column.id, u)} />
         <CompatibilityWarning typeName={column.data_type} dialect={dialect} />
       </div>
 
       {/* NN checkbox */}
-      <div className="w-[28px] shrink-0 flex justify-center">
+      <div className="w-[28px] shrink-0 flex justify-center ml-1.5">
         <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="NOT NULL">
           <input
             type="checkbox"
@@ -240,59 +217,18 @@ function CompactRow({
         </div>
       )}
 
-      {/* More menu */}
-      <div className="w-[24px] shrink-0 flex justify-end relative">
-        <button
-          ref={menuTriggerRef}
-          type="button"
-          className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={() => setShowMenu(!showMenu)}
-        >
-          <MoreVertical size={13} />
-        </button>
-
-        {showMenu && createPortal(
-          <div
-            ref={menuRef}
-            className="fixed bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-[200] py-1 min-w-[120px]"
-            style={{ top: menuPos.top, left: menuPos.left }}
+      {/* Delete button */}
+      {onDelete && (
+        <div className="w-[20px] shrink-0 flex justify-center">
+          <button
+            type="button"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[#4a6480] hover:text-red-400 transition-colors"
+            onClick={() => onDelete(column.id, tableId)}
           >
-            {onDelete && (
-              <div
-                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-red-400"
-                onClick={() => { onDelete(column.id, tableId); setShowMenu(false); }}
-              >
-                删除
-              </div>
-            )}
-            {onMoveUp && (
-              <div
-                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-                onClick={() => { onMoveUp(); setShowMenu(false); }}
-              >
-                上移
-              </div>
-            )}
-            {onMoveDown && (
-              <div
-                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-                onClick={() => { onMoveDown(); setShowMenu(false); }}
-              >
-                下移
-              </div>
-            )}
-            {onOpenDrawer && (
-              <div
-                className="px-3 py-1.5 text-xs cursor-pointer text-[#c8daea] hover:bg-[#1e2d42] hover:text-[#00c9a7]"
-                onClick={() => { onOpenDrawer(tableId, column.id); setShowMenu(false); }}
-              >
-                在抽屉中编辑
-              </div>
-            )}
-          </div>,
-          document.body,
-        )}
-      </div>
+            <X size={13} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

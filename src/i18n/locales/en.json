@@ -352,7 +352,12 @@
     "querySuccessNoData": "Query successful, no data",
     "rowsTruncatedWarning": "⚠ Query returned {{total}} rows, showing first {{max}}. Use LIMIT or export to view all data.",
     "exportFull": "Export All",
-    "pageNumber": "Page {{current}} / {{total}}"
+    "pageNumber": "Page {{current}} / {{total}}",
+    "errorLog": "Error Log",
+    "aiDiagnoseBtn": "AI Diagnosis",
+    "sqlExecutionError": "SQL Execution Error",
+    "errorMessage": "Error",
+    "diagnosing": "Diagnosing..."
   },
   "tableDataView": {
     "firstPage": "First page",

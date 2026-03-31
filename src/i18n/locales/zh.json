@@ -353,7 +353,12 @@
     "querySuccessNoData": "查询成功，暂无数据",
     "rowsTruncatedWarning": "⚠ 查询返回 {{total}} 行，当前显示前 {{max}} 行。如需查看全量数据请使用 LIMIT 或导出。",
     "exportFull": "导出全量",
-    "pageNumber": "第 {{current}} / {{total}} 页"
+    "pageNumber": "第 {{current}} / {{total}} 页",
+    "errorLog": "错误日志",
+    "aiDiagnoseBtn": "AI 诊断",
+    "sqlExecutionError": "SQL 执行错误",
+    "errorMessage": "错误信息",
+    "diagnosing": "诊断中..."
   },
   "tableDataView": {
     "firstPage": "第一页",

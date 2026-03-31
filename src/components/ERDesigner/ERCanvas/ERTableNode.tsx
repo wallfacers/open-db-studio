@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Handle, Position, useNodeConnections } from '@xyflow/react';
-import { Key, Hash, X, MoreVertical, TableProperties } from 'lucide-react';
+import { Key, Hash, X, MoreVertical, TableProperties, Edit3 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
@@ -21,7 +21,7 @@ interface ERTableNodeData {
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
   const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
-  const { boundDialect } = useErDesignerStore();
+  const { boundDialect, openDrawer } = useErDesignerStore();
   const typeOptions = useMemo(() => getTypeOptions(boundDialect as DialectName | null), [boundDialect]);
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -239,7 +239,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   };
 
   return (
-    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible w-[280px] font-sans">
+    <div className="group/table bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible w-[280px] font-sans">
       {/* Header */}
       <div className="bg-[#1a2639] px-3 py-1.5 border-b border-[#253347] rounded-t-lg flex justify-between items-center">
         {isEditingName ? (
@@ -264,6 +264,15 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             <span className="truncate">{table.name}</span>
           </h3>
         )}
+
+        {/* Edit (open drawer) */}
+        <button
+          className="nodrag opacity-0 group-hover/table:opacity-100 p-0.5 text-[#7a9bb8] hover:text-[#00c9a7] transition-all shrink-0 outline-none cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); openDrawer(table.id); }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <Edit3 size={12} />
+        </button>
 
         {/* Menu Trigger */}
         <div ref={menuTriggerRef} className="relative shrink-0 ml-1">

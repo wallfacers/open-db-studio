@@ -9,6 +9,7 @@ import type {
   ErIndex,
   DiffResult,
 } from '../types';
+import { checkTypeCompatibility, type DialectName } from '@/components/ERDesigner/shared/dataTypes';
 
 // Operation record for undo/redo (inverse operation model)
 interface EntityDelta {
@@ -432,6 +433,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         }
         return { columns: newColumns };
       });
+      get().checkColumnCompatibility(id);
     } catch (e) {
       console.error('Failed to update ER column:', e);
     }
@@ -446,6 +448,11 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           [tableId]: (s.columns[tableId] ?? []).filter((c) => c.id !== id),
         },
       }));
+      set((s) => {
+        const next = { ...s.dialectWarnings };
+        delete next[id];
+        return { dialectWarnings: next };
+      });
     } catch (e) {
       console.error('Failed to delete ER column:', e);
     }
@@ -695,10 +702,40 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
     drawerFocusColumnId: null,
   }),
 
-  // ── Dialect compatibility (placeholder) ──────────────────────────────
+  // ── Dialect compatibility ─────────────────────────────────────────────
   boundDialect: null,
   dialectWarnings: {},
-  checkDialectCompatibility: () => {},
-  checkColumnCompatibility: (_columnId: number) => {},
+
+  checkDialectCompatibility: () => {
+    const { boundDialect, columns } = get();
+    if (!boundDialect) {
+      set({ dialectWarnings: {} });
+      return;
+    }
+    const warnings: Record<number, string> = {};
+    for (const cols of Object.values(columns)) {
+      for (const col of cols) {
+        const w = checkTypeCompatibility(col.data_type, boundDialect as DialectName);
+        if (w) warnings[col.id] = w;
+      }
+    }
+    set({ dialectWarnings: warnings });
+  },
+
+  checkColumnCompatibility: (columnId: number) => {
+    const { boundDialect, columns, dialectWarnings } = get();
+    if (!boundDialect) return;
+    for (const cols of Object.values(columns)) {
+      const col = cols.find(c => c.id === columnId);
+      if (col) {
+        const w = checkTypeCompatibility(col.data_type, boundDialect as DialectName);
+        const next = { ...dialectWarnings };
+        if (w) next[columnId] = w; else delete next[columnId];
+        set({ dialectWarnings: next });
+        break;
+      }
+    }
+  },
+
   clearDialectWarnings: () => set({ dialectWarnings: {} }),
 }));

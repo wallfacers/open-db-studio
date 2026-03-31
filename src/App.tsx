@@ -23,11 +23,15 @@ import { flushSeaTunnelPersist, useSeaTunnelStore } from './store/seaTunnelStore
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
+import { tabTypeToActivity, tabToTreeNodeId } from './utils/tabActivityMapping';
+import { useTreeStore } from './store/treeStore';
+import { useErDesignerStore } from './store/erDesignerStore';
+import { stJobNodeId } from './utils/nodeId';
 
 export default function App() {
   const { t } = useTranslation();
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
-  const [activeActivity, setActiveActivity] = useState('database');
+  const { activeActivity, setActiveActivity } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -67,6 +71,45 @@ export default function App() {
   useEffect(() => {
     useSeaTunnelStore.getState().init();
   }, []);
+  // Tab 切换联动 ActivityBar + 侧边栏树选中
+  useEffect(() => {
+    if (!activeTabId) return;
+    const tab = tabs.find(t => t.id === activeTabId);
+    if (!tab) return;
+
+    // 1. 联动 ActivityBar
+    const targetActivity = tabTypeToActivity(tab.type);
+    if (targetActivity && activeActivity !== targetActivity) {
+      setActiveActivity(targetActivity);
+    }
+
+    // 2a. database 树 — 选中对应表节点
+    const treeNodeId = tabToTreeNodeId(tab);
+    if (treeNodeId) {
+      const treeState = useTreeStore.getState();
+      if (treeState.nodes.has(treeNodeId) && treeState.selectedId !== treeNodeId) {
+        treeState.selectNode(treeNodeId);
+      }
+    }
+
+    // 2b. ER 设计器 — 切换活跃项目
+    if (tab.type === 'er_design' && tab.erProjectId != null) {
+      const erStore = useErDesignerStore.getState();
+      if (erStore.activeProjectId !== tab.erProjectId) {
+        erStore.loadProject(tab.erProjectId);
+      }
+    }
+
+    // 2c. SeaTunnel — 选中 job 节点
+    if (tab.type === 'seatunnel_job' && tab.stJobId != null) {
+      const stStore = useSeaTunnelStore.getState();
+      const jobNode = stJobNodeId(tab.stJobId);
+      if (stStore.selectedId !== jobNode) {
+        stStore.selectNode(jobNode);
+      }
+    }
+  }, [activeTabId]);
+
   // 导入/导出完成后自动跳转到「我的任务」侧边栏
   useEffect(() => {
     if (taskCenterVisible) {

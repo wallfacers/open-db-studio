@@ -15,6 +15,8 @@ export interface OperationContext {
 }
 
 interface AppState {
+  activeActivity: string;
+  setActiveActivity: (activity: string) => void;
   lastOperationContext: OperationContext | null;
   setLastOperationContext: (ctx: OperationContext | null) => void;
   isAssistantOpen: boolean;
@@ -31,6 +33,8 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  activeActivity: 'database',
+  setActiveActivity: (activity) => set({ activeActivity: activity }),
   lastOperationContext: null,
   setLastOperationContext: (ctx) => set({ lastOperationContext: ctx }),
   isAssistantOpen: true,

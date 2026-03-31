@@ -348,7 +348,7 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
     : null
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117]">
       <ERToolbar
         projectId={projectId}
         onOpenDDL={() => setShowDDL(true)}
@@ -360,7 +360,7 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
         nodes={nodes}
         tables={tables}
       />
-      <div className="flex-1 min-h-0 bg-[#0d1117] overflow-hidden">
+      <div className="flex-1 min-h-0 bg-[#0d1117] overflow-hidden relative">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -376,7 +376,7 @@ export default function ERCanvas({ projectId, tabId }: ERCanvasProps) {
           fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
           minZoom={0.1}
           maxZoom={2}
-          style={{ backgroundColor: '#0d1117' }}
+          className="graph-canvas-container"
         >
           <Background color="#1e2d42" gap={20} size={1} />
           <Controls />

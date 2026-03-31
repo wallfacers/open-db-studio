@@ -8,7 +8,7 @@ const DAGRE_CONFIG = {
   edgesep: 20,
 } as const
 
-const DEFAULT_NODE_SIZE = { width: 200, height: 150 }
+const DEFAULT_NODE_SIZE = { width: 260, height: 120 }
 
 /**
  * Run dagre auto-layout on a set of nodes (and optional edges),

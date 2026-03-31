@@ -129,7 +129,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
     return (
       <div
-        className="flex items-center justify-between px-3 py-1.5 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[28px]"
+        className="flex items-center justify-between px-4 py-1 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[24px]"
       >
         {/* Target Handle (Left) - For incoming connections */}
         <Handle
@@ -145,7 +145,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         </Handle>
 
         {/* PK Icon / Column Name */}
-        <div className="flex items-center gap-2 z-0 flex-1 min-w-0">
+        <div className="flex items-center gap-1 z-0 flex-1 min-w-0">
           <div
             className={`cursor-pointer shrink-0 ${col.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
             onClick={handleTogglePrimaryKey}
@@ -195,8 +195,8 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
         {/* Delete Column Button */}
         <X
-          size={10}
-          className="opacity-0 group-hover:opacity-100 cursor-pointer text-gray-500 hover:text-red-400 shrink-0 ml-1 z-10"
+          size={14}
+          className="cursor-pointer text-gray-500 hover:text-red-400 shrink-0 ml-1 z-10"
           onClick={(e) => { e.stopPropagation(); onDeleteColumn(col.id); }}
         />
 
@@ -217,13 +217,13 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   };
 
   return (
-    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible min-w-[260px] font-sans">
+    <div className="bg-[#111922] rounded-lg border border-[#253347] shadow-xl overflow-visible min-w-[260px] max-w-[338px] font-sans">
       {/* Header */}
-      <div className="bg-[#1a2639] px-4 py-2.5 border-b border-[#253347] rounded-t-lg flex justify-between items-center">
+      <div className="bg-[#1a2639] px-3 py-1.5 border-b border-[#253347] rounded-t-lg flex justify-between items-center">
         {isEditingName ? (
           <input
             ref={nameInputRef}
-            className="bg-[#253347] text-gray-200 text-sm font-medium px-2 py-0.5 rounded outline-none border border-[#00c9a7] flex-1"
+            className="bg-[#253347] text-gray-200 text-xs font-medium px-1.5 py-0.5 rounded outline-none border border-[#00c9a7] flex-1"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleNameSave}
@@ -231,7 +231,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           />
         ) : (
           <h3
-            className="text-gray-200 text-sm font-medium truncate cursor-text hover:bg-[#253347] px-2 py-0.5 -ml-2 rounded transition-colors flex-1"
+            className="text-gray-200 text-xs font-medium truncate cursor-text hover:bg-[#253347] px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex-1"
             title={t('erDesigner.dblClickToEditName')}
             onDoubleClick={() => setIsEditingName(true)}
           >
@@ -271,7 +271,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
       </div>
 
       {/* Columns */}
-      <div className="flex flex-col max-h-[400px] overflow-y-auto">
+      <div className="flex flex-col max-h-[400px] overflow-y-auto overflow-x-hidden">
         {columns.map((col) => (
           <ColumnRow key={col.id} col={col} />
         ))}
@@ -279,10 +279,10 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
       {/* Add Column Button */}
       <div
-        className="px-4 py-2 border-t border-[#253347] text-center cursor-pointer hover:bg-[#1a2639] transition-colors"
+        className="px-3 py-1.5 border-t border-[#253347] text-center cursor-pointer hover:bg-[#1a2639] transition-colors"
         onClick={onAddColumn}
       >
-        <span className="text-xs text-[#00c9a7]">+ {t('erDesigner.addColumnBtn')}</span>
+        <span className="text-[11px] text-[#00c9a7]">+ {t('erDesigner.addColumnBtn')}</span>
       </div>
     </div>
   );

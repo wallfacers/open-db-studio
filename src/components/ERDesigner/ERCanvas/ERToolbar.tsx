@@ -141,7 +141,7 @@ export default function ERToolbar({
   };
 
   return (
-    <div className="flex items-center gap-2 bg-[#111922]/90 backdrop-blur border-b border-[#1e2d42] px-4 py-2">
+    <div className="flex items-center gap-2 h-10 bg-[#0d1117] border-b border-[#1e2d42] px-4 flex-shrink-0">
       {/* 表操作组 */}
       <button
         onClick={handleAddTable}

@@ -170,12 +170,30 @@ function PlaceholderSection({ title, description }: { title: string; description
 
 function AboutSection({ t }: { t: any }) {
   return (
-    <div className="w-full max-w-lg p-8 space-y-3">
+    <div className="w-full max-w-lg p-8 space-y-4">
       <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('settings.about')}</h3>
+
+      {/* App logo & name */}
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold text-sm">
+          DB
+        </div>
+        <div>
+          <p className="text-white font-semibold text-sm">open-db-studio</p>
+          <p className="text-[#7a9bb8] text-xs">{t('settings.aboutDesc')}</p>
+        </div>
+      </div>
+
+      {/* Info rows */}
       <div className="space-y-2 text-xs text-[#7a9bb8]">
-        <p><span className="text-[#c8daea]">{t('settings.appName')}</span>open-db-studio</p>
-        <p><span className="text-[#c8daea]">{t('settings.positioning')}</span>AI-Native Database Client</p>
-        <p><span className="text-[#c8daea]">{t('settings.techStack')}</span>Tauri 2.x · React 18 · Rust</p>
+        <p><span className="text-[#c8daea]">{t('settings.aboutVersion')}</span>v{__APP_VERSION__}</p>
+        <p><span className="text-[#c8daea]">{t('settings.techStack')}</span>Tauri 2.x · React 18 · TypeScript · Rust</p>
+        <p><span className="text-[#c8daea]">{t('settings.supportedDb')}</span>MySQL · PostgreSQL · SQLite</p>
+      </div>
+
+      {/* Footer */}
+      <div className="pt-2 border-t border-[#1e2d42]">
+        <p className="text-[10px] text-[#4a6a84]">{t('settings.aboutFooter')}</p>
       </div>
     </div>
   );

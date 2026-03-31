@@ -448,6 +448,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         edges={edges}
         tables={tables}
         onAutoLayout={handleAutoLayout}
+        hasConnection={hasConnection}
       />
       <div className="flex-1 overflow-hidden relative graph-canvas-container">
         <ReactFlow

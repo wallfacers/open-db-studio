@@ -1149,6 +1149,7 @@
     "sync": "同步",
     "exportJson": "导出 JSON",
     "importJson": "导入 JSON",
+    "noConnectionTip": "请先绑定数据源连接",
     "addColumnBtn": "添加列",
     "deleteTable": "删除表",
     "primaryKey": "主键",

@@ -30,6 +30,7 @@ export interface ERToolbarProps {
   onTableAdded?: (table: ErTable) => void;
   onOpenBind?: () => void;
   onAutoLayout?: () => void;
+  hasConnection?: boolean;
 }
 
 export default function ERToolbar({
@@ -44,6 +45,7 @@ export default function ERToolbar({
   onTableAdded,
   onOpenBind,
   onAutoLayout,
+  hasConnection = false,
 }: ERToolbarProps) {
   const { t } = useTranslation();
   const {
@@ -51,7 +53,10 @@ export default function ERToolbar({
     syncFromDatabase,
     exportJson,
     importJson,
+    projects,
   } = useErDesignerStore();
+
+  const projectName = projects.find(p => p.id === projectId)?.name;
 
   const [isAutoLayouting, setIsAutoLayouting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -126,8 +131,9 @@ export default function ERToolbar({
   const handleExportJson = async () => {
     try {
       const json = await exportJson(projectId);
+      const defaultFileName = projectName ? `${projectName}.json` : 'er-project.json';
       const path = await save({
-        defaultPath: 'er-project.json',
+        defaultPath: defaultFileName,
         filters: [{ name: 'JSON', extensions: ['json'] }],
       });
       if (!path) return;
@@ -183,8 +189,9 @@ export default function ERToolbar({
 
       <button
         onClick={handleImportTables}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.importTables')}
+        disabled={!hasConnection}
+        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        title={hasConnection ? t('erDesigner.importTables') : t('erDesigner.noConnectionTip')}
       >
         <Database size={14} />
         <span>{t('erDesigner.importTables')}</span>
@@ -214,8 +221,9 @@ export default function ERToolbar({
 
       <button
         onClick={handleDiff}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.diffCheck')}
+        disabled={!hasConnection}
+        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        title={hasConnection ? t('erDesigner.diffCheck') : t('erDesigner.noConnectionTip')}
       >
         <GitCompare size={14} />
         <span>Diff</span>
@@ -223,9 +231,9 @@ export default function ERToolbar({
 
       <button
         onClick={handleSync}
-        disabled={isSyncing}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title={t('erDesigner.syncDB')}
+        disabled={!hasConnection || isSyncing}
+        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        title={hasConnection ? t('erDesigner.syncDB') : t('erDesigner.noConnectionTip')}
       >
         <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
         <span>{isSyncing ? t('erDesigner.syncing') : t('erDesigner.sync')}</span>

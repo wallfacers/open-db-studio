@@ -1148,6 +1148,7 @@
     "sync": "Sync",
     "exportJson": "Export JSON",
     "importJson": "Import JSON",
+    "noConnectionTip": "Please bind a data source connection first",
     "addColumnBtn": "Add Column",
     "deleteTable": "Delete Table",
     "primaryKey": "Primary Key",

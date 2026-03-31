@@ -67,6 +67,14 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
       is_primary_key: false,
       is_auto_increment: false,
       comment: null,
+      length: null,
+      scale: null,
+      is_unique: false,
+      unsigned: false,
+      charset: null,
+      collation: null,
+      on_update: null,
+      enum_values: null,
       sort_order: cols.length,
     });
     onClose();

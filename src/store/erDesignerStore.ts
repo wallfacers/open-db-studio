@@ -108,6 +108,20 @@ interface ErDesignerState {
   pushOperation: (op: OperationRecord) => void;
   undo: () => void;
   redo: () => void;
+
+  // 抽屉面板状态
+  drawerOpen: boolean;
+  drawerTableId: number | null;
+  drawerFocusColumnId: number | null;
+  openDrawer: (tableId: number, focusColumnId?: number) => void;
+  closeDrawer: () => void;
+
+  // 方言兼容性
+  boundDialect: string | null;
+  dialectWarnings: Record<number, string>;
+  checkDialectCompatibility: () => void;
+  checkColumnCompatibility: (columnId: number) => void;
+  clearDialectWarnings: () => void;
 }
 
 /** Helper: apply ErProjectFull to state */
@@ -118,7 +132,10 @@ function applyProjectFull(projectFull: ErProjectFull) {
 
   for (const tf of projectFull.tables) {
     tables.push(tf.table);
-    columns[tf.table.id] = tf.columns;
+    columns[tf.table.id] = tf.columns.map((col: any) => ({
+      ...col,
+      enum_values: col.enum_values ? JSON.parse(col.enum_values) : null,
+    }));
     indexes[tf.table.id] = tf.indexes;
   }
 
@@ -371,16 +388,26 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   // ── Column operations ─────────────────────────────────────────────────
   addColumn: async (tableId, column) => {
     try {
-      const created = await invoke<ErColumn>('er_create_column', {
-        req: { table_id: tableId, ...column },
-      });
+      // Serialize enum_values to JSON string for Rust
+      const req: any = { table_id: tableId, ...column };
+      if (req.enum_values != null) {
+        req.enum_values = JSON.stringify(req.enum_values);
+      }
+      const created = await invoke<ErColumn>('er_create_column', { req });
+      // Deserialize enum_values from Rust
+      const deserialized: ErColumn = {
+        ...created,
+        enum_values: (created as any).enum_values
+          ? JSON.parse((created as any).enum_values)
+          : null,
+      };
       set((s) => ({
         columns: {
           ...s.columns,
-          [tableId]: [...(s.columns[tableId] ?? []), created],
+          [tableId]: [...(s.columns[tableId] ?? []), deserialized],
         },
       }));
-      return created;
+      return deserialized;
     } catch (e) {
       console.error('Failed to add ER column:', e);
       throw e;
@@ -389,7 +416,12 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateColumn: async (id, updates) => {
     try {
-      await invoke('er_update_column', { id, req: updates });
+      // Serialize enum_values to JSON string for Rust
+      const req: any = { ...updates };
+      if (req.enum_values !== undefined && req.enum_values != null) {
+        req.enum_values = JSON.stringify(req.enum_values);
+      }
+      await invoke('er_update_column', { id, req });
       set((s) => {
         const newColumns = { ...s.columns };
         for (const tableId of Object.keys(newColumns)) {
@@ -647,4 +679,26 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       console.error('Redo: failed to reload project:', e)
     );
   },
+
+  // ── Drawer panel state ───────────────────────────────────────────────
+  drawerOpen: false,
+  drawerTableId: null,
+  drawerFocusColumnId: null,
+  openDrawer: (tableId, focusColumnId) => set({
+    drawerOpen: true,
+    drawerTableId: tableId,
+    drawerFocusColumnId: focusColumnId ?? null,
+  }),
+  closeDrawer: () => set({
+    drawerOpen: false,
+    drawerTableId: null,
+    drawerFocusColumnId: null,
+  }),
+
+  // ── Dialect compatibility (placeholder) ──────────────────────────────
+  boundDialect: null,
+  dialectWarnings: {},
+  checkDialectCompatibility: () => {},
+  checkColumnCompatibility: (_columnId: number) => {},
+  clearDialectWarnings: () => set({ dialectWarnings: {} }),
 }));

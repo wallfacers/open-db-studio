@@ -468,6 +468,15 @@ export interface ErColumn {
   is_primary_key: boolean;
   is_auto_increment: boolean;
   comment: string | null;
+  // 扩展属性
+  length: number | null;
+  scale: number | null;
+  is_unique: boolean;
+  unsigned: boolean;
+  charset: string | null;
+  collation: string | null;
+  on_update: string | null;
+  enum_values: string[] | null;  // 前端用数组，Rust 传 JSON 字符串
   sort_order: number;
   created_at: string;
   updated_at: string;

@@ -36,6 +36,8 @@ interface OperationRecord {
 
 const MAX_UNDO_STACK = 50;
 
+const PERSIST_KEY_EXPANDED = 'er_sidebar_expanded';
+
 interface ErDesignerState {
   // Project list
   projects: ErProject[];
@@ -53,6 +55,13 @@ interface ErDesignerState {
 
   // Data loading
   loadProject: (projectId: number) => Promise<void>;
+
+  // Sidebar expansion persistence
+  expandedProjects: Set<number>;
+  expandedTables: Set<number>;
+  toggleProjectExpand: (projectId: number) => void;
+  toggleTableExpand: (tableId: number) => void;
+  restoreExpandedState: () => Promise<void>;
 
   // Table operations
   addTable: (name: string, position: { x: number; y: number }) => Promise<ErTable>;
@@ -123,6 +132,21 @@ function applyProjectFull(projectFull: ErProjectFull) {
   };
 }
 
+/** Debounced persist for expanded state */
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+function persistExpandedState(expandedProjects: Set<number>, expandedTables: Set<number>): void {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    invoke('set_ui_state', {
+      key: PERSIST_KEY_EXPANDED,
+      value: JSON.stringify({
+        projects: [...expandedProjects],
+        tables: [...expandedTables],
+      }),
+    }).catch(() => {});
+  }, 500);
+}
+
 export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   // ── State ──────────────────────────────────────────────────────────────
   projects: [],
@@ -131,6 +155,8 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   columns: {},
   relations: [],
   indexes: {},
+  expandedProjects: new Set<number>(),
+  expandedTables: new Set<number>(),
   undoStack: [],
   redoStack: [],
 
@@ -171,12 +197,23 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   deleteProject: async (id) => {
     try {
       await invoke('er_delete_project', { id });
-      set((s) => ({
-        projects: s.projects.filter((p) => p.id !== id),
-        ...(s.activeProjectId === id
-          ? { activeProjectId: null, tables: [], columns: {}, relations: [], indexes: {} }
-          : {}),
-      }));
+      set((s) => {
+        const expandedProjects = new Set(s.expandedProjects);
+        expandedProjects.delete(id);
+        // Remove table expansions belonging to deleted project's tables
+        const tableIdsToRemove = new Set(s.tables.filter(t => t.project_id === id).map(t => t.id));
+        const expandedTables = new Set(s.expandedTables);
+        for (const tid of tableIdsToRemove) expandedTables.delete(tid);
+        persistExpandedState(expandedProjects, expandedTables);
+        return {
+          projects: s.projects.filter((p) => p.id !== id),
+          expandedProjects,
+          expandedTables,
+          ...(s.activeProjectId === id
+            ? { activeProjectId: null, tables: [], columns: {}, relations: [], indexes: {} }
+            : {}),
+        };
+      });
     } catch (e) {
       console.error('Failed to delete ER project:', e);
     }
@@ -189,6 +226,58 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       set(applyProjectFull(projectFull));
     } catch (e) {
       console.error('Failed to load ER project:', e);
+    }
+  },
+
+  // ── Sidebar expansion persistence ─────────────────────────────────────
+  toggleProjectExpand: (projectId) => {
+    set((s) => {
+      const next = new Set(s.expandedProjects);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+        // Load project data when expanding
+        get().loadProject(projectId);
+      }
+      persistExpandedState(next, s.expandedTables);
+      return { expandedProjects: next };
+    });
+  },
+
+  toggleTableExpand: (tableId) => {
+    set((s) => {
+      const next = new Set(s.expandedTables);
+      if (next.has(tableId)) {
+        next.delete(tableId);
+      } else {
+        next.add(tableId);
+      }
+      persistExpandedState(s.expandedProjects, next);
+      return { expandedTables: next };
+    });
+  },
+
+  restoreExpandedState: async () => {
+    try {
+      const raw = await invoke<string | null>('get_ui_state', { key: PERSIST_KEY_EXPANDED });
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const projects = Array.isArray(parsed.projects)
+          ? new Set<number>(parsed.projects.filter((id: unknown): id is number => typeof id === 'number'))
+          : new Set<number>();
+        const tables = Array.isArray(parsed.tables)
+          ? new Set<number>(parsed.tables.filter((id: unknown): id is number => typeof id === 'number'))
+          : new Set<number>();
+        set({ expandedProjects: projects, expandedTables: tables });
+        // Pre-load expanded projects' data
+        for (const projectId of projects) {
+          get().loadProject(projectId);
+        }
+      }
+    } catch {
+      // Silently ignore — non-critical UI state
     }
   },
 
@@ -236,10 +325,14 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         delete newColumns[id];
         const newIndexes = { ...s.indexes };
         delete newIndexes[id];
+        const expandedTables = new Set(s.expandedTables);
+        expandedTables.delete(id);
+        persistExpandedState(s.expandedProjects, expandedTables);
         return {
           tables: s.tables.filter((t) => t.id !== id),
           columns: newColumns,
           indexes: newIndexes,
+          expandedTables,
           relations: s.relations.filter(
             (r) => r.source_table_id !== id && r.target_table_id !== id
           ),

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, FolderOpen, Plus, Database, TableProperties, Key, Hash, Link2, MoreVertical, ChevronRight, ChevronDown, X } from 'lucide-react';
+import { Folder, FolderOpen, Plus, Database, TableProperties, Key, Hash, Link2, MoreVertical, ChevronRight, ChevronDown, X, Grid3x3 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import type { ErProject, ErTable, ErColumn } from '../../../types';
@@ -74,7 +74,7 @@ const ColumnRow = ({ column, tableId }: ColumnRowProps) => {
   return (
     <div
       className="flex items-center py-1 group hover:bg-[#1a2639] cursor-default"
-      style={{ paddingLeft: '44px' }}
+      style={{ paddingLeft: '60px' }}
       onContextMenu={(e) => {
         e.preventDefault();
       }}
@@ -82,7 +82,7 @@ const ColumnRow = ({ column, tableId }: ColumnRowProps) => {
       {/* 主键图标 */}
       <span title={column.is_primary_key ? '主键' : '点击设置为主键'}>
         <Key
-          size={10}
+          size={14}
           className={`mr-1 flex-shrink-0 cursor-pointer ${
             column.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'
           }`}
@@ -94,7 +94,7 @@ const ColumnRow = ({ column, tableId }: ColumnRowProps) => {
       {column.is_primary_key && (
         <span title={column.is_auto_increment ? '自动递增' : '点击设置自动递增'}>
           <Hash
-            size={10}
+            size={14}
             className={`mr-1 flex-shrink-0 cursor-pointer ${
               column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'
             }`}
@@ -143,7 +143,7 @@ const ColumnRow = ({ column, tableId }: ColumnRowProps) => {
       {/* 删除按钮 - hover 显示 */}
       <span title="删除字段">
         <X
-          size={12}
+          size={14}
           className="ml-1 cursor-pointer text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 shrink-0"
           onClick={() => deleteColumn(column.id, tableId)}
         />
@@ -159,8 +159,6 @@ interface ERSidebarProps {
 
 export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebarProps) => {
   const { t } = useTranslation();
-  const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
-  const [expandedTables, setExpandedTables] = useState<Set<number>>(new Set());
   const [contextMenu, setContextMenu] = useState<{
     type: 'project' | 'table' | 'column';
     x: number;
@@ -176,48 +174,26 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     projects,
     loadProjects,
     createProject,
-    deleteProject,
-    loadProject,
     activeProjectId,
     tables,
     columns,
     relations,
+    expandedProjects,
+    expandedTables,
+    toggleProjectExpand,
+    toggleTableExpand,
+    restoreExpandedState,
   } = useErDesignerStore();
 
   const { openERDesignTab } = useQueryStore();
 
   useEffect(() => {
     loadProjects();
-  }, [loadProjects]);
-
-  const toggleProject = (projectId: number) => {
-    setExpandedProjects(prev => {
-      const next = new Set(prev);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-        // Load project data when expanding
-        loadProject(projectId);
-      }
-      return next;
-    });
-  };
+    restoreExpandedState();
+  }, [loadProjects, restoreExpandedState]);
 
   const handleProjectClick = (project: ErProject) => {
-    toggleProject(project.id);
-  };
-
-  const toggleTable = (tableId: number) => {
-    setExpandedTables(prev => {
-      const next = new Set(prev);
-      if (next.has(tableId)) {
-        next.delete(tableId);
-      } else {
-        next.add(tableId);
-      }
-      return next;
-    });
+    toggleProjectExpand(project.id);
   };
 
   const handleProjectDoubleClick = (project: ErProject) => {
@@ -260,9 +236,12 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-10 border-b border-[#1e2d42] bg-[#080d12]">
-        <span className="text-xs text-[#c8daea] font-medium uppercase tracking-wider">
-          {t('erDesigner.title') || 'ER 设计器'}
-        </span>
+        <div className="flex items-center gap-2">
+          <Grid3x3 size={14} className="text-[#00c9a7]" />
+          <span className="font-medium text-[#c8daea]">
+            {t('erDesigner.title') || 'ER 设计器'}
+          </span>
+        </div>
         <Tooltip content={t('erDesigner.newProject') || '新建项目'}>
           <button
             className="p-1 rounded hover:bg-[#1e2d42] text-[#7a9bb8] hover:text-[#00c9a7]"
@@ -331,7 +310,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                           <div
                             className="flex items-center py-1 px-2 cursor-pointer transition-colors group hover:bg-[#1a2639]"
                             style={{ paddingLeft: '32px' }}
-                            onClick={() => hasColumns && toggleTable(table.id)}
+                            onClick={() => hasColumns && toggleTableExpand(table.id)}
                             onDoubleClick={() => handleTableDoubleClick(project.id, table.name)}
                             onContextMenu={(e) => handleContextMenu(e, 'table', { projectId: project.id, tableId: table.id })}
                           >

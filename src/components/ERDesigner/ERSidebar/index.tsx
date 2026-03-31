@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, FolderOpen, Plus, Database, Table2, Key, Link2, MoreVertical, Trash2, Edit3, Download, Upload, ChevronRight, ChevronDown } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { Folder, FolderOpen, Plus, Database, TableProperties, Key, Hash, Link2, MoreVertical, ChevronRight, ChevronDown, X } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import type { ErProject, ErTable, ErColumn } from '../../../types';
@@ -9,6 +8,149 @@ import { Tooltip } from '../../common/Tooltip';
 import { DropdownSelect } from '../../common/DropdownSelect';
 import { ProjectContextMenu } from './ProjectContextMenu';
 import { TableContextMenu } from './TableContextMenu';
+
+const SQL_TYPES = [
+  { value: 'INT', label: 'INT' },
+  { value: 'BIGINT', label: 'BIGINT' },
+  { value: 'VARCHAR', label: 'VARCHAR' },
+  { value: 'TEXT', label: 'TEXT' },
+  { value: 'CHAR', label: 'CHAR' },
+  { value: 'DATETIME', label: 'DATETIME' },
+  { value: 'DATE', label: 'DATE' },
+  { value: 'TIMESTAMP', label: 'TIMESTAMP' },
+  { value: 'BOOLEAN', label: 'BOOLEAN' },
+  { value: 'DECIMAL', label: 'DECIMAL' },
+  { value: 'FLOAT', label: 'FLOAT' },
+  { value: 'DOUBLE', label: 'DOUBLE' },
+];
+
+// ColumnRow 组件 - 字段行编辑 UI
+interface ColumnRowProps {
+  column: ErColumn;
+  tableId: number;
+}
+
+const ColumnRow = ({ column, tableId }: ColumnRowProps) => {
+  const { updateColumn, deleteColumn } = useErDesignerStore();
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState(column.name);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // 外部更新时同步 editName（画布编辑 → 侧边栏同步）
+  useEffect(() => {
+    if (!isEditingName) {
+      setEditName(column.name);
+    }
+  }, [column.name, isEditingName]);
+
+  // 自动聚焦字段名输入框
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+    }
+  }, [isEditingName]);
+
+  // 保存字段名
+  const handleNameSave = () => {
+    setIsEditingName(false);
+    if (editName.trim() && editName !== column.name) {
+      updateColumn(column.id, { name: editName.trim() });
+    } else {
+      setEditName(column.name);
+    }
+  };
+
+  // 主键切换
+  const handleTogglePrimaryKey = () => {
+    updateColumn(column.id, { is_primary_key: !column.is_primary_key });
+  };
+
+  // 自动递增切换（仅主键可用）
+  const handleToggleAutoIncrement = () => {
+    if (!column.is_primary_key) return;
+    updateColumn(column.id, { is_auto_increment: !column.is_auto_increment });
+  };
+
+  return (
+    <div
+      className="flex items-center py-1 group hover:bg-[#1a2639] cursor-default"
+      style={{ paddingLeft: '44px' }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+      }}
+    >
+      {/* 主键图标 */}
+      <span title={column.is_primary_key ? '主键' : '点击设置为主键'}>
+        <Key
+          size={10}
+          className={`mr-1 flex-shrink-0 cursor-pointer ${
+            column.is_primary_key ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'
+          }`}
+          onClick={handleTogglePrimaryKey}
+        />
+      </span>
+
+      {/* 自动递增图标（仅主键显示） */}
+      {column.is_primary_key && (
+        <span title={column.is_auto_increment ? '自动递增' : '点击设置自动递增'}>
+          <Hash
+            size={10}
+            className={`mr-1 flex-shrink-0 cursor-pointer ${
+              column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'
+            }`}
+            onClick={handleToggleAutoIncrement}
+          />
+        </span>
+      )}
+
+      {/* 字段名 - 可编辑 */}
+      {isEditingName ? (
+        <input
+          ref={nameInputRef}
+          className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 rounded outline-none border border-[#00c9a7] min-w-[40px]"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          onBlur={handleNameSave}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleNameSave();
+            if (e.key === 'Escape') {
+              setEditName(column.name);
+              setIsEditingName(false);
+            }
+          }}
+          style={{ width: `${Math.max(editName.length * 7, 40)}px` }}
+        />
+      ) : (
+        <span
+          className="text-[13px] text-[#b5cfe8] truncate cursor-text hover:bg-[#253347] px-0.5 rounded"
+          onDoubleClick={() => setIsEditingName(true)}
+          title="双击编辑"
+        >
+          {column.name}
+        </span>
+      )}
+
+      {/* 类型 */}
+      <div className="ml-1 shrink-0">
+        <DropdownSelect
+          value={column.data_type}
+          options={SQL_TYPES}
+          onChange={(value) => updateColumn(column.id, { data_type: value })}
+          plain
+        />
+      </div>
+
+      {/* 删除按钮 - hover 显示 */}
+      <span title="删除字段">
+        <X
+          size={12}
+          className="ml-1 cursor-pointer text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 shrink-0"
+          onClick={() => deleteColumn(column.id, tableId)}
+        />
+      </span>
+    </div>
+  );
+};
 
 interface ERSidebarProps {
   width: number;
@@ -18,6 +160,7 @@ interface ERSidebarProps {
 export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebarProps) => {
   const { t } = useTranslation();
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+  const [expandedTables, setExpandedTables] = useState<Set<number>>(new Set());
   const [contextMenu, setContextMenu] = useState<{
     type: 'project' | 'table' | 'column';
     x: number;
@@ -63,6 +206,18 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
 
   const handleProjectClick = (project: ErProject) => {
     toggleProject(project.id);
+  };
+
+  const toggleTable = (tableId: number) => {
+    setExpandedTables(prev => {
+      const next = new Set(prev);
+      if (next.has(tableId)) {
+        next.delete(tableId);
+      } else {
+        next.add(tableId);
+      }
+      return next;
+    });
   };
 
   const handleProjectDoubleClick = (project: ErProject) => {
@@ -131,24 +286,22 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
             <div key={project.id} className="select-none">
               {/* Project Node */}
               <div
-                className={`flex items-center px-2 py-1.5 cursor-pointer transition-colors group ${
-                  activeProjectId === project.id ? 'bg-[#1a2639]' : 'hover:bg-[#151d28]'
+                className={`flex items-center py-1 px-2 cursor-pointer transition-colors group ${
+                  activeProjectId === project.id ? 'bg-[#1e2d42]' : 'hover:bg-[#1a2639]'
                 }`}
                 onClick={() => handleProjectClick(project)}
                 onDoubleClick={() => handleProjectDoubleClick(project)}
                 onContextMenu={(e) => handleContextMenu(e, 'project', { projectId: project.id })}
               >
+                <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#7a9bb8] flex-shrink-0">
+                  {expandedProjects.has(project.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </div>
                 {expandedProjects.has(project.id) ? (
-                  <ChevronDown size={14} className="mr-1 text-[#7a9bb8] flex-shrink-0" />
+                  <FolderOpen size={14} className="mr-1.5 text-[#00c9a7] flex-shrink-0" />
                 ) : (
-                  <ChevronRight size={14} className="mr-1 text-[#7a9bb8] flex-shrink-0" />
+                  <Folder size={14} className="mr-1.5 text-[#7a9bb8] flex-shrink-0" />
                 )}
-                {expandedProjects.has(project.id) ? (
-                  <FolderOpen size={14} className="mr-2 text-[#00c9a7] flex-shrink-0" />
-                ) : (
-                  <Folder size={14} className="mr-2 text-[#7a9bb8] flex-shrink-0" />
-                )}
-                <span className="text-xs text-[#c8daea] flex-1 truncate">{project.name}</span>
+                <span className="text-[13px] text-[#b5cfe8] flex-1 truncate">{project.name}</span>
                 {project.connection_id && (
                   <Tooltip content={t('erDesigner.connectionBound') || '已绑定连接'}>
                     <Link2 size={10} className="mr-1 text-[#00c9a7]" />
@@ -167,54 +320,54 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
 
               {/* Tables under expanded project */}
               {expandedProjects.has(project.id) && (
-                <div className="ml-4">
-                  {tables
+                  tables
                     .filter(t => t.project_id === project.id)
-                    .map(table => (
-                      <div key={table.id}>
-                        {/* Table Node */}
-                        <div
-                          className="flex items-center px-2 py-1 cursor-pointer transition-colors group hover:bg-[#151d28]"
-                          onDoubleClick={() => handleTableDoubleClick(project.id, table.name)}
-                          onContextMenu={(e) => handleContextMenu(e, 'table', { projectId: project.id, tableId: table.id })}
-                        >
-                          <Table2 size={12} className="mr-2 text-[#3794ff] flex-shrink-0" />
-                          <span className="text-xs text-[#c8daea] flex-1 truncate">{table.name}</span>
-                          <span className="text-[10px] text-[#7a9bb8] mr-1">
-                            {getTableColumns(table.id).length}
-                          </span>
-                          {getRelationCount(table.id) > 0 && (
-                            <Tooltip content={`${getRelationCount(table.id)} ${t('erDesigner.relations') || '个关系'}`}>
-                              <Link2 size={10} className="text-[#a855f7] mr-1" />
-                            </Tooltip>
-                          )}
-                        </div>
-
-                        {/* Column Nodes */}
-                        {getTableColumns(table.id).slice(0, 5).map(column => (
+                    .map(table => {
+                      const isTableExpanded = expandedTables.has(table.id);
+                      const hasColumns = getTableColumns(table.id).length > 0;
+                      return (
+                        <div key={table.id}>
+                          {/* Table Node */}
                           <div
-                            key={column.id}
-                            className="flex items-center px-2 py-0.5 ml-4 cursor-default hover:bg-[#151d28]"
-                            onContextMenu={(e) => handleContextMenu(e, 'column', { projectId: project.id, tableId: table.id, columnId: column.id })}
+                            className="flex items-center py-1 px-2 cursor-pointer transition-colors group hover:bg-[#1a2639]"
+                            style={{ paddingLeft: '32px' }}
+                            onClick={() => hasColumns && toggleTable(table.id)}
+                            onDoubleClick={() => handleTableDoubleClick(project.id, table.name)}
+                            onContextMenu={(e) => handleContextMenu(e, 'table', { projectId: project.id, tableId: table.id })}
                           >
-                            {column.is_primary_key ? (
-                              <Key size={10} className="mr-2 text-[#f59e0b] flex-shrink-0" />
-                            ) : (
-                              <div className="w-2.5 mr-2 flex-shrink-0" />
+                            <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#7a9bb8] flex-shrink-0">
+                              {hasColumns ? (
+                                isTableExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+                              ) : null}
+                            </div>
+                            <TableProperties
+                              size={14}
+                              className={`mr-1.5 flex-shrink-0 ${
+                                isTableExpanded ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'
+                              }`}
+                            />
+                            <span className="text-[13px] text-[#b5cfe8] flex-1 truncate">{table.name}</span>
+                            <span className="text-[11px] text-[#7a9bb8] mr-1">
+                              {getTableColumns(table.id).length}
+                            </span>
+                            {getRelationCount(table.id) > 0 && (
+                              <Tooltip content={`${getRelationCount(table.id)} ${t('erDesigner.relations') || '个关系'}`}>
+                                <Link2 size={10} className="text-[#a855f7] mr-1" />
+                              </Tooltip>
                             )}
-                            <span className="text-[11px] text-[#7a9bb8] truncate">{column.name}</span>
-                            <span className="text-[10px] text-[#5a6a7a] ml-1 truncate">{column.data_type}</span>
                           </div>
-                        ))}
-                        {getTableColumns(table.id).length > 5 && (
-                          <div className="px-2 py-0.5 ml-4 text-[10px] text-[#5a6a7a]">
-                            {t('erDesigner.moreColumns', { count: getTableColumns(table.id).length - 5 })}
-                          </div>
-                        )}
-                      </div>
-                    ))}
 
-                </div>
+                          {/* Column Nodes */}
+                          {isTableExpanded && getTableColumns(table.id).map(column => (
+                            <ColumnRow
+                              key={column.id}
+                              column={column}
+                              tableId={table.id}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })
               )}
             </div>
           ))

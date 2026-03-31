@@ -252,13 +252,12 @@ export default function App() {
         )
       )}
 
+      <GraphExplorer connectionId={activeConnectionId} database={activeDatabase} hidden={activeActivity !== 'graph'} />
       {activeActivity === 'settings' ? (
         <SettingsPage />
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
-      ) : activeActivity === 'graph' ? (
-        <GraphExplorer connectionId={activeConnectionId} database={activeDatabase} />
-      ) : (
+      ) : activeActivity !== 'graph' ? (
         <MainContent
           handleFormat={handleFormat}
           showToast={showToast}
@@ -266,7 +265,7 @@ export default function App() {
           resultsHeight={resultsHeight}
           handleResultsResize={handleResultsResize}
         />
-      )}
+      ) : null}
 
       <div
         style={{

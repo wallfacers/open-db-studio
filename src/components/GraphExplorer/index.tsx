@@ -211,9 +211,10 @@ interface EdgeTooltip {
 interface GraphExplorerInnerProps {
   connectionId: number | null;
   database?: string | null;
+  hidden?: boolean;
 }
 
-function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps) {
+function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInnerProps) {
   const { t } = useTranslation();
 
   // ── Independent connection / database selection ────────────────────────────
@@ -880,7 +881,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] overflow-hidden" style={{ display: hidden ? 'none' : undefined }}>
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#1e2d42] flex-shrink-0 bg-[#0d1117]">
         <Network size={16} className="text-[#00c9a7] flex-shrink-0" />
@@ -1265,10 +1266,11 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 interface GraphExplorerProps {
   connectionId: number | null;
   database?: string | null;
+  hidden?: boolean;
 }
 
-export const GraphExplorer: React.FC<GraphExplorerProps> = ({ connectionId, database }) => (
+export const GraphExplorer: React.FC<GraphExplorerProps> = ({ connectionId, database, hidden }) => (
   <ReactFlowProvider>
-    <GraphExplorerInner connectionId={connectionId} database={database} />
+    <GraphExplorerInner connectionId={connectionId} database={database} hidden={hidden} />
   </ReactFlowProvider>
 );

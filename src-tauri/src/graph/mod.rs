@@ -72,12 +72,13 @@ fn emit_log(app: &tauri::AppHandle, task_id: &str, level: &str, message: &str) {
     });
 }
 
-fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine]) {
+fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine], table_count: i64) {
     let now = chrono::Utc::now().to_rfc3339();
     let logs_json = serde_json::to_string(logs).unwrap_or_default();
     let _ = crate::db::update_task(task_id, &crate::db::models::UpdateTaskInput {
         status: Some("completed".to_string()),
         progress: Some(100),
+        processed_rows: Some(table_count),
         completed_at: Some(now),
         logs: Some(logs_json),
         ..Default::default()
@@ -86,7 +87,7 @@ fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine]) {
         task_id: task_id.to_string(),
         status: "completed".to_string(),
         progress: 100.0,
-        processed_rows: 0,
+        processed_rows: table_count,
         total_rows: None,
         current_target: String::new(),
         error: None,
@@ -169,7 +170,7 @@ async fn build_single_database(
     logs: &mut Vec<TaskLogLine>,
     connection_id: i64,
     config: &crate::datasource::ConnectionConfig,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     let ds = crate::datasource::create_datasource(config)
         .await
         .map_err(|e| format!("连接数据源失败: {}", e))?;
@@ -178,7 +179,8 @@ async fn build_single_database(
     log_and_emit(app, task_id, logs, "INFO", &format!("已连接数据源 [{}]，正在获取 Schema...", db_label));
 
     let schema = ds.get_schema().await.map_err(|e| format!("获取 Schema 失败: {}", e))?;
-    log_and_emit(app, task_id, logs, "INFO", &format!("Schema 获取完成，共 {} 张表", schema.tables.len()));
+    let table_count = schema.tables.len();
+    log_and_emit(app, task_id, logs, "INFO", &format!("Schema 获取完成，共 {} 张表", table_count));
 
     let mut table_columns = HashMap::new();
     let mut table_fks = HashMap::new();
@@ -243,7 +245,7 @@ async fn build_single_database(
         .await
         .map_err(|e| format!("增量更新失败: {}", e))?;
 
-    Ok(())
+    Ok(table_count)
 }
 
 pub async fn run_graph_build(
@@ -253,6 +255,7 @@ pub async fn run_graph_build(
     database: Option<String>,
 ) {
     let mut logs: Vec<TaskLogLine> = Vec::new();
+    let mut table_count: i64 = 0;
 
     log_and_emit(&app, &task_id, &mut logs, "INFO", "开始构建知识图谱...");
 
@@ -308,34 +311,39 @@ pub async fn run_graph_build(
 
         if user_dbs.is_empty() {
             log_and_emit(&app, &task_id, &mut logs, "WARN", "未发现用户数据库，跳过构建");
-            emit_completed(&app, &task_id, &logs);
+            emit_completed(&app, &task_id, &logs, 0);
             return;
         }
 
         let total = user_dbs.len();
         log_and_emit(&app, &task_id, &mut logs, "INFO", &format!("发现 {} 个数据库，开始逐一构建...", total));
 
+        let mut total_tables: i64 = 0;
         for (i, db_name) in user_dbs.iter().enumerate() {
             log_and_emit(&app, &task_id, &mut logs, "INFO", &format!("正在构建数据库 {} ({}/{})...", db_name, i + 1, total));
 
             let mut db_config = config.clone();
             db_config.database = Some(db_name.clone());
 
-            if let Err(msg) = build_single_database(
+            match build_single_database(
                 &app, &task_id, &mut logs, connection_id, &db_config,
             ).await {
-                log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("数据库 {} 构建失败: {}", db_name, msg));
-                // 不中断整体流程，继续下一个数据库
+                Ok(n) => total_tables += n as i64,
+                Err(msg) => log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("数据库 {} 构建失败: {}", db_name, msg)),
             }
         }
+        table_count = total_tables;
     } else {
         // ── 单数据库构建（原有逻辑）────────────────────────────────────────
-        if let Err(msg) = build_single_database(
+        match build_single_database(
             &app, &task_id, &mut logs, connection_id, &config,
         ).await {
-            log_and_emit(&app, &task_id, &mut logs, "ERROR", &msg);
-            emit_failed(&app, &task_id, &msg, &logs);
-            return;
+            Ok(n) => table_count = n as i64,
+            Err(msg) => {
+                log_and_emit(&app, &task_id, &mut logs, "ERROR", &msg);
+                emit_failed(&app, &task_id, &msg, &logs);
+                return;
+            }
         }
     }
 
@@ -361,7 +369,7 @@ pub async fn run_graph_build(
         log_and_emit(&app, &task_id, &mut logs, "INFO", "图缓存已失效，下次查询将重新加载");
     }
 
-    emit_completed(&app, &task_id, &logs);
+    emit_completed(&app, &task_id, &logs, table_count);
 }
 
 /// 将 metrics 表中的活跃指标同步到 graph_nodes，并建立 metric_ref 边

@@ -43,19 +43,19 @@ export function GraphSearchPanel({
 
   return (
     <div
-      className="flex flex-col border-l border-[#1e2d42] bg-[#0d1117] flex-shrink-0"
+      className="flex flex-col border-l border-[var(--border-default)] bg-[var(--background-base)] flex-shrink-0"
       style={{ width: 280 }}
     >
       {/* Panel header with tabs */}
-      <div className="flex items-center border-b border-[#1e2d42] flex-shrink-0">
+      <div className="flex items-center border-b border-[var(--border-default)] flex-shrink-0">
         {(['search', 'path'] as PanelTab[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`flex-1 py-2 text-xs font-medium transition-colors border-b-2 ${
               activeTab === tab
-                ? 'border-[#00c9a7] text-[#e8f4ff]'
-                : 'border-transparent text-[#7a9bb8] hover:text-[#c8daea]'
+                ? 'border-[var(--accent)] text-[var(--foreground)]'
+                : 'border-transparent text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]'
             }`}
           >
             {tab === 'search' ? '搜索' : '路径'}
@@ -63,7 +63,7 @@ export function GraphSearchPanel({
         ))}
         <button
           onClick={onClose}
-          className="px-2 py-2 text-[#7a9bb8] hover:text-white transition-colors flex-shrink-0"
+          className="px-2 py-2 text-[var(--foreground-muted)] hover:text-white transition-colors flex-shrink-0"
           aria-label="关闭搜索面板"
         >
           <X size={14} />

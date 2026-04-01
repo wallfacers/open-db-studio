@@ -55,11 +55,11 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
       {/* 标题行：仿 DeepSeek 最小化样式 */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs text-[#5a7a96] hover:text-[#c8daea] transition-colors mb-1.5 select-none"
+        className="flex items-center gap-1.5 text-xs text-[#5a7a96] hover:text-[var(--foreground-default)] transition-colors mb-1.5 select-none"
       >
         <Sparkles
           size={11}
-          className={isStreaming ? 'text-[#00c9a7] animate-pulse' : 'text-[#00c9a7] opacity-70'}
+          className={isStreaming ? 'text-[var(--accent)] animate-pulse' : 'text-[var(--accent)] opacity-70'}
         />
         <span>
           {isStreaming
@@ -72,7 +72,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
 
       {/* 内容区：左侧竖线引用风格 */}
       {expanded && (
-        <div ref={scrollRef} className="pl-3 border-l-2 border-[#2a3f5a] text-[11px] text-[#4a6480] leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
+        <div ref={scrollRef} className="pl-3 border-l-2 border-[var(--border-strong)] text-[11px] text-[var(--foreground-subtle)] leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
           {content}
         </div>
       )}

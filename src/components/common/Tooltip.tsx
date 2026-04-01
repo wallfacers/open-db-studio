@@ -72,8 +72,8 @@ export const Tooltip: React.FC<TooltipProps> = ({
       {mousePos && content &&
         createPortal(
           <div
-            className="fixed z-[9999] px-2 py-1 text-xs text-[#c8daea] bg-[#151d28]
-                       border border-[#2a3f5a] rounded shadow-lg break-words
+            className="fixed z-[9999] px-2 py-1 text-xs text-[var(--foreground-default)] bg-[var(--background-elevated)]
+                       border border-[var(--border-strong)] rounded shadow-lg break-words
                        pointer-events-none tooltip-fade-in"
             style={{ maxWidth: MAX_WIDTH, ...getPosition(mousePos) }}
           >

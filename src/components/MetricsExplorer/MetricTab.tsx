@@ -49,14 +49,14 @@ function TagInput({ value, onChange, t }: { value: string; onChange: (v: string)
   return (
     <div className="space-y-2">
       <div
-        className="min-h-[34px] flex flex-wrap gap-1 bg-[#1a2a3a] border border-[#2a3f5a] rounded
-                   px-2 py-1.5 cursor-text focus-within:border-[#00c9a7] transition-colors"
+        className="min-h-[34px] flex flex-wrap gap-1 bg-[#1a2a3a] border border-[var(--border-strong)] rounded
+                   px-2 py-1.5 cursor-text focus-within:border-[var(--accent)] transition-colors"
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map(tag => (
           <span
             key={tag}
-            className="flex items-center gap-1 px-1.5 py-0.5 bg-[#0d3d2e] text-[#00c9a7] text-xs rounded"
+            className="flex items-center gap-1 px-1.5 py-0.5 bg-[#0d3d2e] text-[var(--accent)] text-xs rounded"
           >
             {tag}
             <button
@@ -82,8 +82,8 @@ function TagInput({ value, onChange, t }: { value: string; onChange: (v: string)
             key={tag}
             type="button"
             onClick={() => addTag(tag)}
-            className="px-2 py-0.5 text-[10px] border border-[#2a3f5a] text-[#7a9bb8] rounded
-                       hover:border-[#00c9a7] hover:text-[#00c9a7] transition-colors"
+            className="px-2 py-0.5 text-[10px] border border-[var(--border-strong)] text-[var(--foreground-muted)] rounded
+                       hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
           >+ {tag}</button>
         ))}
       </div>
@@ -110,8 +110,8 @@ interface Props {
   onDelete?: () => void;
 }
 
-const inputCls = 'w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#00c9a7] transition-colors';
-const labelCls = 'block text-xs text-[#7a9bb8] mb-1';
+const inputCls = 'w-full bg-[#1a2a3a] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[var(--accent)] transition-colors';
+const labelCls = 'block text-xs text-[var(--foreground-muted)] mb-1';
 
 export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSaved, onDelete }: Props) {
   const { t } = useTranslation();
@@ -356,7 +356,7 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
 
   // 编辑模式加载中
   if (!isCreateMode && !metric && !error) {
-    return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('metricsExplorer.loading')}</div>;
+    return <div className="flex items-center justify-center h-full text-[var(--foreground-muted)] text-sm">{t('metricsExplorer.loading')}</div>;
   }
   if (!isCreateMode && error && !metric) {
     return <div className="flex items-center justify-center h-full text-red-400 text-sm">{error}</div>;
@@ -366,9 +366,9 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
   const headerTitle = isCreateMode ? t('metricsExplorer.metricTab.newMetric') : (metric?.display_name ?? '');
 
   return (
-    <div className="flex flex-col h-full bg-[#111922] text-white overflow-hidden">
+    <div className="flex flex-col h-full bg-[var(--background-panel)] text-white overflow-hidden">
       {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#1e2d42] flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-default)] flex-shrink-0">
         <span className="text-sm font-medium text-[#a0b4c8]">{headerTitle}</span>
         <div className="flex items-center gap-2">
           {error && <span className="text-xs text-red-400">{error}</span>}
@@ -376,7 +376,7 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
           {!isCreateMode && (
             <Tooltip content={t('metricsExplorer.metricTab.deleteTitle')} className="contents">
               <button
-                className="flex items-center gap-1.5 px-3 py-1 bg-[#1a2a3a] border border-[#2a3f5a] text-red-400 text-xs rounded
+                className="flex items-center gap-1.5 px-3 py-1 bg-[#1a2a3a] border border-[var(--border-strong)] text-red-400 text-xs rounded
                            hover:border-red-500 hover:text-red-300 disabled:opacity-50"
                 onClick={handleDelete}
                 disabled={deleting || saving}
@@ -387,7 +387,7 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
             </Tooltip>
           )}
           <button
-            className="flex items-center gap-1.5 px-3 py-1 bg-[#00c9a7] text-black text-xs rounded
+            className="flex items-center gap-1.5 px-3 py-1 bg-[var(--accent)] text-black text-xs rounded
                        hover:bg-[#00b090] disabled:opacity-50 font-medium"
             onClick={isCreateMode ? handleCreate : handleSave}
             disabled={saving || deleting}
@@ -415,7 +415,7 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
                         value={mt}
                         checked={currentType === mt}
                         onChange={() => { onUserEdit(); setForm(f => ({ ...f, metric_type: mt })); }}
-                        className="accent-[#00c9a7]"
+                        className="accent-[var(--accent)]"
                       />
                       <span className="text-xs text-[#a0b4c8]">
                         {mt === 'atomic' ? t('metricsExplorer.metricTab.atomicMetric') : t('metricsExplorer.metricTab.compositeMetric')}
@@ -539,8 +539,8 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
               <div>
                 <label className={labelCls}>{t('metricsExplorer.metricTab.description')}</label>
                 <textarea
-                  className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
-                             text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
+                  className="w-full bg-[#1a2a3a] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs
+                             text-white focus:outline-none focus:border-[var(--accent)] transition-colors resize-none h-16"
                   value={(form.description as string | undefined) ?? ''}
                   onChange={e => { onUserEdit(); setValue('description', e.target.value); }}
                 />
@@ -554,8 +554,8 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
               <div>
                 <label className={labelCls}>{t('metricsExplorer.metricTab.dataCaliber')}</label>
                 <textarea
-                  className="w-full bg-[#1a2a3a] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs
-                             text-white focus:outline-none focus:border-[#00c9a7] transition-colors resize-none h-16"
+                  className="w-full bg-[#1a2a3a] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs
+                             text-white focus:outline-none focus:border-[var(--accent)] transition-colors resize-none h-16"
                   value={(form.data_caliber as string | undefined) ?? ''}
                   onChange={e => { onUserEdit(); setValue('data_caliber', e.target.value); }}
                 />
@@ -567,8 +567,8 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
           {currentType === 'atomic' && (
             <HighlightedField scopeId={tabId!} path="filterSql">
               {(onUserEdit) => (
-                <div className="border border-[#2a3f5a] rounded overflow-hidden">
-                  <div className="px-3 py-1.5 bg-[#1a2a3a] border-b border-[#2a3f5a] text-xs text-[#7a9bb8]">
+                <div className="border border-[var(--border-strong)] rounded overflow-hidden">
+                  <div className="px-3 py-1.5 bg-[#1a2a3a] border-b border-[var(--border-strong)] text-xs text-[var(--foreground-muted)]">
                     {t('metricsExplorer.metricTab.filterSql')}
                   </div>
                   <textarea
@@ -584,7 +584,7 @@ export function MetricTab({ metricId, newMetricScope, tabId, connectionId, onSav
           )}
 
           {currentType === 'composite' && (
-            <div className="p-3 bg-[#1a2a3a] border border-[#2a3f5a] rounded text-xs text-[#7a9bb8]">
+            <div className="p-3 bg-[#1a2a3a] border border-[var(--border-strong)] rounded text-xs text-[var(--foreground-muted)]">
               {t('metricsExplorer.metricTab.compositeComingSoon')}
             </div>
           )}

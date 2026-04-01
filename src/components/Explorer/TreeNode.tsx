@@ -82,8 +82,8 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
 
   return (
     <div
-      className={`flex items-center py-1 px-2 cursor-pointer hover:bg-[#1a2639] outline-none select-none ${
-        isSelected ? 'bg-[#1e2d42]' : ''
+      className={`flex items-center py-1 px-2 cursor-pointer hover:bg-[var(--background-hover)] outline-none select-none ${
+        isSelected ? 'bg-[var(--border-default)]' : ''
       }`}
       style={{ paddingLeft: `${indent * 12 + 8}px` }}
       tabIndex={0}
@@ -92,7 +92,7 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
       onContextMenu={onContextMenu}
       onKeyDown={handleKeyDown}
     >
-      <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#7a9bb8] flex-shrink-0">
+      <div className="w-4 h-4 mr-1 flex items-center justify-center text-[var(--foreground-muted)] flex-shrink-0">
         {isLoading ? (
           <Loader2 size={12} className="animate-spin" />
         ) : node.hasChildren ? (
@@ -104,18 +104,18 @@ export const TreeNode: React.FC<TreeNodeProps> = ({
         <DbDriverIcon
           driver={node.meta.driver ?? ''}
           size={14}
-          className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+          className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`}
         />
       ) : (
         <Icon
           size={14}
-          className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+          className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`}
         />
       )}
 
       <Tooltip content={displayLabel} className="min-w-0 overflow-hidden">
         <span
-          className={`text-[13px] truncate block w-full ${isSelected ? 'text-[#e8f4ff]' : 'text-[#b5cfe8]'}`}
+          className={`text-[13px] truncate block w-full ${isSelected ? 'text-[var(--foreground)]' : 'text-[var(--foreground)]'}`}
         >
           {displayLabel}
         </span>

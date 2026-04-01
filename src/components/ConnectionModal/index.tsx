@@ -222,30 +222,30 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
     token: t('connectionModal.authToken'),
   };
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
-  const sectionLabelClass = 'flex items-center gap-1.5 text-xs font-medium text-[#7a9bb8] mb-2';
+  const sectionLabelClass = 'flex items-center gap-1.5 text-xs font-medium text-[var(--foreground-muted)] mb-2';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[520px] p-6 max-h-[80vh] overflow-y-auto">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[520px] p-6 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white font-semibold">{isEdit ? t('connectionModal.editConnection') : t('connectionModal.newConnection')}</h2>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"><X size={16} /></button>
         </div>
 
         {clipboardConn && (
-          <div className="bg-[#0d2137] border border-[#00c9a7]/40 rounded px-3 py-2 flex items-center gap-2 mb-4 text-sm">
-            <Link size={14} className="text-[#00c9a7] flex-shrink-0" />
-            <span className="text-[#b5cfe8]">{t('connectionModal.importBannerTitle')}（</span>
-            <span className="text-[#c8daea] font-medium">
+          <div className="bg-[#0d2137] border border-[var(--accent)]/40 rounded px-3 py-2 flex items-center gap-2 mb-4 text-sm">
+            <Link size={14} className="text-[var(--accent)] flex-shrink-0" />
+            <span className="text-[var(--foreground)]">{t('connectionModal.importBannerTitle')}（</span>
+            <span className="text-[var(--foreground-default)] font-medium">
               {clipboardConn.name || t('connectionModal.importBannerUnnamed')} · {DRIVERS.find(d => d.value === clipboardConn.driver)?.label ?? clipboardConn.driver}
             </span>
-            <span className="text-[#b5cfe8]">）</span>
+            <span className="text-[var(--foreground)]">）</span>
             <button
               type="button"
               onClick={handleImportFromClipboard}
-              className="text-[#00c9a7] hover:underline cursor-pointer ml-auto"
+              className="text-[var(--accent)] hover:underline cursor-pointer ml-auto"
             >
               {t('connectionModal.importBannerImport')}
             </button>
@@ -253,7 +253,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
               type="button"
               onClick={() => setClipboardConn(null)}
               aria-label={t('connectionModal.importBannerClose')}
-              className="text-[#7a9bb8] hover:text-[#c8daea] cursor-pointer"
+              className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] cursor-pointer"
             >
               <X size={14} />
             </button>
@@ -307,7 +307,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
                 <button
                   type="button"
                   onClick={handleBrowseFile}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#1a2639] border border-[#253347] rounded hover:bg-[#253347] text-[#c8daea] transition-colors whitespace-nowrap"
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--background-hover)] border border-[var(--border-strong)] rounded hover:bg-[var(--border-strong)] text-[var(--foreground-default)] transition-colors whitespace-nowrap"
                 >
                   <FolderOpen size={14} />
                   {t('connectionModal.browse')}
@@ -324,20 +324,20 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
                 </div>
                 <div>
                   <label className={labelClass}>{t('connectionModal.port')}</label>
-                  <div className="flex items-stretch w-full border border-[#253347] rounded overflow-hidden focus-within:border-[#009e84] transition-colors">
+                  <div className="flex items-stretch w-full border border-[var(--border-strong)] rounded overflow-hidden focus-within:border-[#009e84] transition-colors">
                     <input
                       type="number"
                       value={form.port ?? ''}
                       onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) }))}
-                      className="flex-1 min-w-0 bg-[#1a2639] px-3 py-1.5 text-sm text-white focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      className="flex-1 min-w-0 bg-[var(--background-hover)] px-3 py-1.5 text-sm text-white focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />
-                    <div className="flex flex-col border-l border-[#253347] bg-[#1a2639]">
+                    <div className="flex flex-col border-l border-[var(--border-strong)] bg-[var(--background-hover)]">
                       <button type="button" onClick={() => setForm(f => ({ ...f, port: Math.min(65535, (f.port ?? 0) + 1) }))}
-                        className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#1e2d42] transition-colors border-b border-[#253347]">
+                        className="flex-1 flex items-center justify-center px-1.5 text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--border-default)] transition-colors border-b border-[var(--border-strong)]">
                         <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
                       </button>
                       <button type="button" onClick={() => setForm(f => ({ ...f, port: Math.max(1, (f.port ?? 1) - 1) }))}
-                        className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#1e2d42] transition-colors">
+                        className="flex-1 flex items-center justify-center px-1.5 text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--border-default)] transition-colors">
                         <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
                       </button>
                     </div>
@@ -352,14 +352,14 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
               </div>
 
               {/* ── Auth Type Section ── */}
-              <div className="border-t border-[#253347] pt-3 mt-1">
+              <div className="border-t border-[var(--border-strong)] pt-3 mt-1">
                 <div className={sectionLabelClass}>
                   <Shield size={12} />
                   {t('connectionModal.authType')}
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {supportedAuthTypes.map((authType) => (
-                    <label key={authType} className="flex items-center gap-1.5 text-sm text-[#c8daea] cursor-pointer">
+                    <label key={authType} className="flex items-center gap-1.5 text-sm text-[var(--foreground-default)] cursor-pointer">
                       <input
                         type="radio"
                         name="auth_type"
@@ -411,7 +411,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
 
               {/* ── SSL/TLS Section ── */}
               {showSslSection && (
-                <div className="border-t border-[#253347] pt-3 mt-1">
+                <div className="border-t border-[var(--border-strong)] pt-3 mt-1">
                   <div className={sectionLabelClass}>
                     <Lock size={12} />
                     {t('connectionModal.sslSettings')}
@@ -438,7 +438,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
                         <button
                           type="button"
                           onClick={() => handleBrowseSslFile('ssl_ca_path')}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#1a2639] border border-[#253347] rounded hover:bg-[#253347] text-[#c8daea] transition-colors whitespace-nowrap"
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--background-hover)] border border-[var(--border-strong)] rounded hover:bg-[var(--border-strong)] text-[var(--foreground-default)] transition-colors whitespace-nowrap"
                         >
                           <FolderOpen size={14} />
                         </button>
@@ -456,7 +456,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
                         <button
                           type="button"
                           onClick={() => handleBrowseSslFile('ssl_cert_path')}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#1a2639] border border-[#253347] rounded hover:bg-[#253347] text-[#c8daea] transition-colors whitespace-nowrap"
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--background-hover)] border border-[var(--border-strong)] rounded hover:bg-[var(--border-strong)] text-[var(--foreground-default)] transition-colors whitespace-nowrap"
                         >
                           <FolderOpen size={14} />
                         </button>
@@ -474,7 +474,7 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
                         <button
                           type="button"
                           onClick={() => handleBrowseSslFile('ssl_key_path')}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#1a2639] border border-[#253347] rounded hover:bg-[#253347] text-[#c8daea] transition-colors whitespace-nowrap"
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--background-hover)] border border-[var(--border-strong)] rounded hover:bg-[var(--border-strong)] text-[var(--foreground-default)] transition-colors whitespace-nowrap"
                         >
                           <FolderOpen size={14} />
                         </button>
@@ -485,11 +485,11 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
               )}
 
               {/* ── Advanced Settings (collapsible) ── */}
-              <div className="border-t border-[#253347] pt-3 mt-1">
+              <div className="border-t border-[var(--border-strong)] pt-3 mt-1">
                 <button
                   type="button"
                   onClick={() => setAdvancedOpen(!advancedOpen)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-[#7a9bb8] hover:text-[#c8daea] transition-colors mb-2"
+                  className="flex items-center gap-1.5 text-xs font-medium text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors mb-2"
                 >
                   {advancedOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   {t('connectionModal.advancedSettings')}
@@ -551,12 +551,12 @@ export function ConnectionModal({ onClose, onSuccess, connection, defaultGroupId
 
         <div className="flex justify-between mt-5">
           <button onClick={handleTest} disabled={testing}
-            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded disabled:opacity-50">
+            className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded disabled:opacity-50">
             {testing ? t('connectionModal.testing') : t('connectionModal.testConnection')}
           </button>
           <div className="flex gap-2">
             <button onClick={onClose}
-              className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">
+              className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded">
               {t('connectionModal.cancel')}
             </button>
             <button onClick={handleSave} disabled={saving}

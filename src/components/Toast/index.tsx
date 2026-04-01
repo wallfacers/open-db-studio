@@ -45,7 +45,7 @@ const LEVEL_CONFIG: Record<ToastLevel, {
   },
   default: {
     bg: '#134e4a',
-    border: '#00c9a7',
+    border: 'var(--accent)',
     color: '#5eead4',
     Icon: Bell,
   },

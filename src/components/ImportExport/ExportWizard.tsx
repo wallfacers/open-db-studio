@@ -238,14 +238,14 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
 
   const displayStep = step1.scope === 'database' && step === 3 ? 2 : step;
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[560px] flex flex-col">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[560px] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#253347]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-strong)]">
           <h3 className="text-white font-semibold">{t('exportWizard.title')}</h3>
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
@@ -253,7 +253,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                 <div
                   key={n}
                   className={`w-2 h-2 rounded-full ${
-                    n === displayStep ? 'bg-[#009e84]' : n < displayStep ? 'bg-[#00c9a7]' : 'bg-[#253347]'
+                    n === displayStep ? 'bg-[#009e84]' : n < displayStep ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
                   }`}
                 />
               ))}
@@ -261,7 +261,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
             <span className="text-xs text-gray-400">
               {t('exportWizard.step', { current: displayStep, total: totalSteps })}
             </span>
-            <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors">
+            <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors">
               <X size={16} />
             </button>
           </div>
@@ -428,7 +428,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                   />
                 </div>
               )}
-              <div className="p-3 bg-[#1a2639] rounded border border-[#253347] text-sm text-gray-400">
+              <div className="p-3 bg-[var(--background-hover)] rounded border border-[var(--border-strong)] text-sm text-gray-400">
                 <div>{t('exportWizard.summaryTableCount', { count: step1.scope === 'current_table' ? 1 : selectedTables.length })}</div>
                 <div>{t('exportWizard.summaryFormat', { format: options.format.toUpperCase() })}</div>
                 <div>
@@ -448,15 +448,15 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[#253347]">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded transition-colors">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border-strong)]">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded transition-colors">
             {t('exportWizard.cancel')}
           </button>
           <div className="flex gap-2">
             {step > 1 && (
               <button
                 onClick={goPrev}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
               >
                 <ChevronLeft size={14} /> {t('exportWizard.prev')}
               </button>

@@ -42,7 +42,7 @@ export function PasswordInput({ value, onChange, className = '', placeholder = '
       <button
         type="button"
         onClick={handleToggle}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7a9bb8] hover:text-[#c8daea]"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
         tabIndex={-1}
       >
         {visible ? <EyeOff size={14} /> : <Eye size={14} />}

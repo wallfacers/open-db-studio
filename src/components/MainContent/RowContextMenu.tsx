@@ -88,14 +88,14 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
     return `DELETE FROM \`${tableName}\` WHERE \`${pkColumn}\` = '${String(pkVal ?? '').replace(/'/g, "\\'")}';`;
   };
 
-  const itemClass = 'px-4 py-1.5 hover:bg-[#1a2639] cursor-pointer text-[#c8daea] flex items-center justify-between';
-  const dividerClass = 'border-t border-[#1e2d42] my-1';
+  const itemClass = 'px-4 py-1.5 hover:bg-[var(--background-hover)] cursor-pointer text-[var(--foreground-default)] flex items-center justify-between';
+  const dividerClass = 'border-t border-[var(--border-default)] my-1';
 
   return (
     <div
       ref={menuRef}
       style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
-      className="bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[160px] py-1"
+      className="bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl text-xs min-w-[160px] py-1"
       onContextMenu={e => e.preventDefault()}
     >
       {target === 'cell' && (
@@ -143,9 +143,9 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
         }}
       >
         <span>{t('tableDataView.copyAsSql')}</span>
-        <ChevronRight size={12} className="text-[#7a9bb8]" />
+        <ChevronRight size={12} className="text-[var(--foreground-muted)]" />
         {sqlSubmenuOpen && (
-          <div className={`absolute ${sqlSubmenuToLeft ? 'right-full' : 'left-full'} ${sqlSubmenuToTop ? 'bottom-0' : 'top-0'} bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[140px] py-1`}>
+          <div className={`absolute ${sqlSubmenuToLeft ? 'right-full' : 'left-full'} ${sqlSubmenuToTop ? 'bottom-0' : 'top-0'} bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl text-xs min-w-[140px] py-1`}>
             <div className={itemClass} onClick={() => copyToClipboard(buildInsertSql())}>
               {t('tableDataView.copyAsInsertSql')}
             </div>

@@ -94,7 +94,7 @@ function CompactRow({
   };
 
   return (
-    <div className="flex items-center gap-1.5 px-2 h-[32px] py-1 hover:bg-[#1a2639] transition-colors group text-[13px] text-[#b5cfe8]" style={onOpenDrawer ? { paddingLeft: '60px' } : undefined}>
+    <div className="flex items-center gap-1.5 px-2 h-[32px] py-1 hover:bg-[var(--background-hover)] transition-colors group text-[13px] text-[var(--foreground)]" style={onOpenDrawer ? { paddingLeft: '60px' } : undefined}>
       {/* PK / AI icons container */}
       <div className="flex items-center shrink-0" style={{ width: 36 }}>
         <Tooltip content={column.is_primary_key ? 'Primary Key' : 'Set as PK'}>
@@ -111,7 +111,7 @@ function CompactRow({
           <button
             type="button"
             className={`shrink-0 w-[16px] h-[16px] flex items-center justify-center rounded-sm cursor-pointer outline-none ${
-              !column.is_primary_key ? 'invisible' : column.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'
+              !column.is_primary_key ? 'invisible' : column.is_auto_increment ? 'text-[var(--accent)]' : 'text-gray-600 hover:text-gray-400'
             }`}
             onClick={() => onUpdate(column.id, { is_auto_increment: !column.is_auto_increment })}
             tabIndex={column.is_primary_key ? 0 : -1}
@@ -126,7 +126,7 @@ function CompactRow({
         {isEditingName ? (
           <input
             ref={nameRef}
-            className="bg-[#151d28] text-[#b5cfe8] text-[13px] px-1 py-px leading-[20px] rounded outline-none border border-[#00c9a7] w-full"
+            className="bg-[var(--background-elevated)] text-[var(--foreground)] text-[13px] px-1 py-px leading-[20px] rounded outline-none border border-[var(--accent)] w-full"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleNameSave}
@@ -135,7 +135,7 @@ function CompactRow({
         ) : (
           <Tooltip content={column.name} className="w-full">
             <span
-              className="truncate cursor-text hover:bg-[#253347] px-1 py-px leading-[20px] rounded text-[13px] block w-full border border-transparent"
+              className="truncate cursor-text hover:bg-[var(--border-strong)] px-1 py-px leading-[20px] rounded text-[13px] block w-full border border-transparent"
               onDoubleClick={() => setIsEditingName(true)}
             >
               {column.name}
@@ -152,10 +152,10 @@ function CompactRow({
 
       {/* NN checkbox */}
       <div className="w-[28px] shrink-0 flex justify-center ml-1.5">
-        <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="NOT NULL">
+        <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[var(--foreground-muted)]" title="NOT NULL">
           <input
             type="checkbox"
-            className="accent-[#00c9a7] w-3 h-3 cursor-pointer"
+            className="accent-[var(--accent)] w-3 h-3 cursor-pointer"
             checked={!column.nullable}
             onChange={() => onUpdate(column.id, { nullable: !column.nullable })}
           />
@@ -165,10 +165,10 @@ function CompactRow({
       {/* UQ checkbox */}
       {vis.unique && (
         <div className="w-[28px] shrink-0 flex justify-center">
-          <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[#7a9bb8]" title="UNIQUE">
+          <label className="flex items-center gap-0.5 shrink-0 cursor-pointer text-[11px] text-[var(--foreground-muted)]" title="UNIQUE">
             <input
               type="checkbox"
-              className="accent-[#00c9a7] w-3 h-3 cursor-pointer"
+              className="accent-[var(--accent)] w-3 h-3 cursor-pointer"
               checked={column.is_unique}
               onChange={() => onUpdate(column.id, { is_unique: !column.is_unique })}
             />
@@ -182,7 +182,7 @@ function CompactRow({
           {isEditingDefault ? (
             <input
               ref={defaultRef}
-              className="bg-[#151d28] text-[#b5cfe8] text-[12px] px-1 py-px leading-[20px] rounded outline-none border border-[#00c9a7] w-full"
+              className="bg-[var(--background-elevated)] text-[var(--foreground)] text-[12px] px-1 py-px leading-[20px] rounded outline-none border border-[var(--accent)] w-full"
               value={editDefault}
               onChange={(e) => setEditDefault(e.target.value)}
               onBlur={handleDefaultSave}
@@ -192,7 +192,7 @@ function CompactRow({
           ) : (
             <Tooltip content={column.default_value ?? '默认值'} className="w-full">
               <span
-                className="truncate w-full text-[12px] text-[#7a9bb8] cursor-text hover:bg-[#253347] px-1 py-px leading-[20px] rounded block border border-transparent"
+                className="truncate w-full text-[12px] text-[var(--foreground-muted)] cursor-text hover:bg-[var(--border-strong)] px-1 py-px leading-[20px] rounded block border border-transparent"
                 onDoubleClick={() => setIsEditingDefault(true)}
               >
                 {column.default_value || '-'}
@@ -208,7 +208,7 @@ function CompactRow({
           <Tooltip content={column.comment || '添加注释'}>
             <button
               type="button"
-              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.comment ? 'text-[#00c9a7]' : 'text-gray-600 hover:text-gray-400'}`}
+              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.comment ? 'text-[var(--accent)]' : 'text-gray-600 hover:text-gray-400'}`}
               onClick={() => onOpenDrawer?.(tableId, column.id)}
             >
               <MessageSquare size={13} />
@@ -222,7 +222,7 @@ function CompactRow({
         <div className="w-[20px] shrink-0 flex justify-center">
           <button
             type="button"
-            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[#4a6480] hover:text-red-400 transition-colors"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[var(--foreground-subtle)] hover:text-red-400 transition-colors"
             onClick={() => onDelete(column.id, tableId)}
           >
             <X size={13} />
@@ -253,16 +253,16 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
   const [collapsed, setCollapsed] = useState(false);
   const typeDef = findTypeDef(column.data_type, dialect);
 
-  const inputClass = 'w-full bg-[#151d28] border border-[#2a3f5a] rounded text-[#b5cfe8] text-[13px] px-2 py-1 outline-none focus:border-[#00c9a7]';
-  const labelClass = 'text-[11px] text-[#7a9bb8] mb-0.5';
+  const inputClass = 'w-full bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded text-[var(--foreground)] text-[13px] px-2 py-1 outline-none focus:border-[var(--accent)]';
+  const labelClass = 'text-[11px] text-[var(--foreground-muted)] mb-0.5';
 
   if (collapsed) {
     return (
-      <div className="border border-[#2a3f5a] rounded px-3 py-1.5 flex items-center justify-between">
-        <span className="text-[13px] text-[#b5cfe8]">{column.name}</span>
+      <div className="border border-[var(--border-strong)] rounded px-3 py-1.5 flex items-center justify-between">
+        <span className="text-[13px] text-[var(--foreground)]">{column.name}</span>
         <button
           type="button"
-          className="text-[#7a9bb8] hover:text-[#b5cfe8] cursor-pointer outline-none"
+          className="text-[var(--foreground-muted)] hover:text-[var(--foreground)] cursor-pointer outline-none"
           onClick={() => setCollapsed(false)}
         >
           <ChevronDown size={14} />
@@ -272,13 +272,13 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
   }
 
   return (
-    <div className="border border-[#2a3f5a] rounded p-3 space-y-2">
+    <div className="border border-[var(--border-strong)] rounded p-3 space-y-2">
       {/* Header with collapse */}
       <div className="flex items-center justify-between">
-        <span className="text-[13px] text-[#b5cfe8] font-medium">{column.name}</span>
+        <span className="text-[13px] text-[var(--foreground)] font-medium">{column.name}</span>
         <button
           type="button"
-          className="text-[#7a9bb8] hover:text-[#b5cfe8] cursor-pointer outline-none"
+          className="text-[var(--foreground-muted)] hover:text-[var(--foreground)] cursor-pointer outline-none"
           onClick={() => setCollapsed(true)}
         >
           <ChevronUp size={14} />
@@ -304,29 +304,29 @@ function FullForm({ column, tableId, dialect, onUpdate }: ColumnPropertyEditorPr
 
       {/* Checkboxes row */}
       <div className="flex items-center gap-3 flex-wrap">
-        <label className="flex items-center gap-1 text-[12px] text-[#b5cfe8] cursor-pointer">
+        <label className="flex items-center gap-1 text-[12px] text-[var(--foreground)] cursor-pointer">
           <input
             type="checkbox"
-            className="accent-[#00c9a7] w-3.5 h-3.5 cursor-pointer"
+            className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
             checked={!column.nullable}
             onChange={() => onUpdate(column.id, { nullable: !column.nullable })}
           />
           NOT NULL
         </label>
-        <label className="flex items-center gap-1 text-[12px] text-[#b5cfe8] cursor-pointer">
+        <label className="flex items-center gap-1 text-[12px] text-[var(--foreground)] cursor-pointer">
           <input
             type="checkbox"
-            className="accent-[#00c9a7] w-3.5 h-3.5 cursor-pointer"
+            className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
             checked={column.is_unique}
             onChange={() => onUpdate(column.id, { is_unique: !column.is_unique })}
           />
           UNIQUE
         </label>
         {typeDef?.hasUnsigned && (
-          <label className="flex items-center gap-1 text-[12px] text-[#b5cfe8] cursor-pointer">
+          <label className="flex items-center gap-1 text-[12px] text-[var(--foreground)] cursor-pointer">
             <input
               type="checkbox"
-              className="accent-[#00c9a7] w-3.5 h-3.5 cursor-pointer"
+              className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
               checked={column.unsigned}
               onChange={() => onUpdate(column.id, { unsigned: !column.unsigned })}
             />

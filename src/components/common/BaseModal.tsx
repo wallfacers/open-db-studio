@@ -27,8 +27,8 @@ interface BaseModalProps {
 }
 
 const VARIANT_CLASS: Record<string, string> = {
-  primary:   'px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#00c9a7] disabled:opacity-50 text-white rounded transition-colors',
-  secondary: 'px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors',
+  primary:   'px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[var(--accent)] disabled:opacity-50 text-white rounded transition-colors',
+  secondary: 'px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors',
   danger:    'px-4 py-1.5 text-xs bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 rounded transition-colors',
 };
 
@@ -57,17 +57,17 @@ export const BaseModal: React.FC<BaseModalProps> = ({
       onMouseDown={(e) => { if (closeOnBackdrop && e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className={`bg-[#111922] border border-[#253347] rounded-lg shadow-2xl flex flex-col ${className}`}
+        className={`bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl flex flex-col ${className}`}
         style={{ width }}
       >
         {/* 标题栏 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e2d42] flex-shrink-0">
-          <div className="text-[#c8daea] font-medium text-sm flex items-center gap-2">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-default)] flex-shrink-0">
+          <div className="text-[var(--foreground-default)] font-medium text-sm flex items-center gap-2">
             {title}
           </div>
           <button
             onClick={onClose}
-            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
           >
             <X size={16} />
           </button>
@@ -80,8 +80,8 @@ export const BaseModal: React.FC<BaseModalProps> = ({
 
         {/* 底部按钮 */}
         {footerButtons && footerButtons.length > 0 && (
-          <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
-            <div className="text-xs text-[#7a9bb8]">{footerHint}</div>
+          <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-[var(--border-default)] bg-[var(--background-base)] flex-shrink-0">
+            <div className="text-xs text-[var(--foreground-muted)]">{footerHint}</div>
             <div className="flex items-center gap-2">
               {footerButtons.map((btn) => (
                 <button

@@ -191,8 +191,8 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       <div className="px-3 py-2 space-y-1">
         {[80, 64, 72, 56].map((w, i) => (
           <div key={i} className="flex items-center gap-2 h-7 px-1">
-            <div className="w-3 h-3 rounded bg-[#1e2d42] animate-pulse flex-shrink-0" />
-            <div className="h-2.5 rounded bg-[#1e2d42] animate-pulse" style={{ width: `${w}%` }} />
+            <div className="w-3 h-3 rounded bg-[var(--border-default)] animate-pulse flex-shrink-0" />
+            <div className="h-2.5 rounded bg-[var(--border-default)] animate-pulse" style={{ width: `${w}%` }} />
           </div>
         ))}
       </div>
@@ -201,7 +201,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
 
   if (visibleNodes.length === 0) {
     return (
-      <div className="px-3 py-4 text-center text-xs text-[#7a9bb8]">
+      <div className="px-3 py-4 text-center text-xs text-[var(--foreground-muted)]">
         {searchQuery.trim() ? t('metricsExplorer.noResults') : t('metricsExplorer.noConnections')}
       </div>
     );
@@ -237,8 +237,8 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
         return (
           <div
             key={node.id}
-            className={`flex items-center py-1 px-2 cursor-pointer hover:bg-[#1a2639] outline-none select-none ${
-              isSelected ? 'bg-[#1e2d42]' : ''
+            className={`flex items-center py-1 px-2 cursor-pointer hover:bg-[var(--background-hover)] outline-none select-none ${
+              isSelected ? 'bg-[var(--border-default)]' : ''
             }`}
             style={{ paddingLeft: `${indent * 12 + 8}px` }}
             tabIndex={0}
@@ -264,7 +264,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
             }}
             onContextMenu={e => handleContextMenu(e, node)}
           >
-            <div className="w-4 h-4 mr-1 flex items-center justify-center text-[#7a9bb8] flex-shrink-0">
+            <div className="w-4 h-4 mr-1 flex items-center justify-center text-[var(--foreground-muted)] flex-shrink-0">
               {isLoading ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (node.hasChildren || node.nodeType !== 'metric') ? (
@@ -276,21 +276,21 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               <DbDriverIcon
                 driver={node.meta.driver ?? ''}
                 size={14}
-                className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+                className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`}
               />
             ) : (
               <Icon
                 size={14}
-                className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+                className={`mr-1.5 flex-shrink-0 ${isGreen ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`}
               />
             )}
 
-            <span className={`text-[13px] truncate flex-1 ${isSelected ? 'text-[#e8f4ff]' : 'text-[#b5cfe8]'}`}>
+            <span className={`text-[13px] truncate flex-1 ${isSelected ? 'text-[var(--foreground)]' : 'text-[var(--foreground)]'}`}>
               {node.label}
             </span>
 
             {count !== undefined && count > 0 && (
-              <span className="text-[10px] text-[#7a9bb8] flex-shrink-0 ml-1">[{count}]</span>
+              <span className="text-[10px] text-[var(--foreground-muted)] flex-shrink-0 ml-1">[{count}]</span>
             )}
           </div>
         );
@@ -299,14 +299,14 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
       {/* 右键菜单 */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl py-1 min-w-[160px]"
+          className="fixed z-50 bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl py-1 min-w-[160px]"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={e => e.stopPropagation()}
         >
           {contextMenu.node.nodeType === 'metric' ? (
             <>
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
                 onClick={() => {
                   if (contextMenu.node.meta.metricId) {
                     onOpenMetricTab?.(contextMenu.node.meta.metricId, contextMenu.node.label, contextMenu.node.meta.connectionId);
@@ -314,9 +314,9 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                   setContextMenu(null);
                 }}
               ><Eye size={13} />{t('metricsExplorer.metricsTree.open')}</button>
-              <div className="h-px bg-[#253347] my-1" />
+              <div className="h-px bg-[var(--border-strong)] my-1" />
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[#1a2639] hover:text-red-300"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300"
                 onClick={async () => {
                   const node = contextMenu.node;
                   setContextMenu(null);
@@ -329,7 +329,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               {(contextMenu.node.nodeType === 'database' || contextMenu.node.nodeType === 'schema') && (
                 <>
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
                     onClick={() => {
                       const { connectionId, database, schema } = contextMenu.node.meta;
                       if (connectionId) {
@@ -342,14 +342,14 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                     }}
                   ><List size={13} />{t('metricsExplorer.metricsTree.openMetricList')}</button>
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
                     onClick={() => handleNewMetric(contextMenu.node)}
                   ><Plus size={13} />{t('metricsExplorer.metricsTree.addMetric')}</button>
-                  <div className="h-px bg-[#253347] my-1" />
+                  <div className="h-px bg-[var(--border-strong)] my-1" />
                 </>
               )}
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
                 onClick={() => {
                   refreshNode(contextMenu.node.id);
                   setContextMenu(null);

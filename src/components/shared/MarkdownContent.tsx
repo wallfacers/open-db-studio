@@ -47,17 +47,17 @@ const CodeExpandModal: React.FC<{
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* 弹框头部 */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#1e2d42] flex-shrink-0">
-          <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[var(--border-default)] flex-shrink-0">
+          <span className="text-xs text-[var(--foreground-muted)] font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
             >
               {copied ? (
-                <><Check size={13} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.markdownContent.copied')}</span></>
+                <><Check size={13} className="text-[var(--accent)]" /><span className="text-[var(--accent)]">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
                 <><Copy size={13} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
@@ -65,7 +65,7 @@ const CodeExpandModal: React.FC<{
             <Tooltip content={t('commonComponents.markdownContent.close')} className="contents">
               <button
                 onClick={onClose}
-                className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+                className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
               >
                 <X size={16} />
               </button>
@@ -79,7 +79,7 @@ const CodeExpandModal: React.FC<{
             language={language || 'plaintext'}
             useInlineStyles={true}
             PreTag="div"
-            customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', minHeight: '100%', overflowX: 'auto' }}
+            customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: 'var(--background-base)', padding: '12px', minHeight: '100%', overflowX: 'auto' }}
             codeTagProps={{ style: { background: 'transparent' } }}
           >
             {code}
@@ -117,24 +117,24 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
 
   return (
     <>
-      <div className="my-2 rounded overflow-hidden border border-[#1e2d42]">
-        <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
-          <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+      <div className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[var(--border-default)]">
+          <span className="text-xs text-[var(--foreground-muted)] font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <Tooltip content={t('commonComponents.markdownContent.expandView')} className="contents">
               <button
                 onClick={() => setExpanded(true)}
-                className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+                className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
               >
                 <Maximize2 size={12} />
               </button>
             </Tooltip>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
             >
               {copied ? (
-                <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.markdownContent.copied')}</span></>
+                <><Check size={12} className="text-[var(--accent)]" /><span className="text-[var(--accent)]">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
                 <><Copy size={12} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
@@ -146,7 +146,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
           language={language || 'plaintext'}
           useInlineStyles={true}
           PreTag="div"
-          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', overflowX: 'auto' }}
+          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: 'var(--background-base)', padding: '12px', overflowX: 'auto' }}
           codeTagProps={{ style: { background: 'transparent' } }}
         >
           {code}
@@ -176,7 +176,7 @@ function makeMdComponents(isStreaming: boolean) {
       return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
     }
     return (
-      <code className="bg-[#111922] text-[#569cd6] px-1 py-0.5 rounded text-xs font-mono" {...props}>
+      <code className="bg-[var(--background-panel)] text-[#569cd6] px-1 py-0.5 rounded text-xs font-mono" {...props}>
         {children}
       </code>
     );
@@ -191,7 +191,7 @@ function makeMdComponents(isStreaming: boolean) {
     return <ol className="list-decimal space-y-1 mb-2 pl-5">{children}</ol>;
   },
   li({ children }: React.ComponentPropsWithoutRef<'li'>) {
-    return <li className="text-[#c8daea] [&>p]:inline">{children}</li>;
+    return <li className="text-[var(--foreground-default)] [&>p]:inline">{children}</li>;
   },
   h1({ children }: React.ComponentPropsWithoutRef<'h1'>) {
     return <h1 className="text-base font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h1>;
@@ -206,7 +206,7 @@ function makeMdComponents(isStreaming: boolean) {
     return <strong className="font-semibold text-[#e8f4fd]">{children}</strong>;
   },
   blockquote({ children }: React.ComponentPropsWithoutRef<'blockquote'>) {
-    return <blockquote className="border-l-2 border-[#2a3f5a] pl-3 text-[#7a9bb8] italic my-2">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-[var(--border-strong)] pl-3 text-[var(--foreground-muted)] italic my-2">{children}</blockquote>;
   },
   table({ children }: React.ComponentPropsWithoutRef<'table'>) {
     return (
@@ -216,10 +216,10 @@ function makeMdComponents(isStreaming: boolean) {
     );
   },
   th({ children }: React.ComponentPropsWithoutRef<'th'>) {
-    return <th className="border border-[#1e2d42] bg-[#111922] px-2 py-1 text-left font-medium text-[#c8daea]">{children}</th>;
+    return <th className="border border-[var(--border-default)] bg-[var(--background-panel)] px-2 py-1 text-left font-medium text-[var(--foreground-default)]">{children}</th>;
   },
   td({ children }: React.ComponentPropsWithoutRef<'td'>) {
-    return <td className="border border-[#1e2d42] px-2 py-1 text-[#c8daea]">{children}</td>;
+    return <td className="border border-[var(--border-default)] px-2 py-1 text-[var(--foreground-default)]">{children}</td>;
   },
   };
 }

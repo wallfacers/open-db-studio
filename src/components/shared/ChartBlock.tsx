@@ -10,7 +10,7 @@ import { Tooltip } from '../common/Tooltip';
 
 // ── ODS 暗色主题（与项目色系一致）────────────────────────────────────────────
 const COLOR_PALETTE = [
-  '#00c9a7', // 品牌青绿（主系列）
+  'var(--accent)', // 品牌青绿（主系列）
   '#4a9eca', // 天蓝
   '#7b8ff0', // 蓝紫
   '#e07b54', // 暖橙
@@ -22,58 +22,58 @@ const COLOR_PALETTE = [
 
 const ODS_CHART_THEME = {
   color: COLOR_PALETTE,
-  backgroundColor: '#0d1117',
+  backgroundColor: 'var(--background-base)',
   textStyle: {
-    color: '#c8daea',
+    color: 'var(--foreground-default)',
     fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
     fontSize: 12,
   },
   title: {
-    textStyle: { color: '#c8daea', fontSize: 13, fontWeight: 'normal' },
-    subtextStyle: { color: '#7a9bb8', fontSize: 11 },
+    textStyle: { color: 'var(--foreground-default)', fontSize: 13, fontWeight: 'normal' },
+    subtextStyle: { color: 'var(--foreground-muted)', fontSize: 11 },
   },
   legend: {
-    textStyle: { color: '#7a9bb8' },
-    inactiveColor: '#2a3f5a',
-    pageTextStyle: { color: '#7a9bb8' },
+    textStyle: { color: 'var(--foreground-muted)' },
+    inactiveColor: 'var(--border-strong)',
+    pageTextStyle: { color: 'var(--foreground-muted)' },
   },
   tooltip: {
-    backgroundColor: '#151d28',
-    borderColor: '#2a3f5a',
+    backgroundColor: 'var(--background-elevated)',
+    borderColor: 'var(--border-strong)',
     borderWidth: 1,
-    textStyle: { color: '#c8daea', fontSize: 12 },
+    textStyle: { color: 'var(--foreground-default)', fontSize: 12 },
     extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.5);',
   },
   axisPointer: {
-    lineStyle: { color: '#2a3f5a' },
-    crossStyle: { color: '#2a3f5a' },
-    label: { backgroundColor: '#151d28', borderColor: '#2a3f5a', color: '#c8daea' },
+    lineStyle: { color: 'var(--border-strong)' },
+    crossStyle: { color: 'var(--border-strong)' },
+    label: { backgroundColor: 'var(--background-elevated)', borderColor: 'var(--border-strong)', color: 'var(--foreground-default)' },
   },
   categoryAxis: {
-    axisLine:  { lineStyle: { color: '#1e2d42' } },
-    axisTick:  { lineStyle: { color: '#1e2d42' } },
-    axisLabel: { color: '#7a9bb8', fontSize: 11 },
-    splitLine: { lineStyle: { color: '#1e2d42', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
+    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
+    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
+    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
     splitArea: { areaStyle: { color: ['rgba(30,45,66,0.15)', 'rgba(30,45,66,0.05)'] } },
   },
   valueAxis: {
-    axisLine:  { lineStyle: { color: '#1e2d42' } },
-    axisTick:  { lineStyle: { color: '#1e2d42' } },
-    axisLabel: { color: '#7a9bb8', fontSize: 11 },
-    splitLine: { lineStyle: { color: '#1e2d42', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
+    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
+    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
+    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
     splitArea: { areaStyle: { color: ['rgba(30,45,66,0.15)', 'rgba(30,45,66,0.05)'] } },
   },
   logAxis: {
-    axisLine:  { lineStyle: { color: '#1e2d42' } },
-    axisTick:  { lineStyle: { color: '#1e2d42' } },
-    axisLabel: { color: '#7a9bb8', fontSize: 11 },
-    splitLine: { lineStyle: { color: '#1e2d42', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
+    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
+    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
+    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
   },
   timeAxis: {
-    axisLine:  { lineStyle: { color: '#1e2d42' } },
-    axisTick:  { lineStyle: { color: '#1e2d42' } },
-    axisLabel: { color: '#7a9bb8', fontSize: 11 },
-    splitLine: { lineStyle: { color: '#1e2d42', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
+    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
+    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
+    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
   },
   line: {
     symbol: 'circle',
@@ -89,8 +89,8 @@ const ODS_CHART_THEME = {
   },
   pie: {
     radius: ['0%', '65%'],
-    label: { color: '#c8daea', fontSize: 11 },
-    labelLine: { lineStyle: { color: '#2a3f5a' } },
+    label: { color: 'var(--foreground-default)', fontSize: 11 },
+    labelLine: { lineStyle: { color: 'var(--border-strong)' } },
     emphasis: { label: { color: '#e8f4fd', fontWeight: 'bold' } },
   },
   scatter: {
@@ -99,41 +99,41 @@ const ODS_CHART_THEME = {
   },
   candlestick: {
     itemStyle: {
-      color: '#00c9a7',
+      color: 'var(--accent)',
       color0: '#f87171',
-      borderColor: '#00c9a7',
+      borderColor: 'var(--accent)',
       borderColor0: '#f87171',
     },
   },
   radar: {
-    name: { textStyle: { color: '#7a9bb8' } },
-    axisLine: { lineStyle: { color: '#1e2d42' } },
-    splitLine: { lineStyle: { color: '#1e2d42', type: 'dashed' } },
+    name: { textStyle: { color: 'var(--foreground-muted)' } },
+    axisLine: { lineStyle: { color: 'var(--border-default)' } },
+    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
     splitArea: { areaStyle: { color: ['rgba(30,45,66,0.2)', 'rgba(30,45,66,0.05)'] } },
   },
   dataZoom: {
-    backgroundColor: '#111922',
+    backgroundColor: 'var(--background-panel)',
     dataBackground: {
-      lineStyle: { color: '#2a3f5a' },
+      lineStyle: { color: 'var(--border-strong)' },
       areaStyle: { color: 'rgba(42,63,90,0.3)' },
     },
     fillerColor: 'rgba(0,201,167,0.12)',
-    handleStyle: { color: '#00c9a7', borderColor: '#009e84' },
-    textStyle: { color: '#7a9bb8' },
+    handleStyle: { color: 'var(--accent)', borderColor: '#009e84' },
+    textStyle: { color: 'var(--foreground-muted)' },
   },
   visualMap: {
-    color: ['#00c9a7', '#4a9eca', '#151d28'],
-    textStyle: { color: '#7a9bb8' },
+    color: ['var(--accent)', '#4a9eca', 'var(--background-elevated)'],
+    textStyle: { color: 'var(--foreground-muted)' },
   },
   toolbox: {
-    iconStyle: { borderColor: '#2a3f5a' },
-    emphasis: { iconStyle: { borderColor: '#00c9a7' } },
+    iconStyle: { borderColor: 'var(--border-strong)' },
+    emphasis: { iconStyle: { borderColor: 'var(--accent)' } },
   },
   timeline: {
-    lineStyle: { color: '#2a3f5a' },
-    itemStyle: { color: '#00c9a7' },
-    label: { color: '#7a9bb8' },
-    controlStyle: { color: '#7a9bb8', borderColor: '#2a3f5a' },
+    lineStyle: { color: 'var(--border-strong)' },
+    itemStyle: { color: 'var(--accent)' },
+    label: { color: 'var(--foreground-muted)' },
+    controlStyle: { color: 'var(--foreground-muted)', borderColor: 'var(--border-strong)' },
   },
 };
 
@@ -157,13 +157,13 @@ const ChartExpandModal: React.FC<{
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#1e2d42] flex-shrink-0">
-          <span className="text-xs text-[#7a9bb8] font-mono">{chartType}</span>
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[var(--border-default)] flex-shrink-0">
+          <span className="text-xs text-[var(--foreground-muted)] font-mono">{chartType}</span>
           <Tooltip content="关闭" className="contents">
             <button
               onClick={onClose}
-              className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
             >
               <X size={16} />
             </button>
@@ -356,18 +356,18 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
     // 柱高序列：低→中→高→中→低，营造波形感
     const barHeights = [20, 32, 44, 32, 20];
     return (
-      <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[#1e2d42]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
-          <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+      <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[var(--border-default)]">
+          <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
           <span className="text-xs text-[#5b8ab0] animate-pulse">{t('commonComponents.chartBlock.generatingChart')}</span>
         </div>
-        <div className="bg-[#0d1117] flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
+        <div className="bg-[var(--background-base)] flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
           <div className="flex flex-col items-center gap-3">
             <div className="flex gap-2 items-end">
               {barHeights.map((h, i) => (
                 <div
                   key={i}
-                  className="w-3 rounded-t bg-[#00c9a7]/70 chart-bar-anim"
+                  className="w-3 rounded-t bg-[var(--accent)]/70 chart-bar-anim"
                   style={{ height: h, animationDelay: `-${(i * 0.22).toFixed(2)}s` }}
                 />
               ))}
@@ -386,7 +386,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
           <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
           <span className="text-xs text-red-400">{t('commonComponents.chartBlock.chartDataError')}</span>
         </div>
-        <pre className="bg-[#0d1117] text-[#f87171] text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
+        <pre className="bg-[var(--background-base)] text-[#f87171] text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
           {code}
         </pre>
       </div>
@@ -399,29 +399,29 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
   );
 
   // 背景色始终强制覆盖（放在 spread 后，防止 AI 输出把它覆盖掉）
-  const mergedOption = { ...option!, backgroundColor: '#0d1117' };
+  const mergedOption = { ...option!, backgroundColor: 'var(--background-base)' };
 
   // ── 正常渲染 ──
   return (
-    <div data-testid="chart-block" className="my-2 rounded overflow-hidden border border-[#1e2d42]">
+    <div data-testid="chart-block" className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
       {/* 工具栏（与 CodeBlock 风格一致） */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
-        <span className="text-xs text-[#7a9bb8] font-mono">{chartType}</span>
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[var(--border-default)]">
+        <span className="text-xs text-[var(--foreground-muted)] font-mono">{chartType}</span>
         <div className="flex items-center gap-3">
           <Tooltip content="放大查看" className="contents">
             <button
               onClick={() => setExpanded(true)}
-              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
             >
               <Maximize2 size={12} />
             </button>
           </Tooltip>
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
           >
             {copied ? (
-              <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.chartBlock.copied')}</span></>
+              <><Check size={12} className="text-[var(--accent)]" /><span className="text-[var(--accent)]">{t('commonComponents.chartBlock.copied')}</span></>
             ) : (
               <><Copy size={12} /><span>{t('commonComponents.chartBlock.copy')}</span></>
             )}
@@ -433,7 +433,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <ChartErrorBoundary
         key={code}
         fallback={
-          <div className="bg-[#0d1117] text-[#7a9bb8] text-xs p-4 text-center">
+          <div className="bg-[var(--background-base)] text-[var(--foreground-muted)] text-xs p-4 text-center">
             {t('commonComponents.chartBlock.renderFailed')}
           </div>
         }

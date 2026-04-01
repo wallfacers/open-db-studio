@@ -47,18 +47,18 @@ export function SearchTab({
   return (
     <div className="flex flex-col h-full">
       {/* Search Input */}
-      <div className="p-3 border-b border-[#1e2d42]">
+      <div className="p-3 border-b border-[var(--border-default)]">
         <div className="relative">
-          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7a9bb8] pointer-events-none" />
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] pointer-events-none" />
           {loading && (
-            <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#7a9bb8] animate-spin" />
+            <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] animate-spin" />
           )}
           <input
             type="text"
             value={keyword}
             onChange={e => setKeyword(e.target.value)}
             placeholder={t('graphExplorer.searchTab.searchPlaceholder')}
-            className="w-full pl-7 pr-7 py-1.5 text-xs bg-[#111922] border border-[#1e2d42] rounded text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00a98f] transition-colors"
+            className="w-full pl-7 pr-7 py-1.5 text-xs bg-[var(--background-panel)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[#3d5470] focus:outline-none focus:border-[var(--accent-hover)] transition-colors"
           />
         </div>
       </div>
@@ -70,7 +70,7 @@ export function SearchTab({
         )}
 
         {searched && results.length === 0 && !loading && (
-          <p className="text-[#7a9bb8] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.noResults')}</p>
+          <p className="text-[var(--foreground-muted)] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.noResults')}</p>
         )}
 
         {results.map(node => {
@@ -80,7 +80,7 @@ export function SearchTab({
             <div
               key={node.id}
               onClick={() => handleItemClick(node)}
-              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[#1a2639] border-b border-[#1e2d42]/50 group"
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[var(--background-hover)] border-b border-[var(--border-default)]/50 group"
             >
               <span
                 className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-mono"
@@ -97,7 +97,7 @@ export function SearchTab({
               </span>
 
               <div className="flex-1 min-w-0">
-                <p className="text-[#c8daea] text-xs truncate">{node.name}</p>
+                <p className="text-[var(--foreground-default)] text-xs truncate">{node.name}</p>
                 {node.display_name && node.display_name !== node.name && (
                   <p className="text-[#3d5470] text-[10px] truncate">{node.display_name}</p>
                 )}

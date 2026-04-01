@@ -187,8 +187,8 @@ const RELATION_LABEL_MAP: Record<string, string> = {
   many_to_many: 'N:N',
 };
 
-const BG_COLOR = '#0d1117';
-const SELECTED_COLOR = '#00c9a7';
+const BG_COLOR = 'var(--background-base)';
+const SELECTED_COLOR = 'var(--accent)';
 
 // ─── Component ──────────────────────────────────────────────────────
 
@@ -354,8 +354,8 @@ export default function EREdge({
             onClick={(e) => { e.stopPropagation(); toggleMenu(); }}
             className={`px-2 py-0.5 rounded text-xs font-mono shadow-sm transition-colors cursor-pointer
               ${selected
-                ? 'bg-[#0d2620] border border-[#00c9a7] text-[#00c9a7]'
-                : 'bg-[#111922] border border-[#253347] text-gray-300 hover:border-[#3794ff] hover:text-white'
+                ? 'bg-[#0d2620] border border-[var(--accent)] text-[var(--accent)]'
+                : 'bg-[var(--background-panel)] border border-[var(--border-strong)] text-gray-300 hover:border-[#3794ff] hover:text-white'
               }`}
           >
             {displayLabel}
@@ -379,7 +379,7 @@ export default function EREdge({
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', left: dropdownPos.left, top: dropdownPos.top, zIndex: 9999 }}
-          className="bg-[#1c2433] border border-[#253347] rounded shadow-lg min-w-[60px]"
+          className="bg-[#1c2433] border border-[var(--border-strong)] rounded shadow-lg min-w-[60px]"
           onMouseDown={(e) => e.stopPropagation()}
         >
           {RELATION_TYPES.map(rt => (
@@ -389,8 +389,8 @@ export default function EREdge({
               onClick={(e) => { e.stopPropagation(); handleChangeType(rt.value); }}
               className={`block w-full px-3 py-1 text-xs font-mono text-left transition-colors
                 ${rt.value === relationType
-                  ? 'text-[#00c9a7] bg-[#253347]'
-                  : 'text-gray-300 hover:bg-[#253347] hover:text-white'
+                  ? 'text-[var(--accent)] bg-[var(--border-strong)]'
+                  : 'text-gray-300 hover:bg-[var(--border-strong)] hover:text-white'
                 }`}
             >
               {rt.label}

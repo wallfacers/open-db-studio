@@ -122,24 +122,24 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       {/* 触发器 */}
       {plain ? (
         <span
-          className={`inline-block px-2.5 py-1.5 -mx-2.5 -my-1.5 rounded-sm text-[12px] cursor-pointer select-none hover:text-[#00c9a7] hover:bg-[#1e2d42]/50 transition-colors
-                      ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#b5cfe8]'}`}
+          className={`inline-block px-2.5 py-1.5 -mx-2.5 -my-1.5 rounded-sm text-[12px] cursor-pointer select-none hover:text-[var(--accent)] hover:bg-[var(--border-default)]/50 transition-colors
+                      ${isPlaceholder ? 'text-[var(--foreground-muted)]' : 'text-[var(--foreground)]'}`}
           onClick={handleToggle}
         >
           {displayLabel}
         </span>
       ) : (
         <div
-          className="flex items-center gap-1 bg-[#151d28] border border-[#2a3f5a] rounded
+          className="flex items-center gap-1 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded
                      px-2 py-1 cursor-pointer hover:border-[#3a5a7a] transition-colors select-none"
           onClick={handleToggle}
         >
-          <span className={`text-xs truncate flex-1 ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#c8daea]'}`}>
+          <span className={`text-xs truncate flex-1 ${isPlaceholder ? 'text-[var(--foreground-muted)]' : 'text-[var(--foreground-default)]'}`}>
             {displayLabel}
           </span>
           <ChevronDown
             size={11}
-            className={`flex-shrink-0 text-[#7a9bb8] transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`flex-shrink-0 text-[var(--foreground-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </div>
       )}
@@ -148,7 +148,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       {open && pos && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed z-[200] bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg overflow-y-auto"
+          className="fixed z-[200] bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg overflow-y-auto"
           style={{
             ...(direction === 'up'
               ? { bottom: pos.bottom + 4 }
@@ -160,8 +160,8 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
         >
           {placeholder && (
             <div
-              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#1e2d42]
-                          ${!value ? 'text-[#009e84]' : 'text-[#7a9bb8]'}`}
+              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[var(--border-default)]
+                          ${!value ? 'text-[#009e84]' : 'text-[var(--foreground-muted)]'}`}
               onClick={() => { onChange(''); close(); }}
             >
               {placeholder}
@@ -170,8 +170,8 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
           {options.map(opt => (
             <div
               key={opt.value}
-              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#1e2d42]
-                          ${value === opt.value ? 'text-[#009e84]' : 'text-[#b5cfe8]'}`}
+              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[var(--border-default)]
+                          ${value === opt.value ? 'text-[#009e84]' : 'text-[var(--foreground)]'}`}
               onClick={() => { onChange(opt.value); close(); }}
             >
               {opt.label}

@@ -166,11 +166,11 @@ export default function ERToolbar({
   };
 
   return (
-    <div className="flex items-center gap-2 h-10 bg-[#0d1117] border-b border-[#1e2d42] px-4 flex-shrink-0">
+    <div className="flex items-center gap-2 h-10 bg-[var(--background-base)] border-b border-[var(--border-default)] px-4 flex-shrink-0">
       {/* 表操作组 */}
       <button
         onClick={handleAddTable}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.newTable')}
       >
         <Plus size={14} />
@@ -180,7 +180,7 @@ export default function ERToolbar({
       <button
         onClick={handleAutoLayout}
         disabled={isAutoLayouting}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         title={t('erDesigner.autoLayout')}
       >
         <LayoutGrid size={14} />
@@ -190,7 +190,7 @@ export default function ERToolbar({
       <button
         onClick={handleImportTables}
         disabled={!hasConnection}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         title={hasConnection ? t('erDesigner.importTables') : t('erDesigner.noConnectionTip')}
       >
         <Database size={14} />
@@ -199,7 +199,7 @@ export default function ERToolbar({
 
       <button
         onClick={onOpenBind}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.bindConnection')}
       >
         <Link2 size={14} />
@@ -207,12 +207,12 @@ export default function ERToolbar({
       </button>
 
       {/* 分隔符 */}
-      <div className="w-px h-4 bg-[#253347] mx-2" />
+      <div className="w-px h-4 bg-[var(--border-strong)] mx-2" />
 
       {/* DDL/Diff/Sync 组 */}
       <button
         onClick={handleDDL}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.ddlPreview')}
       >
         <FileCode size={14} />
@@ -222,7 +222,7 @@ export default function ERToolbar({
       <button
         onClick={handleDiff}
         disabled={!hasConnection}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         title={hasConnection ? t('erDesigner.diffCheck') : t('erDesigner.noConnectionTip')}
       >
         <GitCompare size={14} />
@@ -232,7 +232,7 @@ export default function ERToolbar({
       <button
         onClick={handleSync}
         disabled={!hasConnection || isSyncing}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         title={hasConnection ? t('erDesigner.syncDB') : t('erDesigner.noConnectionTip')}
       >
         <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
@@ -240,12 +240,12 @@ export default function ERToolbar({
       </button>
 
       {/* 分隔符 */}
-      <div className="w-px h-4 bg-[#253347] mx-2" />
+      <div className="w-px h-4 bg-[var(--border-strong)] mx-2" />
 
       {/* 导入/导出组 */}
       <button
         onClick={handleExportJson}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.exportJson')}
       >
         <Upload size={14} />
@@ -254,7 +254,7 @@ export default function ERToolbar({
 
       <button
         onClick={handleImportJson}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
+        className="px-2.5 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.importJson')}
       >
         <Download size={14} />

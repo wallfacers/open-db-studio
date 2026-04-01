@@ -72,16 +72,16 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
-      <div className="bg-[#111922] border border-[#1e2d42] rounded-lg shadow-2xl w-[420px] max-w-[90vw]">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-default)] rounded-lg shadow-2xl w-[420px] max-w-[90vw]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e2d42]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-default)]">
           <div>
-            <h3 className="text-[#c8daea] text-sm font-semibold">{t('graphExplorer.aliasEditor.title')}</h3>
-            <p className="text-[#7a9bb8] text-xs mt-0.5 truncate max-w-[300px]">{nodeName}</p>
+            <h3 className="text-[var(--foreground-default)] text-sm font-semibold">{t('graphExplorer.aliasEditor.title')}</h3>
+            <p className="text-[var(--foreground-muted)] text-xs mt-0.5 truncate max-w-[300px]">{nodeName}</p>
           </div>
           <button
             onClick={onClose}
-            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors p-1 rounded hover:bg-[#1e2d42]"
+            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors p-1 rounded hover:bg-[var(--border-default)]"
           >
             <X size={16} />
           </button>
@@ -91,20 +91,20 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
         <div className="px-4 py-4 space-y-3">
           {/* Current aliases */}
           <div className="space-y-1.5">
-            <p className="text-[#7a9bb8] text-xs">{t('graphExplorer.aliasEditor.currentAliases')}</p>
+            <p className="text-[var(--foreground-muted)] text-xs">{t('graphExplorer.aliasEditor.currentAliases')}</p>
             {aliases.length === 0 ? (
-              <p className="text-[#7a9bb8] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
+              <p className="text-[var(--foreground-muted)] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {aliases.map((alias) => (
                   <span
                     key={alias}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#0d1117] border border-[#1e2d42] rounded text-[#c8daea] text-xs"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--background-base)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] text-xs"
                   >
                     {alias}
                     <button
                       onClick={() => handleRemoveAlias(alias)}
-                      className="text-[#7a9bb8] hover:text-[#f43f5e] transition-colors"
+                      className="text-[var(--foreground-muted)] hover:text-[#f43f5e] transition-colors"
                     >
                       <X size={10} />
                     </button>
@@ -116,7 +116,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
 
           {/* Add alias input */}
           <div className="space-y-1.5">
-            <p className="text-[#7a9bb8] text-xs">{t('graphExplorer.aliasEditor.addNewAlias')}</p>
+            <p className="text-[var(--foreground-muted)] text-xs">{t('graphExplorer.aliasEditor.addNewAlias')}</p>
             <div className="flex gap-2">
               <input
                 ref={inputRef}
@@ -128,12 +128,12 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={t('graphExplorer.aliasEditor.placeholder')}
-                className="flex-1 px-3 py-1.5 text-sm bg-[#0d1117] border border-[#1e2d42] rounded text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00c9a7]/50 transition-colors"
+                className="flex-1 px-3 py-1.5 text-sm bg-[var(--background-base)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[#3d5470] focus:outline-none focus:border-[var(--accent)]/50 transition-colors"
               />
               <button
                 onClick={handleAddAlias}
                 disabled={!inputValue.trim()}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded text-[#c8daea] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded text-[var(--foreground-default)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <Plus size={13} />
                 {t('graphExplorer.aliasEditor.add')}
@@ -146,17 +146,17 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#1e2d42]">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--border-default)]">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors"
+            className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--border-default)] rounded transition-colors"
           >
             {t('common.cancel')}
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#00c9a7]/10 hover:bg-[#00c9a7]/20 border border-[#00c9a7]/30 rounded text-[#00c9a7] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 border border-[var(--accent)]/30 rounded text-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
             {t('common.save')}

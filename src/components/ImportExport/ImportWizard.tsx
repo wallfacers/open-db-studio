@@ -162,14 +162,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
   const mappedCount = mappings.filter((m) => m.targetColumn).length;
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[600px] flex flex-col">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[600px] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#253347]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-strong)]">
           <h3 className="text-white font-semibold">{t('importWizard.title')}</h3>
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
@@ -177,13 +177,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
                 <div
                   key={n}
                   className={`w-2 h-2 rounded-full ${
-                    n === step ? 'bg-[#009e84]' : n < step ? 'bg-[#00c9a7]' : 'bg-[#253347]'
+                    n === step ? 'bg-[#009e84]' : n < step ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
                   }`}
                 />
               ))}
             </div>
             <span className="text-xs text-gray-400">{t('importWizard.step', { current: step, total: 3 })}</span>
-            <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors">
+            <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors">
               <X size={16} />
             </button>
           </div>
@@ -208,7 +208,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
               </div>
               <div
                 onClick={handleSelectFile}
-                className="border-2 border-dashed border-[#253347] rounded-lg p-6 flex flex-col items-center gap-2 cursor-pointer hover:border-[#009e84]/50 transition-colors"
+                className="border-2 border-dashed border-[var(--border-strong)] rounded-lg p-6 flex flex-col items-center gap-2 cursor-pointer hover:border-[#009e84]/50 transition-colors"
               >
                 <Upload size={24} className="text-gray-400" />
                 <span className="text-sm text-white">
@@ -219,7 +219,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
               {preview.length > 0 && (
                 <div>
                   <div className={labelClass}>{t('importWizard.preview')}</div>
-                  <div className="bg-[#0d1117] rounded p-2 font-mono text-xs text-[#00c9a7] max-h-28 overflow-y-auto">
+                  <div className="bg-[var(--background-base)] rounded p-2 font-mono text-xs text-[var(--accent)] max-h-28 overflow-y-auto">
                     {preview.map((line, i) => <div key={i}>{line}</div>)}
                   </div>
                 </div>
@@ -254,7 +254,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
           {step === 3 && (
             <div className="space-y-4">
-              <div className="p-3 bg-[#1a2639] rounded border border-[#253347] text-sm space-y-1">
+              <div className="p-3 bg-[var(--background-hover)] rounded border border-[var(--border-strong)] text-sm space-y-1">
                 <div className="text-gray-400">{t('importWizard.summaryTitle')}</div>
                 <div className="text-white">{t('importWizard.summaryFile', { file: filePath.split(/[/\\]/).pop() })}</div>
                 <div className="text-white">{t('importWizard.summaryTable', { table: targetTable })}</div>
@@ -288,15 +288,15 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[#253347]">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded transition-colors">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border-strong)]">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded transition-colors">
             {t('importWizard.cancel')}
           </button>
           <div className="flex gap-2">
             {step > 1 && (
               <button
                 onClick={() => setStep((s) => s - 1)}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
               >
                 <ChevronLeft size={14} /> {t('importWizard.prev')}
               </button>

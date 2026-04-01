@@ -20,7 +20,7 @@ const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
         <span className="text-[13px]">🔐</span>
         <span className="text-[12px] font-semibold text-[#8ab0cc]">{t('assistant.elicitation.title')}</span>
       </div>
-      <p className="mb-3 text-[12px] text-[#c8daea] leading-relaxed">{request.message}</p>
+      <p className="mb-3 text-[12px] text-[var(--foreground-default)] leading-relaxed">{request.message}</p>
       <div className="flex flex-wrap gap-2">
         {sorted.map((opt) => (
           <button

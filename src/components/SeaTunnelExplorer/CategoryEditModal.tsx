@@ -53,30 +53,30 @@ export function CategoryEditModal({
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-80"
+        className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-80"
         onKeyDown={handleKeyDown}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#253347]">
-          <span className="text-sm font-medium text-[#c8daea]">{t('seaTunnel.categoryModal.newTitle')}</span>
-          <button className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors" onClick={onClose}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-strong)]">
+          <span className="text-sm font-medium text-[var(--foreground-default)]">{t('seaTunnel.categoryModal.newTitle')}</span>
+          <button className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors" onClick={onClose}>
             <X size={16} />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {parentNode && (
-            <div className="text-xs text-[#7a9bb8]">
-              {t('seaTunnel.categoryModal.parentCategory')}：<span className="text-[#c8daea]">{parentNode.label}</span>
+            <div className="text-xs text-[var(--foreground-muted)]">
+              {t('seaTunnel.categoryModal.parentCategory')}：<span className="text-[var(--foreground-default)]">{parentNode.label}</span>
             </div>
           )}
           <div>
-            <label className="block text-xs text-[#7a9bb8] mb-1">{t('seaTunnel.categoryModal.categoryName')}</label>
+            <label className="block text-xs text-[var(--foreground-muted)] mb-1">{t('seaTunnel.categoryModal.categoryName')}</label>
             <input
               ref={inputRef}
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder={t('seaTunnel.categoryModal.namePlaceholder')}
-              className="w-full bg-[#0d1117] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#7a9bb8] outline-none focus:border-[#00c9a7] transition-colors"
+              className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] placeholder-[var(--foreground-muted)] outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
           {error && <div className="text-xs text-red-400">{error}</div>}
@@ -84,14 +84,14 @@ export function CategoryEditModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors"
+              className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] border border-[var(--border-strong)] rounded transition-colors"
             >
               {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-3 py-1.5 text-xs text-[#0d1117] bg-[#00c9a7] hover:bg-[#00a98f] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs text-[var(--background-base)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? t('common.saving') : t('common.create')}
             </button>

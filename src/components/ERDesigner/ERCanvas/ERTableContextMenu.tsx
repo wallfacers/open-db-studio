@@ -118,12 +118,12 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed bg-[#0d1117] border border-[#1e2d42] rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
+      className="fixed bg-[var(--background-base)] border border-[var(--border-default)] rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
       style={{ left: x, top: y }}
     >
       {menuItems.map((item, idx) => {
         if (item.type === 'divider') {
-          return <div key={idx} className="h-px bg-[#1e2d42] my-1" />;
+          return <div key={idx} className="h-px bg-[var(--border-default)] my-1" />;
         }
         return (
           <div
@@ -131,7 +131,7 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
             className={`flex items-center px-3 py-1.5 cursor-pointer text-xs ${
               item.danger
                 ? 'text-red-400 hover:bg-[#3d1f1f]'
-                : 'text-[#c8daea] hover:bg-[#1a2639]'
+                : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)]'
             }`}
             onClick={item.onClick}
           >

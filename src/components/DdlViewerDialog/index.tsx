@@ -42,27 +42,27 @@ export const DdlViewerDialog: React.FC<Props> = ({
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[640px] max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
-          <span className="text-[#c8daea] text-sm font-medium">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[640px] max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
+          <span className="text-[var(--foreground-default)] text-sm font-medium">
             {t('ddlViewer.title')} — {tableName}
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] bg-[#1a2639] rounded"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] bg-[var(--background-hover)] rounded"
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
               {copied ? t('ddlViewer.copied') : t('ddlViewer.copy')}
             </button>
-            <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea]">
+            <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]">
               <X size={16} />
             </button>
           </div>
         </div>
         <textarea
           readOnly
-          className="flex-1 m-4 bg-[#0d1520] border border-[#1e2d42] rounded p-3 font-mono text-xs text-[#c8daea] outline-none resize-none min-h-[300px]"
+          className="flex-1 m-4 bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 font-mono text-xs text-[var(--foreground-default)] outline-none resize-none min-h-[300px]"
           value={ddl}
           spellCheck={false}
         />

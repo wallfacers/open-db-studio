@@ -21,32 +21,32 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
       { token: 'delimiter',  foreground: '7a9bb8' },
     ],
     colors: {
-      'editor.background':                 '#111922',
-      'editorGutter.background':           '#0d1117',
-      'editorLineNumber.foreground':       '#2a3f5a',
-      'editorLineNumber.activeForeground': '#00c9a7',
-      'editor.lineHighlightBackground':    '#0e1e2e',
+      'editor.background':                 '#1E293B',
+      'editorGutter.background':           '#0F172A',
+      'editorLineNumber.foreground':       '#475569',
+      'editorLineNumber.activeForeground': '#10B981',
+      'editor.lineHighlightBackground':    '#1E3A5F40',
       'editor.lineHighlightBorder':        '#00000000',
-      'editor.selectionBackground':        '#003d2f80',
-      'editor.inactiveSelectionBackground':'#003d2f40',
-      'editorCursor.foreground':           '#00c9a7',
-      'editorIndentGuide.background1':     '#1e2d42',
-      'editorIndentGuide.activeBackground1':'#2a3f5a',
-      'editorWidget.background':           '#151d28',
-      'editorWidget.border':               '#1e2d42',
-      'editorSuggestWidget.background':    '#151d28',
-      'editorSuggestWidget.border':        '#1e2d42',
-      'editorSuggestWidget.selectedBackground': '#003d2f',
-      'list.hoverBackground':              '#1a2639',
-      'list.activeSelectionBackground':    '#003d2f',
-      'scrollbarSlider.background':        '#1e2d4260',
-      'scrollbarSlider.hoverBackground':   '#2a3f5a80',
-      'menu.background':                   '#151d28',
-      'menu.foreground':                   '#c8daea',
-      'menu.selectionBackground':          '#1a2639',
+      'editor.selectionBackground':        '#064E3B80',
+      'editor.inactiveSelectionBackground':'#064E3B40',
+      'editorCursor.foreground':           '#10B981',
+      'editorIndentGuide.background1':     '#334155',
+      'editorIndentGuide.activeBackground1':'#475569',
+      'editorWidget.background':           '#27354F',
+      'editorWidget.border':               '#334155',
+      'editorSuggestWidget.background':    '#27354F',
+      'editorSuggestWidget.border':        '#334155',
+      'editorSuggestWidget.selectedBackground': '#064E3B',
+      'list.hoverBackground':              '#334155',
+      'list.activeSelectionBackground':    '#064E3B',
+      'scrollbarSlider.background':        '#33415560',
+      'scrollbarSlider.hoverBackground':   '#47556980',
+      'menu.background':                   '#27354F',
+      'menu.foreground':                   '#E2E8F0',
+      'menu.selectionBackground':          '#334155',
       'menu.selectionForeground':          '#ffffff',
-      'menu.separatorBackground':          '#2a3f5a',
-      'menu.border':                       '#2a3f5a',
+      'menu.separatorBackground':          '#475569',
+      'menu.border':                       '#475569',
     },
   });
 };
@@ -191,14 +191,14 @@ const ResultCellContextMenu = React.forwardRef<HTMLDivElement, ResultCellContext
       if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
     }, [x, y]);
 
-    const item = 'px-4 py-1.5 hover:bg-[#1a2639] cursor-pointer text-[#c8daea] flex items-center justify-between text-xs';
-    const divider = 'border-t border-[#1e2d42] my-1';
+    const item = 'px-4 py-1.5 hover:bg-[var(--background-hover)] cursor-pointer text-[var(--foreground-default)] flex items-center justify-between text-xs';
+    const divider = 'border-t border-[var(--border-default)] my-1';
 
     return (
       <div
         ref={ref}
         style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
-        className="bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[160px] py-1"
+        className="bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl text-xs min-w-[160px] py-1"
         onContextMenu={e => e.preventDefault()}
       >
         {colIdx >= 0 && (
@@ -223,9 +223,9 @@ const ResultCellContextMenu = React.forwardRef<HTMLDivElement, ResultCellContext
           }}
         >
           <span>{t('tableDataView.copyAsSql')}</span>
-          <ChevronDown size={12} className={`text-[#7a9bb8] transition-transform ${sqlOpen ? '' : '-rotate-90'}`} />
+          <ChevronDown size={12} className={`text-[var(--foreground-muted)] transition-transform ${sqlOpen ? '' : '-rotate-90'}`} />
           {sqlOpen && (
-            <div className={`absolute ${sqlToLeft ? 'right-full' : 'left-full'} ${sqlToTop ? 'bottom-0' : 'top-0'} bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[140px] py-1`}>
+            <div className={`absolute ${sqlToLeft ? 'right-full' : 'left-full'} ${sqlToTop ? 'bottom-0' : 'top-0'} bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl text-xs min-w-[140px] py-1`}>
               <div className={item} onClick={onCopyInsert}>{t('tableDataView.copyAsInsertSql')}</div>
               <div className={item} onClick={onCopyUpdate}>{t('tableDataView.copyAsUpdateSql')}</div>
               <div className={item} onClick={onCopyDelete}>{t('tableDataView.copyAsDeleteSql')}</div>
@@ -252,7 +252,7 @@ const ExplanationTypingIndicator: React.FC = () => {
   }, []);
   return (
     <div className="flex items-center gap-2 p-4">
-      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
       <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
     </div>
   );
@@ -901,32 +901,32 @@ export const MainContent: React.FC<MainContentProps> = ({
   }, [tabs, connections]);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
+    <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-panel)]">
       {/* Tabs */}
-      <div className="flex-shrink-0 h-10 flex items-start bg-[#0d1117] border-b border-[#1e2d42] overflow-x-auto no-scrollbar">
+      <div className="flex-shrink-0 h-10 flex items-start bg-[var(--background-base)] border-b border-[var(--border-default)] overflow-x-auto no-scrollbar">
         {tabs.map(tab => (
           <div
             key={tab.id}
-            className={`flex items-center px-4 h-[38px] border-r border-[#1e2d42] cursor-pointer min-w-[120px] max-w-[200px] group ${activeTab === tab.id ? 'bg-[#111922] text-[#00c9a7] border-t-2 border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-2 border-t-transparent hover:bg-[#151d28]'}`}
+            className={`flex items-center px-4 h-[38px] border-r border-[var(--border-default)] cursor-pointer min-w-[120px] max-w-[200px] group ${activeTab === tab.id ? 'bg-[var(--background-panel)] text-[var(--accent)] border-t-2 border-t-[var(--accent)]' : 'bg-[var(--background-hover)] text-[var(--foreground-muted)] border-t-2 border-t-transparent hover:bg-[var(--background-elevated)]'}`}
             onClick={() => setActiveTab(tab.id)}
             onContextMenu={(e) => handleTabContextMenu(e, tab.id)}
           >
             {tab.type === 'query' ? (
-              <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : tab.type === 'er_design' ? (
-              <Grid3x3 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Grid3x3 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : tab.type === 'table_structure' ? (
-              <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : tab.type === 'metric' ? (
-              <BarChart2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <BarChart2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : tab.type === 'metric_list' ? (
-              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : tab.type === 'table' ? (
-              <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : tab.type === 'seatunnel_job' ? (
-              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             ) : (
-              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`} />
             )}
             <Tooltip
               content={tabDisplayTitles.get(tab.id) ?? tab.title}
@@ -938,7 +938,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             </Tooltip>
             <Tooltip content={t('mainContent.closeTab')}>
               <div
-                className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
+                className="ml-2 p-0.5 rounded-sm hover:bg-[var(--border-strong)] opacity-100"
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               >
                 <X size={12} />
@@ -1023,11 +1023,11 @@ export const MainContent: React.FC<MainContentProps> = ({
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             {/* Toolbar */}
-            <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-[#1e2d42] bg-[#080d12]">
+            <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-[var(--border-default)] bg-[var(--background-void)]">
               <div className="flex items-center space-x-2">
                 <Tooltip content={isExecuting ? t('mainContent.executing') : t('mainContent.execute')}>
                   <button
-                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[#1e2d42]' : 'text-[#00c9a7] hover:text-[#00a98f] hover:bg-[#1e2d42]'}`}
+                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[var(--border-default)]' : 'text-[var(--accent)] hover:text-[var(--accent-hover)] hover:bg-[var(--border-default)]'}`}
                     onClick={handleExecute}
                     disabled={isExecuting}
                   >
@@ -1037,7 +1037,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {isExplaining ? (
                   <Tooltip content={t('mainContent.stopExplaining')}>
                     <button
-                      className="p-1.5 rounded transition-colors text-[#3794ff] hover:text-red-400 hover:bg-[#1e2d42] group"
+                      className="p-1.5 rounded transition-colors text-[#3794ff] hover:text-red-400 hover:bg-[var(--border-default)] group"
                       onClick={() => { cancelExplainSql(activeTab); setExplanationStreaming(activeTab, false); }}
                     >
                       <span className="block group-hover:hidden">
@@ -1055,7 +1055,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 ) : (
                   <Tooltip content={!currentSql.trim() ? '' : t('mainContent.explainSql')}>
                     <button
-                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[var(--foreground-muted)] cursor-not-allowed opacity-30' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--border-default)]'}`}
                       onClick={() => handleExplain()}
                       disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
                     >
@@ -1063,12 +1063,12 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </button>
                   </Tooltip>
                 )}
-                <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
+                <div className="w-[1px] h-4 bg-[var(--border-strong)] mx-1"></div>
                 {/* NL→SQL 按钮 */}
                 <div className="relative">
                   <Tooltip content="自然语言生成 SQL（图谱增强）">
                     <button
-                      className={`p-1.5 rounded transition-colors ${nlPanelOpen ? 'bg-[#1e2d42] text-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      className={`p-1.5 rounded transition-colors ${nlPanelOpen ? 'bg-[var(--border-default)] text-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--border-default)]'}`}
                       onClick={() => {
                         setNlPanelOpen(v => !v);
                         setTimeout(() => nlInputRef.current?.focus(), 50);
@@ -1079,11 +1079,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </button>
                   </Tooltip>
                   {nlPanelOpen && (
-                    <div className="absolute top-full left-0 mt-1 z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-xl w-72 p-2 flex flex-col gap-2">
-                      <div className="text-[10px] text-[#7a9bb8] px-1">{t('mainContent.nlPanelHint')}</div>
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-xl w-72 p-2 flex flex-col gap-2">
+                      <div className="text-[10px] text-[var(--foreground-muted)] px-1">{t('mainContent.nlPanelHint')}</div>
                       <input
                         ref={nlInputRef}
-                        className="bg-[#0d1117] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#00c9a7] placeholder:text-[#3a5070]"
+                        className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--accent)] placeholder:text-[#3a5070]"
                         placeholder={t('mainContent.nlInputPlaceholder')}
                         value={nlInput}
                         onChange={e => setNlInput(e.target.value)}
@@ -1091,7 +1091,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         disabled={nlLoading}
                       />
                       <button
-                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-[#1e2d42] text-[#3a5070] cursor-not-allowed' : 'bg-[#00c9a7] text-white hover:bg-[#00a98f]'}`}
+                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-[var(--border-default)] text-[#3a5070] cursor-not-allowed' : 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]'}`}
                         onClick={handleGenerateSqlV2}
                         disabled={nlLoading || !nlInput.trim()}
                       >
@@ -1105,10 +1105,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                     onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
                     className={`p-1 rounded transition-colors ${
                       ghostTextLoading
-                        ? 'text-[#00c9a7]'
+                        ? 'text-[var(--accent)]'
                         : isGhostTextEnabled
-                          ? 'text-[#00c9a7] hover:bg-[#003d2f]'
-                          : 'text-[#4a6a85] hover:bg-[#1a2639]'
+                          ? 'text-[var(--accent)] hover:bg-[var(--accent-subtle)]'
+                          : 'text-[#4a6a85] hover:bg-[var(--background-hover)]'
                     }`}
                   >
                     <Sparkles
@@ -1118,9 +1118,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                     />
                   </button>
                 </Tooltip>
-                <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
+                <div className="w-[1px] h-4 bg-[var(--border-strong)] mx-1"></div>
                 <Tooltip content={t('mainContent.formatSql')}>
-                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
+                  <button className="p-1.5 text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--border-default)] rounded transition-colors" onClick={handleFormat}>
                     <FileEdit size={16} />
                   </button>
                 </Tooltip>
@@ -1153,7 +1153,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 </div>
                 {!isSqlite && (
                   <>
-                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <span className="text-[var(--foreground-muted)] text-xs">›</span>
                     <div className={dbHighlight.className}>
                       <DropdownSelect
                         value={activeTabObj?.queryContext?.database ?? ''}
@@ -1177,7 +1177,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 )}
                 {needsSchema && availableSchemas.length > 0 && (
                   <>
-                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <span className="text-[var(--foreground-muted)] text-xs">›</span>
                     <div className={schemaHighlight.className}>
                       <DropdownSelect
                         value={queryCtx?.schema ?? ''}
@@ -1194,9 +1194,9 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* 图谱上下文折叠块（由 ai_generate_sql_v2 填充） */}
             {graphCtx && (
-              <div className="flex-shrink-0 border-b border-[#1e2d42] bg-[#111922]">
+              <div className="flex-shrink-0 border-b border-[var(--border-default)] bg-[var(--background-panel)]">
                 <button
-                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#0e1e2e] transition-colors"
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[#0e1e2e] transition-colors"
                   onClick={() => setGraphCtxExpanded(v => !v)}
                 >
                   {graphCtxExpanded
@@ -1207,7 +1207,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 </button>
                 {graphCtxExpanded && (
                   <div className="px-3 pb-2">
-                    <pre className="text-[11px] text-[#7a9bb8] bg-[#0d1117] rounded p-2 whitespace-pre-wrap font-mono leading-5 border border-[#1e2d42]">
+                    <pre className="text-[11px] text-[var(--foreground-muted)] bg-[var(--background-base)] rounded p-2 whitespace-pre-wrap font-mono leading-5 border border-[var(--border-default)]">
                       {graphCtx}
                     </pre>
                   </div>
@@ -1216,7 +1216,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             )}
 
             {/* Editor Content */}
-            <div className="flex-1 relative bg-[#111922] min-h-0">
+            <div className="flex-1 relative bg-[var(--background-panel)] min-h-0">
               <MonacoEditor
                 height="100%"
                 language="sql"
@@ -1252,18 +1252,18 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* Results Resizer */}
             <div
-              className="h-1 cursor-row-resize z-10 hover:bg-[#00c9a7] transition-colors"
+              className="h-1 cursor-row-resize z-10 hover:bg-[var(--accent)] transition-colors"
               onMouseDown={handleResultsResize}
             />
 
             {/* Results Area */}
-            <div className="flex flex-col bg-[#080d12] flex-shrink-0" style={{ height: resultsHeight }}>
+            <div className="flex flex-col bg-[var(--background-void)] flex-shrink-0" style={{ height: resultsHeight }}>
               {/* Result tabs — one per result set, numbered from 1 */}
-              <div className="flex items-center bg-[#0d1117] border-b border-[#1e2d42] overflow-x-auto">
+              <div className="flex items-center bg-[var(--background-base)] border-b border-[var(--border-default)] overflow-x-auto">
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === idx ? `bg-[#080d12] ${result.kind === 'error' ? 'text-red-400 border-t-red-400' : 'text-[#00c9a7] border-t-[#00c9a7]'}` : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[var(--border-default)] flex-shrink-0 ${selectedResultPane === idx ? `bg-[var(--background-void)] ${result.kind === 'error' ? 'text-red-400 border-t-red-400' : 'text-[var(--accent)] border-t-[var(--accent)]'}` : 'bg-[var(--background-hover)] text-[var(--foreground-muted)] border-t-transparent hover:bg-[var(--background-elevated)]'}`}
                     onClick={() => setSelectedResultPane(idx)}
                     onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                   >
@@ -1276,7 +1276,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </span>
                     <Tooltip content={t('mainContent.closeResult')}>
                       <span
-                        className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                        className="hover:bg-[var(--border-default)] rounded p-0.5 leading-none"
                         onClick={(e) => {
                           e.stopPropagation();
                           removeResult(activeTab, idx);
@@ -1290,7 +1290,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {/* SQL 解释 Tab — 仅在有内容或正在解释时显示 */}
                 {(explanationStreaming[activeTab] || explanationContent[activeTab]) && (
                   <div
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === 'explanation' ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[var(--border-default)] flex-shrink-0 ${selectedResultPane === 'explanation' ? 'bg-[var(--background-void)] text-[var(--accent)] border-t-[var(--accent)]' : 'bg-[var(--background-hover)] text-[var(--foreground-muted)] border-t-transparent hover:bg-[var(--background-elevated)]'}`}
                     onClick={() => setSelectedResultPane('explanation')}
                     onContextMenu={(e) => { e.preventDefault(); setExplanationContextMenu({ x: e.clientX, y: e.clientY }); }}
                   >
@@ -1305,7 +1305,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     {!(explanationStreaming[activeTab] && explanationContent[activeTab]) && (
                       <Tooltip content={t('mainContent.closeResult')}>
                         <span
-                          className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                          className="hover:bg-[var(--border-default)] rounded p-0.5 leading-none"
                           onClick={(e) => {
                             e.stopPropagation();
                             cancelExplainSql(activeTab);
@@ -1323,13 +1323,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {selectedResultPane === 'explanation' ? (
                   <div className="p-4 h-full overflow-auto">
                     {explanationContent[activeTab] ? (
-                      <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                      <div className="prose prose-invert prose-sm max-w-none text-[var(--foreground-default)]">
                         <MarkdownContent content={explanationContent[activeTab]} />
                       </div>
                     ) : explanationStreaming[activeTab] ? (
                       <ExplanationTypingIndicator />
                     ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-[#7a9bb8] text-sm gap-2 pt-12">
+                      <div className="flex flex-col items-center justify-center h-full text-[var(--foreground-muted)] text-sm gap-2 pt-12">
                         <Lightbulb size={32} className="opacity-20" />
                         <span>{t('mainContent.clickToExplain')}</span>
                       </div>
@@ -1340,7 +1340,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     {isExecuting ? (
                       <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
                     ) : currentResults.length === 0 ? (
-                      <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
+                      <div className="p-4 text-[var(--foreground-muted)] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : (() => {
                       const activeResult = typeof selectedResultPane === 'number'
                         ? currentResults[selectedResultPane]
@@ -1367,15 +1367,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                 {t('mainContent.sqlExecutionError')}
                               </div>
                               {activeResult.sql && (
-                                <pre className="bg-[#0d1117] border border-[#1e2d42] rounded p-2 text-xs text-[#7a9bb8] font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
+                                <pre className="bg-[var(--background-base)] border border-[var(--border-default)] rounded p-2 text-xs text-[var(--foreground-muted)] font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
                               )}
                               <div className="flex items-center justify-between text-xs">
                                 <div>
-                                  <span className="text-[#7a9bb8]">{t('mainContent.errorMessage')}：</span>
+                                  <span className="text-[var(--foreground-muted)]">{t('mainContent.errorMessage')}：</span>
                                   <span className="text-red-400 font-mono">{activeResult.error_message}</span>
                                 </div>
                                 <button
-                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#243a55] transition-colors flex-shrink-0 ml-3"
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[#243a55] transition-colors flex-shrink-0 ml-3"
                                   onClick={() => {
                                     const text = `请帮我分析以下 SQL 执行错误：\n\nSQL:\n\`\`\`sql\n${activeResult.sql ?? ''}\n\`\`\`\n\n错误信息:\n\`\`\`\n${activeResult.error_message ?? ''}\n\`\`\``;
                                     askAiWithContext(text);
@@ -1387,10 +1387,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                               </div>
                             </div>
 
-                            <div className="border-t border-[#1e2d42] pt-3">
+                            <div className="border-t border-[var(--border-default)] pt-3">
                               {!diagContent && !diagStreaming ? (
                                 <button
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-[#1a2639] text-[#00c9a7] hover:bg-[#1e2d42] transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-[var(--background-hover)] text-[var(--accent)] hover:bg-[var(--border-default)] transition-colors"
                                   onClick={() => diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey)}
                                 >
                                   <Sparkles size={13} />
@@ -1398,7 +1398,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                 </button>
                               ) : (
                                 <div>
-                                  <div className="flex items-center gap-1.5 text-xs text-[#00c9a7] mb-2">
+                                  <div className="flex items-center gap-1.5 text-xs text-[var(--accent)] mb-2">
                                     <Sparkles size={13} />
                                     <span>{t('mainContent.aiDiagnoseBtn')}</span>
                                     {diagStreaming && (
@@ -1408,7 +1408,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                     )}
                                     {!diagStreaming && (
                                       <button
-                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#243a55] transition-colors"
+                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--accent)] hover:bg-[#243a55] transition-colors"
                                         onClick={() => {
                                           clearDiagnosis(diagKey);
                                           diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey);
@@ -1419,7 +1419,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                       </button>
                                     )}
                                   </div>
-                                  <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                                  <div className="prose prose-invert prose-sm max-w-none text-[var(--foreground-default)]">
                                     <MarkdownContent content={diagContent} />
                                   </div>
                                 </div>
@@ -1431,7 +1431,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
                       // ── 以下是原有的 select / dml-report 渲染 ──
                       if (activeResult.kind === 'select' && activeResult.columns.length === 0) {
-                        return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>;
+                        return <div className="flex items-center justify-center h-full text-[var(--foreground-muted)] text-sm">{t('mainContent.querySuccessNoData')}</div>;
                       }
 
                       const allRows = activeResult.rows;
@@ -1445,13 +1445,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                         );
                         return (
                           <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
-                            <thead className="sticky top-0 bg-[#0d1117] z-10">
+                            <thead className="sticky top-0 bg-[var(--background-base)] z-10">
                               <tr>
-                                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                                <th className="w-10 px-2 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-muted)] font-normal text-center">{t('tableDataView.serialNo')}</th>
                                 {activeResult.columns.map((col, ci) => {
                                   const w = rColWidths[ci] ?? 150;
                                   return (
-                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal overflow-hidden">
                                       <div className="truncate">{col}</div>
                                     </th>
                                   );
@@ -1460,9 +1460,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                             </thead>
                             <tbody>
                               {allRows.map((row, ri) => (
-                                <tr key={ri} className="hover:bg-[#1a2639]">
+                                <tr key={ri} className="hover:bg-[var(--background-hover)]">
                                   <td
-                                    className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs select-none cursor-default"
+                                    className="px-2 py-1.5 border-r border-b border-[var(--border-default)] text-[var(--foreground-muted)] text-center text-xs select-none cursor-default"
                                     onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
                                   >{ri + 1}</td>
                                   {row.map((cell, ci) => {
@@ -1473,21 +1473,21 @@ export const MainContent: React.FC<MainContentProps> = ({
                                       <td
                                         key={ci}
                                         style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
-                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
+                                        className="px-3 py-1.5 border-r border-b border-[var(--border-default)] relative group text-left overflow-hidden"
                                         onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                       >
                                         <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                           <div className="truncate">
                                             {cell === null
-                                              ? <span className="text-[#7a9bb8]">NULL</span>
+                                              ? <span className="text-[var(--foreground-muted)]">NULL</span>
                                               : typeof cell === 'string' && cell.startsWith('✓')
                                                 ? <span className="text-green-400">{cell}</span>
-                                                : <span className="text-[#c8daea]">{cellStr}</span>}
+                                                : <span className="text-[var(--foreground-default)]">{cellStr}</span>}
                                           </div>
                                         </Tooltip>
                                         {cellStr !== null && (
                                           <button
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[var(--foreground-muted)] hover:text-[#3a7bd5] transition-opacity"
                                             onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
                                           >
                                             <Maximize2 size={10} />
@@ -1547,13 +1547,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                           )}
 
                           <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
-                            <thead className="sticky top-0 bg-[#0d1117] z-10">
+                            <thead className="sticky top-0 bg-[var(--background-base)] z-10">
                               <tr>
-                                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                                <th className="w-10 px-2 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-muted)] font-normal text-center">{t('tableDataView.serialNo')}</th>
                                 {activeResult.columns.map((col, ci) => {
                                   const w = rColWidths[ci] ?? 150;
                                   return (
-                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal overflow-hidden">
                                       <div className="truncate">{col}</div>
                                     </th>
                                   );
@@ -1564,9 +1564,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                               {pageRows.map((row, pageRi) => {
                                 const ri = resultPage * RESULT_PAGE_SIZE + pageRi;
                                 return (
-                                  <tr key={ri} className="hover:bg-[#1a2639]">
+                                  <tr key={ri} className="hover:bg-[var(--background-hover)]">
                                     <td
-                                      className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs select-none cursor-default"
+                                      className="px-2 py-1.5 border-r border-b border-[var(--border-default)] text-[var(--foreground-muted)] text-center text-xs select-none cursor-default"
                                       onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
                                     >{ri + 1}</td>
                                     {row.map((cell, ci) => {
@@ -1577,21 +1577,21 @@ export const MainContent: React.FC<MainContentProps> = ({
                                         <td
                                           key={ci}
                                           style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
-                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
+                                          className="px-3 py-1.5 border-r border-b border-[var(--border-default)] relative group text-left overflow-hidden"
                                           onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                         >
                                           <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                             <div className="truncate">
                                               {cell === null
-                                                ? <span className="text-[#7a9bb8]">NULL</span>
+                                                ? <span className="text-[var(--foreground-muted)]">NULL</span>
                                                 : typeof cell === 'string' && cell.startsWith('✓')
                                                   ? <span className="text-green-400">{cell}</span>
-                                                  : <span className="text-[#c8daea]">{cellStr}</span>}
+                                                  : <span className="text-[var(--foreground-default)]">{cellStr}</span>}
                                             </div>
                                           </Tooltip>
                                           {cellStr !== null && (
                                             <button
-                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[var(--foreground-muted)] hover:text-[#3a7bd5] transition-opacity"
                                               onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
                                             >
                                               <Maximize2 size={10} />
@@ -1609,12 +1609,12 @@ export const MainContent: React.FC<MainContentProps> = ({
                           {displayRows.length > RESULT_PAGE_SIZE && (
                             <div
                               data-testid="result-pagination"
-                              className="flex-shrink-0 h-8 flex items-center justify-center gap-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs"
+                              className="flex-shrink-0 h-8 flex items-center justify-center gap-3 border-t border-[var(--border-default)] bg-[var(--background-void)] text-[var(--foreground-muted)] text-xs"
                             >
                               <button
                                 disabled={resultPage <= 0}
                                 onClick={() => setResultPage(p => p - 1)}
-                                className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+                                className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30"
                               >
                                 <ChevronLeft size={14}/>
                               </button>
@@ -1622,7 +1622,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                               <button
                                 disabled={resultPage >= totalDisplayPages - 1}
                                 onClick={() => setResultPage(p => p + 1)}
-                                className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+                                className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30"
                               >
                                 <ChevronRight size={14}/>
                               </button>
@@ -1637,7 +1637,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
               {/* Status Bar */}
               {!isExecuting && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
-                <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
+                <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[var(--border-default)] bg-[var(--background-void)] text-[var(--foreground-muted)] text-xs">
                   <span>{currentResults[selectedResultPane]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultPane]?.duration_ms}ms</span>
                 </div>
               )}
@@ -1646,7 +1646,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </div>
         )
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-[#7a9bb8] bg-[#111922]">
+        <div className="flex-1 flex flex-col items-center justify-center text-[var(--foreground-muted)] bg-[var(--background-panel)]">
           <DatabaseZap size={64} className="mb-4 opacity-20" />
           <p className="text-lg">{t('mainContent.noActiveEditor')}</p>
           <p className="text-sm mt-2 opacity-60">{t('mainContent.selectItemToView')}</p>
@@ -1657,11 +1657,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
             onClick={(e) => {
               e.stopPropagation();
               closeTab(contextMenu.tabId);
@@ -1670,9 +1670,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.close')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === 0}
             onClick={() => {
               closeTabsLeft(contextMenu.tabId);
@@ -1682,7 +1682,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === tabs.length - 1}
             onClick={() => {
               closeTabsRight(contextMenu.tabId);
@@ -1692,7 +1692,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.length <= 1}
             onClick={() => {
               closeOtherTabs(contextMenu.tabId);
@@ -1701,9 +1701,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeOther')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
             onClick={() => {
               closeAllTabs();
               setContextMenu(null);
@@ -1718,11 +1718,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {resultContextMenu && (
         <div
           ref={resultContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg py-1 min-w-[160px]"
           style={{ left: resultContextMenu.x, top: resultContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
             onClick={() => {
               removeResult(activeTab, resultContextMenu.idx);
               const willBeEmpty = currentResults.length === 1;
@@ -1737,9 +1737,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.close')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={resultContextMenu.idx === 0}
             onClick={() => {
               removeResultsLeft(activeTab, resultContextMenu.idx);
@@ -1750,7 +1750,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={
               resultContextMenu.idx === currentResults.length - 1 &&
               !(explanationContent[activeTab] && !explanationStreaming[activeTab])
@@ -1771,7 +1771,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={currentResults.length <= 1}
             onClick={() => {
               removeOtherResults(activeTab, resultContextMenu.idx);
@@ -1781,9 +1781,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeOther')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
             onClick={() => {
               clearResults(activeTab);
               const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
@@ -1800,11 +1800,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {explanationContextMenu && (
         <div
           ref={explanationContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg py-1 min-w-[160px]"
           style={{ left: explanationContextMenu.x, top: explanationContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={!!(explanationStreaming[activeTab] && explanationContent[activeTab])}
             onClick={() => {
               cancelExplainSql(activeTab);
@@ -1815,9 +1815,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.close')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={currentResults.length === 0}
             onClick={() => {
               clearResults(activeTab);
@@ -1828,13 +1828,13 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled
           >
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={currentResults.length === 0}
             onClick={() => {
               clearResults(activeTab);
@@ -1844,9 +1844,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeOther')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
             onClick={() => {
               cancelExplainSql(activeTab);
               clearResults(activeTab);
@@ -1864,13 +1864,13 @@ export const MainContent: React.FC<MainContentProps> = ({
       {editorContextMenu && (
         <div
           ref={editorContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[200px]"
+          className="fixed z-50 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg py-1 min-w-[200px]"
           style={{ left: editorContextMenu.x, top: editorContextMenu.y }}
           onMouseDown={(e) => e.preventDefault()}
         >
           {/* 分组1：剪贴板 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={() => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
@@ -1887,12 +1887,12 @@ export const MainContent: React.FC<MainContentProps> = ({
               }
             }}
           >
-            <Scissors size={13} color="#7a9bb8" />
+            <Scissors size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.cut')}</span>
             <span className="text-[#3a5070]">Ctrl+X</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={async () => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
@@ -1906,12 +1906,12 @@ export const MainContent: React.FC<MainContentProps> = ({
               ed?.focus();
             }}
           >
-            <Copy size={13} color="#7a9bb8" />
+            <Copy size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.copy')}</span>
             <span className="text-[#3a5070]">Ctrl+C</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={async () => {
               const ed = editorRef.current;
               setEditorContextMenu(null);
@@ -1931,15 +1931,15 @@ export const MainContent: React.FC<MainContentProps> = ({
               } catch { /* 剪贴板读取失败时静默忽略 */ }
             }}
           >
-            <Clipboard size={13} color="#7a9bb8" />
+            <Clipboard size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.paste')}</span>
             <span className="text-[#3a5070]">Ctrl+V</span>
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
 
           {/* 分组2：执行 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={() => {
               const ed = editorRef.current;
               if (ed) { const pos = ed.getPosition(); if (pos) ed.setPosition(pos); }
@@ -1947,59 +1947,59 @@ export const MainContent: React.FC<MainContentProps> = ({
               setEditorContextMenu(null);
             }}
           >
-            <Play size={13} color="#00c9a7" />
+            <Play size={13} color="var(--accent)" />
             <span className="flex-1">{t('editorContextMenu.executeAll')}</span>
             <span className="text-[#3a5070]">F5</span>
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: editorContextMenu.selectedSql.trim() ? '#c8daea' : '#3a5070' }}
+            style={{ color: editorContextMenu.selectedSql.trim() ? 'var(--foreground-default)' : '#3a5070' }}
             disabled={!editorContextMenu.selectedSql.trim()}
             onClick={() => { handleExecute(); setEditorContextMenu(null); }}
           >
-            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? '#00c9a7' : '#3a5070'} />
+            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? 'var(--accent)' : '#3a5070'} />
             <span className="flex-1">{t('editorContextMenu.executeSelected')}</span>
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
 
           {/* 分组3：编辑辅助 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.selectAll', null); setEditorContextMenu(null); }}
           >
-            <TextSelect size={13} color="#7a9bb8" />
+            <TextSelect size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.selectAll')}</span>
             <span className="text-[#3a5070]">Ctrl+A</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.commentLine', null); setEditorContextMenu(null); }}
           >
-            <MessageSquare size={13} color="#7a9bb8" />
+            <MessageSquare size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.toggleComment')}</span>
             <span className="text-[#3a5070]">Ctrl+/</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.startFindReplaceAction', null); setEditorContextMenu(null); }}
           >
-            <Search size={13} color="#7a9bb8" />
+            <Search size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.findReplace')}</span>
             <span className="text-[#3a5070]">Ctrl+H</span>
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-[var(--border-strong)] my-1" />
 
           {/* 分组4：SQL / AI */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
             onClick={() => { handleFormat(); setEditorContextMenu(null); }}
           >
-            <FileEdit size={13} color="#7a9bb8" />
+            <FileEdit size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.format')}</span>
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: activeTabObj?.queryContext?.connectionId ? '#c8daea' : '#3a5070' }}
+            style={{ color: activeTabObj?.queryContext?.connectionId ? 'var(--foreground-default)' : '#3a5070' }}
             disabled={!activeTabObj?.queryContext?.connectionId}
             onClick={() => {
               const menu = editorContextMenu!;

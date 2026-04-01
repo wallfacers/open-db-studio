@@ -142,8 +142,8 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
         ]}
       >
         <div className="flex flex-col items-center justify-center py-8 gap-4">
-          <Database size={48} className="text-[#7a9bb8]" />
-          <div className="text-sm text-[#c8daea] text-center max-w-xs">
+          <Database size={48} className="text-[var(--foreground-muted)]" />
+          <div className="text-sm text-[var(--foreground-default)] text-center max-w-xs">
             {t('erDesigner.noConnectionForImport')}
           </div>
         </div>
@@ -180,62 +180,62 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={t('erDesigner.searchTablePlaceholder')}
-            className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-2 text-xs text-[#c8daea] placeholder:text-[#7a9bb8] focus:outline-none focus:border-[#009e84] transition-colors"
+            className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-2 text-xs text-[var(--foreground-default)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:border-[#009e84] transition-colors"
           />
         </div>
 
         {/* 全选操作 */}
-        <div className="flex items-center justify-between border-b border-[#1e2d42] pb-3">
+        <div className="flex items-center justify-between border-b border-[var(--border-default)] pb-3">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={allSelected && filteredTables.length > 0}
               onChange={toggleSelectAll}
               disabled={filteredTables.length === 0}
-              className="accent-[#00c9a7] w-4 h-4"
+              className="accent-[var(--accent)] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">
+            <span className="text-xs text-[var(--foreground-default)]">
               {allSelected ? t('erDesigner.deselectAll') : t('erDesigner.selectAll')}
             </span>
           </label>
-          <span className="text-xs text-[#7a9bb8]">
+          <span className="text-xs text-[var(--foreground-muted)]">
             {t('erDesigner.tableCount', { count: filteredTables.length })}
           </span>
         </div>
 
         {/* 表列表 */}
-        <div className="overflow-y-auto max-h-80 border border-[#253347] rounded">
+        <div className="overflow-y-auto max-h-80 border border-[var(--border-strong)] rounded">
           {loadingTables ? (
             <div className="flex items-center justify-center py-8">
-              <div className="text-xs text-[#7a9bb8]">{t('common.loading')}</div>
+              <div className="text-xs text-[var(--foreground-muted)]">{t('common.loading')}</div>
             </div>
           ) : filteredTables.length === 0 ? (
             <div className="flex items-center justify-center py-8">
-              <div className="text-xs text-[#7a9bb8]">
+              <div className="text-xs text-[var(--foreground-muted)]">
                 {searchTerm ? t('erDesigner.noTablesFound') : t('erDesigner.noTablesInDb')}
               </div>
             </div>
           ) : (
-            <div className="divide-y divide-[#1e2d42]">
+            <div className="divide-y divide-[var(--border-default)]">
               {filteredTables.map(table => {
                 const isSelected = selectedTables.has(table.name);
                 return (
                   <label
                     key={table.name}
                     className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors
-                      ${isSelected ? 'bg-[#009e84]/10' : 'hover:bg-[#151d28]'}`}
+                      ${isSelected ? 'bg-[#009e84]/10' : 'hover:bg-[var(--background-elevated)]'}`}
                   >
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleTable(table.name)}
-                      className="accent-[#00c9a7] w-4 h-4"
+                      className="accent-[var(--accent)] w-4 h-4"
                     />
-                    <span className="text-xs text-[#c8daea] flex-1 truncate">
+                    <span className="text-xs text-[var(--foreground-default)] flex-1 truncate">
                       {table.name}
                     </span>
                     {getColumnCountText(table) && (
-                      <span className="text-xs text-[#7a9bb8]">
+                      <span className="text-xs text-[var(--foreground-muted)]">
                         {getColumnCountText(table)}
                       </span>
                     )}

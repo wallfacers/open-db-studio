@@ -82,14 +82,14 @@ export function TablePickerModal({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-[#0d1117] border border-[#2a3f5a] rounded-lg shadow-2xl flex flex-col"
+        className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded-lg shadow-2xl flex flex-col"
         style={{ width: '100%', maxWidth: 480 }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a3f5a]">
-          <span className="text-sm font-medium text-[#c8daea]">{t('metricsExplorer.tablePicker.title')}</span>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-strong)]">
+          <span className="text-sm font-medium text-[var(--foreground-default)]">{t('metricsExplorer.tablePicker.title')}</span>
           <button
-            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
             onClick={onClose}
             aria-label="关闭"
           >
@@ -99,26 +99,26 @@ export function TablePickerModal({
 
         {/* Scope label */}
         {scopeLabel && (
-          <div className="px-4 pt-3 pb-1 text-xs text-[#7a9bb8]">{scopeLabel}</div>
+          <div className="px-4 pt-3 pb-1 text-xs text-[var(--foreground-muted)]">{scopeLabel}</div>
         )}
 
         {/* Table list */}
         <div className="flex-1 overflow-y-auto px-2 py-1" style={{ maxHeight: 320 }}>
           {loading && (
-            <div className="py-6 text-center text-sm text-[#7a9bb8]">{t('metricsExplorer.loading')}</div>
+            <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">{t('metricsExplorer.loading')}</div>
           )}
           {!loading && error && (
             <div className="py-4 px-3 text-sm text-red-400">{error}</div>
           )}
           {!loading && !error && tables.length === 0 && (
-            <div className="py-6 text-center text-sm text-[#7a9bb8]">{t('metricsExplorer.tablePicker.noTables')}</div>
+            <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.noTables')}</div>
           )}
           {!loading && !error && tables.map((table) => {
             const isChecked = selected.has(table.name);
             return (
               <div
                 key={table.name}
-                className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[#1a2639] select-none"
+                className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[var(--background-hover)] select-none"
                 onClick={() => toggleRow(table.name)}
               >
                 <input
@@ -126,10 +126,10 @@ export function TablePickerModal({
                   checked={isChecked}
                   onChange={() => toggleRow(table.name)}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-shrink-0 cursor-pointer accent-[#00c9a7]"
+                  className="flex-shrink-0 cursor-pointer accent-[var(--accent)]"
                 />
-                <span className="flex-1 text-sm text-[#c8daea] truncate">{table.name}</span>
-                <span className="text-xs text-[#7a9bb8] flex-shrink-0">
+                <span className="flex-1 text-sm text-[var(--foreground-default)] truncate">{table.name}</span>
+                <span className="text-xs text-[var(--foreground-muted)] flex-shrink-0">
                   ({t('metricsExplorer.tablePicker.columns', { count: table.column_count })})
                 </span>
               </div>
@@ -138,18 +138,18 @@ export function TablePickerModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[#2a3f5a] px-4 py-3 flex flex-col gap-2">
+        <div className="border-t border-[var(--border-strong)] px-4 py-3 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-[#7a9bb8]">{t('metricsExplorer.tablePicker.selected', { count: selected.size })}</span>
+              <span className="text-xs text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.selected', { count: selected.size })}</span>
               <button
-                className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
+                className="text-xs text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors"
                 onClick={selectAll}
               >
                 {t('metricsExplorer.tablePicker.selectAll')}
               </button>
               <button
-                className="text-xs text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
+                className="text-xs text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors"
                 onClick={clearAll}
               >
                 {t('metricsExplorer.tablePicker.deselectAll')}
@@ -157,13 +157,13 @@ export function TablePickerModal({
             </div>
             <div className="flex items-center gap-2">
               <button
-                className="px-3 py-1.5 rounded text-xs bg-[#1a2a3a] text-[#7a9bb8] hover:bg-[#2a3a4a] transition-colors"
+                className="px-3 py-1.5 rounded text-xs bg-[#1a2a3a] text-[var(--foreground-muted)] hover:bg-[#2a3a4a] transition-colors"
                 onClick={onClose}
               >
                 {t('common.cancel')}
               </button>
               <button
-                className="px-3 py-1.5 rounded text-xs bg-[#00c9a7] text-black hover:bg-[#00b090] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 rounded text-xs bg-[var(--accent)] text-black hover:bg-[#00b090] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 disabled={selected.size === 0}
                 onClick={() => onConfirm(Array.from(selected), goToTasks)}
               >
@@ -176,9 +176,9 @@ export function TablePickerModal({
               type="checkbox"
               checked={goToTasks}
               onChange={(e) => setGoToTasks(e.target.checked)}
-              className="accent-[#00c9a7] cursor-pointer"
+              className="accent-[var(--accent)] cursor-pointer"
             />
-            <span className="text-xs text-[#7a9bb8]">{t('metricsExplorer.tablePicker.goToTasks')}</span>
+            <span className="text-xs text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.goToTasks')}</span>
           </label>
         </div>
       </div>

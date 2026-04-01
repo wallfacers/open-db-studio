@@ -435,7 +435,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
 
   return (
     <div className="flex-1 flex min-h-0">
-    <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117]">
+    <div className="flex-1 flex flex-col min-h-0 bg-[var(--background-base)]">
       <ERToolbar
         projectId={projectId}
         onOpenDDL={() => setShowDDL(true)}
@@ -472,7 +472,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           minZoom={0.1}
           maxZoom={2}
         >
-          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="#1e2d42" bgColor="#0d1117" gap={20} size={1} />
+          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="var(--border-default)" bgColor="var(--background-base)" gap={20} size={1} />
           <Controls />
         </ReactFlow>
       </div>

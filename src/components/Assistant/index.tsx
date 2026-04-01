@@ -20,7 +20,7 @@ import type { ToastLevel } from '../Toast';
 const AssistantMessage: React.FC<{ content: string; thinkingContent?: string }> = memo(
   ({ content, thinkingContent }) => (
     <div className="flex flex-col items-start">
-      <div className="text-[#c8daea] text-[13px] w-full">
+      <div className="text-[var(--foreground-default)] text-[13px] w-full">
         {thinkingContent && (
           <ThinkingBlock content={thinkingContent} isStreaming={false} />
         )}
@@ -47,7 +47,7 @@ const TypingIndicator: React.FC = () => {
 
   return (
     <div className="flex items-center gap-2 py-1">
-      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
       <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
     </div>
   );
@@ -67,7 +67,7 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
   return (
     <div className="flex flex-col items-start">
-      <div className="text-[#c8daea] text-[13px] w-full">
+      <div className="text-[var(--foreground-default)] text-[13px] w-full">
         {/* ThinkingBlock 使用 isChatting：Q&A 期间保持展开，仅 AI 完成后才自动折叠 */}
         {thinking && <ThinkingBlock content={thinking} isStreaming={isChatting} />}
         {content && <MarkdownContent content={content} isStreaming={!pendingQuestion} />}
@@ -90,14 +90,14 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               ))
             )}
             <div className="flex items-center gap-2 py-1">
-              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-              <span className="text-xs text-[#00c9a7] animate-pulse">{t('assistant.waitingForAnswer')}</span>
+              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
+              <span className="text-xs text-[var(--accent)] animate-pulse">{t('assistant.waitingForAnswer')}</span>
             </div>
           </div>
         ) : !hasFirstToken && (
           sessionStatus ? (
             <div className="flex items-center gap-2 py-1">
-              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
               <span className="text-xs text-[#5b8ab0] animate-pulse">{sessionStatus}</span>
             </div>
           ) : (
@@ -379,7 +379,7 @@ export const Assistant: React.FC<AssistantProps> = ({
 
   // 输入框 JSX，在空状态和正常状态中复用
   const renderInputBox = () => (
-    <div className="bg-[#111922] border border-[#2a3f5a] rounded-lg p-2 flex flex-col focus-within:border-[#00c9a7] transition-colors relative">
+    <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg p-2 flex flex-col focus-within:border-[var(--accent)] transition-colors relative">
       {slashQuery !== null && (
         <SlashCommandMenu
           query={slashQuery}
@@ -392,7 +392,7 @@ export const Assistant: React.FC<AssistantProps> = ({
       )}
       <div className="relative mb-2 w-fit" ref={connectionMenuRef}>
         <div
-          className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea]"
+          className="flex items-center text-xs text-[var(--foreground-muted)] cursor-pointer hover:text-[var(--foreground-default)]"
           onClick={(e) => {
             e.stopPropagation();
             if (!isConnectionMenuOpen && connectionMenuRef.current) {
@@ -407,7 +407,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             setIsConnectionMenuOpen(!isConnectionMenuOpen);
           }}
         >
-          <DatabaseZap size={12} className="mr-1 text-[#00c9a7]" />
+          <DatabaseZap size={12} className="mr-1 text-[var(--accent)]" />
           <span className="max-w-[120px] truncate">{effectiveConnectionName ?? t('assistant.noConnectionSelected')}</span>
           <ChevronDown size={12} className="ml-1 flex-shrink-0" />
         </div>
@@ -416,7 +416,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         {isConnectionMenuOpen && connectionMenuPos && createPortal(
           <div
             ref={connectionDropdownRef}
-            className="fixed z-[200] w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg overflow-y-auto"
+            className="fixed z-[200] w-52 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg overflow-y-auto"
             style={{
               // 根据视窗位置决定展开方向：底部空间不足时向上展开
               ...(connectionMenuPos.top + 240 > window.innerHeight
@@ -428,23 +428,23 @@ export const Assistant: React.FC<AssistantProps> = ({
           >
             {/* 跟随标签页选项 */}
             <div
-              className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[#1e2d42] ${
-                linkedConnectionId === null ? 'text-[#009e84]' : 'text-[#7a9bb8]'
+              className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[var(--border-default)] ${
+                linkedConnectionId === null ? 'text-[#009e84]' : 'text-[var(--foreground-muted)]'
               }`}
               onClick={() => { setLinkedConnectionId(null); setIsConnectionMenuOpen(false); }}
             >
               <span className="text-xs italic">{t('assistant.followActiveTab')}</span>
             </div>
             {openedConnections.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-[#7a9bb8]">{t('assistant.noOpenedConnections')}</div>
+              <div className="px-3 py-2 text-xs text-[var(--foreground-muted)]">{t('assistant.noOpenedConnections')}</div>
             ) : (
               openedConnections.map((c) => {
                 const isActive = linkedConnectionId === c.id;
                 return (
                   <div
                     key={c.id}
-                    className={`px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-[#1e2d42] ${
-                      isActive ? 'text-[#009e84]' : 'text-[#c8daea]'
+                    className={`px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-[var(--border-default)] ${
+                      isActive ? 'text-[#009e84]' : 'text-[var(--foreground-default)]'
                     }`}
                     onClick={() => { setLinkedConnectionId(c.id); setIsConnectionMenuOpen(false); }}
                   >
@@ -459,7 +459,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         )}
       </div>
       <textarea
-        className="bg-transparent text-[13px] text-[#c8daea] outline-none resize-none h-16 w-full placeholder-[#7a9bb8]"
+        className="bg-transparent text-[13px] text-[var(--foreground-default)] outline-none resize-none h-16 w-full placeholder-[var(--foreground-muted)]"
         placeholder={isWaitingForAnswer ? t('assistant.answerPlaceholder') : t('assistant.inputPlaceholder')}
         value={chatInput}
         onChange={(e) => {
@@ -480,7 +480,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         <div className="flex items-center gap-2">
         <div className="relative" ref={modelMenuRef}>
           <div
-            className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea] bg-[#151d28] px-2 py-1 rounded border border-[#2a3f5a]"
+            className="flex items-center text-xs text-[var(--foreground-muted)] cursor-pointer hover:text-[var(--foreground-default)] bg-[var(--background-elevated)] px-2 py-1 rounded border border-[var(--border-strong)]"
             onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
           >
             <span className="max-w-[96px] truncate">
@@ -497,9 +497,9 @@ export const Assistant: React.FC<AssistantProps> = ({
           </div>
 
           {isModelMenuOpen && (
-            <div className="absolute left-0 bottom-full mb-1 w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
+            <div className="absolute left-0 bottom-full mb-1 w-52 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg z-50 py-1">
               {configs.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-[#7a9bb8]">{t('assistant.noModelHint')}</div>
+                <div className="px-3 py-2 text-xs text-[var(--foreground-muted)]">{t('assistant.noModelHint')}</div>
               ) : (
                 configs.map((c) => {
                   const isConnected = c.test_status === 'success';
@@ -509,8 +509,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                       key={c.id}
                       className={`px-3 py-1.5 flex items-center justify-between ${
                         isConnected
-                          ? `cursor-pointer hover:bg-[#1e2d42] ${isActive ? 'text-[#009e84]' : 'text-[#c8daea]'}`
-                          : 'cursor-not-allowed opacity-40 text-[#7a9bb8]'
+                          ? `cursor-pointer hover:bg-[var(--border-default)] ${isActive ? 'text-[#009e84]' : 'text-[var(--foreground-default)]'}`
+                          : 'cursor-not-allowed opacity-40 text-[var(--foreground-muted)]'
                       }`}
                       onClick={() => {
                         if (!isConnected) return;
@@ -541,13 +541,13 @@ export const Assistant: React.FC<AssistantProps> = ({
         >
           <button
             onClick={() => setAutoMode(!autoMode)}
-            className="flex items-center gap-1.5 px-1.5 py-1 rounded transition-colors hover:bg-[#1e2d42]"
+            className="flex items-center gap-1.5 px-1.5 py-1 rounded transition-colors hover:bg-[var(--border-default)]"
             aria-label={t('assistant.toggleAutoMode')}
           >
             <span className="text-[11px] text-[#5b8ab0] select-none">Auto</span>
             {/* 开关轨道 */}
             <span className={`relative inline-flex h-3.5 w-6 flex-shrink-0 rounded-full transition-colors duration-200 ${
-              autoMode ? 'bg-[#00c9a7]' : 'bg-[#2a3f5a]'
+              autoMode ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
             }`}>
               {/* 滑块 */}
               <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow transition-transform duration-200 ${
@@ -563,7 +563,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             /* 等待回答 + 无输入：显示 X 按钮（拒绝/跳过问题） */
             <Tooltip content={t('assistant.rejectQuestion')} className="contents">
               <button
-                className="p-1.5 rounded transition-colors bg-[#00c9a7]/20 text-[#00c9a7] hover:bg-[#00c9a7]/30"
+                className="p-1.5 rounded transition-colors bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30"
                 onClick={() => {
                   if (pendingQuestion) {
                     respondQuestion(currentSessionId, pendingQuestion.question_id, [], true);
@@ -577,7 +577,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             /* 等待回答 + 有输入：显示发送按钮 */
             <Tooltip content={t('assistant.sendMessage')} className="contents">
               <button
-                className="p-1.5 rounded transition-colors bg-[#00c9a7] text-white hover:bg-[#00a98f]"
+                className="p-1.5 rounded transition-colors bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
                 onClick={handleSendMessage}
               >
                 <Send size={14} />
@@ -597,7 +597,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         ) : (
           <Tooltip content={t('assistant.sendMessage')} className="contents">
             <button
-              className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[#00c9a7] text-white hover:bg-[#00a98f]' : 'bg-[#1e2d42] text-[#7a9bb8]'}`}
+              className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]' : 'bg-[var(--border-default)] text-[var(--foreground-muted)]'}`}
               onClick={handleSendMessage}
               disabled={!chatInput.trim()}
             >
@@ -612,15 +612,15 @@ export const Assistant: React.FC<AssistantProps> = ({
   const isEmpty = chatHistory.length === 0 && !isChatting;
 
   return (
-    <div className="flex flex-col bg-[#080d12] flex-shrink-0 border-l border-[#1e2d42] relative h-full" style={{ width: assistantWidth }}>
+    <div className="flex flex-col bg-[var(--background-void)] flex-shrink-0 border-l border-[var(--border-default)] relative h-full" style={{ width: assistantWidth }}>
       <div
-        className="absolute left-[-2px] top-0 bottom-0 w-[4.5px] cursor-col-resize hover:bg-[#00c9a7] z-10 transition-colors"
+        className="absolute left-[-2px] top-0 bottom-0 w-[4.5px] cursor-col-resize hover:bg-[var(--accent)] z-10 transition-colors"
         onMouseDown={handleAssistantResize}
       />
       {/* Header */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
-        <div className="text-[13px] font-medium truncate flex-1 text-[#c8daea]">{t('assistant.title')}</div>
-        <div className="flex items-center space-x-4 text-[#7a9bb8]">
+      <div className="h-10 flex items-center justify-between px-3 border-b border-[var(--border-default)] bg-[var(--background-base)] flex-shrink-0">
+        <div className="text-[13px] font-medium truncate flex-1 text-[var(--foreground-default)]">{t('assistant.title')}</div>
+        <div className="flex items-center space-x-4 text-[var(--foreground-muted)]">
           {!showHistory && chatHistory.length > 0 && (
             <Tooltip content={t('assistant.clearHistory')} className="contents">
               <span
@@ -641,22 +641,22 @@ export const Assistant: React.FC<AssistantProps> = ({
             </Tooltip>
           )}
           <Tooltip content={t('assistant.newChat')} className="contents">
-            <span className="cursor-pointer hover:text-[#c8daea] p-1" onClick={() => { newSession(); setShowHistory(false); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
+            <span className="cursor-pointer hover:text-[var(--foreground-default)] p-1" onClick={() => { newSession(); setShowHistory(false); showToast(t('assistant.newChatOpened'), 'info'); }}><Plus size={16} /></span>
           </Tooltip>
           <Tooltip content={t('assistant.openHistory')} className="contents">
-            <span className={`cursor-pointer transition-colors p-1 ${showHistory ? 'text-[#00c9a7]' : 'hover:text-[#c8daea]'}`} onClick={() => setShowHistory((v) => !v)}><History size={16} /></span>
+            <span className={`cursor-pointer transition-colors p-1 ${showHistory ? 'text-[var(--accent)]' : 'hover:text-[var(--foreground-default)]'}`} onClick={() => setShowHistory((v) => !v)}><History size={16} /></span>
           </Tooltip>
-          <span className="cursor-pointer hover:text-[#c8daea] p-1 flex items-center" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }}><X size={16} /></span>
+          <span className="cursor-pointer hover:text-[var(--foreground-default)] p-1 flex items-center" onClick={() => { setIsAssistantOpen(false); showToast(t('assistant.assistantClosed'), 'info'); }}><X size={16} /></span>
         </div>
       </div>
 
       {/* ── 会话历史面板（覆盖在聊天区上方）── */}
       {showHistory && (
-        <div className="absolute inset-0 top-10 z-20 flex flex-col bg-[#080d12]">
+        <div className="absolute inset-0 top-10 z-20 flex flex-col bg-[var(--background-void)]">
           {/* 历史面板 Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42] bg-[#0d1117] flex-shrink-0">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)] bg-[var(--background-base)] flex-shrink-0">
             <button
-              className="flex items-center gap-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="flex items-center gap-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
               onClick={() => { setShowHistory(false); }}
             >
               <ChevronLeft size={14} />
@@ -691,20 +691,20 @@ export const Assistant: React.FC<AssistantProps> = ({
                   return (
                     <div
                       key={sess.id}
-                      className={`group flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-[#111922] transition-colors ${
+                      className={`group flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-[var(--background-panel)] transition-colors ${
                         isActive ? 'bg-[#0f1f33]' : 'hover:bg-[#0d1a28]'
                       }`}
                       onClick={() => { switchSession(sess.id); setShowHistory(false); }}
                     >
-                      <MessageSquare size={13} className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-[#00c9a7]' : 'text-[#4a6a8a]'}`} />
+                      <MessageSquare size={13} className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-[var(--accent)]' : 'text-[#4a6a8a]'}`} />
                       <div className="flex-1 min-w-0">
-                        <div className={`text-[12px] font-medium truncate leading-tight flex items-center gap-1.5 ${isActive ? 'text-[#c8daea]' : 'text-[#8ab0cc]'}`}>
+                        <div className={`text-[12px] font-medium truncate leading-tight flex items-center gap-1.5 ${isActive ? 'text-[var(--foreground-default)]' : 'text-[#8ab0cc]'}`}>
                           <span className="truncate">{sess.title}</span>
                           {!sess.titleGenerated && (
                             <span className="text-[10px] text-[#4a6a8a] animate-pulse flex-shrink-0">•</span>
                           )}
                           {chattingSessionIds.has(sess.id) && (
-                            <RefreshCw size={10} className="animate-spin text-[#00c9a7] flex-shrink-0" />
+                            <RefreshCw size={10} className="animate-spin text-[var(--accent)] flex-shrink-0" />
                           )}
                         </div>
                         <div className="text-[11px] text-[#4a6a8a] mt-0.5">
@@ -736,9 +736,9 @@ export const Assistant: React.FC<AssistantProps> = ({
 
           {/* 清除所有会话按钮 */}
           {sessions.length > 0 && (
-            <div className="px-3 py-2 border-t border-[#1e2d42] flex-shrink-0">
+            <div className="px-3 py-2 border-t border-[var(--border-default)] flex-shrink-0">
               <button
-                className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[#7a9bb8] hover:text-red-400 hover:bg-[#1e2d42] rounded transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-red-400 hover:bg-[var(--border-default)] rounded transition-colors"
                 onClick={async () => {
                   const ok = await confirm({
                     title: t('assistant.deleteAllSessionsTitle'),
@@ -762,7 +762,7 @@ export const Assistant: React.FC<AssistantProps> = ({
       {isEmpty ? (
         /* ── 空状态：提示文字 + 输入框垂直居中，紧凑排列 ── */
         <div className="flex flex-col flex-1 items-center justify-center gap-5 px-4 pb-6">
-          <div className="flex flex-col items-center text-[#7a9bb8] text-center">
+          <div className="flex flex-col items-center text-[var(--foreground-muted)] text-center">
             <DatabaseZap size={28} className="mb-3 opacity-25" />
             {connectedConfigs.length === 0 ? (
               <>
@@ -792,7 +792,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             {chatHistory.map((msg, idx) =>
               msg.role === 'user' ? (
                 <div key={idx} className="flex flex-col items-end">
-                  <div className="bg-[#1e2d42] text-[#c8daea] px-3 py-2 rounded-lg max-w-[90%] text-[13px] leading-relaxed break-words">
+                  <div className="bg-[var(--border-default)] text-[var(--foreground-default)] px-3 py-2 rounded-lg max-w-[90%] text-[13px] leading-relaxed break-words">
                     {msg.content}
                   </div>
                 </div>
@@ -824,8 +824,8 @@ export const Assistant: React.FC<AssistantProps> = ({
 
           {/* 连接切换确认 banner */}
           {pendingConnectionSwitch && (
-            <div className="mx-3 mb-2 p-2 bg-[#1a2639] border border-[#2a3f5a] rounded-lg flex-shrink-0">
-              <p className="text-xs text-[#7a9bb8] mb-2">
+            <div className="mx-3 mb-2 p-2 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded-lg flex-shrink-0">
+              <p className="text-xs text-[var(--foreground-muted)] mb-2">
                 {t('assistant.connectionSwitchTitle')}
               </p>
               <p className="text-[11px] text-[#5b8ab0] mb-2">
@@ -836,7 +836,7 @@ export const Assistant: React.FC<AssistantProps> = ({
               </p>
               <div className="flex gap-2">
                 <button
-                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[#111922] border border-[#2a3f5a] text-[#7a9bb8] hover:text-[#c8daea] hover:border-[#3a4f6a]"
+                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[var(--background-panel)] border border-[var(--border-strong)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:border-[#3a4f6a]"
                   onClick={() => {
                     setLinkedConnectionId(pendingConnectionSwitch.oldConnectionId);
                     setPendingConnectionSwitch(null);
@@ -845,7 +845,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                   {t('assistant.keepLastConnection', { name: pendingConnectionSwitch.oldConnectionName })}
                 </button>
                 <button
-                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[#003d2f] border border-[#00c9a7] text-[#00c9a7] hover:bg-[#004d3a]"
+                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[var(--accent-subtle)] border border-[var(--accent)] text-[var(--accent)] hover:bg-[#004d3a]"
                   onClick={() => {
                     setLinkedConnectionId(null);
                     setPendingConnectionSwitch(null);
@@ -858,7 +858,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           )}
 
           {/* 底部输入框 */}
-          <div className="p-3 border-t border-[#1e2d42] flex-shrink-0">
+          <div className="p-3 border-t border-[var(--border-default)] flex-shrink-0">
             {renderInputBox()}
           </div>
         </>

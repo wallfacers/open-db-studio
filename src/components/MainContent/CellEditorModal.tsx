@@ -57,24 +57,24 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[600px] flex flex-col"
+        className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[600px] flex flex-col"
         style={{ maxHeight: '70vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#1e2d42]">
-          <span className="text-[#c8daea] text-xs font-medium font-mono">{columnName}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border-default)]">
+          <span className="text-[var(--foreground-default)] text-xs font-medium font-mono">{columnName}</span>
           <div className="flex items-center gap-2">
             {isJson && (
               <button
                 onClick={handleFormatJson}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-[#1a2639] hover:bg-[#243a55] text-[#3a7bd5] rounded"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--background-hover)] hover:bg-[#243a55] text-[#3a7bd5] rounded"
               >
                 <Code size={11} />
                 {t('tableDataView.formatJson')}
               </button>
             )}
-            <button onClick={onClose} className="p-1 hover:bg-[#1a2639] rounded text-[#7a9bb8]">
+            <button onClick={onClose} className="p-1 hover:bg-[var(--background-hover)] rounded text-[var(--foreground-muted)]">
               <X size={13} />
             </button>
           </div>
@@ -83,7 +83,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className={`flex-1 min-h-[220px] m-4 bg-[#111922] border border-[#1e2d42] rounded p-3 text-[#c8daea] text-xs font-mono outline-none resize-none focus:border-[#00c9a7] transition-colors ${readOnly ? 'cursor-default select-all' : ''}`}
+          className={`flex-1 min-h-[220px] m-4 bg-[var(--background-panel)] border border-[var(--border-default)] rounded p-3 text-[var(--foreground-default)] text-xs font-mono outline-none resize-none focus:border-[var(--accent)] transition-colors ${readOnly ? 'cursor-default select-all' : ''}`}
           value={draft}
           readOnly={readOnly}
           onChange={readOnly ? undefined : e => {
@@ -94,11 +94,11 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
         />
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[#1e2d42]">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[var(--border-default)]">
           {readOnly ? (
             <button
               onClick={onClose}
-              className="px-3 py-1 text-xs bg-[#1a2639] hover:bg-[#243a55] text-[#c8daea] rounded"
+              className="px-3 py-1 text-xs bg-[var(--background-hover)] hover:bg-[#243a55] text-[var(--foreground-default)] rounded"
             >
               {t('common.close')}
             </button>
@@ -107,7 +107,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
               <span className="text-[#4a6b8a] text-xs mr-auto">Ctrl+Enter {t('common.confirm')} · Esc {t('common.cancel')}</span>
               <button
                 onClick={onClose}
-                className="px-3 py-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded"
+                className="px-3 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded"
               >
                 {t('common.cancel')}
               </button>

@@ -64,7 +64,7 @@ export const FieldMapper: React.FC<Props> = ({
         </button>
         <button
           onClick={clearAll}
-          className="px-3 py-1.5 text-sm text-white bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded transition-colors"
+          className="px-3 py-1.5 text-sm text-white bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
         >
           {t('fieldMapper.clearAll')}
         </button>
@@ -74,7 +74,7 @@ export const FieldMapper: React.FC<Props> = ({
       </div>
 
       {/* Header */}
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1 py-1.5 text-xs text-gray-400 border-b border-[#253347]">
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1 py-1.5 text-xs text-gray-400 border-b border-[var(--border-strong)]">
         <div>{t('fieldMapper.sourceColumn')}</div>
         <div className="w-6" />
         <div>{t('fieldMapper.targetColumn')}</div>
@@ -86,7 +86,7 @@ export const FieldMapper: React.FC<Props> = ({
             key={idx}
             className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center"
           >
-            <div className="px-3 py-1.5 bg-[#1a2639] border border-[#253347] rounded text-sm text-white truncate">
+            <div className="px-3 py-1.5 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded text-sm text-white truncate">
               {m.sourceColumn}
             </div>
             <ArrowRight size={14} className="text-gray-600" />

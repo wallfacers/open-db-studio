@@ -58,25 +58,25 @@ export const TruncateConfirmDialog: React.FC<Props> = ({
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[420px] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[420px] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
           <span className="text-red-400 text-sm font-medium flex items-center gap-2">
             <AlertTriangle size={15} />
             {t('truncateConfirm.title')}
           </span>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea]">
+          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]">
             <X size={16} />
           </button>
         </div>
         <div className="p-5">
-          <p className="text-[#c8daea] text-sm">
+          <p className="text-[var(--foreground-default)] text-sm">
             {t('truncateConfirm.warning', { table: tableName })}
           </p>
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t border-[#1e2d42]">
+        <div className="flex justify-end gap-2 p-4 border-t border-[var(--border-default)]">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 bg-[#1a2639] text-[#7a9bb8] hover:text-[#c8daea] rounded text-xs"
+            className="px-3 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] rounded text-xs"
           >
             {t('common.cancel')}
           </button>

@@ -177,20 +177,20 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl py-1 min-w-[160px]"
+      className="fixed z-50 bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl py-1 min-w-[160px]"
       style={{ left: pos.left, top: pos.top, visibility: pos.visible ? 'visible' : 'hidden' }}
     >
       {items.map((item) => (
         <React.Fragment key={item.label}>
-          {item.dividerBefore && <div className="h-px bg-[#253347] my-1" />}
+          {item.dividerBefore && <div className="h-px bg-[var(--border-strong)] my-1" />}
           <button
             disabled={item.disabled}
             className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${
               item.disabled
-                ? 'opacity-40 cursor-not-allowed text-[#7a9bb8]'
+                ? 'opacity-40 cursor-not-allowed text-[var(--foreground-muted)]'
                 : item.danger
-                ? 'text-red-400 hover:bg-[#1a2639] hover:text-red-300'
-                : 'text-[#c8daea] hover:bg-[#1a2639] hover:text-white'
+                ? 'text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300'
+                : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white'
             }`}
             onClick={() => { if (!item.disabled) { onClose(); item.onClick(); } }}
           >

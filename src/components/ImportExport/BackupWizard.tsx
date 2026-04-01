@@ -45,7 +45,7 @@ export const BackupWizard: React.FC<BackupWizardProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   const handleStart = async () => {
@@ -77,9 +77,9 @@ export const BackupWizard: React.FC<BackupWizardProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[480px] flex flex-col">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[480px] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#253347]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-strong)]">
           <h3 className="text-white font-semibold">{t('backupWizard.title')}</h3>
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
@@ -87,13 +87,13 @@ export const BackupWizard: React.FC<BackupWizardProps> = ({
                 <div
                   key={n}
                   className={`w-2 h-2 rounded-full ${
-                    n === step ? 'bg-[#009e84]' : n < step ? 'bg-[#00c9a7]' : 'bg-[#253347]'
+                    n === step ? 'bg-[#009e84]' : n < step ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
                   }`}
                 />
               ))}
             </div>
             <span className="text-xs text-gray-400">{t('backupWizard.step', { current: step, total: 2 })}</span>
-            <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors">
+            <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors">
               <X size={16} />
             </button>
           </div>
@@ -174,7 +174,7 @@ export const BackupWizard: React.FC<BackupWizardProps> = ({
               </div>
 
               {/* 摘要 */}
-              <div className="p-3 bg-[#1a2639] rounded border border-[#253347] text-sm text-gray-400 space-y-1">
+              <div className="p-3 bg-[var(--background-hover)] rounded border border-[var(--border-strong)] text-sm text-gray-400 space-y-1">
                 <div>{t('backupWizard.summaryDb', { db: database })}</div>
                 <div>{t('backupWizard.summaryDriver', { driver: driver === 'mysql' ? 'MySQL' : 'PostgreSQL' })}</div>
                 <div>{t('backupWizard.summaryMethod', { method: t('backupWizard.logicalBackup') })}</div>
@@ -190,10 +190,10 @@ export const BackupWizard: React.FC<BackupWizardProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-[#253347]">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border-strong)]">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded transition-colors"
+            className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded transition-colors"
           >
             {t('backupWizard.cancel')}
           </button>
@@ -201,7 +201,7 @@ export const BackupWizard: React.FC<BackupWizardProps> = ({
             {step > 1 && (
               <button
                 onClick={() => setStep(s => s - 1)}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[#1a2639] hover:bg-[#253347] border border-[#253347] rounded transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
               >
                 <ChevronLeft size={14} /> {t('backupWizard.prev')}
               </button>

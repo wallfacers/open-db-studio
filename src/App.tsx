@@ -250,7 +250,7 @@ export default function App() {
   const isMac = navigator.userAgent.includes('Mac');
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#080d12] text-[#b5cfe8] overflow-hidden font-sans text-[13px]">
+    <div className="h-screen w-screen flex flex-col bg-[var(--background-void)] text-[var(--foreground)] overflow-hidden font-sans text-[13px]">
       {!isMac && <TitleBar />}
       <div className="flex flex-1 overflow-hidden">
       <ActivityBar

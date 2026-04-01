@@ -31,7 +31,7 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
 
   if (!activeConnectionId) {
     return (
-      <div className="p-4 text-[#7a9bb8] text-xs">
+      <div className="p-4 text-[var(--foreground-muted)] text-xs">
         {t('objectPanel.selectConnection')}
       </div>
     );
@@ -50,7 +50,7 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
           views.map(v => (
             <div
               key={v.name}
-              className="px-4 py-1.5 text-[#c8daea] hover:bg-[#1a2639] cursor-pointer flex items-center gap-2"
+              className="px-4 py-1.5 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] cursor-pointer flex items-center gap-2"
               onClick={() => setSelectedView(v)}
             >
               <span className="text-[#569cd6] text-[10px] font-bold flex-shrink-0">VIEW</span>
@@ -61,7 +61,7 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
       </div>
 
       {/* Procedures / Functions Section */}
-      <div className="border-t border-[#1e2d42] mt-1">
+      <div className="border-t border-[var(--border-default)] mt-1">
         <div className="px-3 py-2 text-[#858585] font-medium text-[11px] uppercase tracking-wider">
           {t('objectPanel.procedures')} ({procedures.length})
         </div>
@@ -71,7 +71,7 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
           procedures.map(p => (
             <div
               key={`${p.routine_type}-${p.name}`}
-              className="px-4 py-1.5 text-[#c8daea] hover:bg-[#1a2639] cursor-pointer flex items-center gap-2"
+              className="px-4 py-1.5 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] cursor-pointer flex items-center gap-2"
             >
               <span className="text-[#dcdcaa] text-[10px] font-bold flex-shrink-0">
                 {p.routine_type === 'FUNCTION' ? 'FN' : 'PROC'}
@@ -84,17 +84,17 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
 
       {/* View Definition Overlay */}
       {selectedView && (
-        <div className="absolute inset-0 bg-[#0d1520] flex flex-col z-10">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42]">
-            <span className="text-[#c8daea] text-xs font-medium truncate">{selectedView.name}</span>
+        <div className="absolute inset-0 bg-[var(--background-base)] flex flex-col z-10">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
+            <span className="text-[var(--foreground-default)] text-xs font-medium truncate">{selectedView.name}</span>
             <button
               onClick={() => setSelectedView(null)}
-              className="text-[#7a9bb8] hover:text-[#c8daea] text-xs ml-2 flex-shrink-0"
+              className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] text-xs ml-2 flex-shrink-0"
             >
               ✕
             </button>
           </div>
-          <pre className="flex-1 overflow-auto p-3 text-xs text-[#c8daea] font-mono whitespace-pre-wrap">
+          <pre className="flex-1 overflow-auto p-3 text-xs text-[var(--foreground-default)] font-mono whitespace-pre-wrap">
             {selectedView.definition ?? t('objectPanel.noDefinition')}
           </pre>
         </div>

@@ -13,8 +13,8 @@ import type {
 import { useEscClose } from '../../hooks/useEscClose';
 
 // ──────────────── 共用类名 ────────────────
-const inputCls = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] focus:outline-none focus:border-[#009e84]';
-const labelCls = 'block text-xs text-[#7a9bb8] mb-1 uppercase tracking-wide';
+const inputCls = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none focus:border-[#009e84]';
+const labelCls = 'block text-xs text-[var(--foreground-muted)] mb-1 uppercase tracking-wide';
 
 // ──────────────── TestStatusBadge ────────────────
 function TestStatusBadge({ status, error, testedAt }: {
@@ -31,7 +31,7 @@ function TestStatusBadge({ status, error, testedAt }: {
     if (hours < 24) return t('llmSettings.hoursAgo', { n: hours });
     return t('llmSettings.daysAgo', { n: Math.floor(hours / 24) });
   })();
-  if (status === 'untested') return <span className="text-xs text-[#4a6480]">○ {t('llmSettings.untested')}</span>;
+  if (status === 'untested') return <span className="text-xs text-[var(--foreground-subtle)]">○ {t('llmSettings.untested')}</span>;
   if (status === 'testing') return (
     <span className="text-xs text-yellow-400 flex items-center gap-1">
       <Loader2 size={11} className="animate-spin" />{t('llmSettings.testing')}
@@ -74,30 +74,30 @@ function ModelCombobox({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`w-full bg-[#1a2639] border rounded px-3 py-1.5 text-sm text-[#c8daea] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[#253347]'}`}
+        className={`w-full bg-[var(--background-hover)] border rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[var(--border-strong)]'}`}
       >
         <span>{value || '选择模型…'}</span>
-        <ChevronDown size={13} className="text-[#4a6480]" />
+        <ChevronDown size={13} className="text-[var(--foreground-subtle)]" />
       </button>
       {open && (
-        <div className="absolute z-50 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-52 overflow-y-auto">
+        <div className="absolute z-50 w-full bg-[var(--background-base)] border border-[var(--border-default)] border-t-0 rounded-b-md max-h-52 overflow-y-auto">
           {models.length > 0 && (
-            <div className="px-3 pt-2 pb-1 text-[10px] text-[#4a6480] uppercase tracking-wide">供应商模型</div>
+            <div className="px-3 pt-2 pb-1 text-[10px] text-[var(--foreground-subtle)] uppercase tracking-wide">供应商模型</div>
           )}
           {models.map((m) => (
             <button
               key={m.id}
               type="button"
               onClick={() => { onChange(m.id); setOpen(false); }}
-              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#1a2639] ${value === m.id ? 'text-[#00c9a7] bg-[#003d2f]/20' : 'text-[#7a9bb8]'}`}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--background-hover)] ${value === m.id ? 'text-[var(--accent)] bg-[var(--accent-subtle)]/20' : 'text-[var(--foreground-muted)]'}`}
             >
               {value === m.id && '✓ '}{m.name || m.id}
             </button>
           ))}
-          <div className="border-t border-[#1e2d42] mx-2 my-1" />
+          <div className="border-t border-[var(--border-default)] mx-2 my-1" />
           <div className="px-2 pb-2">
             <input
-              className="w-full bg-[#0d1117] border border-dashed border-[#253347] rounded px-2 py-1 text-xs text-[#4a6480] focus:outline-none focus:border-[#009e84] focus:text-[#c8daea]"
+              className="w-full bg-[var(--background-base)] border border-dashed border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-subtle)] focus:outline-none focus:border-[#009e84] focus:text-[var(--foreground-default)]"
               placeholder="输入自定义模型 ID…"
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
@@ -145,39 +145,39 @@ function ProviderDropdown({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`w-full bg-[#1a2639] border rounded px-3 py-1.5 text-sm text-[#c8daea] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[#253347]'}`}
+        className={`w-full bg-[var(--background-hover)] border rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[var(--border-strong)]'}`}
       >
         <span className="flex items-center gap-2">
           {value && value !== 'custom' && (
-            <span className="w-2 h-2 rounded-full bg-[#00c9a7] flex-shrink-0 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0 inline-block" />
           )}
           {value === 'custom' && (
-            <span className="w-2 h-2 rounded-full bg-[#7a9bb8] flex-shrink-0 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-[var(--foreground-muted)] flex-shrink-0 inline-block" />
           )}
           {displayLabel}
         </span>
-        <ChevronDown size={13} className="text-[#4a6480]" />
+        <ChevronDown size={13} className="text-[var(--foreground-subtle)]" />
       </button>
       {open && (
-        <div className="absolute z-50 w-full bg-[#0d1117] border border-[#1e2d42] border-t-0 rounded-b-md max-h-64 overflow-y-auto">
+        <div className="absolute z-50 w-full bg-[var(--background-base)] border border-[var(--border-default)] border-t-0 rounded-b-md max-h-64 overflow-y-auto">
           {providers.map((p) => (
             <button
               key={p.id}
               type="button"
               onClick={() => { onChange(p.id); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-[#1a2639] flex items-center gap-2 ${value === p.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`}
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--background-hover)] flex items-center gap-2 ${value === p.id ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`}
             >
-              <span className="w-2 h-2 rounded-full bg-[#00c9a7] flex-shrink-0 inline-block" />
+              <span className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0 inline-block" />
               {p.name || p.id}
             </button>
           ))}
-          <div className="border-t border-[#1e2d42] mx-2 my-1" />
+          <div className="border-t border-[var(--border-default)] mx-2 my-1" />
           <button
             type="button"
             onClick={() => { onChange('custom'); setOpen(false); }}
-            className={`w-full text-left px-3 py-2 text-xs hover:bg-[#1a2639] flex items-center gap-2 ${value === 'custom' ? 'text-[#00c9a7]' : 'text-[#4a6480]'}`}
+            className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--background-hover)] flex items-center gap-2 ${value === 'custom' ? 'text-[var(--accent)]' : 'text-[var(--foreground-subtle)]'}`}
           >
-            <span className="w-2 h-2 rounded-full bg-[#7a9bb8] flex-shrink-0 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-[var(--foreground-muted)] flex-shrink-0 inline-block" />
             ⚙ 自定义供应商…
           </button>
         </div>
@@ -305,11 +305,11 @@ function ConfigFormDialog({
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
       {/* 外层容器：不限制 overflow，让下拉框弹出部分正常显示 */}
-      <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-md min-h-[480px] max-h-[90vh] flex flex-col">
+      <div className="bg-[#0d1a26] border border-[var(--border-default)] rounded-lg w-full max-w-md min-h-[480px] max-h-[90vh] flex flex-col">
         {/* 标题行：固定在顶部 */}
         <div className="flex items-center justify-between p-6 pb-0">
-          <h3 className="text-[#e8f4ff] font-semibold text-sm">{title}</h3>
-          <button onClick={onCancel} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16} /></button>
+          <h3 className="text-[var(--foreground)] font-semibold text-sm">{title}</h3>
+          <button onClick={onCancel} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"><X size={16} /></button>
         </div>
         {/* 内容区域：可滚动 */}
         <div className="flex-1 overflow-y-auto p-6 pt-4 space-y-4">
@@ -332,7 +332,7 @@ function ConfigFormDialog({
         <div>
           <label className={labelCls}>
             供应商
-            {providersLoading && <span className="ml-2 text-[#4a6480] normal-case">加载中…</span>}
+            {providersLoading && <span className="ml-2 text-[var(--foreground-subtle)] normal-case">加载中…</span>}
           </label>
           <ProviderDropdown
             providers={providers}
@@ -343,8 +343,8 @@ function ConfigFormDialog({
 
         {/* 自定义模式展开框 */}
         {isCustomMode && (
-          <div className="bg-[#111922] border border-[#1e2d42] rounded-lg p-4 space-y-3">
-            <div className="text-[10px] text-[#4a6480] uppercase tracking-wide">自定义供应商配置</div>
+          <div className="bg-[var(--background-panel)] border border-[var(--border-default)] rounded-lg p-4 space-y-3">
+            <div className="text-[10px] text-[var(--foreground-subtle)] uppercase tracking-wide">自定义供应商配置</div>
 
             <div>
               <label className={labelCls}>Provider ID</label>
@@ -354,14 +354,14 @@ function ConfigFormDialog({
                 onChange={(e) => setForm((f) => ({ ...f, opencode_provider_id: e.target.value }))}
                 placeholder="my-azure-gpt"
               />
-              <p className="text-[10px] text-[#4a6480] mt-1">opencode 中的唯一标识</p>
+              <p className="text-[10px] text-[var(--foreground-subtle)] mt-1">opencode 中的唯一标识</p>
             </div>
 
             <div>
               <label className={labelCls}>API 兼容类型</label>
               <div className="flex gap-4">
                 {(['openai', 'anthropic'] as const).map((type) => (
-                  <label key={type} className="flex items-center gap-1.5 text-xs text-[#c8daea] cursor-pointer">
+                  <label key={type} className="flex items-center gap-1.5 text-xs text-[var(--foreground-default)] cursor-pointer">
                     <input
                       type="radio"
                       name="api_type"
@@ -394,7 +394,7 @@ function ConfigFormDialog({
                 onChange={(e) => setForm((f) => ({ ...f, opencode_provider_name: e.target.value }))}
                 placeholder="如：Model Studio Coding Plan"
               />
-              <p className="text-[10px] text-[#4a6480] mt-1">写入 opencode.json provider.name 字段</p>
+              <p className="text-[10px] text-[var(--foreground-subtle)] mt-1">写入 opencode.json provider.name 字段</p>
             </div>
 
             <div>
@@ -405,7 +405,7 @@ function ConfigFormDialog({
                 onChange={(e) => setForm((f) => ({ ...f, opencode_display_name: e.target.value }))}
                 placeholder="如：Kimi K2.5"
               />
-              <p className="text-[10px] text-[#4a6480] mt-1">opencode 侧显示的模型名，空则使用配置名称</p>
+              <p className="text-[10px] text-[var(--foreground-subtle)] mt-1">opencode 侧显示的模型名，空则使用配置名称</p>
             </div>
 
             <div>
@@ -416,7 +416,7 @@ function ConfigFormDialog({
                 onChange={(e) => setForm((f) => ({ ...f, opencode_model_options: e.target.value }))}
                 placeholder={'{"modalities":{"input":["text"],"output":["text"]},"limit":{"context":1000000,"output":65536}}'}
               />
-              <p className="text-[10px] text-[#4a6480] mt-1">modalities / options.thinking 等，写入 opencode.json models 字段</p>
+              <p className="text-[10px] text-[var(--foreground-subtle)] mt-1">modalities / options.thinking 等，写入 opencode.json models 字段</p>
             </div>
           </div>
         )}
@@ -447,7 +447,7 @@ function ConfigFormDialog({
                 onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
                 placeholder="直接输入模型 ID"
               />
-              <p className="text-[10px] text-[#4a6480] mt-1">直接输入模型 ID</p>
+              <p className="text-[10px] text-[var(--foreground-subtle)] mt-1">直接输入模型 ID</p>
             </>
           ) : (
             <ModelCombobox
@@ -472,7 +472,7 @@ function ConfigFormDialog({
             onClick={handleTest}
             disabled={testing || !canTest}
             title={!canTest ? '请填写必填字段后再测试' : undefined}
-            className="px-3 py-1.5 text-xs border border-[#1e2d42] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1.5"
+            className="px-3 py-1.5 text-xs border border-[var(--border-default)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded disabled:opacity-50 flex items-center gap-1.5"
           >
             {testing && <Loader2 size={12} className="animate-spin" />}
             {testing ? '测试中…' : '测试连接'}
@@ -480,7 +480,7 @@ function ConfigFormDialog({
           <div className="flex gap-2">
             <button
               onClick={onCancel}
-              className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
+              className="px-4 py-1.5 text-xs border border-[var(--border-strong)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded"
             >
               取消
             </button>
@@ -620,7 +620,7 @@ export function LlmSettingsPanel() {
   return (
     <div className="w-full max-w-2xl p-8">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-[#e8f4ff] font-semibold text-sm">{t('llmSettings.aiModelConfig')}</h3>
+        <h3 className="text-[var(--foreground)] font-semibold text-sm">{t('llmSettings.aiModelConfig')}</h3>
         <button
           onClick={handleOpenCreate}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
@@ -631,7 +631,7 @@ export function LlmSettingsPanel() {
 
       {/* 配置卡片网格 */}
       {configs.length === 0 ? (
-        <div className="text-center py-16 text-[#7a9bb8]">
+        <div className="text-center py-16 text-[var(--foreground-muted)]">
           <p className="text-sm">{t('llmSettings.noConfigs')}</p>
           <p className="text-xs mt-1 opacity-60">{t('llmSettings.noConfigsHint')}</p>
         </div>
@@ -640,31 +640,31 @@ export function LlmSettingsPanel() {
           {configs.map((config) => (
             <div
               key={config.id}
-              className={`bg-[#111922] border rounded-lg p-4 flex flex-col gap-2 ${config.is_default ? 'border-[#00c9a7]' : 'border-[#1e2d42]'}`}
+              className={`bg-[var(--background-panel)] border rounded-lg p-4 flex flex-col gap-2 ${config.is_default ? 'border-[var(--accent)]' : 'border-[var(--border-default)]'}`}
             >
               {/* 标题行 */}
               <div className="flex items-start justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
                   {config.is_default && <Star size={13} className="text-[#009e84] fill-[#009e84] flex-shrink-0" />}
-                  <span className="text-sm text-[#e8f4ff] font-medium truncate">{config.name}</span>
+                  <span className="text-sm text-[var(--foreground)] font-medium truncate">{config.name}</span>
                 </div>
                 {config.is_default && (
-                  <span className="text-[10px] bg-[#003d2f] text-[#00c9a7] px-1.5 py-0.5 rounded flex-shrink-0">默认</span>
+                  <span className="text-[10px] bg-[var(--accent-subtle)] text-[var(--accent)] px-1.5 py-0.5 rounded flex-shrink-0">默认</span>
                 )}
               </div>
               {/* 供应商 + 模型 */}
-              <div className="text-xs text-[#7a9bb8] space-y-0.5">
+              <div className="text-xs text-[var(--foreground-muted)] space-y-0.5">
                 <div className="truncate">{providerLabel(config)}</div>
-                <div className="text-[#c8daea] truncate">{config.model}</div>
+                <div className="text-[var(--foreground-default)] truncate">{config.model}</div>
               </div>
               {/* 测试状态 */}
               <TestStatusBadge status={config.test_status} error={config.test_error} testedAt={config.tested_at} />
               {/* 操作 */}
-              <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-[#1e2d42] flex-wrap">
+              <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-[var(--border-default)] flex-wrap">
                 {!config.is_default && (
                   <button
                     onClick={() => setDefaultConfig(config.id)}
-                    className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded"
+                    className="text-xs px-2 py-1 border border-[var(--border-strong)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded"
                   >
                     {t('llmSettings.setDefault')}
                   </button>
@@ -672,14 +672,14 @@ export function LlmSettingsPanel() {
                 <button
                   onClick={() => testConfig(config.id)}
                   disabled={config.test_status === 'testing'}
-                  className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded disabled:opacity-50 flex items-center gap-1"
+                  className="text-xs px-2 py-1 border border-[var(--border-strong)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded disabled:opacity-50 flex items-center gap-1"
                 >
                   {config.test_status === 'testing' && <Loader2 size={10} className="animate-spin" />}
                   {t('llmSettings.test')}
                 </button>
                 <button
                   onClick={() => handleOpenEdit(config)}
-                  className="text-xs px-2 py-1 border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1"
+                  className="text-xs px-2 py-1 border border-[var(--border-strong)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded flex items-center gap-1"
                 >
                   <Pencil size={11} />{t('llmSettings.edit')}
                 </button>
@@ -738,19 +738,19 @@ export function LlmSettingsPanel() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}
         >
-          <div className="bg-[#0d1a26] border border-[#1e2d42] rounded-lg w-full max-w-sm p-6 space-y-4">
+          <div className="bg-[#0d1a26] border border-[var(--border-default)] rounded-lg w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-[#e8f4ff] font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
-              <button onClick={() => setDeleteConfirm(null)} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16} /></button>
+              <h3 className="text-[var(--foreground)] font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
+              <button onClick={() => setDeleteConfirm(null)} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"><X size={16} /></button>
             </div>
-            <p className="text-xs text-[#c8daea]">
+            <p className="text-xs text-[var(--foreground-default)]">
               {t('llmSettings.confirmDeleteMsg', { name: deleteConfirm.name })}
               {deleteConfirm.is_default && (
                 <span className="text-yellow-400 block mt-1">{t('llmSettings.defaultDeleteWarning')}</span>
               )}
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-1.5 text-xs border border-[#253347] text-[#c8daea] hover:bg-[#1a2639] rounded">
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-1.5 text-xs border border-[var(--border-strong)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded">
                 {t('llmSettings.cancel')}
               </button>
               <button onClick={handleDelete} className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-800 text-white rounded">

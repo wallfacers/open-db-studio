@@ -29,9 +29,9 @@ function OpLine({ op }: { op: JsonPatchOp }) {
   return (
     <div className={`flex items-start gap-2 px-3 py-0.5 font-mono text-xs ${bgClass}`}>
       <span className={`select-none w-3 flex-shrink-0 font-bold ${colorClass}`}>{label}</span>
-      <span className="text-[#7a9bb8]">{op.path}</span>
+      <span className="text-[var(--foreground-muted)]">{op.path}</span>
       {op.value !== undefined && (
-        <span className="text-[#c8daea]">
+        <span className="text-[var(--foreground-default)]">
           {typeof op.value === 'object' ? JSON.stringify(op.value) : String(op.value)}
         </span>
       )}
@@ -55,16 +55,16 @@ export const PatchConfirmPanel: React.FC = () => {
   if (!pending) return null
 
   return (
-    <div className="border-t border-[#1e2d42] bg-[#0d1117]">
+    <div className="border-t border-[var(--border-default)] bg-[var(--background-base)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2d42]">
-        <span className="text-xs font-medium text-[#c8daea]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
+        <span className="text-xs font-medium text-[var(--foreground-default)]">
           AI Patch: <strong>{pending.objectType}</strong>
         </span>
         <Tooltip content={t('common.cancel')} className="contents">
           <button
             onClick={reject}
-            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
           >
             <X size={14} />
           </button>
@@ -73,7 +73,7 @@ export const PatchConfirmPanel: React.FC = () => {
 
       {/* Reason */}
       {pending.reason && (
-        <div className="px-3 py-1.5 text-xs text-[#7a9bb8] bg-[#0d1117] border-b border-[#1e2d42]">
+        <div className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] bg-[var(--background-base)] border-b border-[var(--border-default)]">
           {pending.reason}
         </div>
       )}
@@ -84,16 +84,16 @@ export const PatchConfirmPanel: React.FC = () => {
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[#1e2d42]">
+      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[var(--border-default)]">
         <button
           onClick={reject}
-          className="text-xs px-3 py-1 rounded border border-[#2a3f5a] text-[#7a9bb8] hover:text-[#c8daea] hover:border-[#7a9bb8] transition-colors"
+          className="text-xs px-3 py-1 rounded border border-[var(--border-strong)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:border-[var(--foreground-muted)] transition-colors"
         >
           {t('common.cancel')}
         </button>
         <button
           onClick={confirm}
-          className="text-xs px-3 py-1 rounded bg-[#00c9a7] text-white hover:bg-[#00a98f] transition-colors flex items-center gap-1"
+          className="text-xs px-3 py-1 rounded bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-1"
         >
           <Check size={12} />
           {t('assistant.diffPanel.apply')}

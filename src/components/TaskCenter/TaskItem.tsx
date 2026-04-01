@@ -10,19 +10,19 @@ interface Props {
 }
 
 const statusConfig = {
-  pending: { icon: Loader2, color: 'text-[#7a9bb8]', bgColor: 'bg-[#7a9bb8]/20', animate: true },
+  pending: { icon: Loader2, color: 'text-[var(--foreground-muted)]', bgColor: 'bg-[var(--foreground-muted)]/20', animate: true },
   running: { icon: Loader2, color: 'text-[#3794ff]', bgColor: 'bg-[#3794ff]/20', animate: true },
-  completed: { icon: CheckCircle, color: 'text-[#00c9a7]', bgColor: 'bg-[#00c9a7]/20', animate: false },
+  completed: { icon: CheckCircle, color: 'text-[var(--accent)]', bgColor: 'bg-[var(--accent)]/20', animate: false },
   failed: { icon: XCircle, color: 'text-[#f44747]', bgColor: 'bg-[#f44747]/20', animate: false },
-  cancelled: { icon: Square, color: 'text-[#7a9bb8]', bgColor: 'bg-[#7a9bb8]/20', animate: false },
+  cancelled: { icon: Square, color: 'text-[var(--foreground-muted)]', bgColor: 'bg-[var(--foreground-muted)]/20', animate: false },
 };
 
 const progressBarColor = {
-  pending: '#7a9bb8',
+  pending: 'var(--foreground-muted)',
   running: '#3794ff',
-  completed: '#00c9a7',
+  completed: 'var(--accent)',
   failed: '#f44747',
-  cancelled: '#7a9bb8',
+  cancelled: 'var(--foreground-muted)',
 };
 
 export const TaskItem: React.FC<Props> = ({ task }) => {
@@ -85,10 +85,10 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
   };
 
   return (
-    <div className="bg-[#111922] border border-[#1e2d42] rounded-lg overflow-hidden">
+    <div className="bg-[var(--background-panel)] border border-[var(--border-default)] rounded-lg overflow-hidden">
       {/* Main Row */}
       <div
-        className="flex items-center gap-3 p-3 cursor-pointer hover:bg-[#1a2639]/50"
+        className="flex items-center gap-3 p-3 cursor-pointer hover:bg-[var(--background-hover)]/50"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         {/* Status Icon */}
@@ -102,13 +102,13 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-[#e8f4ff] truncate">{task.title}</span>
-            <span className="text-xs text-[#7a9bb8] ml-2">{formatDuration()}</span>
+            <span className="text-sm text-[var(--foreground)] truncate">{task.title}</span>
+            <span className="text-xs text-[var(--foreground-muted)] ml-2">{formatDuration()}</span>
           </div>
 
           {/* Progress Bar */}
           {(task.status === 'running' || task.status === 'pending' || task.status === 'completed') && (
-            <div className="relative h-1.5 bg-[#1a2639] rounded-full overflow-hidden">
+            <div className="relative h-1.5 bg-[var(--background-hover)] rounded-full overflow-hidden">
               <div
                 className="absolute inset-y-0 left-0 transition-all duration-300"
                 style={{
@@ -120,7 +120,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           )}
 
           {/* Status Text */}
-          <div className="text-xs text-[#7a9bb8] mt-1">
+          <div className="text-xs text-[var(--foreground-muted)] mt-1">
             {task.status === 'running' && (
               <>
                 {task.progress}% · {task.currentTarget}
@@ -132,13 +132,13 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
                 {task.type === 'ai_generate_metrics' ? (
                   <>
                     {t('taskCenter.completed', 'Completed')}
-                    {task.metricCount != null && <> · <span className="text-[#00c9a7]">新增 {task.metricCount} 个</span></>}
+                    {task.metricCount != null && <> · <span className="text-[var(--accent)]">新增 {task.metricCount} 个</span></>}
                     {task.skippedCount != null && <> · 跳过 {task.skippedCount} 个</>}
                   </>
                 ) : task.type === 'build_schema_graph' ? (
                   <>
                     {t('taskCenter.completed', 'Completed')}
-                    {(task.processedRows ?? 0) > 0 && <> · <span className="text-[#00c9a7]">{(task.processedRows ?? 0).toLocaleString()} 张表</span></>}
+                    {(task.processedRows ?? 0) > 0 && <> · <span className="text-[var(--accent)]">{(task.processedRows ?? 0).toLocaleString()} 张表</span></>}
                   </>
                 ) : (
                   <>{t('taskCenter.completed', 'Completed')} · {(task.processedRows ?? 0).toLocaleString()} {t('taskCenter.rows', 'rows')}</>
@@ -172,7 +172,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.cancel', 'Cancel')} className="contents">
               <button
                 onClick={handleCancel}
-                className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[#f44747] transition-colors"
               >
                 <Square size={14} />
               </button>
@@ -182,7 +182,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.retry', 'Retry')} className="contents">
               <button
                 onClick={handleRetry}
-                className="p-1.5 text-[#7a9bb8] hover:text-[#00c9a7] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors"
               >
                 <RotateCcw size={14} />
               </button>
@@ -192,7 +192,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.openOutput', 'Open output')} className="contents">
               <button
                 onClick={handleOpenOutput}
-                className="p-1.5 text-[#7a9bb8] hover:text-[#3794ff] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[#3794ff] transition-colors"
               >
                 <ExternalLink size={14} />
               </button>
@@ -202,7 +202,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.remove', 'Remove')} className="contents">
               <button
                 onClick={handleRemove}
-                className="p-1.5 text-[#7a9bb8] hover:text-[#f44747] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[#f44747] transition-colors"
               >
                 <Trash2 size={14} />
               </button>
@@ -213,7 +213,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
 
       {/* Expanded Details */}
       {isExpanded && (
-        <div className="border-t border-[#1e2d42] p-3 text-xs text-[#7a9bb8]">
+        <div className="border-t border-[var(--border-default)] p-3 text-xs text-[var(--foreground-muted)]">
           <div className="grid grid-cols-2 gap-2">
             <div>
               <span className="text-[#5a7a9a]">{t('taskCenter.taskId', 'Task ID')}:</span> {task.id}
@@ -224,15 +224,15 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             {task.outputPath && (
               <div className="col-span-2">
                 <span className="text-[#5a7a9a]">{t('taskCenter.outputPath', 'Output')}:</span>{' '}
-                <span className="text-[#c8daea] break-all">{task.outputPath}</span>
+                <span className="text-[var(--foreground-default)] break-all">{task.outputPath}</span>
               </div>
             )}
           </div>
 
           {/* ai_generate_metrics 统计 */}
           {task.type === 'ai_generate_metrics' && (task.metricCount != null || task.skippedCount != null) && (
-            <div className="mt-2 text-xs text-[#7a9bb8]">
-              {task.metricCount != null && <span>新增指标: <span className="text-[#00c9a7]">{task.metricCount}</span></span>}
+            <div className="mt-2 text-xs text-[var(--foreground-muted)]">
+              {task.metricCount != null && <span>新增指标: <span className="text-[var(--accent)]">{task.metricCount}</span></span>}
               {task.skippedCount != null && <span className="ml-3">跳过: <span className="text-[#ffcc00]">{task.skippedCount}</span></span>}
             </div>
           )}
@@ -241,7 +241,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           {task.description && (
             <div className="mt-3">
               <div className="text-[#5a7a9a] mb-1.5">{t('taskCenter.taskDesc', '任务详情')}:</div>
-              <div className="bg-[#0d1117] rounded p-2.5 font-mono text-[#8ab4d4] leading-5 whitespace-pre-wrap break-all">
+              <div className="bg-[var(--background-base)] rounded p-2.5 font-mono text-[#8ab4d4] leading-5 whitespace-pre-wrap break-all">
                 {task.description}
               </div>
             </div>
@@ -251,7 +251,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           {task.status === 'failed' && task.errorDetails?.length > 0 && (
             <div className="mt-3">
               <div className="text-[#5a7a9a] mb-1">{t('taskCenter.errorDetails', 'Error Details')}:</div>
-              <div className="bg-[#0d1117] rounded p-2 max-h-32 overflow-y-auto font-mono text-[#f44747]">
+              <div className="bg-[var(--background-base)] rounded p-2 max-h-32 overflow-y-auto font-mono text-[#f44747]">
                 {task.errorDetails.map((err, i) => (
                   <div key={i}>{err}</div>
                 ))}
@@ -263,7 +263,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           {(task.type === 'ai_generate_metrics' || task.type === 'build_schema_graph') && task.logs && task.logs.length > 0 && (
             <div className="mt-3">
               <div className="text-[#5a7a9a] mb-1">日志</div>
-              <div className="bg-[#0d1117] rounded p-2 max-h-48 overflow-y-auto font-mono text-xs leading-5">
+              <div className="bg-[var(--background-base)] rounded p-2 max-h-48 overflow-y-auto font-mono text-xs leading-5">
                 {task.logs.map((log, i) => (
                   <div key={i} className={
                     log.level === 'error' ? 'text-[#f44747]' :
@@ -280,7 +280,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
 
           {/* 问 AI 分析 */}
           {task.status === 'failed' && (
-            <div className="mt-3 pt-3 border-t border-[#1e2d42]">
+            <div className="mt-3 pt-3 border-t border-[var(--border-default)]">
               <button
                 onClick={() => {
                   Promise.all([
@@ -299,7 +299,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
                     }
                   });
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#1a2639] hover:bg-[#253347] text-[#7a9bb8] hover:text-[#00c9a7] rounded border border-[#253347] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-[var(--foreground-muted)] hover:text-[var(--accent)] rounded border border-[var(--border-strong)] transition-colors"
               >
                 🤖 {t('error.askAiAnalyze', '问 AI 分析失败原因')}
               </button>

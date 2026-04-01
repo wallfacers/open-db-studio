@@ -37,7 +37,7 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
       {cols.map(col => (
         <div key={col.id} id={`drawer-col-${col.id}`}>
           <div className="flex items-center">
-            <button onClick={() => toggleExpand(col.id)} className="p-0.5 text-[#4a6480] hover:text-[#7a9bb8]">
+            <button onClick={() => toggleExpand(col.id)} className="p-0.5 text-[var(--foreground-subtle)] hover:text-[var(--foreground-muted)]">
               {expandedIds.has(col.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
             <div className="flex-1 min-w-0">
@@ -53,7 +53,7 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
             </div>
           </div>
           {expandedIds.has(col.id) && (
-            <div className="ml-4 mb-2 p-2 bg-[#0d1117] rounded border border-[#1e2d42]">
+            <div className="ml-4 mb-2 p-2 bg-[var(--background-base)] rounded border border-[var(--border-default)]">
               <ColumnPropertyEditor
                 column={col}
                 tableId={tableId}
@@ -84,7 +84,7 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
           enum_values: null,
           sort_order: cols.length,
         })}
-        className="mt-2 w-full py-1 text-[12px] text-[#4a6480] hover:text-[#00c9a7] hover:bg-[#1a2639] rounded transition-colors flex items-center justify-center gap-1"
+        className="mt-2 w-full py-1 text-[12px] text-[var(--foreground-subtle)] hover:text-[var(--accent)] hover:bg-[var(--background-hover)] rounded transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={12} /> 添加列
       </button>

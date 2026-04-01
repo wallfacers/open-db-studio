@@ -17,7 +17,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
 
   if (mode === 'display') {
     return (
-      <span className="text-[13px] text-[#7a9bb8] truncate">
+      <span className="text-[13px] text-[var(--foreground-muted)] truncate">
         {formatTypeDisplay(column)}
       </span>
     );
@@ -51,7 +51,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
       {typeDef?.hasLength && (
         <input
           type="number"
-          className="w-[48px] h-[20px] bg-[#151d28] border border-[#2a3f5a] rounded text-[#b5cfe8] text-[12px] px-1 outline-none focus:border-[#00c9a7] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-[48px] h-[20px] bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded text-[var(--foreground)] text-[12px] px-1 outline-none focus:border-[var(--accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           value={column.length ?? ''}
           placeholder="长度"
           onChange={(e) => {
@@ -64,7 +64,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
       {typeDef?.hasScale && (
         <input
           type="number"
-          className="w-[40px] h-[20px] bg-[#151d28] border border-[#2a3f5a] rounded text-[#b5cfe8] text-[12px] px-1 outline-none focus:border-[#00c9a7] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-[40px] h-[20px] bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded text-[var(--foreground)] text-[12px] px-1 outline-none focus:border-[var(--accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           value={column.scale ?? ''}
           placeholder="精度"
           onChange={(e) => {
@@ -77,7 +77,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
       {typeDef?.hasEnumValues && (
         <button
           type="button"
-          className="text-[11px] text-[#00c9a7] hover:text-[#00e6be] cursor-pointer whitespace-nowrap"
+          className="text-[11px] text-[var(--accent)] hover:text-[#00e6be] cursor-pointer whitespace-nowrap"
           title="编辑值列表"
         >
           编辑值列表...

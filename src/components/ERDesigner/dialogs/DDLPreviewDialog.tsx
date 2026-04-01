@@ -101,7 +101,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
       <div className="flex flex-col gap-4">
         {/* 方言选择 */}
         <div className="flex items-center gap-4">
-          <span className="text-xs text-[#c8daea]">{t('erDesigner.dialect')}:</span>
+          <span className="text-xs text-[var(--foreground-default)]">{t('erDesigner.dialect')}:</span>
           <DropdownSelect
             value={dialect}
             options={DIALECT_OPTIONS}
@@ -117,35 +117,35 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
               type="checkbox"
               checked={includeIndexes}
               onChange={(e) => setIncludeIndexes(e.target.checked)}
-              className="accent-[#00c9a7] w-4 h-4"
+              className="accent-[var(--accent)] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeIndexes')}</span>
+            <span className="text-xs text-[var(--foreground-default)]">{t('erDesigner.includeIndexes')}</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={includeComments}
               onChange={(e) => setIncludeComments(e.target.checked)}
-              className="accent-[#00c9a7] w-4 h-4"
+              className="accent-[var(--accent)] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeComments')}</span>
+            <span className="text-xs text-[var(--foreground-default)]">{t('erDesigner.includeComments')}</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={includeForeignKeys}
               onChange={(e) => setIncludeForeignKeys(e.target.checked)}
-              className="accent-[#00c9a7] w-4 h-4"
+              className="accent-[var(--accent)] w-4 h-4"
             />
-            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeForeignKeys')}</span>
+            <span className="text-xs text-[var(--foreground-default)]">{t('erDesigner.includeForeignKeys')}</span>
           </label>
         </div>
 
         {/* DDL 代码区域 */}
         <div className="relative">
           <pre
-            className={`bg-[#0d1117] text-[#a5d6ff] font-mono text-xs p-4 rounded
-                       border border-[#1e2d42] overflow-auto max-h-80
+            className={`bg-[var(--background-base)] text-[#a5d6ff] font-mono text-xs p-4 rounded
+                       border border-[var(--border-default)] overflow-auto max-h-80
                        ${loading ? 'opacity-50' : ''}`}
           >
             {loading ? t('erDesigner.generating') : ddl || t('erDesigner.noDdl')}
@@ -154,7 +154,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
 
         {/* 执行提示 */}
         {!hasConnection && (
-          <div className="text-xs text-[#7a9bb8]">
+          <div className="text-xs text-[var(--foreground-muted)]">
             {t('erDesigner.executeNeedsConnection')}
           </div>
         )}

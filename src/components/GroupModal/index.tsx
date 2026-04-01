@@ -41,15 +41,15 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
     }
   };
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
   const labelClass = 'block text-xs text-gray-400 mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[480px] p-6">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[480px] p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white font-semibold">{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</h2>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"><X size={16} /></button>
         </div>
 
         <div className="space-y-3">
@@ -71,7 +71,7 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
 
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose}
-            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">
+            className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded">
             {t('common.cancel')}
           </button>
           <button onClick={handleSave} disabled={saving}

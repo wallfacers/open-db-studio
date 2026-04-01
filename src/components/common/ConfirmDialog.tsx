@@ -44,29 +44,29 @@ export const ConfirmDialog: React.FC = () => {
 
   const confirmCls = isDanger
     ? 'px-4 py-1.5 text-xs rounded bg-red-600/80 hover:bg-red-600 text-white transition-colors'
-    : 'px-4 py-1.5 text-xs rounded bg-[#009e84] hover:bg-[#00c9a7] text-white transition-colors';
+    : 'px-4 py-1.5 text-xs rounded bg-[#009e84] hover:bg-[var(--accent)] text-white transition-colors';
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
       onMouseDown={(e) => { if (e.target === e.currentTarget) _cancel(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[360px] p-5 flex flex-col gap-4">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[360px] p-5 flex flex-col gap-4">
         {/* 标题行 */}
         <div className="flex items-center gap-2.5">
           <div className={`flex-shrink-0 p-1.5 rounded-full ${isDanger ? 'bg-red-900/40' : 'bg-[#1a2d42]'}`}>
             <Icon
               size={16}
-              className={isDanger ? 'text-red-400' : 'text-[#00c9a7]'}
+              className={isDanger ? 'text-red-400' : 'text-[var(--accent)]'}
             />
           </div>
-          <span className="text-[#e8f4ff] font-medium text-sm">
+          <span className="text-[var(--foreground)] font-medium text-sm">
             {pending.title ?? (isDanger ? t('common.confirmTitle') : t('common.infoTitle'))}
           </span>
         </div>
 
         {/* 内容 */}
-        <p className="text-[#b5cfe8] text-[13px] leading-relaxed pl-[38px]">
+        <p className="text-[var(--foreground)] text-[13px] leading-relaxed pl-[38px]">
           {pending.message}
         </p>
 
@@ -75,7 +75,7 @@ export const ConfirmDialog: React.FC = () => {
           <button
             ref={cancelBtnRef}
             onClick={_cancel}
-            className="px-4 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+            className="px-4 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
           >
             {pending.cancelLabel ?? t('common.cancel')}
           </button>

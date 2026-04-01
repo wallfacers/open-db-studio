@@ -9,6 +9,7 @@ pub(crate) fn client() -> &'static Client {
     HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .connect_timeout(Duration::from_secs(5))
+            .no_proxy()
             .build()
             .expect("Failed to build reqwest client")
     })

@@ -154,7 +154,8 @@ async fn try_start(
     port: u16,
 ) -> AppResult<Option<tokio::process::Child>> {
     // Fix I1: create the client once and reuse across health checks.
-    let client = reqwest::Client::new();
+    // no_proxy: localhost connections must bypass system proxy.
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
 
     // Fix C2: when already running, return None instead of a sentinel child.
     if check_health(&client, port).await {

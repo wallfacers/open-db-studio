@@ -68,6 +68,7 @@ pub fn run() {
                 // Port is busy — check if it's a healthy opencode instance
                 let client = reqwest::Client::builder()
                     .connect_timeout(std::time::Duration::from_secs(1))
+                    .no_proxy()
                     .build().unwrap();
                 let health_url = format!("http://127.0.0.1:{}/global/health", base_port);
                 let is_opencode = tauri::async_runtime::block_on(async {

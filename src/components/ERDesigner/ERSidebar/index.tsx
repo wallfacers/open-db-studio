@@ -120,7 +120,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
           <Search size={14} className="text-[var(--foreground-muted)] mr-1 flex-shrink-0" />
           <input
             type="text"
-            placeholder={t('erDesigner.searchPlaceholder') || '搜索项目或表...'}
+            placeholder={t('erDesigner.searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="bg-transparent border-none outline-none text-[var(--foreground-default)] w-full text-xs placeholder-[var(--foreground-muted)]"

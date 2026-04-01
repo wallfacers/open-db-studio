@@ -1084,6 +1084,7 @@
     "projectName": "项目名称",
     "noProjects": "暂无 ER 项目",
     "clickPlus": "点击 + 创建新项目",
+    "searchPlaceholder": "搜索项目或表...",
     "connectionBound": "已绑定连接",
     "relations": "个关系",
     "newTable": "新建表",

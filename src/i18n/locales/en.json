@@ -1083,6 +1083,7 @@
     "projectName": "Project Name",
     "noProjects": "No ER projects yet",
     "clickPlus": "Click + to create a new project",
+    "searchPlaceholder": "Search projects or tables...",
     "connectionBound": "Connection bound",
     "relations": "relations",
     "newTable": "New Table",

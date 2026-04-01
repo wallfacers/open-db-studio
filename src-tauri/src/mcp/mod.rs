@@ -2,7 +2,7 @@ pub(crate) mod tools;
 
 use axum::{routing::{get, post}, Router, Json, extract::State};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use futures_util::stream;
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::TcpListener;
@@ -688,14 +688,29 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
     }
 }
 
-/// GET /mcp — SSE endpoint for Streamable HTTP transport.
+/// GET /mcp — SSE endpoint compatible with both legacy SSE transport and
+/// Streamable HTTP transport.
 ///
-/// The MCP Streamable HTTP spec (2025-03-26) allows clients to open a GET SSE
-/// connection to receive server-initiated events. This server never pushes events,
-/// but we must respond to GET immediately (with a keep-alive SSE stream) so that
-/// opencode-cli does not wait for a timeout before falling back to POST-only mode.
-async fn handle_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    Sse::new(stream::pending()).keep_alive(KeepAlive::default())
+/// Legacy MCP SSE transport requires the server to emit an `endpoint` event
+/// containing the POST URL for JSON-RPC messages. Without this event, clients
+/// like opencode-cli will hang waiting for the endpoint announcement.
+async fn handle_mcp_sse(
+    req: axum::extract::Request,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    // Build the POST URL from the incoming request's Host header (or default)
+    let host = req.headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    let post_url = format!("http://{}/mcp", host);
+
+    // Emit the `endpoint` event first (required by legacy SSE transport),
+    // then keep the stream alive for any future server-initiated events.
+    let initial = stream::once(async move {
+        Ok(Event::default().event("endpoint").data(post_url))
+    });
+    let tail = stream::pending();
+    Sse::new(initial.chain(tail)).keep_alive(KeepAlive::default())
 }
 
 async fn handle_mcp(
@@ -734,8 +749,18 @@ async fn handle_mcp(
     }
 }
 
-async fn handle_optimize_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    Sse::new(stream::pending()).keep_alive(KeepAlive::default())
+async fn handle_optimize_mcp_sse(
+    req: axum::extract::Request,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let host = req.headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    let post_url = format!("http://{}/mcp/optimize", host);
+    let initial = stream::once(async move {
+        Ok(Event::default().event("endpoint").data(post_url))
+    });
+    Sse::new(initial.chain(stream::pending())).keep_alive(KeepAlive::default())
 }
 
 async fn handle_optimize_mcp(

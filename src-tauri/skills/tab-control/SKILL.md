@@ -1,138 +1,113 @@
 ---
-description: Unified file-system style tools for reading, writing, searching,
-             opening, and executing actions on any tab, panel, or settings page
+description: Unified UI Object Protocol tools for reading, patching, executing actions,
+             and listing any tab, panel, or workspace object
 triggers:
   - always
 ---
 
 # tab-control Skill
 
-Use the unified fs_* DSL tools to operate on any tab, panel, or settings page.
+Use the unified `ui_*` tools to operate on any UI object (tab, panel, workspace).
 
-## Resource Types
+## Object Types
 
 ```
-tab.query        — SQL 编辑器 Tab
-tab.table        — 表结构 Tab
-tab.metric       — 指标定义 Tab
-tab.seatunnel    — SeaTunnel Job Tab
-panel.db-tree    — 数据库树面板
-panel.tasks      — 任务中心面板
-settings.llm     — LLM 配置页
-settings.conn    — 连接列表页
+query_editor     — SQL editor tab
+table_form       — table structure tab (create / alter)
+metric_form      — metric definition tab
+seatunnel_job    — SeaTunnel job tab
+er_canvas        — ER diagram tab
+db_tree          — database tree panel
+history          — change history panel
+workspace        — virtual global object (open/close/focus tabs)
 ```
 
 ## Target Addressing
 
 | target | meaning |
 |--------|---------|
-| `"active"` | currently focused target |
-| `"list"` | all targets of this resource type |
-| `"history"` | change history view |
-| tab_id | exact tab (e.g. `"tab-001"`) |
-| name | by name (e.g. `"users"` for a table) |
-| `"name@conn:N"` | name + connection ID for multi-connection (e.g. `"users@conn:1"`) |
+| `"active"` | currently focused instance of the object type |
+| objectId | exact tab/panel (e.g. `"tab-001"`) |
 
-## fs_read — Read Content
+## ui_read — Read State / Schema / Actions
 
 ```
-fs_read(resource, target, mode: "text"|"struct")
+ui_read(object, target, mode: "state"|"schema"|"actions")
 ```
 
-text mode returns: `{ content, lines[{no, text}], cursor_line, selected_range, statements }`
-
-struct mode returns the resource object (table schema, metric definition, list, etc.)
-
-```
-fs_read("tab.query",    "active",   "text")    # current SQL text + statements
-fs_read("tab.query",    tab_id,     "text")    # specific tab SQL
-fs_read("tab.table",    "users",    "struct")  # table schema
-fs_read("tab.metric",   "list",     "struct")  # metric list
-fs_read("tab.seatunnel","42",       "struct")  # job config
-fs_read("panel.tasks",  "list",     "struct")  # task list
-fs_read("panel.tasks",  "history",  "struct")  # change history
-fs_read("settings.llm", "active",   "struct")  # LLM config
-```
-
-## fs_write — Write / Patch
+- `state` — current data (SQL text, form fields, etc.)
+- `schema` — JSON Schema describing patchable fields
+- `actions` — list of executable actions with param schemas
 
 ```
-fs_write(resource, target, patch)
+ui_read("query_editor", "active", "state")      # current SQL text
+ui_read("table_form",   "tab-001", "schema")    # patchable field schema
+ui_read("table_form",   "active",  "actions")   # available actions
+ui_read("workspace",    "",        "actions")    # open/close/focus
 ```
 
-Text patch (line-range operations):
+## ui_patch — JSON Patch (RFC 6902)
+
+```
+ui_patch(object, target, ops, reason?)
+```
+
+Applies RFC 6902 JSON Patch operations atomically. Supports `[key=value]` array addressing.
+
 ```json
-{ "mode": "text", "op": "replace",      "range": [3,3], "content": "...", "reason": "..." }
-{ "mode": "text", "op": "insert_after", "line": 5,      "content": "...", "reason": "..." }
-{ "mode": "text", "op": "replace_all",  "content": "SELECT 1" }
+ui_patch("table_form", "active", [
+  {"op": "replace", "path": "/tableName", "value": "orders"},
+  {"op": "add", "path": "/columns/-", "value": {"name": "total", "dataType": "DECIMAL"}},
+  {"op": "replace", "path": "/columns[name=amount]/dataType", "value": "BIGINT"},
+  {"op": "test", "path": "/engine", "value": "InnoDB"}
+], "rename table and add total column")
 ```
 
-Struct patch (JSON path):
-```json
-{ "mode": "struct", "path": "/columns/1/comment", "value": "用户邮箱" }
-{ "mode": "struct", "path": "/model", "value": "gpt-4o" }
-```
+Supported ops: `add`, `remove`, `replace`, `move`, `copy`, `test`
 
-Write response:
-- `{ "status": "pending_confirm", "confirm_id": "...", "preview": "..." }` — awaiting user confirmation
-- `{ "status": "applied" }` — applied immediately
+Response:
+- `{ "status": "applied" }` — applied immediately (Auto Mode ON)
+- `{ "status": "pending_confirm", "confirm_id": "...", "preview": [...] }` — awaiting user confirmation (Auto Mode OFF)
+- `{ "status": "error", "message": "..." }` — atomic rollback on any failure
 
-## fs_search — Search / Locate
+## ui_exec — Execute Action
 
 ```
-fs_search(resource_pattern, filter?)
-```
-
-```
-fs_search("tab.*")                                         # all open tabs
-fs_search("tab.query",     { keyword: "orders" })         # query tabs containing keyword
-fs_search("panel.db-tree", { keyword: "users", type: "table" })
-fs_search("tab.*",         { type: "metric" })            # all metric tabs
-```
-
-Returns: `[{ resource, target, label, meta }]`
-
-## fs_open — Open / Navigate
-
-```
-fs_open(resource, params?)
-```
-
-Returns `{ target: tab_id }` — use returned target for subsequent operations.
-
-```
-fs_open("tab.query",  { connection_id: 1 })
-fs_open("tab.table",  { table: "users", database: "app", connection_id: 1 })  # edit existing
-fs_open("tab.table",  { connection_id: 1, database: "app", initial_table_name: "orders", initial_columns: [...] })  # new table with pre-filled columns
-fs_open("tab.metric", { metric_id: 42 })
-fs_open("tab.seatunnel", { job_id: 42 })
-fs_open("settings.llm")
-fs_open("panel.tasks")
-```
-
-## fs_exec — Execute Action
-
-```
-fs_exec(resource, target, action, params?)
+ui_exec(object, target, action, params?)
 ```
 
 | call | description |
 |------|-------------|
-| `fs_exec("tab.query", "active", "run_sql")` | execute current SQL |
-| `fs_exec("tab.query", "active", "confirm_write", { confirm_id: "..." })` | confirm pending write |
-| `fs_exec("tab.query", "active", "undo")` | undo last change |
-| `fs_exec("tab.query", tab_id, "focus")` | switch to tab |
-| `fs_exec("tab.table", "", "create_table", { connection_id, table_name, columns:[...] })` | generates CREATE TABLE SQL to query tab |
-| `fs_exec("tab.table", "", "add_column", { connection_id, table_name, column:{...} })` | generates ALTER ADD COLUMN SQL to query tab |
-| `fs_exec("tab.table", "", "drop_column", { connection_id, table_name, column_name })` | generates ALTER DROP COLUMN SQL to query tab |
-| `fs_exec("panel.db-tree", "conn:1", "refresh")` | refresh db tree |
-| `fs_exec("tab.metric", "new", "create", { connection_id, name, display_name, aggregation, table_name, column_name, filter_sql?, description?, time_granularity? })` | create metric |
-| `fs_exec("tab.seatunnel", "new", "create", { job_name, config_json, category_id?, description? })` | create SeaTunnel job |
+| `ui_exec("workspace", "", "open", {type: "query_editor", connection_id: 1})` | open new query tab |
+| `ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database: "app"})` | open new table form |
+| `ui_exec("workspace", "", "close", {target: "tab-001"})` | close tab |
+| `ui_exec("workspace", "", "focus", {target: "tab-001"})` | switch to tab |
+| `ui_exec("query_editor", "active", "run_sql")` | execute current SQL |
+| `ui_exec("query_editor", "active", "format")` | format SQL |
+| `ui_exec("query_editor", "active", "undo")` | undo last change |
+| `ui_exec("table_form", "active", "preview_sql")` | preview CREATE/ALTER SQL |
+| `ui_exec("table_form", "active", "save")` | generate SQL to query tab |
+| `ui_exec("db_tree", "active", "refresh")` | refresh db tree |
+| `ui_exec("db_tree", "active", "search", {keyword: "users"})` | search tree nodes |
+
+## ui_list — List Open Objects
+
+```
+ui_list(filter?)
+```
+
+```
+ui_list()                                        # all open UI objects
+ui_list({type: "query_editor"})                  # all query editor tabs
+ui_list({type: "table_form", connectionId: 1})   # table forms for connection 1
+ui_list({keyword: "orders"})                     # search by title/id
+```
+
+Returns: `[{ objectId, type, title, connectionId }]`
 
 ## Tab Discovery Strategy
 
-1. Check `active_tab` context first
-2. If target not in open tabs → `fs_search("tab.*")`
-3. If still not found → `fs_search("panel.db-tree", { keyword: ..., type: "table" })`
-4. If found in db-tree → `fs_open(resource, params)` then use returned `target`
-5. Read content with `fs_read(resource, target, mode)`
+1. Check `ui_read(object, "active", "state")` for current context
+2. If target not found → `ui_list({keyword: ..., type: ...})`
+3. If not open → `ui_exec("workspace", "", "open", {type: ..., ...})`
+4. Read with `ui_read(object, target, "state")`

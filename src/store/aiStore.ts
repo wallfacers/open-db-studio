@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, PermissionRequest } from '../types';
+import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, PermissionRequest, QuestionRequest } from '../types';
 import { useAppStore } from './appStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -50,6 +50,7 @@ interface SessionRuntimeState {
   activeToolName: string | null;
   sessionStatus: string | null;
   pendingPermission: PermissionRequest | null;          // permission 路径（isChatting=true）
+  pendingQuestion: QuestionRequest | null;              // question.asked 路径（isChatting=true, 输入框启用）
   pendingConfigId: number | null;                       // 切换模型时暂存（session 尚未进入 sessions 列表）
   lastUserMessageId: string | null;                     // OpenCode message ID，undo 用
   canRedo: boolean;                                     // redo 可用标志
@@ -63,6 +64,7 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   activeToolName: null,
   sessionStatus: null,
   pendingPermission: null,
+  pendingQuestion: null,
   pendingConfigId: null,
   lastUserMessageId: null,
   canRedo: false,
@@ -111,6 +113,7 @@ interface AiState {
   redoMessage: (sessionId: string) => Promise<void>;
   compactSession: (sessionId: string, modelId: string, providerId: string) => Promise<void>;
   respondPermission: (sessionId: string, permissionId: string, selectedOptionId: string, cancelled: boolean) => Promise<void>;
+  respondQuestion: (sessionId: string, questionId: string, answers: string[][], cancelled: boolean) => Promise<void>;
   sendAgentChatStream: (message: string, connectionId: number | null) => Promise<void>;
 
   // ── AI 功能 ──
@@ -132,6 +135,14 @@ interface AiState {
   cancelExplainSql: (tabId: string) => Promise<void>;
   createTable: (description: string, connectionId: number) => Promise<string>;
   diagnoseError: (sql: string, errorMsg: string, connectionId: number) => Promise<string>;
+
+  // SQL 错误诊断（per result, 流式内容）
+  diagnosisContent: Record<string, string>;     // key -> 诊断内容
+  diagnosisStreaming: Record<string, boolean>;   // key -> 是否正在流式输出
+
+  diagnoseSqlError: (sql: string, errorMsg: string, connectionId: number | null, database: string | null, diagKey: string) => Promise<void>;
+  cancelDiagnosis: (diagKey: string) => Promise<void>;
+  clearDiagnosis: (diagKey: string) => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -151,6 +162,8 @@ export const useAiStore = create<AiState>()(
       error: null,
       draftMessage: '',
       linkedConnectionId: null,
+      diagnosisContent: {},
+      diagnosisStreaming: {},
 
       setLinkedConnectionId: (id) => set({ linkedConnectionId: id }),
 
@@ -363,6 +376,11 @@ export const useAiStore = create<AiState>()(
           }));
         }
 
+        // 如果有 pending question，先 reject 以解除服务端阻塞
+        if (state?.pendingQuestion) {
+          invoke('agent_question_reject', { questionId: state.pendingQuestion.question_id }).catch(() => {});
+        }
+
         try {
           await invoke('agent_cancel_session', { sessionId });
         } catch (_) {
@@ -387,6 +405,46 @@ export const useAiStore = create<AiState>()(
           });
         } catch (e) {
           console.error('[permission] agent_permission_respond failed:', e);
+        }
+      },
+
+      respondQuestion: async (sessionId, questionId, answers, cancelled) => {
+        // 将用户答案追加到 chatHistory（cancel 跳过时不追加）
+        const answerText = cancelled ? '' : (answers.flat().join(', ') || '').trim();
+        set((s) => {
+          const isCurrentSession = s.currentSessionId === sessionId;
+          const base: Record<string, unknown> = {
+            chatStates: {
+              ...s.chatStates,
+              [sessionId]: {
+                ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
+                pendingQuestion: null,
+              },
+            },
+          };
+          if (answerText && isCurrentSession) {
+            base.chatHistory = [...s.chatHistory, { role: 'user' as const, content: answerText }];
+          }
+          if (answerText && !isCurrentSession) {
+            const sess = s.sessions.find((se) => se.id === sessionId);
+            if (sess) {
+              base.sessions = s.sessions.map((se) =>
+                se.id === sessionId
+                  ? { ...se, messages: [...se.messages, { role: 'user' as const, content: answerText }], updatedAt: Date.now() }
+                  : se
+              );
+            }
+          }
+          return base;
+        });
+        try {
+          if (cancelled) {
+            await invoke('agent_question_reject', { questionId });
+          } else {
+            await invoke('agent_question_reply', { questionId, answers });
+          }
+        } catch (e) {
+          console.error('[question] respond failed:', e);
         }
       },
 
@@ -718,7 +776,7 @@ export const useAiStore = create<AiState>()(
         try {
           const { Channel } = await import('@tauri-apps/api/core');
           const channel = new Channel<{
-            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest';
+            type: 'ThinkingChunk' | 'ContentChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error' | 'PermissionRequest' | 'QuestionRequest';
             data?: {
               delta?: string;
               message?: string;
@@ -728,6 +786,10 @@ export const useAiStore = create<AiState>()(
               // PermissionRequest 字段
               permission_id?: string;
               options?: Array<{ option_id: string; label: string; kind: string }>;
+              // QuestionRequest 字段
+              question_id?: string;
+              session_id?: string;
+              questions?: Array<{ question: string; header: string; options: Array<{ label: string; description: string }>; multiple?: boolean; custom?: boolean }>;
             };
           }>();
 
@@ -811,6 +873,18 @@ export const useAiStore = create<AiState>()(
                     kind: o.kind as 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | 'deny',
                   })),
                 },
+              });
+            } else if (event.type === 'QuestionRequest' && event.data?.question_id) {
+              // question.asked 到达：flush 当前 streaming 内容，展示 question 面板
+              flushNow();
+              setChatStateField({
+                pendingQuestion: {
+                  question_id: event.data.question_id,
+                  session_id: event.data.session_id ?? sessionId,
+                  questions: event.data.questions ?? [],
+                },
+                activeToolName: null,
+                sessionStatus: null,
               });
             } else if (event.type === 'Done') {
               flushNow();
@@ -925,6 +999,99 @@ export const useAiStore = create<AiState>()(
         } finally {
           set({ isDiagnosing: false });
         }
+      },
+
+      diagnoseSqlError: async (sql, errorMsg, connectionId, database, diagKey) => {
+        set(s => ({
+          diagnosisContent: { ...s.diagnosisContent, [diagKey]: '' },
+          diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: true },
+        }));
+        try {
+          const { Channel } = await import('@tauri-apps/api/core');
+          const channel = new Channel<{
+            type: 'ContentChunk' | 'ThinkingChunk' | 'ToolCallRequest' | 'StatusUpdate' | 'Done' | 'Error';
+            data?: { delta?: string; message?: string };
+          }>();
+
+          // RAF 缓冲
+          let buffer = '';
+          let rafPending = false;
+
+          channel.onmessage = (event) => {
+            if (!get().diagnosisStreaming[diagKey]) return;
+            if (event.type === 'ContentChunk' && event.data?.delta) {
+              buffer += event.data.delta;
+              if (!rafPending) {
+                rafPending = true;
+                requestAnimationFrame(() => {
+                  rafPending = false;
+                  if (buffer) {
+                    set(s => ({
+                      diagnosisContent: {
+                        ...s.diagnosisContent,
+                        [diagKey]: (s.diagnosisContent[diagKey] ?? '') + buffer,
+                      },
+                    }));
+                    buffer = '';
+                  }
+                });
+              }
+            } else if (event.type === 'Done') {
+              // flush remaining buffer
+              if (buffer) {
+                set(s => ({
+                  diagnosisContent: {
+                    ...s.diagnosisContent,
+                    [diagKey]: (s.diagnosisContent[diagKey] ?? '') + buffer,
+                  },
+                }));
+                buffer = '';
+              }
+              set(s => ({ diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false } }));
+            } else if (event.type === 'Error') {
+              const errMsg = event.data?.message ?? 'Unknown error';
+              set(s => ({
+                diagnosisContent: {
+                  ...s.diagnosisContent,
+                  [diagKey]: (s.diagnosisContent[diagKey] ?? '') + `\n\n**Error:** ${errMsg}`,
+                },
+                diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false },
+              }));
+            }
+          };
+
+          await invoke('agent_diagnose_error', {
+            sql,
+            errorMsg,
+            connectionId,
+            database,
+            channel,
+          });
+        } catch (e) {
+          const isCancelledError = String(e).includes('thread dropped') || String(e).includes('cancelled');
+          if (!isCancelledError) {
+            set(s => ({
+              diagnosisContent: {
+                ...s.diagnosisContent,
+                [diagKey]: `**Error:** ${String(e)}`,
+              },
+            }));
+          }
+          set(s => ({ diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false } }));
+        }
+      },
+
+      cancelDiagnosis: async (diagKey) => {
+        await invoke('cancel_diagnose_error').catch(() => {});
+        set(s => ({ diagnosisStreaming: { ...s.diagnosisStreaming, [diagKey]: false } }));
+      },
+
+      clearDiagnosis: (diagKey) => {
+        set(s => {
+          const { [diagKey]: _c, ...restContent } = s.diagnosisContent;
+          const { [diagKey]: _s, ...restStreaming } = s.diagnosisStreaming;
+          return { diagnosisContent: restContent, diagnosisStreaming: restStreaming };
+        });
       },
     }),
     {

@@ -45,6 +45,11 @@ export const Tooltip: React.FC<TooltipProps> = ({
     setMousePos(null);
   };
 
+  const handleMouseDown = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setMousePos(null);
+  };
+
   const getPosition = (pos: { x: number; y: number }) => {
     // 右边缘：光标右侧偏移 12px，超出则从右侧留出 margin
     const left = Math.min(pos.x + 12, window.innerWidth - MAX_WIDTH - MARGIN);
@@ -61,6 +66,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
       onMouseEnter={handleMouseEnter}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      onMouseDown={handleMouseDown}
     >
       {children}
       {mousePos && content &&

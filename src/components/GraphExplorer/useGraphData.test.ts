@@ -23,6 +23,8 @@ function makeNode(overrides: Partial<GraphNode> = {}): GraphNode {
     connection_id: 1,
     is_deleted: 0,
     source: 'manual',
+    position_x: null,
+    position_y: null,
     ...overrides,
   };
 }

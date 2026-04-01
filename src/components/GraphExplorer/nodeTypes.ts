@@ -1,5 +1,5 @@
 import type { NodeTypes, EdgeTypes } from '@xyflow/react';
-import { TableNodeComponent, MetricNodeComponent, AliasNodeComponent, LinkNodeComponent, RelationEdge } from './GraphNodeComponents';
+import { TableNodeComponent, MetricNodeComponent, AliasNodeComponent, LinkNodeComponent, RelationEdge, SelfLoopEdge } from './GraphNodeComponents';
 
 export const nodeTypes: NodeTypes = {
   table: TableNodeComponent,
@@ -10,4 +10,5 @@ export const nodeTypes: NodeTypes = {
 
 export const edgeTypes: EdgeTypes = {
   relation: RelationEdge,
+  selfLoop: SelfLoopEdge,
 };

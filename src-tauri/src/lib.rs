@@ -35,9 +35,16 @@ pub fn run() {
                 if let Ok(img) = image::load_from_memory(icon_bytes) {
                     let rgba = img.into_rgba8();
                     let (w, h) = rgba.dimensions();
+                    log::info!("Setting window icon: {}x{}", w, h);
                     let icon = tauri::image::Image::new_owned(rgba.into_raw(), w, h);
-                    let _ = window.set_icon(icon);
+                    if let Err(e) = window.set_icon(icon) {
+                        log::error!("Failed to set window icon: {}", e);
+                    }
+                } else {
+                    log::error!("Failed to decode icon.png");
                 }
+            } else {
+                log::error!("Could not find 'main' window for icon");
             }
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data dir");
@@ -66,10 +73,9 @@ pub fn run() {
                 serve_child: tokio::sync::Mutex::new(None),
                 serve_port,
                 current_explain_session_id: tokio::sync::Mutex::new(None),
+                current_diagnose_session_id: tokio::sync::Mutex::new(None),
                 editor_sql_map: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 last_active_session_id: tokio::sync::Mutex::new(None),
-                pending_diff_response: tokio::sync::Mutex::new(None),
-                pending_ui_actions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 pending_queries: tokio::sync::Mutex::new(std::collections::HashMap::new()),
                 auto_mode: tokio::sync::Mutex::new({
                     crate::db::get_app_setting("auto_mode").unwrap_or_default()
@@ -96,7 +102,7 @@ pub fn run() {
                     Ok(configs) => {
                         if let Err(e) = crate::agent::config::sync_all_providers(&opencode_dir, &configs) {
                             log::warn!("Failed to sync providers to opencode.json: {}", e);
-                        }
+                        } // 返回的 root 值在启动阶段不需要
                     }
                     Err(e) => log::warn!("Failed to list llm_configs for sync: {}", e),
                 }
@@ -181,6 +187,7 @@ pub fn run() {
             commands::delete_connection,
             commands::update_connection,
             commands::get_connection_password,
+            commands::get_connection_token,
             commands::execute_query,
             commands::get_tables,
             commands::get_schema,
@@ -211,6 +218,8 @@ pub fn run() {
             commands::ai_create_table,
             commands::ai_generate_table_schema,
             commands::ai_diagnose_error,
+            commands::ai_inline_complete,
+            commands::refresh_schema_graph,
             commands::list_groups,
             commands::create_group,
             commands::update_group,
@@ -225,6 +234,7 @@ pub fn run() {
             commands::list_metrics_by_node,
             commands::list_metrics_paged,
             commands::count_metrics_batch,
+            commands::count_metrics_by_node,
             commands::list_schemas,
             commands::list_objects,
             commands::list_tables_with_stats,
@@ -261,12 +271,13 @@ pub fn run() {
             commands::get_graph_edges,
             commands::update_node_alias,
             commands::update_graph_node_metadata,
+            commands::save_graph_node_position,
+            commands::clear_graph_node_positions,
             commands::ai_generate_metrics,
             commands::list_tables_with_column_count,
             commands::ai_generate_sql_v2,
             commands::acp_permission_respond,
             commands::acp_elicitation_respond,
-            commands::mcp_diff_respond,
             commands::get_ui_state,
             commands::set_ui_state,
             commands::delete_ui_state,
@@ -277,7 +288,6 @@ pub fn run() {
             commands::list_tab_files,
             commands::get_auto_mode,
             commands::set_auto_mode,
-            commands::mcp_ui_action_respond,
             commands::mcp_query_respond,
             commands::agent_create_session,
             commands::agent_delete_session,
@@ -287,6 +297,8 @@ pub fn run() {
             commands::agent_clear_session_history,
             commands::agent_cancel_session,
             commands::agent_permission_respond,
+            commands::agent_question_reply,
+            commands::agent_question_reject,
             commands::agent_chat,
             commands::agent_request_ai_title,
             commands::agent_apply_config,
@@ -294,6 +306,8 @@ pub fn run() {
             commands::test_llm_config_inline,
             commands::agent_explain_sql,
             commands::cancel_explain_sql,
+            commands::agent_diagnose_error,
+            commands::cancel_diagnose_error,
             commands::agent_revert_message,
             commands::agent_unrevert_message,
             commands::agent_summarize_session,
@@ -328,6 +342,12 @@ pub fn run() {
             commands::get_driver_capabilities,
             commands::get_db_stats,
             commands::read_text_file,
+            commands::write_text_file,
+            mcp::tools::table_edit::cmd_generate_create_table_sql,
+            mcp::tools::table_edit::cmd_generate_add_column_sql,
+            mcp::tools::table_edit::cmd_generate_drop_column_sql,
+            mcp::tools::table_edit::cmd_generate_modify_column_sql,
+            mcp::tools::table_edit::cmd_generate_update_comment_sql,
             er::commands::er_create_project,
             er::commands::er_update_project,
             er::commands::er_delete_project,

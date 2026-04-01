@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { QueryResult, QueryHistory, Tab, SqlDiffProposal, EditorInfo, MetricScope, QueryContext } from '../types';
+import type { QueryResult, QueryHistory, Tab, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
+import { parseStatements } from '../utils/sqlParser';
+import { metricTabId, newMetricTabId, metricListTabId, queryTabId, tableDataTabId, tableStructureTabId, newTableStructureTabId, stJobTabId, erDesignTabId } from '../utils/nodeId';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -29,10 +31,6 @@ function getSqlType(sql: string): string {
 }
 
 /** 截断 SQL 用于显示摘要 */
-function truncateSql(sql: string, max = 40): string {
-  const s = sql.replace(/\s+/g, ' ').trim();
-  return s.length > max ? s.slice(0, max) + '…' : s;
-}
 
 interface StmtResult { stmt: string; result: QueryResult }
 
@@ -55,7 +53,7 @@ interface QueryState {
 
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
-  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string, initialColumns?: import('../types').Tab['initialColumns'], initialTableName?: string) => void;
+  openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
   openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
@@ -78,12 +76,6 @@ interface QueryState {
   removeOtherResults: (tabId: string, idx: number) => void;
   clearResults: (tabId: string) => void;
 
-  // SQL diff 提案（等待用户确认）
-  pendingDiff: SqlDiffProposal | null;
-  proposeSqlDiff: (proposal: SqlDiffProposal) => void;
-  applyDiff: () => void;
-  cancelDiff: () => void;
-
   // Monaco 编辑器光标/选区（由 MainContent 实时写入）
   editorInfo: Record<string, EditorInfo>;
   setEditorInfo: (tabId: string, info: EditorInfo) => void;
@@ -96,13 +88,11 @@ interface QueryState {
   clearExplanation: (tabId: string) => void;
   startExplanation: (tabId: string) => void;
 
-  // Auto 模式自动应用 Banner（短暂显示后清除）
-  autoApplyBanner: { reason: string } | null;
-  setAutoApplyBanner: (banner: { reason: string } | null) => void;
-
   // 表数据外部刷新信号（tabId → 递增计数器，TableDataView 订阅后自动刷新）
   tableRefreshSignals: Record<string, number>;
   triggerTableRefresh: (tabId: string) => void;
+  toggleGhostText: (tabId: string) => void;
+  isGhostTextEnabled: (tabId: string) => boolean;
 }
 
 const DEFAULT_TAB: Tab = { id: 'query-1', type: 'query', title: 'Query 1' };
@@ -178,9 +168,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   queryHistory: [],
   error: null,
   diagnosis: null,
-  pendingDiff: null,
-  autoApplyBanner: null,
-  setAutoApplyBanner: (banner) => set({ autoApplyBanner: banner }),
   tableRefreshSignals: {},
   triggerTableRefresh: (tabId) => set(s => ({
     tableRefreshSignals: { ...s.tableRefreshSignals, [tabId]: (s.tableRefreshSignals[tabId] ?? 0) + 1 },
@@ -199,13 +186,13 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     set(s => {
       const existing = s.tabs.find(t => t.type === 'metric' && t.metricId === metricId);
       if (existing) return { activeTabId: existing.id };
-      const id = `metric_${metricId}_${Date.now()}`;
+      const id = metricTabId(metricId, Date.now());
       const tab: Tab = { id, type: 'metric', title, metricId, connectionId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },
   openNewMetricTab: (scope, scopeTitle) => {
-    const id = `metric_new_${Date.now()}`;
+    const id = newMetricTabId(Date.now());
     const tab: Tab = { id, type: 'metric', title: `新建指标`, metricScope: scope };
     set(s => ({ tabs: [...s.tabs, tab], activeTabId: id }));
   },
@@ -217,7 +204,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   },
 
   openMetricListTab: (scope, title) => {
-    const key = `ml_${scope.connectionId}_${scope.database ?? ''}_${scope.schema ?? ''}`;
+    const key = metricListTabId(scope.connectionId, scope.database ?? '', scope.schema ?? '');
     set(s => {
       const existing = s.tabs.find(t => t.id === key);
       if (existing) return { activeTabId: key };
@@ -235,7 +222,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   openQueryTab: (connId, connName, database, schema, initialSql) => {
     let newTabId = '';
     set(s => {
-      const id = `query_${connId}_${Date.now()}`;
+      const id = queryTabId(connId, Date.now());
       const queryCount = s.tabs.filter(t => t.type === 'query').length + 1;
       const tab: Tab = {
         id,
@@ -252,7 +239,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   openTableDataTab: (tableName, connectionId, database, schema) => {
     const dbName = database ?? `conn_${connectionId}`;
-    const id = `table_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+    const id = tableDataTabId(connectionId, dbName, schema ?? '', tableName);
     set(s => {
       if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
       const tab: Tab = { id, type: 'table', title: tableName, db: dbName, connectionId, schema };
@@ -260,21 +247,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
-  openTableStructureTab: (connectionId, database, schema, tableName, initialColumns, initialTableName) => {
+  openTableStructureTab: (connectionId, database, schema, tableName) => {
     const dbName = database ?? `conn_${connectionId}`;
     const isNew = !tableName;
     const id = isNew
-      ? `table_structure_new_${connectionId}_${dbName}_${schema ?? ''}_${Date.now()}`
-      : `table_structure_${connectionId}_${dbName}_${schema ?? ''}_${tableName}`;
+      ? newTableStructureTabId(connectionId, dbName, schema ?? '', Date.now())
+      : tableStructureTabId(connectionId, dbName, schema ?? '', tableName!);
     set(s => {
       if (s.tabs.find(t => t.id === id)) return { activeTabId: id };
       const tab: Tab = {
         id, type: 'table_structure',
-        title: initialTableName || tableName || '新建表',
+        title: tableName || '新建表',
         db: dbName, connectionId, schema,
-        isNewTable: isNew,
-        initialColumns,
-        initialTableName,
       };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
@@ -284,7 +268,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     set(s => {
       const existing = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
       if (existing) return { activeTabId: existing.id };
-      const id = `st_job_${jobId}_${Date.now()}`;
+      const id = stJobTabId(jobId, Date.now());
       const tab: Tab = { id, type: 'seatunnel_job', title, stJobId: jobId, stConnectionId: connectionId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
@@ -314,7 +298,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     set(s => {
       const existing = s.tabs.find(t => t.type === 'er_design' && t.erProjectId === projectId);
       if (existing) return { activeTabId: existing.id };
-      const id = `er_design_${projectId}_${Date.now()}`;
+      const id = erDesignTabId(projectId, Date.now());
       const tab: Tab = { id, type: 'er_design', title: projectName, erProjectId: projectId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
@@ -418,11 +402,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const sql = sqlOverride ?? get().sqlContent[tabId] ?? '';
     if (!sql.trim()) return;
 
-    // NOTE: 简单按 ; 分割，不支持字符串字面量或注释中的分号，是已知限制
-    const statements = sql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+    const statements = parseStatements(sql).map(s => s.text);
 
     // 写入操作上下文快照（供错误诊断使用）
     useAppStore.getState().setLastOperationContext({
@@ -435,11 +415,44 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
     set(s => ({ isExecuting: { ...s.isExecuting, [tabId]: true }, error: null, diagnosis: null }));
 
-    const selectResults: StmtResult[] = [];
-    const dmlResults: StmtResult[] = [];
+    // 逐条执行，按顺序收集成功/失败结果
+    const orderedResults: QueryResult[] = [];
+    const dmlBatch: { idx: number; stmt: string; result: QueryResult }[] = [];
 
-    try {
-      for (const stmt of statements) {
+    const flushDmlBatch = () => {
+      if (dmlBatch.length === 0) return;
+      if (dmlBatch.length === 1) {
+        // 单条 DML 不聚合，保持原位
+        orderedResults[dmlBatch[0].idx] = dmlBatch[0].result;
+      } else {
+        const totalDuration = dmlBatch.reduce((sum, r) => sum + r.result.duration_ms, 0);
+        const dmlReport: QueryResult = {
+          columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
+          rows: dmlBatch.map((item, i) => [
+            String(i + 1),
+            getSqlType(item.stmt),
+            item.stmt.replace(/\s+/g, ' ').trim(),
+            String(item.result.row_count),
+            String(item.result.duration_ms),
+            '✓ 成功',
+          ]),
+          row_count: dmlBatch.reduce((sum, r) => sum + r.result.row_count, 0),
+          duration_ms: totalDuration,
+          kind: 'dml-report',
+          sql: `-- DML batch (${dmlBatch.length} statements)`,
+        };
+        // 放在 batch 首位 index，后续位置标记为 null 待清理
+        orderedResults[dmlBatch[0].idx] = dmlReport;
+        for (let i = 1; i < dmlBatch.length; i++) {
+          orderedResults[dmlBatch[i].idx] = null as unknown as QueryResult;
+        }
+      }
+      dmlBatch.length = 0;
+    };
+
+    for (let i = 0; i < statements.length; i++) {
+      const stmt = statements[i];
+      try {
         const result = await invoke<QueryResult>('execute_query', {
           connectionId,
           sql: stmt,
@@ -453,42 +466,33 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           kind: isSelect ? 'select' : undefined,
         };
         if (isSelect) {
-          selectResults.push({ stmt, result: enriched });
+          flushDmlBatch();
+          orderedResults[i] = enriched;
         } else {
-          dmlResults.push({ stmt, result: enriched });
+          dmlBatch.push({ idx: i, stmt, result: enriched });
         }
-      }
-
-      const finalList: QueryResult[] = selectResults.map(r => r.result);
-
-      if (dmlResults.length > 0) {
-        const totalDuration = dmlResults.reduce((sum, r) => sum + r.result.duration_ms, 0);
-        const dmlReport: QueryResult = {
-          columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
-          rows: dmlResults.map((item, i) => [
-            String(i + 1),
-            getSqlType(item.stmt),
-            truncateSql(item.stmt),
-            String(item.result.row_count),
-            String(item.result.duration_ms),
-            '✓ 成功',
-          ]),
-          row_count: dmlResults.reduce((sum, r) => sum + r.result.row_count, 0),
-          duration_ms: totalDuration,
-          kind: 'dml-report',
-          sql: `-- DML batch (${dmlResults.length} statements)`,
+      } catch (e) {
+        flushDmlBatch();
+        orderedResults[i] = {
+          columns: [],
+          rows: [],
+          row_count: 0,
+          duration_ms: 0,
+          kind: 'error',
+          sql: stmt,
+          error_message: String(e),
         };
-        finalList.push(dmlReport);
       }
-
-      set(s => ({ results: { ...s.results, [tabId]: finalList }, isExecuting: { ...s.isExecuting, [tabId]: false } }));
-    } catch (e) {
-      const errorMsg = String(e);
-      set(s => ({ error: errorMsg, isExecuting: { ...s.isExecuting, [tabId]: false } }));
-      invoke<string>('ai_diagnose_error', { sql, errorMsg, connectionId })
-        .then(diagnosis => set({ diagnosis }))
-        .catch(() => {});
     }
+    flushDmlBatch();
+
+    // 过滤掉 null 占位（被聚合的 DML）
+    const finalList = orderedResults.filter(Boolean);
+
+    set(s => ({
+      results: { ...s.results, [tabId]: finalList },
+      isExecuting: { ...s.isExecuting, [tabId]: false },
+    }));
   },
 
   removeResult: (tabId, idx) =>
@@ -517,31 +521,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
   clearResults: (tabId) =>
     set(s => ({ results: { ...s.results, [tabId]: [] } })),
-
-  proposeSqlDiff: (proposal) => set({ pendingDiff: proposal }),
-
-  applyDiff: () => {
-    const { pendingDiff } = get();
-    if (!pendingDiff) return;
-    const full = get().sqlContent[pendingDiff.tabId] ?? '';
-    // endOffset 指向语句末尾（不含分号），若原文紧跟分号则一并消费，
-    // 避免 modified 自带分号时出现双分号
-    const endOffset =
-      full[pendingDiff.endOffset] === ';'
-        ? pendingDiff.endOffset + 1
-        : pendingDiff.endOffset;
-    const newSql =
-      full.slice(0, pendingDiff.startOffset) +
-      pendingDiff.modified +
-      full.slice(endOffset);
-    set((s) => ({
-      sqlContent: { ...s.sqlContent, [pendingDiff.tabId]: newSql },
-      pendingDiff: null,
-    }));
-    persistSqlContent(pendingDiff.tabId, newSql);
-  },
-
-  cancelDiff: () => set({ pendingDiff: null }),
 
   setEditorInfo: (tabId, info) =>
     set((s) => ({ editorInfo: { ...s.editorInfo, [tabId]: info } })),
@@ -579,6 +558,21 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     } catch (e) {
       set({ error: String(e) });
     }
+  },
+
+  toggleGhostText: (tabId) => {
+    const { tabs } = get();
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    const currentlyEnabled = tab.ghostTextEnabled ?? useAppStore.getState().ghostTextDefault;
+    set({
+      tabs: tabs.map(t => t.id === tabId ? { ...t, ghostTextEnabled: !currentlyEnabled } : t),
+    });
+  },
+  isGhostTextEnabled: (tabId) => {
+    const tab = get().tabs.find(t => t.id === tabId);
+    if (!tab) return false;
+    return tab.ghostTextEnabled ?? useAppStore.getState().ghostTextDefault;
   },
 }));
 

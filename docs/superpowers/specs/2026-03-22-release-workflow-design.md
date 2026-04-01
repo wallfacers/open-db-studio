@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # Release Workflow 设计文档
 
 **日期**：2026-03-22

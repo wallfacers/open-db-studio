@@ -1,24 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useTableFormStore, loadPersistedFormState } from '../../store/tableFormStore';
+import { useUIObjectRegistry } from '../../mcp/ui';
+import { TableFormUIObject, generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
+import type { EditableColumn } from '../../store/tableFormStore';
+import { useFieldHighlight } from '../../hooks/useFieldHighlight';
+import { useHighlightStore } from '../../store/highlightStore';
 
-interface EditableColumn {
-  id: string;
-  name: string;
-  dataType: string;
-  length: string;
-  isNullable: boolean;
-  defaultValue: string;
-  isPrimaryKey: boolean;
-  extra: string;
-  comment: string;
-  _originalName?: string;
-  _isNew?: boolean;
-  _isDeleted?: boolean;
+const HighlightedField: React.FC<{
+  scopeId: string;
+  path: string;
+  children: (onUserEdit: () => void) => React.ReactNode;
+}> = ({ scopeId, path, children }) => {
+  const { className, onUserEdit } = useFieldHighlight(scopeId, path);
+  return <div className={className}>{children(onUserEdit)}</div>;
+};
+
+/** Wraps a <tr> with highlight className — returns className string, not a wrapper div */
+function useRowHighlight(scopeId: string, columnName: string) {
+  return useFieldHighlight(scopeId, `columns.${columnName}`);
 }
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
@@ -31,157 +36,207 @@ const getTypeOptions = (dataType: string) => {
   return opts;
 };
 
-function generateSql(
-  tableName: string,
-  original: EditableColumn[],
-  edited: EditableColumn[],
-  driver: string,
-  isNew: boolean
-): string {
-  const isPostgres = driver === 'postgres' || driver === 'postgresql';
-  const q = (name: string) => isPostgres ? `"${name}"` : `\`${name}\``;
-
-  const colDef = (col: EditableColumn) => {
-    const type = col.length ? `${col.dataType}(${col.length})` : col.dataType;
-    const nullable = col.isNullable ? 'NULL' : 'NOT NULL';
-    const def = col.defaultValue ? `DEFAULT ${col.defaultValue}` : '';
-    const extra = col.extra && !isPostgres ? col.extra.toUpperCase() : '';
-    const comment = col.comment && !isPostgres ? `COMMENT '${col.comment.replace(/'/g, "\\'")}'` : '';
-    return [q(col.name), type, nullable, def, extra, comment].filter(Boolean).join(' ');
-  };
-
-  if (isNew) {
-    const activeCols = edited.filter(c => !c._isDeleted);
-    const pkCols = activeCols.filter(c => c.isPrimaryKey).map(c => q(c.name));
-    const lines = activeCols.map(c => `  ${colDef(c)}`);
-    if (pkCols.length > 0) lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`);
-    return `CREATE TABLE ${q(tableName)} (\n${lines.join(',\n')}\n);`;
-  }
-
-  const tbl = q(tableName);
-  const statements: string[] = [];
-  const existingEdited = edited.filter(c => !c._isNew && !c._isDeleted);
-  const orderChanged = !isPostgres && existingEdited.some((c, i) => {
-    if (i === 0) return false;
-    const prevOrigIdx = original.findIndex(o => o.name === (existingEdited[i - 1]._originalName ?? existingEdited[i - 1].name));
-    const currOrigIdx = original.findIndex(o => o.name === (c._originalName ?? c.name));
-    return prevOrigIdx > currOrigIdx;
-  });
-
-  for (const col of edited) {
-    if (col._isDeleted && !col._isNew) {
-      statements.push(`ALTER TABLE ${tbl} DROP COLUMN ${q(col._originalName ?? col.name)};`);
-    } else if (col._isNew && !col._isDeleted) {
-      statements.push(`ALTER TABLE ${tbl} ADD COLUMN ${colDef(col)};`);
-    } else if (!col._isNew && !col._isDeleted) {
-      const orig = original.find(o => o.name === (col._originalName ?? col.name));
-      if (!orig) continue;
-      const changed = orig.name !== col.name
-        || orig.dataType !== col.dataType
-        || orig.length !== col.length
-        || orig.isNullable !== col.isNullable
-        || orig.defaultValue !== col.defaultValue
-        || orig.extra !== col.extra
-        || orig.comment !== col.comment
-        || (orderChanged && !isPostgres);
-      if (changed) {
-        if (isPostgres) {
-          if (orig.dataType !== col.dataType || orig.length !== col.length) {
-            const type = col.length ? `${col.dataType}(${col.length})` : col.dataType;
-            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} TYPE ${type};`);
-          }
-          if (orig.isNullable !== col.isNullable) {
-            statements.push(`ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} ${col.isNullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`);
-          }
-          if (orig.defaultValue !== col.defaultValue) {
-            statements.push(col.defaultValue
-              ? `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} SET DEFAULT ${col.defaultValue};`
-              : `ALTER TABLE ${tbl} ALTER COLUMN ${q(col.name)} DROP DEFAULT;`
-            );
-          }
-          if (orig.comment !== col.comment) {
-            statements.push(col.comment
-              ? `COMMENT ON COLUMN ${tbl}.${q(col.name)} IS '${col.comment.replace(/'/g, "''")}';`
-              : `COMMENT ON COLUMN ${tbl}.${q(col.name)} IS NULL;`
-            );
-          }
-        } else {
-          const activeEdited = edited.filter(c => !c._isDeleted);
-          const idx = activeEdited.indexOf(col);
-          const after = idx <= 0 ? 'FIRST' : `AFTER ${q(activeEdited[idx - 1].name)}`;
-          statements.push(`ALTER TABLE ${tbl} MODIFY COLUMN ${colDef(col)} ${after};`);
-        }
-      }
-    }
-  }
-
-  const origPks = original.filter(c => c.isPrimaryKey).map(c => q(c.name));
-  const newPks = edited.filter(c => c.isPrimaryKey && !c._isDeleted).map(c => q(c.name));
-  const pkChanged = JSON.stringify([...origPks].sort()) !== JSON.stringify([...newPks].sort());
-  if (pkChanged) {
-    if (isPostgres) {
-      statements.push(`ALTER TABLE ${tbl} DROP CONSTRAINT IF EXISTS ${tbl}_pkey;`);
-      if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`);
-    } else {
-      statements.push(`ALTER TABLE ${tbl} DROP PRIMARY KEY;`);
-      if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`);
-    }
-  }
-
-  return statements.length > 0 ? statements.join('\n') : '-- 无变更';
-}
-
 function makeId() { return Math.random().toString(36).slice(2); }
 
+const ColumnRow: React.FC<{
+  col: EditableColumn;
+  idx: number;
+  tabId: string;
+  visibleCount: number;
+  updateColumn: (id: string, updates: Partial<EditableColumn>) => void;
+  moveColumn: (id: string, dir: 'up' | 'down') => void;
+  setColumns: (updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => void;
+  iconBtn: string;
+  iconBtnDanger: string;
+}> = ({ col, idx, tabId, visibleCount, updateColumn, moveColumn, setColumns, iconBtn, iconBtnDanger }) => {
+  const { className: hlClass, onUserEdit } = useRowHighlight(tabId, col.name);
+
+  return (
+    <tr className={`hover:bg-[#1a2639] border-b border-[#1e2d42] group ${col._isNew ? 'bg-green-900/10' : ''} ${hlClass}`}>
+      <td className="w-[30px] px-1 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none">
+        {idx + 1}
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.name}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { name: e.target.value }); }}
+        />
+      </td>
+      <td className="px-1.5 py-1 border-r border-[#1e2d42]">
+        <DropdownSelect
+          value={col.dataType}
+          options={getTypeOptions(col.dataType)}
+          onChange={v => { onUserEdit(); updateColumn(col.id, { dataType: v }); }}
+          className="w-full"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.length ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { length: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
+        <input
+          type="checkbox"
+          checked={col.isNullable ?? true}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { isNullable: e.target.checked }); }}
+          className="accent-[#009e84]"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.defaultValue ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { defaultValue: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
+        <input
+          type="checkbox"
+          checked={col.isPrimaryKey ?? false}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { isPrimaryKey: e.target.checked }); }}
+          className="accent-[#3794ff]"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.extra ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { extra: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
+        <input
+          className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
+          value={col.comment ?? ''}
+          onChange={e => { onUserEdit(); updateColumn(col.id, { comment: e.target.value }); }}
+          placeholder="—"
+        />
+      </td>
+      <td className="px-1.5 py-1">
+        <div className="flex items-center gap-0.5 justify-center">
+          <button
+            onClick={() => moveColumn(col.id, 'up')}
+            disabled={idx === 0}
+            className={iconBtn}
+          ><ChevronUp size={12} /></button>
+          <button
+            onClick={() => moveColumn(col.id, 'down')}
+            disabled={idx === visibleCount - 1}
+            className={iconBtn}
+          ><ChevronDown size={12} /></button>
+          <button
+            onClick={() => col._isNew
+              ? setColumns(prev => prev.filter(c => c.id !== col.id))
+              : updateColumn(col.id, { _isDeleted: true })
+            }
+            className={iconBtnDanger}
+          ><Trash2 size={12} /></button>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
 interface TableStructureViewProps {
+  tabId: string;
   connectionId: number;
   tableName?: string;
   database?: string;
   schema?: string;
-  initialColumns?: Array<{
-    name: string; data_type: string; length?: string;
-    is_nullable?: boolean; default_value?: string;
-    is_primary_key?: boolean; extra?: string; comment?: string;
-  }>;
-  initialTableName?: string;
   onSuccess: () => void;
   showToast: (msg: string, level?: ToastLevel) => void;
 }
 
 export const TableStructureView: React.FC<TableStructureViewProps> = ({
-  connectionId, tableName, database, schema, initialColumns, initialTableName, onSuccess, showToast
+  tabId, connectionId, tableName, database, schema, onSuccess, showToast
 }) => {
   const { t } = useTranslation();
-  const [columns, setColumns] = useState<EditableColumn[]>([]);
-  const [originalColumns, setOriginalColumns] = useState<EditableColumn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [newTableName, setNewTableName] = useState(initialTableName || tableName || '');
+
+  // SQL Preview panel resizable height
+  const [previewHeight, setPreviewHeight] = useState(140);
+  const [isPreviewResizing, setIsPreviewResizing] = useState(false);
+  const previewResizeRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  const handlePreviewResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = previewHeight;
+    previewResizeRef.current = { startY, startH };
+    setIsPreviewResizing(true);
+
+    const onMove = (ev: MouseEvent) => {
+      if (!previewResizeRef.current) return;
+      const delta = previewResizeRef.current.startY - ev.clientY;
+      setPreviewHeight(Math.max(80, Math.min(400, previewResizeRef.current.startH + delta)));
+    };
+    const onUp = () => {
+      previewResizeRef.current = null;
+      setIsPreviewResizing(false);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [previewHeight]);
 
   const { connections } = useConnectionStore();
   const driver = connections.find(c => c.id === connectionId)?.driver ?? 'mysql';
 
+  // Zustand store for form state (accessible by AI via UIObject)
+  const formState = useTableFormStore(s => s.forms[tabId])
+  const { initForm, setForm, removeForm } = useTableFormStore()
+
+  const columns = formState?.columns ?? []
+  const originalColumns = formState?.originalColumns ?? []
+  const newTableName = formState?.tableName ?? ''
+
+  const setColumns = useCallback((updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => {
+    useTableFormStore.getState().patchForm(tabId, s => ({
+      ...s,
+      columns: typeof updater === 'function' ? updater(s.columns as EditableColumn[]) : updater,
+    }))
+  }, [tabId])
+
+  const setNewTableName = useCallback((name: string) => {
+    useTableFormStore.getState().patchForm(tabId, s => ({ ...s, tableName: name }))
+  }, [tabId])
+
+  // Register UIObject for AI access
+  const uiObject = useMemo(
+    () => formState ? new TableFormUIObject(tabId, connectionId, database ?? '') : null,
+    [tabId, connectionId, database, formState != null]
+  )
+  useUIObjectRegistry(uiObject)
+
+  // Initialize form state on mount, cleanup on unmount
   useEffect(() => {
     if (!tableName) {
-      const initCols: EditableColumn[] = initialColumns && initialColumns.length > 0
-        ? initialColumns.map(c => ({
-            id: makeId(),
-            name: c.name,
-            dataType: (c.data_type ?? 'VARCHAR').toUpperCase(),
-            length: c.length ?? '',
-            isNullable: c.is_nullable ?? true,
-            defaultValue: c.default_value ?? '',
-            isPrimaryKey: c.is_primary_key ?? false,
-            extra: c.extra ?? '',
-            comment: c.comment ?? '',
-            _isNew: true,
-          }))
-        : [{
+      // New table mode — try to restore persisted form state first
+      loadPersistedFormState(tabId).then(persisted => {
+        if (persisted) {
+          initForm(tabId, persisted)
+        } else {
+          // No persisted state — start with a default id column
+          const initCols: EditableColumn[] = [{
             id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
             defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
           }];
-      setColumns(initCols);
-      setOriginalColumns([]);
+          initForm(tabId, {
+            tableName: '',
+            engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+            columns: initCols, originalColumns: [], indexes: [], isNewTable: true,
+          })
+        }
+      })
       return;
     }
     setIsLoadingData(true);
@@ -199,7 +254,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         id: makeId(),
         name: c.name,
         dataType: c.data_type.toUpperCase().split('(')[0],
-        length: c.data_type.match(/\((\d+)\)/)?.[1] ?? '',
+        length: c.data_type.match(/\(([^)]+)\)/)?.[1] ?? '',
         isNullable: c.is_nullable,
         defaultValue: c.column_default ?? '',
         isPrimaryKey: c.is_primary_key,
@@ -207,12 +262,20 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         comment: c.comment ?? '',
         _originalName: c.name,
       }));
-      setColumns(cols);
-      setOriginalColumns(cols.map(c => ({ ...c })));
+      initForm(tabId, {
+        tableName: tableName,
+        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+        columns: cols, originalColumns: cols.map(c => ({ ...c })), indexes: [], isNewTable: false,
+      })
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
     }).finally(() => setIsLoadingData(false));
-  }, [tableName, connectionId, database, schema]);
+
+    return () => {
+      removeForm(tabId);
+      useHighlightStore.getState().clearAll(tabId);
+    }
+  }, [tableName, connectionId, database, schema, tabId]);
 
   const updateColumn = useCallback((id: string, patch: Partial<EditableColumn>) => {
     setColumns(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
@@ -248,15 +311,21 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       setColumns(initCols);
       setNewTableName('');
     } else {
-      setColumns(originalColumns.map(c => ({ ...c })));
+      setColumns(originalColumns.map(c => ({ ...c } as EditableColumn)));
     }
   };
 
   const visibleColumns = columns.filter(c => !c._isDeleted);
   const effectiveTableName = tableName ?? newTableName;
-  const previewSql = effectiveTableName.trim()
-    ? generateSql(effectiveTableName, originalColumns, columns, driver, !tableName)
-    : '-- 请先填写表名';
+  const previewSql = useMemo(() => effectiveTableName.trim()
+    ? generateTableSql({
+        tableName: effectiveTableName,
+        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+        columns, originalColumns: tableName ? originalColumns : undefined,
+        indexes: [], isNewTable: !tableName,
+      }, driver)
+    : '-- 请先填写表名',
+    [effectiveTableName, columns, originalColumns, tableName, driver]);
 
   const hasChanges = !previewSql.startsWith('-- ');
 
@@ -284,17 +353,30 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const iconBtn = 'p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#c8daea] transition-colors disabled:opacity-30 disabled:cursor-not-allowed';
   const iconBtnDanger = 'p-0.5 hover:bg-[#243a55] rounded text-red-500/70 hover:text-red-400 transition-colors';
 
+  const connectionName = connections.find(c => c.id === connectionId)?.name ?? `conn_${connectionId}`;
+
   return (
     <div className="flex-1 flex flex-col bg-[#080d12] overflow-hidden min-h-0">
+      {/* Context info bar */}
+      <div className="h-8 flex items-center px-3 border-b border-[#1e2d42] bg-[#0a1018] text-xs flex-shrink-0 gap-1.5 text-[#7a9bb8]">
+        <span className="text-[#009e84]">{connectionName}</span>
+        {database && (<><span className="text-[#3a4f6a]">/</span><span>{database}</span></>)}
+        {schema && (<><span className="text-[#3a4f6a]">/</span><span>{schema}</span></>)}
+        {tableName && (<><span className="text-[#3a4f6a]">/</span><span className="text-[#c8daea]">{tableName}</span></>)}
+      </div>
       {/* Toolbar */}
       {!tableName && (
         <div className="h-10 flex items-center px-3 border-b border-[#1e2d42] bg-[#080d12] text-xs flex-shrink-0">
-          <input
-            className="bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] w-40"
-            placeholder={t('tableManage.tableName') + '...'}
-            value={newTableName}
-            onChange={e => setNewTableName(e.target.value)}
-          />
+          <HighlightedField scopeId={tabId} path="tableName">
+            {(onUserEdit) => (
+              <input
+                className="bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] w-40"
+                placeholder={t('tableManage.tableName') + '...'}
+                value={newTableName}
+                onChange={e => { onUserEdit(); setNewTableName(e.target.value); }}
+              />
+            )}
+          </HighlightedField>
         </div>
       )}
 
@@ -320,95 +402,18 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
             </thead>
             <tbody>
               {visibleColumns.map((col, idx) => (
-                <tr key={col.id} className={`hover:bg-[#1a2639] border-b border-[#1e2d42] group ${col._isNew ? 'bg-green-900/10' : ''}`}>
-                  <td className="w-[30px] px-1 py-1.5 border-r border-[#1e2d42] text-[#7a9bb8] bg-[#0d1117] text-center text-xs cursor-default select-none">
-                    {idx + 1}
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.name}
-                      onChange={e => updateColumn(col.id, { name: e.target.value })}
-                    />
-                  </td>
-                  <td className="px-1.5 py-1 border-r border-[#1e2d42]">
-                    <DropdownSelect
-                      value={col.dataType}
-                      options={getTypeOptions(col.dataType)}
-                      onChange={v => updateColumn(col.id, { dataType: v })}
-                      className="w-full"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.length}
-                      onChange={e => updateColumn(col.id, { length: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
-                    <input
-                      type="checkbox"
-                      checked={col.isNullable}
-                      onChange={e => updateColumn(col.id, { isNullable: e.target.checked })}
-                      className="accent-[#009e84]"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.defaultValue}
-                      onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1 border-r border-[#1e2d42] text-center">
-                    <input
-                      type="checkbox"
-                      checked={col.isPrimaryKey}
-                      onChange={e => updateColumn(col.id, { isPrimaryKey: e.target.checked })}
-                      className="accent-[#3794ff]"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.extra}
-                      onChange={e => updateColumn(col.id, { extra: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="p-0 border-r border-[#1e2d42] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[#1a2639]">
-                    <input
-                      className="w-full h-full px-3 py-1.5 bg-transparent text-[#c8daea] outline-none text-xs block"
-                      value={col.comment}
-                      onChange={e => updateColumn(col.id, { comment: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-1.5 py-1">
-                    <div className="flex items-center gap-0.5 justify-center">
-                      <button
-                        onClick={() => moveColumn(col.id, 'up')}
-                        disabled={idx === 0}
-                        className={iconBtn}
-                      ><ChevronUp size={12} /></button>
-                      <button
-                        onClick={() => moveColumn(col.id, 'down')}
-                        disabled={idx === visibleColumns.length - 1}
-                        className={iconBtn}
-                      ><ChevronDown size={12} /></button>
-                      <button
-                        onClick={() => col._isNew
-                          ? setColumns(prev => prev.filter(c => c.id !== col.id))
-                          : updateColumn(col.id, { _isDeleted: true })
-                        }
-                        className={iconBtnDanger}
-                      ><Trash2 size={12} /></button>
-                    </div>
-                  </td>
-                </tr>
+                <ColumnRow
+                  key={col.id}
+                  col={col}
+                  idx={idx}
+                  tabId={tabId}
+                  visibleCount={visibleColumns.length}
+                  updateColumn={updateColumn}
+                  moveColumn={moveColumn}
+                  setColumns={setColumns}
+                  iconBtn={iconBtn}
+                  iconBtnDanger={iconBtnDanger}
+                />
               ))}
             </tbody>
           </table>
@@ -422,14 +427,24 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         </button>
       </div>
 
+      {/* Resize Handle */}
+      <div
+        className="flex-shrink-0 h-[4.5px] cursor-row-resize hover:bg-[#00c9a7] z-10 transition-colors border-t border-[#1e2d42]"
+        style={isPreviewResizing ? { backgroundColor: '#00c9a7' } : undefined}
+        onMouseDown={handlePreviewResizeStart}
+      />
+
       {/* SQL Preview + Actions */}
-      <div className="flex-shrink-0 border-t border-[#1e2d42] px-3 py-2 bg-[#080d12]">
+      <div
+        className="flex-shrink-0 flex flex-col px-3 py-2 bg-[#080d12]"
+        style={{ height: previewHeight, transition: isPreviewResizing ? 'none' : 'height 150ms ease' }}
+      >
         <div className="text-xs text-[#7a9bb8] mb-1">
           {tableName ? t('tableManage.alterPreview') : t('tableManage.createPreview')}
         </div>
         <textarea
           readOnly
-          className="w-full bg-[#0d1520] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#c8daea] outline-none resize-none h-[72px]"
+          className="w-full flex-1 min-h-0 bg-[#0d1520] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#c8daea] outline-none resize-none"
           value={previewSql}
           spellCheck={false}
         />

@@ -98,6 +98,22 @@
   display: none !important;
 }
 
+/* React Flow Controls — dark theme override */
+.react-flow__controls {
+  background: rgba(17, 25, 34, 0.9) !important;
+  border: 1px solid #1e2d42 !important;
+  border-radius: 6px !important;
+  backdrop-filter: blur(8px);
+}
+.react-flow__controls-button {
+  background: transparent !important;
+  border-color: #1e2d42 !important;
+  fill: #c8daea !important;
+}
+.react-flow__controls-button:hover {
+  background: #1a2639 !important;
+}
+
 /* ============================================================
    全局微纹理 — 给深色背景增加深度感
    ============================================================ */
@@ -189,4 +205,9 @@ input[type="number"]::-webkit-outer-spin-button {
 .graph-canvas-container {
   width: 100%;
   height: 100%;
+}
+
+/* Keep edge label HTML layer above all edge SVG layers (incl. high-zIndex groups) */
+.react-flow__edgelabel-renderer {
+  z-index: 1001 !important;
 }

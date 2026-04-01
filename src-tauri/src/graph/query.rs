@@ -6,12 +6,16 @@ pub struct GraphNode {
     pub id: String,
     pub node_type: String,
     pub connection_id: Option<i64>,
+    pub database: Option<String>,
+    pub schema_name: Option<String>,
     pub name: String,
     pub display_name: Option<String>,
     pub metadata: Option<String>,
     pub aliases: Option<String>,
     pub is_deleted: Option<i32>,
     pub source: Option<String>,
+    pub position_x: Option<f64>,
+    pub position_y: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -37,31 +41,60 @@ fn row_to_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
         id: row.get(0)?,
         node_type: row.get(1)?,
         connection_id: row.get(2)?,
-        name: row.get(3)?,
-        display_name: row.get(4)?,
-        metadata: row.get::<_, Option<String>>(5)?,
-        aliases: row.get::<_, Option<String>>(6)?,
-        is_deleted: row.get::<_, Option<i32>>(7)?,
-        source: row.get::<_, Option<String>>(8)?,
+        database: row.get::<_, Option<String>>(3)?,
+        schema_name: row.get::<_, Option<String>>(4)?,
+        name: row.get(5)?,
+        display_name: row.get(6)?,
+        metadata: row.get::<_, Option<String>>(7)?,
+        aliases: row.get::<_, Option<String>>(8)?,
+        is_deleted: row.get::<_, Option<i32>>(9)?,
+        source: row.get::<_, Option<String>>(10)?,
+        position_x: row.get::<_, Option<f64>>(11)?,
+        position_y: row.get::<_, Option<f64>>(12)?,
     })
 }
 
+/// Column list for SELECT queries on graph_nodes
+const GN_COLS: &str = "id,node_type,connection_id,database,schema_name,name,display_name,metadata,aliases,is_deleted,source,position_x,position_y";
+
 pub fn get_nodes(connection_id: i64, node_type: Option<&str>) -> AppResult<Vec<GraphNode>> {
+    get_nodes_filtered(connection_id, node_type, None)
+}
+
+/// 查询图谱节点，可选按 node_type 和 database 过滤。
+/// database=None 返回全部节点；database=Some(db) 仅返回该库（或 database 为 NULL 的旧数据）的节点。
+pub fn get_nodes_filtered(
+    connection_id: i64,
+    node_type: Option<&str>,
+    database: Option<&str>,
+) -> AppResult<Vec<GraphNode>> {
     let conn = crate::db::get().lock().unwrap();
-    let (sql, p): (String, Vec<Box<dyn rusqlite::ToSql>>) = match node_type {
-        Some(t) => (
-            "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
-             FROM graph_nodes WHERE connection_id=?1 AND node_type=?2 AND is_deleted=0 ORDER BY name".to_string(),
-            vec![Box::new(connection_id), Box::new(t.to_string())],
-        ),
-        None => (
-            "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
-             FROM graph_nodes WHERE connection_id=?1 AND is_deleted=0 ORDER BY node_type,name".to_string(),
-            vec![Box::new(connection_id)],
-        ),
-    };
+
+    let mut where_clauses = vec!["connection_id=?1".to_string(), "is_deleted=0".to_string()];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(connection_id)];
+    let mut idx = 2;
+
+    if let Some(t) = node_type {
+        where_clauses.push(format!("node_type=?{}", idx));
+        params.push(Box::new(t.to_string()));
+        idx += 1;
+    }
+
+    if let Some(db) = database {
+        where_clauses.push(format!("(database=?{} OR database IS NULL)", idx));
+        params.push(Box::new(db.to_string()));
+    }
+
+    let order = if node_type.is_some() { "ORDER BY name" } else { "ORDER BY node_type,name" };
+    let sql = format!(
+        "SELECT {} FROM graph_nodes WHERE {} {}",
+        GN_COLS,
+        where_clauses.join(" AND "),
+        order
+    );
+
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(p.iter()), row_to_node)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_node)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -72,8 +105,9 @@ pub fn search_graph(connection_id: i64, keyword: &str) -> AppResult<Vec<GraphNod
     let escaped = keyword.replace('"', "\"\"");
     let fts_query = format!("\"{}\"*", escaped);
     let mut stmt = conn.prepare(
-        "SELECT gn.id, gn.node_type, gn.connection_id, gn.name, gn.display_name, gn.metadata,
-                gn.aliases, gn.is_deleted, gn.source
+        "SELECT gn.id, gn.node_type, gn.connection_id, gn.database, gn.schema_name,
+                gn.name, gn.display_name, gn.metadata, gn.aliases, gn.is_deleted, gn.source,
+                gn.position_x, gn.position_y
          FROM graph_nodes_fts fts
          JOIN graph_nodes gn ON gn.rowid = fts.rowid
          WHERE graph_nodes_fts MATCH ?1
@@ -101,14 +135,14 @@ pub async fn find_relevant_subgraph(
     let ph1 = (2..=n+1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
     let ph2 = (n+2..=2*n+1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
     let sql = format!(
-        "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
+        "SELECT {cols}
          FROM graph_nodes
          WHERE connection_id=?1 AND node_type='table'
            AND (name IN ({ph1}) OR id IN (
                SELECT node_id FROM semantic_aliases WHERE connection_id=?1
                  AND alias IN ({ph2})
            ))",
-        ph1 = ph1, ph2 = ph2
+        cols = GN_COLS, ph1 = ph1, ph2 = ph2
     );
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(connection_id)];
     for e in entities {
@@ -143,9 +177,9 @@ pub async fn find_relevant_subgraph(
     let conn = crate::db::get().lock().unwrap();
     let mut all_nodes = Vec::new();
     for node_id in &all_node_ids {
+        let sql = format!("SELECT {} FROM graph_nodes WHERE id=?1 AND node_type != 'link'", GN_COLS);
         if let Ok(n) = conn.query_row(
-            "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
-             FROM graph_nodes WHERE id=?1 AND node_type != 'link'",
+            &sql,
             [node_id], row_to_node
         ) {
             all_nodes.push(n);
@@ -180,6 +214,33 @@ pub async fn find_relevant_subgraph(
     edges.dedup_by_key(|e| e.id.clone());
 
     Ok(SubGraph { nodes: all_nodes, edges, join_paths })
+}
+
+/// 保存单个节点的坐标
+pub fn save_node_position(node_id: &str, x: f64, y: f64) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    conn.execute(
+        "UPDATE graph_nodes SET position_x = ?1, position_y = ?2 WHERE id = ?3",
+        rusqlite::params![x, y, node_id],
+    )?;
+    Ok(())
+}
+
+/// 清除指定连接下所有节点的坐标（自动布局时调用）
+pub fn clear_node_positions(connection_id: i64, database: Option<&str>) -> AppResult<()> {
+    let conn = crate::db::get().lock().unwrap();
+    if let Some(db) = database {
+        conn.execute(
+            "UPDATE graph_nodes SET position_x = NULL, position_y = NULL WHERE connection_id = ?1 AND (database = ?2 OR database IS NULL)",
+            rusqlite::params![connection_id, db],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE graph_nodes SET position_x = NULL, position_y = NULL WHERE connection_id = ?1",
+            rusqlite::params![connection_id],
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -24,6 +24,8 @@ export async function loadOpenedConnectionIds(): Promise<number[]> {
   }
 }
 
+const graphTimers = new Map<number, ReturnType<typeof setInterval>>();
+
 export interface ConnectionMeta {
   dbVersion: string;
   driver: string;
@@ -53,6 +55,9 @@ interface ConnectionState {
   // 管理已打开的连接
   openConnection: (id: number) => void;
   closeConnection: (id: number) => void;
+  startGraphRefreshTimer: (connectionId: number) => void;
+  stopGraphRefreshTimer: (connectionId: number) => void;
+  stopAllGraphRefreshTimers: () => void;
 }
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
@@ -82,10 +87,22 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
   deleteConnection: async (id) => {
     await invoke('delete_connection', { id });
-    set((s) => ({
-      connections: s.connections.filter((c) => c.id !== id),
-      activeConnectionId: s.activeConnectionId === id ? null : s.activeConnectionId,
-    }));
+    // 停止该连接的图刷新定时器
+    get().stopGraphRefreshTimer(id);
+    set((s) => {
+      // 清理已打开连接集合并持久化
+      const newActiveIds = new Set(s.activeConnectionIds);
+      newActiveIds.delete(id);
+      saveOpenedConnectionIds(newActiveIds);
+      // 清理元数据缓存
+      const { [id]: _, ...restMeta } = s.metaCache;
+      return {
+        connections: s.connections.filter((c) => c.id !== id),
+        activeConnectionId: s.activeConnectionId === id ? null : s.activeConnectionId,
+        activeConnectionIds: newActiveIds,
+        metaCache: restMeta,
+      };
+    });
   },
 
   updateConnection: async (id, req) => {
@@ -107,6 +124,12 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         password: req.password ?? '',
         extra_params: req.extra_params,
         file_path: req.file_path,
+        auth_type: req.auth_type,
+        token: req.token,
+        ssl_mode: req.ssl_mode,
+        ssl_ca_path: req.ssl_ca_path,
+        ssl_cert_path: req.ssl_cert_path,
+        ssl_key_path: req.ssl_key_path,
       },
     });
   },
@@ -143,4 +166,20 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
   setMeta: (connectionId, meta) =>
     set((s) => ({ metaCache: { ...s.metaCache, [connectionId]: meta } })),
+
+  startGraphRefreshTimer: (connectionId) => {
+    if (graphTimers.has(connectionId)) return;
+    const timer = setInterval(() => {
+      invoke('refresh_schema_graph', { connectionId, database: null }).catch(() => {});
+    }, 5 * 60 * 1000);
+    graphTimers.set(connectionId, timer);
+  },
+  stopGraphRefreshTimer: (connectionId) => {
+    const timer = graphTimers.get(connectionId);
+    if (timer) { clearInterval(timer); graphTimers.delete(connectionId); }
+  },
+  stopAllGraphRefreshTimers: () => {
+    graphTimers.forEach((timer) => clearInterval(timer));
+    graphTimers.clear();
+  },
 }));

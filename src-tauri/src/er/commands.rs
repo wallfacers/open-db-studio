@@ -163,6 +163,41 @@ pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<
     )
 }
 
+// ─── Type Parsing ──────────────────────────────────────────────────────────
+
+/// Parse a database type string into (base_type, length, scale).
+/// E.g. "VARCHAR(255)" -> ("VARCHAR", Some(255), None)
+///      "DECIMAL(10,2)" -> ("DECIMAL", Some(10), Some(2))
+///      "INT4" -> ("INTEGER", None, None)
+fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>) {
+    let normalized = raw.trim().to_uppercase();
+    if let Some(paren_start) = normalized.find('(') {
+        let base = normalized[..paren_start].trim().to_string();
+        let inner = &normalized[paren_start + 1..normalized.len().saturating_sub(1)];
+        let parts: Vec<&str> = inner.split(',').collect();
+        let length = parts.first().and_then(|s| s.trim().parse::<i64>().ok());
+        let scale = parts.get(1).and_then(|s| s.trim().parse::<i64>().ok());
+        let base = match base.as_str() {
+            "CHARACTER VARYING" => "VARCHAR".to_string(),
+            "CHARACTER" => "CHAR".to_string(),
+            "INT4" => "INTEGER".to_string(),
+            "INT8" => "BIGINT".to_string(),
+            _ => base,
+        };
+        (base, length, scale)
+    } else {
+        let base = match normalized.as_str() {
+            "CHARACTER VARYING" => "VARCHAR".to_string(),
+            "CHARACTER" => "CHAR".to_string(),
+            "INT4" | "INT" => "INTEGER".to_string(),
+            "INT8" => "BIGINT".to_string(),
+            "DOUBLE PRECISION" => "DOUBLE".to_string(),
+            _ => normalized,
+        };
+        (base, None, None)
+    }
+}
+
 // ─── Diff & Sync ────────────────────────────────────────────────────────────
 
 /// Helper: load project and build maps for diff/sync operations.
@@ -293,23 +328,33 @@ pub async fn er_sync_from_database(
                 let col_lower = db_col.name.to_lowercase();
                 if let Some(er_col) = existing_cols.get(&col_lower) {
                     // Update existing column
+                    let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
                     let req = UpdateColumnRequest {
                         name: Some(db_col.name.clone()),
-                        data_type: Some(db_col.data_type.clone()),
+                        data_type: Some(parsed_type),
                         nullable: Some(db_col.is_nullable),
                         default_value: db_col.column_default.clone(),
                         is_primary_key: Some(db_col.is_primary_key),
                         is_auto_increment: None, // preserve existing
                         comment: db_col.comment.clone(),
+                        length: parsed_len,
+                        scale: parsed_scale,
+                        is_unique: None,
+                        unsigned: None,
+                        charset: None,
+                        collation: None,
+                        on_update: None,
+                        enum_values: None,
                         sort_order: Some(i as i64),
                     };
                     crate::er::repository::update_column(er_col.id, &req)?;
                 } else {
                     // Create new column
+                    let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
                     let req = CreateColumnRequest {
                         table_id: er_tf.table.id,
                         name: db_col.name.clone(),
-                        data_type: db_col.data_type.clone(),
+                        data_type: parsed_type,
                         nullable: Some(db_col.is_nullable),
                         default_value: db_col.column_default.clone(),
                         is_primary_key: Some(db_col.is_primary_key),
@@ -321,6 +366,14 @@ pub async fn er_sync_from_database(
                                 .unwrap_or(false),
                         ),
                         comment: db_col.comment.clone(),
+                        length: parsed_len,
+                        scale: parsed_scale,
+                        is_unique: None,
+                        unsigned: None,
+                        charset: None,
+                        collation: None,
+                        on_update: None,
+                        enum_values: None,
                         sort_order: Some(i as i64),
                     };
                     crate::er::repository::create_column(&req)?;
@@ -360,10 +413,11 @@ pub async fn er_sync_from_database(
 
             // Create columns
             for (i, db_col) in db_table.columns.iter().enumerate() {
+                let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
                 let col_req = CreateColumnRequest {
                     table_id: new_table.id,
                     name: db_col.name.clone(),
-                    data_type: db_col.data_type.clone(),
+                    data_type: parsed_type,
                     nullable: Some(db_col.is_nullable),
                     default_value: db_col.column_default.clone(),
                     is_primary_key: Some(db_col.is_primary_key),
@@ -375,6 +429,14 @@ pub async fn er_sync_from_database(
                             .unwrap_or(false),
                     ),
                     comment: db_col.comment.clone(),
+                    length: parsed_len,
+                    scale: parsed_scale,
+                    is_unique: None,
+                    unsigned: None,
+                    charset: None,
+                    collation: None,
+                    on_update: None,
+                    enum_values: None,
                     sort_order: Some(i as i64),
                 };
                 crate::er::repository::create_column(&col_req)?;
@@ -563,6 +625,14 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
                 is_primary_key: Some(export_col.is_primary_key),
                 is_auto_increment: Some(export_col.is_auto_increment),
                 comment: export_col.comment.clone(),
+                length: None,
+                scale: None,
+                is_unique: None,
+                unsigned: None,
+                charset: None,
+                collation: None,
+                on_update: None,
+                enum_values: None,
                 sort_order: Some(i as i64),
             })?;
 

@@ -17,6 +17,22 @@ fn parse_sse_payload(line: &str) -> Option<serde_json::Value> {
     Some(payload)
 }
 
+/// Auto-respond to permission requests to unblock the agent.
+fn spawn_auto_permission_respond(port: u16, session_id: &str, permission_id: &str) {
+    let port_copy = port;
+    let sid = session_id.to_string();
+    let pid = permission_id.to_string();
+    tokio::spawn(async move {
+        if let Err(e) = crate::agent::client::permission_respond(
+            port_copy, &sid, &pid, "always", Some(true),
+        )
+        .await
+        {
+            log::warn!("[stream] auto permission_respond failed: {}", e);
+        }
+    });
+}
+
 // ── 标题生成（阻塞式，不需要流式）────────────────────────────────────────────
 
 /// 通过 `GET /global/event` + `POST /session/:id/message` 收集完整回复文本。
@@ -58,6 +74,8 @@ pub async fn collect_text_via_global_events(
     let mut session_part_ids: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     let mut result = String::new();
+    // 上一个发送过内容的 text part ID，用于在切换 part 时插入换行分隔
+    let mut last_text_part_id: Option<String> = None;
 
     let mut stream = sse_resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -87,6 +105,12 @@ pub async fn collect_text_via_global_events(
                             let full = part["text"].as_str().unwrap_or("");
                             let prev = *part_offsets.get(&part_id).unwrap_or(&0);
                             if full.len() > prev {
+                                if last_text_part_id.as_deref() != Some(&part_id)
+                                    && last_text_part_id.is_some()
+                                {
+                                    result.push_str("\n\n");
+                                }
+                                last_text_part_id = Some(part_id.clone());
                                 result.push_str(&full[prev..]);
                                 part_offsets.insert(part_id, full.len());
                             }
@@ -102,6 +126,12 @@ pub async fn collect_text_via_global_events(
                     if props["field"].as_str() == Some("text") {
                         let delta = props["delta"].as_str().unwrap_or("");
                         if !delta.is_empty() {
+                            if last_text_part_id.as_deref() != Some(part_id)
+                                && last_text_part_id.is_some()
+                            {
+                                result.push_str("\n\n");
+                            }
+                            last_text_part_id = Some(part_id.to_string());
                             result.push_str(delta);
                             // 更新偏移，避免快照事件重复发送
                             let prev = *part_offsets.get(part_id).unwrap_or(&0);
@@ -113,6 +143,17 @@ pub async fn collect_text_via_global_events(
                     if props["sessionID"].as_str() == Some(session_id) {
                         return Ok(result);
                     }
+                }
+                // permission.updated：自动回复以解除 agent 阻塞（标题生成无需展示）
+                "permission.updated" => {
+                    if props["sessionID"].as_str() != Some(session_id) {
+                        continue;
+                    }
+                    let permission_id = props["id"].as_str().unwrap_or("");
+                    if permission_id.is_empty() {
+                        continue;
+                    }
+                    spawn_auto_permission_respond(port, session_id, permission_id);
                 }
                 _ => {}
             }
@@ -175,6 +216,8 @@ pub async fn stream_global_events(
     // 本 session 的 part_id → part_type 映射（从 message.part.updated 注册）
     let mut session_parts: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    // 上一个发送过内容的 text part ID，用于在切换 part 时插入换行分隔
+    let mut last_text_part_id: Option<String> = None;
 
     let mut stream = sse_resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -244,6 +287,15 @@ pub async fn stream_global_events(
 
                     match (part_type, field) {
                         ("text", "text") => {
+                            // 切换到新的 text part 时插入换行，确保 Markdown 标题等语法正确渲染
+                            if last_text_part_id.as_deref() != Some(part_id)
+                                && last_text_part_id.is_some()
+                            {
+                                let _ = channel.send(StreamEvent::ContentChunk {
+                                    delta: "\n\n".to_string(),
+                                });
+                            }
+                            last_text_part_id = Some(part_id.to_string());
                             let _ = channel.send(StreamEvent::ContentChunk {
                                 delta: delta.to_string(),
                             });
@@ -280,6 +332,45 @@ pub async fn stream_global_events(
                         let _ = channel.send(StreamEvent::Done);
                         return Ok(());
                     }
+                }
+
+                // permission.updated：将 title 作为普通文本展示，并自动回复解除 agent 阻塞
+                "permission.updated" => {
+                    let perm_session = props["sessionID"].as_str().unwrap_or("");
+                    if perm_session != session_id {
+                        continue;
+                    }
+                    let permission_id = props["id"].as_str().unwrap_or("");
+                    let title = props["title"].as_str().unwrap_or("Tool permission requested");
+                    if permission_id.is_empty() {
+                        continue;
+                    }
+
+                    // 1. 将 permission title 作为普通文本发送给前端
+                    let display = format!("\n> [Permission] {}\n\n", title);
+                    let _ = channel.send(StreamEvent::ContentChunk {
+                        delta: display,
+                    });
+
+                    // 2. 自动回复 "always" 以解除 agent 阻塞
+                    spawn_auto_permission_respond(port, session_id, permission_id);
+                }
+
+                // question.asked：AI agent 请求用户输入
+                "question.asked" => {
+                    let q_session = props["sessionID"].as_str().unwrap_or("");
+                    if q_session != session_id {
+                        continue;
+                    }
+                    let question_id = props["id"].as_str().unwrap_or("");
+                    if question_id.is_empty() {
+                        continue;
+                    }
+                    let _ = channel.send(StreamEvent::QuestionRequest {
+                        question_id: question_id.to_string(),
+                        session_id: session_id.to_string(),
+                        questions: props["questions"].clone(),
+                    });
                 }
 
                 _ => {}

@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # ECharts Chart Block 渲染设计
 
 **日期：** 2026-03-19

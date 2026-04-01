@@ -1,0 +1,38 @@
+/* ── AI Change Highlight: Pulse + Residual ────────────────────── */
+
+@keyframes ai-pulse {
+  0%   { background-color: transparent; box-shadow: none; }
+  15%  { background-color: rgba(0, 201, 167, 0.35); box-shadow: 0 0 12px rgba(0, 201, 167, 0.25); }
+  30%  { background-color: rgba(0, 201, 167, 0.08); box-shadow: none; }
+  45%  { background-color: rgba(0, 201, 167, 0.30); box-shadow: 0 0 10px rgba(0, 201, 167, 0.2); }
+  60%  { background-color: rgba(0, 201, 167, 0.05); box-shadow: none; }
+  75%  { background-color: rgba(0, 201, 167, 0.20); box-shadow: 0 0 6px rgba(0, 201, 167, 0.15); }
+  100% { background-color: rgba(0, 201, 167, 0.06); box-shadow: none; }
+}
+
+.ai-highlight-pulse {
+  animation: ai-pulse 2.4s ease-in-out forwards;
+  border-radius: 4px;
+}
+
+.ai-highlight-residual {
+  background-color: rgba(0, 201, 167, 0.06);
+  border-left: 2px solid rgba(0, 201, 167, 0.4);
+  border-radius: 4px;
+}
+
+/* Monaco editor line decorations */
+.ai-line-pulse {
+  animation: ai-pulse 2.4s ease-in-out forwards;
+}
+
+.ai-line-residual {
+  background-color: rgba(0, 201, 167, 0.06);
+}
+
+.ai-gutter-residual {
+  background: rgba(0, 201, 167, 0.4);
+  width: 3px !important;
+  margin-left: 3px;
+  border-radius: 1px;
+}

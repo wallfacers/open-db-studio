@@ -10,6 +10,7 @@ import { useTaskStore } from '../../store/taskStore';
 import { TablePickerModal } from './TablePickerModal';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { Tooltip } from '../common/Tooltip';
+import { metricsMetricNodeId, metricsDbNodeId, metricsSchemaNodeId } from '../../utils/nodeId';
 
 interface Props {
   scope: MetricScope;
@@ -44,9 +45,9 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   const openNewMetricTab = useQueryStore(s => s.openNewMetricTab);
 
   const parentNodeId = scope.schema
-    ? `schema_${scope.connectionId}_${scope.database}_${scope.schema}`
+    ? metricsSchemaNodeId(scope.connectionId, scope.database!, scope.schema)
     : scope.database
-      ? `db_${scope.connectionId}_${scope.database}`
+      ? metricsDbNodeId(scope.connectionId, scope.database)
       : null;
 
   const load = useCallback(async () => {
@@ -117,7 +118,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
     for (const id of ids) {
       try {
-        await deleteMetric(id, `metric_${id}`, parentNodeId ?? undefined);
+        await deleteMetric(id, metricsMetricNodeId(id), parentNodeId ?? undefined);
         closeMetricTabById(id);
       } catch (e: any) {
         setError(e?.message ?? t('metricsExplorer.metricList.deleteFailed'));

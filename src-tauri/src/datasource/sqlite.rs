@@ -63,6 +63,18 @@ impl DataSource for SqliteDataSource {
         tokio::task::spawn_blocking(move || -> AppResult<QueryResult> {
             let guard = conn.blocking_lock();
             let start = Instant::now();
+
+            // Non-SELECT statements: use execute_batch() which supports multiple
+            // semicolon-separated statements in a single call.
+            let trimmed = sql.trim_start().to_uppercase();
+            if !trimmed.starts_with("SELECT") && !trimmed.starts_with("PRAGMA") && !trimmed.starts_with("EXPLAIN") {
+                guard
+                    .execute_batch(&sql)
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+                let duration_ms = start.elapsed().as_millis() as u64;
+                return Ok(QueryResult { columns: vec![], rows: vec![], row_count: 0, duration_ms });
+            }
+
             let mut stmt = guard
                 .prepare(&sql)
                 .map_err(|e| AppError::Datasource(e.to_string()))?;
@@ -344,6 +356,10 @@ impl DataSource for SqliteDataSource {
             has_multi_database: false,
             has_partitions: false,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["os_native".to_string()],
+            has_pool_config: false,
+            has_timeout_config: false,
+            has_ssl_config: false,
         }
     }
 

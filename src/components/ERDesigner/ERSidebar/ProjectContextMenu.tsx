@@ -1,9 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Edit3, Trash2, Link2, Unlink, Download, Table2, LucideIcon, FolderOpen } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { emit } from '@tauri-apps/api/event';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
+import { useConfirmStore } from '../../../store/confirmStore';
 
 interface ProjectContextMenuProps {
   x: number;
@@ -24,10 +26,14 @@ interface MenuItem {
 export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, projectId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { projects, deleteProject, loadProject, addTable } = useErDesignerStore();
+  const { projects, tables, deleteProject, loadProject, addTable, updateProject, unbindConnection, exportJson } = useErDesignerStore();
   const { openERDesignTab } = useQueryStore();
 
   const project = projects.find(p => p.id === projectId);
+
+  const [renaming, setRenaming] = useState(false);
+  const [renameName, setRenameName] = useState(project?.name || '');
+  const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -39,35 +45,88 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
+  useEffect(() => {
+    if (renaming) {
+      renameRef.current?.focus();
+      renameRef.current?.select();
+    }
+  }, [renaming]);
+
   const handleDelete = async () => {
-    if (!confirm(t('erDesigner.confirmDeleteProject') || '确定删除此项目？')) return;
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('common.delete') || '删除',
+      message: t('erDesigner.confirmDeleteProject') || '确定删除此项目？',
+      variant: 'danger',
+    });
+    if (!ok) return;
     await deleteProject(projectId);
     onClose();
   };
 
   const handleRename = () => {
-    // TODO: Open rename dialog
+    setRenaming(true);
+  };
+
+  const handleRenameConfirm = async () => {
+    const trimmed = renameName.trim();
+    if (trimmed && trimmed !== project?.name) {
+      await updateProject(projectId, { name: trimmed });
+    }
     onClose();
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRenameConfirm();
+    } else if (e.key === 'Escape') {
+      onClose();
+    }
   };
 
   const handleBindConnection = () => {
-    // TODO: Open bind connection dialog
+    // Open the ER canvas tab which has the bind dialog, then trigger it
+    openERDesignTab(projectId, project?.name || '');
     onClose();
+    // Dispatch event to open bind dialog on the canvas
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('er-open-bind-dialog', { detail: { projectId } }));
+    }, 100);
   };
 
-  const handleUnbind = () => {
-    // TODO: Unbind connection
+  const handleUnbind = async () => {
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('erDesigner.unbindConnection') || '解除绑定',
+      message: t('erDesigner.confirmUnbind') || '确定解除绑定？',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    await unbindConnection(projectId);
     onClose();
   };
 
   const handleAddTable = async () => {
     await loadProject(projectId);
-    await addTable('new_table', { x: 100, y: 100 });
+    const existing = new Set(tables.map(t => t.name));
+    let name = 'new_table';
+    let i = 1;
+    while (existing.has(name)) {
+      name = `new_table_${++i}`;
+    }
+    await addTable(name, { x: 100, y: 100 });
+    // Open the ER design tab so the user can see the new table
+    openERDesignTab(projectId, project?.name || '');
     onClose();
+    // If canvas was already mounted, trigger reload to show the new node
+    emit('er-canvas-reload', { projectId });
   };
 
-  const handleExport = () => {
-    // TODO: Export project as JSON
+  const handleExport = async () => {
+    try {
+      const json = await exportJson(projectId);
+      await navigator.clipboard.writeText(json);
+    } catch (e) {
+      console.error('Export failed:', e);
+    }
     onClose();
   };
 
@@ -75,6 +134,27 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     openERDesignTab(projectId, project?.name || '');
     onClose();
   };
+
+  if (renaming) {
+    return createPortal(
+      <div
+        ref={menuRef}
+        className="fixed bg-[#0d1117] border border-[#1e2d42] rounded-md shadow-lg p-2 z-[200] min-w-[180px]"
+        style={{ left: x, top: y }}
+      >
+        <input
+          ref={renameRef}
+          type="text"
+          value={renameName}
+          onChange={(e) => setRenameName(e.target.value)}
+          onKeyDown={handleRenameKeyDown}
+          onBlur={handleRenameConfirm}
+          className="w-full bg-[#1a2639] border border-[#253347] rounded px-2 py-1 text-xs text-[#c8daea] focus:outline-none focus:border-[#009e84]"
+        />
+      </div>,
+      document.body
+    );
+  }
 
   const menuItems: MenuItem[] = [
     { icon: FolderOpen, label: t('common.open') || '打开', onClick: handleOpen },

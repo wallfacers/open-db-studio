@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Edit3, Trash2, Plus, Copy, LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { useQueryStore } from '../../../store/queryStore';
+import { useConfirmStore } from '../../../store/confirmStore';
 
 interface TableContextMenuProps {
   x: number;
@@ -23,7 +25,10 @@ interface MenuItem {
 export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projectId, tableId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { deleteTable } = useErDesignerStore();
+  const { tables, columns, deleteTable, loadProject, addTable, addColumn, openDrawer } = useErDesignerStore();
+  const { openERDesignTab } = useQueryStore();
+
+  const table = tables.find(t => t.id === tableId);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -36,23 +41,73 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   }, [onClose]);
 
   const handleDelete = async () => {
-    if (!confirm(t('erDesigner.confirmDeleteTable') || '确定删除此表？')) return;
+    const ok = await useConfirmStore.getState().confirm({
+      title: t('common.delete') || '删除',
+      message: t('erDesigner.confirmDeleteTable') || '确定删除此表？',
+      variant: 'danger',
+    });
+    if (!ok) return;
     await deleteTable(tableId);
     onClose();
   };
 
   const handleEdit = () => {
-    // TODO: Open table edit dialog
+    openERDesignTab(projectId, table?.name || '');
+    openDrawer(tableId);
     onClose();
   };
 
-  const handleAddColumn = () => {
-    // TODO: Open add column dialog
+  const handleAddColumn = async () => {
+    const cols = columns[tableId] || [];
+    await addColumn(tableId, {
+      name: `column_${cols.length + 1}`,
+      data_type: 'VARCHAR',
+      nullable: true,
+      default_value: null,
+      is_primary_key: false,
+      is_auto_increment: false,
+      comment: null,
+      length: null,
+      scale: null,
+      is_unique: false,
+      unsigned: false,
+      charset: null,
+      collation: null,
+      on_update: null,
+      enum_values: null,
+      sort_order: cols.length,
+    });
     onClose();
   };
 
-  const handleDuplicate = () => {
-    // TODO: Duplicate table
+  const handleDuplicate = async () => {
+    if (!table) return;
+    const srcCols = columns[tableId] || [];
+    const newTable = await addTable(`${table.name}_copy`, {
+      x: table.position_x + 50,
+      y: table.position_y + 50,
+    });
+    for (let i = 0; i < srcCols.length; i++) {
+      const col = srcCols[i];
+      await addColumn(newTable.id, {
+        name: col.name,
+        data_type: col.data_type,
+        nullable: col.nullable,
+        default_value: col.default_value,
+        is_primary_key: col.is_primary_key,
+        is_auto_increment: col.is_auto_increment,
+        comment: col.comment,
+        length: col.length,
+        scale: col.scale,
+        is_unique: col.is_unique,
+        unsigned: col.unsigned,
+        charset: col.charset,
+        collation: col.collation,
+        on_update: col.on_update,
+        enum_values: col.enum_values,
+        sort_order: i,
+      });
+    }
     onClose();
   };
 

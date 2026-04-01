@@ -1,14 +1,18 @@
 pub mod clickhouse;
+pub mod db2;
+pub mod gaussdb;
 pub mod mysql;
 pub mod oracle;
 pub mod pool_cache;
 pub mod postgres;
 pub mod sqlite;
 pub mod sqlserver;
+pub mod utils;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::AppResult;
+use std::fmt;
+use crate::{AppError, AppResult};
 
 /// 查询结果
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -130,6 +134,157 @@ pub struct ConnectionConfig {
     pub extra_params: Option<String>,
     /// SQLite 专用：.sqlite 文件绝对路径
     pub file_path: Option<String>,
+
+    // === 认证 ===
+    /// 认证方式: "password"(默认) | "ssl_cert" | "os_native" | "token"
+    pub auth_type: Option<String>,
+    /// auth_type=token 时使用的令牌
+    pub token: Option<String>,
+
+    // === SSL/TLS ===
+    /// SSL 模式: "disable"|"prefer"|"require"|"verify_ca"|"verify_full"
+    pub ssl_mode: Option<String>,
+    pub ssl_ca_path: Option<String>,
+    pub ssl_cert_path: Option<String>,
+    pub ssl_key_path: Option<String>,
+
+    // === 超时 ===
+    pub connect_timeout_secs: Option<u32>,
+    pub read_timeout_secs: Option<u32>,
+
+    // === 连接池 ===
+    pub pool_max_connections: Option<u32>,
+    pub pool_idle_timeout_secs: Option<u32>,
+}
+
+// ─── 配置校验 ────────────────────────────────────────────────────────────────
+
+/// 连接配置校验错误类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ConfigError {
+    UnsupportedAuth { driver: String, auth_type: String },
+    MissingField { field: String, reason: String },
+    InvalidValue { field: String, value: String, constraint: String },
+    FileNotFound { path: String },
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfigError::UnsupportedAuth { driver, auth_type } => {
+                write!(f, "驱动 '{}' 不支持认证方式 '{}', 支持的方式: {}",
+                       driver, auth_type, supported_auth_types(driver).join(", "))
+            }
+            ConfigError::MissingField { field, reason } => {
+                write!(f, "缺少必填字段 '{}': {}", field, reason)
+            }
+            ConfigError::InvalidValue { field, value, constraint } => {
+                write!(f, "字段 '{}' 的值 '{}' 不合法: {}", field, value, constraint)
+            }
+            ConfigError::FileNotFound { path } => {
+                write!(f, "文件不存在: {}", path)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+impl From<ConfigError> for AppError {
+    fn from(e: ConfigError) -> Self {
+        AppError::Datasource(e.to_string())
+    }
+}
+
+/// 返回指定驱动支持的认证方式列表
+pub fn supported_auth_types(driver: &str) -> &'static [&'static str] {
+    match driver {
+        "mysql" | "doris" | "tidb" => &["password", "ssl_cert", "os_native"],
+        "postgres" | "gaussdb" => &["password", "ssl_cert", "os_native"],
+        "sqlite" => &["os_native"],
+        "oracle" => &["password", "os_native"],
+        "sqlserver" => &["password", "ssl_cert", "os_native"],
+        "clickhouse" => &["password", "ssl_cert", "token"],
+        "db2" => &["password", "os_native"],
+        _ => &["password"],
+    }
+}
+
+/// 验证驱动与认证方式是否兼容
+pub fn validate_auth_compatibility(driver: &str, auth_type: &str) -> AppResult<()> {
+    let supported = supported_auth_types(driver);
+    if !supported.contains(&auth_type) {
+        return Err(AppError::Datasource(format!(
+            "驱动 {} 不支持认证方式 '{}', 支持的方式: {}",
+            driver, auth_type, supported.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// 统一校验连接配置的合法性
+pub fn validate_connection_config(config: &ConnectionConfig) -> AppResult<()> {
+    // 1. driver 有效性
+    let valid_drivers = ["mysql", "postgres", "sqlite", "oracle", "sqlserver", "doris", "clickhouse", "tidb", "gaussdb", "db2"];
+    if !valid_drivers.contains(&config.driver.as_str()) {
+        return Err(AppError::Datasource(format!("不支持的驱动: {}", config.driver)));
+    }
+
+    // 2. auth_type 兼容性（根据 driver 选择默认值，而非硬编码 "password"）
+    let default_auth = supported_auth_types(&config.driver).first().unwrap_or(&"password");
+    let auth_type = config.auth_type.as_deref().unwrap_or(default_auth);
+    validate_auth_compatibility(&config.driver, auth_type)?;
+
+    // 3. 必填字段完整性（根据 driver）
+    match config.driver.as_str() {
+        "sqlite" => {
+            if config.file_path.is_none() || config.file_path.as_ref().map_or(true, |s| s.is_empty()) {
+                return Err(AppError::Datasource("SQLite 必须指定文件路径".to_string()));
+            }
+        }
+        _ => {
+            // 网络驱动需要 host
+            if config.host.is_none() || config.host.as_ref().map_or(true, |s| s.is_empty()) {
+                return Err(AppError::Datasource(format!("{} 必须指定主机地址", config.driver)));
+            }
+        }
+    }
+
+    // 4. SSL 证书文件存在性（仅在指定了路径时检查）
+    if let Some(ref path) = config.ssl_ca_path {
+        if !path.is_empty() && !std::path::Path::new(path).exists() {
+            return Err(AppError::Datasource(format!("CA 证书文件不存在: {}", path)));
+        }
+    }
+    if let Some(ref path) = config.ssl_cert_path {
+        if !path.is_empty() && !std::path::Path::new(path).exists() {
+            return Err(AppError::Datasource(format!("客户端证书文件不存在: {}", path)));
+        }
+    }
+    if let Some(ref path) = config.ssl_key_path {
+        if !path.is_empty() && !std::path::Path::new(path).exists() {
+            return Err(AppError::Datasource(format!("客户端密钥文件不存在: {}", path)));
+        }
+    }
+
+    // 5. 端口/超时范围合法性
+    if let Some(port) = config.port {
+        if port == 0 {
+            return Err(AppError::Datasource("端口号不能为 0".to_string()));
+        }
+    }
+    if let Some(timeout) = config.connect_timeout_secs {
+        if timeout == 0 {
+            return Err(AppError::Datasource("连接超时不能为 0".to_string()));
+        }
+    }
+    if let Some(timeout) = config.read_timeout_secs {
+        if timeout == 0 {
+            return Err(AppError::Datasource("读取超时不能为 0".to_string()));
+        }
+    }
+
+    Ok(())
 }
 
 // ─── 驱动能力声明 ────────────────────────────────────────────────────────────
@@ -157,6 +312,14 @@ pub struct DriverCapabilities {
     pub has_multi_database: bool,
     pub has_partitions: bool,
     pub sql_dialect: SqlDialect,
+    /// 支持的认证方式列表
+    pub supported_auth_types: Vec<String>,
+    /// 是否支持连接池配置
+    pub has_pool_config: bool,
+    /// 是否支持超时配置
+    pub has_timeout_config: bool,
+    /// 是否支持 SSL 配置
+    pub has_ssl_config: bool,
 }
 
 impl Default for DriverCapabilities {
@@ -170,6 +333,10 @@ impl Default for DriverCapabilities {
             has_multi_database: false,
             has_partitions: false,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["password".to_string()],
+            has_pool_config: false,
+            has_timeout_config: false,
+            has_ssl_config: false,
         }
     }
 }
@@ -300,6 +467,7 @@ pub trait DataSource: Send + Sync {
 pub async fn create_datasource(
     config: &ConnectionConfig,
 ) -> AppResult<Box<dyn DataSource>> {
+    validate_connection_config(config)?;
     match config.driver.as_str() {
         "mysql"  => Ok(Box::new(mysql::MySqlDataSource::new(config).await?)),
         "postgres" => Ok(Box::new(postgres::PostgresDataSource::new(config).await?)),
@@ -309,6 +477,8 @@ pub async fn create_datasource(
         "doris"     => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(config, mysql::Dialect::Doris).await?)),
         "tidb"      => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(config, mysql::Dialect::TiDB).await?)),
         "clickhouse" => Ok(Box::new(clickhouse::ClickHouseDataSource::new(config).await?)),
+        "gaussdb" => Ok(Box::new(gaussdb::GaussDbDataSource::new(config).await?)),
+        "db2" => Ok(Box::new(db2::Db2DataSource::new(config).await?)),
         d => Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     }
 }
@@ -344,6 +514,8 @@ pub async fn create_datasource_with_context(
         "doris"     => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(&cfg, mysql::Dialect::Doris).await?)),
         "tidb"      => Ok(Box::new(mysql::MySqlDataSource::new_with_dialect(&cfg, mysql::Dialect::TiDB).await?)),
         "clickhouse" => Ok(Box::new(clickhouse::ClickHouseDataSource::new(&cfg).await?)),
+        "gaussdb" => Ok(Box::new(gaussdb::GaussDbDataSource::new_with_schema(&cfg, schema).await?)),
+        "db2" => Ok(Box::new(db2::Db2DataSource::new(&cfg).await?)),
         d => Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
     }
 }

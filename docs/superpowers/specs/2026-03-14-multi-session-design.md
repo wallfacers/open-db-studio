@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # Multi-Session Background Streaming Design
 
 **Date**: 2026-03-14

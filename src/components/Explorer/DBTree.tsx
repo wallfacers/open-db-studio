@@ -7,6 +7,7 @@ import { TreeNode } from './TreeNode';
 import { ContextMenu } from './ContextMenu';
 import { invoke } from '@tauri-apps/api/core';
 import type { TreeNode as TreeNodeType } from '../../types';
+import { connNodeId, parseGroupNodeId, tableDataTabId, tableStructureTabId } from '../../utils/nodeId';
 import { TableManageDialog } from '../TableManageDialog';
 import { IndexManager } from '../IndexManager';
 import { ConnectionModal } from '../ConnectionModal';
@@ -19,6 +20,7 @@ import { ImportWizard } from '../ImportExport/ImportWizard';
 import { CreateDatabaseDialog } from '../DatabaseManager/CreateDatabaseDialog';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { Folder, FolderX } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 
@@ -206,7 +208,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
     if (node.nodeType === 'connection') return node.label;
     const connId = node.meta.connectionId;
     if (!connId) return '';
-    const connNode = nodes.get(`conn_${connId}`);
+    const connNode = nodes.get(connNodeId(connId));
     return connNode?.label ?? '';
   };
 
@@ -231,6 +233,30 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
     const q = (name: string) => quoteIdentifier(name, driver);
     const cols = columnName ? q(columnName) : '*';
     return `SELECT ${cols} FROM ${q(tableName)} LIMIT 100;`;
+  };
+
+  const handleCopyConnectionInfo = async (connectionId: number) => {
+    const conn = connections.find(c => c.id === connectionId);
+    if (!conn) return;
+    try {
+      const password = await invoke<string>('get_connection_password', { id: connectionId });
+      const payload = {
+        _odb: 1,
+        driver: conn.driver,
+        name: conn.name,
+        host: conn.host ?? null,
+        port: conn.port ?? null,
+        database_name: conn.database_name ?? null,
+        username: conn.username ?? null,
+        password,
+        file_path: conn.file_path ?? null,
+        extra_params: conn.extra_params ?? null,
+      };
+      await writeText(JSON.stringify(payload));
+      showToast(t('contextMenu.copyConnectionInfoSuccess'), 'success');
+    } catch {
+      showToast(t('contextMenu.copyConnectionInfoError'), 'error');
+    }
   };
 
   const handleMoveToGroup = async (connectionId: number, groupId: number | null) => {
@@ -326,11 +352,12 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
               y: contextMenu.y,
             });
           }}
+          onCopyConnectionInfo={() => handleCopyConnectionInfo(getConnectionId(contextMenu.node))}
           onEditConnection={() => setEditingConnId(getConnectionId(contextMenu.node))}
           onDeleteConnection={async () => {
             if (!await confirm({ message: t('dbTree.confirmDeleteConnection'), variant: 'danger' })) return;
             const connId = getConnectionId(contextMenu.node);
-            await invoke('delete_connection', { id: connId });
+            await useConnectionStore.getState().deleteConnection(connId);
             useTreeStore.getState().init();
             useQueryStore.getState().closeTabsByConnectionId(connId);
             showToast(t('dbTree.connectionDeleted'), 'success');
@@ -388,8 +415,8 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
               const connId = getConnectionId(n);
               const dbName = n.meta.database ?? `conn_${connId}`;
               const schemaStr = n.meta.schema ?? '';
-              const dataTabId = `table_${connId}_${dbName}_${schemaStr}_${n.label}`;
-              const structTabId = `table_structure_${connId}_${dbName}_${schemaStr}_${n.label}`;
+              const dataTabId = tableDataTabId(connId, dbName, schemaStr, n.label);
+              const structTabId = tableStructureTabId(connId, dbName, schemaStr, n.label);
               const { tabs, closeTab } = useQueryStore.getState();
               if (tabs.some(t => t.id === dataTabId)) closeTab(dataTabId);
               if (tabs.some(t => t.id === structTabId)) closeTab(structTabId);
@@ -404,17 +431,16 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           }}
           onCreateGroup={() => {/* 入口在 Explorer 头部 FolderPlus 按钮 */}}
           onCreateConnectionInGroup={() => {
-            const groupIdStr = contextMenu.node.id.replace('group_', '');
-            setNewConnGroupId(parseInt(groupIdStr, 10));
+            setNewConnGroupId(parseGroupNodeId(contextMenu.node.id));
           }}
           onRenameGroup={() => {
             const n = contextMenu.node;
-            const groupId = parseInt(n.id.replace('group_', ''), 10);
+            const groupId = parseGroupNodeId(n.id);
             setEditingGroup({ id: groupId, name: n.label, color: n.meta.color ?? null });
           }}
           onDeleteGroup={async () => {
             if (!await confirm({ message: t('dbTree.confirmDeleteGroup'), variant: 'danger' })) return;
-            const groupId = parseInt(contextMenu.node.id.replace('group_', ''), 10);
+            const groupId = parseGroupNodeId(contextMenu.node.id);
             await invoke('delete_group', { id: groupId });
             useTreeStore.getState().init();
             showToast(t('dbTree.groupDeleted'), 'success');
@@ -548,7 +574,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
                 }`}
                 onClick={() => handleMoveToGroup(
                   moveToGroupPicker.connectionId,
-                  parseInt(g.id.replace('group_', ''), 10)
+                  parseGroupNodeId(g.id)
                 )}
               >
                 <Folder size={13} />
@@ -652,7 +678,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
             if (parentId) refreshNode(parentId);
             // 如果表数据 Tab 已打开且为活跃 Tab，触发数据刷新
             const dbName = truncateConfirm.database ?? `conn_${truncateConfirm.connectionId}`;
-            const tabId = `table_${truncateConfirm.connectionId}_${dbName}_${truncateConfirm.schema ?? ''}_${truncateConfirm.tableName}`;
+            const tabId = tableDataTabId(truncateConfirm.connectionId, dbName, truncateConfirm.schema ?? '', truncateConfirm.tableName);
             const { tabs, activeTabId, triggerTableRefresh } = useQueryStore.getState();
             if (tabs.some(t => t.id === tabId) && activeTabId === tabId) {
               triggerTableRefresh(tabId);
@@ -700,7 +726,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           onSuccess={(dbName, switchTo) => {
             const connId = createDb.connectionId;
             setCreateDb(null);
-            refreshNode(`conn_${connId}`);
+            refreshNode(connNodeId(connId));
             if (switchTo) {
               showToast(`已创建数据库 ${dbName}`, 'success');
             }

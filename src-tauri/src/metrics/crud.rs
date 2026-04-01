@@ -401,6 +401,38 @@ pub fn count_metrics_batch(
     Ok(map)
 }
 
+/// 计算指定节点下的指标数量（用于树节点未展开时显示徽章）
+pub fn count_metrics_by_node(
+    connection_id: i64,
+    database: Option<&str>,
+    schema: Option<&str>,
+) -> AppResult<i64> {
+    let conn = crate::db::get().lock().unwrap();
+    let count: i64 = match (database, schema) {
+        (Some(db), Some(sc)) => conn.query_row(
+            "SELECT COUNT(*) FROM metrics WHERE connection_id=?1 AND scope_database=?2 AND scope_schema=?3",
+            rusqlite::params![connection_id, db, sc],
+            |row| row.get(0),
+        )?,
+        (Some(db), None) => conn.query_row(
+            "SELECT COUNT(*) FROM metrics WHERE connection_id=?1 AND scope_database=?2",
+            rusqlite::params![connection_id, db],
+            |row| row.get(0),
+        )?,
+        (None, Some(sc)) => conn.query_row(
+            "SELECT COUNT(*) FROM metrics WHERE connection_id=?1 AND scope_schema=?2",
+            rusqlite::params![connection_id, sc],
+            |row| row.get(0),
+        )?,
+        (None, None) => conn.query_row(
+            "SELECT COUNT(*) FROM metrics WHERE connection_id=?1",
+            rusqlite::params![connection_id],
+            |row| row.get(0),
+        )?,
+    };
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

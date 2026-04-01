@@ -9,9 +9,16 @@ use std::sync::Mutex;
 use crate::AppResult;
 
 static DB: OnceCell<Mutex<Connection>> = OnceCell::new();
+static APP_DATA_DIR: OnceCell<String> = OnceCell::new();
+
+/// 获取 app_data_dir（db::init 时缓存）
+pub fn get_app_data_dir() -> &'static str {
+    APP_DATA_DIR.get().expect("APP_DATA_DIR not initialized")
+}
 
 /// 初始化内置 SQLite 数据库
 pub fn init(app_data_dir: &str) -> AppResult<()> {
+    APP_DATA_DIR.set(app_data_dir.to_string()).ok();
     // 确保目录存在（Windows 上 Tauri 不一定自动创建）
     std::fs::create_dir_all(app_data_dir)
         .map_err(|e| crate::AppError::Other(format!("Failed to create app data dir: {}", e)))?;
@@ -20,6 +27,8 @@ pub fn init(app_data_dir: &str) -> AppResult<()> {
 
     // 开启 WAL 模式提升并发性能
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    // 开启外键约束，确保 CASCADE / SET NULL 规则生效
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
     migrations::run_migrations(&conn)?;
 
@@ -35,28 +44,52 @@ pub fn get() -> &'static Mutex<Connection> {
     DB.get().expect("DB not initialized. Call db::init() first.")
 }
 
+// ─── Connection 行映射辅助 ──────────────────────────────────────────────────
+
+const CONNECTION_SELECT: &str =
+    "SELECT id, name, group_id, driver, host, port, database_name, username, \
+            extra_params, file_path, \
+            auth_type, token_enc, ssl_mode, ssl_ca_path, ssl_cert_path, ssl_key_path, \
+            connect_timeout_secs, read_timeout_secs, \
+            pool_max_connections, pool_idle_timeout_secs, \
+            sort_order, created_at, updated_at \
+     FROM connections";
+
+fn row_to_connection(row: &rusqlite::Row) -> rusqlite::Result<models::Connection> {
+    Ok(models::Connection {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        group_id: row.get(2)?,
+        driver: row.get(3)?,
+        host: row.get(4)?,
+        port: row.get(5)?,
+        database_name: row.get(6)?,
+        username: row.get(7)?,
+        extra_params: row.get(8)?,
+        file_path: row.get(9)?,
+        auth_type: row.get(10)?,
+        token_enc: row.get(11)?,
+        ssl_mode: row.get(12)?,
+        ssl_ca_path: row.get(13)?,
+        ssl_cert_path: row.get(14)?,
+        ssl_key_path: row.get(15)?,
+        connect_timeout_secs: row.get::<_, Option<i64>>(16)?.map(|v| v as u32),
+        read_timeout_secs: row.get::<_, Option<i64>>(17)?.map(|v| v as u32),
+        pool_max_connections: row.get::<_, Option<i64>>(18)?.map(|v| v as u32),
+        pool_idle_timeout_secs: row.get::<_, Option<i64>>(19)?.map(|v| v as u32),
+        sort_order: row.get(20)?,
+        created_at: row.get(21)?,
+        updated_at: row.get(22)?,
+    })
+}
+
 /// 根据 ID 获取单个连接配置
 pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
     let conn = get().lock().unwrap();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections WHERE id = ?1",
+        &format!("{} WHERE id = ?1", CONNECTION_SELECT),
         [id],
-        |row| Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        }),
+        |row| row_to_connection(row),
     ).optional()?;
     Ok(result)
 }
@@ -65,27 +98,9 @@ pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
 pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     let conn = get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections ORDER BY sort_order, name"
+        &format!("{} ORDER BY sort_order, name", CONNECTION_SELECT)
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        })
-    })?;
-
+    let rows = stmt.query_map([], |row| row_to_connection(row))?;
     let mut results = Vec::new();
     for row in rows {
         results.push(row?);
@@ -106,9 +121,19 @@ pub struct UpdateConnectionRequest {
     pub extra_params: Option<String>,
     pub group_id: Option<i64>,
     pub file_path: Option<String>,
+    pub auth_type: Option<String>,
+    pub token: Option<String>,
+    pub ssl_mode: Option<String>,
+    pub ssl_ca_path: Option<String>,
+    pub ssl_cert_path: Option<String>,
+    pub ssl_key_path: Option<String>,
+    pub connect_timeout_secs: Option<u32>,
+    pub read_timeout_secs: Option<u32>,
+    pub pool_max_connections: Option<u32>,
+    pub pool_idle_timeout_secs: Option<u32>,
 }
 
-/// 创建连接，密码加密存储
+/// 创建连接，密码和token 加密存储
 pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<models::Connection> {
     let conn = get().lock().unwrap();
     let now = Utc::now().to_rfc3339();
@@ -118,43 +143,52 @@ pub fn create_connection(req: &models::CreateConnectionRequest) -> AppResult<mod
         _ => None,
     };
 
+    let token_enc = match &req.token {
+        Some(t) if !t.is_empty() => Some(crate::crypto::encrypt(t)?),
+        _ => None,
+    };
+
     conn.execute(
-        "INSERT INTO connections (name, group_id, driver, host, port, database_name, username, password_enc, extra_params, file_path, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+        "INSERT INTO connections (name, group_id, driver, host, port, database_name, username, password_enc, extra_params, file_path, \
+         auth_type, token_enc, ssl_mode, ssl_ca_path, ssl_cert_path, ssl_key_path, \
+         connect_timeout_secs, read_timeout_secs, pool_max_connections, pool_idle_timeout_secs, \
+         created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
+         ?11, ?12, ?13, ?14, ?15, ?16, \
+         ?17, ?18, ?19, ?20, \
+         ?21, ?21)",
         rusqlite::params![
             req.name, req.group_id, req.driver, req.host, req.port,
             req.database_name, req.username, password_enc,
-            req.extra_params, req.file_path, now
+            req.extra_params, req.file_path,
+            req.auth_type, token_enc,
+            req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+            req.connect_timeout_secs.map(|v| v as i64),
+            req.read_timeout_secs.map(|v| v as i64),
+            req.pool_max_connections.map(|v| v as i64),
+            req.pool_idle_timeout_secs.map(|v| v as i64),
+            now
         ],
     )?;
 
     let id = conn.last_insert_rowid();
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections WHERE id = ?1",
+        &format!("{} WHERE id = ?1", CONNECTION_SELECT),
         [id],
-        |row| Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        }),
+        |row| row_to_connection(row),
     )?;
     Ok(result)
 }
 
-/// 删除连接（CASCADE 删除关联历史）
+/// 删除连接及所有关联资源
 pub fn delete_connection(id: i64) -> AppResult<()> {
     let conn = get().lock().unwrap();
+    // 显式清理缺少 CASCADE 约束的关联表
+    conn.execute("DELETE FROM migration_tasks WHERE src_connection_id = ?1 OR dst_connection_id = ?1", [id])?;
+    conn.execute("DELETE FROM schema_change_log WHERE connection_id = ?1", [id])?;
+    conn.execute("DELETE FROM task_records WHERE connection_id = ?1", [id])?;
+    conn.execute("UPDATE er_projects SET connection_id = NULL WHERE connection_id = ?1", [id])?;
+    // 删除连接本体（query_history / graph_nodes / metrics / semantic_aliases 由 CASCADE 自动清理）
     let affected = conn.execute("DELETE FROM connections WHERE id = ?1", [id])?;
     if affected == 0 {
         return Err(crate::AppError::Other(format!("Connection {} not found", id)));
@@ -162,58 +196,50 @@ pub fn delete_connection(id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// 更新连接，password 为 None 时保留原值
+/// 更新连接,password/token 为 None 时保留原值
 pub fn update_connection(id: i64, req: &UpdateConnectionRequest) -> AppResult<models::Connection> {
     let conn = get().lock().unwrap();
-    let now = Utc::now().to_rfc3339();
 
-    match &req.password {
-        Some(pwd) if !pwd.is_empty() => {
-            let password_enc = crate::crypto::encrypt(pwd)?;
-            conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
-                 database_name=?5, username=?6, password_enc=?7,
-                 extra_params=?8, group_id=?9, file_path=?10, updated_at=?11 WHERE id=?12",
-                rusqlite::params![
-                    req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username, password_enc,
-                    req.extra_params, req.group_id, req.file_path, now, id
-                ],
-            )?;
-        }
-        _ => {
-            conn.execute(
-                "UPDATE connections SET name=?1, driver=?2, host=?3, port=?4,
-                 database_name=?5, username=?6,
-                 extra_params=?7, group_id=?8, file_path=?9, updated_at=?10 WHERE id=?11",
-                rusqlite::params![
-                    req.name, req.driver, req.host, req.port,
-                    req.database_name, req.username,
-                    req.extra_params, req.group_id, req.file_path, now, id
-                ],
-            )?;
-        }
-    }
+    let password_enc = match &req.password {
+        Some(pwd) if !pwd.is_empty() => Some(crate::crypto::encrypt(pwd)?),
+        _ => None,
+    };
+    let token_enc = match &req.token {
+        Some(t) if !t.is_empty() => Some(crate::crypto::encrypt(t)?),
+        _ => None,
+    };
+
+    conn.execute(
+        "UPDATE connections SET \
+         name=?1, group_id=?2, driver=?3, host=?4, port=?5, \
+         database_name=?6, username=?7, \
+         password_enc=COALESCE(?8, password_enc), \
+         extra_params=?9, file_path=?10, \
+         auth_type=?11, \
+         token_enc=COALESCE(?12, token_enc), \
+         ssl_mode=?13, ssl_ca_path=?14, ssl_cert_path=?15, ssl_key_path=?16, \
+         connect_timeout_secs=?17, read_timeout_secs=?18, \
+         pool_max_connections=?19, pool_idle_timeout_secs=?20, \
+         updated_at=datetime('now') \
+         WHERE id=?21",
+        rusqlite::params![
+            req.name, req.group_id, req.driver, req.host, req.port,
+            req.database_name, req.username, password_enc,
+            req.extra_params, req.file_path,
+            req.auth_type, token_enc,
+            req.ssl_mode, req.ssl_ca_path, req.ssl_cert_path, req.ssl_key_path,
+            req.connect_timeout_secs.map(|v| v as i64),
+            req.read_timeout_secs.map(|v| v as i64),
+            req.pool_max_connections.map(|v| v as i64),
+            req.pool_idle_timeout_secs.map(|v| v as i64),
+            id
+        ],
+    )?;
 
     let result = conn.query_row(
-        "SELECT id, name, group_id, driver, host, port, database_name, username, extra_params, file_path, sort_order, created_at, updated_at
-         FROM connections WHERE id = ?1",
+        &format!("{} WHERE id = ?1", CONNECTION_SELECT),
         [id],
-        |row| Ok(models::Connection {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            group_id: row.get(2)?,
-            driver: row.get(3)?,
-            host: row.get(4)?,
-            port: row.get(5)?,
-            database_name: row.get(6)?,
-            username: row.get(7)?,
-            extra_params: row.get(8)?,
-            file_path: row.get(9)?,
-            sort_order: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-        }),
+        |row| row_to_connection(row),
     )?;
     Ok(result)
 }
@@ -229,11 +255,12 @@ pub fn get_configured_database(id: i64) -> AppResult<Option<String>> {
     Ok(name.filter(|s| !s.is_empty()))
 }
 
-/// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
-pub fn get_connection_password(id: i64) -> AppResult<String> {
+/// 从 connections 表读取指定加密列并解密返回；列为空或不存在时返回空字符串。
+/// 注意：`column` 仅由内部硬编码字面量传入，不存在 SQL 注入风险。
+fn get_encrypted_field(id: i64, column: &str) -> AppResult<String> {
     let conn = get().lock().unwrap();
     let enc: Option<String> = conn.query_row(
-        "SELECT password_enc FROM connections WHERE id = ?1",
+        &format!("SELECT {} FROM connections WHERE id = ?1", column),
         [id],
         |row| row.get(0),
     ).optional()?.flatten();
@@ -243,27 +270,54 @@ pub fn get_connection_password(id: i64) -> AppResult<String> {
     }
 }
 
-/// 通过 ID 获取连接配置（含解密密码）
+/// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
+pub fn get_connection_password(id: i64) -> AppResult<String> {
+    get_encrypted_field(id, "password_enc")
+}
+
+/// 返回指定连接的明文 token（供编辑弹窗使用）
+pub fn get_connection_token(id: i64) -> AppResult<String> {
+    get_encrypted_field(id, "token_enc")
+}
+
+/// 通过 ID 获取连接配置（含解密密码和token）
 pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::ConnectionConfig> {
     let conn = get().lock().unwrap();
     let row = conn.query_row(
-        "SELECT driver, host, port, database_name, username, password_enc, extra_params, file_path
+        "SELECT driver, host, port, database_name, username, password_enc, extra_params, file_path, \
+               auth_type, token_enc, ssl_mode, ssl_ca_path, ssl_cert_path, ssl_key_path, \
+               connect_timeout_secs, read_timeout_secs, pool_max_connections, pool_idle_timeout_secs \
          FROM connections WHERE id = ?1",
         [id],
         |row| Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, Option<String>>(1)?,
-            row.get::<_, Option<i64>>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, Option<String>>(4)?,
-            row.get::<_, Option<String>>(5)?,
-            row.get::<_, Option<String>>(6)?,
-            row.get::<_, Option<String>>(7)?,
+            row.get::<_, String>(0)?,                    // driver
+            row.get::<_, Option<String>>(1)?,             // host
+            row.get::<_, Option<i64>>(2)?,                // port
+            row.get::<_, Option<String>>(3)?,             // database_name
+            row.get::<_, Option<String>>(4)?,             // username
+            row.get::<_, Option<String>>(5)?,             // password_enc
+            row.get::<_, Option<String>>(6)?,             // extra_params
+            row.get::<_, Option<String>>(7)?,             // file_path
+            row.get::<_, Option<String>>(8)?,             // auth_type
+            row.get::<_, Option<String>>(9)?,             // token_enc
+            row.get::<_, Option<String>>(10)?,            // ssl_mode
+            row.get::<_, Option<String>>(11)?,            // ssl_ca_path
+            row.get::<_, Option<String>>(12)?,            // ssl_cert_path
+            row.get::<_, Option<String>>(13)?,            // ssl_key_path
+            row.get::<_, Option<i64>>(14)?,               // connect_timeout_secs
+            row.get::<_, Option<i64>>(15)?,               // read_timeout_secs
+            row.get::<_, Option<i64>>(16)?,               // pool_max_connections
+            row.get::<_, Option<i64>>(17)?,               // pool_idle_timeout_secs
         )),
     ).optional()?
     .ok_or_else(|| crate::AppError::Other(format!("Connection {} not found", id)))?;
 
     let password = match row.5 {
+        Some(enc) => crate::crypto::decrypt(&enc)?,
+        None => String::new(),
+    };
+
+    let token = match row.9 {
         Some(enc) => crate::crypto::decrypt(&enc)?,
         None => String::new(),
     };
@@ -276,13 +330,17 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         "doris" => 9030,
         "clickhouse" => 8123,
         "tidb" => 4000,
+        "gaussdb" => 8000,
+        "db2" => 50000,
         _ => 3306, // mysql
     };
     let username = row.4.unwrap_or_default();
-    // PostgreSQL 数据库名为空时默认使用用户名（pg 规范），避免连接到 pg_catalog
+    // 保留原始 database_name 值（可为空）。
+    // PG 连接层（postgres.rs）会在建连时自行处理空值（默认 = 用户名），
+    // 这里不填充默认值，以便图谱构建层通过空值判断是否需要遍历所有数据库。
     let database = match row.3 {
         Some(db) if !db.is_empty() => db,
-        _ => if driver == "postgres" { username.clone() } else { String::new() },
+        _ => String::new(),
     };
 
     Ok(crate::datasource::ConnectionConfig {
@@ -294,6 +352,16 @@ pub fn get_connection_config(id: i64) -> AppResult<crate::datasource::Connection
         password: Some(password),
         extra_params: row.6,
         file_path: row.7,
+        auth_type: row.8,
+        token: if token.is_empty() { None } else { Some(token) },
+        ssl_mode: row.10,
+        ssl_ca_path: row.11,
+        ssl_cert_path: row.12,
+        ssl_key_path: row.13,
+        connect_timeout_secs: row.14.map(|v| v as u32),
+        read_timeout_secs: row.15.map(|v| v as u32),
+        pool_max_connections: row.16.map(|v| v as u32),
+        pool_idle_timeout_secs: row.17.map(|v| v as u32),
     })
 }
 
@@ -670,6 +738,29 @@ pub fn get_default_llm_config() -> AppResult<Option<models::LlmConfig>> {
     }
 }
 
+pub fn get_best_llm_config() -> AppResult<Option<models::LlmConfig>> {
+    let conn = get().lock().unwrap();
+    // Priority 1: default + tested successfully
+    let result = conn.query_row(
+        &format!("{} WHERE is_default = 1 AND test_status = 'success' LIMIT 1", LLM_CONFIG_SELECT),
+        [],
+        |row| row_to_llm_config_raw(row),
+    ).optional()?;
+    if let Some(r) = result {
+        return Ok(Some(decrypt_llm_config(r)?));
+    }
+    // Priority 2: any config tested successfully
+    let result = conn.query_row(
+        &format!("{} WHERE test_status = 'success' LIMIT 1", LLM_CONFIG_SELECT),
+        [],
+        |row| row_to_llm_config_raw(row),
+    ).optional()?;
+    match result {
+        Some(r) => Ok(Some(decrypt_llm_config(r)?)),
+        None => Ok(None),
+    }
+}
+
 pub fn get_llm_config_by_id(id: i64) -> AppResult<Option<models::LlmConfig>> {
     let conn = get().lock().unwrap();
     let raw = conn.query_row(
@@ -972,135 +1063,6 @@ pub fn get_task_by_id(id: &str) -> AppResult<Option<models::TaskRecord>> {
     Ok(task)
 }
 
-// ============ change_history ============
-
-pub fn insert_change_history(
-    session_id: &str,
-    tool_name: &str,
-    target_type: &str,
-    target_id: &str,
-    old_value: &str,
-) -> crate::AppResult<i64> {
-    let conn = get().lock().unwrap();
-    conn.execute(
-        "INSERT INTO change_history (session_id, tool_name, target_type, target_id, old_value, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-        rusqlite::params![session_id, tool_name, target_type, target_id, old_value],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn complete_change_history(id: i64, new_value: Option<&str>, status: &str) -> crate::AppResult<()> {
-    let conn = get().lock().unwrap();
-    conn.execute(
-        "UPDATE change_history SET new_value = ?1, status = ?2 WHERE id = ?3",
-        rusqlite::params![new_value, status, id],
-    )?;
-    Ok(())
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-pub struct ChangeHistoryRecord {
-    pub id: i64,
-    pub session_id: String,
-    pub tool_name: String,
-    pub target_type: String,
-    pub target_id: String,
-    pub old_value: String,
-    pub new_value: Option<String>,
-    pub status: String,
-    pub created_at: String,
-}
-
-pub fn list_change_history(session_id: &str, limit: i64) -> crate::AppResult<Vec<ChangeHistoryRecord>> {
-    let conn = get().lock().unwrap();
-    let mut stmt = conn.prepare(
-        "SELECT id, session_id, tool_name, target_type, target_id, old_value, new_value, status, created_at
-         FROM change_history WHERE session_id = ?1 ORDER BY id DESC LIMIT ?2"
-    )?;
-    let records = stmt.query_map(rusqlite::params![session_id, limit], |row| {
-        Ok(ChangeHistoryRecord {
-            id: row.get(0)?,
-            session_id: row.get(1)?,
-            tool_name: row.get(2)?,
-            target_type: row.get(3)?,
-            target_id: row.get(4)?,
-            old_value: row.get(5)?,
-            new_value: row.get(6)?,
-            status: row.get(7)?,
-            created_at: row.get(8)?,
-        })
-    })?.filter_map(|r| r.ok()).collect();
-    Ok(records)
-}
-
-pub fn get_last_success_change(session_id: &str) -> crate::AppResult<Option<ChangeHistoryRecord>> {
-    let conn = get().lock().unwrap();
-    let result = conn.query_row(
-        "SELECT id, session_id, tool_name, target_type, target_id, old_value, new_value, status, created_at
-         FROM change_history WHERE session_id = ?1 AND status = 'success' ORDER BY id DESC LIMIT 1",
-        rusqlite::params![session_id],
-        |row| Ok(ChangeHistoryRecord {
-            id: row.get(0)?,
-            session_id: row.get(1)?,
-            tool_name: row.get(2)?,
-            target_type: row.get(3)?,
-            target_id: row.get(4)?,
-            old_value: row.get(5)?,
-            new_value: row.get(6)?,
-            status: row.get(7)?,
-            created_at: row.get(8)?,
-        }),
-    ).optional().map_err(|e| crate::AppError::Other(e.to_string()))?;
-    Ok(result)
-}
-
-pub fn mark_change_undone(id: i64) -> crate::AppResult<()> {
-    let conn = get().lock().unwrap();
-    conn.execute(
-        "UPDATE change_history SET status = 'undone' WHERE id = ?1",
-        rusqlite::params![id],
-    )?;
-    Ok(())
-}
-
-// ============ Metric helpers for MCP tools ============
-
-pub fn get_metric_by_id(metric_id: i64) -> crate::AppResult<Option<crate::metrics::Metric>> {
-    let conn = get().lock().unwrap();
-    let result = conn.query_row(
-        "SELECT id,connection_id,name,display_name,table_name,column_name,aggregation,\
-         filter_sql,description,status,source,metric_type,composite_components,\
-         composite_formula,category,data_caliber,version,scope_database,scope_schema,\
-         created_at,updated_at FROM metrics WHERE id=?1",
-        [metric_id],
-        |row| Ok(crate::metrics::Metric {
-            id: row.get(0)?,
-            connection_id: row.get(1)?,
-            name: row.get(2)?,
-            display_name: row.get(3)?,
-            table_name: row.get(4)?,
-            column_name: row.get(5)?,
-            aggregation: row.get(6)?,
-            filter_sql: row.get(7)?,
-            description: row.get(8)?,
-            status: row.get(9)?,
-            source: row.get(10)?,
-            metric_type: row.get(11)?,
-            composite_components: row.get(12)?,
-            composite_formula: row.get(13)?,
-            category: row.get(14)?,
-            data_caliber: row.get(15)?,
-            version: row.get(16)?,
-            scope_database: row.get(17)?,
-            scope_schema: row.get(18)?,
-            created_at: row.get(19)?,
-            updated_at: row.get(20)?,
-        }),
-    ).optional().map_err(|e| crate::AppError::Other(e.to_string()))?;
-    Ok(result)
-}
-
 // ============ agent_sessions CRUD ============
 
 /// 插入 agent session 记录
@@ -1158,35 +1120,4 @@ pub fn delete_all_agent_sessions() -> AppResult<()> {
     let conn = get().lock().unwrap();
     conn.execute("DELETE FROM agent_sessions", [])?;
     Ok(())
-}
-
-pub fn create_metric_from_mcp(
-    connection_id: i64,
-    name: &str,
-    display_name: &str,
-    table_name: &str,
-    description: &str,
-    database: Option<&str>,
-    schema: Option<&str>,
-) -> crate::AppResult<crate::metrics::Metric> {
-    let input = crate::metrics::CreateMetricInput {
-        connection_id,
-        name: name.to_string(),
-        display_name: display_name.to_string(),
-        table_name: if table_name.is_empty() { None } else { Some(table_name.to_string()) },
-        column_name: None,
-        aggregation: None,
-        filter_sql: None,
-        description: if description.is_empty() { None } else { Some(description.to_string()) },
-        source: Some("ai".to_string()),
-        metric_type: Some("atomic".to_string()),
-        composite_components: None,
-        composite_formula: None,
-        category: None,
-        data_caliber: None,
-        version: None,
-        scope_database: database.map(|s| s.to_string()),
-        scope_schema: schema.map(|s| s.to_string()),
-    };
-    crate::metrics::save_metric(&input)
 }

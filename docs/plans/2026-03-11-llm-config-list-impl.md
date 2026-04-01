@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # LLM 多配置列表 Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

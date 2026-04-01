@@ -9,6 +9,7 @@ import type {
   ErIndex,
   DiffResult,
 } from '../types';
+import { checkTypeCompatibility, type DialectName } from '@/components/ERDesigner/shared/dataTypes';
 
 // Operation record for undo/redo (inverse operation model)
 interface EntityDelta {
@@ -36,6 +37,8 @@ interface OperationRecord {
 
 const MAX_UNDO_STACK = 50;
 
+const PERSIST_KEY_EXPANDED = 'er_sidebar_expanded';
+
 interface ErDesignerState {
   // Project list
   projects: ErProject[];
@@ -54,24 +57,32 @@ interface ErDesignerState {
   // Data loading
   loadProject: (projectId: number) => Promise<void>;
 
+  // Sidebar expansion persistence
+  expandedProjects: Set<number>;
+  expandedTables: Set<number>;
+  toggleProjectExpand: (projectId: number) => void;
+  toggleTableExpand: (tableId: number) => void;
+  restoreExpandedState: () => Promise<void>;
+
   // Table operations
   addTable: (name: string, position: { x: number; y: number }) => Promise<ErTable>;
   updateTable: (id: number, updates: Partial<ErTable>) => Promise<void>;
+  updateTablePositions: (positions: { id: number; x: number; y: number }[]) => Promise<void>;
   deleteTable: (id: number) => Promise<void>;
 
   // Column operations
-  addColumn: (tableId: number, column: Partial<ErColumn>) => Promise<void>;
+  addColumn: (tableId: number, column: Partial<ErColumn>) => Promise<ErColumn>;
   updateColumn: (id: number, updates: Partial<ErColumn>) => Promise<void>;
   deleteColumn: (id: number, tableId: number) => Promise<void>;
   reorderColumns: (tableId: number, columnIds: number[]) => Promise<void>;
 
   // Relation operations
-  addRelation: (rel: Partial<ErRelation>) => Promise<void>;
+  addRelation: (rel: Partial<ErRelation>) => Promise<ErRelation>;
   updateRelation: (id: number, updates: Partial<ErRelation>) => Promise<void>;
   deleteRelation: (id: number) => Promise<void>;
 
   // Index operations
-  addIndex: (tableId: number, index: Partial<ErIndex>) => Promise<void>;
+  addIndex: (tableId: number, index: Partial<ErIndex>) => Promise<ErIndex>;
   updateIndex: (id: number, updates: Partial<ErIndex>) => Promise<void>;
   deleteIndex: (id: number, tableId: number) => Promise<void>;
 
@@ -98,6 +109,20 @@ interface ErDesignerState {
   pushOperation: (op: OperationRecord) => void;
   undo: () => void;
   redo: () => void;
+
+  // 抽屉面板状态
+  drawerOpen: boolean;
+  drawerTableId: number | null;
+  drawerFocusColumnId: number | null;
+  openDrawer: (tableId: number, focusColumnId?: number) => void;
+  closeDrawer: () => void;
+
+  // 方言兼容性
+  boundDialect: string | null;
+  dialectWarnings: Record<number, string>;
+  checkDialectCompatibility: () => void;
+  checkColumnCompatibility: (columnId: number) => void;
+  clearDialectWarnings: () => void;
 }
 
 /** Helper: apply ErProjectFull to state */
@@ -108,7 +133,10 @@ function applyProjectFull(projectFull: ErProjectFull) {
 
   for (const tf of projectFull.tables) {
     tables.push(tf.table);
-    columns[tf.table.id] = tf.columns;
+    columns[tf.table.id] = tf.columns.map((col: any) => ({
+      ...col,
+      enum_values: col.enum_values ? JSON.parse(col.enum_values) : null,
+    }));
     indexes[tf.table.id] = tf.indexes;
   }
 
@@ -123,6 +151,21 @@ function applyProjectFull(projectFull: ErProjectFull) {
   };
 }
 
+/** Debounced persist for expanded state */
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+function persistExpandedState(expandedProjects: Set<number>, expandedTables: Set<number>): void {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    invoke('set_ui_state', {
+      key: PERSIST_KEY_EXPANDED,
+      value: JSON.stringify({
+        projects: [...expandedProjects],
+        tables: [...expandedTables],
+      }),
+    }).catch(() => {});
+  }, 500);
+}
+
 export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   // ── State ──────────────────────────────────────────────────────────────
   projects: [],
@@ -131,6 +174,8 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   columns: {},
   relations: [],
   indexes: {},
+  expandedProjects: new Set<number>(),
+  expandedTables: new Set<number>(),
   undoStack: [],
   redoStack: [],
 
@@ -171,12 +216,23 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   deleteProject: async (id) => {
     try {
       await invoke('er_delete_project', { id });
-      set((s) => ({
-        projects: s.projects.filter((p) => p.id !== id),
-        ...(s.activeProjectId === id
-          ? { activeProjectId: null, tables: [], columns: {}, relations: [], indexes: {} }
-          : {}),
-      }));
+      set((s) => {
+        const expandedProjects = new Set(s.expandedProjects);
+        expandedProjects.delete(id);
+        // Remove table expansions belonging to deleted project's tables
+        const tableIdsToRemove = new Set(s.tables.filter(t => t.project_id === id).map(t => t.id));
+        const expandedTables = new Set(s.expandedTables);
+        for (const tid of tableIdsToRemove) expandedTables.delete(tid);
+        persistExpandedState(expandedProjects, expandedTables);
+        return {
+          projects: s.projects.filter((p) => p.id !== id),
+          expandedProjects,
+          expandedTables,
+          ...(s.activeProjectId === id
+            ? { activeProjectId: null, tables: [], columns: {}, relations: [], indexes: {} }
+            : {}),
+        };
+      });
     } catch (e) {
       console.error('Failed to delete ER project:', e);
     }
@@ -189,6 +245,58 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       set(applyProjectFull(projectFull));
     } catch (e) {
       console.error('Failed to load ER project:', e);
+    }
+  },
+
+  // ── Sidebar expansion persistence ─────────────────────────────────────
+  toggleProjectExpand: (projectId) => {
+    set((s) => {
+      const next = new Set(s.expandedProjects);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+        // Load project data when expanding
+        get().loadProject(projectId);
+      }
+      persistExpandedState(next, s.expandedTables);
+      return { expandedProjects: next };
+    });
+  },
+
+  toggleTableExpand: (tableId) => {
+    set((s) => {
+      const next = new Set(s.expandedTables);
+      if (next.has(tableId)) {
+        next.delete(tableId);
+      } else {
+        next.add(tableId);
+      }
+      persistExpandedState(s.expandedProjects, next);
+      return { expandedTables: next };
+    });
+  },
+
+  restoreExpandedState: async () => {
+    try {
+      const raw = await invoke<string | null>('get_ui_state', { key: PERSIST_KEY_EXPANDED });
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const projects = Array.isArray(parsed.projects)
+          ? new Set<number>(parsed.projects.filter((id: unknown): id is number => typeof id === 'number'))
+          : new Set<number>();
+        const tables = Array.isArray(parsed.tables)
+          ? new Set<number>(parsed.tables.filter((id: unknown): id is number => typeof id === 'number'))
+          : new Set<number>();
+        set({ expandedProjects: projects, expandedTables: tables });
+        // Pre-load expanded projects' data
+        for (const projectId of projects) {
+          get().loadProject(projectId);
+        }
+      }
+    } catch {
+      // Silently ignore — non-critical UI state
     }
   },
 
@@ -228,6 +336,30 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
     }
   },
 
+  updateTablePositions: async (positions) => {
+    set((s) => {
+      const posMap = new Map(positions.map((p) => [p.id, p]));
+      return {
+        tables: s.tables.map((t) => {
+          const p = posMap.get(t.id);
+          return p ? { ...t, position_x: p.x, position_y: p.y } : t;
+        }),
+      };
+    });
+    try {
+      await Promise.all(
+        positions.map((p) =>
+          invoke('er_update_table', {
+            id: p.id,
+            req: { position_x: p.x, position_y: p.y },
+          })
+        )
+      );
+    } catch (e) {
+      console.error('Failed to save auto layout positions:', e);
+    }
+  },
+
   deleteTable: async (id) => {
     try {
       await invoke('er_delete_table', { id });
@@ -236,10 +368,14 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         delete newColumns[id];
         const newIndexes = { ...s.indexes };
         delete newIndexes[id];
+        const expandedTables = new Set(s.expandedTables);
+        expandedTables.delete(id);
+        persistExpandedState(s.expandedProjects, expandedTables);
         return {
           tables: s.tables.filter((t) => t.id !== id),
           columns: newColumns,
           indexes: newIndexes,
+          expandedTables,
           relations: s.relations.filter(
             (r) => r.source_table_id !== id && r.target_table_id !== id
           ),
@@ -253,23 +389,72 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   // ── Column operations ─────────────────────────────────────────────────
   addColumn: async (tableId, column) => {
     try {
-      const created = await invoke<ErColumn>('er_create_column', {
-        req: { table_id: tableId, ...column },
-      });
+      // Serialize enum_values to JSON string for Rust
+      const req: any = { table_id: tableId, ...column };
+      if (req.enum_values != null) {
+        req.enum_values = JSON.stringify(req.enum_values);
+      }
+      const created = await invoke<ErColumn>('er_create_column', { req });
+      // Deserialize enum_values from Rust
+      const deserialized: ErColumn = {
+        ...created,
+        enum_values: (created as any).enum_values
+          ? JSON.parse((created as any).enum_values)
+          : null,
+      };
       set((s) => ({
         columns: {
           ...s.columns,
-          [tableId]: [...(s.columns[tableId] ?? []), created],
+          [tableId]: [...(s.columns[tableId] ?? []), deserialized],
         },
       }));
+      return deserialized;
     } catch (e) {
       console.error('Failed to add ER column:', e);
+      throw e;
     }
   },
 
   updateColumn: async (id, updates) => {
     try {
-      await invoke('er_update_column', { id, req: updates });
+      // When removing primary key, also clear auto_increment
+      if (updates.is_primary_key === false) {
+        updates = { ...updates, is_auto_increment: false };
+      }
+      // When setting primary key, clear PK (and auto_increment) from other columns in the same table
+      if (updates.is_primary_key === true) {
+        const state = get();
+        for (const tableId of Object.keys(state.columns)) {
+          const cols = state.columns[Number(tableId)];
+          const target = cols?.find((c) => c.id === id);
+          if (target) {
+            const otherPks = cols.filter((c) => c.id !== id && c.is_primary_key);
+            for (const pk of otherPks) {
+              const clearReq: any = { is_primary_key: false, is_auto_increment: false };
+              await invoke('er_update_column', { id: pk.id, req: clearReq });
+            }
+            if (otherPks.length > 0) {
+              set((s) => {
+                const newColumns = { ...s.columns };
+                const tid = Number(tableId);
+                newColumns[tid] = newColumns[tid].map((c) =>
+                  c.id !== id && c.is_primary_key
+                    ? { ...c, is_primary_key: false, is_auto_increment: false }
+                    : c
+                );
+                return { columns: newColumns };
+              });
+            }
+            break;
+          }
+        }
+      }
+      // Serialize enum_values to JSON string for Rust
+      const req: any = { ...updates };
+      if (req.enum_values !== undefined && req.enum_values != null) {
+        req.enum_values = JSON.stringify(req.enum_values);
+      }
+      await invoke('er_update_column', { id, req });
       set((s) => {
         const newColumns = { ...s.columns };
         for (const tableId of Object.keys(newColumns)) {
@@ -280,6 +465,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         }
         return { columns: newColumns };
       });
+      get().checkColumnCompatibility(id);
     } catch (e) {
       console.error('Failed to update ER column:', e);
     }
@@ -294,6 +480,11 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           [tableId]: (s.columns[tableId] ?? []).filter((c) => c.id !== id),
         },
       }));
+      set((s) => {
+        const next = { ...s.dialectWarnings };
+        delete next[id];
+        return { dialectWarnings: next };
+      });
     } catch (e) {
       console.error('Failed to delete ER column:', e);
     }
@@ -326,8 +517,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         req: { project_id: activeProjectId, ...rel },
       });
       set((s) => ({ relations: [...s.relations, created] }));
+      return created;
     } catch (e) {
       console.error('Failed to add ER relation:', e);
+      throw e;
     }
   },
 
@@ -363,8 +556,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           [tableId]: [...(s.indexes[tableId] ?? []), created],
         },
       }));
+      return created;
     } catch (e) {
       console.error('Failed to add ER index:', e);
+      throw e;
     }
   },
 
@@ -523,4 +718,56 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       console.error('Redo: failed to reload project:', e)
     );
   },
+
+  // ── Drawer panel state ───────────────────────────────────────────────
+  drawerOpen: false,
+  drawerTableId: null,
+  drawerFocusColumnId: null,
+  openDrawer: (tableId, focusColumnId) => set({
+    drawerOpen: true,
+    drawerTableId: tableId,
+    drawerFocusColumnId: focusColumnId ?? null,
+  }),
+  closeDrawer: () => set({
+    drawerOpen: false,
+    drawerTableId: null,
+    drawerFocusColumnId: null,
+  }),
+
+  // ── Dialect compatibility ─────────────────────────────────────────────
+  boundDialect: null,
+  dialectWarnings: {},
+
+  checkDialectCompatibility: () => {
+    const { boundDialect, columns } = get();
+    if (!boundDialect) {
+      set({ dialectWarnings: {} });
+      return;
+    }
+    const warnings: Record<number, string> = {};
+    for (const cols of Object.values(columns)) {
+      for (const col of cols) {
+        const w = checkTypeCompatibility(col.data_type, boundDialect as DialectName);
+        if (w) warnings[col.id] = w;
+      }
+    }
+    set({ dialectWarnings: warnings });
+  },
+
+  checkColumnCompatibility: (columnId: number) => {
+    const { boundDialect, columns, dialectWarnings } = get();
+    if (!boundDialect) return;
+    for (const cols of Object.values(columns)) {
+      const col = cols.find(c => c.id === columnId);
+      if (col) {
+        const w = checkTypeCompatibility(col.data_type, boundDialect as DialectName);
+        const next = { ...dialectWarnings };
+        if (w) next[columnId] = w; else delete next[columnId];
+        set({ dialectWarnings: next });
+        break;
+      }
+    }
+  },
+
+  clearDialectWarnings: () => set({ dialectWarnings: {} }),
 }));

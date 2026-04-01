@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # 多语句执行结果智能分组 实现计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

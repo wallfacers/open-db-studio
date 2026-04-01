@@ -161,14 +161,17 @@ fn load_connection_graph(connection_id: i64) -> AppResult<ConnectionGraph> {
         adj.entry(source_table.clone()).or_default().push(edge_fwd);
 
         // target → source 反向（双向图）
-        let mut rev_meta = link_meta.clone();
-        std::mem::swap(&mut rev_meta.source_table, &mut rev_meta.target_table);
-        let edge_rev = LogicalEdge {
-            link_node_id: link.id.clone(),
-            target_table: source_table.clone(),
-            metadata: rev_meta,
-        };
-        adj.entry(target_table.clone()).or_default().push(edge_rev);
+        // 自引用 FK（source == target）时 swap 是空操作，跳过以避免重复边
+        if source_table != target_table {
+            let mut rev_meta = link_meta.clone();
+            std::mem::swap(&mut rev_meta.source_table, &mut rev_meta.target_table);
+            let edge_rev = LogicalEdge {
+                link_node_id: link.id.clone(),
+                target_table: source_table.clone(),
+                metadata: rev_meta,
+            };
+            adj.entry(target_table.clone()).or_default().push(edge_rev);
+        }
     }
 
     Ok(ConnectionGraph::new(adj))
@@ -189,7 +192,17 @@ pub fn bfs_find_paths(
     }
 
     if from == to {
-        return vec![];
+        // 自引用 FK：查找从该表直接指回自身的边（深度 1）
+        let mut results: Vec<JoinPath> = vec![];
+        if let Some(neighbors) = graph.adj.get(from) {
+            for edge in neighbors {
+                if edge.target_table == from {
+                    results.push(build_join_path(from, to, &[edge.clone()]));
+                }
+            }
+        }
+        graph.path_cache.put(cache_key, results.clone());
+        return results;
     }
 
     // BFS
@@ -276,9 +289,16 @@ fn build_join_path(from: &str, _to: &str, edges: &[LogicalEdge]) -> JoinPath {
     for edge in edges {
         let m = &edge.metadata;
         if !m.via.is_empty() {
-            // 根据实际遍历方向生成正确的 JOIN
-            via_parts.push(format!("{}.{} = {}.{}", prev_table, m.via, edge.target_table, "id"));
-            sql_parts.push(format!("JOIN {} ON {}.{} = {}.id", edge.target_table, prev_table, m.via, edge.target_table));
+            if prev_table == edge.target_table {
+                // 自引用 FK：需要表别名避免歧义
+                let alias = format!("{}_self", edge.target_table);
+                via_parts.push(format!("{}.{} = {}.id", prev_table, m.via, alias));
+                sql_parts.push(format!("JOIN {} AS {} ON {}.{} = {}.id", edge.target_table, alias, prev_table, m.via, alias));
+            } else {
+                // 根据实际遍历方向生成正确的 JOIN
+                via_parts.push(format!("{}.{} = {}.{}", prev_table, m.via, edge.target_table, "id"));
+                sql_parts.push(format!("JOIN {} ON {}.{} = {}.id", edge.target_table, prev_table, m.via, edge.target_table));
+            }
         }
         prev_table = edge.target_table.clone();
     }
@@ -326,13 +346,16 @@ mod tests {
             });
 
             // 反向边: target → source（与 load_connection_graph 一致）
-            let mut rev_meta = meta;
-            std::mem::swap(&mut rev_meta.source_table, &mut rev_meta.target_table);
-            adj.entry(target.to_string()).or_default().push(LogicalEdge {
-                link_node_id: format!("link:{}:{}", source, target),
-                target_table: source.to_string(),
-                metadata: rev_meta,
-            });
+            // 自引用时跳过（swap 是空操作，会产生重复边）
+            if source != target {
+                let mut rev_meta = meta;
+                std::mem::swap(&mut rev_meta.source_table, &mut rev_meta.target_table);
+                adj.entry(target.to_string()).or_default().push(LogicalEdge {
+                    link_node_id: format!("link:{}:{}", source, target),
+                    target_table: source.to_string(),
+                    metadata: rev_meta,
+                });
+            }
         }
 
         ConnectionGraph {
@@ -385,10 +408,48 @@ mod tests {
     }
 
     #[test]
-    fn test_bfs_same_table() {
+    fn test_bfs_same_table_no_self_ref() {
+        // 表没有自引用 FK 时，同表搜索应返回空
         let mut graph = make_test_graph(vec![("order_items", "orders", "order_id")]);
         let paths = bfs_find_paths(&mut graph, "orders", "orders", 4);
         assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_bfs_self_referencing_fk() {
+        // employee.manager_id → employee.id（自引用 FK）
+        let mut graph = make_test_graph(vec![("employee", "employee", "manager_id")]);
+        let paths = bfs_find_paths(&mut graph, "employee", "employee", 4);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "employee → employee");
+        assert!(paths[0].via.contains("manager_id"));
+        // SQL hint 应使用别名
+        assert!(paths[0].sql_hint.contains("AS employee_self"),
+            "actual sql_hint: {}", paths[0].sql_hint);
+    }
+
+    #[test]
+    fn test_bfs_self_ref_no_duplicate_edges() {
+        // 自引用 FK 邻接表不应有重复边
+        let graph = make_test_graph(vec![("employee", "employee", "manager_id")]);
+        let edges = graph.adj.get("employee").unwrap();
+        assert_eq!(edges.len(), 1, "self-ref FK should produce exactly 1 edge, got {}", edges.len());
+    }
+
+    #[test]
+    fn test_bfs_self_ref_with_other_fks() {
+        // employee 有自引用 FK 和对 department 的 FK
+        let mut graph = make_test_graph(vec![
+            ("employee", "employee", "manager_id"),
+            ("employee", "department", "dept_id"),
+        ]);
+        // 自引用路径
+        let self_paths = bfs_find_paths(&mut graph, "employee", "employee", 4);
+        assert_eq!(self_paths.len(), 1);
+        // 到 department 的路径
+        let dept_paths = bfs_find_paths(&mut graph, "employee", "department", 4);
+        assert_eq!(dept_paths.len(), 1);
+        assert_eq!(dept_paths[0].path, "employee → department");
     }
 
     #[test]

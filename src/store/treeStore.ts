@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { TreeNode, NodeType, CategoryKey, ConnectionGroup, Metric } from '../types';
+import { connNodeId, groupNodeId, dbNodeId, schemaNodeId, catNodeId, objectNodeId, colNodeId, metricsFolderNodeId, treeMetricNodeId } from '../utils/nodeId';
 
 // 各数据库方言支持的 Category 列表
 const CATEGORIES_BY_DRIVER: Record<string, CategoryKey[]> = {
@@ -12,6 +13,8 @@ const CATEGORIES_BY_DRIVER: Record<string, CategoryKey[]> = {
   doris:      ['tables', 'views', 'materialized_views'],
   clickhouse: ['tables', 'views', 'dictionaries'],
   tidb:       ['tables', 'views'],
+  gaussdb:    ['tables', 'views', 'functions', 'procedures', 'triggers', 'sequences', 'materialized_views'],
+  db2:        ['tables', 'views', 'functions', 'procedures', 'triggers', 'materialized_views'],
 };
 
 const CATEGORY_LABELS: Record<CategoryKey, string> = {
@@ -54,7 +57,7 @@ function persistTreeExpandedIds(ids: Set<string>): void {
 function makeCategoryNodes(parentId: string, driver: string, meta: TreeNode['meta']): TreeNode[] {
   const cats = CATEGORIES_BY_DRIVER[driver] ?? ['tables', 'views'];
   return cats.map((cat): TreeNode => ({
-    id: `${parentId}/cat_${cat}`,
+    id: catNodeId(parentId, cat),
     nodeType: 'category',
     label: CATEGORY_LABELS[cat],
     parentId,
@@ -66,7 +69,7 @@ function makeCategoryNodes(parentId: string, driver: string, meta: TreeNode['met
 
 function makeMetricsFolderNode(parentId: string, meta: TreeNode['meta']): TreeNode {
   return {
-    id: `${parentId}/metrics_folder`,
+    id: metricsFolderNodeId(parentId),
     nodeType: 'metrics_folder',
     label: 'dbTree.metrics',   // i18n key，DBTree 渲染时调用 t()
     parentId,
@@ -92,7 +95,8 @@ interface TreeStore {
   selectNode: (nodeId: string) => void;
   refreshNode: (nodeId: string) => Promise<void>;
   search: (query: string) => TreeNode[];
-  deleteMetricNode: (nodeId: string) => void;  // 新增
+  deleteMetricNode: (nodeId: string) => void;
+  deleteMetricById: (metricId: number) => void;
   _addNodes: (nodes: TreeNode[]) => void;
   _removeSubtree: (nodeId: string) => void;
 }
@@ -118,7 +122,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
       for (const g of groups) {
         const node: TreeNode = {
-          id: `group_${g.id}`,
+          id: groupNodeId(g.id),
           nodeType: 'group',
           label: g.name,
           parentId: null,
@@ -130,9 +134,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }
 
       for (const c of connections) {
-        const parentId = c.group_id ? `group_${c.group_id}` : null;
+        const parentId = c.group_id ? groupNodeId(c.group_id) : null;
         const node: TreeNode = {
-          id: `conn_${c.id}`,
+          id: connNodeId(c.id),
           nodeType: 'connection',
           label: c.name,
           parentId,
@@ -195,7 +199,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           connectionId: node.meta.connectionId,
         });
         const driver = node.meta.driver ?? 'mysql';
-        const needsSchema = ['postgres', 'oracle'].includes(driver);
+        const needsSchema = ['postgres', 'oracle', 'gaussdb'].includes(driver);
 
         if (databases.length === 0) {
           // 无多数据库概念（如 SQLite）：category 直接挂在 connection 节点下
@@ -203,7 +207,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
         } else {
           for (const db of databases) {
-            const dbId = `${nodeId}/db_${db}`;
+            const dbId = dbNodeId(nodeId, db);
             const dbNode: TreeNode = {
               id: dbId,
               nodeType: 'database',
@@ -223,13 +227,13 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         }
       } else if (node.nodeType === 'database') {
         const driver = node.meta.driver ?? 'postgres';
-        if (['postgres', 'oracle'].includes(driver)) {
+        if (['postgres', 'oracle', 'gaussdb'].includes(driver)) {
           const schemas = await invoke<string[]>('list_schemas', {
             connectionId: node.meta.connectionId,
             database: node.meta.database,
           });
           for (const schema of schemas) {
-            const schemaId = `${nodeId}/schema_${schema}`;
+            const schemaId = schemaNodeId(nodeId, schema);
             const schemaNode: TreeNode = {
               id: schemaId,
               nodeType: 'schema',
@@ -259,7 +263,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         const hasChildren = ['table', 'view', 'materialized_view'].includes(leafType);
         for (const name of objects) {
           children.push({
-            id: `${nodeId}/${leafType}_${name}`,
+            id: objectNodeId(nodeId, leafType, name),
             nodeType: leafType,
             label: name,
             parentId: nodeId,
@@ -278,7 +282,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         });
         for (const m of metrics) {
           children.push({
-            id: `${nodeId}/metric_${m.id}`,
+            id: treeMetricNodeId(nodeId, m.id),
             nodeType: 'metric',
             label: m.display_name,
             parentId: nodeId,
@@ -294,7 +298,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         );
         for (const col of detail.columns) {
           children.push({
-            id: `${nodeId}/col_${col.name}`,
+            id: colNodeId(nodeId, col.name),
             nodeType: 'column',
             label: col.name,
             parentId: nodeId,
@@ -306,6 +310,63 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       }
 
       get()._addNodes(children);
+
+      // 在创建 metrics_folder 节点后立即获取指标计数（未展开时也显示徽章）
+      const metricsFolderNodes = children.filter(c => c.nodeType === 'metrics_folder');
+      if (metricsFolderNodes.length > 0) {
+        const newCounts = new Map(get().metricCounts);
+        const newNodes = new Map(get().nodes);
+
+        if (node.nodeType === 'connection') {
+          // connection 分支：使用 count_metrics_batch 批量获取
+          const driver = node.meta.driver ?? 'mysql';
+          const needsSchema = ['postgres', 'oracle', 'gaussdb'].includes(driver);
+          if (!needsSchema && metricsFolderNodes.length > 1) {
+            // 多数据库（MySQL 等）：一次批量获取
+            const counts: Record<string, number> = await invoke('count_metrics_batch', {
+              connectionId: node.meta.connectionId,
+              database: null,
+            });
+            for (const folder of metricsFolderNodes) {
+              const db = folder.meta.database;
+              const cnt = db ? (counts[db] ?? 0) : 0;
+              newCounts.set(folder.id, cnt);
+              const f = newNodes.get(folder.id);
+              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+            }
+          } else {
+            // 单数据库（SQLite）或 schema 型驱动在 connection 层无 metrics_folder
+            for (const folder of metricsFolderNodes) {
+              try {
+                const cnt = await invoke<number>('count_metrics_by_node', {
+                  connectionId: folder.meta.connectionId,
+                  database: folder.meta.database ?? null,
+                  schema: null,
+                });
+                newCounts.set(folder.id, cnt);
+                const f = newNodes.get(folder.id);
+                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+              } catch { /* ignore */ }
+            }
+          }
+        } else {
+          // database 分支（PG/Oracle）：逐个获取计数
+          for (const folder of metricsFolderNodes) {
+            try {
+              const cnt = await invoke<number>('count_metrics_by_node', {
+                connectionId: folder.meta.connectionId,
+                database: folder.meta.database ?? null,
+                schema: null,
+              });
+              newCounts.set(folder.id, cnt);
+              const f = newNodes.get(folder.id);
+              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+            } catch { /* ignore */ }
+          }
+        }
+
+        set({ metricCounts: newCounts, nodes: newNodes });
+      }
 
       // metrics_folder 节点加载后更新 metricCounts 和 hasChildren
       if (node.nodeType === 'metrics_folder') {
@@ -477,6 +538,16 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
 
       return { nodes, searchIndex, expandedIds };
     });
+  },
+
+  deleteMetricById: (metricId: number) => {
+    const { nodes } = get();
+    for (const [id, node] of nodes) {
+      if (node.nodeType === 'metric' && node.meta.objectName === String(metricId)) {
+        get().deleteMetricNode(id);
+        return;
+      }
+    }
   },
 
   _addNodes: (newNodes: TreeNode[]) => {

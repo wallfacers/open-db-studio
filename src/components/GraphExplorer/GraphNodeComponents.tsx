@@ -1,7 +1,7 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position, BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
 import type { NodeProps, EdgeProps } from '@xyflow/react';
-import { Plus, Database, BarChart2, Hash, ArrowLeftRight } from 'lucide-react';
+import { Plus, Database, BarChart2, Hash, ArrowLeftRight, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../common/Tooltip';
 
@@ -181,6 +181,9 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
     >
       <NodeRoleBadge isPathFrom={nodeData.isPathFrom as boolean | undefined} isPathTo={nodeData.isPathTo as boolean | undefined} />
       <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      {/* 自引用 FK 额外 handles：to_link 从 Top 出发，from_link 从 Bottom 返回 */}
+      <Handle type="source" position={Position.Top} id="top-source" className="!bg-[#1e2d42] !border-[#f59e0b]" />
+      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-[#1e2d42] !border-[#f59e0b]" />
 
       {/* Header */}
       <div className="px-3 py-2 border-b border-[#1e2d42] flex items-center gap-2">
@@ -308,6 +311,7 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
   try { meta = JSON.parse((nodeData.metadata as string) || '{}'); } catch { /* ignore */ }
 
   const isInferred = Boolean(meta.is_inferred);
+  const isSelfRef = Boolean(meta.source_table && meta.source_table === meta.target_table);
   const isDimmed = Boolean(nodeData.isDimmed);
   const borderClass = isInferred
     ? 'border-dashed border-[#00c9a7]'
@@ -318,13 +322,22 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
       className={`w-64 rounded-md border bg-[#111922] shadow-lg ${borderClass} transition-opacity`}
       style={{ opacity: isDimmed ? 0.3 : 1 }}
     >
-      <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      {/* Handles: 自引用用 Top/Bottom 避免边交叉，普通用 Left/Right */}
+      {isSelfRef ? (
+        <Handle type="target" position={Position.Top} id="self-target" className="!bg-[#1e2d42] !border-[#f59e0b]" />
+      ) : (
+        <Handle type="target" position={Position.Left} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      )}
 
       {/* Row 1: edge_type + cardinality */}
       <div className="px-3 py-1.5 border-b border-[#1e2d42] flex items-center gap-2">
-        <ArrowLeftRight size={12} className="text-[#00c9a7] flex-shrink-0" />
+        {isSelfRef
+          ? <RotateCcw size={12} className="text-[#f59e0b] flex-shrink-0" />
+          : <ArrowLeftRight size={12} className="text-[#00c9a7] flex-shrink-0" />
+        }
         <span className="text-[#00c9a7] text-[11px] font-semibold flex-1">
           {(meta.edge_type ?? 'fk').toUpperCase()}
+          {isSelfRef && <span className="text-[#f59e0b] ml-1 text-[9px]">(self-ref)</span>}
         </span>
         {meta.cardinality && (
           <span className="text-[#f59e0b] text-[10px] font-mono">{meta.cardinality}</span>
@@ -364,7 +377,11 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
         </div>
       )}
 
-      <Handle type="source" position={Position.Right} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      {isSelfRef ? (
+        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-[#1e2d42] !border-[#f59e0b]" />
+      ) : (
+        <Handle type="source" position={Position.Right} className="!bg-[#1e2d42] !border-[#2a3f5a]" />
+      )}
     </div>
   );
 });
@@ -442,3 +459,65 @@ export const RelationEdge = memo(({
   );
 });
 RelationEdge.displayName = 'RelationEdge';
+
+// ── Self-Loop Edge (自引用 FK) ────────────────────────────────────────────────
+
+export const SelfLoopEdge = memo(({
+  sourceX, sourceY,
+  data,
+  markerEnd,
+}: EdgeProps) => {
+  const edgeType = String((data as Record<string, unknown>)?.edge_type ?? 'fk');
+  const isHighlighted = Boolean((data as Record<string, unknown>)?.highlighted);
+  const isDimmed = Boolean((data as Record<string, unknown>)?.dimmed);
+
+  const baseStroke = edgeStroke(edgeType);
+  const stroke = isHighlighted ? '#00c9a7' : baseStroke;
+  const strokeWidth = isHighlighted ? 3 : 1.5;
+  const opacity = isDimmed ? 0.3 : (isHighlighted ? 1 : 0.75);
+
+  // 从节点右侧 Handle 出发，绕上方画弧线回到左侧 Handle
+  const loopRadius = 50;
+  const edgePath = `M ${sourceX} ${sourceY} C ${sourceX + loopRadius * 1.6} ${sourceY - loopRadius * 2}, ${sourceX - loopRadius * 1.6} ${sourceY - loopRadius * 2}, ${sourceX} ${sourceY}`;
+  const labelX = sourceX;
+  const labelY = sourceY - loopRadius * 1.6;
+
+  return (
+    <>
+      <path
+        d={edgePath}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        style={{
+          opacity,
+          transition: 'opacity 0.3s ease, stroke-width 0.3s ease',
+        }}
+        markerEnd={markerEnd as string}
+      />
+      <EdgeLabelRenderer>
+        <div
+          className="nodrag nopan absolute pointer-events-none"
+          style={{
+            transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
+            opacity,
+            transition: 'opacity 0.3s ease',
+          }}
+        >
+          <span
+            className="text-[9px] font-mono px-1.5 py-0.5 rounded border leading-none"
+            style={{
+              color: stroke,
+              borderColor: `${stroke}55`,
+              background: '#0d1117cc',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            self-ref
+          </span>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+});
+SelfLoopEdge.displayName = 'SelfLoopEdge';

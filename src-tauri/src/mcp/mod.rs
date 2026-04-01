@@ -1,4 +1,4 @@
-mod tools;
+pub(crate) mod tools;
 
 use axum::{routing::{get, post}, Router, Json, extract::State};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -44,6 +44,15 @@ impl JsonRpcResponse {
 fn tool_definitions() -> Value {
     json!({
         "tools": [
+            {
+                "name": "list_connections",
+                "description": "List all configured database connections (id, name, driver, host, database_name). Call this first when connection_id is unknown.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
             {
                 "name": "list_databases",
                 "description": "List all databases for a connection",
@@ -165,15 +174,101 @@ fn tool_definitions() -> Value {
                 }
             }),
             json!({
-                "name": "search_tabs",
-                "description": "Search currently opened tabs by type or table name. Results include is_active=true for the currently active tab, job_id for seatunnel_job tabs, and metric_id for metric tabs. Use this to find the active tab.",
+                "name": "ui_read",
+                "description": "Read the current state, schema, or available actions of a UI object.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "table_name": { "type": "string" },
-                        "type": { "type": "string", "enum": ["query", "table", "table_structure", "metric", "metric_list", "seatunnel_job", "er_design"] }
+                        "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, seatunnel_job, db_tree, history, er_canvas" },
+                        "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
+                        "mode": { "type": "string", "enum": ["state", "schema", "actions"], "default": "state" }
                     },
-                    "required": []
+                    "required": ["object"]
+                }
+            }),
+            json!({
+                "name": "ui_patch",
+                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements. IMPORTANT: Always batch ALL changes into a single ui_patch call with multiple ops. For table_form, set tableName AND add ALL columns in one call. Example: [{\"op\":\"replace\",\"path\":\"/tableName\",\"value\":\"users\"},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"id\",\"dataType\":\"INT\",...}},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"email\",\"dataType\":\"VARCHAR\",...}}]",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "object": { "type": "string", "description": "Object type" },
+                        "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
+                        "ops": { "type": "array", "description": "Array of JSON Patch operations. Batch all changes into one call for best performance.", "items": { "type": "object" } },
+                        "reason": { "type": "string", "description": "Human-readable reason for the change" }
+                    },
+                    "required": ["object", "ops"]
+                }
+            }),
+            json!({
+                "name": "ui_exec",
+                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, format).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "object": { "type": "string", "description": "Object type" },
+                        "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
+                        "action": { "type": "string", "description": "Action name" },
+                        "params": { "type": "object", "description": "Action parameters" }
+                    },
+                    "required": ["object", "action"]
+                }
+            }),
+            json!({
+                "name": "ui_list",
+                "description": "List all currently open UI objects, optionally filtered by type.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "filter": { "type": "object", "properties": { "type": { "type": "string" }, "keyword": { "type": "string" }, "connectionId": { "type": "integer" }, "database": { "type": "string" } } }
+                    }
+                }
+            }),
+            json!({
+                "name": "init_table_form",
+                "description": "Initialize a new table design form with a complete table definition in one call. This is much faster than using ui_patch multiple times. Opens a new table_form tab and populates it with the given table name, columns, and indexes. Returns the new tab objectId.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "connection_id": { "type": "integer", "description": "Database connection ID" },
+                        "database": { "type": "string", "description": "Target database name" },
+                        "table_name": { "type": "string", "description": "Table name" },
+                        "columns": {
+                            "type": "array",
+                            "description": "Column definitions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "dataType": { "type": "string" },
+                                    "length": { "type": "string" },
+                                    "isNullable": { "type": "boolean", "default": true },
+                                    "defaultValue": { "type": "string" },
+                                    "isPrimaryKey": { "type": "boolean", "default": false },
+                                    "extra": { "type": "string" },
+                                    "comment": { "type": "string" }
+                                },
+                                "required": ["name", "dataType"]
+                            }
+                        },
+                        "indexes": {
+                            "type": "array",
+                            "description": "Index definitions (optional)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "columns": { "type": "array", "items": { "type": "string" } },
+                                    "unique": { "type": "boolean", "default": false }
+                                },
+                                "required": ["name", "columns"]
+                            }
+                        },
+                        "comment": { "type": "string", "description": "Table comment" },
+                        "engine": { "type": "string", "default": "InnoDB" },
+                        "charset": { "type": "string", "default": "utf8mb4" }
+                    },
+                    "required": ["connection_id", "database", "table_name", "columns"]
                 }
             }),
             json!({
@@ -228,7 +323,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "graph_search_metrics",
-                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. Unlike fs_search('tab.metric'), this searches graph nodes (node_type=metric); fs_search searches approved MetricsExplorer records. To get ALL metrics for a specific table (e.g. '订单表有哪些指标'), pass table_name (exact English table name like 'orders') instead of keyword.",
+                "description": "Search business metric nodes in the knowledge graph, returning metric names and calculation logic. This searches graph nodes (node_type=metric). To get ALL metrics for a specific table (e.g. '订单表有哪些指标'), pass table_name (exact English table name like 'orders') instead of keyword.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -251,73 +346,6 @@ fn tool_definitions() -> Value {
                     "required": ["connection_id"]
                 }
             }),
-            json!({
-                "name": "fs_read",
-                "description": "Read content from any tab or panel. mode=text→SQL with line info; mode=struct→structured JSON; mode=error→last SQL error; mode=history→recent query history.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.table | tab.metric | tab.seatunnel | panel.db-tree | panel.history" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.table: table@conn:N. tab.metric: <metric_id>. tab.seatunnel: <job_id>. panel.history: active" },
-                        "mode":     { "type": "string", "description": "tab.query: text|struct|error|history. tab.table/metric/history: struct" }
-                    },
-                    "required": ["resource", "target", "mode"]
-                }
-            }),
-            json!({
-                "name": "fs_write",
-                "description": "Write or patch tab content. SQL editor writes show diff unless Auto mode is on. Requires Auto mode ON for tab.metric and tab.table writes.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "target":   { "type": "string", "description": "tab.query: active|tab_id. tab.metric: <metric_id>. tab.table: table@conn:N. tab.seatunnel: <job_id>" },
-                        "patch": {
-                            "type": "object",
-                            "description": "tab.query: {mode:'text',op:'replace_all',content:'...',reason:'...'}. tab.metric: {mode:'struct',path:'/field',value:...}. tab.table comment: {column_name,comment} → writes ALTER SQL to query tab. tab.table modify: {action:'modify_column',column_name,changes:{...}} → writes ALTER SQL to query tab. NOTE: tab.table write does NOT execute DDL directly; user reviews and executes manually."
-                        }
-                    },
-                    "required": ["resource", "target", "patch"]
-                }
-            }),
-            json!({
-                "name": "fs_search",
-                "description": "Search tabs or panels. tab.*=all open tabs; tab.metric=list/search metrics; panel.db-tree=search cached DB tree.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource_pattern": { "type": "string", "description": "tab.* | tab.query | tab.metric | panel.db-tree" },
-                        "filter": { "type": "object", "description": "tab.query/tab.*: {keyword?}. tab.metric: {connection_id, keyword?, status?, limit?}. panel.db-tree: {keyword, type?, connection_id?}" }
-                    },
-                    "required": ["resource_pattern"]
-                }
-            }),
-            json!({
-                "name": "fs_open",
-                "description": "Open a new tab. Returns { target: tab_id }.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel" },
-                        "params":   { "type": "object", "description": "tab.query: {connection_id,label?,database?}. tab.metric: {metric_id}. tab.table: {table?,database,connection_id,initial_columns?,initial_table_name?} — omit 'table' for new table mode with optional pre-filled columns. tab.seatunnel: {job_id}" }
-                    },
-                    "required": ["resource"]
-                }
-            }),
-            json!({
-                "name": "fs_exec",
-                "description": "Execute an action on a resource target. NOTE: tab.table actions generate SQL and write it to a query tab for user review — they do NOT execute DDL directly.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "resource": { "type": "string", "description": "tab.query | tab.metric | tab.table | tab.seatunnel | panel.history" },
-                        "target":   { "type": "string", "description": "active | tab_id | new" },
-                        "action":   { "type": "string", "description": "tab.query: focus|run_sql|undo|confirm_write. tab.metric: create. tab.table: create_table|add_column|drop_column (writes SQL to query tab). tab.seatunnel: create. panel.history: undo" },
-                        "params":   { "type": "object" }
-                    },
-                    "required": ["resource", "target", "action"]
-                }
-            })
         ]
     })
 }
@@ -379,8 +407,12 @@ fn optimize_tool_definitions() -> Value {
     })
 }
 
-async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, session_id: String) -> crate::AppResult<String> {
+async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _session_id: String) -> crate::AppResult<String> {
     match name {
+        "list_connections" => {
+            let connections = crate::db::list_connections()?;
+            Ok(serde_json::to_string_pretty(&connections).unwrap_or_default())
+        }
         "list_databases" => {
             let conn_id = args["connection_id"].as_i64()
                 .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
@@ -542,8 +574,97 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
                 }
             }
         }
-        "search_tabs" => {
-            tools::tab_control::search_tabs(Arc::clone(&handle), args).await
+        "init_table_form" => {
+            // Single-IPC fast path: open a table_form tab and populate it with a complete definition.
+            // Step 1: Ask frontend to open a new table_form tab via workspace.exec('open')
+            let conn_id = args["connection_id"].as_i64().unwrap_or(0);
+            let database = args["database"].as_str().unwrap_or("");
+            let open_payload = json!({
+                "tool": "ui_exec",
+                "object": "workspace",
+                "target": "workspace",
+                "payload": {
+                    "action": "open",
+                    "params": {
+                        "type": "table_form",
+                        "connection_id": conn_id,
+                        "database": database
+                    }
+                }
+            });
+            let open_result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", open_payload,
+            ).await?;
+
+            let object_id = open_result["data"]["objectId"].as_str().unwrap_or("").to_string();
+            if object_id.is_empty() {
+                return Err(crate::AppError::Other("Failed to open table_form tab".into()));
+            }
+
+            // Step 2: Build a single batch patch with tableName + all columns + indexes
+            let mut ops: Vec<Value> = Vec::new();
+            ops.push(json!({"op": "replace", "path": "/tableName", "value": args["table_name"]}));
+            if let Some(comment) = args.get("comment").and_then(|v| v.as_str()) {
+                ops.push(json!({"op": "replace", "path": "/comment", "value": comment}));
+            }
+            if let Some(engine) = args.get("engine").and_then(|v| v.as_str()) {
+                ops.push(json!({"op": "replace", "path": "/engine", "value": engine}));
+            }
+            if let Some(charset) = args.get("charset").and_then(|v| v.as_str()) {
+                ops.push(json!({"op": "replace", "path": "/charset", "value": charset}));
+            }
+            if let Some(columns) = args["columns"].as_array() {
+                for col in columns {
+                    ops.push(json!({"op": "add", "path": "/columns/-", "value": col}));
+                }
+            }
+            if let Some(indexes) = args["indexes"].as_array() {
+                for idx in indexes {
+                    ops.push(json!({"op": "add", "path": "/indexes/-", "value": idx}));
+                }
+            }
+
+            let patch_payload = json!({
+                "tool": "ui_patch",
+                "object": "table_form",
+                "target": object_id,
+                "payload": {
+                    "ops": ops,
+                    "reason": "init_table_form: batch initialization"
+                }
+            });
+            let patch_result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", patch_payload,
+            ).await?;
+
+            let result = json!({
+                "objectId": object_id,
+                "table_name": args["table_name"],
+                "columns_count": args["columns"].as_array().map(|a| a.len()).unwrap_or(0),
+                "patch_status": patch_result.get("data").and_then(|d| d.get("status")).unwrap_or(&json!("unknown")),
+            });
+            Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
+        }
+        "ui_read" | "ui_patch" | "ui_exec" | "ui_list" => {
+            let payload = json!({
+                "tool":    name,
+                "object":  args.get("object").and_then(|v| v.as_str()).unwrap_or(""),
+                "target":  args.get("target").and_then(|v| v.as_str()).unwrap_or("active"),
+                "payload": match name {
+                    "ui_read"  => json!({ "mode": args.get("mode").and_then(|v| v.as_str()).unwrap_or("state") }),
+                    "ui_patch" => json!({ "ops": args.get("ops").cloned().unwrap_or(json!([])), "reason": args.get("reason") }),
+                    "ui_exec"  => json!({ "action": args.get("action").and_then(|v| v.as_str()).unwrap_or(""), "params": args.get("params").cloned().unwrap_or(json!({})) }),
+                    "ui_list"  => json!({ "filter": args.get("filter").cloned().unwrap_or(json!({})) }),
+                    _ => json!({})
+                }
+            });
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle,
+                "mcp://ui-request",
+                "ui_request",
+                payload,
+            ).await?;
+            Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }
         "graph_query_context" => {
             tools::graph::query_context::handle(Arc::clone(&handle), args).await
@@ -562,52 +683,6 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, sessi
         }
         "graph_debug_links" => {
             tools::graph::debug_links::handle(Arc::clone(&handle), args).await
-        }
-        "fs_read" | "fs_write" | "fs_search" | "fs_open" | "fs_exec" => {
-            let op = name.strip_prefix("fs_").unwrap_or(name);
-            let resource = args
-                .get("resource").or_else(|| args.get("resource_pattern"))
-                .and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let target = args.get("target")
-                .and_then(|v| v.as_str()).unwrap_or("active").to_string();
-            let payload = match op {
-                "search" => args.get("filter").cloned().unwrap_or(json!({})),
-                "write"  => args.get("patch").cloned().unwrap_or(json!({})),
-                "open"   => args.get("params").cloned().unwrap_or(json!({})),
-                "exec"   => json!({
-                    "action": args.get("action").and_then(|v| v.as_str()).unwrap_or(""),
-                    "params": args.get("params").cloned().unwrap_or(json!({}))
-                }),
-                _        => json!({
-                    "mode": args.get("mode").and_then(|v| v.as_str()).unwrap_or("struct")
-                }),
-            };
-
-            // Dispatch by resource: handle in backend vs forward to frontend FsRouter
-            match resource.as_str() {
-                // ── Handled directly in backend (no frontend roundtrip) ──────────────────────────
-                r if r.starts_with("tab.metric") => {
-                    tools::fs_metric::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                r if r.starts_with("tab.table") => {
-                    tools::fs_table::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                r if r.starts_with("tab.seatunnel") => {
-                    tools::fs_seatunnel::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                "panel.history" => {
-                    tools::fs_history::handle(Arc::clone(&handle), op, &target, payload, session_id).await
-                }
-                // ── Handled by frontend FsRouter (tab.query → QueryTabAdapter, panel.db-tree → DbTreeAdapter)
-                _ => {
-                    let result = crate::mcp::tools::tab_control::query_frontend(
-                        &handle,
-                        "fs_request",
-                        json!({ "op": op, "resource": resource, "target": target, "payload": payload }),
-                    ).await?;
-                    Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
-                }
-            }
         }
         _ => Err(crate::AppError::Other(format!("Unknown tool: {}", name))),
     }

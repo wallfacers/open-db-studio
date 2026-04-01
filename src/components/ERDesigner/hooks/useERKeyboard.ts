@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import type { Node, Edge } from '@xyflow/react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId';
 
 interface UseERKeyboardOptions {
   nodes: Node[];
@@ -45,18 +46,16 @@ export function useERKeyboard({
   const handleDelete = useCallback(() => {
     // 删除选中的节点
     selectedNodes.forEach((node) => {
-      const match = node.id.match(/^table-(\d+)$/);
-      if (match) {
-        const tableId = parseInt(match[1]);
+      const tableId = parseErTableNodeId(node.id);
+      if (tableId !== null) {
         deleteTable(tableId);
       }
     });
 
     // 删除选中的边
     selectedEdges.forEach((edge) => {
-      const match = edge.id.match(/^edge-(\d+)$/);
-      if (match) {
-        const relationId = parseInt(match[1]);
+      const relationId = parseErEdgeNodeId(edge.id);
+      if (relationId !== null) {
         deleteRelation(relationId);
       }
     });
@@ -67,10 +66,8 @@ export function useERKeyboard({
     if (selectedNodes.length === 0 || !activeProjectId) return;
 
     selectedNodes.forEach((node) => {
-      const match = node.id.match(/^table-(\d+)$/);
-      if (!match) return;
-
-      const tableId = parseInt(match[1]);
+      const tableId = parseErTableNodeId(node.id);
+      if (tableId === null) return;
       const originalTable = tables.find((t) => t.id === tableId);
       if (!originalTable) return;
 

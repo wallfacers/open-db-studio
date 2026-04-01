@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use clickhouse::Client;
 use serde::Deserialize;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use reqwest;
 
 use super::{
@@ -11,13 +11,19 @@ use super::{
 };
 use crate::{AppError, AppResult};
 
+use super::utils::format_size;
+
 pub struct ClickHouseDataSource {
     client: Client,
     database: String,
-    /// HTTP 基础 URL（用于 execute() 的 raw JSON 查询）
+    /// HTTP 基础 URL（用于 execute() 的 raw JSON 查询)
     http_url: String,
     http_user: Option<String>,
     http_password: Option<String>,
+    /// Token 认证时用于 Authorization header
+    http_token: Option<String>,
+    /// HTTP 请求超时
+    connect_timeout: Duration,
 }
 
 impl ClickHouseDataSource {
@@ -27,15 +33,29 @@ impl ClickHouseDataSource {
         let port = config.port.unwrap_or(8123);
         let database = config.database.as_deref().unwrap_or("default").to_string();
 
-        let url = format!("http://{}:{}", host, port);
+        // SSL 模式
+        let ssl_mode = config.ssl_mode.as_deref().unwrap_or("disable");
+        let scheme = if ssl_mode == "disable" { "http" } else { "https" };
+        let url = format!("{}://{}:{}", scheme, host, port);
+
         let mut client = Client::default().with_url(&url).with_database(&database);
 
-        if let Some(user) = config.username.as_deref() {
-            client = client.with_user(user);
+        // Token 认证
+        let auth_type = config.auth_type.as_deref().unwrap_or("password");
+        if auth_type == "token" {
+            // token 认证: 不设置 username/password，在 header 中发送
+        } else {
+            if let Some(user) = config.username.as_deref() {
+                client = client.with_user(user);
+            }
+            if let Some(pw) = config.password.as_deref() {
+                client = client.with_password(pw);
+            }
         }
-        if let Some(pw) = config.password.as_deref() {
-            client = client.with_password(pw);
-        }
+
+        // 超时
+        let connect_timeout_secs = config.connect_timeout_secs.unwrap_or(30) as u64;
+        let connect_timeout = Duration::from_secs(connect_timeout_secs);
 
         // 测试连通性
         client
@@ -50,6 +70,8 @@ impl ClickHouseDataSource {
             http_url: url,
             http_user: config.username.clone(),
             http_password: config.password.clone(),
+            http_token: config.token.clone(),
+            connect_timeout,
         })
     }
 }
@@ -98,18 +120,35 @@ impl DataSource for ClickHouseDataSource {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         // ClickHouse HTTP 接口：附加 FORMAT JSONEachRow，用 reqwest 发送原始 JSON
         let start = Instant::now();
-        let query_sql = format!("{} FORMAT JSONEachRow", sql);
 
-        let mut req = reqwest::Client::new()
+        let http_client = reqwest::Client::builder()
+            .timeout(self.connect_timeout)
+            .build()
+            .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+        // Non-SELECT statements: send without FORMAT suffix, return success
+        let trimmed = sql.trim_start().to_uppercase();
+        let is_query = trimmed.starts_with("SELECT") || trimmed.starts_with("SHOW") || trimmed.starts_with("DESCRIBE") || trimmed.starts_with("EXPLAIN") || trimmed.starts_with("WITH") || trimmed.starts_with("EXISTS");
+        let query_sql = if is_query {
+            format!("{} FORMAT JSONEachRow", sql)
+        } else {
+            sql.to_string()
+        };
+
+        let mut req = http_client
             .post(&self.http_url)
             .query(&[("database", self.database.as_str())])
             .body(query_sql);
 
-        if let Some(user) = &self.http_user {
-            req = req.header("X-ClickHouse-User", user);
-        }
-        if let Some(pw) = &self.http_password {
-            req = req.header("X-ClickHouse-Key", pw);
+        if let Some(token) = &self.http_token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        } else {
+            if let Some(user) = &self.http_user {
+                req = req.header("X-ClickHouse-User", user);
+            }
+            if let Some(pw) = &self.http_password {
+                req = req.header("X-ClickHouse-Key", pw);
+            }
         }
 
         let resp = req.send().await.map_err(|e| AppError::Datasource(e.to_string()))?;
@@ -119,6 +158,11 @@ impl DataSource for ClickHouseDataSource {
 
         if !status.is_success() {
             return Err(AppError::Datasource(body));
+        }
+
+        // DML succeeded — ClickHouse HTTP doesn't report affected rows
+        if !is_query {
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: 1, duration_ms });
         }
 
         // JSONEachRow 每行一个 JSON 对象（换行分隔）
@@ -397,6 +441,10 @@ impl DataSource for ClickHouseDataSource {
             has_multi_database: true,
             has_partitions: true,
             sql_dialect: SqlDialect::ClickHouse,
+            supported_auth_types: vec!["password".to_string(), "token".to_string()],
+            has_pool_config: false,
+            has_timeout_config: true,
+            has_ssl_config: true,
         }
     }
 
@@ -451,14 +499,3 @@ impl DataSource for ClickHouseDataSource {
     }
 }
 
-fn format_size(bytes: i64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}

@@ -299,3 +299,53 @@ pub async fn patch_config(port: u16, model: &str, provider: &str) -> AppResult<(
     }
     Ok(())
 }
+
+/// Reply to a question request from the AI agent.
+/// POST /question/:requestID/reply { "answers": [[...], ...] }
+pub async fn question_reply(
+    port: u16,
+    request_id: &str,
+    answers: serde_json::Value,
+) -> AppResult<()> {
+    let url = format!("{}/question/{}/reply", base_url(port), request_id);
+    let body = serde_json::json!({ "answers": answers });
+
+    let resp = client()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("question_reply request failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!(
+            "question_reply failed: {} — {}",
+            status, text
+        )));
+    }
+    Ok(())
+}
+
+/// Reject a question request from the AI agent.
+/// POST /question/:requestID/reject
+pub async fn question_reject(port: u16, request_id: &str) -> AppResult<()> {
+    let url = format!("{}/question/{}/reject", base_url(port), request_id);
+
+    let resp = client()
+        .post(&url)
+        .send()
+        .await
+        .map_err(|e| crate::AppError::Other(format!("question_reject request failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(crate::AppError::Other(format!(
+            "question_reject failed: {} — {}",
+            status, text
+        )));
+    }
+    Ok(())
+}

@@ -21,14 +21,25 @@ pub async fn handle(
         |row| row.get(0),
     ).unwrap_or(0);
 
-    // 如果有过滤条件，检查该表节点是否存在
+    // 如果有过滤条件，检查该表节点是否存在（支持 PG schema 限定名 fallback）
     let target_table_exists = if let Some(ref tbl) = table_filter {
         let node_id = format!("{}:table:{}", connection_id, tbl);
-        conn.query_row(
+        let exists = conn.query_row(
             "SELECT COUNT(*) FROM graph_nodes WHERE id = ?1 AND is_deleted = 0",
             [&node_id],
             |row| row.get::<_, i64>(0),
-        ).unwrap_or(0) > 0
+        ).unwrap_or(0) > 0;
+        // Fallback: try public.{tbl} for PG tables
+        if !exists && !tbl.contains('.') {
+            let pg_node_id = format!("{}:table:public.{}", connection_id, tbl);
+            conn.query_row(
+                "SELECT COUNT(*) FROM graph_nodes WHERE id = ?1 AND is_deleted = 0",
+                [&pg_node_id],
+                |row| row.get::<_, i64>(0),
+            ).unwrap_or(0) > 0
+        } else {
+            exists
+        }
     } else {
         false
     };

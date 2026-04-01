@@ -107,6 +107,8 @@ fn spawn_child(
         .env("OPENCODE_CONFIG_DIR", opencode_dir)
         // 禁用自动更新（autoupdate: false 在非全局路径下是已知 bug #6984，需用环境变量）
         .env("OPENCODE_DISABLE_AUTOUPDATE", "true")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(false); // we manage lifecycle explicitly
 
     // Windows：CREATE_NO_WINDOW (0x08000000) 阻止系统为子进程弹出 CMD 黑窗口，
@@ -118,6 +120,28 @@ fn spawn_child(
         e.kind(),
         format!("Failed to spawn opencode-cli at {}: {}", cli_path.display(), e)
     ))
+}
+
+/// Spawn a background task that reads child stderr line-by-line and logs it.
+fn spawn_stderr_logger(child: &mut tokio::process::Child) {
+    if let Some(stderr) = child.stderr.take() {
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                log::warn!("[opencode-cli stderr] {}", line);
+            }
+        });
+    }
+    if let Some(stdout) = child.stdout.take() {
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                log::info!("[opencode-cli stdout] {}", line);
+            }
+        });
+    }
 }
 
 /// Core logic: attempt to start serve once.
@@ -154,14 +178,23 @@ async fn try_start(
         )));
     }
 
-    let child = spawn_child(cli_path, opencode_dir, port)
+    let mut child = spawn_child(cli_path, opencode_dir, port)
         .map_err(|e| crate::AppError::Other(e.to_string()))?;
 
+    // Capture stdout/stderr to log so we can diagnose startup failures.
+    spawn_stderr_logger(&mut child);
+
     if !wait_for_health(&client, port).await {
+        // Check if the process already exited
+        let exit_info = match child.try_wait() {
+            Ok(Some(status)) => format!(" Process exited with: {}", status),
+            Ok(None) => " Process is still running but health endpoint not responding.".into(),
+            Err(e) => format!(" Could not check process status: {}", e),
+        };
         return Err(crate::AppError::Other(format!(
-            "opencode serve did not become healthy within 10s. \
-             Bundled opencode-cli may be corrupted or incompatible with this system. \
-             Binary path: {}",
+            "opencode serve did not become healthy within 10s.{} \
+             Binary path: {}. Check [opencode-cli stderr] log lines above for details.",
+            exit_info,
             cli_path.display()
         )));
     }

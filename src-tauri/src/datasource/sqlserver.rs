@@ -31,7 +31,12 @@ impl SqlServerDataSource {
         // 认证方式
         let auth_type = cfg.auth_type.as_deref().unwrap_or("password");
         if auth_type == "os_native" {
+            #[cfg(windows)]
             config.authentication(AuthMethod::Integrated);
+            #[cfg(not(windows))]
+            return Err(AppError::Datasource(
+                "Windows Integrated authentication is only supported on Windows".into(),
+            ));
         } else {
             let username = cfg.username.as_deref()
                 .ok_or_else(|| AppError::Datasource("Missing username".into()))?;

@@ -62,10 +62,32 @@ pub fn run() {
                 .as_deref()
                 .and_then(|s| s.parse::<u16>().ok())
                 .unwrap_or(6686);
-            let serve_port = crate::agent::server::find_available_port(base_port);
-            if serve_port != base_port {
-                log::info!("Port {} busy, using {} for opencode serve", base_port, serve_port);
-            }
+            // 如果基础端口被占，先检查上面是否已有健康的 opencode 实例，
+            // 避免在新端口启动第二个实例导致数据目录锁冲突。
+            let serve_port = if std::net::TcpListener::bind(("127.0.0.1", base_port)).is_err() {
+                // Port is busy — check if it's a healthy opencode instance
+                let client = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(1))
+                    .build().unwrap();
+                let health_url = format!("http://127.0.0.1:{}/global/health", base_port);
+                let is_opencode = tauri::async_runtime::block_on(async {
+                    client.get(&health_url)
+                        .timeout(std::time::Duration::from_secs(2))
+                        .send().await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                });
+                if is_opencode {
+                    log::info!("Port {} has a healthy opencode instance, reusing it", base_port);
+                    base_port
+                } else {
+                    let port = crate::agent::server::find_available_port(base_port);
+                    log::info!("Port {} busy (not opencode), using {} for opencode serve", base_port, port);
+                    port
+                }
+            } else {
+                base_port
+            };
 
             app.manage(crate::state::AppState {
                 mcp_port,

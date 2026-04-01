@@ -40,3 +40,9 @@ Thumbs.db
 
 # Tauri sidecar binaries (downloaded at build time)
 src-tauri/binaries/
+
+# Tauri generated platform schemas
+src-tauri/gen/schemas/
+
+# Accidentally copied app data files
+src-tauri/C*/

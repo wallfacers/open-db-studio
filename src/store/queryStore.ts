@@ -31,10 +31,6 @@ function getSqlType(sql: string): string {
 }
 
 /** 截断 SQL 用于显示摘要 */
-function truncateSql(sql: string, max = 40): string {
-  const s = sql.replace(/\s+/g, ' ').trim();
-  return s.length > max ? s.slice(0, max) + '…' : s;
-}
 
 interface StmtResult { stmt: string; result: QueryResult }
 
@@ -435,7 +431,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           rows: dmlBatch.map((item, i) => [
             String(i + 1),
             getSqlType(item.stmt),
-            truncateSql(item.stmt),
+            item.stmt.replace(/\s+/g, ' ').trim(),
             String(item.result.row_count),
             String(item.result.duration_ms),
             '✓ 成功',

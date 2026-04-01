@@ -74,6 +74,8 @@ pub async fn collect_text_via_global_events(
     let mut session_part_ids: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     let mut result = String::new();
+    // 上一个发送过内容的 text part ID，用于在切换 part 时插入换行分隔
+    let mut last_text_part_id: Option<String> = None;
 
     let mut stream = sse_resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -103,6 +105,12 @@ pub async fn collect_text_via_global_events(
                             let full = part["text"].as_str().unwrap_or("");
                             let prev = *part_offsets.get(&part_id).unwrap_or(&0);
                             if full.len() > prev {
+                                if last_text_part_id.as_deref() != Some(&part_id)
+                                    && last_text_part_id.is_some()
+                                {
+                                    result.push_str("\n\n");
+                                }
+                                last_text_part_id = Some(part_id.clone());
                                 result.push_str(&full[prev..]);
                                 part_offsets.insert(part_id, full.len());
                             }
@@ -118,6 +126,12 @@ pub async fn collect_text_via_global_events(
                     if props["field"].as_str() == Some("text") {
                         let delta = props["delta"].as_str().unwrap_or("");
                         if !delta.is_empty() {
+                            if last_text_part_id.as_deref() != Some(part_id)
+                                && last_text_part_id.is_some()
+                            {
+                                result.push_str("\n\n");
+                            }
+                            last_text_part_id = Some(part_id.to_string());
                             result.push_str(delta);
                             // 更新偏移，避免快照事件重复发送
                             let prev = *part_offsets.get(part_id).unwrap_or(&0);
@@ -202,6 +216,8 @@ pub async fn stream_global_events(
     // 本 session 的 part_id → part_type 映射（从 message.part.updated 注册）
     let mut session_parts: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    // 上一个发送过内容的 text part ID，用于在切换 part 时插入换行分隔
+    let mut last_text_part_id: Option<String> = None;
 
     let mut stream = sse_resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -271,6 +287,15 @@ pub async fn stream_global_events(
 
                     match (part_type, field) {
                         ("text", "text") => {
+                            // 切换到新的 text part 时插入换行，确保 Markdown 标题等语法正确渲染
+                            if last_text_part_id.as_deref() != Some(part_id)
+                                && last_text_part_id.is_some()
+                            {
+                                let _ = channel.send(StreamEvent::ContentChunk {
+                                    delta: "\n\n".to_string(),
+                                });
+                            }
+                            last_text_part_id = Some(part_id.to_string());
                             let _ = channel.send(StreamEvent::ContentChunk {
                                 delta: delta.to_string(),
                             });

@@ -40,7 +40,7 @@ pub fn write_mcp_config(opencode_dir: &std::path::Path, mcp_port: u16) -> AppRes
     Ok(())
 }
 
-/// Write agent prompt files for sql-explain and sql-optimize agents.
+/// Write agent prompt files for sql-explain, sql-optimize and sql-diagnose agents.
 pub fn write_agent_prompts(opencode_dir: &std::path::Path) -> AppResult<()> {
     let agents_dir = opencode_dir.join("agents");
     std::fs::create_dir_all(&agents_dir)
@@ -72,6 +72,18 @@ description: SQL 优化专家，提供 SQL 性能优化建议与改写
 请用中文回答，优化建议要具体可执行。
 "#;
 
+    let diagnose_content = r#"---
+description: SQL 错误诊断专家，分析 SQL 执行错误并给出修复建议
+---
+
+你是一个专业的 SQL 错误诊断专家。当用户提供失败的 SQL 及其错误信息时，请：
+1. 分析错误的根本原因
+2. 给出具体的修复方案（包含修正后的 SQL）
+3. 解释如何避免类似错误
+
+请用中文回答，保持简洁清晰。
+"#;
+
     let explain_path = agents_dir.join("sql-explain.md");
     std::fs::write(&explain_path, explain_content)
         .map_err(|e| crate::AppError::Other(format!("Failed to write sql-explain.md: {}", e)))?;
@@ -79,6 +91,10 @@ description: SQL 优化专家，提供 SQL 性能优化建议与改写
     let optimize_path = agents_dir.join("sql-optimize.md");
     std::fs::write(&optimize_path, optimize_content)
         .map_err(|e| crate::AppError::Other(format!("Failed to write sql-optimize.md: {}", e)))?;
+
+    let diagnose_path = agents_dir.join("sql-diagnose.md");
+    std::fs::write(&diagnose_path, diagnose_content)
+        .map_err(|e| crate::AppError::Other(format!("Failed to write sql-diagnose.md: {}", e)))?;
 
     log::info!("Wrote agent prompt files to opencode/agents at {:?}", agents_dir);
     Ok(())

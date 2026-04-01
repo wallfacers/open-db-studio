@@ -357,7 +357,9 @@
     "aiDiagnoseBtn": "AI Diagnosis",
     "sqlExecutionError": "SQL Execution Error",
     "errorMessage": "Error",
-    "diagnosing": "Diagnosing..."
+    "diagnosing": "Diagnosing...",
+    "reDiagnose": "Re-diagnose",
+    "sendToAssistant": "Send to AI Assistant"
   },
   "tableDataView": {
     "firstPage": "First page",

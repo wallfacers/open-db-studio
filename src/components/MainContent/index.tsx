@@ -275,7 +275,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const { activeConnectionId, connections } = useConnectionStore();
   const { nodes } = useTreeStore();
   const { explainSql, isExplaining: isExplainingMap, cancelExplainSql,
-          diagnoseSqlError, diagnosisContent: diagnosisContentMap, diagnosisStreaming: diagnosisStreamingMap, cancelDiagnosis } = useAiStore();
+          diagnoseSqlError, diagnosisContent: diagnosisContentMap, diagnosisStreaming: diagnosisStreamingMap, cancelDiagnosis, clearDiagnosis } = useAiStore();
   const isExecuting = isExecutingMap[activeTab] ?? false;
   const isExplaining = isExplainingMap[activeTab] ?? false;
   const isGhostTextEnabled = useQueryStore((s) => s.isGhostTextEnabled(activeTab));
@@ -1369,9 +1369,21 @@ export const MainContent: React.FC<MainContentProps> = ({
                               {activeResult.sql && (
                                 <pre className="bg-[#0d1117] border border-[#1e2d42] rounded p-2 text-xs text-[#7a9bb8] font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
                               )}
-                              <div className="text-xs">
-                                <span className="text-[#7a9bb8]">{t('mainContent.errorMessage')}：</span>
-                                <span className="text-red-400 font-mono">{activeResult.error_message}</span>
+                              <div className="flex items-center justify-between text-xs">
+                                <div>
+                                  <span className="text-[#7a9bb8]">{t('mainContent.errorMessage')}：</span>
+                                  <span className="text-red-400 font-mono">{activeResult.error_message}</span>
+                                </div>
+                                <button
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#243a55] transition-colors flex-shrink-0 ml-3"
+                                  onClick={() => {
+                                    const text = `请帮我分析以下 SQL 执行错误：\n\nSQL:\n\`\`\`sql\n${activeResult.sql ?? ''}\n\`\`\`\n\n错误信息:\n\`\`\`\n${activeResult.error_message ?? ''}\n\`\`\``;
+                                    askAiWithContext(text);
+                                  }}
+                                >
+                                  <MessageSquare size={12} />
+                                  {t('mainContent.sendToAssistant')}
+                                </button>
                               </div>
                             </div>
 
@@ -1393,6 +1405,18 @@ export const MainContent: React.FC<MainContentProps> = ({
                                       <svg className="animate-spin ml-1" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                                       </svg>
+                                    )}
+                                    {!diagStreaming && (
+                                      <button
+                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#243a55] transition-colors"
+                                        onClick={() => {
+                                          clearDiagnosis(diagKey);
+                                          diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey);
+                                        }}
+                                      >
+                                        <RefreshCw size={11} className="inline -mt-0.5 mr-1" />
+                                        {t('mainContent.reDiagnose')}
+                                      </button>
                                     )}
                                   </div>
                                   <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">

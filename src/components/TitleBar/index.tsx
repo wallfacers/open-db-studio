@@ -66,7 +66,7 @@ export const TitleBar: React.FC = () => {
         </Tooltip>
         <Tooltip content={t('titleBar.close')}>
           <button
-            className="w-8 h-8 flex items-center justify-center text-[var(--foreground-subtle)] hover:text-white hover:bg-[#c0392b] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-[var(--foreground-subtle)] hover:text-[var(--foreground)] hover:bg-[var(--window-close-hover)] transition-colors"
             onClick={() => appWindow.close()}
           >
             <X size={13} />

@@ -26,7 +26,7 @@ export function SettingsPage() {
             key={id}
             className={`w-full flex items-center px-4 py-2 text-sm text-left transition-colors ${
               activeSection === id
-                ? 'bg-[var(--accent-subtle)] text-white border-l-2 border-[var(--accent)]'
+                ? 'bg-[var(--accent-subtle)] text-[var(--foreground)] border-l-2 border-[var(--accent)]'
                 : 'text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] border-l-2 border-transparent'
             }`}
             onClick={() => setActiveSection(id)}
@@ -64,7 +64,7 @@ function AiSection() {
     <div className="w-full flex flex-col items-center">
       <LlmSettingsPanel />
       <div className="w-full max-w-2xl px-8 pb-8 space-y-4">
-        <h3 className="text-white font-semibold text-sm border-b border-[var(--border-default)] pb-2">
+        <h3 className="text-[var(--foreground)] font-semibold text-sm border-b border-[var(--border-default)] pb-2">
           {t('settings.aiInlineCompletion')}
         </h3>
         <div className="flex items-center justify-between">
@@ -111,7 +111,7 @@ function AppearanceSection({ t }: { t: any }) {
 
   return (
     <div className="w-full max-w-lg p-8 space-y-6">
-      <h3 className="text-white font-semibold text-sm border-b border-[var(--border-default)] pb-2">{t('settings.appearance')}</h3>
+      <h3 className="text-[var(--foreground)] font-semibold text-sm border-b border-[var(--border-default)] pb-2">{t('settings.appearance')}</h3>
       <div className="space-y-6">
         <div>
           <p className="text-xs font-medium text-[var(--foreground-default)] mb-1">{t('settings.language')}</p>
@@ -126,7 +126,7 @@ function AppearanceSection({ t }: { t: any }) {
                 onClick={() => handleLanguageChange(value)}
                 className={`px-4 py-1.5 text-xs rounded transition-colors ${
                   currentLang === value
-                    ? 'bg-[var(--accent-subtle)] text-white border border-[var(--accent)]'
+                    ? 'bg-[var(--accent-subtle)] text-[var(--foreground)] border border-[var(--accent)]'
                     : 'text-[var(--foreground-muted)] border border-[var(--border-strong)] hover:text-[var(--foreground-default)] hover:border-[var(--border-strong)]'
                 }`}
               >
@@ -145,7 +145,7 @@ function AppearanceSection({ t }: { t: any }) {
                 onClick={() => setTablePageSizeLimit(size)}
                 className={`px-4 py-1.5 text-xs rounded transition-colors ${
                   tablePageSizeLimit === size
-                    ? 'bg-[var(--accent-subtle)] text-white border border-[var(--accent)]'
+                    ? 'bg-[var(--accent-subtle)] text-[var(--foreground)] border border-[var(--accent)]'
                     : 'text-[var(--foreground-muted)] border border-[var(--border-strong)] hover:text-[var(--foreground-default)] hover:border-[var(--border-strong)]'
                 }`}
               >
@@ -171,15 +171,15 @@ function PlaceholderSection({ title, description }: { title: string; description
 function AboutSection({ t }: { t: any }) {
   return (
     <div className="w-full max-w-lg p-8 space-y-4">
-      <h3 className="text-white font-semibold text-sm border-b border-[var(--border-default)] pb-2">{t('settings.about')}</h3>
+      <h3 className="text-[var(--foreground)] font-semibold text-sm border-b border-[var(--border-default)] pb-2">{t('settings.about')}</h3>
 
       {/* App logo & name */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold text-sm">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--primary)] to-[var(--accent)] flex items-center justify-center text-[var(--foreground)] font-bold text-sm">
           DB
         </div>
         <div>
-          <p className="text-white font-semibold text-sm">open-db-studio</p>
+          <p className="text-[var(--foreground)] font-semibold text-sm">open-db-studio</p>
           <p className="text-[var(--foreground-muted)] text-xs">{t('settings.aboutDesc')}</p>
         </div>
       </div>
@@ -193,7 +193,7 @@ function AboutSection({ t }: { t: any }) {
 
       {/* Footer */}
       <div className="pt-2 border-t border-[var(--border-default)]">
-        <p className="text-[10px] text-[#4a6a84]">{t('settings.aboutFooter')}</p>
+        <p className="text-[10px] text-[var(--foreground-subtle)]">{t('settings.aboutFooter')}</p>
       </div>
     </div>
   );

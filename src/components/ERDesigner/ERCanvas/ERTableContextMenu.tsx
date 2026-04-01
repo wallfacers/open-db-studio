@@ -130,7 +130,7 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
             key={idx}
             className={`flex items-center px-3 py-1.5 cursor-pointer text-xs ${
               item.danger
-                ? 'text-red-400 hover:bg-[#3d1f1f]'
+                ? 'text-[var(--error)] hover:bg-[var(--danger-hover-bg)]'
                 : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)]'
             }`}
             onClick={item.onClick}

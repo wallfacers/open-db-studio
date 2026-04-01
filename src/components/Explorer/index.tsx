@@ -264,8 +264,8 @@ export const Explorer: React.FC<ExplorerProps> = ({
               </div>
             </div>
 
-            <div className="p-2 border-b border-[var(--border-default)]">
-              <div className="flex items-center bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 focus-within:border-[var(--accent-hover)] transition-colors">
+            <div className="h-10 flex items-center px-2 border-b border-[var(--border-default)]">
+              <div className="flex items-center bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 flex-1 focus-within:border-[var(--accent-hover)] transition-colors">
                 <Search size={14} className="text-[var(--foreground-muted)] mr-1" />
                 <input
                   type="text"

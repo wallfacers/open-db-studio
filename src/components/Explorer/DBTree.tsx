@@ -567,7 +567,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
             groupNodes.map(g => (
               <button
                 key={g.id}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--background-hover)] hover:text-white ${
+                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] ${
                   moveToGroupPicker.currentGroupId === g.id
                     ? 'text-[var(--accent)]'
                     : 'text-[var(--foreground-default)]'
@@ -587,7 +587,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
             <>
               <div className="h-px bg-[var(--border-strong)] my-1" />
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => handleMoveToGroup(moveToGroupPicker.connectionId, null)}
               >
                 <FolderX size={13} />

@@ -55,12 +55,12 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
       {/* 搜索栏 */}
       <div className="flex items-center gap-2 mb-2">
         <div className="flex-1 flex items-center gap-1.5 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5">
-          <Search size={13} className="text-gray-400 flex-shrink-0" />
+          <Search size={13} className="text-[var(--foreground-muted)] flex-shrink-0" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('tableSelector.searchPlaceholder')}
-            className="flex-1 bg-transparent text-sm text-white placeholder-gray-600 outline-none"
+            className="flex-1 bg-transparent text-sm text-[var(--foreground)] placeholder-[var(--foreground-ghost)] outline-none"
           />
         </div>
       </div>
@@ -76,7 +76,7 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleAll}
-                  className="accent-[#009e84] cursor-pointer"
+                  className="accent-[var(--accent)] cursor-pointer"
                   title={allSelected ? t('tableSelector.deselectAll') : t('tableSelector.selectAll')}
                 />
               </th>
@@ -90,7 +90,7 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
               <tr
                 key={t.name}
                 onClick={() => toggleTable(t.name)}
-                className={`border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--background-hover)] ${selected.includes(t.name) ? 'bg-[#0f1e30]' : ''}`}
+                className={`border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--background-hover)] ${selected.includes(t.name) ? 'bg-[var(--background-active)]' : ''}`}
               >
                 <td className="px-2 py-1.5 border-r border-[var(--border-default)]">
                   <input
@@ -98,10 +98,10 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
                     checked={selected.includes(t.name)}
                     onChange={() => toggleTable(t.name)}
                     onClick={(e) => e.stopPropagation()}
-                    className="accent-[#009e84]"
+                    className="accent-[var(--accent)]"
                   />
                 </td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-white max-w-[200px] truncate">{t.name}</td>
+                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground)] max-w-[200px] truncate">{t.name}</td>
                 <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)] text-right">
                   {t.rowCount ? t.rowCount.toLocaleString() : '-'}
                 </td>
@@ -112,7 +112,7 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
         </table>
       </div>
 
-      <div className="text-sm text-gray-400 mt-2 pt-2 border-t border-[var(--border-strong)]">
+      <div className="text-sm text-[var(--foreground-muted)] mt-2 pt-2 border-t border-[var(--border-strong)]">
         {t('tableSelector.selectedCount', { selected: selected.length, total: tables.length })}
       </div>
     </div>

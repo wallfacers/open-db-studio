@@ -52,11 +52,11 @@ const ColumnRow: React.FC<{
   const { className: hlClass, onUserEdit } = useRowHighlight(tabId, col.name);
 
   return (
-    <tr className={`hover:bg-[var(--background-hover)] border-b border-[var(--border-default)] group ${col._isNew ? 'bg-green-900/10' : ''} ${hlClass}`}>
+    <tr className={`hover:bg-[var(--background-hover)] border-b border-[var(--border-default)] group ${col._isNew ? 'bg-[var(--success-subtle)]' : ''} ${hlClass}`}>
       <td className="w-[30px] px-1 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)] bg-[var(--background-base)] text-center text-xs cursor-default select-none">
         {idx + 1}
       </td>
-      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
+      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
         <input
           className="w-full h-full px-3 py-1.5 bg-transparent text-[var(--foreground-default)] outline-none text-xs block"
           value={col.name}
@@ -71,7 +71,7 @@ const ColumnRow: React.FC<{
           className="w-full"
         />
       </td>
-      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
+      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
         <input
           className="w-full h-full px-3 py-1.5 bg-transparent text-[var(--foreground-default)] outline-none text-xs block"
           value={col.length ?? ''}
@@ -84,10 +84,10 @@ const ColumnRow: React.FC<{
           type="checkbox"
           checked={col.isNullable ?? true}
           onChange={e => { onUserEdit(); updateColumn(col.id, { isNullable: e.target.checked }); }}
-          className="accent-[#009e84]"
+          className="accent-[var(--accent)]"
         />
       </td>
-      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
+      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
         <input
           className="w-full h-full px-3 py-1.5 bg-transparent text-[var(--foreground-default)] outline-none text-xs block"
           value={col.defaultValue ?? ''}
@@ -100,10 +100,10 @@ const ColumnRow: React.FC<{
           type="checkbox"
           checked={col.isPrimaryKey ?? false}
           onChange={e => { onUserEdit(); updateColumn(col.id, { isPrimaryKey: e.target.checked }); }}
-          className="accent-[#3794ff]"
+          className="accent-[var(--info)]"
         />
       </td>
-      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
+      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
         <input
           className="w-full h-full px-3 py-1.5 bg-transparent text-[var(--foreground-default)] outline-none text-xs block"
           value={col.extra ?? ''}
@@ -111,7 +111,7 @@ const ColumnRow: React.FC<{
           placeholder="—"
         />
       </td>
-      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_#3a7bd5] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
+      <td className="p-0 border-r border-[var(--border-default)] [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-[var(--background-hover)]">
         <input
           className="w-full h-full px-3 py-1.5 bg-transparent text-[var(--foreground-default)] outline-none text-xs block"
           value={col.comment ?? ''}
@@ -350,19 +350,19 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
     }
   };
 
-  const iconBtn = 'p-0.5 hover:bg-[#243a55] rounded text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed';
-  const iconBtnDanger = 'p-0.5 hover:bg-[#243a55] rounded text-red-500/70 hover:text-red-400 transition-colors';
+  const iconBtn = 'p-0.5 hover:bg-[var(--background-hover)] rounded text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed';
+  const iconBtnDanger = 'p-0.5 hover:bg-[var(--background-hover)] rounded text-[var(--error)]/70 hover:text-[var(--error)] transition-colors';
 
   const connectionName = connections.find(c => c.id === connectionId)?.name ?? `conn_${connectionId}`;
 
   return (
     <div className="flex-1 flex flex-col bg-[var(--background-void)] overflow-hidden min-h-0">
       {/* Context info bar */}
-      <div className="h-8 flex items-center px-3 border-b border-[var(--border-default)] bg-[#0a1018] text-xs flex-shrink-0 gap-1.5 text-[var(--foreground-muted)]">
-        <span className="text-[#009e84]">{connectionName}</span>
-        {database && (<><span className="text-[#3a4f6a]">/</span><span>{database}</span></>)}
-        {schema && (<><span className="text-[#3a4f6a]">/</span><span>{schema}</span></>)}
-        {tableName && (<><span className="text-[#3a4f6a]">/</span><span className="text-[var(--foreground-default)]">{tableName}</span></>)}
+      <div className="h-8 flex items-center px-3 border-b border-[var(--border-default)] bg-[var(--background-deep)] text-xs flex-shrink-0 gap-1.5 text-[var(--foreground-muted)]">
+        <span className="text-[var(--accent)]">{connectionName}</span>
+        {database && (<><span className="text-[var(--foreground-ghost)]">/</span><span>{database}</span></>)}
+        {schema && (<><span className="text-[var(--foreground-ghost)]">/</span><span>{schema}</span></>)}
+        {tableName && (<><span className="text-[var(--foreground-ghost)]">/</span><span className="text-[var(--foreground-default)]">{tableName}</span></>)}
       </div>
       {/* Toolbar */}
       {!tableName && (
@@ -370,7 +370,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
           <HighlightedField scopeId={tabId} path="tableName">
             {(onUserEdit) => (
               <input
-                className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-0.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[#009e84] w-40"
+                className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-0.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--accent)] w-40"
                 placeholder={t('tableManage.tableName') + '...'}
                 value={newTableName}
                 onChange={e => { onUserEdit(); setNewTableName(e.target.value); }}
@@ -420,7 +420,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         )}
         <button
           onClick={addColumn}
-          className="m-2 flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[#009e84] px-2 py-1"
+          className="m-2 flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--accent)] px-2 py-1"
         >
           <Plus size={13} />
           {t('tableManage.addColumn')}
@@ -461,7 +461,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
           <button
             onClick={handleExecute}
             disabled={isLoading || !hasChanges || isLoadingData}
-            className="flex items-center gap-1 px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-xs disabled:opacity-50"
+            className="flex items-center gap-1 px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded text-xs disabled:opacity-50"
           >
             <Check size={12} />
             {isLoading

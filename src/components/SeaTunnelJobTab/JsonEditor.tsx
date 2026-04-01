@@ -20,7 +20,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
         { token: 'string.key.json',   foreground: '5eb2f7' },
         { token: 'string.value.json', foreground: 'e8a87c' },
         { token: 'number',            foreground: '9de0b2' },
-        { token: 'keyword',           foreground: '00c9a7' },
+        { token: 'keyword',           foreground: '10B981' }, // CSS var: --accent
         { token: 'delimiter',         foreground: '7a9bb8' },
       ],
       colors: {
@@ -28,7 +28,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
         'editorGutter.background':            '#0F172A',
         'editorLineNumber.foreground':        '#475569',
         'editorLineNumber.activeForeground':  '#10B981',
-        'editor.lineHighlightBackground':     '#1E3A5F40',
+        'editor.lineHighlightBackground':     '#25236340', // CSS var: --background-active
         'editor.lineHighlightBorder':         '#00000000',
         'editor.selectionBackground':         '#064E3B80',
         'editor.inactiveSelectionBackground': '#064E3B40',

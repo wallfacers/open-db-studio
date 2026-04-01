@@ -149,7 +149,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
           onChange={(e) => setRenameName(e.target.value)}
           onKeyDown={handleRenameKeyDown}
           onBlur={handleRenameConfirm}
-          className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] focus:outline-none focus:border-[#009e84]"
+          className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] focus:outline-none focus:border-[var(--accent)]"
         />
       </div>,
       document.body
@@ -189,7 +189,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
             key={idx}
             className={`flex items-center px-3 py-1.5 cursor-pointer text-xs ${
               item.danger
-                ? 'text-red-400 hover:bg-[#3d1f1f]'
+                ? 'text-[var(--error)] hover:bg-[var(--danger-hover-bg)]'
                 : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)]'
             }`}
             onClick={item.onClick}

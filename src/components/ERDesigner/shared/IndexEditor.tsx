@@ -98,7 +98,7 @@ function IndexRow({
         <Tooltip content="删除索引">
           <button
             type="button"
-            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-red-400 transition-colors"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[var(--foreground-ghost)] hover:text-[var(--error)] transition-colors"
             onClick={(e) => { e.stopPropagation(); onDelete(index.id, tableId); }}
           >
             <Trash2 size={12} />

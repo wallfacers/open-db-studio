@@ -55,14 +55,14 @@ export const EditableCell: React.FC<EditableCellProps> = ({
 
   const baseCellClass = [
     'px-3 py-1.5 text-left text-[var(--foreground-default)] border-r border-b border-[var(--border-default)] relative overflow-hidden',
-    isDeleted ? 'line-through text-red-400/60' : '',
-    isCloned ? 'text-green-400' : '',
-    isModified && !isDeleted ? 'bg-yellow-900/20' : '',
+    isDeleted ? 'line-through text-[var(--error)]/60' : '',
+    isCloned ? 'text-[var(--success)]' : '',
+    isModified && !isDeleted ? 'bg-[var(--warning-subtle)]' : '',
   ].filter(Boolean).join(' ');
 
   if (editing) {
     return (
-      <td className="border-r border-b border-[var(--border-default)] p-0 relative overflow-hidden" style={{ outline: '1px solid #3a7bd5', outlineOffset: '-1px', ...style }}>
+      <td className="border-r border-b border-[var(--border-default)] p-0 relative overflow-hidden" style={{ outline: '1px solid var(--border-focus)', outlineOffset: '-1px', ...style }}>
         <input
           ref={inputRef}
           value={draft}
@@ -98,7 +98,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
       </Tooltip>
       {onOpenEditor && !isDeleted && (
         <button
-          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[var(--foreground-muted)] hover:text-[#3a7bd5] transition-opacity"
+          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--background-hover)] rounded text-[var(--foreground-muted)] hover:text-[var(--border-focus)] transition-opacity"
           onClick={e => { e.stopPropagation(); onOpenEditor(); }}
           onMouseDown={e => e.preventDefault()}
         >

@@ -400,8 +400,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   };
 
   const rowBgClass = useCallback((rowIdx: number) => {
-    if (isRowDeleted(rowIdx)) return 'bg-red-900/20';
-    if (pending.edits.some(e => e.rowIdx === rowIdx)) return 'bg-yellow-900/20';
+    if (isRowDeleted(rowIdx)) return 'bg-[var(--error-subtle)]';
+    if (pending.edits.some(e => e.rowIdx === rowIdx)) return 'bg-[var(--warning-subtle)]';
     return '';
   }, [pending.edits, isRowDeleted]);
 
@@ -415,18 +415,18 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       if (!row) return null;
       return (
         <>
-          <td style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[var(--border-default)] text-green-400 text-center text-xs select-none">
+          <td style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[var(--border-default)] text-[var(--success)] text-center text-xs select-none">
             <Tooltip content={t('tableDataView.deleteRowMenuItem')} className="contents">
               <button
                 onClick={() => removeClonedRow(cloneIdx)}
-                className="text-red-400 hover:text-red-300 leading-none"
+                className="text-[var(--error)] hover:text-[var(--error-foreground)] leading-none"
               >×</button>
             </Tooltip>
           </td>
           {row.map((cell, ji) => {
             const w = colWidths[ji] ?? 150;
             return (
-              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 text-green-400 border-r border-b border-[var(--border-default)] overflow-hidden">
+              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 text-[var(--success)] border-r border-b border-[var(--border-default)] overflow-hidden">
                 <div className="truncate">{cell === null ? <span className="text-[var(--foreground-muted)]">NULL</span> : String(cell)}</div>
               </td>
             );
@@ -475,7 +475,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       }>
         <button
           className={`flex-shrink-0 leading-none transition-colors ${
-            sortCol === col ? 'text-[var(--accent)]' : 'text-[#3a5a7a] hover:text-[var(--foreground-muted)]'
+            sortCol === col ? 'text-[var(--accent)]' : 'text-[var(--foreground-ghost)] hover:text-[var(--foreground-muted)]'
           }`}
           onClick={() => {
             if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
@@ -580,7 +580,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
                 <button
                   onClick={handleCommit}
                   disabled={isCommitting}
-                  className="flex items-center gap-1 px-2 py-1 bg-[var(--accent-hover)] hover:bg-[var(--accent)] text-white rounded disabled:opacity-50 text-xs"
+                  className="flex items-center gap-1 px-2 py-1 bg-[var(--accent-hover)] hover:bg-[var(--accent)] text-[var(--foreground)] rounded disabled:opacity-50 text-xs"
                 >
                   <Check size={12}/>
                   {t('tableDataView.commitWithCount', { count: totalCount })}

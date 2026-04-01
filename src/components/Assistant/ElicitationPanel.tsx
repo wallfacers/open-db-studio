@@ -15,10 +15,10 @@ const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
   )
 
   return (
-    <div className="mx-3 mb-3 rounded-lg border border-[#1e3a5f] bg-[#0d2137] p-3">
+    <div className="mx-3 mb-3 rounded-lg border border-[var(--border-strong)] bg-[var(--background-base)] p-3">
       <div className="mb-2 flex items-center gap-1.5">
         <span className="text-[13px]">🔐</span>
-        <span className="text-[12px] font-semibold text-[#8ab0cc]">{t('assistant.elicitation.title')}</span>
+        <span className="text-[12px] font-semibold text-[var(--foreground-default)]">{t('assistant.elicitation.title')}</span>
       </div>
       <p className="mb-3 text-[12px] text-[var(--foreground-default)] leading-relaxed">{request.message}</p>
       <div className="flex flex-wrap gap-2">
@@ -28,8 +28,8 @@ const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
             onClick={() => onRespond(opt.option_id, false)}
             className={`rounded px-3 py-1.5 text-[12px] font-medium transition-colors ${
               opt.kind === 'deny' || opt.kind === 'reject_once' || opt.kind === 'reject_always'
-                ? 'border border-[#3a1a1a] bg-[#1a0a0a] text-[#e05c5c] hover:bg-[#2a1010]'
-                : 'border border-[#1e4a7f] bg-[#0d2a4a] text-[#4a9eff] hover:bg-[#0d3060]'
+                ? 'border border-[var(--error-subtle)] bg-[var(--error-subtle)] text-[var(--error)] hover:bg-[var(--danger-hover-bg)]'
+                : 'border border-[var(--border-strong)] bg-[var(--primary-subtle)] text-[var(--info)] hover:bg-[var(--primary-subtle)]'
             }`}
           >
             {opt.label}
@@ -37,7 +37,7 @@ const ElicitationPanel: React.FC<Props> = ({ request, onRespond }) => {
         ))}
         <button
           onClick={() => onRespond('', true)}
-          className="rounded border border-[#2a3a4a] bg-transparent px-3 py-1.5 text-[12px] text-[#5b8ab0] transition-colors hover:border-[#3a5a7a] hover:text-[#8ab0cc]"
+          className="rounded border border-[var(--border-strong)] bg-transparent px-3 py-1.5 text-[12px] text-[var(--foreground-muted)] transition-colors hover:border-[var(--border-focus)] hover:text-[var(--foreground-default)]"
         >
           {t('common.cancel')}
         </button>

@@ -41,11 +41,11 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
     <div className="h-full flex flex-col overflow-auto text-xs relative">
       {/* Views Section */}
       <div>
-        <div className="px-3 py-2 text-[#858585] font-medium text-[11px] uppercase tracking-wider flex items-center justify-between">
+        <div className="px-3 py-2 text-[var(--foreground-muted)] font-medium text-[11px] uppercase tracking-wider flex items-center justify-between">
           <span>{t('objectPanel.views')} ({views.length})</span>
         </div>
         {views.length === 0 ? (
-          <div className="px-4 py-1 text-[#555] italic">{t('objectPanel.noViews')}</div>
+          <div className="px-4 py-1 text-[var(--foreground-ghost)] italic">{t('objectPanel.noViews')}</div>
         ) : (
           views.map(v => (
             <div
@@ -53,7 +53,7 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
               className="px-4 py-1.5 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] cursor-pointer flex items-center gap-2"
               onClick={() => setSelectedView(v)}
             >
-              <span className="text-[#569cd6] text-[10px] font-bold flex-shrink-0">VIEW</span>
+              <span className="text-[var(--node-table)] text-[10px] font-bold flex-shrink-0">VIEW</span>
               <span className="truncate">{v.name}</span>
             </div>
           ))
@@ -62,18 +62,18 @@ export const ObjectPanel: React.FC<Props> = ({ showToast }) => {
 
       {/* Procedures / Functions Section */}
       <div className="border-t border-[var(--border-default)] mt-1">
-        <div className="px-3 py-2 text-[#858585] font-medium text-[11px] uppercase tracking-wider">
+        <div className="px-3 py-2 text-[var(--foreground-muted)] font-medium text-[11px] uppercase tracking-wider">
           {t('objectPanel.procedures')} ({procedures.length})
         </div>
         {procedures.length === 0 ? (
-          <div className="px-4 py-1 text-[#555] italic">{t('objectPanel.noProcedures')}</div>
+          <div className="px-4 py-1 text-[var(--foreground-ghost)] italic">{t('objectPanel.noProcedures')}</div>
         ) : (
           procedures.map(p => (
             <div
               key={`${p.routine_type}-${p.name}`}
               className="px-4 py-1.5 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] cursor-pointer flex items-center gap-2"
             >
-              <span className="text-[#dcdcaa] text-[10px] font-bold flex-shrink-0">
+              <span className="text-[var(--warning)] text-[10px] font-bold flex-shrink-0">
                 {p.routine_type === 'FUNCTION' ? 'FN' : 'PROC'}
               </span>
               <span className="truncate">{p.name}</span>

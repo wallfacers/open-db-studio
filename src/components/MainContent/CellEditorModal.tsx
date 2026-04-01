@@ -68,7 +68,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
             {isJson && (
               <button
                 onClick={handleFormatJson}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--background-hover)] hover:bg-[#243a55] text-[#3a7bd5] rounded"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--background-hover)] hover:bg-[var(--background-active)] text-[var(--border-focus)] rounded"
               >
                 <Code size={11} />
                 {t('tableDataView.formatJson')}
@@ -98,13 +98,13 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
           {readOnly ? (
             <button
               onClick={onClose}
-              className="px-3 py-1 text-xs bg-[var(--background-hover)] hover:bg-[#243a55] text-[var(--foreground-default)] rounded"
+              className="px-3 py-1 text-xs bg-[var(--background-hover)] hover:bg-[var(--background-active)] text-[var(--foreground-default)] rounded"
             >
               {t('common.close')}
             </button>
           ) : (
             <>
-              <span className="text-[#4a6b8a] text-xs mr-auto">Ctrl+Enter {t('common.confirm')} · Esc {t('common.cancel')}</span>
+              <span className="text-[var(--foreground-subtle)] text-xs mr-auto">Ctrl+Enter {t('common.confirm')} · Esc {t('common.cancel')}</span>
               <button
                 onClick={onClose}
                 className="px-3 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded"
@@ -113,7 +113,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
               </button>
               <button
                 onClick={handleConfirm}
-                className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                className="px-3 py-1 text-xs bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--foreground)] rounded"
               >
                 {t('common.confirm')}
               </button>

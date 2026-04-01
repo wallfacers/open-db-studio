@@ -10,6 +10,7 @@ interface UseERKeyboardOptions {
   selectedEdges: Edge[];
   onAutoLayout: () => void;
   onExportDDL: () => void;
+  enabled?: boolean;
 }
 
 /**
@@ -31,6 +32,7 @@ export function useERKeyboard({
   selectedEdges,
   onAutoLayout,
   onExportDDL,
+  enabled = true,
 }: UseERKeyboardOptions) {
   const {
     deleteTable,
@@ -88,6 +90,7 @@ export function useERKeyboard({
 
   // 键盘事件处理
   useEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName);
       if (isInput) return;
@@ -158,6 +161,7 @@ export function useERKeyboard({
     onExportDDL,
     selectedNodes,
     selectedEdges,
+    enabled,
   ]);
 
   return {

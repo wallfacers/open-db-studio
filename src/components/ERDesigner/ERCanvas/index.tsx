@@ -33,6 +33,7 @@ import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import { layoutNodesWithDagre } from '../utils/dagreLayout'
 import type { ErTable, ErColumn } from '../../../types'
 import { erTableNodeId, erEdgeNodeId, parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId'
+import { useQueryStore } from '../../../store/queryStore'
 
 const nodeTypes = {
   erTable: ERTableNode,
@@ -68,6 +69,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tableId: number } | null>(null)
+  const isActiveTab = useQueryStore(s => s.activeTabId === tabId)
 
   // Register UIObject for MCP ui_list discovery
   const projectName = useErDesignerStore(s => s.projects.find(p => p.id === projectId)?.name)
@@ -389,10 +391,11 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   useERKeyboard({
     nodes,
     edges,
-    selectedNodes: [],
-    selectedEdges: [],
+    selectedNodes: [], // Since we track selected inside nodes via ReactFlow's selected property, but the hook uses it.
+    selectedEdges: [], // Same as above. The hook probably reads from the store or we should pass the mapped selected items.
     onAutoLayout: handleAutoLayout,
     onExportDDL: () => setShowDDL(true),
+    enabled: isActiveTab,
   })
 
   // Listen for sidebar context menu requesting bind dialog
@@ -455,6 +458,10 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           className="graph-canvas-container"
           nodes={nodes}
           edges={edges}
+          panActivationKeyCode={isActiveTab ? 'Space' : null}
+          selectionKeyCode={isActiveTab ? 'Shift' : null}
+          multiSelectionKeyCode={isActiveTab ? 'Meta' : null}
+          zoomActivationKeyCode={isActiveTab ? 'Meta' : null}
           onNodesChange={onNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}

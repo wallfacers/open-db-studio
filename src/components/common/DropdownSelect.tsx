@@ -131,7 +131,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       ) : (
         <div
           className="flex items-center gap-1 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded
-                     px-2 py-1 cursor-pointer hover:border-[#3a5a7a] transition-colors select-none"
+                     px-2 py-1 cursor-pointer hover:border-[var(--border-focus)] transition-colors select-none"
           onClick={handleToggle}
         >
           <span className={`text-xs truncate flex-1 ${isPlaceholder ? 'text-[var(--foreground-muted)]' : 'text-[var(--foreground-default)]'}`}>
@@ -161,7 +161,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
           {placeholder && (
             <div
               className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[var(--border-default)]
-                          ${!value ? 'text-[#009e84]' : 'text-[var(--foreground-muted)]'}`}
+                          ${!value ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'}`}
               onClick={() => { onChange(''); close(); }}
             >
               {placeholder}
@@ -171,7 +171,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
             <div
               key={opt.value}
               className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[var(--border-default)]
-                          ${value === opt.value ? 'text-[#009e84]' : 'text-[var(--foreground)]'}`}
+                          ${value === opt.value ? 'text-[var(--accent)]' : 'text-[var(--foreground)]'}`}
               onClick={() => { onChange(opt.value); close(); }}
             >
               {opt.label}

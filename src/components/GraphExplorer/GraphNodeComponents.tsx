@@ -54,7 +54,7 @@ function NodeRoleBadge({ isPathFrom, isPathTo }: { isPathFrom?: boolean; isPathT
   return (
     <div
       className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold z-10"
-      style={{ background: isPathFrom ? '#4ade80' : '#5eb2f7', color: 'var(--background-base)' }}
+      style={{ background: isPathFrom ? 'var(--success)' : 'var(--info)', color: 'var(--background-base)' }}
     >
       {isPathFrom ? 'S' : 'T'}
     </div>
@@ -70,7 +70,7 @@ function BaseNode({
 }: {
   data: GraphNodeData;
   borderClass: string;
-  badgeBgClass: string;  // 仅背景+文字色，如 "bg-[#0d2a3d] text-[#3794ff]"
+  badgeBgClass: string;  // 仅背景+文字色，如 "bg-[var(--node-table-bg)] text-[var(--node-table)]"
   badgeLabel: string;
   icon: React.ElementType;
 }) {
@@ -105,7 +105,7 @@ function BaseNode({
           <Tooltip content={data.name} className="w-full">
             <p className="text-[var(--foreground-default)] text-xs font-semibold truncate">{data.name}</p>
           </Tooltip>
-          <p className="text-[#3d5470] text-[9px]">Object Type · {badgeLabel.toUpperCase()}</p>
+          <p className="text-[var(--foreground-ghost)] text-[9px]">Object Type · {badgeLabel.toUpperCase()}</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {propCount > 0 && (
@@ -115,7 +115,7 @@ function BaseNode({
             <Tooltip content={t('graphExplorer.highlightLinks')} className="contents">
               <button
                 onClick={(e) => { e.stopPropagation(); data.onHighlightLinks?.(data.id); }}
-                className="text-[9px] text-[var(--accent)] bg-[#0d1f1a] px-1 rounded hover:bg-[var(--accent)22] transition-colors"
+                className="text-[9px] text-[var(--accent)] bg-[var(--accent-subtle)] px-1 rounded hover:bg-[var(--accent)22] transition-colors"
               >
                 {linkCount}⇌
               </button>
@@ -138,7 +138,7 @@ function BaseNode({
           {fields.map((f, i) => (
             <div key={i} className="flex items-center justify-between py-0.5">
               <span className="text-[var(--foreground-default)] text-[10px] font-mono truncate flex-1">
-                {f.is_primary_key && <span className="text-[#f59e0b] mr-1">⬡</span>}
+                {f.is_primary_key && <span className="text-[var(--key-primary)] mr-1">⬡</span>}
                 {f.name}
               </span>
               {f.type && <span className="text-[var(--foreground-muted)] text-[9px] font-mono ml-2 flex-shrink-0">{f.type}</span>}
@@ -151,7 +151,7 @@ function BaseNode({
       {aliases.length > 0 && (
         <div className="px-3 py-1.5 flex flex-wrap gap-1">
           {aliases.slice(0, 3).map(a => (
-            <span key={a} className="text-[9px] text-[#a855f7] bg-[#1e0d2d] border border-[#a855f744] rounded px-1">
+            <span key={a} className="text-[9px] text-[var(--node-alias)] bg-[var(--node-alias-bg)] border border-[var(--node-alias)]/25 rounded px-1">
               #{a}
             </span>
           ))}
@@ -175,26 +175,26 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
 
   return (
     <div
-      className={`w-60 rounded-md border border-[#3794ff] bg-[var(--background-panel)] shadow-lg group relative transition-opacity ${
+      className={`w-60 rounded-md border border-[var(--node-table)] bg-[var(--background-panel)] shadow-lg group relative transition-opacity ${
         nodeData.isDimmed ? 'opacity-30' : ''
       } ${nodeData.isHighlighted ? 'accent-glow' : ''}`}
     >
       <NodeRoleBadge isPathFrom={nodeData.isPathFrom as boolean | undefined} isPathTo={nodeData.isPathTo as boolean | undefined} />
       <Handle type="target" position={Position.Left} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
       {/* 自引用 FK 额外 handles：to_link 从 Top 出发，from_link 从 Bottom 返回 */}
-      <Handle type="source" position={Position.Top} id="top-source" className="!bg-[var(--border-default)] !border-[#f59e0b]" />
-      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-[var(--border-default)] !border-[#f59e0b]" />
+      <Handle type="source" position={Position.Top} id="top-source" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
+      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
 
       {/* Header */}
       <div className="px-3 py-2 border-b border-[var(--border-default)] flex items-center gap-2">
-        <div className="flex-shrink-0 bg-[#0d2a3d] text-[#3794ff] p-1 rounded">
+        <div className="flex-shrink-0 bg-[var(--node-table-bg)] text-[var(--node-table)] p-1 rounded">
           <Database size={13} />
         </div>
         <div className="flex-1 min-w-0">
           <Tooltip content={nodeData.name} className="w-full">
             <p className="text-[var(--foreground-default)] text-xs font-semibold truncate">{nodeData.name}</p>
           </Tooltip>
-          <p className="text-[#3d5470] text-[9px]">Object Type · TABLE</p>
+          <p className="text-[var(--foreground-ghost)] text-[9px]">Object Type · TABLE</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {tableColumns.length > 0 && (
@@ -205,7 +205,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
           {(nodeData.linkCount as number ?? 0) > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); nodeData.onHighlightLinks?.(nodeData.id); }}
-              className="text-[9px] text-[var(--accent)] bg-[#0d1f1a] px-1 rounded hover:bg-[var(--accent)22] transition-colors"
+              className="text-[9px] text-[var(--accent)] bg-[var(--accent-subtle)] px-1 rounded hover:bg-[var(--accent)22] transition-colors"
             >
               {nodeData.linkCount as number}⇌
             </button>
@@ -226,7 +226,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
             {shownCols.map((col, i) => (
               <div key={i} className="flex items-center justify-between py-0.5">
                 <span className="text-[var(--foreground-default)] text-[10px] font-mono truncate flex-1">
-                  {col.is_primary_key && <span className="text-[#f59e0b] mr-1">⬡</span>}
+                  {col.is_primary_key && <span className="text-[var(--key-primary)] mr-1">⬡</span>}
                   {col.name}
                 </span>
                 {col.data_type && (
@@ -240,7 +240,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
           {tableColumns.length > COLS_PREVIEW && (
             <button
               onClick={(e) => { e.stopPropagation(); setColsExpanded(v => !v); }}
-              className="w-full px-3 py-1 text-[9px] text-[#3794ff] hover:bg-[var(--background-base)] transition-colors text-left border-t border-[var(--border-default)]"
+              className="w-full px-3 py-1 text-[9px] text-[var(--node-table)] hover:bg-[var(--background-base)] transition-colors text-left border-t border-[var(--border-default)]"
             >
               {colsExpanded
                 ? '▲ 收起'
@@ -258,7 +258,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
         return aliases.length > 0 ? (
           <div className="px-3 py-1.5 flex flex-wrap gap-1">
             {aliases.slice(0, 3).map(a => (
-              <span key={a} className="text-[9px] text-[#a855f7] bg-[#1e0d2d] border border-[#a855f744] rounded px-1">
+              <span key={a} className="text-[9px] text-[var(--node-alias)] bg-[var(--node-alias-bg)] border border-[var(--node-alias)]/25 rounded px-1">
                 #{a}
               </span>
             ))}
@@ -275,8 +275,8 @@ TableNodeComponent.displayName = 'TableNodeComponent';
 export const MetricNodeComponent = memo(({ data }: NodeProps) => (
   <BaseNode
     data={data as GraphNodeData}
-    borderClass="border-[#f59e0b]"
-    badgeBgClass="bg-[#2d1e0d] text-[#f59e0b]"
+    borderClass="border-[var(--node-metric)]"
+    badgeBgClass="bg-[var(--node-metric-bg)] text-[var(--node-metric)]"
     badgeLabel="metric"
     icon={BarChart2}
   />
@@ -286,8 +286,8 @@ MetricNodeComponent.displayName = 'MetricNodeComponent';
 export const AliasNodeComponent = memo(({ data }: NodeProps) => (
   <BaseNode
     data={data as GraphNodeData}
-    borderClass="border-[#a855f7]"
-    badgeBgClass="bg-[#1e0d2d] text-[#a855f7]"
+    borderClass="border-[var(--node-alias)]"
+    badgeBgClass="bg-[var(--node-alias-bg)] text-[var(--node-alias)]"
     badgeLabel="alias"
     icon={Hash}
   />
@@ -324,7 +324,7 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
     >
       {/* Handles: 自引用用 Top/Bottom 避免边交叉，普通用 Left/Right */}
       {isSelfRef ? (
-        <Handle type="target" position={Position.Top} id="self-target" className="!bg-[var(--border-default)] !border-[#f59e0b]" />
+        <Handle type="target" position={Position.Top} id="self-target" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
       ) : (
         <Handle type="target" position={Position.Left} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
       )}
@@ -332,15 +332,15 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
       {/* Row 1: edge_type + cardinality */}
       <div className="px-3 py-1.5 border-b border-[var(--border-default)] flex items-center gap-2">
         {isSelfRef
-          ? <RotateCcw size={12} className="text-[#f59e0b] flex-shrink-0" />
+          ? <RotateCcw size={12} className="text-[var(--edge-reference)] flex-shrink-0" />
           : <ArrowLeftRight size={12} className="text-[var(--accent)] flex-shrink-0" />
         }
         <span className="text-[var(--accent)] text-[11px] font-semibold flex-1">
           {(meta.edge_type ?? 'fk').toUpperCase()}
-          {isSelfRef && <span className="text-[#f59e0b] ml-1 text-[9px]">(self-ref)</span>}
+          {isSelfRef && <span className="text-[var(--edge-reference)] ml-1 text-[9px]">(self-ref)</span>}
         </span>
         {meta.cardinality && (
-          <span className="text-[#f59e0b] text-[10px] font-mono">{meta.cardinality}</span>
+          <span className="text-[var(--edge-reference)] text-[10px] font-mono">{meta.cardinality}</span>
         )}
       </div>
 
@@ -354,7 +354,7 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
           )}
           {meta.on_delete && (
             <span className="text-[var(--foreground-muted)] text-[9px] ml-1">
-              · <span className="text-[#f59e0b]">{meta.on_delete}</span>
+              · <span className="text-[var(--warning)]">{meta.on_delete}</span>
             </span>
           )}
         </div>
@@ -362,11 +362,11 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
 
       {/* Row 3: direction */}
       <div className="px-3 py-1 flex items-center">
-        <span className="text-[#3d5470] text-[9px] truncate">
+        <span className="text-[var(--foreground-ghost)] text-[9px] truncate">
           {nodeData.display_name || `${meta.source_table ?? ''} → ${meta.target_table ?? ''}`}
         </span>
         {isInferred && (
-          <span className="ml-auto text-[8px] text-[#3d5470] flex-shrink-0">AI</span>
+          <span className="ml-auto text-[8px] text-[var(--foreground-ghost)] flex-shrink-0">AI</span>
         )}
       </div>
 
@@ -378,7 +378,7 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
       )}
 
       {isSelfRef ? (
-        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-[var(--border-default)] !border-[#f59e0b]" />
+        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
       ) : (
         <Handle type="source" position={Position.Right} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
       )}
@@ -390,14 +390,14 @@ LinkNodeComponent.displayName = 'LinkNodeComponent';
 // ── Relation Edge ──────────────────────────────────────────────────────────────
 
 const EDGE_COLOR: Record<string, string> = {
-  fk:         '#3794ff',
-  references: '#f59e0b',
-  alias_of:   '#a855f7',
+  fk:         'var(--edge-fk)',
+  references: 'var(--edge-reference)',
+  alias_of:   'var(--edge-alias)',
   inferred:   'var(--accent)',
 };
 
 function edgeStroke(edgeType: string): string {
-  return EDGE_COLOR[edgeType] ?? '#4a6380';
+  return EDGE_COLOR[edgeType] ?? 'var(--edge-default)';
 }
 
 export const RelationEdge = memo(({

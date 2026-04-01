@@ -58,7 +58,7 @@ export function SearchTab({
             value={keyword}
             onChange={e => setKeyword(e.target.value)}
             placeholder={t('graphExplorer.searchTab.searchPlaceholder')}
-            className="w-full pl-7 pr-7 py-1.5 text-xs bg-[var(--background-panel)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[#3d5470] focus:outline-none focus:border-[var(--accent-hover)] transition-colors"
+            className="w-full pl-7 pr-7 py-1.5 text-xs bg-[var(--background-panel)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[var(--foreground-ghost)] focus:outline-none focus:border-[var(--accent-hover)] transition-colors"
           />
         </div>
       </div>
@@ -66,7 +66,7 @@ export function SearchTab({
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {!searched && !loading && (
-          <p className="text-[#3d5470] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.searchHint')}</p>
+          <p className="text-[var(--foreground-ghost)] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.searchHint')}</p>
         )}
 
         {searched && results.length === 0 && !loading && (
@@ -85,12 +85,12 @@ export function SearchTab({
               <span
                 className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-mono"
                 style={{
-                  background: node.node_type === 'table' ? '#0d2a3d'
-                    : node.node_type === 'metric' ? '#2d1e0d'
-                    : '#1e0d2d',
-                  color: node.node_type === 'table' ? '#3794ff'
-                    : node.node_type === 'metric' ? '#f59e0b'
-                    : '#a855f7',
+                  background: node.node_type === 'table' ? 'var(--node-table-bg)'
+                    : node.node_type === 'metric' ? 'var(--node-metric-bg)'
+                    : 'var(--node-alias-bg)',
+                  color: node.node_type === 'table' ? 'var(--node-table)'
+                    : node.node_type === 'metric' ? 'var(--node-metric)'
+                    : 'var(--node-alias)',
                 }}
               >
                 {node.node_type.toUpperCase()}
@@ -99,10 +99,10 @@ export function SearchTab({
               <div className="flex-1 min-w-0">
                 <p className="text-[var(--foreground-default)] text-xs truncate">{node.name}</p>
                 {node.display_name && node.display_name !== node.name && (
-                  <p className="text-[#3d5470] text-[10px] truncate">{node.display_name}</p>
+                  <p className="text-[var(--foreground-ghost)] text-[10px] truncate">{node.display_name}</p>
                 )}
                 {isHidden && (
-                  <p className="text-[#f59e0b] text-[9px]">{t('graphExplorer.searchTab.filteredHidden')}</p>
+                  <p className="text-[var(--warning)] text-[9px]">{t('graphExplorer.searchTab.filteredHidden')}</p>
                 )}
               </div>
 
@@ -112,7 +112,7 @@ export function SearchTab({
                     onClick={e => handleSetFrom(e, node)}
                     disabled={!isTable}
                     className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                    style={{ background: '#0a2010', color: '#4ade80', border: '1px solid #4ade8044' }}
+                    style={{ background: 'var(--accent-subtle)', color: 'var(--success)', border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)' }}
                   >
                     S
                   </button>
@@ -122,7 +122,7 @@ export function SearchTab({
                     onClick={e => handleSetTo(e, node)}
                     disabled={!isTable}
                     className="w-5 h-5 rounded text-[9px] font-bold flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                    style={{ background: '#0a1525', color: '#5eb2f7', border: '1px solid #5eb2f744' }}
+                    style={{ background: 'var(--primary-subtle)', color: 'var(--info)', border: '1px solid color-mix(in srgb, var(--info) 25%, transparent)' }}
                   >
                     T
                   </button>

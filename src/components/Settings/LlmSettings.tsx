@@ -13,7 +13,7 @@ import type {
 import { useEscClose } from '../../hooks/useEscClose';
 
 // ──────────────── 共用类名 ────────────────
-const inputCls = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none focus:border-[#009e84]';
+const inputCls = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none focus:border-[var(--accent)]';
 const labelCls = 'block text-xs text-[var(--foreground-muted)] mb-1 uppercase tracking-wide';
 
 // ──────────────── TestStatusBadge ────────────────
@@ -33,17 +33,17 @@ function TestStatusBadge({ status, error, testedAt }: {
   })();
   if (status === 'untested') return <span className="text-xs text-[var(--foreground-subtle)]">○ {t('llmSettings.untested')}</span>;
   if (status === 'testing') return (
-    <span className="text-xs text-yellow-400 flex items-center gap-1">
+    <span className="text-xs text-[var(--warning)] flex items-center gap-1">
       <Loader2 size={11} className="animate-spin" />{t('llmSettings.testing')}
     </span>
   );
   if (status === 'success') return (
-    <span className="text-xs text-[#4ade80] flex items-center gap-1">
+    <span className="text-xs text-[var(--success)] flex items-center gap-1">
       <CheckCircle size={11} />{t('llmSettings.connected')} {ago}
     </span>
   );
   return (
-    <span className="text-xs text-red-400 flex items-center gap-1" title={error ?? ''}>
+    <span className="text-xs text-[var(--error)] flex items-center gap-1" title={error ?? ''}>
       <XCircle size={11} />{t('llmSettings.failed')}
     </span>
   );
@@ -74,7 +74,7 @@ function ModelCombobox({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`w-full bg-[var(--background-hover)] border rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[var(--border-strong)]'}`}
+        className={`w-full bg-[var(--background-hover)] border rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none flex justify-between items-center ${open ? 'border-[var(--accent)] rounded-b-none' : 'border-[var(--border-strong)]'}`}
       >
         <span>{value || '选择模型…'}</span>
         <ChevronDown size={13} className="text-[var(--foreground-subtle)]" />
@@ -97,7 +97,7 @@ function ModelCombobox({
           <div className="border-t border-[var(--border-default)] mx-2 my-1" />
           <div className="px-2 pb-2">
             <input
-              className="w-full bg-[var(--background-base)] border border-dashed border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-subtle)] focus:outline-none focus:border-[#009e84] focus:text-[var(--foreground-default)]"
+              className="w-full bg-[var(--background-base)] border border-dashed border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-subtle)] focus:outline-none focus:border-[var(--accent)] focus:text-[var(--foreground-default)]"
               placeholder="输入自定义模型 ID…"
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
@@ -145,7 +145,7 @@ function ProviderDropdown({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`w-full bg-[var(--background-hover)] border rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none flex justify-between items-center ${open ? 'border-[#009e84] rounded-b-none' : 'border-[var(--border-strong)]'}`}
+        className={`w-full bg-[var(--background-hover)] border rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] focus:outline-none flex justify-between items-center ${open ? 'border-[var(--accent)] rounded-b-none' : 'border-[var(--border-strong)]'}`}
       >
         <span className="flex items-center gap-2">
           {value && value !== 'custom' && (
@@ -305,7 +305,7 @@ function ConfigFormDialog({
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
       {/* 外层容器：不限制 overflow，让下拉框弹出部分正常显示 */}
-      <div className="bg-[#0d1a26] border border-[var(--border-default)] rounded-lg w-full max-w-md min-h-[480px] max-h-[90vh] flex flex-col">
+      <div className="bg-[var(--background-panel)] border border-[var(--border-default)] rounded-lg w-full max-w-md min-h-[480px] max-h-[90vh] flex flex-col">
         {/* 标题行：固定在顶部 */}
         <div className="flex items-center justify-between p-6 pb-0">
           <h3 className="text-[var(--foreground)] font-semibold text-sm">{title}</h3>
@@ -368,7 +368,7 @@ function ConfigFormDialog({
                       value={type}
                       checked={form.api_type === type}
                       onChange={() => setForm((f) => ({ ...f, api_type: type }))}
-                      className="accent-[#009e84]"
+                      className="accent-[var(--accent)]"
                     />
                     {type === 'openai' ? 'OpenAI 兼容' : 'Anthropic 兼容'}
                   </label>
@@ -460,7 +460,7 @@ function ConfigFormDialog({
 
         {/* 测试结果 */}
         {testResult && (
-          <div className={`flex items-center gap-1.5 text-xs ${testResult.ok ? 'text-[#4ade80]' : 'text-red-400'}`}>
+          <div className={`flex items-center gap-1.5 text-xs ${testResult.ok ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
             {testResult.ok ? <CheckCircle size={12} /> : <XCircle size={12} />}
             {testResult.ok ? '连接成功' : testResult.msg}
           </div>
@@ -487,7 +487,7 @@ function ConfigFormDialog({
             <button
               onClick={handleSave}
               disabled={saving || !form.model || (!isCustomMode && !form.opencode_provider_id)}
-              className="px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50"
+              className="px-4 py-1.5 text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded disabled:opacity-50"
             >
               {saving ? '保存中…' : '保存'}
             </button>
@@ -623,7 +623,7 @@ export function LlmSettingsPanel() {
         <h3 className="text-[var(--foreground)] font-semibold text-sm">{t('llmSettings.aiModelConfig')}</h3>
         <button
           onClick={handleOpenCreate}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded"
         >
           <Plus size={13} />{t('llmSettings.addConfig')}
         </button>
@@ -645,7 +645,7 @@ export function LlmSettingsPanel() {
               {/* 标题行 */}
               <div className="flex items-start justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  {config.is_default && <Star size={13} className="text-[#009e84] fill-[#009e84] flex-shrink-0" />}
+                  {config.is_default && <Star size={13} className="text-[var(--accent)] fill-[var(--accent)] flex-shrink-0" />}
                   <span className="text-sm text-[var(--foreground)] font-medium truncate">{config.name}</span>
                 </div>
                 {config.is_default && (
@@ -685,7 +685,7 @@ export function LlmSettingsPanel() {
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(config)}
-                  className="text-xs px-2 py-1 border border-red-900 text-red-400 hover:bg-red-950 rounded flex items-center gap-1"
+                  className="text-xs px-2 py-1 border border-[var(--error)]/30 text-[var(--error)] hover:bg-[var(--error-subtle)] rounded flex items-center gap-1"
                 >
                   <Trash2 size={11} />{t('llmSettings.delete')}
                 </button>
@@ -738,7 +738,7 @@ export function LlmSettingsPanel() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setDeleteConfirm(null); }}
         >
-          <div className="bg-[#0d1a26] border border-[var(--border-default)] rounded-lg w-full max-w-sm p-6 space-y-4">
+          <div className="bg-[var(--background-panel)] border border-[var(--border-default)] rounded-lg w-full max-w-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-[var(--foreground)] font-semibold text-sm">{t('llmSettings.confirmDelete')}</h3>
               <button onClick={() => setDeleteConfirm(null)} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"><X size={16} /></button>
@@ -746,14 +746,14 @@ export function LlmSettingsPanel() {
             <p className="text-xs text-[var(--foreground-default)]">
               {t('llmSettings.confirmDeleteMsg', { name: deleteConfirm.name })}
               {deleteConfirm.is_default && (
-                <span className="text-yellow-400 block mt-1">{t('llmSettings.defaultDeleteWarning')}</span>
+                <span className="text-[var(--warning)] block mt-1">{t('llmSettings.defaultDeleteWarning')}</span>
               )}
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-1.5 text-xs border border-[var(--border-strong)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded">
                 {t('llmSettings.cancel')}
               </button>
-              <button onClick={handleDelete} className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-800 text-white rounded">
+              <button onClick={handleDelete} className="px-4 py-1.5 text-xs bg-[var(--error)] hover:bg-[var(--error)] text-[var(--foreground)] rounded">
                 {t('llmSettings.delete')}
               </button>
             </div>

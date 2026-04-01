@@ -31,7 +31,7 @@ export function QueryHistory() {
               <span>{h.executed_at.slice(0, 19).replace('T', ' ')}</span>
               {h.duration_ms !== null && <span>{h.duration_ms}ms</span>}
               {h.row_count !== null && <span>{h.row_count} {t('queryHistory.rows')}</span>}
-              {h.error_msg && <span className="text-red-400 truncate">{h.error_msg}</span>}
+              {h.error_msg && <span className="text-[var(--error)] truncate">{h.error_msg}</span>}
             </div>
           </div>
         ))

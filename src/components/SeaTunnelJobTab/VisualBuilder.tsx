@@ -323,7 +323,7 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
               <div className="flex flex-col gap-1">
                 <span className={labelCls}>
                   {getTranslatedLabel(field.label, t)}
-                  {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                  {field.required && <span className="text-[var(--error)] ml-0.5">*</span>}
                 </span>
                 <FieldInput
                   field={field}
@@ -369,7 +369,7 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange, t
         </span>
         <button
           onClick={addTransform}
-          className="text-[10px] text-[var(--accent)] hover:text-white px-2 py-0.5 rounded border border-[var(--border-strong)] hover:border-[var(--accent)]/60 transition-colors"
+          className="text-[10px] text-[var(--accent)] hover:text-[var(--foreground)] px-2 py-0.5 rounded border border-[var(--border-strong)] hover:border-[var(--accent)]/60 transition-colors"
         >
           {t('seaTunnelJob.visualBuilder.add')}
         </button>
@@ -392,7 +392,7 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange, t
                 />
                 <button
                   onClick={() => removeTransform(idx)}
-                  className="text-[var(--foreground-muted)] hover:text-red-400 transition-colors text-xs px-1"
+                  className="text-[var(--foreground-muted)] hover:text-[var(--error)] transition-colors text-xs px-1"
                   title={t('seaTunnelJob.visualBuilder.remove')}
                 >
                   ✕

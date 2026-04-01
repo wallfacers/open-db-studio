@@ -20,33 +20,33 @@ const LEVEL_CONFIG: Record<ToastLevel, {
   Icon: React.ElementType;
 }> = {
   success: {
-    bg: '#14532d',
-    border: '#4ade80',
-    color: '#86efac',
+    bg: 'var(--success-subtle)',
+    border: 'var(--success)',
+    color: 'var(--success-foreground)',
     Icon: CheckCircle,
   },
   warning: {
-    bg: '#78350f',
-    border: '#f59e0b',
-    color: '#fcd34d',
+    bg: 'var(--warning-subtle)',
+    border: 'var(--warning)',
+    color: 'var(--warning-foreground)',
     Icon: AlertTriangle,
   },
   error: {
-    bg: '#881337',
-    border: '#f43f5e',
-    color: '#fda4af',
+    bg: 'var(--error-subtle)',
+    border: 'var(--error)',
+    color: 'var(--error-foreground)',
     Icon: XCircle,
   },
   info: {
-    bg: '#1e3a5f',
-    border: '#5eb2f7',
-    color: '#93c5fd',
+    bg: 'var(--info-subtle)',
+    border: 'var(--info)',
+    color: 'var(--info-foreground)',
     Icon: Info,
   },
   default: {
-    bg: '#134e4a',
+    bg: 'var(--accent-subtle)',
     border: 'var(--accent)',
-    color: '#5eead4',
+    color: 'var(--accent)',
     Icon: Bell,
   },
 };

@@ -112,12 +112,12 @@ export const cls = {
   menuItem: [
     'w-full text-left px-3 py-1.5 text-xs',
     'flex items-center gap-2',
-    `text-[${colors.textPrimary}] hover:bg-[${colors.bgHover}] hover:text-white`,
+    `text-[${colors.textPrimary}] hover:bg-[${colors.bgHover}] hover:text-[${colors.textBright}]`,
   ].join(' '),
   menuItemDanger: [
     'w-full text-left px-3 py-1.5 text-xs',
     'flex items-center gap-2',
-    `text-[${colors.textDanger}] hover:bg-[${colors.bgHover}] hover:text-red-300`,
+    `text-[${colors.textDanger}] hover:bg-[${colors.bgHover}] hover:text-[var(--error-foreground)]`,
   ].join(' '),
   menuItemDisabled: [
     'w-full text-left px-3 py-1.5 text-xs',
@@ -135,7 +135,7 @@ export const cls = {
   // 输入框
   input: [
     `bg-[${colors.bgInput}] border border-[${colors.borderDefault}]`,
-    'rounded px-3 py-1.5 text-sm text-white outline-none',
+    `rounded px-3 py-1.5 text-sm text-[${colors.textBright}] outline-none`,
     `focus:border-[${colors.accent}] transition-colors`,
   ].join(' '),
 

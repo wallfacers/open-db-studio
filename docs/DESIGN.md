@@ -2,20 +2,34 @@
 
 ## 主题
 
-- 基础主题：Slate Dark（专业开发者主题）
-- 设计系统：基于 Tailwind CSS Slate 色板
+- 基础主题：Abyss Indigo（品牌差异化深色主题）
+- 设计系统：基于 Tailwind CSS Slate 背景 + Indigo 品牌色
 - 禁止使用内联 style，所有样式通过 Tailwind 类名或 CSS 变量
 
-## 颜色系统（Color System v2.0）
+## 颜色系统（Color System v3.0 — Indigo Brand）
 
-基于 SaaS 开发者工具专业配色，符合 WCAG AA 对比度标准。
+基于 SaaS 开发者工具专业配色，品牌差异化 Indigo 主色，符合 WCAG AA 对比度标准。
+
+### 设计一致性原则
+
+**同概念 = 同样式**：相同语义的操作在全应用范围内必须使用相同的颜色 token，不允许同一概念出现不同颜色。
+
+| 概念 | 对应 Token | 禁止 |
+|------|-----------|------|
+| 主要操作（确认、保存、提交） | `--primary` | 不同页面用不同蓝/紫 |
+| 执行/运行（Run SQL、Execute） | `--accent` | 混用 primary 或 success |
+| 成功状态（已完成、通过） | `--success` | 混用 accent |
+| 错误状态（失败、校验不通过） | `--error` | 混用 warning |
+| 警告状态（注意、风险提示） | `--warning` | 混用 error |
+| 信息提示（说明、通知） | `--info` | 混用 primary |
+| 焦点/选中指示 | `--border-focus` / `--ring` | 使用 primary 直接色值 |
 
 ### 核心语义色彩
 
 | Token | CSS 变量 | 用途 | 色值 |
 |-------|----------|------|------|
-| **Primary** | `--primary` | 主要按钮、链接 | `#2563EB` (blue-600) |
-| **Primary Hover** | `--primary-hover` | Primary 悬停态 | `#1D4ED8` (blue-700) |
+| **Primary** | `--primary` | 品牌色、主要按钮、链接 | `#6366F1` (indigo-500) |
+| **Primary Hover** | `--primary-hover` | Primary 悬停态 | `#4F46E5` (indigo-600) |
 | **Accent** | `--accent` | 执行/运行按钮、强调 | `#10B981` (emerald-500) |
 | **Accent Hover** | `--accent-hover` | Accent 悬停态 | `#059669` (emerald-600) |
 
@@ -28,7 +42,7 @@
 | **Background Panel** | `--background-panel` | 面板、侧边栏 | `#1E293B` (slate-800) |
 | **Background Elevated** | `--background-elevated` | 卡片、悬浮面板 | `#27354F` |
 | **Background Hover** | `--background-hover` | Hover 状态背景 | `#334155` (slate-700) |
-| **Background Active** | `--background-active` | 选中/激活背景 | `#1E3A5F` |
+| **Background Active** | `--background-active` | 选中/激活背景 | `#252363` (dark indigo) |
 
 ### 文字层级
 
@@ -47,7 +61,7 @@
 | **Border Subtle** | `--border-subtle` | 极细分隔线 | `#1E293B` (slate-800) |
 | **Border Default** | `--border` | 默认边框 | `#334155` (slate-700) |
 | **Border Strong** | `--border-strong` | 强调边框 | `#475569` (slate-600) |
-| **Border Focus** | `--border-focus` | 焦点边框 | `#2563EB` (blue-600) |
+| **Border Focus** | `--border-focus` | 焦点边框 | `#818CF8` (indigo-400) |
 
 ### 语义状态色
 

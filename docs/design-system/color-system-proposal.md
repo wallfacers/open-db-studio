@@ -143,15 +143,16 @@
 
 ## 优化后的完整颜色系统
 
-### 推荐方案：Slate + Emerald 专业开发主题
+### 推荐方案：Slate + Indigo 品牌差异化主题
 
-基于 UI/UX Pro Max "Developer Tool / IDE" 配色（Result #1）优化：
+基于 UI/UX Pro Max 评估，采用方案 C（品牌差异化）：
 
 ```
 设计逻辑：
-- Primary: 深蓝灰（专业、稳重）
-- Accent: 翠绿（执行/运行暗示，与代码成功区分）
-- 背景：极深蓝（护眼、沉浸）
+- Primary: Indigo（品牌辨识度 — 区别于大量 Blue SaaS 产品）
+- Accent: Emerald（执行/运行暗示，与 Success 区分色相）
+- 背景：Slate Deep（护眼、沉浸）
+- 参考：Linear (#5E6AD2)、Discord、Figma 均采用紫蓝色系
 ```
 
 ### 1. CSS 变量定义（完整版）
@@ -163,12 +164,12 @@
      基于 Slate 色板的专业开发者主题
      ======================================================== */
 
-  /* --- Primary: 主要交互色 --- */
-  --primary:           #2563EB;  /* blue-600 - 主要按钮/链接 */
+  /* --- Primary: 品牌色 / 主要交互色 (Indigo) --- */
+  --primary:           #6366F1;  /* indigo-500 - 品牌色/主要按钮/链接 */
   --primary-foreground: #FFFFFF;
-  --primary-hover:     #1D4ED8;  /* blue-700 */
-  --primary-active:    #1E40AF;  /* blue-800 */
-  --primary-subtle:    #1E3A8A;  /* blue-900 - 淡蓝背景（选中项） */
+  --primary-hover:     #4F46E5;  /* indigo-600 */
+  --primary-active:    #4338CA;  /* indigo-700 */
+  --primary-subtle:    #312E81;  /* indigo-900 - 淡紫背景（选中项） */
 
   /* --- Secondary: 次要交互色 --- */
   --secondary:           #334155;  /* slate-700 */
@@ -192,7 +193,7 @@
   --background-card:     #1E293B;  /* slate-800 - 卡片 */
   --background-elevated: #27354F;  /* 浮层/卡片 */
   --background-hover:    #334155;  /* slate-700 - hover状态 */
-  --background-active:   #1E3A5F;  /* 选中/激活背景 */
+  --background-active:   #252363;  /* dark indigo - 选中/激活背景 */
   --background-deep:     #0A1018;  /* 极深背景（工具栏/breadcrumb） */
   --background-code:     #161B22;  /* 代码块/Markdown 头部背景 */
 
@@ -213,7 +214,7 @@
   --border-default:#334155;  /* 别名（兼容） */
   --border-subtle:  #1E293B; /* slate-800 - 极细分隔 */
   --border-strong:  #475569; /* slate-600 - 强调边框 */
-  --border-focus:   #2563EB; /* blue-600 - 焦点状态 */
+  --border-focus:   #818CF8; /* indigo-400 - 焦点状态（深色背景高可见） */
 
   /* ========================================================
      语义状态色 (Semantic Status Colors)
@@ -238,7 +239,7 @@
   /* ========================================================
      功能色 (Functional Colors)
      ======================================================== */
-  --ring:        #2563EB;  /* 焦点环 */
+  --ring:        #818CF8;  /* indigo-400 焦点环 */
   --ring-accent: #10B981;  /* 强调环 */
 
   --overlay:     rgba(2, 6, 23, 0.8);   /* 遮罩层 */
@@ -345,7 +346,7 @@
     --background-card:   #FFFFFF;
     --background-elevated: #F8FAFC;
     --background-hover:  #F1F5F9;  /* slate-100 */
-    --background-active: #DBEAFE;  /* blue-100 */
+    --background-active: #E0E7FF;  /* indigo-100 */
     --background-deep:   #F1F5F9;  /* slate-100 */
     --background-code:   #F6F8FA;  /* GitHub light code bg */
 
@@ -432,7 +433,7 @@
 | `#007a62` / `#007a67` | `var(--accent-hover)` | 旧版 accent hover |
 | `#004d3a` / `#00b090` / `#00e6be` | `var(--accent)` 或 `var(--accent-hover)` | accent 变体 |
 | `#3794ff` | `var(--node-table)` 或 `var(--info)` | 根据语境选择 |
-| `#3a7bd5` | `var(--border-focus)` | 焦点蓝 |
+| `#3a7bd5` | `var(--border-focus)` | 焦点 indigo |
 | `#5eb2f7` | `var(--info)` | 信息蓝 |
 | `#5b8ab0` | `var(--foreground-muted)` | 次要文字 |
 | `#4a6a8a`/`#4a6a85`/`#4a6b8a`/`#4a6a84` | `var(--foreground-subtle)` | 禁用文字 |
@@ -450,8 +451,8 @@
 | `#f59e0b` | `var(--warning)` 或 `var(--key-primary)` | 根据语境 |
 | `#eab308` | `var(--key-primary)` | 主键图标 |
 | `#fbbf24` / `#fcd34d` | `var(--warning)` 或 `var(--warning-foreground)` | 警告 |
-| `#a855f7` | `var(--node-alias)` 或 `var(--data-purple)` | 紫色指示 |
-| `#c084fc` | `var(--data-purple)` | 紫色（diff move） |
+| `#a855f7` | `var(--node-alias)` | 紫色指示（图节点别名） |
+| `#c084fc` | `var(--node-alias)` 或淡化处理 | 紫色为 AI 专属色，勿作通用数据色 |
 | `#818cf8` | `var(--data-indigo)` | 靛蓝指示 |
 | `#60a5fa` | `var(--diff-modify)` | diff replace |
 | `#161b22` | `var(--background-code)` | 代码块头部 |
@@ -475,7 +476,7 @@
 | `#243a55` | `var(--background-hover)` | 操作 hover 背景 |
 | `#1e3a5f` | `var(--background-active)` | 激活背景 |
 | `#0d2620` / `#0a2010` / `#0a1f18` / `#0d1f1a` | `var(--accent-subtle)` | accent 淡背景 |
-| `#0a1525` / `#0d2a4a` / `#0d3060` | `var(--primary-subtle)` | primary 淡背景 |
+| `#0a1525` / `#0d2a4a` / `#0d3060` | `var(--primary-subtle)` | primary 淡背景 (indigo-900) |
 | `#1a1a3d` | `var(--info-subtle)` | info 淡背景 |
 | `#2d1216` / `#881337` / `#2a1010` / `#1a0a0a` / `#3a1a1a` | `var(--error-subtle)` | error 淡背景 |
 | `#2a2a0e` / `#2a3319` | `var(--warning-subtle)` | warning 淡背景 |
@@ -596,7 +597,9 @@ background: var(--background-panel); color: var(--foreground);
 | 最亮文字 | #F8FAFC | #1E293B | 10.8:1 | AAA |
 | 次要文字 | #94A3B8 | #1E293B | 5.4:1 | AA |
 | 占位符 | #64748B | #1E293B | 3.2:1 | AA (大字体) |
-| 主按钮 | #FFFFFF | #2563EB | 4.5:1 | AA |
+| 主按钮文字 | #FFFFFF | #6366F1 | 4.5:1 | AA |
+| 品牌色文字 | #6366F1 | #0F172A | 4.0:1 | AA (大字体/UI) |
+| 焦点环 | #818CF8 | #1E293B | 6.1:1 | AA |
 | Accent | #10B981 | #0F172A | 5.1:1 | AA |
 | 成功 | #22C55E | #0F172A | 5.8:1 | AA |
 | 错误 | #EF4444 | #0F172A | 6.3:1 | AA |

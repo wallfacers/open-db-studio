@@ -129,7 +129,7 @@ export function SeaTunnelConnectionModal({
           {/* 名称 */}
           <div>
             <label className="block text-xs text-[var(--foreground-muted)] mb-1">
-              {t('seaTunnel.connectionModal.connectionName')} <span className="text-red-400">*</span>
+              {t('seaTunnel.connectionModal.connectionName')} <span className="text-[var(--error)]">*</span>
             </label>
             <input
               ref={nameRef}
@@ -144,7 +144,7 @@ export function SeaTunnelConnectionModal({
           {/* 集群地址 */}
           <div>
             <label className="block text-xs text-[var(--foreground-muted)] mb-1">
-              {t('seaTunnel.connectionModal.clusterUrl')} <span className="text-red-400">*</span>
+              {t('seaTunnel.connectionModal.clusterUrl')} <span className="text-[var(--error)]">*</span>
             </label>
             <input
               type="text"
@@ -179,13 +179,13 @@ export function SeaTunnelConnectionModal({
           </div>
 
           {error && (
-            <div className="text-xs text-red-400 bg-red-900/20 border border-red-900/40 rounded px-3 py-2">
+            <div className="text-xs text-[var(--error)] bg-[var(--error-subtle)] border border-[var(--error)]/30 rounded px-3 py-2">
               {error}
             </div>
           )}
 
           {testResult && (
-            <div className={`text-xs rounded px-3 py-2 ${testResult.ok ? 'text-[var(--accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/30' : 'text-red-400 bg-red-900/20 border border-red-900/40'}`}>
+            <div className={`text-xs rounded px-3 py-2 ${testResult.ok ? 'text-[var(--accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/30' : 'text-[var(--error)] bg-[var(--error-subtle)] border border-[var(--error)]/30'}`}>
               {testResult.msg}
             </div>
           )}

@@ -60,7 +60,7 @@ export const TruncateConfirmDialog: React.FC<Props> = ({
     >
       <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[420px] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
-          <span className="text-red-400 text-sm font-medium flex items-center gap-2">
+          <span className="text-[var(--error)] text-sm font-medium flex items-center gap-2">
             <AlertTriangle size={15} />
             {t('truncateConfirm.title')}
           </span>
@@ -83,7 +83,7 @@ export const TruncateConfirmDialog: React.FC<Props> = ({
           <button
             onClick={handleTruncate}
             disabled={isLoading}
-            className="px-3 py-1.5 bg-red-600/80 text-white hover:bg-red-600 rounded text-xs disabled:opacity-50"
+            className="px-3 py-1.5 bg-[var(--error)]/80 text-[var(--foreground)] hover:bg-[var(--error)] rounded text-xs disabled:opacity-50"
           >
             {isLoading ? t('common.executing') : t('truncateConfirm.confirm')}
           </button>

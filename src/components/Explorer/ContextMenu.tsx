@@ -189,8 +189,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               item.disabled
                 ? 'opacity-40 cursor-not-allowed text-[var(--foreground-muted)]'
                 : item.danger
-                ? 'text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300'
-                : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white'
+                ? 'text-[var(--error)] hover:bg-[var(--background-hover)] hover:text-[var(--error-foreground)]'
+                : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]'
             }`}
             onClick={() => { if (!item.disabled) { onClose(); item.onClick(); } }}
           >

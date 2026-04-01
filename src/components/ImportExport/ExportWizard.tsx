@@ -238,27 +238,27 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
 
   const displayStep = step1.scope === 'database' && step === 3 ? 2 : step;
 
-  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
-  const labelClass = 'block text-xs text-gray-400 mb-1';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--border-focus)]';
+  const labelClass = 'block text-xs text-[var(--foreground-muted)] mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[560px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-strong)]">
-          <h3 className="text-white font-semibold">{t('exportWizard.title')}</h3>
+          <h3 className="text-[var(--foreground)] font-semibold">{t('exportWizard.title')}</h3>
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
               {Array.from({ length: totalSteps }, (_, i) => i + 1).map((n) => (
                 <div
                   key={n}
                   className={`w-2 h-2 rounded-full ${
-                    n === displayStep ? 'bg-[#009e84]' : n < displayStep ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
+                    n === displayStep ? 'bg-[var(--accent)]' : n < displayStep ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
                   }`}
                 />
               ))}
             </div>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-[var(--foreground-muted)]">
               {t('exportWizard.step', { current: displayStep, total: totalSteps })}
             </span>
             <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors">
@@ -272,7 +272,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
           {step === 1 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-gray-400 mb-2">{t('exportWizard.scope')}</label>
+                <label className="block text-xs text-[var(--foreground-muted)] mb-2">{t('exportWizard.scope')}</label>
                 {(['current_table', 'multi_table', 'database'] as ExportScope[]).map((scope) => (
                   <label key={scope} className="flex items-center gap-2 py-1 cursor-pointer">
                     <input
@@ -281,10 +281,10 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                       value={scope}
                       checked={step1.scope === scope}
                       onChange={() => handleScopeChange(scope)}
-                      className="accent-[#009e84]"
+                      className="accent-[var(--accent)]"
                       disabled={scope === 'current_table' && !defaultTable}
                     />
-                    <span className={`text-sm ${scope === 'current_table' && !defaultTable ? 'text-gray-600' : 'text-white'}`}>
+                    <span className={`text-sm ${scope === 'current_table' && !defaultTable ? 'text-[var(--foreground-ghost)]' : 'text-[var(--foreground)]'}`}>
                       {scope === 'current_table'
                         ? (defaultTable ? t('exportWizard.scopeCurrentTable', { table: defaultTable }) : t('exportWizard.scopeCurrentTableDisabled'))
                         : scope === 'multi_table' ? t('exportWizard.scopeMultiTable') : t('exportWizard.scopeDatabase')}
@@ -325,12 +325,12 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
           {step === 2 && (
             <div className="h-[300px] flex flex-col">
               {isLoading ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                <div className="flex-1 flex items-center justify-center text-[var(--foreground-muted)] text-sm">
                   {t('exportWizard.loadingTables')}
                 </div>
               ) : step1.scope === 'current_table' ? (
-                <div className="text-sm text-white py-4">
-                  {t('exportWizard.willExportTable')}<span className="text-[#009e84] font-medium">{defaultTable}</span>
+                <div className="text-sm text-[var(--foreground)] py-4">
+                  {t('exportWizard.willExportTable')}<span className="text-[var(--accent)] font-medium">{defaultTable}</span>
                 </div>
               ) : (
                 <TableSelector
@@ -357,7 +357,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                     placeholder={t('exportWizard.fileNamePlaceholder')}
                     className={`${inputClass} flex-1`}
                   />
-                  <span className="text-sm text-gray-400 flex-shrink-0">
+                  <span className="text-sm text-[var(--foreground-muted)] flex-shrink-0">
                     {(step1.scope === 'current_table')
                       ? `.${options.format}`
                       : '.zip'}
@@ -400,9 +400,9 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                       type="checkbox"
                       checked={options.includeHeader}
                       onChange={(e) => setOptions((o) => ({ ...o, includeHeader: e.target.checked }))}
-                      className="accent-[#009e84]"
+                      className="accent-[var(--accent)]"
                     />
-                    <span className="text-sm text-white">{t('exportWizard.includeHeader')}</span>
+                    <span className="text-sm text-[var(--foreground)]">{t('exportWizard.includeHeader')}</span>
                   </label>
                 )}
                 {options.format === 'sql' && (
@@ -411,9 +411,9 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                       type="checkbox"
                       checked={options.includeDdl}
                       onChange={(e) => setOptions((o) => ({ ...o, includeDdl: e.target.checked }))}
-                      className="accent-[#009e84]"
+                      className="accent-[var(--accent)]"
                     />
-                    <span className="text-sm text-white">{t('exportWizard.includeDdl')}</span>
+                    <span className="text-sm text-[var(--foreground)]">{t('exportWizard.includeDdl')}</span>
                   </label>
                 )}
               </div>
@@ -428,7 +428,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                   />
                 </div>
               )}
-              <div className="p-3 bg-[var(--background-hover)] rounded border border-[var(--border-strong)] text-sm text-gray-400">
+              <div className="p-3 bg-[var(--background-hover)] rounded border border-[var(--border-strong)] text-sm text-[var(--foreground-muted)]">
                 <div>{t('exportWizard.summaryTableCount', { count: step1.scope === 'current_table' ? 1 : selectedTables.length })}</div>
                 <div>{t('exportWizard.summaryFormat', { format: options.format.toUpperCase() })}</div>
                 <div>
@@ -439,7 +439,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
                 </div>
               </div>
               {exportError && (
-                <div className="text-sm text-red-400 bg-red-400/10 px-3 py-1.5 rounded border border-red-400/30">
+                <div className="text-sm text-[var(--error)] bg-[var(--error-subtle)] px-3 py-1.5 rounded border border-[var(--error)]/30">
                   {t('exportWizard.exportFailed', { error: exportError })}
                 </div>
               )}
@@ -449,14 +449,14 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border-strong)]">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded transition-colors">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-[var(--foreground)] rounded transition-colors">
             {t('exportWizard.cancel')}
           </button>
           <div className="flex gap-2">
             {step > 1 && (
               <button
                 onClick={goPrev}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-[var(--foreground)] bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
               >
                 <ChevronLeft size={14} /> {t('exportWizard.prev')}
               </button>
@@ -465,7 +465,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
               <button
                 onClick={goNext}
                 disabled={!canGoNext()}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded transition-colors disabled:opacity-50"
               >
                 {t('exportWizard.next')} <ChevronRight size={14} />
               </button>
@@ -473,7 +473,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
               <button
                 onClick={handleStart}
                 disabled={isLoading}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded transition-colors disabled:opacity-50"
               >
                 <Download size={14} /> {t('exportWizard.startExport')}
               </button>

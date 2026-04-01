@@ -254,9 +254,9 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
   return (
     <div className="flex-1 overflow-y-auto py-1 relative">
       {error && (
-        <div className="mx-2 mb-1 px-3 py-1.5 text-xs text-red-400 bg-red-900/20 rounded border border-red-900/40 flex items-center justify-between">
+        <div className="mx-2 mb-1 px-3 py-1.5 text-xs text-[var(--error)] bg-[var(--error-subtle)] rounded border border-[var(--error)]/30 flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="ml-2 text-red-400/60 hover:text-red-400">✕</button>
+          <button onClick={() => setError(null)} className="ml-2 text-[var(--error)]/60 hover:text-[var(--error)]">✕</button>
         </div>
       )}
 
@@ -342,7 +342,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
             {node.nodeType === 'job' && node.meta.status && !isEditing && (
               <span className={`text-[10px] flex-shrink-0 ml-1 px-1 rounded ${
                 node.meta.status === 'RUNNING' ? 'text-[var(--accent)] bg-[var(--accent)]/10'
-                : node.meta.status === 'FAILED' ? 'text-red-400 bg-red-900/20'
+                : node.meta.status === 'FAILED' ? 'text-[var(--error)] bg-[var(--error-subtle)]'
                 : 'text-[var(--foreground-muted)]'
               }`}>
                 {node.meta.status}
@@ -361,16 +361,16 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
         >
           {contextMenu.node.nodeType === 'connection' && (
             <>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => handleNewCategory(contextMenu.node)}>
                 <FolderPlus size={13} />{t('seaTunnel.jobTree.newCategory')}
               </button>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => handleNewJob(contextMenu.node)}>
                 <FilePlus size={13} />{t('seaTunnel.jobTree.newJob')}
               </button>
               <div className="h-px bg-[var(--border-strong)] my-1" />
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => {
                   const { connectionId, connectionUrl } = contextMenu.node.meta;
                   if (connectionId) {
@@ -381,7 +381,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                 <Pencil size={13} />{t('seaTunnel.jobTree.editConnection')}
               </button>
               <div className="h-px bg-[var(--border-strong)] my-1" />
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--error)] hover:bg-[var(--background-hover)] hover:text-[var(--error-foreground)]"
                 onClick={async () => {
                   const node = contextMenu.node;
                   setContextMenu(null);
@@ -394,20 +394,20 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
 
           {contextMenu.node.nodeType === 'category' && (
             <>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => handleNewCategory(contextMenu.node)}>
                 <FolderPlus size={13} />{t('seaTunnel.jobTree.newSubCategory')}
               </button>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => handleNewJob(contextMenu.node)}>
                 <FilePlus size={13} />{t('seaTunnel.jobTree.newJob')}
               </button>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => startInlineEdit(contextMenu.node)}>
                 <Pencil size={13} />{t('seaTunnel.jobTree.rename')}
               </button>
               <div className="h-px bg-[var(--border-strong)] my-1" />
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--error)] hover:bg-[var(--background-hover)] hover:text-[var(--error-foreground)]"
                 onClick={async () => {
                   const node = contextMenu.node;
                   setContextMenu(null);
@@ -420,7 +420,7 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
 
           {contextMenu.node.nodeType === 'job' && (
             <>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => {
                   const { jobId, connectionId } = contextMenu.node.meta;
                   if (jobId) onOpenJob?.(jobId, contextMenu.node.label, connectionId);
@@ -428,16 +428,16 @@ export function SeaTunnelJobTree({ searchQuery = '', onOpenJob }: SeaTunnelJobTr
                 }}>
                 <Eye size={13} />{t('seaTunnel.jobTree.open')}
               </button>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => startInlineEdit(contextMenu.node)}>
                 <Pencil size={13} />{t('seaTunnel.jobTree.rename')}
               </button>
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => { setContextMenu(null); /* TODO: move dialog */ }}>
                 <MoveRight size={13} />{t('seaTunnel.jobTree.moveToCategory')}
               </button>
               <div className="h-px bg-[var(--border-strong)] my-1" />
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300"
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--error)] hover:bg-[var(--background-hover)] hover:text-[var(--error-foreground)]"
                 onClick={async () => {
                   const node = contextMenu.node;
                   setContextMenu(null);

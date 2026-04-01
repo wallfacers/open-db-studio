@@ -38,7 +38,7 @@ export const TaskCenter: React.FC = () => {
     <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-panel)] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)] flex-shrink-0">
-        <h2 className="text-white font-semibold text-base">{t('activity.myTasks')}</h2>
+        <h2 className="text-[var(--foreground)] font-semibold text-base">{t('activity.myTasks')}</h2>
         <button
           onClick={handleClearCompleted}
           className="text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors px-3 py-1.5 bg-[var(--background-hover)] hover:bg-[var(--border-strong)] rounded border border-[var(--border-strong)]"

@@ -61,7 +61,7 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
           <div>
             <label className="text-xs text-[var(--foreground-muted)] mb-1 block">{t('aiCreateTable.describeTable')}</label>
             <textarea
-              className="w-full bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 text-xs text-[var(--foreground-default)] outline-none resize-none h-24 focus:border-[#009e84]"
+              className="w-full bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 text-xs text-[var(--foreground-default)] outline-none resize-none h-24 focus:border-[var(--border-focus)]"
               placeholder={t('aiCreateTable.descriptionPlaceholder')}
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -80,7 +80,7 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
             <div className="flex-1 flex flex-col">
               <label className="text-xs text-[var(--foreground-muted)] mb-1">{t('aiCreateTable.reviewDdl')}</label>
               <textarea
-                className="flex-1 bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 font-mono text-xs text-[var(--foreground-default)] outline-none resize-none min-h-[150px] focus:border-[#009e84]"
+                className="flex-1 bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 font-mono text-xs text-[var(--foreground-default)] outline-none resize-none min-h-[150px] focus:border-[var(--border-focus)]"
                 value={generatedDdl}
                 onChange={e => setGeneratedDdl(e.target.value)}
                 spellCheck={false}

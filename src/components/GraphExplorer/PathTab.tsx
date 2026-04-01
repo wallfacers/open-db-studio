@@ -76,38 +76,38 @@ export function PathTab({
         <div className="flex items-center gap-2">
           <span
             className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: '#0a2010', color: '#4ade80', border: '1px solid #4ade8044' }}
+            style={{ background: 'var(--accent-subtle)', color: 'var(--success)', border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)' }}
           >
             FROM
           </span>
           {pathFrom ? (
             <div className="flex-1 flex items-center gap-1 min-w-0">
               <span className="text-[var(--foreground-default)] text-xs truncate flex-1">{pathFrom.name}</span>
-              <button onClick={onClearFrom} className="flex-shrink-0 text-[var(--foreground-muted)] hover:text-white">
+              <button onClick={onClearFrom} className="flex-shrink-0 text-[var(--foreground-muted)] hover:text-[var(--foreground)]">
                 <X size={11} />
               </button>
             </div>
           ) : (
-            <span className="text-[#3d5470] text-xs">在搜索结果中点击 [S] 设置</span>
+            <span className="text-[var(--foreground-ghost)] text-xs">在搜索结果中点击 [S] 设置</span>
           )}
         </div>
 
         <div className="flex items-center gap-2">
           <span
             className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: '#0a1525', color: '#5eb2f7', border: '1px solid #5eb2f744' }}
+            style={{ background: 'var(--primary-subtle)', color: 'var(--info)', border: '1px solid color-mix(in srgb, var(--info) 25%, transparent)' }}
           >
             TO
           </span>
           {pathTo ? (
             <div className="flex-1 flex items-center gap-1 min-w-0">
               <span className="text-[var(--foreground-default)] text-xs truncate flex-1">{pathTo.name}</span>
-              <button onClick={onClearTo} className="flex-shrink-0 text-[var(--foreground-muted)] hover:text-white">
+              <button onClick={onClearTo} className="flex-shrink-0 text-[var(--foreground-muted)] hover:text-[var(--foreground)]">
                 <X size={11} />
               </button>
             </div>
           ) : (
-            <span className="text-[#3d5470] text-xs">在搜索结果中点击 [T] 设置</span>
+            <span className="text-[var(--foreground-ghost)] text-xs">在搜索结果中点击 [T] 设置</span>
           )}
         </div>
 
@@ -137,7 +137,7 @@ export function PathTab({
             disabled={!canQuery || loading}
             title={undefined}
             className="flex-1 flex items-center justify-center gap-1 py-1 text-xs rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: '#0a1f18', color: 'var(--accent)', borderColor: 'var(--accent-hover)55' }}
+            style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent-hover) 33%, transparent)' }}
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <GitFork size={12} />}
             {loading ? '查找中...' : '查找路径'}
@@ -148,7 +148,7 @@ export function PathTab({
 
       <div className="flex-1 overflow-y-auto">
         {error && (
-          <div className="m-3 p-2 rounded text-xs text-[#f43f5e] bg-[#2d1216] border border-[#f43f5e]/30">
+          <div className="m-3 p-2 rounded text-xs text-[var(--error)] bg-[var(--error-subtle)] border border-[var(--error)]/30">
             {error}
             <button
               onClick={handleFindPath}
@@ -181,14 +181,14 @@ export function PathTab({
                 : 'hover:bg-[var(--background-hover)]'
             }`}
           >
-            <p className="text-[#3d5470] text-[9px] mb-1">路径 {idx + 1} · {path.length} 节点</p>
+            <p className="text-[var(--foreground-ghost)] text-[9px] mb-1">路径 {idx + 1} · {path.length} 节点</p>
             <p className="text-[var(--foreground-default)] leading-relaxed">
               {path.map((id, i) => (
                 <span key={id}>
-                  <span className={i === 0 ? 'text-[#4ade80]' : i === path.length - 1 ? 'text-[#5eb2f7]' : 'text-[var(--foreground-default)]'}>
+                  <span className={i === 0 ? 'text-[var(--success)]' : i === path.length - 1 ? 'text-[var(--info)]' : 'text-[var(--foreground-default)]'}>
                     {nodeDisplayMap[id] ?? id}
                   </span>
-                  {i < path.length - 1 && <span className="text-[#3d5470] mx-1">→</span>}
+                  {i < path.length - 1 && <span className="text-[var(--foreground-ghost)] mx-1">→</span>}
                 </span>
               ))}
             </p>

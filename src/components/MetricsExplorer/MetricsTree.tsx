@@ -210,9 +210,9 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
   return (
     <div className="flex-1 overflow-y-auto py-1">
       {deleteError && (
-        <div className="mx-2 mb-1 px-3 py-1.5 text-xs text-red-400 bg-red-900/20 rounded border border-red-900/40 flex items-center justify-between">
+        <div className="mx-2 mb-1 px-3 py-1.5 text-xs text-[var(--error)] bg-[var(--error-subtle)] rounded border border-[var(--error)]/30 flex items-center justify-between">
           <span>{deleteError}</span>
-          <button onClick={() => setDeleteError(null)} className="ml-2 text-red-400/60 hover:text-red-400">✕</button>
+          <button onClick={() => setDeleteError(null)} className="ml-2 text-[var(--error)]/60 hover:text-[var(--error)]">✕</button>
         </div>
       )}
       {visibleNodes.map(node => {
@@ -306,7 +306,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
           {contextMenu.node.nodeType === 'metric' ? (
             <>
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => {
                   if (contextMenu.node.meta.metricId) {
                     onOpenMetricTab?.(contextMenu.node.meta.metricId, contextMenu.node.label, contextMenu.node.meta.connectionId);
@@ -316,7 +316,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               ><Eye size={13} />{t('metricsExplorer.metricsTree.open')}</button>
               <div className="h-px bg-[var(--border-strong)] my-1" />
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-red-400 hover:bg-[var(--background-hover)] hover:text-red-300"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--error)] hover:bg-[var(--background-hover)] hover:text-[var(--error-foreground)]"
                 onClick={async () => {
                   const node = contextMenu.node;
                   setContextMenu(null);
@@ -329,7 +329,7 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
               {(contextMenu.node.nodeType === 'database' || contextMenu.node.nodeType === 'schema') && (
                 <>
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                     onClick={() => {
                       const { connectionId, database, schema } = contextMenu.node.meta;
                       if (connectionId) {
@@ -342,14 +342,14 @@ export function MetricsTree({ searchQuery = '', onOpenMetricTab, onOpenMetricLis
                     }}
                   ><List size={13} />{t('metricsExplorer.metricsTree.openMetricList')}</button>
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                     onClick={() => handleNewMetric(contextMenu.node)}
                   ><Plus size={13} />{t('metricsExplorer.metricsTree.addMetric')}</button>
                   <div className="h-px bg-[var(--border-strong)] my-1" />
                 </>
               )}
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
                 onClick={() => {
                   refreshNode(contextMenu.node.id);
                   setContextMenu(null);

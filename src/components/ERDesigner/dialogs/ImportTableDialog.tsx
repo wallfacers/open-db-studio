@@ -180,7 +180,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={t('erDesigner.searchTablePlaceholder')}
-            className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-2 text-xs text-[var(--foreground-default)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:border-[#009e84] transition-colors"
+            className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-2 text-xs text-[var(--foreground-default)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
           />
         </div>
 
@@ -223,7 +223,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
                   <label
                     key={table.name}
                     className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors
-                      ${isSelected ? 'bg-[#009e84]/10' : 'hover:bg-[var(--background-elevated)]'}`}
+                      ${isSelected ? 'bg-[var(--accent)]/10' : 'hover:bg-[var(--background-elevated)]'}`}
                   >
                     <input
                       type="checkbox"
@@ -248,7 +248,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
 
         {/* 错误提示 */}
         {error && (
-          <div className="text-xs text-red-400 bg-red-400/10 px-3 py-2 rounded border border-red-400/30">
+          <div className="text-xs text-[var(--error)] bg-[var(--error-subtle)] px-3 py-2 rounded border border-[var(--error)]/30">
             {error}
           </div>
         )}

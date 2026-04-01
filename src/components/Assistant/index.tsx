@@ -48,7 +48,7 @@ const TypingIndicator: React.FC = () => {
   return (
     <div className="flex items-center gap-2 py-1">
       <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
-      <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
+      <span className="text-xs text-[var(--foreground-muted)] animate-pulse">{messages[msgIdx]}</span>
     </div>
   );
 };
@@ -77,10 +77,10 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             {Array.isArray(pendingQuestion.questions) && pendingQuestion.questions.length > 0 && (
               pendingQuestion.questions.map((q, qi) => (
                 <div key={qi} className="text-[13px] leading-relaxed">
-                  {q.header && <div className="font-medium text-[#4ac9c0]">{q.header}</div>}
-                  {q.question && <div className="text-[#8ec8e0]">{q.question}</div>}
+                  {q.header && <div className="font-medium text-[var(--accent)]">{q.header}</div>}
+                  {q.question && <div className="text-[var(--foreground-default)]">{q.question}</div>}
                   {Array.isArray(q.options) && q.options.length > 0 && (
-                    <div className="mt-1 space-y-0.5 text-xs text-[#6aadcc]">
+                    <div className="mt-1 space-y-0.5 text-xs text-[var(--foreground-default)]">
                       {q.options.map((opt, oi) => (
                         <div key={oi}>• {opt.label}{opt.description ? ` — ${opt.description}` : ''}</div>
                       ))}
@@ -98,7 +98,7 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           sessionStatus ? (
             <div className="flex items-center gap-2 py-1">
               <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
-              <span className="text-xs text-[#5b8ab0] animate-pulse">{sessionStatus}</span>
+              <span className="text-xs text-[var(--foreground-muted)] animate-pulse">{sessionStatus}</span>
             </div>
           ) : (
             <TypingIndicator />
@@ -429,7 +429,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             {/* 跟随标签页选项 */}
             <div
               className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[var(--border-default)] ${
-                linkedConnectionId === null ? 'text-[#009e84]' : 'text-[var(--foreground-muted)]'
+                linkedConnectionId === null ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]'
               }`}
               onClick={() => { setLinkedConnectionId(null); setIsConnectionMenuOpen(false); }}
             >
@@ -444,12 +444,12 @@ export const Assistant: React.FC<AssistantProps> = ({
                   <div
                     key={c.id}
                     className={`px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-[var(--border-default)] ${
-                      isActive ? 'text-[#009e84]' : 'text-[var(--foreground-default)]'
+                      isActive ? 'text-[var(--accent)]' : 'text-[var(--foreground-default)]'
                     }`}
                     onClick={() => { setLinkedConnectionId(c.id); setIsConnectionMenuOpen(false); }}
                   >
                     <span className="text-xs truncate flex-1">{c.name}</span>
-                    <span className="ml-2 w-2 h-2 rounded-full flex-shrink-0 bg-green-400" />
+                    <span className="ml-2 w-2 h-2 rounded-full flex-shrink-0 bg-[var(--success)]" />
                   </div>
                 );
               })
@@ -509,7 +509,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                       key={c.id}
                       className={`px-3 py-1.5 flex items-center justify-between ${
                         isConnected
-                          ? `cursor-pointer hover:bg-[var(--border-default)] ${isActive ? 'text-[#009e84]' : 'text-[var(--foreground-default)]'}`
+                          ? `cursor-pointer hover:bg-[var(--border-default)] ${isActive ? 'text-[var(--accent)]' : 'text-[var(--foreground-default)]'}`
                           : 'cursor-not-allowed opacity-40 text-[var(--foreground-muted)]'
                       }`}
                       onClick={() => {
@@ -521,8 +521,8 @@ export const Assistant: React.FC<AssistantProps> = ({
                     >
                       <span className="text-xs truncate flex-1">{c.is_default ? `★ ${c.name}` : c.name}</span>
                       <span className={`ml-2 w-2 h-2 rounded-full flex-shrink-0 ${
-                        c.test_status === 'success' ? 'bg-green-400' :
-                        c.test_status === 'fail' ? 'bg-red-400' : 'bg-gray-600'
+                        c.test_status === 'success' ? 'bg-[var(--success)]' :
+                        c.test_status === 'fail' ? 'bg-[var(--error)]' : 'bg-[var(--foreground-ghost)]'
                       }`} />
                     </div>
                   );
@@ -544,7 +544,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             className="flex items-center gap-1.5 px-1.5 py-1 rounded transition-colors hover:bg-[var(--border-default)]"
             aria-label={t('assistant.toggleAutoMode')}
           >
-            <span className="text-[11px] text-[#5b8ab0] select-none">Auto</span>
+            <span className="text-[11px] text-[var(--foreground-muted)] select-none">Auto</span>
             {/* 开关轨道 */}
             <span className={`relative inline-flex h-3.5 w-6 flex-shrink-0 rounded-full transition-colors duration-200 ${
               autoMode ? 'bg-[var(--accent)]' : 'bg-[var(--border-strong)]'
@@ -577,7 +577,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             /* 等待回答 + 有输入：显示发送按钮 */
             <Tooltip content={t('assistant.sendMessage')} className="contents">
               <button
-                className="p-1.5 rounded transition-colors bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
+                className="p-1.5 rounded transition-colors bg-[var(--accent)] text-[var(--foreground)] hover:bg-[var(--accent-hover)]"
                 onClick={handleSendMessage}
               >
                 <Send size={14} />
@@ -587,7 +587,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             /* 生成中：显示停止按钮 */
             <Tooltip content={t('assistant.stopGeneration')} className="contents">
               <button
-                className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                className="p-1.5 rounded transition-colors bg-[var(--error-subtle)] text-[var(--error)] hover:bg-[var(--error-subtle)]"
                 onClick={() => cancelChat(currentSessionId)}
               >
                 <Square size={14} />
@@ -597,7 +597,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         ) : (
           <Tooltip content={t('assistant.sendMessage')} className="contents">
             <button
-              className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]' : 'bg-[var(--border-default)] text-[var(--foreground-muted)]'}`}
+              className={`p-1.5 rounded transition-colors ${chatInput.trim() ? 'bg-[var(--accent)] text-[var(--foreground)] hover:bg-[var(--accent-hover)]' : 'bg-[var(--border-default)] text-[var(--foreground-muted)]'}`}
               onClick={handleSendMessage}
               disabled={!chatInput.trim()}
             >
@@ -624,7 +624,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           {!showHistory && chatHistory.length > 0 && (
             <Tooltip content={t('assistant.clearHistory')} className="contents">
               <span
-                className="flex items-center cursor-pointer hover:text-red-400 p-1"
+                className="flex items-center cursor-pointer hover:text-[var(--error)] p-1"
                 onClick={async () => {
                   const ok = await confirm({
                     title: t('assistant.clearChatTitle'),
@@ -662,13 +662,13 @@ export const Assistant: React.FC<AssistantProps> = ({
               <ChevronLeft size={14} />
               <span>{t('assistant.backToChat')}</span>
             </button>
-            <span className="text-xs text-[#4a6a8a]">{sessions.length} {t('assistant.sessionCount')}</span>
+            <span className="text-xs text-[var(--foreground-subtle)]">{sessions.length} {t('assistant.sessionCount')}</span>
           </div>
 
           {/* 会话列表 */}
           <div className="flex-1 overflow-auto py-1 min-h-0">
             {sessions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-[#4a6a8a] text-center px-4 gap-3">
+              <div className="flex flex-col items-center justify-center h-full text-[var(--foreground-subtle)] text-center px-4 gap-3">
                 <MessageSquare size={28} className="opacity-20" />
                 <p className="text-xs">{t('assistant.noHistory')}</p>
               </div>
@@ -692,28 +692,28 @@ export const Assistant: React.FC<AssistantProps> = ({
                     <div
                       key={sess.id}
                       className={`group flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-[var(--background-panel)] transition-colors ${
-                        isActive ? 'bg-[#0f1f33]' : 'hover:bg-[#0d1a28]'
+                        isActive ? 'bg-[var(--background-base)]' : 'hover:bg-[var(--background-void)]'
                       }`}
                       onClick={() => { switchSession(sess.id); setShowHistory(false); }}
                     >
-                      <MessageSquare size={13} className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-[var(--accent)]' : 'text-[#4a6a8a]'}`} />
+                      <MessageSquare size={13} className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-[var(--accent)]' : 'text-[var(--foreground-subtle)]'}`} />
                       <div className="flex-1 min-w-0">
-                        <div className={`text-[12px] font-medium truncate leading-tight flex items-center gap-1.5 ${isActive ? 'text-[var(--foreground-default)]' : 'text-[#8ab0cc]'}`}>
+                        <div className={`text-[12px] font-medium truncate leading-tight flex items-center gap-1.5 ${isActive ? 'text-[var(--foreground-default)]' : 'text-[var(--foreground-default)]'}`}>
                           <span className="truncate">{sess.title}</span>
                           {!sess.titleGenerated && (
-                            <span className="text-[10px] text-[#4a6a8a] animate-pulse flex-shrink-0">•</span>
+                            <span className="text-[10px] text-[var(--foreground-subtle)] animate-pulse flex-shrink-0">•</span>
                           )}
                           {chattingSessionIds.has(sess.id) && (
                             <RefreshCw size={10} className="animate-spin text-[var(--accent)] flex-shrink-0" />
                           )}
                         </div>
-                        <div className="text-[11px] text-[#4a6a8a] mt-0.5">
+                        <div className="text-[11px] text-[var(--foreground-subtle)] mt-0.5">
                           {relTime} · {sess.messages.length} {t('assistant.messageCount')}
                         </div>
                       </div>
                       <Tooltip content={t('assistant.deleteSession')} className="contents">
                         <button
-                          className="opacity-0 group-hover:opacity-100 p-1 text-[#4a6a8a] hover:text-red-400 transition-all flex-shrink-0"
+                          className="opacity-0 group-hover:opacity-100 p-1 text-[var(--foreground-subtle)] hover:text-[var(--error)] transition-all flex-shrink-0"
                           onClick={async (e) => {
                             e.stopPropagation();
                             const ok = await confirm({
@@ -738,7 +738,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           {sessions.length > 0 && (
             <div className="px-3 py-2 border-t border-[var(--border-default)] flex-shrink-0">
               <button
-                className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-red-400 hover:bg-[var(--border-default)] rounded transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--error)] hover:bg-[var(--border-default)] rounded transition-colors"
                 onClick={async () => {
                   const ok = await confirm({
                     title: t('assistant.deleteAllSessionsTitle'),
@@ -770,7 +770,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                 <p className="text-xs mt-1 opacity-60 mb-4">{t('assistant.noConnectedModelHint')}</p>
                 <button
                   onClick={onOpenSettings}
-                  className="px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[#007a62] text-white rounded"
+                  className="px-4 py-1.5 text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded"
                 >
                   {t('assistant.goToSettings')}
                 </button>
@@ -828,7 +828,7 @@ export const Assistant: React.FC<AssistantProps> = ({
               <p className="text-xs text-[var(--foreground-muted)] mb-2">
                 {t('assistant.connectionSwitchTitle')}
               </p>
-              <p className="text-[11px] text-[#5b8ab0] mb-2">
+              <p className="text-[11px] text-[var(--foreground-muted)] mb-2">
                 {t('assistant.connectionSwitchDesc', {
                   old: pendingConnectionSwitch.oldConnectionName,
                   new: pendingConnectionSwitch.newConnectionName,
@@ -836,7 +836,7 @@ export const Assistant: React.FC<AssistantProps> = ({
               </p>
               <div className="flex gap-2">
                 <button
-                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[var(--background-panel)] border border-[var(--border-strong)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:border-[#3a4f6a]"
+                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[var(--background-panel)] border border-[var(--border-strong)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:border-[var(--border-strong)]"
                   onClick={() => {
                     setLinkedConnectionId(pendingConnectionSwitch.oldConnectionId);
                     setPendingConnectionSwitch(null);
@@ -845,7 +845,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                   {t('assistant.keepLastConnection', { name: pendingConnectionSwitch.oldConnectionName })}
                 </button>
                 <button
-                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[var(--accent-subtle)] border border-[var(--accent)] text-[var(--accent)] hover:bg-[#004d3a]"
+                  className="flex-1 text-[11px] px-2 py-1 rounded bg-[var(--accent-subtle)] border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-subtle)]"
                   onClick={() => {
                     setLinkedConnectionId(null);
                     setPendingConnectionSwitch(null);

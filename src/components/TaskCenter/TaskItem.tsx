@@ -11,17 +11,17 @@ interface Props {
 
 const statusConfig = {
   pending: { icon: Loader2, color: 'text-[var(--foreground-muted)]', bgColor: 'bg-[var(--foreground-muted)]/20', animate: true },
-  running: { icon: Loader2, color: 'text-[#3794ff]', bgColor: 'bg-[#3794ff]/20', animate: true },
+  running: { icon: Loader2, color: 'text-[var(--info)]', bgColor: 'bg-[var(--info)]/20', animate: true },
   completed: { icon: CheckCircle, color: 'text-[var(--accent)]', bgColor: 'bg-[var(--accent)]/20', animate: false },
-  failed: { icon: XCircle, color: 'text-[#f44747]', bgColor: 'bg-[#f44747]/20', animate: false },
+  failed: { icon: XCircle, color: 'text-[var(--error)]', bgColor: 'bg-[var(--error)]/20', animate: false },
   cancelled: { icon: Square, color: 'text-[var(--foreground-muted)]', bgColor: 'bg-[var(--foreground-muted)]/20', animate: false },
 };
 
 const progressBarColor = {
   pending: 'var(--foreground-muted)',
-  running: '#3794ff',
+  running: 'var(--info)',
   completed: 'var(--accent)',
-  failed: '#f44747',
+  failed: 'var(--error)',
   cancelled: 'var(--foreground-muted)',
 };
 
@@ -146,20 +146,20 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
               </>
             )}
             {task.status === 'failed' && task.error && (
-              <span className="text-[#f44747]">{task.error}</span>
+              <span className="text-[var(--error)]">{task.error}</span>
             )}
             {task.status === 'cancelled' && t('taskCenter.cancelled', 'Cancelled')}
           </div>
 
           {/* Time Info */}
-          <div className="flex gap-3 mt-1.5 text-xs text-[#5a7a9a]">
+          <div className="flex gap-3 mt-1.5 text-xs text-[var(--foreground-subtle)]">
             <span>
-              <span className="text-[#3a5a7a]">{t('taskCenter.startTime', '开始')}：</span>
+              <span className="text-[var(--foreground-ghost)]">{t('taskCenter.startTime', '开始')}：</span>
               {new Date(task.startTime).toLocaleString()}
             </span>
             {task.endTime && (
               <span>
-                <span className="text-[#3a5a7a]">{t('taskCenter.endTime', '结束')}：</span>
+                <span className="text-[var(--foreground-ghost)]">{t('taskCenter.endTime', '结束')}：</span>
                 {new Date(task.endTime).toLocaleString()}
               </span>
             )}
@@ -172,7 +172,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.cancel', 'Cancel')} className="contents">
               <button
                 onClick={handleCancel}
-                className="p-1.5 text-[var(--foreground-muted)] hover:text-[#f44747] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[var(--error)] transition-colors"
               >
                 <Square size={14} />
               </button>
@@ -192,7 +192,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.openOutput', 'Open output')} className="contents">
               <button
                 onClick={handleOpenOutput}
-                className="p-1.5 text-[var(--foreground-muted)] hover:text-[#3794ff] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[var(--info)] transition-colors"
               >
                 <ExternalLink size={14} />
               </button>
@@ -202,7 +202,7 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
             <Tooltip content={t('taskCenter.remove', 'Remove')} className="contents">
               <button
                 onClick={handleRemove}
-                className="p-1.5 text-[var(--foreground-muted)] hover:text-[#f44747] transition-colors"
+                className="p-1.5 text-[var(--foreground-muted)] hover:text-[var(--error)] transition-colors"
               >
                 <Trash2 size={14} />
               </button>
@@ -216,14 +216,14 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
         <div className="border-t border-[var(--border-default)] p-3 text-xs text-[var(--foreground-muted)]">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <span className="text-[#5a7a9a]">{t('taskCenter.taskId', 'Task ID')}:</span> {task.id}
+              <span className="text-[var(--foreground-subtle)]">{t('taskCenter.taskId', 'Task ID')}:</span> {task.id}
             </div>
             <div>
-              <span className="text-[#5a7a9a]">{t('taskCenter.type', 'Type')}:</span> {task.type}
+              <span className="text-[var(--foreground-subtle)]">{t('taskCenter.type', 'Type')}:</span> {task.type}
             </div>
             {task.outputPath && (
               <div className="col-span-2">
-                <span className="text-[#5a7a9a]">{t('taskCenter.outputPath', 'Output')}:</span>{' '}
+                <span className="text-[var(--foreground-subtle)]">{t('taskCenter.outputPath', 'Output')}:</span>{' '}
                 <span className="text-[var(--foreground-default)] break-all">{task.outputPath}</span>
               </div>
             )}
@@ -233,15 +233,15 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           {task.type === 'ai_generate_metrics' && (task.metricCount != null || task.skippedCount != null) && (
             <div className="mt-2 text-xs text-[var(--foreground-muted)]">
               {task.metricCount != null && <span>新增指标: <span className="text-[var(--accent)]">{task.metricCount}</span></span>}
-              {task.skippedCount != null && <span className="ml-3">跳过: <span className="text-[#ffcc00]">{task.skippedCount}</span></span>}
+              {task.skippedCount != null && <span className="ml-3">跳过: <span className="text-[var(--warning)]">{task.skippedCount}</span></span>}
             </div>
           )}
 
           {/* Markdown 描述（连接/数据库/表清单信息） */}
           {task.description && (
             <div className="mt-3">
-              <div className="text-[#5a7a9a] mb-1.5">{t('taskCenter.taskDesc', '任务详情')}:</div>
-              <div className="bg-[var(--background-base)] rounded p-2.5 font-mono text-[#8ab4d4] leading-5 whitespace-pre-wrap break-all">
+              <div className="text-[var(--foreground-subtle)] mb-1.5">{t('taskCenter.taskDesc', '任务详情')}:</div>
+              <div className="bg-[var(--background-base)] rounded p-2.5 font-mono text-[var(--foreground-default)] leading-5 whitespace-pre-wrap break-all">
                 {task.description}
               </div>
             </div>
@@ -250,8 +250,8 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           {/* Error Details */}
           {task.status === 'failed' && task.errorDetails?.length > 0 && (
             <div className="mt-3">
-              <div className="text-[#5a7a9a] mb-1">{t('taskCenter.errorDetails', 'Error Details')}:</div>
-              <div className="bg-[var(--background-base)] rounded p-2 max-h-32 overflow-y-auto font-mono text-[#f44747]">
+              <div className="text-[var(--foreground-subtle)] mb-1">{t('taskCenter.errorDetails', 'Error Details')}:</div>
+              <div className="bg-[var(--background-base)] rounded p-2 max-h-32 overflow-y-auto font-mono text-[var(--error)]">
                 {task.errorDetails.map((err, i) => (
                   <div key={i}>{err}</div>
                 ))}
@@ -262,13 +262,13 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
           {/* 任务日志区域 */}
           {(task.type === 'ai_generate_metrics' || task.type === 'build_schema_graph') && task.logs && task.logs.length > 0 && (
             <div className="mt-3">
-              <div className="text-[#5a7a9a] mb-1">日志</div>
+              <div className="text-[var(--foreground-subtle)] mb-1">日志</div>
               <div className="bg-[var(--background-base)] rounded p-2 max-h-48 overflow-y-auto font-mono text-xs leading-5">
                 {task.logs.map((log, i) => (
                   <div key={i} className={
-                    log.level === 'error' ? 'text-[#f44747]' :
-                    log.level === 'warn' ? 'text-[#ffcc00]' :
-                    'text-[#8ab4d4]'
+                    log.level === 'error' ? 'text-[var(--error)]' :
+                    log.level === 'warn' ? 'text-[var(--warning)]' :
+                    'text-[var(--foreground-default)]'
                   }>
                     [{new Date(log.timestamp).toLocaleTimeString()}] {log.level.toUpperCase()} {log.message}
                   </div>

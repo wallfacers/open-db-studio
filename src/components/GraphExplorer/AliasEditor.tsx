@@ -104,7 +104,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
                     {alias}
                     <button
                       onClick={() => handleRemoveAlias(alias)}
-                      className="text-[var(--foreground-muted)] hover:text-[#f43f5e] transition-colors"
+                      className="text-[var(--foreground-muted)] hover:text-[var(--error)] transition-colors"
                     >
                       <X size={10} />
                     </button>
@@ -128,7 +128,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={t('graphExplorer.aliasEditor.placeholder')}
-                className="flex-1 px-3 py-1.5 text-sm bg-[var(--background-base)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[#3d5470] focus:outline-none focus:border-[var(--accent)]/50 transition-colors"
+                className="flex-1 px-3 py-1.5 text-sm bg-[var(--background-base)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[var(--foreground-ghost)] focus:outline-none focus:border-[var(--accent)]/50 transition-colors"
               />
               <button
                 onClick={handleAddAlias}
@@ -140,7 +140,7 @@ export const AliasEditor: React.FC<AliasEditorProps> = ({
               </button>
             </div>
             {error && (
-              <p className="text-[#f43f5e] text-xs">{error}</p>
+              <p className="text-[var(--error)] text-xs">{error}</p>
             )}
           </div>
         </div>

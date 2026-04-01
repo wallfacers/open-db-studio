@@ -41,14 +41,14 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
     }
   };
 
-  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
-  const labelClass = 'block text-xs text-gray-400 mb-1';
+  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--border-focus)]';
+  const labelClass = 'block text-xs text-[var(--foreground-muted)] mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[480px] p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</h2>
+          <h2 className="text-[var(--foreground)] font-semibold">{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</h2>
           <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"><X size={16} /></button>
         </div>
 
@@ -67,15 +67,15 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
           </div>
         </div>
 
-        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        {error && <p className="text-xs text-[var(--error)] mt-2">{error}</p>}
 
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose}
-            className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-white rounded">
+            className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-[var(--foreground)] rounded">
             {t('common.cancel')}
           </button>
           <button onClick={handleSave} disabled={saving}
-            className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
+            className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded disabled:opacity-50">
             {saving ? t('groupModal.saving') : t('common.save')}
           </button>
         </div>

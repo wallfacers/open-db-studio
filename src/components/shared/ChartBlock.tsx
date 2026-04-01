@@ -17,7 +17,7 @@ const COLOR_PALETTE = [
   '#f0c94a', // 琥珀黄
   '#a78bfa', // 柔紫
   '#34d399', // 翠绿
-  '#f87171', // 玫红
+  'var(--error)', // 玫红
 ];
 
 const ODS_CHART_THEME = {
@@ -91,7 +91,7 @@ const ODS_CHART_THEME = {
     radius: ['0%', '65%'],
     label: { color: 'var(--foreground-default)', fontSize: 11 },
     labelLine: { lineStyle: { color: 'var(--border-strong)' } },
-    emphasis: { label: { color: '#e8f4fd', fontWeight: 'bold' } },
+    emphasis: { label: { color: 'var(--foreground)', fontWeight: 'bold' } },
   },
   scatter: {
     symbolSize: 8,
@@ -100,9 +100,9 @@ const ODS_CHART_THEME = {
   candlestick: {
     itemStyle: {
       color: 'var(--accent)',
-      color0: '#f87171',
+      color0: 'var(--error)',
       borderColor: 'var(--accent)',
-      borderColor0: '#f87171',
+      borderColor0: 'var(--error)',
     },
   },
   radar: {
@@ -117,8 +117,8 @@ const ODS_CHART_THEME = {
       lineStyle: { color: 'var(--border-strong)' },
       areaStyle: { color: 'rgba(42,63,90,0.3)' },
     },
-    fillerColor: 'rgba(0,201,167,0.12)',
-    handleStyle: { color: 'var(--accent)', borderColor: '#009e84' },
+    fillerColor: 'rgba(16,185,129,0.12)',
+    handleStyle: { color: 'var(--accent)', borderColor: 'var(--accent-hover)' },
     textStyle: { color: 'var(--foreground-muted)' },
   },
   visualMap: {
@@ -158,7 +158,7 @@ const ChartExpandModal: React.FC<{
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[var(--border-default)] flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--background-code)] border-b border-[var(--border-default)] flex-shrink-0">
           <span className="text-xs text-[var(--foreground-muted)] font-mono">{chartType}</span>
           <Tooltip content="关闭" className="contents">
             <button
@@ -357,9 +357,9 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
     const barHeights = [20, 32, 44, 32, 20];
     return (
       <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[var(--border-default)]">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--background-code)] border-b border-[var(--border-default)]">
           <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
-          <span className="text-xs text-[#5b8ab0] animate-pulse">{t('commonComponents.chartBlock.generatingChart')}</span>
+          <span className="text-xs text-[var(--foreground-muted)] animate-pulse">{t('commonComponents.chartBlock.generatingChart')}</span>
         </div>
         <div className="bg-[var(--background-base)] flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
           <div className="flex flex-col items-center gap-3">
@@ -381,12 +381,12 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
   // ── 错误状态（非流式，JSON 确实有误）──
   if (error) {
     return (
-      <div data-testid="chart-error" className="my-2 rounded overflow-hidden border border-red-800/40">
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-900/20 border-b border-red-800/40">
-          <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
-          <span className="text-xs text-red-400">{t('commonComponents.chartBlock.chartDataError')}</span>
+      <div data-testid="chart-error" className="my-2 rounded overflow-hidden border border-[var(--error)]/30">
+        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--error-subtle)] border-b border-[var(--error)]/30">
+          <AlertTriangle size={13} className="text-[var(--error)] flex-shrink-0" />
+          <span className="text-xs text-[var(--error)]">{t('commonComponents.chartBlock.chartDataError')}</span>
         </div>
-        <pre className="bg-[var(--background-base)] text-[#f87171] text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
+        <pre className="bg-[var(--background-base)] text-[var(--error)] text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
           {code}
         </pre>
       </div>
@@ -405,7 +405,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
   return (
     <div data-testid="chart-block" className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
       {/* 工具栏（与 CodeBlock 风格一致） */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[var(--border-default)]">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--background-code)] border-b border-[var(--border-default)]">
         <span className="text-xs text-[var(--foreground-muted)] font-mono">{chartType}</span>
         <div className="flex items-center gap-3">
           <Tooltip content="放大查看" className="contents">

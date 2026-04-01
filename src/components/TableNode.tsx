@@ -143,26 +143,26 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
             >
               <div
                 className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors ${
-                  col.isPrimary ? 'bg-[var(--accent-subtle)] text-white' : 'hover:bg-[var(--border-default)] text-[var(--foreground-default)]'
+                  col.isPrimary ? 'bg-[var(--accent-subtle)] text-[var(--foreground)]' : 'hover:bg-[var(--border-default)] text-[var(--foreground-default)]'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onUpdateColumn(col.name, { ...col, isPrimary: !col.isPrimary });
                 }}
               >
-                <Key className="w-3 h-3 mr-1.5 text-[#eab308]" />
+                <Key className="w-3 h-3 mr-1.5 text-[var(--key-primary)]" />
                 {t('tableNode.primaryKey')}
               </div>
               <div
                 className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors ${
-                  col.isForeign ? 'bg-[var(--accent-subtle)] text-white' : 'hover:bg-[var(--border-default)] text-[var(--foreground-default)]'
+                  col.isForeign ? 'bg-[var(--accent-subtle)] text-[var(--foreground)]' : 'hover:bg-[var(--border-default)] text-[var(--foreground-default)]'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onUpdateColumn(col.name, { ...col, isForeign: !col.isForeign });
                 }}
               >
-                <Key className="w-3 h-3 mr-1.5 text-[#8bafc9]" />
+                <Key className="w-3 h-3 mr-1.5 text-[var(--key-foreign)]" />
                 {t('tableNode.foreignKey')}
               </div>
             </div>,
@@ -178,10 +178,10 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
               setIsEditingKey(!isEditingKey);
             }}
           >
-            {col.isPrimary && <Key className="w-3.5 h-3.5 text-[#eab308] shrink-0" />}
-            {col.isForeign && <Key className="w-3.5 h-3.5 text-[#8bafc9] shrink-0" />}
+            {col.isPrimary && <Key className="w-3.5 h-3.5 text-[var(--key-primary)] shrink-0" />}
+            {col.isForeign && <Key className="w-3.5 h-3.5 text-[var(--key-foreign)] shrink-0" />}
             {!col.isPrimary && !col.isForeign && (
-              <Key className="w-3.5 h-3.5 text-gray-500 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+              <Key className="w-3.5 h-3.5 text-[var(--foreground-subtle)] opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
             )}
           </div>
         </div>
@@ -190,7 +190,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
         {isEditingName ? (
           <input
             ref={nameInputRef}
-            className="bg-[var(--border-strong)] text-gray-200 text-xs font-medium px-1 py-0.5 rounded outline-none border border-[var(--accent)]"
+            className="bg-[var(--border-strong)] text-[var(--foreground-default)] text-xs font-medium px-1 py-0.5 rounded outline-none border border-[var(--accent)]"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleNameSave}
@@ -199,7 +199,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
           />
         ) : (
           <span
-            className="text-gray-300 text-xs font-medium cursor-text hover:bg-[var(--border-strong)] px-1 py-0.5 -mx-1 rounded truncate max-w-[90px]"
+            className="text-[var(--foreground-default)] text-xs font-medium cursor-text hover:bg-[var(--border-strong)] px-1 py-0.5 -mx-1 rounded truncate max-w-[90px]"
             title={`${t('tableNode.columnName')}${col.name}${t('tableNode.doubleClickToEdit')}`}
             onDoubleClick={() => setIsEditingName(true)}
           >
@@ -227,7 +227,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
               <div
                 key={type}
                 className={`px-3 py-1.5 cursor-pointer text-xs font-mono transition-colors ${
-                  type === col.type ? 'bg-[var(--accent-subtle)] text-white' : 'hover:bg-[var(--border-default)] text-[var(--foreground-default)]'
+                  type === col.type ? 'bg-[var(--accent-subtle)] text-[var(--foreground)]' : 'hover:bg-[var(--border-default)] text-[var(--foreground-default)]'
                 }`}
                 onClick={() => {
                   setEditType(type);
@@ -245,7 +245,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
         {/* We keep the span always visible, but click triggers the menu */}
         <span
           ref={typeSpanRef}
-          className={`text-gray-500 text-xs font-mono cursor-pointer hover:bg-[var(--border-strong)] px-1 py-0.5 -mx-1 rounded ${isEditingType ? 'bg-[var(--border-strong)] border border-[var(--accent)]' : ''}`}
+          className={`text-[var(--foreground-subtle)] text-xs font-mono cursor-pointer hover:bg-[var(--border-strong)] px-1 py-0.5 -mx-1 rounded ${isEditingType ? 'bg-[var(--border-strong)] border border-[var(--accent)]' : ''}`}
           title={`${t('tableNode.type')}${col.type}${t('tableNode.doubleClickToEdit')}`}
           onDoubleClick={() => setIsEditingType(true)}
           onClick={(e) => {
@@ -267,7 +267,7 @@ function TableRow({ col, nodeId, onUpdateColumn }: { col: ColumnData; nodeId: st
         `}
         style={{ width: '12px', height: '12px', right: '-6px', top: '50%', transform: 'translateY(-50%)' }}
       >
-        <div className="w-full h-full bg-[#f43f5e] rounded-full transition-transform duration-150 hover:scale-[2.5] hover:shadow-[0_0_12px_rgba(244,63,94,0.6)]" />
+        <div className="w-full h-full bg-[var(--error)] rounded-full transition-transform duration-150 hover:scale-[2.5] hover:shadow-[0_0_12px_color-mix(in_srgb,var(--error)_60%,transparent)]" />
       </Handle>
     </div>
   );
@@ -343,7 +343,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
         {isEditingTitle ? (
           <input
             ref={titleInputRef}
-            className="bg-[var(--border-strong)] text-gray-200 text-sm font-medium px-2 py-0.5 rounded outline-none border border-[var(--accent)] text-center w-full"
+            className="bg-[var(--border-strong)] text-[var(--foreground-default)] text-sm font-medium px-2 py-0.5 rounded outline-none border border-[var(--accent)] text-center w-full"
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
             onBlur={handleTitleSave}
@@ -351,7 +351,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
           />
         ) : (
           <h3
-            className="text-gray-200 text-sm font-medium text-center m-0 cursor-text hover:bg-[var(--border-strong)] px-2 py-0.5 rounded transition-colors"
+            className="text-[var(--foreground-default)] text-sm font-medium text-center m-0 cursor-text hover:bg-[var(--border-strong)] px-2 py-0.5 rounded transition-colors"
             title={`${t('tableNode.tableName')}${data.tableName}${t('tableNode.doubleClickToEdit')}`}
             onDoubleClick={() => setIsEditingTitle(true)}
           >

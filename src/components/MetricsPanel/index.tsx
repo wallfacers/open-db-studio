@@ -29,9 +29,9 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'rejected';
 const statusBadge = (status: string) => {
   switch (status) {
     case 'approved':
-      return 'bg-[#0d3d2e] text-[var(--accent)] border border-[var(--accent)]/30';
+      return 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]/30';
     case 'rejected':
-      return 'bg-[#3d1a1a] text-[#f87171] border border-[#f87171]/30';
+      return 'bg-[var(--error-subtle)] text-[var(--error)] border border-[var(--error)]/30';
     default:
       return 'bg-[var(--border-default)] text-[var(--foreground-muted)] border border-[var(--border-strong)]';
   }
@@ -133,7 +133,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
       <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)] flex-shrink-0">
         <div className="flex items-center gap-2">
           <BarChart2 size={18} className="text-[var(--accent)]" />
-          <h2 className="text-white font-semibold text-base">{t('metricsExplorer.title')}</h2>
+          <h2 className="text-[var(--foreground)] font-semibold text-base">{t('metricsExplorer.title')}</h2>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -209,7 +209,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                       {statusLabel(metric.status)}
                     </span>
                     {metric.source === 'ai' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1a1a3d] text-[#818cf8] border border-[#818cf8]/30 flex-shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-subtle)] text-[var(--data-indigo)] border border-[var(--data-indigo)]/30 flex-shrink-0">
                         AI
                       </span>
                     )}
@@ -238,7 +238,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                       <Tooltip content={t('metricsExplorer.metricsTree.open')} className="contents">
                         <button
                           onClick={() => handleApprove(metric.id)}
-                          className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--accent)] hover:bg-[#0d3d2e] transition-colors"
+                          className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] transition-colors"
                         >
                           <Check size={14} />
                         </button>
@@ -246,7 +246,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                       <Tooltip content={t('metricsExplorer.metricList.rejected')} className="contents">
                         <button
                           onClick={() => handleReject(metric.id)}
-                          className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
+                          className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors"
                         >
                           <X size={14} />
                         </button>
@@ -256,7 +256,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                   <Tooltip content={t('metricsExplorer.metricList.delete')} className="contents">
                     <button
                       onClick={() => handleDelete(metric.id)}
-                      className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[#f87171] hover:bg-[#3d1a1a] transition-colors"
+                      className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors"
                     >
                       <Trash2 size={14} />
                     </button>

@@ -43,8 +43,8 @@ export const ConfirmDialog: React.FC = () => {
   const Icon = isDanger ? AlertTriangle : Info;
 
   const confirmCls = isDanger
-    ? 'px-4 py-1.5 text-xs rounded bg-red-600/80 hover:bg-red-600 text-white transition-colors'
-    : 'px-4 py-1.5 text-xs rounded bg-[#009e84] hover:bg-[var(--accent)] text-white transition-colors';
+    ? 'px-4 py-1.5 text-xs rounded bg-[var(--error)]/80 hover:bg-[var(--error)] text-[var(--foreground)] transition-colors'
+    : 'px-4 py-1.5 text-xs rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] transition-colors';
 
   return (
     <div
@@ -54,10 +54,10 @@ export const ConfirmDialog: React.FC = () => {
       <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[360px] p-5 flex flex-col gap-4">
         {/* 标题行 */}
         <div className="flex items-center gap-2.5">
-          <div className={`flex-shrink-0 p-1.5 rounded-full ${isDanger ? 'bg-red-900/40' : 'bg-[#1a2d42]'}`}>
+          <div className={`flex-shrink-0 p-1.5 rounded-full ${isDanger ? 'bg-[var(--error-subtle)]' : 'bg-[var(--background-panel)]'}`}>
             <Icon
               size={16}
-              className={isDanger ? 'text-red-400' : 'text-[var(--accent)]'}
+              className={isDanger ? 'text-[var(--error)]' : 'text-[var(--accent)]'}
             />
           </div>
           <span className="text-[var(--foreground)] font-medium text-sm">

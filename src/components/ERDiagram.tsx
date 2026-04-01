@@ -101,7 +101,7 @@ export default function ERDiagram() {
               targetHandle: `${fk.column}-target`,
               type: 'smoothstep',
               animated: false,
-              style: { stroke: '#3794ff', strokeWidth: 1.5 },
+              style: { stroke: 'var(--edge-fk)', strokeWidth: 1.5 },
               label: fk.constraint_name,
             });
           });
@@ -200,7 +200,7 @@ export default function ERDiagram() {
         <Background color="var(--border-default)" gap={20} size={1} />
         <Controls 
           showZoom={false} 
-          className="!bg-[var(--background-panel)] border border-[var(--border-strong)] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[var(--background-panel)] [&_button]:!border-b [&_button]:!border-[var(--border-strong)] [&_button:last-child]:!border-b-0 [&_button]:!fill-[var(--foreground-default)] hover:[&_button]:!bg-[var(--border-default)] hover:[&_button]:!fill-white hover:[&_button_svg]:text-white [&_button_svg]:text-[var(--foreground-default)]"
+          className="!bg-[var(--background-panel)] border border-[var(--border-strong)] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[var(--background-panel)] [&_button]:!border-b [&_button]:!border-[var(--border-strong)] [&_button:last-child]:!border-b-0 [&_button]:!fill-[var(--foreground-default)] hover:[&_button]:!bg-[var(--border-default)] hover:[&_button]:!fill-[var(--foreground)] hover:[&_button_svg]:text-[var(--foreground)] [&_button_svg]:text-[var(--foreground-default)]"
         >
           <ControlButton onClick={onAddTable} title={t('erDiagram.addTable')}>
             <Plus size={16} strokeWidth={2.5} />

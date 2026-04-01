@@ -8,7 +8,7 @@
 
 /* ============================================================
    ABYSS THEME — open-db-studio 暗黑主题色彩系统
-   设计语言：深海军蓝底色 + 电光青主题色
+   设计语言：深海军蓝底色 + 靛蓝品牌色 (Indigo Brand)
    ============================================================ */
 
 :root {
@@ -17,12 +17,12 @@
      完整规范: docs/design-system/color-system-proposal.md
      ======================================================== */
 
-  /* --- Primary: 主要交互色 --- */
-  --primary:            #2563EB;
+  /* --- Primary: 品牌色 / 主要交互色 (Indigo) --- */
+  --primary:            #6366F1;  /* indigo-500 */
   --primary-foreground:  #FFFFFF;
-  --primary-hover:      #1D4ED8;
-  --primary-active:     #1E40AF;
-  --primary-subtle:     #1E3A8A;
+  --primary-hover:      #4F46E5;  /* indigo-600 */
+  --primary-active:     #4338CA;  /* indigo-700 */
+  --primary-subtle:     #312E81;  /* indigo-900 */
 
   /* --- Secondary: 次要交互色 --- */
   --secondary:            #334155;
@@ -45,7 +45,7 @@
   --background-card:     #1E293B;
   --background-elevated: #27354F;
   --background-hover:    #334155;
-  --background-active:   #1E3A5F;
+  --background-active:   #252363;  /* dark indigo tint */
   --background-deep:     #0A1018;
   --background-code:     #161B22;
 
@@ -65,7 +65,7 @@
   --border-default:#334155;
   --border-subtle:  #1E293B;
   --border-strong:  #475569;
-  --border-focus:   #2563EB;
+  --border-focus:   #818CF8;  /* indigo-400 — 深色背景高可见性 */
 
   /* ========================================================
      语义状态色 (Semantic Status Colors)
@@ -89,7 +89,7 @@
   /* ========================================================
      功能色 (Functional Colors)
      ======================================================== */
-  --ring:        #2563EB;
+  --ring:        #818CF8;  /* indigo-400 — 与 border-focus 一致 */
   --ring-accent: #10B981;
   --overlay:     rgba(2, 6, 23, 0.8);
   --scrim:       rgba(2, 6, 23, 0.6);
@@ -262,14 +262,18 @@ body {
       0deg,
       transparent,
       transparent 2px,
-      rgba(0, 201, 167, 0.012) 2px,
-      rgba(0, 201, 167, 0.012) 4px
+      rgba(99, 102, 241, 0.012) 2px,
+      rgba(99, 102, 241, 0.012) 4px
     );
 }
 
-/* 主题色发光效果 */
+/* 品牌色发光效果 */
+.primary-glow {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25), 0 0 4px rgba(99, 102, 241, 0.15);
+}
+/* 强调色发光效果 */
 .accent-glow {
-  box-shadow: 0 0 12px rgba(0, 201, 167, 0.25), 0 0 4px rgba(0, 201, 167, 0.15);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25), 0 0 4px rgba(16, 185, 129, 0.15);
 }
 
 /* 激活边框左侧指示线动画 */
@@ -330,7 +334,7 @@ input[type="number"]::-webkit-outer-spin-button {
 .react-flow {
   --xy-background-color: var(--background-base);
   --xy-edge-stroke: #1e3a5a;
-  --xy-edge-stroke-selected: #3794ff;
+  --xy-edge-stroke-selected: var(--primary);
   --xy-node-border-radius: 6px;
   --xy-minimap-background-color: var(--background-panel);
 }

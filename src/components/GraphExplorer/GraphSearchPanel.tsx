@@ -63,7 +63,7 @@ export function GraphSearchPanel({
         ))}
         <button
           onClick={onClose}
-          className="px-2 py-2 text-[var(--foreground-muted)] hover:text-white transition-colors flex-shrink-0"
+          className="px-2 py-2 text-[var(--foreground-muted)] hover:text-[var(--foreground)] transition-colors flex-shrink-0"
           aria-label="关闭搜索面板"
         >
           <X size={14} />

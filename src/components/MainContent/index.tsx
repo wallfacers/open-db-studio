@@ -21,32 +21,33 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
       { token: 'delimiter',  foreground: '7a9bb8' },
     ],
     colors: {
-      'editor.background':                 '#1E293B',
-      'editorGutter.background':           '#0F172A',
-      'editorLineNumber.foreground':       '#475569',
-      'editorLineNumber.activeForeground': '#10B981',
-      'editor.lineHighlightBackground':    '#1E3A5F40',
+      // Monaco theme colors — hardcoded for editor theming (not using CSS variables)
+      'editor.background':                 '#1E293B',  // --background-panel
+      'editorGutter.background':           '#0F172A',  // --background-deep
+      'editorLineNumber.foreground':       '#475569',  // --foreground-ghost
+      'editorLineNumber.activeForeground': '#10B981',  // --accent
+      'editor.lineHighlightBackground':    '#25236340', // --background-active (with alpha)
       'editor.lineHighlightBorder':        '#00000000',
-      'editor.selectionBackground':        '#064E3B80',
-      'editor.inactiveSelectionBackground':'#064E3B40',
-      'editorCursor.foreground':           '#10B981',
-      'editorIndentGuide.background1':     '#334155',
-      'editorIndentGuide.activeBackground1':'#475569',
-      'editorWidget.background':           '#27354F',
-      'editorWidget.border':               '#334155',
-      'editorSuggestWidget.background':    '#27354F',
-      'editorSuggestWidget.border':        '#334155',
-      'editorSuggestWidget.selectedBackground': '#064E3B',
-      'list.hoverBackground':              '#334155',
-      'list.activeSelectionBackground':    '#064E3B',
-      'scrollbarSlider.background':        '#33415560',
-      'scrollbarSlider.hoverBackground':   '#47556980',
-      'menu.background':                   '#27354F',
-      'menu.foreground':                   '#E2E8F0',
-      'menu.selectionBackground':          '#334155',
-      'menu.selectionForeground':          '#ffffff',
-      'menu.separatorBackground':          '#475569',
-      'menu.border':                       '#475569',
+      'editor.selectionBackground':        '#064E3B80', // --accent-subtle (with alpha)
+      'editor.inactiveSelectionBackground':'#064E3B40', // --accent-subtle (with alpha)
+      'editorCursor.foreground':           '#10B981',  // --accent
+      'editorIndentGuide.background1':     '#334155',  // --border-strong
+      'editorIndentGuide.activeBackground1':'#475569', // --border-strong active
+      'editorWidget.background':           '#27354F',  // --background-elevated
+      'editorWidget.border':               '#334155',  // --border-strong
+      'editorSuggestWidget.background':    '#27354F',  // --background-elevated
+      'editorSuggestWidget.border':        '#334155',  // --border-strong
+      'editorSuggestWidget.selectedBackground': '#064E3B', // --accent-subtle
+      'list.hoverBackground':              '#334155',  // --background-hover
+      'list.activeSelectionBackground':    '#064E3B',  // --accent-subtle
+      'scrollbarSlider.background':        '#33415560', // --border-strong (with alpha)
+      'scrollbarSlider.hoverBackground':   '#47556980', // --foreground-ghost (with alpha)
+      'menu.background':                   '#27354F',  // --background-elevated
+      'menu.foreground':                   '#E2E8F0',  // --foreground-default
+      'menu.selectionBackground':          '#334155',  // --background-hover
+      'menu.selectionForeground':          '#ffffff',  // --foreground
+      'menu.separatorBackground':          '#475569',  // --border-strong
+      'menu.border':                       '#475569',  // --border-strong
     },
   });
 };
@@ -253,7 +254,7 @@ const ExplanationTypingIndicator: React.FC = () => {
   return (
     <div className="flex items-center gap-2 p-4">
       <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
-      <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
+      <span className="text-xs text-[var(--foreground-muted)] animate-pulse">{messages[msgIdx]}</span>
     </div>
   );
 };
@@ -1027,7 +1028,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               <div className="flex items-center space-x-2">
                 <Tooltip content={isExecuting ? t('mainContent.executing') : t('mainContent.execute')}>
                   <button
-                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[var(--border-default)]' : 'text-[var(--accent)] hover:text-[var(--accent-hover)] hover:bg-[var(--border-default)]'}`}
+                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-[var(--error)] hover:text-[var(--error-foreground)] hover:bg-[var(--border-default)]' : 'text-[var(--accent)] hover:text-[var(--accent-hover)] hover:bg-[var(--border-default)]'}`}
                     onClick={handleExecute}
                     disabled={isExecuting}
                   >
@@ -1037,7 +1038,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {isExplaining ? (
                   <Tooltip content={t('mainContent.stopExplaining')}>
                     <button
-                      className="p-1.5 rounded transition-colors text-[#3794ff] hover:text-red-400 hover:bg-[var(--border-default)] group"
+                      className="p-1.5 rounded transition-colors text-[var(--info)] hover:text-[var(--error)] hover:bg-[var(--border-default)] group"
                       onClick={() => { cancelExplainSql(activeTab); setExplanationStreaming(activeTab, false); }}
                     >
                       <span className="block group-hover:hidden">
@@ -1083,7 +1084,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                       <div className="text-[10px] text-[var(--foreground-muted)] px-1">{t('mainContent.nlPanelHint')}</div>
                       <input
                         ref={nlInputRef}
-                        className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--accent)] placeholder:text-[#3a5070]"
+                        className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--foreground-ghost)]"
                         placeholder={t('mainContent.nlInputPlaceholder')}
                         value={nlInput}
                         onChange={e => setNlInput(e.target.value)}
@@ -1091,7 +1092,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         disabled={nlLoading}
                       />
                       <button
-                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-[var(--border-default)] text-[#3a5070] cursor-not-allowed' : 'bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]'}`}
+                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-[var(--border-default)] text-[var(--foreground-ghost)] cursor-not-allowed' : 'bg-[var(--accent)] text-[var(--foreground)] hover:bg-[var(--accent-hover)]'}`}
                         onClick={handleGenerateSqlV2}
                         disabled={nlLoading || !nlInput.trim()}
                       >
@@ -1108,7 +1109,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         ? 'text-[var(--accent)]'
                         : isGhostTextEnabled
                           ? 'text-[var(--accent)] hover:bg-[var(--accent-subtle)]'
-                          : 'text-[#4a6a85] hover:bg-[var(--background-hover)]'
+                          : 'text-[var(--foreground-subtle)] hover:bg-[var(--background-hover)]'
                     }`}
                   >
                     <Sparkles
@@ -1196,14 +1197,14 @@ export const MainContent: React.FC<MainContentProps> = ({
             {graphCtx && (
               <div className="flex-shrink-0 border-b border-[var(--border-default)] bg-[var(--background-panel)]">
                 <button
-                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[#0e1e2e] transition-colors"
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] transition-colors"
                   onClick={() => setGraphCtxExpanded(v => !v)}
                 >
                   {graphCtxExpanded
                     ? <ChevronDown size={12} className="flex-shrink-0" />
                     : <ChevronRight size={12} className="flex-shrink-0" />}
-                  <span className="text-[#4a8ab0]">▸ {t('mainContent.graphContextRef')}</span>
-                  <span className="text-[#3a5070] ml-1">{t('mainContent.clickToExpand')}</span>
+                  <span className="text-[var(--foreground-muted)]">▸ {t('mainContent.graphContextRef')}</span>
+                  <span className="text-[var(--foreground-ghost)] ml-1">{t('mainContent.clickToExpand')}</span>
                 </button>
                 {graphCtxExpanded && (
                   <div className="px-3 pb-2">
@@ -1263,7 +1264,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[var(--border-default)] flex-shrink-0 ${selectedResultPane === idx ? `bg-[var(--background-void)] ${result.kind === 'error' ? 'text-red-400 border-t-red-400' : 'text-[var(--accent)] border-t-[var(--accent)]'}` : 'bg-[var(--background-hover)] text-[var(--foreground-muted)] border-t-transparent hover:bg-[var(--background-elevated)]'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[var(--border-default)] flex-shrink-0 ${selectedResultPane === idx ? `bg-[var(--background-void)] ${result.kind === 'error' ? 'text-[var(--error)] border-t-[var(--error)]' : 'text-[var(--accent)] border-t-[var(--accent)]'}` : 'bg-[var(--background-hover)] text-[var(--foreground-muted)] border-t-transparent hover:bg-[var(--background-elevated)]'}`}
                     onClick={() => setSelectedResultPane(idx)}
                     onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                   >
@@ -1338,7 +1339,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 ) : (
                   <>
                     {isExecuting ? (
-                      <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
+                      <div className="p-4 text-[var(--foreground-muted)] text-sm">{t('mainContent.executing')}</div>
                     ) : currentResults.length === 0 ? (
                       <div className="p-4 text-[var(--foreground-muted)] text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : (() => {
@@ -1359,7 +1360,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         return (
                           <div className="p-4 h-full overflow-auto">
                             <div className="mb-3">
-                              <div className="flex items-center gap-2 text-red-400 text-sm font-medium mb-2">
+                              <div className="flex items-center gap-2 text-[var(--error)] text-sm font-medium mb-2">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                                   <path d="M12 9v4" /><path d="M12 17h.01" />
@@ -1372,10 +1373,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                               <div className="flex items-center justify-between text-xs">
                                 <div>
                                   <span className="text-[var(--foreground-muted)]">{t('mainContent.errorMessage')}：</span>
-                                  <span className="text-red-400 font-mono">{activeResult.error_message}</span>
+                                  <span className="text-[var(--error)] font-mono">{activeResult.error_message}</span>
                                 </div>
                                 <button
-                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[#243a55] transition-colors flex-shrink-0 ml-3"
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-active)] transition-colors flex-shrink-0 ml-3"
                                   onClick={() => {
                                     const text = `请帮我分析以下 SQL 执行错误：\n\nSQL:\n\`\`\`sql\n${activeResult.sql ?? ''}\n\`\`\`\n\n错误信息:\n\`\`\`\n${activeResult.error_message ?? ''}\n\`\`\``;
                                     askAiWithContext(text);
@@ -1408,7 +1409,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                     )}
                                     {!diagStreaming && (
                                       <button
-                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--accent)] hover:bg-[#243a55] transition-colors"
+                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--accent)] hover:bg-[var(--background-active)] transition-colors"
                                         onClick={() => {
                                           clearDiagnosis(diagKey);
                                           diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey);
@@ -1481,13 +1482,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                                             {cell === null
                                               ? <span className="text-[var(--foreground-muted)]">NULL</span>
                                               : typeof cell === 'string' && cell.startsWith('✓')
-                                                ? <span className="text-green-400">{cell}</span>
+                                                ? <span className="text-[var(--success)]">{cell}</span>
                                                 : <span className="text-[var(--foreground-default)]">{cellStr}</span>}
                                           </div>
                                         </Tooltip>
                                         {cellStr !== null && (
                                           <button
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[var(--foreground-muted)] hover:text-[#3a7bd5] transition-opacity"
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--background-active)] rounded text-[var(--foreground-muted)] hover:text-[var(--border-focus)] transition-opacity"
                                             onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
                                           >
                                             <Maximize2 size={10} />
@@ -1535,11 +1536,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                       return (
                         <>
                           {isTruncated && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/30 border-b border-yellow-700/50 text-yellow-300 text-xs flex-shrink-0">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--warning-subtle)] border-b border-[var(--warning)]/50 text-[var(--warning)] text-xs flex-shrink-0">
                               <span>{t('mainContent.rowsTruncatedWarning', { total: allRows.length, max: RESULT_MAX_ROWS })}</span>
                               <button
                                 onClick={exportCsv}
-                                className="ml-auto px-2 py-0.5 rounded border border-yellow-600 hover:bg-yellow-800/50 transition-colors flex-shrink-0"
+                                className="ml-auto px-2 py-0.5 rounded border border-[var(--warning)] hover:bg-[var(--warning-subtle)] transition-colors flex-shrink-0"
                               >
                                 {t('mainContent.exportFull')}
                               </button>
@@ -1585,13 +1586,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                                               {cell === null
                                                 ? <span className="text-[var(--foreground-muted)]">NULL</span>
                                                 : typeof cell === 'string' && cell.startsWith('✓')
-                                                  ? <span className="text-green-400">{cell}</span>
+                                                  ? <span className="text-[var(--success)]">{cell}</span>
                                                   : <span className="text-[var(--foreground-default)]">{cellStr}</span>}
                                             </div>
                                           </Tooltip>
                                           {cellStr !== null && (
                                             <button
-                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[var(--foreground-muted)] hover:text-[#3a7bd5] transition-opacity"
+                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--background-active)] rounded text-[var(--foreground-muted)] hover:text-[var(--border-focus)] transition-opacity"
                                               onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
                                             >
                                               <Maximize2 size={10} />
@@ -1661,7 +1662,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
             onClick={(e) => {
               e.stopPropagation();
               closeTab(contextMenu.tabId);
@@ -1672,7 +1673,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === 0}
             onClick={() => {
               closeTabsLeft(contextMenu.tabId);
@@ -1682,7 +1683,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === tabs.length - 1}
             onClick={() => {
               closeTabsRight(contextMenu.tabId);
@@ -1692,7 +1693,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={tabs.length <= 1}
             onClick={() => {
               closeOtherTabs(contextMenu.tabId);
@@ -1703,7 +1704,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
             onClick={() => {
               closeAllTabs();
               setContextMenu(null);
@@ -1722,7 +1723,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           style={{ left: resultContextMenu.x, top: resultContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
             onClick={() => {
               removeResult(activeTab, resultContextMenu.idx);
               const willBeEmpty = currentResults.length === 1;
@@ -1739,7 +1740,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={resultContextMenu.idx === 0}
             onClick={() => {
               removeResultsLeft(activeTab, resultContextMenu.idx);
@@ -1750,7 +1751,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={
               resultContextMenu.idx === currentResults.length - 1 &&
               !(explanationContent[activeTab] && !explanationStreaming[activeTab])
@@ -1771,7 +1772,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={currentResults.length <= 1}
             onClick={() => {
               removeOtherResults(activeTab, resultContextMenu.idx);
@@ -1783,7 +1784,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
             onClick={() => {
               clearResults(activeTab);
               const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
@@ -1804,7 +1805,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           style={{ left: explanationContextMenu.x, top: explanationContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={!!(explanationStreaming[activeTab] && explanationContent[activeTab])}
             onClick={() => {
               cancelExplainSql(activeTab);
@@ -1817,7 +1818,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={currentResults.length === 0}
             onClick={() => {
               clearResults(activeTab);
@@ -1828,13 +1829,13 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled
           >
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] disabled:opacity-40 disabled:cursor-not-allowed"
             disabled={currentResults.length === 0}
             onClick={() => {
               clearResults(activeTab);
@@ -1846,7 +1847,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
             onClick={() => {
               cancelExplainSql(activeTab);
               clearResults(activeTab);
@@ -1870,7 +1871,7 @@ export const MainContent: React.FC<MainContentProps> = ({
         >
           {/* 分组1：剪贴板 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={() => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
@@ -1889,10 +1890,10 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             <Scissors size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.cut')}</span>
-            <span className="text-[#3a5070]">Ctrl+X</span>
+            <span className="text-[var(--foreground-ghost)]">Ctrl+X</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={async () => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
@@ -1908,10 +1909,10 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             <Copy size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.copy')}</span>
-            <span className="text-[#3a5070]">Ctrl+C</span>
+            <span className="text-[var(--foreground-ghost)]">Ctrl+C</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={async () => {
               const ed = editorRef.current;
               setEditorContextMenu(null);
@@ -1933,13 +1934,13 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             <Clipboard size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.paste')}</span>
-            <span className="text-[#3a5070]">Ctrl+V</span>
+            <span className="text-[var(--foreground-ghost)]">Ctrl+V</span>
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
 
           {/* 分组2：执行 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={() => {
               const ed = editorRef.current;
               if (ed) { const pos = ed.getPosition(); if (pos) ed.setPosition(pos); }
@@ -1949,49 +1950,49 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             <Play size={13} color="var(--accent)" />
             <span className="flex-1">{t('editorContextMenu.executeAll')}</span>
-            <span className="text-[#3a5070]">F5</span>
+            <span className="text-[var(--foreground-ghost)]">F5</span>
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: editorContextMenu.selectedSql.trim() ? 'var(--foreground-default)' : '#3a5070' }}
+            style={{ color: editorContextMenu.selectedSql.trim() ? 'var(--foreground-default)' : 'var(--foreground-ghost)' }}
             disabled={!editorContextMenu.selectedSql.trim()}
             onClick={() => { handleExecute(); setEditorContextMenu(null); }}
           >
-            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? 'var(--accent)' : '#3a5070'} />
+            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? 'var(--accent)' : 'var(--foreground-ghost)'} />
             <span className="flex-1">{t('editorContextMenu.executeSelected')}</span>
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
 
           {/* 分组3：编辑辅助 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.selectAll', null); setEditorContextMenu(null); }}
           >
             <TextSelect size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.selectAll')}</span>
-            <span className="text-[#3a5070]">Ctrl+A</span>
+            <span className="text-[var(--foreground-ghost)]">Ctrl+A</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.commentLine', null); setEditorContextMenu(null); }}
           >
             <MessageSquare size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.toggleComment')}</span>
-            <span className="text-[#3a5070]">Ctrl+/</span>
+            <span className="text-[var(--foreground-ghost)]">Ctrl+/</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.startFindReplaceAction', null); setEditorContextMenu(null); }}
           >
             <Search size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.findReplace')}</span>
-            <span className="text-[#3a5070]">Ctrl+H</span>
+            <span className="text-[var(--foreground-ghost)]">Ctrl+H</span>
           </button>
           <div className="h-px bg-[var(--border-strong)] my-1" />
 
           {/* 分组4：SQL / AI */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] flex items-center gap-2"
             onClick={() => { handleFormat(); setEditorContextMenu(null); }}
           >
             <FileEdit size={13} color="var(--foreground-muted)" />
@@ -1999,7 +2000,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: activeTabObj?.queryContext?.connectionId ? 'var(--foreground-default)' : '#3a5070' }}
+            style={{ color: activeTabObj?.queryContext?.connectionId ? 'var(--foreground-default)' : 'var(--foreground-ghost)' }}
             disabled={!activeTabObj?.queryContext?.connectionId}
             onClick={() => {
               const menu = editorContextMenu!;
@@ -2010,7 +2011,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               handleExplain(sql);
             }}
           >
-            <Lightbulb size={13} color={activeTabObj?.queryContext?.connectionId ? '#5eb2f7' : '#3a5070'} />
+            <Lightbulb size={13} color={activeTabObj?.queryContext?.connectionId ? 'var(--info)' : 'var(--foreground-ghost)'} />
             <span className="flex-1">{t('editorContextMenu.explainSql')}</span>
           </button>
         </div>

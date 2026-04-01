@@ -90,7 +90,7 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
                   <td className="py-1.5 pr-4">{idx.columns.join(', ')}</td>
                   <td className="py-1.5 pr-4">{idx.is_unique ? '✓' : ''}</td>
                   <td>
-                    <button onClick={() => handleDrop(idx.index_name)} className="text-[var(--foreground-muted)] hover:text-red-400 p-1">
+                    <button onClick={() => handleDrop(idx.index_name)} className="text-[var(--foreground-muted)] hover:text-[var(--error)] p-1">
                       <Trash2 size={12}/>
                     </button>
                   </td>
@@ -101,13 +101,13 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
           {isAdding && (
             <div className="mt-3 p-3 bg-[var(--background-base)] border border-[var(--border-default)] rounded space-y-2">
               <input
-                className="w-full bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[#009e84]"
+                className="w-full bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)]"
                 placeholder={t('indexManager.indexName')}
                 value={newIndex.name}
                 onChange={e => setNewIndex(p => ({...p, name: e.target.value}))}
               />
               <input
-                className="w-full bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[#009e84]"
+                className="w-full bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)]"
                 placeholder={t('indexManager.columnsHint')}
                 value={newIndex.columns}
                 onChange={e => setNewIndex(p => ({...p, columns: e.target.value}))}
@@ -117,7 +117,7 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
                 {t('indexManager.uniqueIndex')}
               </label>
               <div className="flex gap-2">
-                <button onClick={handleCreate} className="px-3 py-1 bg-[#3794ff] text-[var(--foreground-default)] text-xs rounded">{t('common.create')}</button>
+                <button onClick={handleCreate} className="px-3 py-1 bg-[var(--primary)] text-[var(--foreground-default)] text-xs rounded">{t('common.create')}</button>
                 <button onClick={() => setIsAdding(false)} className="px-3 py-1 bg-[var(--background-hover)] text-[var(--foreground-muted)] text-xs rounded">{t('common.cancel')}</button>
               </div>
             </div>
@@ -125,7 +125,7 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
         </div>
         <div className="p-3 border-t border-[var(--border-default)] flex justify-between">
           <button onClick={() => setIsAdding(true)} disabled={isAdding}
-            className="flex items-center gap-1 text-xs text-[#3794ff] hover:opacity-80 disabled:opacity-30">
+            className="flex items-center gap-1 text-xs text-[var(--primary)] hover:opacity-80 disabled:opacity-30">
             <Plus size={12}/> {t('indexManager.addIndex')}
           </button>
           <button onClick={onClose} className="px-3 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-muted)] text-xs rounded">

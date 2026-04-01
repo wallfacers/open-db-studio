@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, FolderOpen, Plus, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3, Key } from 'lucide-react';
+import { Folder, FolderOpen, Plus, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3, Key, Search, X } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import type { ErProject, ErTable, ErColumn } from '../../../types';
@@ -26,6 +26,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   } | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -96,7 +97,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
       onClick={closeContextMenu}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border-default)] bg-[var(--background-void)]">
+      <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border-default)]">
         <div className="flex items-center gap-2">
           <Grid3x3 size={14} className="text-[var(--accent)]" />
           <span className="font-medium text-[var(--foreground-default)]">
@@ -113,6 +114,28 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
         </Tooltip>
       </div>
 
+      {/* 搜索框 */}
+      <div className="h-10 flex items-center px-2 border-b border-[var(--border-default)]">
+        <div className="flex items-center bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 flex-1 focus-within:border-[var(--accent-hover)] transition-colors">
+          <Search size={14} className="text-[var(--foreground-muted)] mr-1 flex-shrink-0" />
+          <input
+            type="text"
+            placeholder={t('erDesigner.searchPlaceholder') || '搜索项目或表...'}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="bg-transparent border-none outline-none text-[var(--foreground-default)] w-full text-xs placeholder-[var(--foreground-muted)]"
+          />
+          {searchQuery && (
+            <button
+              className="text-[var(--foreground-muted)] ml-1 hover:text-[var(--foreground-default)] flex-shrink-0"
+              onClick={() => setSearchQuery('')}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Project List */}
       <div className="flex-1 overflow-y-auto py-1">
         {projects.length === 0 ? (
@@ -122,7 +145,13 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
             <span className="text-[10px] opacity-60 mt-1">{t('erDesigner.clickPlus') || '点击 + 创建新项目'}</span>
           </div>
         ) : (
-          projects.map(project => (
+          projects.filter(project => {
+            if (!searchQuery.trim()) return true;
+            const q = searchQuery.trim().toLowerCase();
+            if (project.name.toLowerCase().includes(q)) return true;
+            const projectTables = tables.filter(t => t.project_id === project.id);
+            return projectTables.some(t => t.name.toLowerCase().includes(q));
+          }).map(project => (
             <div key={project.id} className="select-none">
               {/* Project Node */}
               <div
@@ -191,7 +220,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                             </span>
                             {getRelationCount(table.id) > 0 && (
                               <Tooltip content={`${getRelationCount(table.id)} ${t('erDesigner.relations') || '个关系'}`}>
-                                <Link2 size={10} className="text-[#a855f7] mr-1" />
+                                <Link2 size={10} className="text-[var(--node-alias)] mr-1" />
                               </Tooltip>
                             )}
                             <button
@@ -213,7 +242,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                             >
                               <div className="w-[14px] shrink-0 flex items-center justify-center">
                                 {column.is_primary_key && (
-                                  <Key size={12} className="text-[#f59e0b]" />
+                                  <Key size={12} className="text-[var(--key-primary)]" />
                                 )}
                               </div>
                               <span className="truncate">{column.name}</span>
@@ -236,7 +265,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
             <h3 className="text-sm text-[var(--foreground-default)] mb-3">{t('erDesigner.newProject') || '新建 ER 项目'}</h3>
             <input
               type="text"
-              className="w-full px-3 py-2 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded text-xs text-[var(--foreground-default)] placeholder-[#5a6a7a] focus:outline-none focus:border-[#009e84]"
+              className="w-full px-3 py-2 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded text-xs text-[var(--foreground-default)] placeholder-[var(--foreground-subtle)] focus:outline-none focus:border-[var(--accent)]"
               placeholder={t('erDesigner.projectName') || '项目名称'}
               value={newProjectName}
               onChange={e => setNewProjectName(e.target.value)}

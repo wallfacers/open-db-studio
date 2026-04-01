@@ -207,10 +207,10 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
 });
 
 function getLogColor(text: string): string {
-  if (text.startsWith('[ERROR]')) return 'text-red-400';
-  if (text.startsWith('[WARN]'))  return 'text-yellow-400';
+  if (text.startsWith('[ERROR]')) return 'text-[var(--error)]';
+  if (text.startsWith('[WARN]'))  return 'text-[var(--warning)]';
   if (text.startsWith('[INFO]'))  return 'text-[var(--accent)]';
-  return 'text-green-400';
+  return 'text-[var(--success)]';
 }
 
 export default JobLogPanel;

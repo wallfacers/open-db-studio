@@ -79,7 +79,7 @@ export function CategoryEditModal({
               className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] placeholder-[var(--foreground-muted)] outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>
-          {error && <div className="text-xs text-red-400">{error}</div>}
+          {error && <div className="text-xs text-[var(--error)]">{error}</div>}
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"

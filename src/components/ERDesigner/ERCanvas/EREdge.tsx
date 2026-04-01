@@ -296,9 +296,9 @@ export default function EREdge({
     deleteRelation(rid);
   };
 
-  const baseColor = sourceType === 'comment' ? '#f59e0b'
-    : sourceType === 'designer' ? '#a855f7'
-    : '#3794ff';
+  const baseColor = sourceType === 'comment' ? 'var(--edge-reference)'
+    : sourceType === 'designer' ? 'var(--edge-alias)'
+    : 'var(--edge-fk)';
   const strokeColor = selected ? SELECTED_COLOR : baseColor;
 
   const edgeStyle: React.CSSProperties = {
@@ -354,8 +354,8 @@ export default function EREdge({
             onClick={(e) => { e.stopPropagation(); toggleMenu(); }}
             className={`px-2 py-0.5 rounded text-xs font-mono shadow-sm transition-colors cursor-pointer
               ${selected
-                ? 'bg-[#0d2620] border border-[var(--accent)] text-[var(--accent)]'
-                : 'bg-[var(--background-panel)] border border-[var(--border-strong)] text-gray-300 hover:border-[#3794ff] hover:text-white'
+                ? 'bg-[var(--accent-subtle)] border border-[var(--accent)] text-[var(--accent)]'
+                : 'bg-[var(--background-panel)] border border-[var(--border-strong)] text-[var(--foreground-default)] hover:border-[var(--edge-fk)] hover:text-[var(--foreground)]'
               }`}
           >
             {displayLabel}
@@ -365,7 +365,7 @@ export default function EREdge({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-              className="w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500/80 hover:bg-red-500 text-white text-[10px] leading-none cursor-pointer transition-colors shadow-sm"
+              className="w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[var(--error)]/80 hover:bg-[var(--error)] text-[var(--foreground)] text-[10px] leading-none cursor-pointer transition-colors shadow-sm"
               title="删除关系"
             >
               ✕
@@ -379,7 +379,7 @@ export default function EREdge({
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', left: dropdownPos.left, top: dropdownPos.top, zIndex: 9999 }}
-          className="bg-[#1c2433] border border-[var(--border-strong)] rounded shadow-lg min-w-[60px]"
+          className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded shadow-lg min-w-[60px]"
           onMouseDown={(e) => e.stopPropagation()}
         >
           {RELATION_TYPES.map(rt => (
@@ -390,7 +390,7 @@ export default function EREdge({
               className={`block w-full px-3 py-1 text-xs font-mono text-left transition-colors
                 ${rt.value === relationType
                   ? 'text-[var(--accent)] bg-[var(--border-strong)]'
-                  : 'text-gray-300 hover:bg-[var(--border-strong)] hover:text-white'
+                  : 'text-[var(--foreground-default)] hover:bg-[var(--border-strong)] hover:text-[var(--foreground)]'
                 }`}
             >
               {rt.label}

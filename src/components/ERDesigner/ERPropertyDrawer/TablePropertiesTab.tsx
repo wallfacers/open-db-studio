@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useErDesignerStore } from '@/store/erDesignerStore';
 
-const PRESET_COLORS = ['var(--accent)', '#5eb2f7', '#f59e0b', '#f43f5e', '#a855f7', '#4ade80'];
+const PRESET_COLORS = ['var(--accent)', 'var(--info)', 'var(--warning)', 'var(--error)', 'var(--node-alias)', 'var(--success)'];
 
 interface TablePropertiesTabProps {
   tableId: number;

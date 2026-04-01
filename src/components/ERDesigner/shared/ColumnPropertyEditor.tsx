@@ -100,7 +100,7 @@ function CompactRow({
         <Tooltip content={column.is_primary_key ? 'Primary Key' : 'Set as PK'}>
           <button
             type="button"
-            className={`shrink-0 w-[16px] h-[16px] flex items-center justify-center rounded-sm cursor-pointer outline-none ${column.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-600 hover:text-gray-400'}`}
+            className={`shrink-0 w-[16px] h-[16px] flex items-center justify-center rounded-sm cursor-pointer outline-none ${column.is_primary_key ? 'text-[var(--key-primary)]' : 'text-[var(--foreground-ghost)] hover:text-[var(--foreground-muted)]'}`}
             onClick={() => onUpdate(column.id, { is_primary_key: !column.is_primary_key })}
           >
             <Key size={12} />
@@ -111,7 +111,7 @@ function CompactRow({
           <button
             type="button"
             className={`shrink-0 w-[16px] h-[16px] flex items-center justify-center rounded-sm cursor-pointer outline-none ${
-              !column.is_primary_key ? 'invisible' : column.is_auto_increment ? 'text-[var(--accent)]' : 'text-gray-600 hover:text-gray-400'
+              !column.is_primary_key ? 'invisible' : column.is_auto_increment ? 'text-[var(--accent)]' : 'text-[var(--foreground-ghost)] hover:text-[var(--foreground-muted)]'
             }`}
             onClick={() => onUpdate(column.id, { is_auto_increment: !column.is_auto_increment })}
             tabIndex={column.is_primary_key ? 0 : -1}
@@ -208,7 +208,7 @@ function CompactRow({
           <Tooltip content={column.comment || '添加注释'}>
             <button
               type="button"
-              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.comment ? 'text-[var(--accent)]' : 'text-gray-600 hover:text-gray-400'}`}
+              className={`shrink-0 p-0.5 rounded-sm cursor-pointer outline-none ${column.comment ? 'text-[var(--accent)]' : 'text-[var(--foreground-ghost)] hover:text-[var(--foreground-muted)]'}`}
               onClick={() => onOpenDrawer?.(tableId, column.id)}
             >
               <MessageSquare size={13} />
@@ -222,7 +222,7 @@ function CompactRow({
         <div className="w-[20px] shrink-0 flex justify-center">
           <button
             type="button"
-            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[var(--foreground-subtle)] hover:text-red-400 transition-colors"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[var(--foreground-subtle)] hover:text-[var(--error)] transition-colors"
             onClick={() => onDelete(column.id, tableId)}
           >
             <X size={13} />

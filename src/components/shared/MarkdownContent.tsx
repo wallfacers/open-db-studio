@@ -49,7 +49,7 @@ const CodeExpandModal: React.FC<{
     >
       <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* 弹框头部 */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[var(--border-default)] flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--background-code)] border-b border-[var(--border-default)] flex-shrink-0">
           <span className="text-xs text-[var(--foreground-muted)] font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <button
@@ -118,7 +118,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   return (
     <>
       <div className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
-        <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[var(--border-default)]">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--background-code)] border-b border-[var(--border-default)]">
           <span className="text-xs text-[var(--foreground-muted)] font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <Tooltip content={t('commonComponents.markdownContent.expandView')} className="contents">
@@ -176,7 +176,7 @@ function makeMdComponents(isStreaming: boolean) {
       return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
     }
     return (
-      <code className="bg-[var(--background-panel)] text-[#569cd6] px-1 py-0.5 rounded text-xs font-mono" {...props}>
+      <code className="bg-[var(--background-panel)] text-[var(--node-table)] px-1 py-0.5 rounded text-xs font-mono" {...props}>
         {children}
       </code>
     );
@@ -194,16 +194,16 @@ function makeMdComponents(isStreaming: boolean) {
     return <li className="text-[var(--foreground-default)] [&>p]:inline">{children}</li>;
   },
   h1({ children }: React.ComponentPropsWithoutRef<'h1'>) {
-    return <h1 className="text-base font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h1>;
+    return <h1 className="text-base font-semibold text-[var(--foreground)] mb-2 mt-3 first:mt-0">{children}</h1>;
   },
   h2({ children }: React.ComponentPropsWithoutRef<'h2'>) {
-    return <h2 className="text-sm font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h2>;
+    return <h2 className="text-sm font-semibold text-[var(--foreground)] mb-2 mt-3 first:mt-0">{children}</h2>;
   },
   h3({ children }: React.ComponentPropsWithoutRef<'h3'>) {
-    return <h3 className="text-sm font-medium text-[#e8f4fd] mb-1 mt-2 first:mt-0">{children}</h3>;
+    return <h3 className="text-sm font-medium text-[var(--foreground)] mb-1 mt-2 first:mt-0">{children}</h3>;
   },
   strong({ children }: React.ComponentPropsWithoutRef<'strong'>) {
-    return <strong className="font-semibold text-[#e8f4fd]">{children}</strong>;
+    return <strong className="font-semibold text-[var(--foreground)]">{children}</strong>;
   },
   blockquote({ children }: React.ComponentPropsWithoutRef<'blockquote'>) {
     return <blockquote className="border-l-2 border-[var(--border-strong)] pl-3 text-[var(--foreground-muted)] italic my-2">{children}</blockquote>;

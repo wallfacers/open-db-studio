@@ -123,7 +123,7 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
         {t('tableDataView.cloneRow')}
       </div>
       <div className={itemClass} onClick={() => { onDeleteRow(); onClose(); }}>
-        <span className="text-red-400">{t('tableDataView.deleteRowMenuItem')}</span>
+        <span className="text-[var(--error)]">{t('tableDataView.deleteRowMenuItem')}</span>
       </div>
 
       <div className={dividerClass} />

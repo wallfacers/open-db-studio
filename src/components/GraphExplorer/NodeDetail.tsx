@@ -19,9 +19,9 @@ interface NodeDetailProps {
 
 function SourceBadge({ source }: { source: string }) {
   const badges: Record<string, { label: string; color: string }> = {
-    comment: { label: '注释推断', color: '#f59e0b' },
-    user:    { label: '✏️ 用户自定义', color: '#a855f7' },
-    schema:  { label: '数据库外键', color: '#3794ff' },
+    comment: { label: '注释推断', color: 'var(--node-metric)' },
+    user:    { label: '✏️ 用户自定义', color: 'var(--node-alias)' },
+    schema:  { label: '数据库外键', color: 'var(--node-table)' },
   };
   const badge = badges[source] ?? badges.schema;
   return (
@@ -87,8 +87,8 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
 
   const rows: { label: string; value: string; color?: string }[] = [
     { label: t('graphExplorer.nodeDetail.linkDirection'), value: `${meta.source_table ?? ''} → ${meta.target_table ?? ''}` },
-    { label: t('graphExplorer.nodeDetail.linkCardinality'), value: meta.cardinality ?? '-', color: '#f59e0b' },
-    { label: t('graphExplorer.nodeDetail.linkVia'), value: meta.via ?? '-', color: '#3794ff' },
+    { label: t('graphExplorer.nodeDetail.linkCardinality'), value: meta.cardinality ?? '-', color: 'var(--edge-reference)' },
+    { label: t('graphExplorer.nodeDetail.linkVia'), value: meta.via ?? '-', color: 'var(--edge-fk)' },
     { label: t('graphExplorer.nodeDetail.linkOnDelete'), value: meta.on_delete ?? '-' },
     { label: t('graphExplorer.nodeDetail.linkWeight'), value: meta.weight?.toFixed(2) ?? '-' },
   ];
@@ -103,7 +103,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
       <div className="mb-3">
         <span className={`text-[9px] px-2 py-0.5 rounded border ${
           meta.is_inferred !== false
-            ? 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/30'
+            ? 'bg-[var(--node-table-bg)] text-[var(--node-table)] border-[var(--node-table)]/30'
             : 'bg-[var(--border-default)] text-[var(--foreground-muted)] border-[var(--border-strong)]'
         }`}>
           {meta.is_inferred !== false
@@ -142,7 +142,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="w-full text-xs bg-[var(--background-base)] border border-[var(--border-strong)] rounded p-2 text-[var(--foreground-default)] placeholder-[#3d5470] focus:outline-none focus:border-[var(--accent)]/50 resize-none"
+              className="w-full text-xs bg-[var(--background-base)] border border-[var(--border-strong)] rounded p-2 text-[var(--foreground-default)] placeholder-[var(--foreground-ghost)] focus:outline-none focus:border-[var(--accent)]/50 resize-none"
               rows={3}
               placeholder={t('graphExplorer.nodeDetail.descriptionPlaceholder')}
             />
@@ -164,7 +164,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
           </div>
         ) : (
           <p className="text-[var(--foreground-default)] text-xs italic">
-            {description || <span className="text-[#3d5470]">{t('graphExplorer.nodeDetail.noDescription')}</span>}
+            {description || <span className="text-[var(--foreground-ghost)]">{t('graphExplorer.nodeDetail.noDescription')}</span>}
           </p>
         )}
       </div>
@@ -209,27 +209,27 @@ function parseMetadata(raw: string): ParsedField[] {
 
 function nodeTypeIcon(nodeType: string) {
   switch (nodeType) {
-    case 'table': return <Table2 size={14} className="text-[#3794ff]" />;
-    case 'metric': return <BarChart2 size={14} className="text-[#f59e0b]" />;
-    case 'alias': return <Hash size={14} className="text-[#a855f7]" />;
+    case 'table': return <Table2 size={14} className="text-[var(--node-table)]" />;
+    case 'metric': return <BarChart2 size={14} className="text-[var(--node-metric)]" />;
+    case 'alias': return <Hash size={14} className="text-[var(--node-alias)]" />;
     default: return <Tag size={14} className="text-[var(--foreground-muted)]" />;
   }
 }
 
 function nodeTypeBadgeClass(nodeType: string): string {
   switch (nodeType) {
-    case 'table': return 'bg-[#0d2a3d] text-[#3794ff] border border-[#3794ff]/30';
-    case 'metric': return 'bg-[#2d1e0d] text-[#f59e0b] border border-[#f59e0b]/30';
-    case 'alias': return 'bg-[#1e0d2d] text-[#a855f7] border border-[#a855f7]/30';
+    case 'table': return 'bg-[var(--node-table-bg)] text-[var(--node-table)] border border-[var(--node-table)]/30';
+    case 'metric': return 'bg-[var(--node-metric-bg)] text-[var(--node-metric)] border border-[var(--node-metric)]/30';
+    case 'alias': return 'bg-[var(--node-alias-bg)] text-[var(--node-alias)] border border-[var(--node-alias)]/30';
     default: return 'bg-[var(--border-default)] text-[var(--foreground-muted)] border border-[var(--border-strong)]';
   }
 }
 
 function edgeTypeColor(edgeType: string): string {
   switch (edgeType) {
-    case 'fk': return 'text-[#3794ff]';
-    case 'alias_of': return 'text-[#a855f7]';
-    case 'references': return 'text-[#f59e0b]';
+    case 'fk': return 'text-[var(--edge-fk)]';
+    case 'alias_of': return 'text-[var(--edge-alias)]';
+    case 'references': return 'text-[var(--edge-reference)]';
     default: return 'text-[var(--foreground-muted)]';
   }
 }
@@ -323,9 +323,9 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
               style={{
                 marginTop: 8,
                 padding: '4px 12px',
-                border: '1px solid #ef4444',
+                border: '1px solid var(--error)',
                 borderRadius: 4,
-                color: '#ef4444',
+                color: 'var(--error)',
                 background: 'transparent',
                 cursor: 'pointer',
                 fontSize: 12,

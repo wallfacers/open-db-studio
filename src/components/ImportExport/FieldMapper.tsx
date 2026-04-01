@@ -58,23 +58,23 @@ export const FieldMapper: React.FC<Props> = ({
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={autoMatch}
-          className="px-3 py-1.5 text-sm text-white bg-[#009e84] hover:bg-[#007a62] rounded transition-colors"
+          className="px-3 py-1.5 text-sm text-[var(--foreground)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded transition-colors"
         >
           {t('fieldMapper.autoMatch')}
         </button>
         <button
           onClick={clearAll}
-          className="px-3 py-1.5 text-sm text-white bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
+          className="px-3 py-1.5 text-sm text-[var(--foreground)] bg-[var(--background-hover)] hover:bg-[var(--border-strong)] border border-[var(--border-strong)] rounded transition-colors"
         >
           {t('fieldMapper.clearAll')}
         </button>
-        <span className="text-sm text-gray-400 ml-auto">
+        <span className="text-sm text-[var(--foreground-muted)] ml-auto">
           {t('fieldMapper.mappedCount', { mapped: mappings.filter((m) => m.targetColumn).length, total: sourceColumns.length })}
         </span>
       </div>
 
       {/* Header */}
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1 py-1.5 text-xs text-gray-400 border-b border-[var(--border-strong)]">
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-1 py-1.5 text-xs text-[var(--foreground-muted)] border-b border-[var(--border-strong)]">
         <div>{t('fieldMapper.sourceColumn')}</div>
         <div className="w-6" />
         <div>{t('fieldMapper.targetColumn')}</div>
@@ -86,10 +86,10 @@ export const FieldMapper: React.FC<Props> = ({
             key={idx}
             className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center"
           >
-            <div className="px-3 py-1.5 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded text-sm text-white truncate">
+            <div className="px-3 py-1.5 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded text-sm text-[var(--foreground)] truncate">
               {m.sourceColumn}
             </div>
-            <ArrowRight size={14} className="text-gray-600" />
+            <ArrowRight size={14} className="text-[var(--foreground-ghost)]" />
             <DropdownSelect
               value={m.targetColumn ?? ''}
               placeholder={t('fieldMapper.noMapping')}

@@ -27,9 +27,9 @@ interface BaseModalProps {
 }
 
 const VARIANT_CLASS: Record<string, string> = {
-  primary:   'px-4 py-1.5 text-xs bg-[#009e84] hover:bg-[var(--accent)] disabled:opacity-50 text-white rounded transition-colors',
+  primary:   'px-4 py-1.5 text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-[var(--foreground)] rounded transition-colors',
   secondary: 'px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors',
-  danger:    'px-4 py-1.5 text-xs bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 text-red-400 rounded transition-colors',
+  danger:    'px-4 py-1.5 text-xs bg-[var(--error-subtle)] hover:bg-[var(--error-subtle)] disabled:opacity-50 text-[var(--error)] rounded transition-colors',
 };
 
 export const BaseModal: React.FC<BaseModalProps> = ({

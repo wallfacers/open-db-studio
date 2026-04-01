@@ -10,20 +10,20 @@ const PATCH_TIMEOUT_MS = 60_000 // auto-reject after 60s
 function OpLine({ op }: { op: JsonPatchOp }) {
   const label = { add: '+', remove: '-', replace: '~', move: '>', copy: '=', test: '?' }[op.op] ?? '?'
   const colorMap: Record<string, string> = {
-    add: 'text-[#4ade80]',
-    remove: 'text-[#f87171]',
-    replace: 'text-[#60a5fa]',
-    move: 'text-[#c084fc]',
-    copy: 'text-[#94a3b8]',
-    test: 'text-[#fbbf24]',
+    add: 'text-[var(--success)]',
+    remove: 'text-[var(--error)]',
+    replace: 'text-[var(--diff-modify)]',
+    move: 'text-[var(--data-purple)]',
+    copy: 'text-[var(--foreground-muted)]',
+    test: 'text-[var(--warning)]',
   }
   const bgMap: Record<string, string> = {
-    add: 'bg-[#0e2a1a]',
-    remove: 'bg-[#2a0e0e]',
-    replace: 'bg-[#0e1a2a]',
-    test: 'bg-[#2a2a0e]',
+    add: 'bg-[var(--diff-add-bg)]',
+    remove: 'bg-[var(--diff-remove-bg)]',
+    replace: 'bg-[var(--diff-modify-bg)]',
+    test: 'bg-[var(--warning-subtle)]',
   }
-  const colorClass = colorMap[op.op] ?? 'text-[#94a3b8]'
+  const colorClass = colorMap[op.op] ?? 'text-[var(--foreground-muted)]'
   const bgClass = bgMap[op.op] ?? ''
 
   return (
@@ -93,7 +93,7 @@ export const PatchConfirmPanel: React.FC = () => {
         </button>
         <button
           onClick={confirm}
-          className="text-xs px-3 py-1 rounded bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-1"
+          className="text-xs px-3 py-1 rounded bg-[var(--accent)] text-[var(--foreground)] hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-1"
         >
           <Check size={12} />
           {t('assistant.diffPanel.apply')}

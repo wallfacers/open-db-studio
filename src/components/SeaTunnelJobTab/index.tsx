@@ -65,9 +65,9 @@ const DEFAULT_BUILDER_STATE: BuilderState = {
 function statusColor(status: RunStatus): string {
   switch (status) {
     case 'RUNNING':   return 'text-[var(--accent)]';
-    case 'FINISHED':  return 'text-green-400';
-    case 'FAILED':    return 'text-red-400';
-    case 'CANCELLED': return 'text-yellow-400';
+    case 'FINISHED':  return 'text-[var(--success)]';
+    case 'FAILED':    return 'text-[var(--error)]';
+    case 'CANCELLED': return 'text-[var(--warning)]';
     default:          return 'text-[var(--foreground-muted)]';
   }
 }
@@ -75,9 +75,9 @@ function statusColor(status: RunStatus): string {
 function statusDot(status: RunStatus): string {
   switch (status) {
     case 'RUNNING':   return 'bg-[var(--accent)] animate-pulse';
-    case 'FINISHED':  return 'bg-green-400';
-    case 'FAILED':    return 'bg-red-400';
-    case 'CANCELLED': return 'bg-yellow-400';
+    case 'FINISHED':  return 'bg-[var(--success)]';
+    case 'FAILED':    return 'bg-[var(--error)]';
+    case 'CANCELLED': return 'bg-[var(--warning)]';
     default:          return 'bg-[var(--foreground-muted)]';
   }
 }
@@ -420,7 +420,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         {isRunning ? (
           <button
             onClick={handleStop}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs text-white bg-red-600/80 hover:bg-red-600 rounded transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs text-[var(--foreground)] bg-[var(--error)]/80 hover:bg-[var(--error)] rounded transition-colors"
           >
             <Square size={12} />
             {t('seaTunnelJob.toolbar.stop')}
@@ -429,7 +429,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
           <button
             onClick={handleSubmit}
             disabled={submitting || !selectedConnectionId}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs text-white bg-[#009e84] hover:bg-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs text-[var(--foreground)] bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
           >
             {submitting ? (
               <RefreshCw size={12} className="animate-spin" />

@@ -108,7 +108,7 @@ export function TablePickerModal({
             <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">{t('metricsExplorer.loading')}</div>
           )}
           {!loading && error && (
-            <div className="py-4 px-3 text-sm text-red-400">{error}</div>
+            <div className="py-4 px-3 text-sm text-[var(--error)]">{error}</div>
           )}
           {!loading && !error && tables.length === 0 && (
             <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.noTables')}</div>
@@ -157,13 +157,13 @@ export function TablePickerModal({
             </div>
             <div className="flex items-center gap-2">
               <button
-                className="px-3 py-1.5 rounded text-xs bg-[#1a2a3a] text-[var(--foreground-muted)] hover:bg-[#2a3a4a] transition-colors"
+                className="px-3 py-1.5 rounded text-xs bg-[var(--background-panel)] text-[var(--foreground-muted)] hover:bg-[var(--background-hover)] transition-colors"
                 onClick={onClose}
               >
                 {t('common.cancel')}
               </button>
               <button
-                className="px-3 py-1.5 rounded text-xs bg-[var(--accent)] text-black hover:bg-[#00b090] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 rounded text-xs bg-[var(--accent)] text-black hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 disabled={selected.size === 0}
                 onClick={() => onConfirm(Array.from(selected), goToTasks)}
               >

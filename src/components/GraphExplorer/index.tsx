@@ -883,7 +883,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-base)] overflow-hidden" style={{ display: hidden ? 'none' : undefined }}>
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-default)] flex-shrink-0 bg-[var(--background-base)]">
+      <div className="h-10 flex items-center gap-2 px-4 border-b border-[var(--border-default)] flex-shrink-0 bg-[var(--background-base)]">
         <Network size={16} className="text-[var(--accent)] flex-shrink-0" />
         <span className="text-[var(--foreground-default)] text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 

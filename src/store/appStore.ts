@@ -15,6 +15,8 @@ export interface OperationContext {
 }
 
 interface AppState {
+  activeActivity: string;
+  setActiveActivity: (activity: string) => void;
   lastOperationContext: OperationContext | null;
   setLastOperationContext: (ctx: OperationContext | null) => void;
   isAssistantOpen: boolean;
@@ -25,9 +27,14 @@ interface AppState {
   tablePageSizeLimit: number;
   setTablePageSizeLimit: (size: number) => Promise<void>;
   initTablePageSizeLimit: () => Promise<void>;
+  ghostTextDefault: boolean;
+  setGhostTextDefault: (v: boolean) => void;
+  initGhostTextDefault: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  activeActivity: 'database',
+  setActiveActivity: (activity) => set({ activeActivity: activity }),
   lastOperationContext: null,
   setLastOperationContext: (ctx) => set({ lastOperationContext: ctx }),
   isAssistantOpen: true,
@@ -68,5 +75,20 @@ export const useAppStore = create<AppState>((set) => ({
     } catch (e) {
       console.error('Failed to get table_page_size_limit:', e);
     }
+  },
+  ghostTextDefault: true,
+  setGhostTextDefault: async (v) => {
+    set({ ghostTextDefault: v });
+    try {
+      await invoke('set_ui_state', { key: 'ghost_text_default', value: String(v) });
+    } catch (e) {
+      console.error('Failed to set ghost_text_default:', e);
+    }
+  },
+  initGhostTextDefault: async () => {
+    try {
+      const saved = await invoke<string | null>('get_ui_state', { key: 'ghost_text_default' });
+      if (saved !== null) set({ ghostTextDefault: saved === 'true' });
+    } catch { /* silent — use default true */ }
   },
 }));

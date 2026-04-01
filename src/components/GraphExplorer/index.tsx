@@ -39,6 +39,8 @@ import { DropdownSelect } from '../common/DropdownSelect';
 import type { GraphNode } from './useGraphData';
 import { GraphSearchPanel } from './GraphSearchPanel';
 import { Tooltip } from '../common/Tooltip';
+import { useConfirmStore } from '../../store/confirmStore';
+import { BaseModal } from '../common/BaseModal';
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
@@ -48,11 +50,22 @@ const LINK_NODE_W = 260;
 const LINK_NODE_H = 70;
 const CLUSTER_THRESHOLD = 200;
 
+/** 节点是否拥有已保存的坐标（position_x/position_y 非 null） */
+function hasSavedPosition(n: Node): boolean {
+  const d = n.data as Record<string, unknown> | undefined;
+  return d?.position_x != null && d?.position_y != null;
+}
+
 function buildLayout(
   nodes: Node[],
   edges: Edge[],
   direction: 'LR' | 'TB' = 'LR',
+  forceRelayout = false,
 ): { nodes: Node[]; edges: Edge[] } {
+  // 如果所有节点都有已保存坐标且不是强制重排，直接使用保存的坐标
+  const allSaved = !forceRelayout && nodes.length > 0 && nodes.every(hasSavedPosition);
+  if (allSaved) return { nodes, edges };
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
@@ -68,6 +81,8 @@ function buildLayout(
   dagre.layout(g);
 
   const laid = nodes.map((n) => {
+    // 有已保存坐标且非强制重排时保持原位
+    if (!forceRelayout && hasSavedPosition(n)) return n;
     const pos = g.node(n.id);
     const isLink = n.type === 'link';
     const w = isLink ? LINK_NODE_W : NODE_W;
@@ -115,6 +130,8 @@ function clusterByConnection(rawNodes: GraphNode[]): GraphNode[] {
         connection_id: Number(cid),
         is_deleted: 0,
         source: 'cluster',
+        position_x: null,
+        position_y: null,
       });
     }
   });
@@ -140,7 +157,10 @@ function toFlowNodes(
   return rawNodes.map((n) => ({
     id: n.id,
     type: NODE_TYPE_MAP[n.node_type] ?? 'table',
-    position: { x: 0, y: 0 },
+    position: {
+      x: n.position_x ?? 0,
+      y: n.position_y ?? 0,
+    },
     data: {
       ...n,
       onAddAlias,
@@ -151,17 +171,30 @@ function toFlowNodes(
   }));
 }
 
-function toFlowEdges(rawEdges: { id: string; from_node: string; to_node: string; edge_type: string; weight: number; source?: string }[]): Edge[] {
-  return rawEdges.map((e) => ({
-    id: e.id,
-    source: e.from_node,
-    target: e.to_node,
-    type: 'relation',
-    animated: false,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
-    style: getEdgeStyleBySource(e.source ?? 'schema'),
-    data: { edge_type: e.edge_type, weight: e.weight },
-  }));
+function toFlowEdges(
+  rawEdges: { id: string; from_node: string; to_node: string; edge_type: string; weight: number; source?: string }[],
+  selfRefLinkIds?: Set<string>,
+): Edge[] {
+  return rawEdges.map((e) => {
+    // 自引用 link 边：to_link 用 Top handles，from_link 用 Bottom handles
+    const isSelfRefToLink = selfRefLinkIds?.has(e.to_node) && e.edge_type === 'to_link';
+    const isSelfRefFromLink = selfRefLinkIds?.has(e.from_node) && e.edge_type === 'from_link';
+
+    return {
+      id: e.id,
+      source: e.from_node,
+      target: e.to_node,
+      type: e.from_node === e.to_node ? 'selfLoop' : 'relation',
+      animated: false,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#4a6380' },
+      style: getEdgeStyleBySource(e.source ?? 'schema'),
+      data: { edge_type: e.edge_type, weight: e.weight, edgeSource: e.source ?? 'schema' },
+      // 自引用 to_link: Table(top-source) → Link(self-target)
+      ...(isSelfRefToLink ? { sourceHandle: 'top-source', targetHandle: 'self-target' } : {}),
+      // 自引用 from_link: Link(self-source) → Table(bottom-target)
+      ...(isSelfRefFromLink ? { sourceHandle: 'self-source', targetHandle: 'bottom-target' } : {}),
+    };
+  });
 }
 
 // ── Edge Tooltip ──────────────────────────────────────────────────────────────
@@ -178,9 +211,10 @@ interface EdgeTooltip {
 interface GraphExplorerInnerProps {
   connectionId: number | null;
   database?: string | null;
+  hidden?: boolean;
 }
 
-function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps) {
+function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInnerProps) {
   const { t } = useTranslation();
 
   // ── Independent connection / database selection ────────────────────────────
@@ -189,6 +223,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   const [internalDb, setInternalDb] = useState<string | null>(() => database ?? null);
   const [databases, setDatabases] = useState<string[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Ensure connections are loaded
   useEffect(() => {
@@ -200,16 +235,38 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   useEffect(() => {
     if (internalConnId === null) {
       setDatabases([]);
+      setDbError(null);
       return;
     }
+    let cancelled = false;
     setDbLoading(true);
+    setDbError(null);
+
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) {
+        cancelled = true;
+        setDbLoading(false);
+        setDbError('加载超时');
+      }
+    }, 15000);
+
     invoke<string[]>('list_databases_for_metrics', { connectionId: internalConnId })
-      .then(dbs => setDatabases(dbs))
-      .catch(() => setDatabases([]))
-      .finally(() => setDbLoading(false));
+      .then(dbs => { if (!cancelled) setDatabases(dbs); })
+      .catch((err) => {
+        if (!cancelled) {
+          setDatabases([]);
+          setDbError(typeof err === 'string' ? err : '加载失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDbLoading(false);
+        clearTimeout(timeoutId);
+      });
+
+    return () => { cancelled = true; clearTimeout(timeoutId); };
   }, [internalConnId]);
 
-  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId);
+  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId, internalDb);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -234,7 +291,17 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 
   const [editMode, setEditMode] = useState(false);
 
+  // ── 编辑模式弹框状态 ──────────────────────────────────────────────────────
+  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+  const [addNodeName, setAddNodeName] = useState('');
+  const [addNodeLoading, setAddNodeLoading] = useState(false);
+  const [pendingConnect, setPendingConnect] = useState<{ source: string; target: string } | null>(null);
+  const [connectEdgeType, setConnectEdgeType] = useState<'user_defined' | 'join_path'>('user_defined');
+
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+
+  // 本次会话中拖拽过的节点位置（避免 useEffect 重建时被覆盖）
+  const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // ── Node click focus state (1-hop neighbor highlight) ────────────────────────
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -244,10 +311,15 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   }, []);
 
   // ── Edit mode: add virtual node ─────────────────────────────────────────────
-  const handleAddVirtualNode = useCallback(async () => {
-    // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
-    const name = window.prompt('输入虚拟节点名称');
+  const handleAddVirtualNode = useCallback(() => {
+    setAddNodeName('');
+    setShowAddNodeModal(true);
+  }, []);
+
+  const handleAddNodeSubmit = useCallback(async () => {
+    const name = addNodeName.trim();
     if (!name || !internalConnId) return;
+    setAddNodeLoading(true);
     try {
       await invoke('add_user_node', {
         connectionId: internalConnId,
@@ -255,41 +327,39 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         displayName: name,
         nodeType: 'table',
       });
+      setShowAddNodeModal(false);
       refetch();
     } catch (e) {
       console.error('添加虚拟节点失败', e);
       alert(`添加节点失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAddNodeLoading(false);
     }
-  }, [internalConnId, refetch]);
+  }, [addNodeName, internalConnId, refetch]);
 
   // ── Edit mode: manual connect ───────────────────────────────────────────────
-  const onConnect = useCallback(async (params: Connection) => {
+  const onConnect = useCallback((params: Connection) => {
     if (!editMode || !params.source || !params.target) return;
-    // TODO: replace window.prompt with custom modal dialog for better UX in Tauri webview
-    const choice = window.prompt(
-      '选择边类型（输入数字）:\n1. user_defined（用户自定义）\n2. foreign_key（外键关系）\n3. join_path（连接路径）',
-      '1'
-    );
-    if (choice === null) return; // 用户取消，不创建边
-    const edgeTypeMap: Record<string, string> = {
-      '1': 'user_defined',
-      '2': 'foreign_key',
-      '3': 'join_path',
-    };
-    const edgeType = edgeTypeMap[choice] ?? 'user_defined';
+    setConnectEdgeType('user_defined');
+    setPendingConnect({ source: params.source, target: params.target });
+  }, [editMode]);
+
+  const handleConnectSubmit = useCallback(async () => {
+    if (!pendingConnect) return;
     try {
       await invoke('add_user_edge', {
-        fromNode: params.source,
-        toNode: params.target,
-        edgeType,
+        fromNode: pendingConnect.source,
+        toNode: pendingConnect.target,
+        edgeType: connectEdgeType,
         weight: 1.0,
       });
+      setPendingConnect(null);
       refetch();
     } catch (e) {
       console.error('添加边失败', e);
       alert(`添加边失败: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [editMode, refetch]);
+  }, [pendingConnect, connectEdgeType, refetch]);
 
   const { fitView, setCenter, getZoom } = useReactFlow();
   const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
@@ -360,12 +430,33 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   );
   const clustered = useMemo(() => clusterByConnection(sourceNodes), [sourceNodes]);
 
+  // 数据重新加载后清除拖拽缓存（rawNodes 已包含最新 position_x/position_y）
+  const prevClusteredRef = useRef(clustered);
+  if (prevClusteredRef.current !== clustered) {
+    prevClusteredRef.current = clustered;
+    draggedPositionsRef.current.clear();
+  }
+
   const nodeNameMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     rawNodes.forEach(n => { map[n.id] = n.display_name || n.name; });
     return map;
   }, [rawNodes]);
   const visibleNodeIds = useMemo(() => new Set(clustered.map((n) => n.id)), [clustered]);
+
+  // 自引用 Link Node ID 集合（source_table === target_table）
+  const selfRefLinkIds = useMemo(() => {
+    const ids = new Set<string>();
+    filteredRaw.filter(n => n.node_type === 'link').forEach(n => {
+      try {
+        const meta = JSON.parse(n.metadata || '{}');
+        if (meta.source_table && meta.source_table === meta.target_table) {
+          ids.add(n.id);
+        }
+      } catch { /* ignore */ }
+    });
+    return ids;
+  }, [filteredRaw]);
 
   const filteredEdges = useMemo(() => {
     // 正常两段式边（Link Node 开启时）
@@ -419,7 +510,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         isPathTo: pathTo?.id === n.id,
       },
     }));
-    const flowEdges = toFlowEdges(filteredEdges).map(e => {
+    const flowEdges = toFlowEdges(filteredEdges, selfRefLinkIds).map(e => {
       const isHighlighted = highlightedEdgeIds.has(e.id);
       const isDimmed = highlightedEdgeIds.size > 0 && !highlightedEdgeIds.has(e.id);
       return {
@@ -438,7 +529,13 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         animated: isHighlighted,
       };
     });
-    const { nodes: laid, edges: laidEdges } = buildLayout(flowNodes, flowEdges);
+    // 合并本次会话拖拽过的坐标，防止高亮/焦点等状态变化导致位置回弹
+    const mergedNodes = flowNodes.map(n => {
+      const dragged = draggedPositionsRef.current.get(n.id);
+      if (dragged) return { ...n, position: dragged };
+      return n;
+    });
+    const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
     // Defer fitView until layout is painted, but skip when a node is focused
@@ -449,11 +546,30 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       }, 80);
       return () => clearTimeout(timerId);
     }
-  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId]);
+  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId, selfRefLinkIds]);
+
+  // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────
+  const onNodeDragStop: NodeMouseHandler = useCallback((_event, node) => {
+    // 同时保存到 ref（防止 useEffect 重建时覆盖）和数据库
+    draggedPositionsRef.current.set(node.id, { x: node.position.x, y: node.position.y });
+    invoke('save_graph_node_position', {
+      nodeId: node.id,
+      x: node.position.x,
+      y: node.position.y,
+    }).catch((err) => console.warn('[GraphExplorer] save position failed:', err));
+  }, []);
 
   // ── Auto-layout button ──────────────────────────────────────────────────────
-  const handleAutoLayout = useCallback(() => {
-    const { nodes: laid, edges: laidEdges } = buildLayout(rfNodes, rfEdges);
+  const handleAutoLayout = useCallback(async () => {
+    // 清除本次拖拽缓存和数据库中的已保存坐标
+    draggedPositionsRef.current.clear();
+    if (internalConnId !== null) {
+      await invoke('clear_graph_node_positions', {
+        connectionId: internalConnId,
+        database: internalDb ?? null,
+      }).catch((err) => console.warn('[GraphExplorer] clear positions failed:', err));
+    }
+    const { nodes: laid, edges: laidEdges } = buildLayout(rfNodes, rfEdges, 'LR', true);
     setRfNodes([...laid]);
     setRfEdges([...laidEdges]);
     if (layoutTimerRef.current !== null) clearTimeout(layoutTimerRef.current);
@@ -461,7 +577,48 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
       fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
       layoutTimerRef.current = null;
     }, 50);
-  }, [rfNodes, rfEdges, setRfNodes, setRfEdges, fitView]);
+  }, [rfNodes, rfEdges, setRfNodes, setRfEdges, fitView, internalConnId, internalDb]);
+
+  // ── Delete/Backspace 键删除拦截 ────────────────────────────────────────────
+  const onBeforeDelete = useCallback(async ({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) => {
+    if (!editMode) return false;
+
+    // 筛选可删除项：节点仅 source='user'，边仅 source='user'|'comment'
+    const deletableNodes = nodes.filter(n => (n.data as Record<string, unknown>)?.source === 'user');
+    const deletableEdges = edges.filter(e => {
+      const s = String((e.data as Record<string, unknown>)?.edgeSource ?? 'schema');
+      return s === 'user' || s === 'comment';
+    });
+
+    if (deletableNodes.length === 0 && deletableEdges.length === 0) return false;
+
+    const parts: string[] = [];
+    if (deletableNodes.length > 0) parts.push(`${deletableNodes.length} 个节点`);
+    if (deletableEdges.length > 0) parts.push(`${deletableEdges.length} 条边`);
+
+    const ok = await useConfirmStore.getState().confirm({
+      title: '删除确认',
+      message: `确认删除选中的 ${parts.join(' 和 ')}？此操作不可撤销。`,
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      variant: 'danger',
+    });
+    if (!ok) return false;
+
+    try {
+      for (const n of deletableNodes) {
+        await invoke('delete_graph_node', { nodeId: n.id });
+      }
+      for (const e of deletableEdges) {
+        await invoke('delete_graph_edge', { edgeId: e.id });
+      }
+      refetch();
+    } catch (err) {
+      console.error('删除失败', err);
+      alert(`删除失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return false; // 由 refetch 刷新，不需要 React Flow 自行移除
+  }, [editMode, refetch]);
 
   // ── Build schema graph (with TaskBar integration) ───────────────────────────
   const handleBuildGraph = useCallback(async () => {
@@ -633,6 +790,82 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
     setEdgeTooltip(null);
   }, []);
 
+  // ── 右键菜单状态 ─────────────────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number;
+    type: 'edge' | 'node';
+    id: string;
+    edgeSource?: string;
+    nodeSource?: string;
+    label?: string;
+  } | null>(null);
+
+  // 点击其他区域关闭右键菜单
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // 编辑模式下右键边 → 弹出上下文菜单
+  const onEdgeContextMenu: EdgeMouseHandler = useCallback((evt, edge) => {
+    evt.preventDefault();
+    if (!editMode) return;
+    const edgeSource = String(edge.data?.edgeSource ?? 'schema');
+    if (edgeSource !== 'user' && edgeSource !== 'comment') return;
+    setContextMenu({
+      x: evt.clientX,
+      y: evt.clientY,
+      type: 'edge',
+      id: edge.id,
+      edgeSource,
+      label: String(edge.data?.edge_type ?? ''),
+    });
+  }, [editMode]);
+
+  // 编辑模式下右键节点 → 弹出上下文菜单
+  const onNodeContextMenu: NodeMouseHandler = useCallback((evt, node) => {
+    evt.preventDefault();
+    if (!editMode) return;
+    const nodeSource = String((node.data as Record<string, unknown>)?.source ?? 'schema');
+    if (nodeSource !== 'user') return;
+    setContextMenu({
+      x: evt.clientX,
+      y: evt.clientY,
+      type: 'node',
+      id: node.id,
+      nodeSource,
+      label: String((node.data as Record<string, unknown>)?.display_name || (node.data as Record<string, unknown>)?.name || ''),
+    });
+  }, [editMode]);
+
+  const handleContextMenuDelete = useCallback(async () => {
+    if (!contextMenu) return;
+    const { type, id, edgeSource, nodeSource, label } = contextMenu;
+    setContextMenu(null);
+
+    const itemLabel = type === 'edge'
+      ? `${edgeSource === 'user' ? '用户自定义' : '注释推断'}关系`
+      : `用户节点「${label}」`;
+
+    const ok = await useConfirmStore.getState().confirm({
+      title: type === 'edge' ? '删除关系' : '删除节点',
+      message: `确认删除${itemLabel}？${type === 'node' ? '该节点相关的自定义边也将一并删除。' : ''}此操作不可撤销。`,
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    try {
+      if (type === 'edge') {
+        await invoke('delete_graph_edge', { edgeId: id });
+      } else {
+        await invoke('delete_graph_node', { nodeId: id });
+      }
+      refetch();
+    } catch (e) {
+      console.error(`删除${type === 'edge' ? '边' : '节点'}失败`, e);
+      alert(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [contextMenu, refetch]);
+
   // ── Type filter toggle ──────────────────────────────────────────────────────
   const toggleType = (type: string) => {
     setTypeFilter((prev) =>
@@ -648,7 +881,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117] overflow-hidden" style={{ display: hidden ? 'none' : undefined }}>
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#1e2d42] flex-shrink-0 bg-[#0d1117]">
         <Network size={16} className="text-[#00c9a7] flex-shrink-0" />
@@ -678,6 +911,9 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
         )}
         {internalConnId !== null && dbLoading && (
           <Loader2 size={14} className="animate-spin text-[#7a9bb8]" />
+        )}
+        {internalConnId !== null && !dbLoading && dbError && (
+          <span className="text-[11px] text-red-400" title={dbError}>{dbError}</span>
         )}
 
         {/* Type filter */}
@@ -838,11 +1074,16 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             edges={rfEdges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
+            onNodeDragStop={onNodeDragStop}
+            onNodeClick={(e, n) => { closeContextMenu(); onNodeClick(e, n); }}
+            onNodeContextMenu={onNodeContextMenu}
+            onPaneClick={(e) => { closeContextMenu(); onPaneClick(e); }}
+            onEdgeContextMenu={onEdgeContextMenu}
             onEdgeMouseEnter={onEdgeMouseEnter}
             onEdgeMouseLeave={onEdgeMouseLeave}
             onConnect={onConnect}
+            onBeforeDelete={onBeforeDelete}
+            deleteKeyCode={editMode ? 'Delete' : null}
             nodesConnectable={editMode}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
@@ -854,7 +1095,7 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
             }}
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="#1e2d42" gap={20} size={1} />
+            <Background id="graph-explorer-bg" color="#1e2d42" gap={20} size={1} />
             <Controls
               className="!bg-[#111922] border border-[#2a3f5a] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[#111922] [&_button]:!border-b [&_button]:!border-[#2a3f5a] [&_button:last-child]:!border-b-0 [&_button]:!fill-[#c8daea] hover:[&_button]:!bg-[#1e2d42]"
             />
@@ -882,6 +1123,21 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
               <span className="text-[#7a9bb8]">{t('graphExplorer.edgeTooltipType')}: </span>{edgeTooltip.edge_type}
               <span className="mx-2 text-[#1e2d42]">|</span>
               <span className="text-[#7a9bb8]">{t('graphExplorer.edgeTooltipWeight')}: </span>{edgeTooltip.weight.toFixed(2)}
+            </div>
+          )}
+
+          {/* 右键上下文菜单 */}
+          {contextMenu && (
+            <div
+              className="fixed z-[9999] min-w-[120px] bg-[#151d28] border border-[#2a3f5a] rounded-md shadow-xl py-1"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
+              <button
+                onClick={handleContextMenuDelete}
+                className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-600/20 transition-colors"
+              >
+                删除{contextMenu.type === 'edge' ? '关系' : '节点'}
+              </button>
             </div>
           )}
         </div>
@@ -936,6 +1192,71 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
           />
         );
       })()}
+
+      {/* 添加虚拟节点弹框 */}
+      {showAddNodeModal && (
+        <BaseModal
+          title="添加虚拟节点"
+          onClose={() => setShowAddNodeModal(false)}
+          width={400}
+          footerButtons={[
+            { label: '取消', onClick: () => setShowAddNodeModal(false), variant: 'secondary' },
+            { label: '添加', onClick: handleAddNodeSubmit, variant: 'primary', loading: addNodeLoading, disabled: !addNodeName.trim() },
+          ]}
+        >
+          <div className="px-1">
+            <label className="block text-xs text-[#7a9bb8] mb-1.5 uppercase tracking-wide">节点名称</label>
+            <input
+              autoFocus
+              type="text"
+              value={addNodeName}
+              onChange={(e) => setAddNodeName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && addNodeName.trim()) handleAddNodeSubmit(); }}
+              placeholder="请输入节点名称"
+              className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#4a5e75] focus:outline-none focus:border-[#009e84] transition-colors"
+            />
+          </div>
+        </BaseModal>
+      )}
+
+      {/* 添加边类型选择弹框 */}
+      {pendingConnect && (
+        <BaseModal
+          title="添加关系"
+          onClose={() => setPendingConnect(null)}
+          width={400}
+          footerButtons={[
+            { label: '取消', onClick: () => setPendingConnect(null), variant: 'secondary' },
+            { label: '添加', onClick: handleConnectSubmit, variant: 'primary' },
+          ]}
+        >
+          <div className="px-1">
+            <label className="block text-xs text-[#7a9bb8] mb-1.5 uppercase tracking-wide">边类型</label>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#c8daea]">
+                <input
+                  type="radio"
+                  name="edgeType"
+                  checked={connectEdgeType === 'user_defined'}
+                  onChange={() => setConnectEdgeType('user_defined')}
+                  className="accent-[#009e84]"
+                />
+                用户自定义 <span className="text-[#4a5e75] text-xs">(user_defined)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#c8daea]">
+                <input
+                  type="radio"
+                  name="edgeType"
+                  checked={connectEdgeType === 'join_path'}
+                  onChange={() => setConnectEdgeType('join_path')}
+                  className="accent-[#009e84]"
+                />
+                连接路径 <span className="text-[#4a5e75] text-xs">(join_path)</span>
+              </label>
+            </div>
+          </div>
+        </BaseModal>
+      )}
     </div>
   );
 }
@@ -945,10 +1266,11 @@ function GraphExplorerInner({ connectionId, database }: GraphExplorerInnerProps)
 interface GraphExplorerProps {
   connectionId: number | null;
   database?: string | null;
+  hidden?: boolean;
 }
 
-export const GraphExplorer: React.FC<GraphExplorerProps> = ({ connectionId, database }) => (
+export const GraphExplorer: React.FC<GraphExplorerProps> = ({ connectionId, database, hidden }) => (
   <ReactFlowProvider>
-    <GraphExplorerInner connectionId={connectionId} database={database} />
+    <GraphExplorerInner connectionId={connectionId} database={database} hidden={hidden} />
   </ReactFlowProvider>
 );

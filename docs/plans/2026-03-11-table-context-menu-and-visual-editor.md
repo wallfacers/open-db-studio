@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # 表右键菜单扩展 & 可视化表结构编辑器 实施计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

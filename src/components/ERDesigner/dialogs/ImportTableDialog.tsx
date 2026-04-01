@@ -124,6 +124,8 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
     onClose();
   };
 
+  if (!visible) return null;
+
   // 未绑定连接时显示提示
   if (!connectionId || !databaseName) {
     return (

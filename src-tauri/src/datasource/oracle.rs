@@ -76,6 +76,27 @@ impl DataSource for OracleDataSource {
             tokio::task::spawn_blocking(move || {
                 let conn = oracle_crate::Connection::connect(&user, &pass, &conn_str)
                     .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+                // Non-SELECT statements: split into individual statements and execute each,
+                // then commit once. oracle-crate does not support multi-statement strings.
+                let trimmed = sql.trim_start().to_uppercase();
+                if !trimmed.starts_with("SELECT") && !trimmed.starts_with("WITH") {
+                    let stmts = crate::datasource::utils::split_sql_statements(&sql);
+                    let mut total_affected = 0usize;
+                    for s in &stmts {
+                        let mut stmt = conn.statement(s).build()
+                            .map_err(|e| AppError::Datasource(e.to_string()))?;
+                        stmt.execute(&[])
+                            .map_err(|e| AppError::Datasource(e.to_string()))?;
+                        total_affected += stmt.row_count()
+                            .map_err(|e| AppError::Datasource(e.to_string()))? as usize;
+                    }
+                    conn.commit()
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    return Ok(QueryResult { columns: vec![], rows: vec![], row_count: total_affected, duration_ms });
+                }
+
                 let mut stmt = conn.statement(&sql).build()
                     .map_err(|e| AppError::Datasource(e.to_string()))?;
                 let rows = stmt.query(&[])
@@ -147,6 +168,10 @@ impl DataSource for OracleDataSource {
             has_multi_database: false, // Oracle 使用 Schema 而非多数据库
             has_partitions: true,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["password".to_string(), "os_native".to_string()],
+            has_pool_config: false,
+            has_timeout_config: true,
+            has_ssl_config: false,
         }
     }
 }

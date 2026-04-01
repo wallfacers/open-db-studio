@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # 连接编辑功能实施计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

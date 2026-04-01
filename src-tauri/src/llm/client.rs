@@ -3,6 +3,19 @@ use serde::{Deserialize, Serialize};
 use crate::AppResult;
 use futures_util::StreamExt;
 use tauri::ipc::Channel;
+use once_cell::sync::Lazy;
+
+/// 全局共享 HTTP 客户端，避免每次请求重新初始化 TLS
+static SHARED_CLIENT: Lazy<Client> = Lazy::new(|| {
+    Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap_or_else(|e| {
+            log::warn!("[llm] Failed to build HTTP client: {}, falling back to default", e);
+            Client::new()
+        })
+});
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", content = "data")]
@@ -10,6 +23,11 @@ pub enum StreamEvent {
     ThinkingChunk { delta: String },
     ContentChunk   { delta: String },
     ToolCallRequest { call_id: String, name: String, arguments: String },
+    QuestionRequest {
+        question_id: String,
+        session_id: String,
+        questions: serde_json::Value,
+    },
     Done,
     Error { message: String },
 }
@@ -104,22 +122,6 @@ pub struct ChatContext {
     pub model: Option<String>,
 }
 
-#[derive(serde::Serialize)]
-struct AnthropicRequest {
-    model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
-    messages: Vec<ChatMessage>,
-    max_tokens: u32,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenAIRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    stream: bool,
-}
-
 #[derive(Debug, Deserialize)]
 struct OpenAIResponse {
     choices: Vec<OpenAIChoice>,
@@ -138,6 +140,15 @@ pub struct LlmClient {
     pub api_type: ApiType,
 }
 
+/// Parameter overrides for LLM calls (used by inline completion)
+#[derive(Default)]
+pub struct ChatParams {
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+    /// OpenAI: maps to "stop" field. Anthropic: maps to "stop_sequences" field.
+    pub stop: Option<Vec<String>>,
+}
+
 impl LlmClient {
     pub fn new(
         api_key: String,
@@ -151,35 +162,58 @@ impl LlmClient {
             ApiType::Openai => "https://api.openai.com/v1",
         };
         Self {
-            client: Client::new(),
+            client: SHARED_CLIENT.clone(),
             api_key,
-            base_url: base_url.unwrap_or_else(|| default_base.to_string()),
+            base_url: base_url.filter(|b| !b.is_empty()).unwrap_or_else(|| default_base.to_string()),
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
             api_type: resolved_type,
         }
     }
 
-    /// 通用对话（OpenAI 协议）
-    async fn chat_openai(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
-        let req = OpenAIRequest {
-            model: self.model.clone(),
-            messages,
-            stream: false,
-        };
-
+    /// OpenAI 协议对话，支持可选参数覆盖
+    async fn chat_openai(&self, messages: Vec<ChatMessage>, params: Option<ChatParams>) -> AppResult<String> {
         let base = self.base_url.trim_end_matches('/');
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+            "stream": false,
+        });
+
+        if let Some(p) = params {
+            if let Some(temp) = p.temperature {
+                body["temperature"] = serde_json::json!(temp);
+            }
+            if let Some(max_tok) = p.max_tokens {
+                body["max_tokens"] = serde_json::json!(max_tok);
+            }
+            if let Some(stop) = p.stop {
+                body["stop"] = serde_json::json!(stop);
+            }
+        }
+
+        let url = format!("{}/chat/completions", base);
+        log::debug!("[llm] POST {} model={}", url, self.model);
+        let t0 = std::time::Instant::now();
+
         let http_resp = self
             .client
-            .post(format!("{}/chat/completions", base))
+            .post(&url)
             .bearer_auth(&self.api_key)
-            .json(&req)
+            .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                log::warn!("[llm] request failed after {:?}: {}", t0.elapsed(), e);
+                e
+            })?;
+
+        log::debug!("[llm] response {} in {:?}", http_resp.status(), t0.elapsed());
 
         if !http_resp.status().is_success() {
             let status = http_resp.status();
-            let body = http_resp.text().await.unwrap_or_default();
-            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body)));
+            let body_text = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
         }
 
         let resp: OpenAIResponse = http_resp.json().await
@@ -192,7 +226,8 @@ impl LlmClient {
             .ok_or_else(|| crate::AppError::Llm("Empty response from LLM".into()))
     }
 
-    async fn chat_anthropic(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
+    /// Anthropic 协议对话，支持可选参数覆盖
+    async fn chat_anthropic(&self, messages: Vec<ChatMessage>, params: Option<ChatParams>) -> AppResult<String> {
         let mut user_messages: Vec<ChatMessage> = Vec::new();
         let mut system_content: Option<String> = None;
         for msg in messages {
@@ -202,28 +237,59 @@ impl LlmClient {
                 user_messages.push(msg);
             }
         }
-        let req = AnthropicRequest {
-            model: self.model.clone(),
-            system: system_content,
-            messages: user_messages,
-            max_tokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
-        };
+
+        let max_tokens = params.as_ref()
+            .and_then(|p| p.max_tokens)
+            .unwrap_or(DEFAULT_ANTHROPIC_MAX_TOKENS);
+
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": user_messages,
+            "max_tokens": max_tokens,
+        });
+
+        if let Some(system) = system_content {
+            body["system"] = serde_json::json!(system);
+        }
+        if let Some(p) = params {
+            if let Some(temp) = p.temperature {
+                body["temperature"] = serde_json::json!(temp);
+            }
+            if let Some(stop_seqs) = p.stop {
+                body["stop_sequences"] = serde_json::json!(stop_seqs);
+            }
+            // 当 max_tokens 较小时（inline complete 等轻量场景），
+            // 显式禁用深度思考以加速响应
+            if p.max_tokens.map_or(false, |t| t <= 200) {
+                body["thinking"] = serde_json::json!({"type": "disabled"});
+            }
+        }
 
         let base = self.base_url.trim_end_matches('/');
+        let url = format!("{}/v1/messages", base);
+        log::debug!("[llm] POST {} model={}", url, self.model);
+        let t0 = std::time::Instant::now();
+
         let http_resp = self
             .client
-            .post(format!("{}/v1/messages", base))
+            .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("user-agent", "claude-code/1.0.0")
-            .json(&req)
+            .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                log::warn!("[llm] request failed after {:?}: {}", t0.elapsed(), e);
+                e
+            })?;
+
+        log::debug!("[llm] response {} in {:?}", http_resp.status(), t0.elapsed());
 
         if !http_resp.status().is_success() {
             let status = http_resp.status();
-            let body = http_resp.text().await.unwrap_or_default();
-            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body)));
+            let body_text = http_resp.text().await.unwrap_or_default();
+            return Err(crate::AppError::Llm(format!("HTTP {}: {}", status, body_text)));
         }
 
         let resp: AnthropicResponse = http_resp
@@ -240,9 +306,34 @@ impl LlmClient {
 
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> AppResult<String> {
         match self.api_type {
-            ApiType::Openai => self.chat_openai(messages).await,
-            ApiType::Anthropic => self.chat_anthropic(messages).await,
+            ApiType::Openai => self.chat_openai(messages, None).await,
+            ApiType::Anthropic => self.chat_anthropic(messages, None).await,
         }
+    }
+
+    pub async fn chat_with_params(&self, messages: Vec<ChatMessage>, params: ChatParams) -> AppResult<String> {
+        match self.api_type {
+            ApiType::Openai => self.chat_openai(messages, Some(params)).await,
+            ApiType::Anthropic => self.chat_anthropic(messages, Some(params)).await,
+        }
+    }
+
+    pub async fn inline_complete(&self, prompt: String, hint: &str) -> AppResult<String> {
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: prompt,
+        }];
+        let max_tokens = match hint {
+            "single_line" => 60,
+            _ => 200,
+        };
+        // NOTE: 部分兼容接口（如 DashScope）不支持 stop/stop_sequences，
+        // 改用 prompt 指令 + max_tokens 控制生成长度
+        self.chat_with_params(messages, ChatParams {
+            temperature: Some(0.1),
+            max_tokens: Some(max_tokens),
+            stop: None,
+        }).await
     }
 
     /// 自然语言 → SQL

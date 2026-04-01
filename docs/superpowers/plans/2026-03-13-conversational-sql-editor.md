@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # 对话式 SQL 编辑器修改 Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.

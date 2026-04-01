@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../common/DropdownSelect';
+import { useFieldHighlight } from '../../hooks/useFieldHighlight';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -270,6 +271,8 @@ interface ConnectorPanelProps {
   config: ConnectorConfig;
   onChange: (config: ConnectorConfig) => void;
   t: (key: string, options?: Record<string, unknown>) => string;
+  scopeId: string;
+  section: string; // 'source.0' or 'sink.0'
 }
 
 // Helper to translate label keys
@@ -279,7 +282,7 @@ const getTranslatedLabel = (labelKey: string, t: (key: string) => string): strin
   return translated === key ? labelKey : translated;
 };
 
-const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange, t }) => {
+const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange, t, scopeId, section }) => {
   const fields = CONNECTOR_FIELDS[config.type] ?? [];
 
   const handleTypeChange = (type: ConnectorType) => {
@@ -315,18 +318,22 @@ const ConnectorPanel: React.FC<ConnectorPanelProps> = ({ title, config, onChange
           <p className="text-xs text-[#7a9bb8] italic mt-2">{t('seaTunnelJob.visualBuilder.noExtraConfig')}</p>
         )}
         {fields.map((field) => (
-          <div key={field.key} className="flex flex-col gap-1">
-            <span className={labelCls}>
-              {getTranslatedLabel(field.label, t)}
-              {field.required && <span className="text-red-400 ml-0.5">*</span>}
-            </span>
-            <FieldInput
-              field={field}
-              value={config.fields[field.key] ?? ''}
-              onChange={(v) => handleFieldChange(field.key, v)}
-              t={t}
-            />
-          </div>
+          <HighlightedField key={field.key} scopeId={scopeId} path={`${section}.${field.key}`}>
+            {(onUserEdit) => (
+              <div className="flex flex-col gap-1">
+                <span className={labelCls}>
+                  {getTranslatedLabel(field.label, t)}
+                  {field.required && <span className="text-red-400 ml-0.5">*</span>}
+                </span>
+                <FieldInput
+                  field={field}
+                  value={config.fields[field.key] ?? ''}
+                  onChange={(v) => { onUserEdit(); handleFieldChange(field.key, v); }}
+                  t={t}
+                />
+              </div>
+            )}
+          </HighlightedField>
         ))}
       </div>
     </div>
@@ -412,15 +419,27 @@ const TransformPanel: React.FC<TransformPanelProps> = ({ transforms, onChange, t
   );
 };
 
+/** Thin wrapper that applies highlight class to a field container */
+const HighlightedField: React.FC<{
+  scopeId: string;
+  path: string;
+  children: (onUserEdit: () => void) => React.ReactNode;
+}> = ({ scopeId, path, children }) => {
+  const { className, onUserEdit } = useFieldHighlight(scopeId, path);
+  return <div className={className}>{children(onUserEdit)}</div>;
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface VisualBuilderProps {
   value: BuilderState;
   onChange: (state: BuilderState) => void;
+  scopeId: string;
 }
 
-const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
+const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange, scopeId }) => {
   const { t } = useTranslation();
+  const parallelismHighlight = useFieldHighlight(scopeId, 'env.parallelism');
 
   return (
     <div className="flex flex-col h-full gap-0">
@@ -428,27 +447,28 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
       <div className="flex items-center gap-3 px-3 py-2 bg-[#0d1117] border-b border-[#253347] flex-shrink-0">
         <span className={`${labelCls} whitespace-nowrap`}>{t('seaTunnelJob.visualBuilder.parallelism')}</span>
         {/* 自定义数字步进器，避免原生 spinner 样式问题 */}
-        <div className="flex items-stretch border border-[#253347] rounded overflow-hidden focus-within:border-[#00c9a7]/60 transition-colors" style={{ width: '80px' }}>
+        <div className={`flex items-stretch border border-[#253347] rounded overflow-hidden focus-within:border-[#00c9a7]/60 transition-colors ${parallelismHighlight.className}`} style={{ width: '80px' }}>
           <input
             type="number"
             min={1}
             value={value.env.parallelism}
-            onChange={(e) =>
-              onChange({ ...value, env: { ...value.env, parallelism: parseInt(e.target.value, 10) || 1 } })
-            }
+            onChange={(e) => {
+              parallelismHighlight.onUserEdit();
+              onChange({ ...value, env: { ...value.env, parallelism: parseInt(e.target.value, 10) || 1 } });
+            }}
             className="flex-1 min-w-0 bg-[#0d1117] px-2 py-1.5 text-xs text-[#c8daea] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           />
           <div className="flex flex-col border-l border-[#253347] bg-[#0d1117]">
             <button
               type="button"
-              onClick={() => onChange({ ...value, env: { ...value.env, parallelism: value.env.parallelism + 1 } })}
+              onClick={() => { parallelismHighlight.onUserEdit(); onChange({ ...value, env: { ...value.env, parallelism: value.env.parallelism + 1 } }); }}
               className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors border-b border-[#253347]"
             >
               <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
             </button>
             <button
               type="button"
-              onClick={() => onChange({ ...value, env: { ...value.env, parallelism: Math.max(1, value.env.parallelism - 1) } })}
+              onClick={() => { parallelismHighlight.onUserEdit(); onChange({ ...value, env: { ...value.env, parallelism: Math.max(1, value.env.parallelism - 1) } }); }}
               className="flex-1 flex items-center justify-center px-1.5 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors"
             >
               <svg width="8" height="5" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
@@ -466,6 +486,8 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
             config={value.source}
             onChange={(source) => onChange({ ...value, source })}
             t={t}
+            scopeId={scopeId}
+            section="source.0"
           />
         </div>
 
@@ -485,6 +507,8 @@ const VisualBuilder: React.FC<VisualBuilderProps> = ({ value, onChange }) => {
             config={value.sink}
             onChange={(sink) => onChange({ ...value, sink })}
             t={t}
+            scopeId={scopeId}
+            section="sink.0"
           />
         </div>
       </div>

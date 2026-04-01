@@ -8,6 +8,7 @@ import { ConnectionModal } from '../ConnectionModal';
 import { GroupModal } from '../GroupModal';
 import { Tooltip } from '../common/Tooltip';
 import { invoke } from '@tauri-apps/api/core';
+import { connNodeId } from '../../utils/nodeId';
 import i18n from '../../i18n';
 import type { ToastLevel } from '../Toast';
 
@@ -84,7 +85,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
     connectionId: number,
     savedExpandedIds: Set<string>
   ): Promise<void> => {
-    const nodeId = `conn_${connectionId}`;
+    const nodeId = connNodeId(connectionId);
     if (!useTreeStore.getState().nodes.get(nodeId)) return;
 
     // 检测连接可用性
@@ -159,7 +160,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   }, []);
 
   const handleOpenConnection = async (connectionId: number) => {
-    const nodeId = `conn_${connectionId}`;
+    const nodeId = connNodeId(connectionId);
     const store = useTreeStore.getState();
 
     // 若子节点未加载，先加载以验证连接是否可用
@@ -202,7 +203,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
   const handleCloseConnection = (connectionId: number) => {
     closeConnection(connectionId);
 
-    const nodeId = `conn_${connectionId}`;
+    const nodeId = connNodeId(connectionId);
     const store = useTreeStore.getState();
 
     // 折叠树节点

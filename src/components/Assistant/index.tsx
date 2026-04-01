@@ -1,11 +1,11 @@
 import React, { useRef, useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { createPortal } from 'react-dom';
 import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
-import { DiffPanel } from './DiffPanel';
-import { AutoApplyBanner } from './AutoApplyBanner';
+import { PatchConfirmPanel } from './PatchConfirmPanel';
 import ElicitationPanel from './ElicitationPanel';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { useAiStore } from '../../store';
@@ -58,6 +58,9 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const content = useAiStore((s) => s.chatStates[sessionId]?.streamingContent ?? '');
   const thinking = useAiStore((s) => s.chatStates[sessionId]?.streamingThinkingContent ?? '');
   const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
+  const pendingQuestion = useAiStore((s) => s.chatStates[sessionId]?.pendingQuestion ?? null);
+  const isChatting = useAiStore((s) => s.chatStates[sessionId]?.isChatting ?? false);
+  const { t } = useTranslation();
 
   // 已收到任何内容（包含深度思考）则不再显示等待动画
   const hasFirstToken = !!(content || thinking);
@@ -65,9 +68,33 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   return (
     <div className="flex flex-col items-start">
       <div className="text-[#c8daea] text-[13px] w-full">
-        {thinking && <ThinkingBlock content={thinking} isStreaming={true} />}
-        {content && <MarkdownContent content={content} isStreaming={true} />}
-        {!hasFirstToken && (
+        {/* ThinkingBlock 使用 isChatting：Q&A 期间保持展开，仅 AI 完成后才自动折叠 */}
+        {thinking && <ThinkingBlock content={thinking} isStreaming={isChatting} />}
+        {content && <MarkdownContent content={content} isStreaming={!pendingQuestion} />}
+        {pendingQuestion ? (
+          <div className="mt-2 space-y-1">
+            {/* 从 questions 字段提取问题文本展示 */}
+            {Array.isArray(pendingQuestion.questions) && pendingQuestion.questions.length > 0 && (
+              pendingQuestion.questions.map((q, qi) => (
+                <div key={qi} className="text-[13px] leading-relaxed">
+                  {q.header && <div className="font-medium text-[#4ac9c0]">{q.header}</div>}
+                  {q.question && <div className="text-[#8ec8e0]">{q.question}</div>}
+                  {Array.isArray(q.options) && q.options.length > 0 && (
+                    <div className="mt-1 space-y-0.5 text-xs text-[#6aadcc]">
+                      {q.options.map((opt, oi) => (
+                        <div key={oi}>• {opt.label}{opt.description ? ` — ${opt.description}` : ''}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            <div className="flex items-center gap-2 py-1">
+              <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
+              <span className="text-xs text-[#00c9a7] animate-pulse">{t('assistant.waitingForAnswer')}</span>
+            </div>
+          </div>
+        ) : !hasFirstToken && (
           sessionStatus ? (
             <div className="flex items-center gap-2 py-1">
               <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
@@ -110,13 +137,15 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondQuestion, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const lastUserMessageId = useAiStore((s) => s.chatStates[currentSessionId]?.lastUserMessageId ?? null);
   const canRedo = useAiStore((s) => s.chatStates[currentSessionId]?.canRedo ?? false);
   const isCompacting = useAiStore((s) => s.chatStates[currentSessionId]?.isCompacting ?? false);
   const activeToolName = useAiStore((s) => s.chatStates[currentSessionId]?.activeToolName ?? null);
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
+  const pendingQuestion = useAiStore((s) => s.chatStates[currentSessionId]?.pendingQuestion ?? null);
+  const isWaitingForAnswer = isChatting && !!pendingQuestion;
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
   const chattingSessionIdsStr = useAiStore((s) =>
@@ -137,7 +166,6 @@ export const Assistant: React.FC<AssistantProps> = ({
     sessions.find((s) => s.id === currentSessionId)?.configId ??
     null;
   const connectedConfigs = configs.filter((c) => c.test_status === 'success');
-  const { pendingDiff, applyDiff, cancelDiff, autoApplyBanner } = useQueryStore();
   const { connections, activeConnectionIds } = useConnectionStore();
 
   const [chatInput, setChatInput] = useState('');
@@ -156,6 +184,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     return () => window.removeEventListener('mousedown', handler);
   }, [isModelMenuOpen]);
   const [isConnectionMenuOpen, setIsConnectionMenuOpen] = useState(false);
+  const [connectionMenuPos, setConnectionMenuPos] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null);
   // 连接切换确认对话框：当 session 有内容时，Tab 切换触发
   const [pendingConnectionSwitch, setPendingConnectionSwitch] = useState<{
     oldConnectionId: number | null;
@@ -230,15 +259,36 @@ export const Assistant: React.FC<AssistantProps> = ({
     }
   }, [isChatting]);
   const connectionMenuRef = useRef<HTMLDivElement>(null);
+  const connectionDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭：排除触发器和弹出层
   useEffect(() => {
     if (!isConnectionMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (connectionMenuRef.current && !connectionMenuRef.current.contains(e.target as Node)) {
-        setIsConnectionMenuOpen(false);
-      }
+      const target = e.target as Node;
+      if (
+        connectionMenuRef.current?.contains(target) ||
+        connectionDropdownRef.current?.contains(target)
+      ) return;
+      setIsConnectionMenuOpen(false);
     };
     window.addEventListener('mousedown', handler);
     return () => window.removeEventListener('mousedown', handler);
+  }, [isConnectionMenuOpen]);
+
+  // 滚动或 resize 时关闭（下拉层内部滚动不触发）
+  useEffect(() => {
+    if (!isConnectionMenuOpen) return;
+    const handleScroll = (e: Event) => {
+      if (connectionDropdownRef.current?.contains(e.target as Node)) return;
+      setIsConnectionMenuOpen(false);
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', () => setIsConnectionMenuOpen(false));
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', () => setIsConnectionMenuOpen(false));
+    };
   }, [isConnectionMenuOpen]);
   const [showHistory, setShowHistory] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -262,7 +312,7 @@ export const Assistant: React.FC<AssistantProps> = ({
   );
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, streamingContent, streamingThinking, pendingPermission, currentSessionId]);
+  }, [chatHistory, streamingContent, streamingThinking, pendingPermission, pendingQuestion, currentSessionId]);
 
   useEffect(() => {
     loadConfigs();
@@ -270,9 +320,23 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || isChatting) return;
+    if (!chatInput.trim()) return;
+
+    // 如果有 pending question，发送答案而非新消息
+    if (isWaitingForAnswer && pendingQuestion) {
+      const answer = chatInput.trim();
+      setChatInput('');
+      await respondQuestion(
+        currentSessionId,
+        pendingQuestion.question_id,
+        [[answer]],  // 单个答案包装为 answers 格式
+        false,
+      );
+      return;
+    }
+
+    if (isChatting) return;
     const prompt = chatInput.trim();
-    // 并发上限检查
     const activeChatCount = Object.values(useAiStore.getState().chatStates).filter((s) => s.isChatting).length;
     if (activeChatCount >= 10) {
       showToast(t('assistant.concurrentChatLimit'), 'warning');
@@ -329,15 +393,39 @@ export const Assistant: React.FC<AssistantProps> = ({
       <div className="relative mb-2 w-fit" ref={connectionMenuRef}>
         <div
           className="flex items-center text-xs text-[#7a9bb8] cursor-pointer hover:text-[#c8daea]"
-          onClick={(e) => { e.stopPropagation(); setIsConnectionMenuOpen(!isConnectionMenuOpen); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isConnectionMenuOpen && connectionMenuRef.current) {
+              const rect = connectionMenuRef.current.getBoundingClientRect();
+              setConnectionMenuPos({
+                top: rect.bottom,
+                bottom: window.innerHeight - rect.top,
+                left: Math.min(rect.left, window.innerWidth - 208 - 8),
+                width: rect.width,
+              });
+            }
+            setIsConnectionMenuOpen(!isConnectionMenuOpen);
+          }}
         >
           <DatabaseZap size={12} className="mr-1 text-[#00c9a7]" />
           <span className="max-w-[120px] truncate">{effectiveConnectionName ?? t('assistant.noConnectionSelected')}</span>
           <ChevronDown size={12} className="ml-1 flex-shrink-0" />
         </div>
 
-        {isConnectionMenuOpen && (
-          <div className="absolute left-0 top-full mt-1 w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg z-50 py-1">
+        {/* 下拉列表：Portal 到 body，fixed 定位，自适应展开方向 */}
+        {isConnectionMenuOpen && connectionMenuPos && createPortal(
+          <div
+            ref={connectionDropdownRef}
+            className="fixed z-[200] w-52 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg overflow-y-auto"
+            style={{
+              // 根据视窗位置决定展开方向：底部空间不足时向上展开
+              ...(connectionMenuPos.top + 240 > window.innerHeight
+                ? { bottom: connectionMenuPos.bottom + 4 }
+                : { top: connectionMenuPos.top + 4 }),
+              left: connectionMenuPos.left,
+              maxHeight: 240,
+            }}
+          >
             {/* 跟随标签页选项 */}
             <div
               className={`px-3 py-1.5 flex items-center cursor-pointer hover:bg-[#1e2d42] ${
@@ -366,12 +454,13 @@ export const Assistant: React.FC<AssistantProps> = ({
                 );
               })
             )}
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
       <textarea
         className="bg-transparent text-[13px] text-[#c8daea] outline-none resize-none h-16 w-full placeholder-[#7a9bb8]"
-        placeholder={t('assistant.inputPlaceholder')}
+        placeholder={isWaitingForAnswer ? t('assistant.answerPlaceholder') : t('assistant.inputPlaceholder')}
         value={chatInput}
         onChange={(e) => {
           const val = e.target.value;
@@ -384,7 +473,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           }
         }}
         onKeyDown={handleKeyDown}
-        disabled={isChatting}
+        disabled={isChatting && !isWaitingForAnswer}
       />
       <div className="flex items-center justify-between mt-2 relative">
         {/* 模型选择器 + Auto 开关 */}
@@ -470,14 +559,41 @@ export const Assistant: React.FC<AssistantProps> = ({
         </div>
 
         {isChatting ? (
-          <Tooltip content={t('assistant.stopGeneration')} className="contents">
-            <button
-              className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
-              onClick={() => cancelChat(currentSessionId)}
-            >
-              <Square size={14} />
-            </button>
-          </Tooltip>
+          isWaitingForAnswer && !chatInput.trim() ? (
+            /* 等待回答 + 无输入：显示 X 按钮（拒绝/跳过问题） */
+            <Tooltip content={t('assistant.rejectQuestion')} className="contents">
+              <button
+                className="p-1.5 rounded transition-colors bg-[#00c9a7]/20 text-[#00c9a7] hover:bg-[#00c9a7]/30"
+                onClick={() => {
+                  if (pendingQuestion) {
+                    respondQuestion(currentSessionId, pendingQuestion.question_id, [], true);
+                  }
+                }}
+              >
+                <X size={14} />
+              </button>
+            </Tooltip>
+          ) : isWaitingForAnswer ? (
+            /* 等待回答 + 有输入：显示发送按钮 */
+            <Tooltip content={t('assistant.sendMessage')} className="contents">
+              <button
+                className="p-1.5 rounded transition-colors bg-[#00c9a7] text-white hover:bg-[#00a98f]"
+                onClick={handleSendMessage}
+              >
+                <Send size={14} />
+              </button>
+            </Tooltip>
+          ) : (
+            /* 生成中：显示停止按钮 */
+            <Tooltip content={t('assistant.stopGeneration')} className="contents">
+              <button
+                className="p-1.5 rounded transition-colors bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                onClick={() => cancelChat(currentSessionId)}
+              >
+                <Square size={14} />
+              </button>
+            </Tooltip>
+          )
         ) : (
           <Tooltip content={t('assistant.sendMessage')} className="contents">
             <button
@@ -666,7 +782,6 @@ export const Assistant: React.FC<AssistantProps> = ({
               </>
             )}
           </div>
-          {autoApplyBanner && <AutoApplyBanner reason={autoApplyBanner.reason} />}
           {/* 输入框紧跟在提示文字下方 */}
           <div className="w-full">{renderInputBox()}</div>
         </div>
@@ -704,16 +819,8 @@ export const Assistant: React.FC<AssistantProps> = ({
             <div ref={chatEndRef} />
           </div>
 
-          {/* SQL Diff 确认面板 */}
-          {pendingDiff && (
-            <DiffPanel
-              proposal={pendingDiff}
-              onApply={() => { applyDiff(); invoke('mcp_diff_respond', { confirmed: true }).catch(() => {}); }}
-              onCancel={() => { cancelDiff(); invoke('mcp_diff_respond', { confirmed: false }).catch(() => {}); }}
-            />
-          )}
-          {/* Auto 模式自动应用 Banner */}
-          {autoApplyBanner && <AutoApplyBanner reason={autoApplyBanner.reason} />}
+          {/* Patch 确认面板 */}
+          <PatchConfirmPanel />
 
           {/* 连接切换确认 banner */}
           {pendingConnectionSwitch && (

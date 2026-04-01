@@ -33,6 +33,36 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // ── 前置修复 2：V15 迁移重建 graph_nodes 时遗漏了 database/schema_name 列，
+    // 导致 init.sql 的 idx_graph_nodes_db 索引因缺少 database 列而 panic。
+    // 在 execute_batch 之前补回缺失列。
+    let graph_nodes_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='graph_nodes'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if graph_nodes_exists {
+        for col in &["database", "schema_name"] {
+            let has_col: bool = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM pragma_table_info('graph_nodes') WHERE name='{}'", col),
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has_col {
+                let _ = conn.execute_batch(
+                    &format!("ALTER TABLE graph_nodes ADD COLUMN {} TEXT", col),
+                );
+                log::info!("Pre-migration: added graph_nodes.{} column before execute_batch(schema)", col);
+            }
+        }
+    }
+
     let schema = include_str!("../../../schema/init.sql");
     conn.execute_batch(schema)?;
 
@@ -177,6 +207,48 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             "ALTER TABLE graph_nodes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
         )?;
         log::info!("Migrated graph_nodes: added is_deleted column");
+    }
+
+    // V17: graph_nodes 新增 database / schema_name 列（多库/多 schema 支持）
+    if !graph_nodes_columns.contains("database") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN database TEXT",
+        )?;
+        log::info!("V17: added graph_nodes.database column");
+    }
+    if !graph_nodes_columns.contains("schema_name") {
+        conn.execute_batch(
+            "ALTER TABLE graph_nodes ADD COLUMN schema_name TEXT",
+        )?;
+        log::info!("V17: added graph_nodes.schema_name column");
+    }
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_graph_nodes_db ON graph_nodes(connection_id, database)",
+        [],
+    );
+
+    // V17: 回填存量数据的 database 列（从 connections 表读取默认 database）
+    {
+        let backfill_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM graph_nodes WHERE database IS NULL AND connection_id IS NOT NULL",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+        if backfill_count > 0 {
+            conn.execute(
+                "UPDATE graph_nodes SET database = (
+                    SELECT c.database_name FROM connections c WHERE c.id = graph_nodes.connection_id
+                ) WHERE database IS NULL AND connection_id IS NOT NULL",
+                [],
+            )?;
+            // 回填 PG schema_name（从 metadata JSON 中提取 $.schema）
+            conn.execute(
+                "UPDATE graph_nodes SET schema_name = json_extract(metadata, '$.schema')
+                 WHERE schema_name IS NULL AND metadata IS NOT NULL AND json_extract(metadata, '$.schema') IS NOT NULL",
+                [],
+            )?;
+            log::info!("V17: backfilled database/schema_name for {} existing nodes", backfill_count);
+        }
     }
 
     // V4: agent_sessions 表（opencode HTTP Serve 模式）
@@ -512,12 +584,16 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         if !gn_sql.contains("'link'") {
             let _ = conn.execute_batch("PRAGMA foreign_keys = OFF;");
 
+            // 重建时必须包含 database 和 schema_name 列，否则 init.sql 的
+            // idx_graph_nodes_db 索引会因缺少 database 列而失败
             let rebuild_result = conn.execute_batch(
                 "BEGIN;
                  CREATE TABLE graph_nodes_new (
                      id            TEXT PRIMARY KEY,
                      node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias','link')),
                      connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
+                     database      TEXT,
+                     schema_name   TEXT,
                      name          TEXT NOT NULL,
                      display_name  TEXT,
                      aliases       TEXT,
@@ -526,11 +602,16 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
                      metadata      TEXT,
                      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
                  );
-                 INSERT INTO graph_nodes_new SELECT * FROM graph_nodes;
+                 INSERT INTO graph_nodes_new
+                     SELECT id, node_type, connection_id, database, schema_name,
+                            name, display_name, aliases, source, is_deleted,
+                            metadata, created_at
+                     FROM graph_nodes;
                  DROP TABLE graph_nodes;
                  ALTER TABLE graph_nodes_new RENAME TO graph_nodes;
                  CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);
                  CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+                 CREATE INDEX IF NOT EXISTS idx_graph_nodes_db   ON graph_nodes(connection_id, database);
                  COMMIT;"
             );
 
@@ -538,6 +619,112 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
             rebuild_result?;
             log::info!("V15: graph_nodes CHECK constraint updated to include 'link' node_type");
         }
+    }
+
+    // V16: 数据源连接配置增强
+    {
+        let conn_columns: HashSet<String> = {
+            let mut stmt = conn.prepare(
+                "SELECT name FROM pragma_table_info('connections')",
+            )?;
+            let cols: HashSet<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols
+        };
+        let v16_columns = [
+            ("auth_type", "ALTER TABLE connections ADD COLUMN auth_type TEXT"),
+            ("token_enc", "ALTER TABLE connections ADD COLUMN token_enc TEXT"),
+            ("ssl_mode", "ALTER TABLE connections ADD COLUMN ssl_mode TEXT"),
+            ("ssl_ca_path", "ALTER TABLE connections ADD COLUMN ssl_ca_path TEXT"),
+            ("ssl_cert_path", "ALTER TABLE connections ADD COLUMN ssl_cert_path TEXT"),
+            ("ssl_key_path", "ALTER TABLE connections ADD COLUMN ssl_key_path TEXT"),
+            ("connect_timeout_secs", "ALTER TABLE connections ADD COLUMN connect_timeout_secs INTEGER DEFAULT 30"),
+            ("read_timeout_secs", "ALTER TABLE connections ADD COLUMN read_timeout_secs INTEGER DEFAULT 60"),
+            ("pool_max_connections", "ALTER TABLE connections ADD COLUMN pool_max_connections INTEGER DEFAULT 5"),
+            ("pool_idle_timeout_secs", "ALTER TABLE connections ADD COLUMN pool_idle_timeout_secs INTEGER DEFAULT 300"),
+        ];
+        for (col_name, alter_sql) in &v16_columns {
+            if !conn_columns.contains(*col_name) {
+                conn.execute_batch(alter_sql)?;
+                log::info!("V16: added connections.{} column", col_name);
+            }
+        }
+    }
+
+    // V17: 修复 SQLite 连接的 auth_type（旧默认值 'password' 不正确，应为 'os_native'）
+    {
+        let fixed = conn.execute(
+            "UPDATE connections SET auth_type = 'os_native' WHERE driver = 'sqlite' AND (auth_type IS NULL OR auth_type = 'password')",
+            [],
+        )?;
+        if fixed > 0 {
+            log::info!("V17: fixed {} sqlite connection(s) auth_type from 'password' to 'os_native'", fixed);
+        }
+    }
+
+    // V18: graph_nodes 新增 position_x / position_y 列（知识图谱节点坐标持久化）
+    {
+        let cols = [("position_x", "REAL"), ("position_y", "REAL")];
+        for (col_name, col_type) in &cols {
+            let has_col: bool = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('graph_nodes') WHERE name='{}'",
+                        col_name
+                    ),
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has_col {
+                conn.execute_batch(&format!(
+                    "ALTER TABLE graph_nodes ADD COLUMN {} {}",
+                    col_name, col_type
+                ))?;
+                log::info!("V18: added graph_nodes.{} column", col_name);
+            }
+        }
+    }
+
+    // ── V8: ER column extended properties ──
+    {
+        let new_cols = [
+            ("length",      "INTEGER"),
+            ("scale",       "INTEGER"),
+            ("is_unique",   "INTEGER NOT NULL DEFAULT 0"),
+            ("unsigned",    "INTEGER NOT NULL DEFAULT 0"),
+            ("charset",     "TEXT"),
+            ("collation",   "TEXT"),
+            ("on_update",   "TEXT"),
+            ("enum_values", "TEXT"),
+        ];
+        for (col_name, col_type) in &new_cols {
+            let sql = format!("ALTER TABLE er_columns ADD COLUMN {} {}", col_name, col_type);
+            match conn.execute(&sql, []) {
+                Ok(_) => log::info!("Migration V8: added er_columns.{}", col_name),
+                Err(e) if e.to_string().contains("duplicate column name") => {}
+                Err(e) => log::warn!("Migration V8: failed to add er_columns.{}: {}", col_name, e),
+            }
+        }
+
+        // 数据清洗：解析已有 data_type 中的括号部分，拆分到 length/scale
+        let _ = conn.execute_batch("
+            UPDATE er_columns
+            SET length = CAST(SUBSTR(data_type, INSTR(data_type, '(') + 1,
+                    CASE WHEN INSTR(data_type, ',') > 0
+                         THEN INSTR(data_type, ',') - INSTR(data_type, '(') - 1
+                         ELSE INSTR(data_type, ')') - INSTR(data_type, '(') - 1
+                    END) AS INTEGER),
+                scale = CASE WHEN INSTR(data_type, ',') > 0
+                    THEN CAST(SUBSTR(data_type, INSTR(data_type, ',') + 1,
+                              INSTR(data_type, ')') - INSTR(data_type, ',') - 1) AS INTEGER)
+                    ELSE NULL END,
+                data_type = SUBSTR(data_type, 1, INSTR(data_type, '(') - 1)
+            WHERE INSTR(data_type, '(') > 0 AND length IS NULL;
+        ");
+        log::info!("Migration V8: data_type cleanup completed");
     }
 
     log::info!("Database migrations completed");

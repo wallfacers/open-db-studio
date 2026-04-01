@@ -58,6 +58,9 @@ pub trait DdlDialect {
         let mut col_defs: Vec<String> = Vec::new();
         for col in columns {
             let mut def = format!("  {} {}", self.quote_identifier(&col.name), self.map_column_type(col));
+            if col.unsigned {
+                def.push_str(" UNSIGNED");
+            }
             if !col.nullable {
                 def.push_str(" NOT NULL");
             }
@@ -68,9 +71,17 @@ pub trait DdlDialect {
                     def.push_str(ai);
                 }
             }
+            if col.is_unique {
+                def.push_str(" UNIQUE");
+            }
             if let Some(ref dv) = col.default_value {
                 if !dv.is_empty() {
                     def.push_str(&format!(" DEFAULT {}", dv));
+                }
+            }
+            if let Some(ref ou) = col.on_update {
+                if !ou.is_empty() {
+                    def.push_str(&format!(" ON UPDATE {}", ou));
                 }
             }
             // Inline column comment for MySQL
@@ -142,9 +153,14 @@ pub trait DdlDialect {
 
     fn map_type(&self, generic_type: &str) -> String;
 
-    /// Map a column to its dialect-specific type, considering auto_increment.
+    /// Map a column to its dialect-specific type, considering length/scale.
     fn map_column_type(&self, col: &ErColumn) -> String {
-        self.map_type(&col.data_type)
+        let base = self.map_type(&col.data_type);
+        match (col.length, col.scale) {
+            (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+            (Some(l), None)    => format!("{}({})", base, l),
+            _                  => base,
+        }
     }
 
     fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String;
@@ -180,22 +196,9 @@ pub trait DdlDialect {
 // Helper: parse generic type like "VARCHAR(255)" or "DECIMAL(10,2)"
 // ---------------------------------------------------------------------------
 
-fn parse_type(input: &str) -> (&str, Option<&str>) {
-    if let Some(pos) = input.find('(') {
-        (&input[..pos], Some(&input[pos..]))
-    } else {
-        (input, None)
-    }
-}
-
-fn map_type_with(input: &str, mapper: &dyn Fn(&str) -> &str) -> String {
-    let (base, params) = parse_type(input);
-    let upper = base.to_uppercase();
-    let mapped = mapper(&upper);
-    match params {
-        Some(p) => format!("{}{}", mapped, p),
-        None => mapped.to_string(),
-    }
+fn map_type_with(generic_type: &str, mapper: &dyn Fn(&str) -> &str) -> String {
+    let upper = generic_type.to_uppercase();
+    mapper(&upper).to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +288,25 @@ impl DdlDialect for MySqlDialect {
             "JSON" => "JSON",
             other => other,
         })
+    }
+
+    fn map_column_type(&self, col: &ErColumn) -> String {
+        let upper = col.data_type.to_uppercase();
+        if upper == "ENUM" || upper == "SET" {
+            if let Some(ref ev) = col.enum_values {
+                if let Ok(vals) = serde_json::from_str::<Vec<String>>(ev) {
+                    let quoted: Vec<String> = vals.iter().map(|v| format!("'{}'", v)).collect();
+                    return format!("{}({})", upper, quoted.join(","));
+                }
+            }
+            return upper;
+        }
+        let base = self.map_type(&col.data_type);
+        match (col.length, col.scale) {
+            (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+            (Some(l), None)    => format!("{}({})", base, l),
+            _                  => base,
+        }
     }
 
     fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
@@ -377,16 +399,27 @@ impl DdlDialect for PostgresDialect {
 
     fn map_column_type(&self, col: &ErColumn) -> String {
         if col.is_auto_increment {
-            let (base, _params) = parse_type(&col.data_type);
-            let upper = base.to_uppercase();
+            let upper = col.data_type.to_uppercase();
             return match upper.as_str() {
                 "BIGINT" => "BIGSERIAL".to_string(),
                 "INT" | "INTEGER" => "SERIAL".to_string(),
                 "SMALLINT" => "SMALLSERIAL".to_string(),
-                _ => self.map_type(&col.data_type),
+                _ => {
+                    let base = self.map_type(&col.data_type);
+                    match (col.length, col.scale) {
+                        (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+                        (Some(l), None)    => format!("{}({})", base, l),
+                        _                  => base,
+                    }
+                }
             };
         }
-        self.map_type(&col.data_type)
+        let base = self.map_type(&col.data_type);
+        match (col.length, col.scale) {
+            (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+            (Some(l), None)    => format!("{}({})", base, l),
+            _                  => base,
+        }
     }
 
     fn primary_key_syntax(&self, pk_columns: &[&ErColumn]) -> String {
@@ -477,11 +510,16 @@ impl DdlDialect for OracleDialect {
     }
 
     fn map_column_type(&self, col: &ErColumn) -> String {
-        let mapped = self.map_type(&col.data_type);
+        let base = self.map_type(&col.data_type);
+        let typed = match (col.length, col.scale) {
+            (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+            (Some(l), None)    => format!("{}({})", base, l),
+            _                  => base,
+        };
         if col.is_auto_increment {
-            format!("{} GENERATED ALWAYS AS IDENTITY", mapped)
+            format!("{} GENERATED ALWAYS AS IDENTITY", typed)
         } else {
-            mapped
+            typed
         }
     }
 
@@ -791,10 +829,25 @@ mod tests {
             is_primary_key: pk,
             is_auto_increment: ai,
             comment: Some(format!("{} column", name)),
+            length: None,
+            scale: None,
+            is_unique: false,
+            unsigned: false,
+            charset: None,
+            collation: None,
+            on_update: None,
+            enum_values: None,
             sort_order: id,
             created_at: String::new(),
             updated_at: String::new(),
         }
+    }
+
+    fn make_column_with_length(id: i64, table_id: i64, name: &str, data_type: &str, length: Option<i64>, scale: Option<i64>, pk: bool, ai: bool) -> ErColumn {
+        let mut col = make_column(id, table_id, name, data_type, pk, ai);
+        col.length = length;
+        col.scale = scale;
+        col
     }
 
     #[test]
@@ -802,7 +855,7 @@ mod tests {
         let tables = vec![make_table(1, "users")];
         let columns = vec![
             make_column(1, 1, "id", "BIGINT", true, true),
-            make_column(2, 1, "name", "VARCHAR(255)", false, false),
+            make_column_with_length(2, 1, "name", "VARCHAR", Some(255), None, false, false),
             make_column(3, 1, "active", "BOOLEAN", false, false),
         ];
         let mut cm = HashMap::new();
@@ -814,6 +867,7 @@ mod tests {
         assert!(ddl.contains("CREATE TABLE `users`"));
         assert!(ddl.contains("AUTO_INCREMENT"));
         assert!(ddl.contains("TINYINT(1)"));
+        assert!(ddl.contains("VARCHAR(255)"));
         assert!(ddl.contains("ENGINE=InnoDB"));
         assert!(ddl.contains("PRIMARY KEY"));
     }
@@ -823,7 +877,7 @@ mod tests {
         let tables = vec![make_table(1, "users")];
         let columns = vec![
             make_column(1, 1, "id", "BIGINT", true, true),
-            make_column(2, 1, "name", "VARCHAR(100)", false, false),
+            make_column_with_length(2, 1, "name", "VARCHAR", Some(100), None, false, false),
         ];
         let mut cm = HashMap::new();
         cm.insert(1, columns);
@@ -841,7 +895,7 @@ mod tests {
         let tables = vec![make_table(1, "users")];
         let columns = vec![
             make_column(1, 1, "id", "INT", true, true),
-            make_column(2, 1, "email", "VARCHAR(255)", false, false),
+            make_column_with_length(2, 1, "email", "VARCHAR", Some(255), None, false, false),
         ];
         let mut cm = HashMap::new();
         cm.insert(1, columns);
@@ -875,7 +929,7 @@ mod tests {
         let tables = vec![make_table(1, "users")];
         let columns = vec![
             make_column(1, 1, "id", "INT", true, true),
-            make_column(2, 1, "name", "VARCHAR(50)", false, false),
+            make_column_with_length(2, 1, "name", "VARCHAR", Some(50), None, false, false),
         ];
         let mut cm = HashMap::new();
         cm.insert(1, columns);
@@ -898,7 +952,7 @@ mod tests {
         let tables = vec![make_table(1, "users")];
         let columns = vec![
             make_column(1, 1, "id", "INT", true, false),
-            make_column(2, 1, "email", "VARCHAR(255)", false, false),
+            make_column_with_length(2, 1, "email", "VARCHAR", Some(255), None, false, false),
         ];
         let indexes = vec![ErIndex {
             id: 1,

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS connections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     group_id INTEGER REFERENCES connection_groups(id) ON DELETE SET NULL,
-    driver TEXT NOT NULL CHECK(driver IN ('mysql','postgres','oracle','sqlserver','sqlite','doris','tidb','clickhouse')),
+    driver TEXT NOT NULL CHECK(driver IN ('mysql','postgres','oracle','sqlserver','sqlite','doris','tidb','clickhouse','gaussdb','db2')),
     host TEXT,
     port INTEGER,
     database_name TEXT,
@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS connections (
     password_enc TEXT,
     extra_params TEXT,
     file_path TEXT,
+    auth_type TEXT,
+    token_enc TEXT,
+    ssl_mode TEXT,
+    ssl_ca_path TEXT,
+    ssl_cert_path TEXT,
+    ssl_key_path TEXT,
+    connect_timeout_secs INTEGER DEFAULT 30,
+    read_timeout_secs INTEGER DEFAULT 60,
+    pool_max_connections INTEGER DEFAULT 5,
+    pool_idle_timeout_secs INTEGER DEFAULT 300,
     sort_order INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -104,16 +114,21 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
     id            TEXT PRIMARY KEY,
     node_type     TEXT NOT NULL CHECK(node_type IN ('table','column','fk','index','metric','alias','link')),
     connection_id INTEGER REFERENCES connections(id) ON DELETE CASCADE,
+    database      TEXT,
+    schema_name   TEXT,
     name          TEXT NOT NULL,
     display_name  TEXT,
     aliases       TEXT,
     source        TEXT DEFAULT 'schema',
     is_deleted    INTEGER NOT NULL DEFAULT 0,
     metadata      TEXT,
+    position_x    REAL,
+    position_y    REAL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_conn ON graph_nodes(connection_id);
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_db   ON graph_nodes(connection_id, database);
 
 -- 图谱边
 CREATE TABLE IF NOT EXISTS graph_edges (
@@ -342,6 +357,14 @@ CREATE TABLE IF NOT EXISTS er_columns (
     is_primary_key  INTEGER DEFAULT 0,
     is_auto_increment INTEGER DEFAULT 0,
     comment         TEXT,
+    length          INTEGER,
+    scale           INTEGER,
+    is_unique       INTEGER DEFAULT 0,
+    unsigned        INTEGER DEFAULT 0,
+    charset         TEXT,
+    collation       TEXT,
+    on_update       TEXT,
+    enum_values     TEXT,
     sort_order      INTEGER DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))

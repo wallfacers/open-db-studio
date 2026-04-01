@@ -50,14 +50,22 @@ fn row_to_column(row: &rusqlite::Row) -> rusqlite::Result<ErColumn> {
         is_primary_key: row.get(6)?,
         is_auto_increment: row.get(7)?,
         comment: row.get(8)?,
-        sort_order: row.get(9)?,
-        created_at: row.get(10)?,
-        updated_at: row.get(11)?,
+        length: row.get(9)?,
+        scale: row.get(10)?,
+        is_unique: row.get(11)?,
+        unsigned: row.get(12)?,
+        charset: row.get(13)?,
+        collation: row.get(14)?,
+        on_update: row.get(15)?,
+        enum_values: row.get(16)?,
+        sort_order: row.get(17)?,
+        created_at: row.get(18)?,
+        updated_at: row.get(19)?,
     })
 }
 
 const COLUMN_COLS: &str =
-    "id, table_id, name, data_type, nullable, default_value, is_primary_key, is_auto_increment, comment, sort_order, created_at, updated_at";
+    "id, table_id, name, data_type, nullable, default_value, is_primary_key, is_auto_increment, comment, length, scale, is_unique, unsigned, charset, collation, on_update, enum_values, sort_order, created_at, updated_at";
 
 fn row_to_relation(row: &rusqlite::Row) -> rusqlite::Result<ErRelation> {
     Ok(ErRelation {
@@ -350,8 +358,8 @@ pub fn create_column(req: &CreateColumnRequest) -> AppResult<ErColumn> {
     };
 
     conn.execute(
-        "INSERT INTO er_columns (table_id, name, data_type, nullable, default_value, is_primary_key, is_auto_increment, comment, sort_order, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO er_columns (table_id, name, data_type, nullable, default_value, is_primary_key, is_auto_increment, comment, length, scale, is_unique, unsigned, charset, collation, on_update, enum_values, sort_order, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
         rusqlite::params![
             req.table_id,
             req.name,
@@ -361,6 +369,14 @@ pub fn create_column(req: &CreateColumnRequest) -> AppResult<ErColumn> {
             req.is_primary_key.unwrap_or(false),
             req.is_auto_increment.unwrap_or(false),
             req.comment,
+            req.length,
+            req.scale,
+            req.is_unique.unwrap_or(false),
+            req.unsigned.unwrap_or(false),
+            req.charset,
+            req.collation,
+            req.on_update,
+            req.enum_values,
             sort_order,
             &now,
             &now,
@@ -401,6 +417,14 @@ pub fn update_column(id: i64, req: &UpdateColumnRequest) -> AppResult<ErColumn> 
     maybe_set!(req.is_primary_key, "is_primary_key");
     maybe_set!(req.is_auto_increment, "is_auto_increment");
     maybe_set!(req.comment, "comment");
+    maybe_set!(req.length, "length");
+    maybe_set!(req.scale, "scale");
+    maybe_set!(req.is_unique, "is_unique");
+    maybe_set!(req.unsigned, "unsigned");
+    maybe_set!(req.charset, "charset");
+    maybe_set!(req.collation, "collation");
+    maybe_set!(req.on_update, "on_update");
+    maybe_set!(req.enum_values, "enum_values");
     maybe_set!(req.sort_order, "sort_order");
 
     sets.push(format!("updated_at = ?{}", idx));

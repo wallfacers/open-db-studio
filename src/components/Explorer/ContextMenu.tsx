@@ -48,6 +48,7 @@ interface ContextMenuProps {
   onExportDatabase?: () => void;
   onBackupDatabase?: () => void;
   onExportMultiTable?: () => void;
+  onCopyConnectionInfo?: () => void;
   // 新增指标相关回调
   onOpenMetricList?: () => void;
   onNewMetric?: () => void;
@@ -66,6 +67,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onExportDatabase,
   onBackupDatabase,
   onExportMultiTable,
+  onCopyConnectionInfo,
   // 新增
   onOpenMetricList,
   onNewMetric,
@@ -106,6 +108,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           { label: t('contextMenu.moveToGroup'), icon: FolderInput, onClick: onMoveToGroup, dividerBefore: true },
           { label: t('contextMenu.createDatabase', '新建数据库'), icon: Database, onClick: onCreateDatabase, disabled: !isConnected, dividerBefore: true },
           { label: t('contextMenu.editConnection'), icon: Pencil, onClick: onEditConnection },
+          { label: t('contextMenu.copyConnectionInfo'), icon: Copy, onClick: onCopyConnectionInfo || (() => {}), disabled: !onCopyConnectionInfo },
           { label: t('contextMenu.deleteConnection'), icon: Trash2, onClick: onDeleteConnection, danger: true, dividerBefore: true },
         ];
       case 'database':

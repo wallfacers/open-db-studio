@@ -1,14 +1,19 @@
 use crate::AppResult;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-/// 从 graph_edges 读取 foreign_key 边的邻接表
+/// 从 graph_edges 通过 Link Node 两段式边（to_link → link → from_link）读取 FK 邻接表
 fn load_fk_adjacency(connection_id: i64) -> AppResult<Vec<(String, String)>> {
     let conn = crate::db::get().lock().unwrap();
     let mut stmt = conn.prepare(
-        "SELECT e.from_node, e.to_node
-         FROM graph_edges e
-         JOIN graph_nodes n ON n.id = e.from_node
-         WHERE n.connection_id = ?1 AND e.edge_type = 'foreign_key'"
+        "SELECT e1.from_node, e2.to_node
+         FROM graph_edges e1
+         JOIN graph_nodes ln ON ln.id = e1.to_node
+         JOIN graph_edges e2 ON e2.from_node = ln.id
+         WHERE ln.connection_id = ?1
+           AND ln.node_type = 'link'
+           AND ln.is_deleted = 0
+           AND e1.edge_type = 'to_link'
+           AND e2.edge_type = 'from_link'"
     )?;
     let rows = stmt.query_map([connection_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -23,13 +28,25 @@ pub(crate) fn bfs_paths(
     max_hops: u8,
 ) -> Vec<Vec<String>> {
     let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+    // 记录自引用边（from == to），单独处理
+    let mut self_loops: HashSet<String> = HashSet::new();
     for (from, to) in edges {
+        if from == to {
+            self_loops.insert(from.clone());
+        }
         adj.entry(from.clone()).or_default().push(to.clone());
-        adj.entry(to.clone()).or_default().push(from.clone()); // 双向
+        if from != to {
+            adj.entry(to.clone()).or_default().push(from.clone()); // 双向（非自引用）
+        }
     }
 
     let mut paths = Vec::new();
     for start in start_ids {
+        // 自引用边：添加 [start, start] 路径
+        if self_loops.contains(start) {
+            paths.push(vec![start.clone(), start.clone()]);
+        }
+
         let mut visited: HashSet<String> = HashSet::new();
         let mut queue: VecDeque<(String, Vec<String>, u8)> = VecDeque::new();
         queue.push_back((start.clone(), vec![start.clone()], 0));

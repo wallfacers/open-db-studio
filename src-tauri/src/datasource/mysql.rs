@@ -37,17 +37,7 @@ fn get_opt_str(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
     None
 }
 
-fn format_size(bytes: i64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
+use super::utils::format_size;
 
 pub struct MySqlDataSource {
     pool: MySqlPool,
@@ -68,19 +58,45 @@ impl MySqlDataSource {
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
         let password = config.password.as_deref().unwrap_or("");
         let database = config.database.as_deref().unwrap_or("");
-        let connect_opts = MySqlConnectOptions::new()
+        // SSL 模式映射
+        let ssl_mode = match config.ssl_mode.as_deref().unwrap_or("disable") {
+            "disable" => MySqlSslMode::Disabled,
+            "prefer" => MySqlSslMode::Preferred,
+            "require" => MySqlSslMode::Required,
+            "verify_ca" => MySqlSslMode::VerifyCa,
+            "verify_full" => MySqlSslMode::VerifyIdentity,
+            _ => MySqlSslMode::Disabled,
+        };
+        let mut opts = MySqlConnectOptions::new()
             .host(host)
             .port(port)
             .username(username)
             .password(password)
             .database(database)
-            .ssl_mode(MySqlSslMode::Disabled)
+            .ssl_mode(ssl_mode)
             .log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
+
+        // SSL 证书
+        if let Some(ref ca) = config.ssl_ca_path {
+            if !ca.is_empty() { opts = opts.ssl_ca(ca); }
+        }
+        if let Some(ref cert) = config.ssl_cert_path {
+            if !cert.is_empty() { opts = opts.ssl_client_cert(cert); }
+        }
+        if let Some(ref key) = config.ssl_key_path {
+            if !key.is_empty() { opts = opts.ssl_client_key(key); }
+        }
+
+        // 连接池参数
+        let max_conn = config.pool_max_connections.unwrap_or(5) as u32;
+        let idle_timeout = config.pool_idle_timeout_secs.unwrap_or(300);
+        let acquire_timeout = config.connect_timeout_secs.unwrap_or(30);
+
         let pool = MySqlPoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(Duration::from_secs(30))
-            .idle_timeout(Duration::from_secs(300))
-            .connect_with(connect_opts)
+            .max_connections(max_conn)
+            .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
+            .idle_timeout(Duration::from_secs(idle_timeout as u64))
+            .connect_with(opts)
             .await?;
         Ok(Self { pool, dialect })
     }
@@ -96,6 +112,22 @@ impl DataSource for MySqlDataSource {
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         use sqlx::Column;
         let start = Instant::now();
+
+        // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
+        // sqlx does not enable CLIENT_MULTI_STATEMENTS by default, so sending multiple statements
+        // as a single string causes a syntax error on the second statement.
+        let trimmed = sql.trim_start().to_uppercase();
+        if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("DESCRIBE") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
+            let stmts = crate::datasource::utils::split_sql_statements(sql);
+            let mut total_affected = 0usize;
+            for stmt in &stmts {
+                let result = sqlx::query(stmt).execute(&self.pool).await?;
+                total_affected += result.rows_affected() as usize;
+            }
+            let duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: total_affected, duration_ms });
+        }
+
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -192,7 +224,7 @@ impl DataSource for MySqlDataSource {
 
     async fn get_columns(&self, table: &str, _schema: Option<&str>) -> AppResult<Vec<ColumnMeta>> {
         let rows = sqlx::query(
-            "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA, COLUMN_COMMENT
+            "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA, COLUMN_COMMENT
              FROM information_schema.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
              ORDER BY ORDINAL_POSITION"
@@ -421,6 +453,10 @@ impl DataSource for MySqlDataSource {
                 has_multi_database: true,
                 has_partitions: true,
                 sql_dialect: SqlDialect::Standard,
+                supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
+                has_pool_config: true,
+                has_timeout_config: true,
+                has_ssl_config: true,
             },
             Dialect::Doris => DriverCapabilities {
                 has_schemas: false,
@@ -431,6 +467,10 @@ impl DataSource for MySqlDataSource {
                 has_multi_database: true,
                 has_partitions: true,
                 sql_dialect: SqlDialect::Doris,
+                supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
+                has_pool_config: true,
+                has_timeout_config: true,
+                has_ssl_config: true,
             },
             Dialect::TiDB => DriverCapabilities {
                 has_schemas: false,
@@ -441,6 +481,10 @@ impl DataSource for MySqlDataSource {
                 has_multi_database: true,
                 has_partitions: true,
                 sql_dialect: SqlDialect::Standard,
+                supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
+                has_pool_config: true,
+                has_timeout_config: true,
+                has_ssl_config: true,
             },
         }
     }

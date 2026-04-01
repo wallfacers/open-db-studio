@@ -135,6 +135,11 @@ export const TaskItem: React.FC<Props> = ({ task }) => {
                     {task.metricCount != null && <> · <span className="text-[#00c9a7]">新增 {task.metricCount} 个</span></>}
                     {task.skippedCount != null && <> · 跳过 {task.skippedCount} 个</>}
                   </>
+                ) : task.type === 'build_schema_graph' ? (
+                  <>
+                    {t('taskCenter.completed', 'Completed')}
+                    {(task.processedRows ?? 0) > 0 && <> · <span className="text-[#00c9a7]">{(task.processedRows ?? 0).toLocaleString()} 张表</span></>}
+                  </>
                 ) : (
                   <>{t('taskCenter.completed', 'Completed')} · {(task.processedRows ?? 0).toLocaleString()} {t('taskCenter.rows', 'rows')}</>
                 )}

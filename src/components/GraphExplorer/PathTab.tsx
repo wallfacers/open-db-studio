@@ -34,8 +34,7 @@ export function PathTab({
   const { loading, error, subgraph, findPath, reset, nodeDisplayMap } = usePathFinder();
   const { fitView } = useReactFlow();
 
-  const sameNode = pathFrom && pathTo && pathFrom.id === pathTo.id;
-  const canQuery = pathFrom && pathTo && !sameNode && connectionId !== null;
+  const canQuery = pathFrom && pathTo && connectionId !== null;
 
   const handleFindPath = async () => {
     if (!canQuery) return;
@@ -136,7 +135,7 @@ export function PathTab({
           <button
             onClick={handleFindPath}
             disabled={!canQuery || loading}
-            title={sameNode ? '起点和终点不能相同' : undefined}
+            title={undefined}
             className="flex-1 flex items-center justify-center gap-1 py-1 text-xs rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: '#0a1f18', color: '#00c9a7', borderColor: '#00a98f55' }}
           >
@@ -145,9 +144,6 @@ export function PathTab({
           </button>
         </div>
 
-        {sameNode && (
-          <p className="text-[#f43f5e] text-[10px]">起点和终点不能相同</p>
-        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">

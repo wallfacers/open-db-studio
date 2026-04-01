@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # Navicat 风格数据库导航树 实施计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

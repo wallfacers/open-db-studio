@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # propose_sql_diff MCP 工具 + Tauri 全局事件桥接 Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.

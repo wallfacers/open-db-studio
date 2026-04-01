@@ -9,6 +9,15 @@ export interface Connection {
   username: string | null;
   extra_params: string | null;
   file_path: string | null;
+  auth_type: string | null;
+  ssl_mode: string | null;
+  ssl_ca_path: string | null;
+  ssl_cert_path: string | null;
+  ssl_key_path: string | null;
+  connect_timeout_secs: number | null;
+  read_timeout_secs: number | null;
+  pool_max_connections: number | null;
+  pool_idle_timeout_secs: number | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -25,6 +34,16 @@ export interface CreateConnectionRequest {
   extra_params?: string;
   group_id?: number | null;
   file_path?: string;
+  auth_type?: string;
+  token?: string;
+  ssl_mode?: string;
+  ssl_ca_path?: string;
+  ssl_cert_path?: string;
+  ssl_key_path?: string;
+  connect_timeout_secs?: number;
+  read_timeout_secs?: number;
+  pool_max_connections?: number;
+  pool_idle_timeout_secs?: number;
 }
 
 export interface QueryResult {
@@ -32,10 +51,12 @@ export interface QueryResult {
   rows: (string | number | boolean | null)[][];
   row_count: number;
   duration_ms: number;
-  /** 前端附加：select=查询结果, dml-report=DML聚合报告 */
-  kind?: 'select' | 'dml-report';
+  /** 前端附加：select=查询结果, dml-report=DML聚合报告, error=执行错误 */
+  kind?: 'select' | 'dml-report' | 'error';
   /** 前端附加：产生该结果的原始 SQL */
   sql?: string;
+  /** 前端附加：错误信息（仅 kind='error' 时存在） */
+  error_message?: string;
 }
 
 export interface TableMeta {
@@ -131,16 +152,10 @@ export interface Tab {
   db?: string;
   schema?: string;
   queryContext?: QueryContext;
-  isNewTable?: boolean;        // table_structure Tab 专用
-  initialTableName?: string;   // table_structure Tab：AI 预填表名
-  initialColumns?: Array<{     // table_structure Tab：AI 预填列定义
-    name: string; data_type: string; length?: string;
-    is_nullable?: boolean; default_value?: string;
-    is_primary_key?: boolean; extra?: string; comment?: string;
-  }>;
   stJobId?: number;            // seatunnel_job Tab 专用
   stConnectionId?: number;     // seatunnel_job Tab 专用
   erProjectId?: number;        // er_design Tab 专用
+  ghostTextEnabled?: boolean;  // undefined = use global default
 }
 
 export interface ColumnMeta {
@@ -280,16 +295,6 @@ export interface SqlStatementInfo {
   endLine: number;      // 0-based 行号（语句结束）
 }
 
-/** AI 提出的 SQL 修改提案（等待用户确认） */
-export interface SqlDiffProposal {
-  original: string;     // 原始 SQL（单条语句）
-  modified: string;     // 修改后的 SQL
-  reason: string;       // 修改原因（AI 说明）
-  tabId: string;        // 目标 Tab
-  startOffset: number;  // 原始语句在编辑器中的起始位置
-  endOffset: number;    // 原始语句在编辑器中的结束位置
-}
-
 /** Monaco 编辑器光标/选区信息（由 MainContent 实时写入） */
 export interface EditorInfo {
   cursorOffset: number;       // 光标在全文中的字符偏移
@@ -388,6 +393,26 @@ export interface PermissionRequest {
   }>
 }
 
+/** OpenCode question.asked — AI agent 请求用户回答选择题/自定义输入 */
+export interface QuestionOption {
+  label: string
+  description: string
+}
+
+export interface QuestionInfo {
+  question: string
+  header: string
+  options: QuestionOption[]
+  multiple?: boolean
+  custom?: boolean    // 默认 true，允许自定义输入
+}
+
+export interface QuestionRequest {
+  question_id: string
+  session_id: string
+  questions: QuestionInfo[]
+}
+
 export interface OpenCodeProviderModel {
   id: string;
   name: string;
@@ -445,6 +470,15 @@ export interface ErColumn {
   is_primary_key: boolean;
   is_auto_increment: boolean;
   comment: string | null;
+  // 扩展属性
+  length: number | null;
+  scale: number | null;
+  is_unique: boolean;
+  unsigned: boolean;
+  charset: string | null;
+  collation: string | null;
+  on_update: string | null;
+  enum_values: string[] | null;  // 前端用数组，Rust 传 JSON 字符串
   sort_order: number;
   created_at: string;
   updated_at: string;

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { useQueryStore } from './queryStore';
+import { connNodeId, stCatNodeId, stJobNodeId } from '../utils/nodeId';
 
 // 防抖持久化（对齐 metricsTreeStore 模式）
 let _persistSTTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,8 +120,8 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
       // 1. 生成 connection 根节点
       for (const c of connections) {
-        nodes.set(`conn_${c.id}`, {
-          id: `conn_${c.id}`,
+        nodes.set(connNodeId(c.id), {
+          id: connNodeId(c.id),
           nodeType: 'connection',
           label: c.name,
           parentId: null,
@@ -146,12 +147,12 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
       }
 
       for (const cat of categories) {
-        const id = `cat_${cat.id}`;
+        const id = stCatNodeId(cat.id);
         let parentId: string | null = null;
         if (cat.parent_id !== null) {
-          parentId = `cat_${cat.parent_id}`;
+          parentId = stCatNodeId(cat.parent_id);
         } else if (cat.connection_id !== null) {
-          parentId = `conn_${cat.connection_id}`;
+          parentId = connNodeId(cat.connection_id);
         } else {
           continue; // 无归属的根目录，隐藏
         }
@@ -168,12 +169,12 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
       // 3. 构建 Job 节点
       for (const job of jobs) {
-        const id = `job_${job.id}`;
+        const id = stJobNodeId(job.id);
         let parentId: string | null = null;
         if (job.category_id !== null) {
-          parentId = `cat_${job.category_id}`;
+          parentId = stCatNodeId(job.category_id);
         } else if (job.connection_id !== null) {
-          parentId = `conn_${job.connection_id}`;
+          parentId = connNodeId(job.connection_id);
         } else {
           continue; // 孤儿 Job，隐藏
         }
@@ -223,7 +224,7 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
   deleteConnection: async (id) => {
     // 删除前收集该连接下所有 Job 的 ID，用于关闭已开启的 Tab
-    const jobIds = collectDescendantJobIds(get().nodes, `conn_${id}`);
+    const jobIds = collectDescendantJobIds(get().nodes, connNodeId(id));
     await invoke('delete_st_connection', { id });
     await get().init();
     jobIds.forEach(jobId => useQueryStore.getState().closeSeaTunnelJobTab(jobId));
@@ -240,27 +241,27 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
     if (parentCategoryId) {
       set(s => {
         const next = new Set(s.expandedIds);
-        next.add(`cat_${parentCategoryId}`);
+        next.add(stCatNodeId(parentCategoryId));
         persistSTExpandedIds(next);
         return { expandedIds: next };
       });
     }
-    set({ selectedId: `cat_${newId}` });
+    set({ selectedId: stCatNodeId(newId) });
   },
 
   renameCategory: async (id, name) => {
     await invoke('rename_st_category', { id, name });
     set(s => {
       const next = new Map(s.nodes);
-      const node = next.get(`cat_${id}`);
-      if (node) next.set(`cat_${id}`, { ...node, label: name });
+      const node = next.get(stCatNodeId(id));
+      if (node) next.set(stCatNodeId(id), { ...node, label: name });
       return { nodes: next };
     });
   },
 
   deleteCategory: async (id) => {
     // 删除前收集该目录下所有 Job 的 ID，用于关闭已开启的 Tab
-    const jobIds = collectDescendantJobIds(get().nodes, `cat_${id}`);
+    const jobIds = collectDescendantJobIds(get().nodes, stCatNodeId(id));
     await invoke('delete_st_category', { id });
     await get().init();
     jobIds.forEach(jobId => useQueryStore.getState().closeSeaTunnelJobTab(jobId));
@@ -273,7 +274,7 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
       connectionId: connectionId ?? null,
     });
     await get().init();
-    set({ selectedId: `job_${newId}` });
+    set({ selectedId: stJobNodeId(newId) });
     return newId;
   },
 
@@ -281,7 +282,7 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
     await invoke('delete_st_job', { id });
     set(s => {
       const next = new Map(s.nodes);
-      next.delete(`job_${id}`);
+      next.delete(stJobNodeId(id));
       return { nodes: next };
     });
     useQueryStore.getState().closeSeaTunnelJobTab(id);
@@ -296,7 +297,7 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
   updateJobLabel: (id, name) => {
     set(s => {
-      const key = `job_${id}`;
+      const key = stJobNodeId(id);
       const node = s.nodes.get(key);
       if (!node) return {};
       const next = new Map(s.nodes);
@@ -312,7 +313,7 @@ export const useSeaTunnelStore = create<SeaTunnelStore>((set, get) => ({
 
   updateJobStatus: (jobId, status) => {
     set(s => {
-      const key = `job_${jobId}`;
+      const key = stJobNodeId(jobId);
       const node = s.nodes.get(key);
       if (!node) return {};
       const next = new Map(s.nodes);

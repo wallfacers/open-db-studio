@@ -6,6 +6,7 @@ import { AliasEditor } from './AliasEditor';
 import type { GraphNode, GraphEdge } from './useGraphData';
 import { parseAliases } from './graphUtils';
 import { Tooltip } from '../common/Tooltip';
+import { useConfirmStore } from '../../store/confirmStore';
 
 interface NodeDetailProps {
   node: GraphNode;
@@ -301,16 +302,21 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           {node.source === 'user' && (
             <button
               onClick={async () => {
-                if (!confirm('确认删除此用户节点？该节点相关的自定义边也将删除。')) return;
+                const ok = await useConfirmStore.getState().confirm({
+                  title: '删除节点',
+                  message: `确认删除用户节点「${node.display_name || node.name}」？该节点相关的自定义边也将一并删除。`,
+                  confirmLabel: '删除',
+                  cancelLabel: '取消',
+                  variant: 'danger',
+                });
+                if (!ok) return;
                 try {
                   await invoke('delete_graph_node', { nodeId: node.id });
                 } catch (e) {
                   console.error('删除节点失败', e);
                   alert(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
-                  // 失败时不关闭面板，让用户知道操作未成功
                   return;
                 }
-                // 只在成功时执行 onClose 和 onRefresh
                 onClose();
                 onRefresh?.();
               }}

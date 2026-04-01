@@ -26,20 +26,32 @@ pub async fn test_connection(config: ConnectionConfig) -> AppResult<bool> {
 
 #[tauri::command]
 pub async fn delete_connection(id: i64) -> AppResult<()> {
-    crate::datasource::pool_cache::invalidate(id).await;
+    invalidate_all_caches(id).await;
     crate::db::delete_connection(id)
 }
 
 #[tauri::command]
 pub async fn update_connection(id: i64, req: crate::db::UpdateConnectionRequest) -> AppResult<crate::db::models::Connection> {
-    crate::datasource::pool_cache::invalidate(id).await;
+    invalidate_all_caches(id).await;
     crate::db::update_connection(id, &req)
+}
+
+async fn invalidate_all_caches(connection_id: i64) {
+    crate::datasource::pool_cache::invalidate(connection_id).await;
+    crate::llm::inline_complete::invalidate_meta_cache(connection_id).await;
+    crate::llm::inline_complete::invalidate_timeout_tracker(connection_id).await;
 }
 
 /// 返回指定连接的明文密码（仅供编辑弹窗"小眼睛"功能使用）
 #[tauri::command]
 pub async fn get_connection_password(id: i64) -> AppResult<String> {
     crate::db::get_connection_password(id)
+}
+
+/// 返回指定连接的明文 Token（仅供编辑弹窗"小眼睛"功能使用）
+#[tauri::command]
+pub async fn get_connection_token(id: i64) -> AppResult<String> {
+    crate::db::get_connection_token(id)
 }
 
 // ============ 查询执行 ============
@@ -52,10 +64,11 @@ pub async fn execute_query(
     schema: Option<String>,
 ) -> AppResult<QueryResult> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource_with_context(
+    let ds = crate::datasource::pool_cache::get_or_create(
+        connection_id,
         &config,
-        database.as_deref(),
-        schema.as_deref(),
+        database.as_deref().unwrap_or(""),
+        schema.as_deref().unwrap_or(""),
     ).await?;
 
     let result = ds.execute(&sql).await;
@@ -79,6 +92,21 @@ pub async fn execute_query(
                 None,
                 Some(&e.to_string()),
             );
+        }
+    }
+
+    // Auto-trigger schema graph refresh on DDL changes
+    if result.is_ok() {
+        let sql_upper = sql.trim().to_uppercase();
+        if sql_upper.starts_with("CREATE")
+            || sql_upper.starts_with("ALTER")
+            || sql_upper.starts_with("DROP")
+        {
+            let conn_id = connection_id;
+            let db = database.clone();
+            tokio::spawn(async move {
+                let _ = crate::graph::refresh_schema_graph(conn_id, db).await;
+            });
         }
     }
 
@@ -108,15 +136,29 @@ fn parse_api_type(s: &str) -> crate::llm::ApiType {
     }
 }
 
+/// 解析 LlmConfig 的有效 base_url：DB 有值就用 DB，否则从 opencode.json 读。
+fn resolve_base_url(config: &crate::db::models::LlmConfig) -> String {
+    if !config.base_url.is_empty() {
+        return config.base_url.clone();
+    }
+    if !config.opencode_provider_id.is_empty() {
+        if let Some(url) = crate::agent::config::resolve_opencode_base_url(&config.opencode_provider_id) {
+            return url;
+        }
+    }
+    String::new()
+}
+
 fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let config = crate::db::get_default_llm_config()?
         .ok_or_else(|| crate::AppError::Other(
             "No AI model configured. Please add one in Settings → AI Model.".into()
         ))?;
     let api_type = parse_api_type(&config.api_type);
+    let base_url = resolve_base_url(&config);
     Ok(crate::llm::client::LlmClient::new(
         config.api_key,
-        Some(config.base_url),
+        Some(base_url),
         Some(config.model),
         Some(api_type),
     ))
@@ -253,23 +295,40 @@ pub async fn set_llm_config_test_status(id: i64, status: String, error: Option<S
 }
 
 #[tauri::command]
-pub async fn test_llm_config(id: i64) -> AppResult<()> {
+pub async fn test_llm_config(
+    id: i64,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
     crate::db::update_llm_config_test_status(id, "testing", None)?;
     let config = crate::db::get_llm_config_by_id(id)?
         .ok_or_else(|| crate::AppError::Other(format!("LlmConfig {} not found", id)))?;
-    let api_type = parse_api_type(&config.api_type);
-    let client = crate::llm::client::LlmClient::new(
-        config.api_key,
-        Some(config.base_url),
-        Some(config.model),
-        Some(api_type),
-    );
-    let messages = vec![crate::llm::ChatMessage {
-        role: "user".into(),
-        content: "hi".into(),
-    }];
-    match client.chat(messages).await {
-        Ok(_) => {
+
+    let result = if config.config_mode != "custom" {
+        // opencode 模式：走 opencode serve sidecar 测试（与 Agent 对话同一链路）
+        test_via_serve(
+            state.serve_port,
+            &config.model,
+            &config.opencode_provider_id,
+        ).await
+    } else {
+        // custom 模式：直连 LLM API
+        let api_type = parse_api_type(&config.api_type);
+        let base_url = resolve_base_url(&config);
+        let client = crate::llm::client::LlmClient::new(
+            config.api_key,
+            Some(base_url),
+            Some(config.model),
+            Some(api_type),
+        );
+        let messages = vec![crate::llm::ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }];
+        client.chat(messages).await.map(|_| ())
+    };
+
+    match result {
+        Ok(()) => {
             crate::db::update_llm_config_test_status(id, "success", None)?;
         }
         Err(e) => {
@@ -279,6 +338,38 @@ pub async fn test_llm_config(id: i64) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+/// 通过 opencode serve 测试连接：创建临时 session → 发 "hi" → 检查回复 → 清理。
+async fn test_via_serve(
+    port: u16,
+    model_id: &str,
+    provider_id: &str,
+) -> AppResult<()> {
+    let session_id = crate::agent::client::create_session(port, Some("__connection_test__"))
+        .await
+        .map_err(|e| crate::AppError::Other(format!(
+            "opencode serve not available (is it running?): {}", e
+        )))?;
+
+    let result = crate::agent::stream::collect_text_via_global_events(
+        port,
+        &session_id,
+        "hi",
+        Some(model_id),
+        Some(provider_id),
+    ).await;
+
+    // 清理临时 session（无论成功失败）
+    cleanup_temp_sql_session(port, &session_id).await;
+
+    match result {
+        Ok(text) if text.trim().is_empty() => {
+            Err(crate::AppError::Other("Model returned empty response".into()))
+        }
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 // ============ 历史 & 收藏 ============
@@ -997,6 +1088,156 @@ pub async fn ai_diagnose_error(sql: String, error_msg: String, connection_id: Op
     client.diagnose_error(&sql, &error_msg, &schema_context, &driver).await
 }
 
+// ============ AI 内联补全 ============
+
+#[tauri::command]
+pub async fn ai_inline_complete(
+    connection_id: i64,
+    sql_before: String,
+    sql_after: String,
+    mentioned_tables: Vec<String>,
+    current_schema: String,
+    hint: String,
+    database: Option<String>,
+) -> Result<String, String> {
+    use crate::llm::inline_complete;
+
+    // 1. Check request deduplication — return cached result immediately (no slot needed)
+    if let Some(cached) = inline_complete::check_duplicate_request(connection_id, &sql_before, &mentioned_tables).await {
+        log::debug!("[ai_inline_complete] duplicate request, returning cached result (len={})", cached.len());
+        return Ok(cached);
+    }
+
+    // 2. Check concurrency — only 1 in-flight request per connection
+    if !inline_complete::acquire_slot(connection_id).await {
+        return Ok(String::new());
+    }
+
+    let result = async {
+        // 3. Check TimeoutTracker
+        if inline_complete::should_skip(connection_id).await {
+            log::debug!("[ai_inline_complete] skip: timeout backoff active for connection {}", connection_id);
+            return Ok(String::new());
+        }
+
+        // 4. Get best LLM config (prefer tested+default, then any tested)
+        let config = match crate::db::get_best_llm_config()
+            .map_err(|e| e.to_string())?
+        {
+            Some(c) => c,
+            None => {
+                log::warn!("[ai_inline_complete] skip: no LLM config with test_status='success'");
+                return Ok(String::new());
+            }
+        };
+
+        // 5. Get dialect from connection config
+        let conn_config = crate::db::get_connection_config(connection_id)
+            .map_err(|e| e.to_string())?;
+        let dialect = conn_config.driver.clone();
+
+        // 6. Get DataSource for context assembly
+        let ds = crate::datasource::pool_cache::get_or_create(
+            connection_id,
+            &conn_config,
+            database.as_deref().unwrap_or(""),
+            "",
+        ).await.map_err(|e| e.to_string())?;
+
+        // 7. Build layered context
+        let ctx_t0 = std::time::Instant::now();
+        let schema_context = inline_complete::build_layered_context(
+            ds.as_ref(),
+            &mentioned_tables,
+            &current_schema,
+            connection_id,
+        ).await;
+        log::debug!("[ai_inline_complete] context built in {:?}, len={}", ctx_t0.elapsed(), schema_context.len());
+
+        // 8. Assemble prompt from template
+        let mode_instruction = match hint.as_str() {
+            "single_line" => "Complete the current line only. Do not add newlines.",
+            _ => "Complete the full SQL statement from the cursor position. Use newlines for readability.",
+        };
+
+        let sql_before_trimmed = if sql_before.len() > 200 {
+            let mut start = sql_before.len() - 200;
+            while !sql_before.is_char_boundary(start) { start += 1; }
+            &sql_before[start..]
+        } else {
+            &sql_before
+        };
+        let sql_after_trimmed = if sql_after.len() > 100 {
+            let mut end = 100;
+            while !sql_after.is_char_boundary(end) { end -= 1; }
+            &sql_after[..end]
+        } else {
+            &sql_after
+        };
+
+        // Fast-path: statement already complete, skip LLM call
+        if sql_before_trimmed.trim_end().ends_with(';') && sql_after_trimmed.trim().is_empty() {
+            return Ok(String::new());
+        }
+
+        let prompt = include_str!("../../prompts/sql_inline_complete.txt")
+            .replace("{{DIALECT}}", &dialect)
+            .replace("{{MODE_INSTRUCTION}}", mode_instruction)
+            .replace("{{SCHEMA_CONTEXT}}", &schema_context)
+            .replace("{{SQL_BEFORE}}", sql_before_trimmed)
+            .replace("{{SQL_AFTER}}", sql_after_trimmed);
+
+        // 9. Create LLM client and call with 20s timeout
+        let api_type = parse_api_type(&config.api_type);
+        let base_url = resolve_base_url(&config);
+        let client = crate::llm::client::LlmClient::new(
+            config.api_key,
+            Some(base_url),
+            Some(config.model),
+            Some(api_type),
+        );
+
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            client.inline_complete(prompt, &hint),
+        ).await {
+            Ok(Ok(raw)) => {
+                inline_complete::record_success(connection_id).await;
+                let processed = inline_complete::postprocess_completion(&raw, &sql_before);
+                log::debug!("[ai_inline_complete] raw_len={} processed_len={} processed={:?}",
+                    raw.len(), processed.len(), &processed[..processed.len().min(100)]);
+                inline_complete::update_last_request(connection_id, sql_before.clone(), mentioned_tables.clone(), processed.clone()).await;
+                Ok(processed)
+            }
+            Ok(Err(e)) => {
+                log::warn!("[ai_inline_complete] LLM error: {}", e);
+                inline_complete::record_timeout(connection_id).await;
+                Ok(String::new())
+            }
+            Err(_) => {
+                log::warn!("[ai_inline_complete] Request timed out (20s)");
+                inline_complete::record_timeout(connection_id).await;
+                Ok(String::new())
+            }
+        }
+    }.await;
+
+    // Always release the slot
+    inline_complete::release_slot(connection_id).await;
+
+    result
+}
+
+#[tauri::command]
+pub async fn refresh_schema_graph(
+    connection_id: i64,
+    database: Option<String>,
+) -> Result<(), String> {
+    crate::graph::refresh_schema_graph(connection_id, database)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============ 导航树查询命令 ============
 
 #[tauri::command]
@@ -1006,8 +1247,14 @@ pub async fn list_databases(connection_id: i64) -> AppResult<Vec<String>> {
         return Ok(vec![db]);
     }
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
-    ds.list_databases().await
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
+        ds.list_databases().await
+    }).await;
+    match result {
+        Ok(r) => r,
+        Err(_) => Err(AppError::Datasource("获取数据库列表超时，请检查连接配置".into())),
+    }
 }
 
 #[tauri::command]
@@ -1017,10 +1264,7 @@ pub async fn list_schemas(connection_id: i64, database: String) -> AppResult<Vec
     ds.list_schemas(&database).await
 }
 
-const SYSTEM_SCHEMAS: &[&str] = &[
-    "information_schema", "pg_catalog",
-    "performance_schema", "sys", "mysql",
-];
+use crate::graph::SYSTEM_SCHEMAS;
 
 #[tauri::command]
 pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<String>> {
@@ -1029,9 +1273,16 @@ pub async fn list_databases_for_metrics(connection_id: i64) -> AppResult<Vec<Str
         return Ok(vec![db]);
     }
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
-    let dbs = ds.list_databases().await?;
-    Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect())
+    // 带超时保护：避免连接创建或 SHOW DATABASES 长时间挂起导致前端 spinner 永转
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let ds = crate::datasource::pool_cache::get_or_create(connection_id, &config, "", "").await?;
+        ds.list_databases().await
+    }).await;
+    match result {
+        Ok(Ok(dbs)) => Ok(dbs.into_iter().filter(|d| !SYSTEM_SCHEMAS.contains(&d.as_str())).collect()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(AppError::Datasource("获取数据库列表超时，请检查连接配置".into())),
+    }
 }
 
 #[tauri::command]
@@ -1101,6 +1352,15 @@ pub async fn count_metrics_batch(
     database: Option<String>,
 ) -> AppResult<std::collections::HashMap<String, i64>> {
     crate::metrics::crud::count_metrics_batch(connection_id, database.as_deref())
+}
+
+#[tauri::command]
+pub async fn count_metrics_by_node(
+    connection_id: i64,
+    database: Option<String>,
+    schema: Option<String>,
+) -> AppResult<i64> {
+    crate::metrics::crud::count_metrics_by_node(connection_id, database.as_deref(), schema.as_deref())
 }
 
 #[tauri::command]
@@ -2295,8 +2555,13 @@ pub async fn build_schema_graph(
 pub async fn get_graph_nodes(
     connection_id: i64,
     node_type: Option<String>,
+    database: Option<String>,
 ) -> AppResult<Vec<crate::graph::GraphNode>> {
-    crate::graph::query::get_nodes(connection_id, node_type.as_deref())
+    crate::graph::query::get_nodes_filtered(
+        connection_id,
+        node_type.as_deref(),
+        database.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -2403,6 +2668,25 @@ pub async fn update_graph_node_metadata(
         ));
     }
     Ok(())
+}
+
+// ============ 图谱节点坐标持久化 ============
+
+#[tauri::command]
+pub async fn save_graph_node_position(
+    node_id: String,
+    x: f64,
+    y: f64,
+) -> AppResult<()> {
+    crate::graph::query::save_node_position(&node_id, x, y)
+}
+
+#[tauri::command]
+pub async fn clear_graph_node_positions(
+    connection_id: i64,
+    database: Option<String>,
+) -> AppResult<()> {
+    crate::graph::query::clear_node_positions(connection_id, database.as_deref())
 }
 
 // ============ 跨数据源迁移 ============
@@ -2607,19 +2891,6 @@ pub async fn acp_elicitation_respond(
     Ok(())
 }
 
-/// 前端 DiffPanel 用户点击"应用"或"取消"后调用，解除 propose_sql_diff 的阻塞等待。
-/// confirmed=true 表示用户应用了修改，confirmed=false 表示用户取消。
-#[tauri::command]
-pub async fn mcp_diff_respond(
-    confirmed: bool,
-    state: tauri::State<'_, crate::AppState>,
-) -> crate::AppResult<()> {
-    if let Some(tx) = state.pending_diff_response.lock().await.take() {
-        let _ = tx.send(confirmed);
-    }
-    Ok(())
-}
-
 // ============ UI 状态持久化 ============
 
 #[tauri::command]
@@ -2768,26 +3039,6 @@ pub async fn set_auto_mode(
     }
     // 持久化到 app_settings
     crate::db::set_app_setting("auto_mode", if enabled { "true" } else { "false" })?;
-    Ok(())
-}
-
-// ============ MCP 双向桥接回调 ============
-
-#[tauri::command]
-pub async fn mcp_ui_action_respond(
-    state: tauri::State<'_, crate::AppState>,
-    request_id: String,
-    success: bool,
-    data: Option<serde_json::Value>,
-    error: Option<String>,
-) -> AppResult<()> {
-    let tx = {
-        let mut pending = state.pending_ui_actions.lock().await;
-        pending.remove(&request_id)
-    };
-    if let Some(tx) = tx {
-        let _ = tx.send(crate::state::UiActionResponse { success, data, error });
-    }
     Ok(())
 }
 
@@ -3170,6 +3421,26 @@ pub async fn agent_permission_respond(
     .await
 }
 
+/// Reply to a question from the AI agent.
+/// answers: array of arrays, e.g. [["选项1"], ["自定义输入"]]
+#[tauri::command]
+pub async fn agent_question_reply(
+    question_id: String,
+    answers: serde_json::Value,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::question_reply(state.serve_port, &question_id, answers).await
+}
+
+/// Reject a question from the AI agent.
+#[tauri::command]
+pub async fn agent_question_reject(
+    question_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    crate::agent::client::question_reject(state.serve_port, &question_id).await
+}
+
 /// Agent 对话（Serve 模式）
 /// 1. 写入 editor_sql_map 和 last_active_session_id
 /// 2. 构建 prompt_text
@@ -3215,30 +3486,41 @@ async fn sync_on_config_save(
         return;
     }
 
-    // 1a. 自定义模式：全量同步（保证同 provider 下其他 model 条目完整）
-    if cfg.config_mode == "custom" {
-        match crate::db::list_llm_configs() {
-            Ok(all_configs) => {
-                if let Err(e) = crate::agent::config::sync_all_providers(&opencode_dir, &all_configs) {
-                    log::warn!("[sync_on_config_save] sync_all_providers failed: {}", e);
-                }
+    // 1. 全量同步（保证同 provider 下所有 model 条目完整，含 opencode 和 custom 两种模式）
+    let mut root_after_sync: Option<serde_json::Value> = None;
+    match crate::db::list_llm_configs() {
+        Ok(all_configs) => {
+            match crate::agent::config::sync_all_providers(&opencode_dir, &all_configs) {
+                Ok(root) => { root_after_sync = Some(root); }
+                Err(e) => log::warn!("[sync_on_config_save] sync_all_providers failed: {}", e),
             }
-            Err(e) => log::warn!("[sync_on_config_save] list_llm_configs failed: {}", e),
         }
+        Err(e) => log::warn!("[sync_on_config_save] list_llm_configs failed: {}", e),
     }
 
-    // 1b. 将当前 config 的 provider 条目写入 opencode.json（两种模式均执行）
-    //     自定义模式：npm + options + 当前 model 条目；opencode 模式：options + 当前 model 条目
-    let entry = build_provider_entry_for_json(cfg);
-    if let Err(e) = crate::agent::config::upsert_provider_entry(&opencode_dir, &provider_id, &entry) {
-        log::warn!("[sync_on_config_save] upsert_provider_entry failed: {}", e);
-    }
+    // 2. 获取 provider 条目用于 PATCH 热更新
+    let full_entry = if !cfg.opencode_provider_id.is_empty() {
+        // sync_all_providers 已处理该 provider，直接从返回的 root 中提取
+        root_after_sync
+            .as_ref()
+            .map(|r| r["provider"][&provider_id].clone())
+            .filter(|v| !v.is_null())
+    } else {
+        // opencode_provider_id 为空，降级到 api_type，sync_all_providers 未处理，需单独 upsert
+        let entry = build_provider_entry_for_json(cfg);
+        match crate::agent::config::upsert_provider_entry(&opencode_dir, &provider_id, &entry) {
+            Ok(provider_val) => Some(provider_val).filter(|v| !v.is_null()),
+            Err(e) => { log::warn!("[sync_on_config_save] upsert_provider_entry failed: {}", e); None }
+        }
+    };
 
-    // 2. PATCH /config 热更新运行时配置
+    // 3. PATCH /config 热更新运行时配置
     if !cfg.model.is_empty() {
-        let body = serde_json::json!({ "provider": { &provider_id: entry } });
-        if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
-            log::warn!("[sync_on_config_save] patch_config_json failed (ignored): {}", e);
+        if let Some(entry) = full_entry {
+            let body = serde_json::json!({ "provider": { &provider_id: entry } });
+            if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
+                log::warn!("[sync_on_config_save] patch_config_json failed (ignored): {}", e);
+            }
         }
     }
 }
@@ -3321,6 +3603,21 @@ async fn apply_llm_config_to_opencode(
     }
 
     if !cfg.model.is_empty() && !effective_provider.is_empty() {
+        // 写入 opencode.json（深合并保留已有 npm/baseURL/其他 models），返回值即完整 provider 条目
+        let opencode_dir = state.app_data_dir.join("opencode");
+        let entry = build_provider_entry_for_json(cfg);
+        match crate::agent::config::upsert_provider_entry(&opencode_dir, &effective_provider, &entry) {
+            Ok(full_entry) => {
+                if !full_entry.is_null() {
+                    let body = serde_json::json!({ "provider": { &effective_provider: full_entry } });
+                    if let Err(e) = crate::agent::client::patch_config_json(state.serve_port, &body).await {
+                        log::warn!("[apply_llm_config] patch_config_json failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => log::warn!("[apply_llm_config] upsert_provider_entry failed: {}", e),
+        }
+
         if let Err(e) = crate::agent::client::patch_config(
             state.serve_port, &cfg.model, &effective_provider,
         ).await {
@@ -3675,6 +3972,118 @@ pub async fn cancel_explain_sql(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn agent_diagnose_error(
+    sql: String,
+    error_msg: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let result = agent_diagnose_error_inner(sql, error_msg, connection_id, database, &channel, &state).await;
+    if let Err(ref e) = result {
+        let _ = channel.send(crate::llm::StreamEvent::Error { message: e.to_string() });
+    }
+    result
+}
+
+async fn agent_diagnose_error_inner(
+    sql: String,
+    error_msg: String,
+    connection_id: Option<i64>,
+    database: Option<String>,
+    channel: &tauri::ipc::Channel<crate::llm::StreamEvent>,
+    state: &tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let port = state.serve_port;
+
+    // 1. 并发处理：若上次诊断仍在进行，先 abort 旧 session
+    {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        if let Some(old_id) = guard.take() {
+            log::info!("[agent_diagnose_error] Aborting previous diagnose session: {}", old_id);
+            cleanup_temp_sql_session(port, &old_id).await;
+        }
+    }
+
+    // 2. 获取当前 LLM 配置
+    let config = crate::db::get_default_llm_config()?
+        .ok_or_else(|| AppError::Other("No default LLM config found".into()))?;
+
+    // 3. 构建 prompt_text
+    let conn_context = if let Some(conn_id) = connection_id {
+        let driver = crate::db::get_connection_config(conn_id)
+            .map(|c| c.driver)
+            .unwrap_or_else(|_| "mysql".to_string());
+        let db_line = match &database {
+            Some(db) if !db.is_empty() => format!("当前数据库: {}\n", db),
+            _ => String::new(),
+        };
+        format!("当前数据库连接 ID: {}\n数据库类型: {}\n{}\n", conn_id, driver, db_line)
+    } else {
+        String::new()
+    };
+    let prompt_text = format!(
+        "{}请诊断以下 SQL 执行错误：\n\nSQL:\n```sql\n{}\n```\n\n错误信息:\n```\n{}\n```\n\n请分析错误原因并给出修复建议。",
+        conn_context, sql, error_msg
+    );
+
+    // 4. 创建临时 session
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let title = format!("sql-diagnose-{}", ts);
+    let session_id = crate::agent::client::create_session(port, Some(&title)).await?;
+    crate::db::insert_agent_session(&session_id, Some(&title), None, true)?;
+
+    // 5. 存入 AppState
+    {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        *guard = Some(session_id.clone());
+    }
+
+    // 6. 通过 /event SSE 流式输出
+    let (model_str, provider_str) = apply_llm_config_to_opencode(&config, state).await;
+    let model_opt = if model_str.is_empty() { None } else { Some(model_str.as_str()) };
+    let provider_opt = if provider_str.is_empty() { None } else { Some(provider_str.as_str()) };
+    let stream_result = crate::agent::stream::stream_global_events(
+        port,
+        &session_id,
+        &prompt_text,
+        model_opt,
+        provider_opt,
+        Some("sql-diagnose"),
+        channel,
+    )
+    .await;
+
+    // 7. 清理 session
+    cleanup_temp_sql_session(port, &session_id).await;
+    {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        if guard.as_deref() == Some(&session_id) {
+            *guard = None;
+        }
+    }
+
+    stream_result
+}
+
+#[tauri::command]
+pub async fn cancel_diagnose_error(
+    state: tauri::State<'_, crate::AppState>,
+) -> AppResult<()> {
+    let session_id = {
+        let mut guard = state.current_diagnose_session_id.lock().await;
+        guard.take()
+    };
+    if let Some(id) = session_id {
+        log::info!("[cancel_diagnose_error] Cancelling diagnose session: {}", id);
+        cleanup_temp_sql_session(state.serve_port, &id).await;
+    }
+    Ok(())
+}
+
 // ============ Agent Session 操作（undo / redo / compact）============
 
 /// 撤销最后一轮对话
@@ -3793,10 +4202,10 @@ pub async fn add_user_edge(
     edge_type: String,
     weight: Option<f64>,
 ) -> AppResult<String> {
-    let allowed_edge_types = ["foreign_key", "join_path", "user_defined"];
+    let allowed_edge_types = ["join_path", "user_defined"];
     if !allowed_edge_types.contains(&edge_type.as_str()) {
         return Err(crate::AppError::Other(format!(
-            "edge_type '{}' 不合法，允许值: foreign_key, join_path, user_defined", edge_type
+            "edge_type '{}' 不合法，允许值: join_path, user_defined", edge_type
         )));
     }
     let w = weight.unwrap_or(1.0);
@@ -3852,7 +4261,7 @@ pub async fn update_graph_edge(
                 ));
             }
             if let Some(ref et) = edge_type {
-                let allowed = ["foreign_key", "join_path", "user_defined"];
+                let allowed = ["join_path", "user_defined"];
                 if !allowed.contains(&et.as_str()) {
                     return Err(crate::AppError::Other(format!(
                         "edge_type '{}' 不合法", et
@@ -3956,4 +4365,10 @@ pub async fn get_db_stats(connection_id: i64, database: Option<String>) -> AppRe
 #[tauri::command]
 pub async fn read_text_file(path: String) -> AppResult<String> {
     std::fs::read_to_string(&path).map_err(|e| crate::error::AppError::Other(e.to_string()))
+}
+
+/// 写入文本文件（用于 JSON 导出）
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> AppResult<()> {
+    std::fs::write(&path, content).map_err(|e| crate::error::AppError::Other(e.to_string()))
 }

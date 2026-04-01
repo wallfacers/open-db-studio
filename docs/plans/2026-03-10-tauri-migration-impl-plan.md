@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # open-db-studio Tauri 迁移 + 文档记录系统 实施计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

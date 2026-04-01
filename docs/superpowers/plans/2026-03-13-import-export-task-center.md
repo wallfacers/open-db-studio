@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # 导入导出 + 任务中心 实现计划
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.

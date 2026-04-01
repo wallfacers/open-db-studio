@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format as formatSql } from 'sql-formatter';
+import { format as formatSql, type SqlLanguage } from 'sql-formatter';
 import { useTranslation } from 'react-i18next';
 import { ActivityBar } from './components/ActivityBar';
 import { Explorer } from './components/Explorer';
@@ -10,8 +10,8 @@ import { Toast, type ToastLevel } from './components/Toast';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
+import { useConnectionStore } from './store/connectionStore';
 import { useAppStore } from './store/appStore';
-import { useToolBridge } from './hooks/useToolBridge';
 import { useMcpBridge } from './hooks/useMcpBridge';
 import { TaskCenter } from './components/TaskCenter';
 import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
@@ -23,11 +23,15 @@ import { flushSeaTunnelPersist, useSeaTunnelStore } from './store/seaTunnelStore
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
+import { tabTypeToActivity, tabToTreeNodeId } from './utils/tabActivityMapping';
+import { useTreeStore } from './store/treeStore';
+import { useErDesignerStore } from './store/erDesignerStore';
+import { stJobNodeId } from './utils/nodeId';
 
 export default function App() {
   const { t } = useTranslation();
   const isAssistantOpen = useAppStore((s) => s.isAssistantOpen);
-  const [activeActivity, setActiveActivity] = useState('database');
+  const { activeActivity, setActiveActivity } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -51,8 +55,6 @@ export default function App() {
     activeTab?.db ??
     null;
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
-  // 全局挂载 MCP propose_sql_diff 事件监听器
-  useToolBridge();
   // 全局挂载 MCP 双向桥接（UI action / query request）
   useMcpBridge();
   // 初始化任务进度监听器
@@ -69,6 +71,45 @@ export default function App() {
   useEffect(() => {
     useSeaTunnelStore.getState().init();
   }, []);
+  // Tab 切换联动 ActivityBar + 侧边栏树选中
+  useEffect(() => {
+    if (!activeTabId) return;
+    const tab = tabs.find(t => t.id === activeTabId);
+    if (!tab) return;
+
+    // 1. 联动 ActivityBar
+    const targetActivity = tabTypeToActivity(tab.type);
+    if (targetActivity && activeActivity !== targetActivity) {
+      setActiveActivity(targetActivity);
+    }
+
+    // 2a. database 树 — 选中对应表节点
+    const treeNodeId = tabToTreeNodeId(tab);
+    if (treeNodeId) {
+      const treeState = useTreeStore.getState();
+      if (treeState.nodes.has(treeNodeId) && treeState.selectedId !== treeNodeId) {
+        treeState.selectNode(treeNodeId);
+      }
+    }
+
+    // 2b. ER 设计器 — 切换活跃项目
+    if (tab.type === 'er_design' && tab.erProjectId != null) {
+      const erStore = useErDesignerStore.getState();
+      if (erStore.activeProjectId !== tab.erProjectId) {
+        erStore.loadProject(tab.erProjectId);
+      }
+    }
+
+    // 2c. SeaTunnel — 选中 job 节点
+    if (tab.type === 'seatunnel_job' && tab.stJobId != null) {
+      const stStore = useSeaTunnelStore.getState();
+      const jobNode = stJobNodeId(tab.stJobId);
+      if (stStore.selectedId !== jobNode) {
+        stStore.selectNode(jobNode);
+      }
+    }
+  }, [activeTabId]);
+
   // 导入/导出完成后自动跳转到「我的任务」侧边栏
   useEffect(() => {
     if (taskCenterVisible) {
@@ -99,18 +140,50 @@ export default function App() {
   };
 
   const handleFormat = () => {
-    const { activeTabId, sqlContent, setSql } = useQueryStore.getState();
+    const { activeTabId, sqlContent, setSql, tabs } = useQueryStore.getState();
     const current = sqlContent[activeTabId] ?? '';
     if (!current.trim()) return;
+
+    // 根据当前 tab 的连接 driver 选择正确的 sql-formatter 方言
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    const connectionId = activeTab?.queryContext?.connectionId ?? null;
+    const connections = useConnectionStore.getState().connections;
+    const driver = connectionId != null
+      ? (connections.find(c => c.id === connectionId)?.driver ?? '')
+      : '';
+    const driverLanguageMap: Record<string, SqlLanguage> = {
+      mysql: 'mysql',
+      postgres: 'postgresql',
+      mssql: 'tsql',
+      oracle: 'plsql',
+      sqlite: 'sqlite',
+    };
+    const language: SqlLanguage = driverLanguageMap[driver] ?? 'sql';
+
+    const formatOpts = { language, tabWidth: 2, keywordCase: 'upper' } as const;
+
     try {
-      const formatted = formatSql(current, {
-        language: 'sql',
-        tabWidth: 2,
-        keywordCase: 'upper',
-      });
-      setSql(activeTabId, formatted);
+      setSql(activeTabId, formatSql(current, formatOpts));
     } catch {
-      showToast(t('app.sqlFormatFailed'), 'error');
+      // 降级：逐条格式化，失败的语句保持原样
+      try {
+        const parts = current.split(/(?<=;)\s*\n/);
+        const formatted = parts
+          .map(part => {
+            const trimmed = part.trim();
+            if (!trimmed) return part;
+            try { return formatSql(trimmed, formatOpts); } catch { return trimmed; }
+          })
+          .join('\n\n');
+        const anyChanged = formatted !== parts.map(p => p.trim()).join('\n\n');
+        if (anyChanged) {
+          setSql(activeTabId, formatted);
+        } else {
+          showToast(t('app.sqlFormatFailed'), 'error');
+        }
+      } catch {
+        showToast(t('app.sqlFormatFailed'), 'error');
+      }
     }
   };
 
@@ -222,13 +295,12 @@ export default function App() {
         )
       )}
 
+      <GraphExplorer connectionId={activeConnectionId} database={activeDatabase} hidden={activeActivity !== 'graph'} />
       {activeActivity === 'settings' ? (
         <SettingsPage />
       ) : activeActivity === 'tasks' ? (
         <TaskCenter />
-      ) : activeActivity === 'graph' ? (
-        <GraphExplorer connectionId={activeConnectionId} database={activeDatabase} />
-      ) : (
+      ) : activeActivity !== 'graph' ? (
         <MainContent
           handleFormat={handleFormat}
           showToast={showToast}
@@ -236,7 +308,7 @@ export default function App() {
           resultsHeight={resultsHeight}
           handleResultsResize={handleResultsResize}
         />
-      )}
+      ) : null}
 
       <div
         style={{

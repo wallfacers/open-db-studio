@@ -5,6 +5,7 @@ use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
+use super::utils::format_size;
 use crate::AppResult;
 
 pub struct PostgresDataSource {
@@ -284,26 +285,53 @@ impl PostgresDataSource {
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+        // SSL 模式映射
+        let ssl_mode = match config.ssl_mode.as_deref().unwrap_or("disable") {
+            "disable" => PgSslMode::Disable,
+            "prefer" => PgSslMode::Prefer,
+            "require" => PgSslMode::Require,
+            "verify_ca" => PgSslMode::VerifyCa,
+            "verify_full" => PgSslMode::VerifyFull,
+            _ => PgSslMode::Disable,
+        };
         let mut opts = PgConnectOptions::new()
             .host(host)
             .port(port)
             .username(username)
-            .ssl_mode(PgSslMode::Disable);
+            .ssl_mode(ssl_mode);
         if let Some(pw) = config.password.as_deref() {
             opts = opts.password(pw);
         }
-        // database 为空时不设置，sqlx 默认使用用户名作为库名（PG 规范）
-        if let Some(db) = config.database.as_deref().filter(|s| !s.is_empty()) {
-            opts = opts.database(db);
+        // database 为空时显式使用用户名（PG 规范：默认库 = 用户名）
+        // 不能省略，否则 sqlx PgConnectOptions::new() 可能读取 PGDATABASE 环境变量导致连接到错误的库
+        let db = config.database.as_deref().filter(|s| !s.is_empty()).unwrap_or(username);
+        opts = opts.database(db);
+
+        // SSL 证书
+        if let Some(ref ca) = config.ssl_ca_path {
+            if !ca.is_empty() { opts = opts.ssl_root_cert(ca); }
         }
+        if let Some(ref cert) = config.ssl_cert_path {
+            if !cert.is_empty() { opts = opts.ssl_client_cert(cert); }
+        }
+        if let Some(ref key) = config.ssl_key_path {
+            if !key.is_empty() { opts = opts.ssl_client_key(key); }
+        }
+
         // 设置 search_path：未指定时默认 public
         let search_path = schema.filter(|s| !s.is_empty()).unwrap_or("public");
         opts = opts.options([("search_path", search_path)]);
         opts = opts.log_slow_statements(log::LevelFilter::Off, Duration::from_secs(0));
+
+        // 连接池参数
+        let max_conn = config.pool_max_connections.unwrap_or(5) as u32;
+        let idle_timeout = config.pool_idle_timeout_secs.unwrap_or(300);
+        let acquire_timeout = config.connect_timeout_secs.unwrap_or(30);
+
         let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(Duration::from_secs(30))
-            .idle_timeout(Duration::from_secs(300))
+            .max_connections(max_conn)
+            .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
+            .idle_timeout(Duration::from_secs(idle_timeout as u64))
             .connect_with(opts)
             .await?;
         Ok(Self { pool })
@@ -319,6 +347,20 @@ impl DataSource for PostgresDataSource {
 
     async fn execute(&self, sql: &str) -> AppResult<QueryResult> {
         let start = Instant::now();
+
+        // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
+        let trimmed = sql.trim_start().to_uppercase();
+        if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
+            let stmts = crate::datasource::utils::split_sql_statements(sql);
+            let mut total_affected = 0usize;
+            for stmt in &stmts {
+                let result = sqlx::query(stmt).execute(&self.pool).await?;
+                total_affected += result.rows_affected() as usize;
+            }
+            let duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(QueryResult { columns: vec![], rows: vec![], row_count: total_affected, duration_ms });
+        }
+
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -361,7 +403,21 @@ impl DataSource for PostgresDataSource {
     async fn get_columns(&self, table: &str, schema: Option<&str>) -> AppResult<Vec<ColumnMeta>> {
         let schema = schema.unwrap_or("public");
         let rows = sqlx::query(
-            "SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
+            "SELECT c.column_name,
+                    CASE
+                      WHEN c.data_type = 'character varying' AND c.character_maximum_length IS NOT NULL
+                        THEN 'varchar(' || c.character_maximum_length || ')'
+                      WHEN c.data_type = 'character varying' THEN 'varchar'
+                      WHEN c.data_type = 'character' AND c.character_maximum_length IS NOT NULL
+                        THEN 'char(' || c.character_maximum_length || ')'
+                      WHEN c.data_type = 'character' THEN 'char'
+                      WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL AND c.numeric_scale IS NOT NULL
+                        THEN 'numeric(' || c.numeric_precision || ',' || c.numeric_scale || ')'
+                      WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL
+                        THEN 'numeric(' || c.numeric_precision || ')'
+                      ELSE c.data_type
+                    END AS data_type,
+                    c.is_nullable, c.column_default,
                     COALESCE(
                         (SELECT true FROM information_schema.table_constraints tc
                          JOIN information_schema.key_column_usage kcu
@@ -436,13 +492,14 @@ impl DataSource for PostgresDataSource {
         let schema = schema.unwrap_or("public");
         let rows = sqlx::query(
             "SELECT tc.constraint_name, kcu.column_name,
+                    ccu.table_schema AS referenced_schema,
                     ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
                     rc.delete_rule
              FROM information_schema.table_constraints tc
              JOIN information_schema.key_column_usage kcu
                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
              JOIN information_schema.constraint_column_usage ccu
-                 ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+                 ON ccu.constraint_name = tc.constraint_name AND ccu.constraint_schema = tc.constraint_schema
              LEFT JOIN information_schema.referential_constraints rc
                  ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.table_schema
              WHERE tc.constraint_type = 'FOREIGN KEY'
@@ -453,12 +510,17 @@ impl DataSource for PostgresDataSource {
         .bind(schema)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| ForeignKeyMeta {
-            constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
-            column: r.try_get::<String, _>(1).unwrap_or_default(),
-            referenced_table: r.try_get::<String, _>(2).unwrap_or_default(),
-            referenced_column: r.try_get::<String, _>(3).unwrap_or_default(),
-            on_delete: r.try_get::<Option<String>, _>(4).ok().flatten(),
+        Ok(rows.iter().map(|r| {
+            let ref_schema: String = r.try_get::<String, _>(2).unwrap_or_default();
+            let ref_table: String = r.try_get::<String, _>(3).unwrap_or_default();
+            ForeignKeyMeta {
+                constraint_name: r.try_get::<String, _>(0).unwrap_or_default(),
+                column: r.try_get::<String, _>(1).unwrap_or_default(),
+                // schema-qualified: "public.orders" — 与图谱节点 ID 格式一致
+                referenced_table: format!("{}.{}", ref_schema, ref_table),
+                referenced_column: r.try_get::<String, _>(4).unwrap_or_default(),
+                on_delete: r.try_get::<Option<String>, _>(5).ok().flatten(),
+            }
         }).collect())
     }
 
@@ -612,6 +674,10 @@ impl DataSource for PostgresDataSource {
             has_multi_database: true,
             has_partitions: true,
             sql_dialect: SqlDialect::Standard,
+            supported_auth_types: vec!["password".to_string(), "ssl_cert".to_string(), "os_native".to_string()],
+            has_pool_config: true,
+            has_timeout_config: true,
+            has_ssl_config: true,
         }
     }
 
@@ -668,21 +734,9 @@ impl DataSource for PostgresDataSource {
         ).bind(schema).fetch_all(&self.pool).await?;
 
         Ok(rows.into_iter().map(|(name, row_count, bytes)| {
-            let size = Some(format_pg_size(bytes));
+            let size = Some(format_size(bytes));
             TableStatInfo { name, row_count: Some(row_count), size }
         }).collect())
-    }
-}
-
-fn format_pg_size(bytes: i64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 
@@ -709,6 +763,16 @@ mod tests {
             password: Some(std::env::var("PG_PASSWORD").unwrap_or_else(|_| "123456".to_string())),
             extra_params: None,
             file_path: None,
+            auth_type: None,
+            token: None,
+            ssl_mode: None,
+            ssl_ca_path: None,
+            ssl_cert_path: None,
+            ssl_key_path: None,
+            connect_timeout_secs: None,
+            read_timeout_secs: None,
+            pool_max_connections: None,
+            pool_idle_timeout_secs: None,
         }
     }
 
@@ -838,5 +902,32 @@ mod tests {
             "public schema 应存在, 实际: {:?}", schemas);
 
         println!("过滤规则验证通过");
+    }
+
+    /// 模拟新建连接：database 为空串时应自动回退到用户名，连接成功
+    #[tokio::test]
+    async fn pg_empty_database_falls_back_to_username() {
+        let mut cfg = base_config();
+        cfg.database = Some("".to_string()); // 模拟前端新建连接发送的空 database
+
+        let ds = PostgresDataSource::new(&cfg).await
+            .expect("database 为空时连接应成功（回退到用户名）");
+        ds.test_connection().await.expect("test_connection 应成功");
+
+        let dbs = ds.list_databases().await.expect("list_databases 应成功");
+        assert!(!dbs.is_empty(), "数据库列表不应为空");
+        println!("database='' 回退测试通过，数据库列表: {:?}", dbs);
+    }
+
+    /// 模拟新建连接：database 为 None 时也应连接成功
+    #[tokio::test]
+    async fn pg_none_database_falls_back_to_username() {
+        let mut cfg = base_config();
+        cfg.database = None;
+
+        let ds = PostgresDataSource::new(&cfg).await
+            .expect("database 为 None 时连接应成功（回退到用户名）");
+        ds.test_connection().await.expect("test_connection 应成功");
+        println!("database=None 回退测试通过");
     }
 }

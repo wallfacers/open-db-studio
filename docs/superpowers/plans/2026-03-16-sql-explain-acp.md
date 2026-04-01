@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # SQL Explain ACP Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development or superpowers:executing-plans.

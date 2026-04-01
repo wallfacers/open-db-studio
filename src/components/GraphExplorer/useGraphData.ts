@@ -11,6 +11,8 @@ export interface GraphNode {
   connection_id: number;
   is_deleted: number;
   source: string;
+  position_x: number | null;
+  position_y: number | null;
 }
 
 export interface GraphEdge {
@@ -30,7 +32,7 @@ interface UseGraphDataResult {
   refetch: () => void;
 }
 
-export function useGraphData(connectionId: number | null): UseGraphDataResult {
+export function useGraphData(connectionId: number | null, database?: string | null): UseGraphDataResult {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,6 +51,7 @@ export function useGraphData(connectionId: number | null): UseGraphDataResult {
     try {
       const fetchedNodes = await invoke<GraphNode[]>('get_graph_nodes', {
         connectionId,
+        database: database ?? null,
       });
 
       setNodes(fetchedNodes);
@@ -72,7 +75,7 @@ export function useGraphData(connectionId: number | null): UseGraphDataResult {
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, database]);
 
   useEffect(() => {
     fetchData();

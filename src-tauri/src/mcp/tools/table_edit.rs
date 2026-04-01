@@ -1,5 +1,4 @@
 use serde_json::Value;
-use std::sync::Arc;
 
 // ─── 共享：标识符引用 ───────────────────────────────────────────────────────
 fn q(name: &str, is_pg: bool) -> String {
@@ -115,7 +114,7 @@ pub fn generate_create_table_sql(args: &Value) -> crate::AppResult<String> {
     let cols: Vec<ColInput> = cols_arr.iter().map(ColInput::from_json).collect::<Result<_, _>>()?;
 
     let driver = get_driver(conn_id)?;
-    let is_pg = driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&driver);
 
     let pk_cols: Vec<String> = cols.iter().filter(|c| c.is_primary_key).map(|c| q(&c.name, is_pg)).collect();
     let col_lines: Vec<String> = cols.iter().map(|c| {
@@ -153,7 +152,7 @@ pub fn generate_add_column_sql(args: &Value) -> crate::AppResult<String> {
     let after_col = args["after_column"].as_str().unwrap_or("");
 
     let driver = get_driver(conn_id)?;
-    let is_pg = driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&driver);
 
     let mut stmts = Vec::new();
     if is_pg {
@@ -184,7 +183,7 @@ pub fn generate_drop_column_sql(args: &Value) -> crate::AppResult<String> {
     validate_ident(column_name, "column name")?;
 
     let driver = get_driver(conn_id)?;
-    let is_pg = driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&driver);
 
     Ok(format!("ALTER TABLE {} DROP COLUMN {}", q(table_name, is_pg), q(column_name, is_pg)))
 }
@@ -204,7 +203,7 @@ pub async fn generate_modify_column_sql(args: &Value) -> crate::AppResult<String
     let changes = &args["changes"];
 
     let (config, ds) = get_ds(conn_id, database).await?;
-    let is_pg = config.driver == "postgres";
+    let is_pg = crate::graph::is_pg_driver(&config.driver);
 
     let columns = ds.get_columns(table_name, None).await?;
     let old_col = columns.iter().find(|c| c.name == column_name)
@@ -318,21 +317,33 @@ pub async fn generate_update_comment_sql(args: &Value) -> crate::AppResult<Strin
     Ok(sql)
 }
 
-pub async fn get_column_meta(_handle: Arc<tauri::AppHandle>, args: Value) -> crate::AppResult<String> {
-    let conn_id = args["connection_id"].as_i64()
-        .ok_or_else(|| crate::AppError::Other("missing connection_id".into()))?;
-    let table_name = args["table_name"].as_str()
-        .ok_or_else(|| crate::AppError::Other("missing table_name".into()))?;
-    if !table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err(crate::AppError::Other("Invalid table name".into()));
-    }
-    let database = args["database"].as_str();
-    let config = crate::db::get_connection_config(conn_id)?;
-    let ds = match database.filter(|s| !s.is_empty()) {
-        Some(db) => crate::datasource::create_datasource_with_db(&config, db).await?,
-        None => crate::datasource::create_datasource(&config).await?,
-    };
-    let columns = ds.get_columns(table_name, None).await?;
-    Ok(serde_json::to_string_pretty(&columns).unwrap_or_default())
+// ═══════════════════════════════════════════════════════════════════════════
+// Tauri command wrappers
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tauri::command]
+pub fn cmd_generate_create_table_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_create_table_sql(&params).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn cmd_generate_add_column_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_add_column_sql(&params).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn cmd_generate_drop_column_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_drop_column_sql(&params).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_generate_modify_column_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_modify_column_sql(&params).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_generate_update_comment_sql(params: serde_json::Value) -> Result<String, String> {
+    generate_update_comment_sql(&params).await.map_err(|e| e.to_string())
+}
+
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Play, Square, Save, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,11 @@ import VisualBuilder, {
 } from './VisualBuilder';
 import JsonEditor from './JsonEditor';
 import JobLogPanel, { type JobLogPanelHandle } from './JobLogPanel';
+import { useUIObjectRegistry } from '../../mcp/ui/useUIObjectRegistry';
+import { SeaTunnelJobUIObject } from '../../mcp/ui/adapters/SeaTunnelJobAdapter';
+import { useSeaTunnelJobFormStore } from '../../store/seatunnelJobStore';
+import { useHighlightStore } from '../../store/highlightStore';
+import { stJobNodeId } from '../../utils/nodeId';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,7 +109,25 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
   const lastSyncedContentRef = useRef<string>('');
   const updateSeaTunnelJobTabTitle = useQueryStore(s => s.updateSeaTunnelJobTabTitle);
   // 订阅树节点 label，响应从树侧发起的重命名
-  const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(`job_${jobId}`)?.label : undefined);
+  const nodeLabel = useSeaTunnelStore(s => jobId ? s.nodes.get(stJobNodeId(jobId))?.label : undefined);
+
+  const tabId = tab.id;
+
+  // ── Init / cleanup form store for UIObject ──────────────────────────────
+  useEffect(() => {
+    useSeaTunnelJobFormStore.getState().initForm(tabId, {
+      jobId: tab.stJobId ?? undefined,
+      jobName: '',
+      configJson: '',
+      connectionId: tab.stConnectionId ?? undefined,
+    });
+    return () => useSeaTunnelJobFormStore.getState().removeForm(tabId);
+  }, [tabId]);
+
+  // ── Cleanup highlights on unmount ─────────────────────────────
+  useEffect(() => {
+    return () => useHighlightStore.getState().clearAll(tabId);
+  }, [tabId]);
 
   // Job metadata
   const [jobName, setJobName] = useState('');
@@ -173,11 +196,25 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         // 同步到 store，供 MCP bridge 读取
         lastSyncedContentRef.current = finalJson;
         setStJobContent(jobId, finalJson);
+
+        // 同步到 form store，供 SeaTunnelJobUIObject 读取
+        useSeaTunnelJobFormStore.getState().setForm(tabId, {
+          jobId: tab.stJobId ?? undefined,
+          jobName: job.name,
+          configJson: finalJson,
+          connectionId: tab.stConnectionId ?? undefined,
+        });
       } catch (e) {
         showToast?.(String(e), 'error');
       }
     })();
   }, [jobId]);
+
+  // ── Register UIObject with UIRouter ────────────────────────────────────
+  const jobUIObject = useMemo(() => {
+    return new SeaTunnelJobUIObject(tabId);
+  }, [tabId]);
+  useUIObjectRegistry(jobUIObject);
 
   // ── 响应树侧重命名（inline edit）→ 同步 toolbar 输入框 ──────────────────
   useEffect(() => {
@@ -441,9 +478,9 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       {/* ── Editor area ── */}
       <div className="flex-1 overflow-hidden">
         {mode === 'visual' ? (
-          <VisualBuilder value={builderState} onChange={handleBuilderChange} />
+          <VisualBuilder value={builderState} onChange={handleBuilderChange} scopeId={tabId} />
         ) : (
-          <JsonEditor value={configJson} onChange={handleJsonChange} />
+          <JsonEditor value={configJson} onChange={handleJsonChange} externalValue={externalContent} />
         )}
       </div>
 

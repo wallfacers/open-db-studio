@@ -40,22 +40,26 @@ When user input is ambiguous (e.g. "revenue", "orders", "users"):
 
 ## Available Tools
 
-### list metrics
-List metrics for a connection (optionally filtered by status/database/limit).
+### Search metrics
+Search metrics by keyword or list all for a connection. Use `graph_search_metrics` for keyword search:
 ```
-fs_search("tab.metric", { connection_id: N, status?: "approved"|"draft"|"rejected", limit?: 50 })
-```
-
-### search metrics
-Search **approved** metrics by keyword (space-separated terms are ANDed).
-```
-fs_search("tab.metric", { connection_id: N, keyword: "sales revenue" })
+graph_search_metrics(connection_id: N, keyword: "sales revenue")
 ```
 
-### get metric
-Get full metric definition by ID.
+### Get metric detail
+Read full metric definition via metric form:
 ```
-fs_read("tab.metric", "<metric_id>", "struct")
+ui_read("metric_form", "<tabId>", "state")
+```
+
+Or open a metric tab first:
+```
+ui_exec("workspace", "", "open", {type: "metric_form", metric_id: 42})
+```
+
+### List open metric tabs
+```
+ui_list({type: "metric_form"})
 ```
 
 
@@ -79,7 +83,7 @@ FROM {table_name}
 
 ### 4. Composite metric
 
-* Resolve ALL sub-metrics via `fs_read("tab.metric", "<id>", "struct")`
+* Resolve ALL sub-metrics via `ui_read("metric_form", "<id>", "state")`
 * Build using CTEs
 * Apply `composite_formula` strictly
 

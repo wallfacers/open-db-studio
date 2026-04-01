@@ -127,6 +127,8 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
     onClose();
   };
 
+  if (!visible) return null;
+
   const conn = connections.find(c => c.id === selectedConnectionId);
   const showSchema = conn?.driver === 'postgresql';
 

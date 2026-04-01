@@ -53,7 +53,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3, Sparkles,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -66,6 +66,7 @@ import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
 import SeaTunnelJobTab from '../SeaTunnelJobTab';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
+import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId } from '../../utils/nodeId';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 import { buildErrorContext } from '../../utils/errorContext';
@@ -73,6 +74,58 @@ import { askAiWithContext } from '../../utils/askAi';
 import { computeColumnWidths, adjustColumnWidths, ROW_NUM_WIDTH } from '../../utils/columnWidths';
 import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { MarkdownContent } from '../shared/MarkdownContent';
+import { useUIObjectRegistry } from '../../mcp/ui';
+import { QueryEditorAdapter } from '../../mcp/ui/adapters/QueryEditorAdapter';
+import { useMonacoHighlight } from '../../hooks/useMonacoHighlight';
+import { useFieldHighlight } from '../../hooks/useFieldHighlight';
+import { useHighlightStore } from '../../store/highlightStore';
+
+const SQL_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'ON',
+  'AS', 'SET', 'VALUES', 'INTO', 'NULL', 'IS', 'LIKE', 'BETWEEN',
+  'EXISTS', 'HAVING', 'GROUP', 'BY', 'ORDER', 'LIMIT', 'OFFSET',
+  'UNION', 'ALL', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CROSS', 'FULL', 'NATURAL',
+  'ASC', 'DESC', 'WITH', 'RECURSIVE', 'IF', 'BEGIN', 'COMMIT',
+  'ROLLBACK', 'CREATE', 'ALTER', 'DROP', 'TABLE', 'INDEX', 'VIEW',
+  'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'TRUNCATE',
+]);
+
+function extractMentionedTables(sql: string): string[] {
+  const tables = new Set<string>();
+  const keywordPattern = /(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM|MERGE\s+INTO)\s+([`"']?[\w]+[`"']?(?:\.[`"']?[\w]+[`"']?)?)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = keywordPattern.exec(sql)) !== null) {
+    const name = match[1].replace(/[`"']/g, '');
+    if (!SQL_KEYWORDS.has(name.toUpperCase())) {
+      tables.add(name);
+    }
+  }
+  const commaListPattern = /FROM\s+([\w.`"']+(?:\s*,\s*[\w.`"']+)*)/gi;
+  while ((match = commaListPattern.exec(sql)) !== null) {
+    const list = match[1];
+    for (const item of list.split(',')) {
+      const name = item.trim().replace(/[`"']/g, '');
+      if (name && !SQL_KEYWORDS.has(name.toUpperCase())) {
+        tables.add(name);
+      }
+    }
+  }
+  return Array.from(tables);
+}
+
+function tryPrefixCache(
+  currentSqlBefore: string,
+  cacheRef: React.MutableRefObject<{ sqlBefore: string; result: string; timestamp: number } | null>
+): string | null {
+  const cache = cacheRef.current;
+  if (!cache || !cache.result) return null;
+  if (Date.now() - cache.timestamp > 30_000) return null;
+  if (!currentSqlBefore.startsWith(cache.sqlBefore)) return null;
+  const typed = currentSqlBefore.slice(cache.sqlBefore.length);
+  if (!cache.result.startsWith(typed)) return null;
+  return cache.result.slice(typed.length);
+}
 
 function getSqlAtCursor(sql: string, cursorOffset: number): string {
   const parts = sql.split(';');
@@ -215,15 +268,17 @@ export const MainContent: React.FC<MainContentProps> = ({
   const { tabs, activeTabId: activeTab, setActiveTabId: setActiveTab,
           closeTab, closeAllTabs, closeTabsLeft, closeTabsRight, closeOtherTabs,
           updateTabContext,
-          sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results, error, diagnosis,
+          sqlContent, setSql, executeQuery, isExecuting: isExecutingMap, results,
           removeResult, removeResultsLeft, removeResultsRight, removeOtherResults, clearResults,
           explanationContent, explanationStreaming,
           appendExplanationContent, clearExplanation, setExplanationStreaming, startExplanation } = useQueryStore();
-  const { activeConnectionId } = useConnectionStore();
+  const { activeConnectionId, connections } = useConnectionStore();
   const { nodes } = useTreeStore();
-  const { explainSql, isExplaining: isExplainingMap, cancelExplainSql } = useAiStore();
+  const { explainSql, isExplaining: isExplainingMap, cancelExplainSql,
+          diagnoseSqlError, diagnosisContent: diagnosisContentMap, diagnosisStreaming: diagnosisStreamingMap, cancelDiagnosis, clearDiagnosis } = useAiStore();
   const isExecuting = isExecutingMap[activeTab] ?? false;
   const isExplaining = isExplainingMap[activeTab] ?? false;
+  const isGhostTextEnabled = useQueryStore((s) => s.isGhostTextEnabled(activeTab));
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [resultContextMenu, setResultContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null);
   const [explanationContextMenu, setExplanationContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -331,6 +386,14 @@ export const MainContent: React.FC<MainContentProps> = ({
   // Register Monaco completion provider once (module-level guard)
   const completionProviderRegistered = useRef(false);
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
+  const { notifyContentChange } = useMonacoHighlight(editorRef);
+  const prevSqlRef = useRef<string>('');
+  const ghostCacheRef = useRef<{ sqlBefore: string; result: string; timestamp: number } | null>(null);
+  const pendingResultRef = useRef<{ sqlBefore: string; result: string } | null>(null);
+  const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inlineProviderRef = useRef<{ dispose(): void } | null>(null);
+  const editorDisposablesRef = useRef<{ dispose(): void }[]>([]);
+  const [ghostTextLoading, setGhostTextLoading] = useState(false);
 
   const handleEditorDidMount: OnMount = (editor, monaco: Monaco) => {
     editorRef.current = editor;
@@ -368,17 +431,14 @@ export const MainContent: React.FC<MainContentProps> = ({
         doSyncEditorInfo();
       }, 100);
     };
-    editor.onDidChangeCursorPosition(syncEditorInfo);
-    editor.onDidChangeCursorSelection(syncEditorInfo);
+    editorDisposablesRef.current.push(editor.onDidChangeCursorPosition(syncEditorInfo));
+    editorDisposablesRef.current.push(editor.onDidChangeCursorSelection(syncEditorInfo));
     doSyncEditorInfo(); // 初始化一次（同步执行）
-
-    if (completionProviderRegistered.current) return;
-    completionProviderRegistered.current = true;
 
     // 阻止浏览器原生右键菜单（Monaco 的 e.event.preventDefault 只影响 Monaco 内部事件）
     editor.getDomNode()?.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    editor.onContextMenu((e) => {
+    editorDisposablesRef.current.push(editor.onContextMenu((e) => {
       e.event.preventDefault();
       const sel = editor.getSelection();
       const selectedSql = (sel && !sel.isEmpty())
@@ -393,50 +453,198 @@ export const MainContent: React.FC<MainContentProps> = ({
         cursorOffset,
         selectionRange: (sel && !sel.isEmpty()) ? sel : null,
       });
-    });
+    }));
 
-    monaco.languages.registerCompletionItemProvider('sql', {
-      provideCompletionItems: (
-        model: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[0],
-        position: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[1],
-      ) => {
-        const word = model.getWordUntilPosition(position);
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn,
-        };
-        const schema = schemaRef.current;
-        if (!schema) return { suggestions: [] };
+    // 全局 language provider 只注册一次
+    if (!completionProviderRegistered.current) {
+      completionProviderRegistered.current = true;
 
-        const suggestions: MonacoLanguages.CompletionItem[] = [];
-        schema.tables.forEach(t => {
-          suggestions.push({
-            label: t.name,
-            kind: monaco.languages.CompletionItemKind.Class,
-            insertText: t.name,
-            range,
-            detail: 'Table',
-          });
-          t.columns.forEach(c => {
+      monaco.languages.registerCompletionItemProvider('sql', {
+        provideCompletionItems: (
+          model: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[0],
+          position: Parameters<MonacoLanguages.CompletionItemProvider['provideCompletionItems']>[1],
+        ) => {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+          const schema = schemaRef.current;
+          if (!schema) return { suggestions: [] };
+
+          const suggestions: MonacoLanguages.CompletionItem[] = [];
+          schema.tables.forEach(t => {
             suggestions.push({
-              label: `${t.name}.${c.name}`,
-              kind: monaco.languages.CompletionItemKind.Field,
-              insertText: c.name,
+              label: t.name,
+              kind: monaco.languages.CompletionItemKind.Class,
+              insertText: t.name,
               range,
-              detail: `${t.name} (${c.data_type})`,
+              detail: 'Table',
+            });
+            t.columns.forEach(c => {
+              suggestions.push({
+                label: `${t.name}.${c.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                insertText: c.name,
+                range,
+                detail: `${t.name} (${c.data_type})`,
+              });
             });
           });
-        });
-        return { suggestions };
-      },
-    });
+          return { suggestions };
+        },
+      });
+    }
+
+    // Ghost Text — 监听光标位置变化（覆盖打字、点击、箭头导航、粘贴等）
+    editorDisposablesRef.current.push(editor.onDidChangeCursorPosition((e: any) => {
+      if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
+      // 点击/导航用稍长防抖，打字用短防抖
+      const delay = e.reason === 3 /* CursorChangeReason.Explicit */ ? 800 : 600;
+      ghostDebounceRef.current = setTimeout(async () => {
+        const ed = editorRef.current;
+        if (!ed) return;
+        const currentState = useQueryStore.getState();
+        const tab = currentState.tabs.find(t => t.id === currentState.activeTabId);
+        if (!tab?.queryContext?.connectionId) return;
+        if (!currentState.isGhostTextEnabled(tab.id)) return;
+
+        const sel = ed.getSelection();
+        if (sel && !sel.isEmpty()) return;
+
+        const model = ed.getModel();
+        const position = ed.getPosition();
+        if (!model || !position) return;
+
+        const fullText = model.getValue();
+        const offset = model.getOffsetAt(position);
+        const sqlBefore = fullText.slice(0, offset);
+        const sqlAfter = fullText.slice(offset);
+
+        if (sqlBefore.trim().length < 2) return;
+
+        const mentionedTables = extractMentionedTables(sqlBefore + sqlAfter);
+        const lineBeforeCursor = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+        const hint = lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
+
+        try {
+          setGhostTextLoading(true);
+          const result = await invoke<string>('ai_inline_complete', {
+            connectionId: tab.queryContext.connectionId,
+            sqlBefore,
+            sqlAfter,
+            mentionedTables,
+            currentSchema: tab.queryContext.schema || tab.schema || 'public',
+            hint,
+            database: tab.queryContext.database || tab.db || null,
+          });
+          if (result) {
+            pendingResultRef.current = { sqlBefore, result };
+            ghostCacheRef.current = { sqlBefore, result, timestamp: Date.now() };
+            ed.trigger('ghost-text', 'editor.action.inlineSuggest.trigger', {});
+          }
+        } catch (err) {
+          console.warn('[ghost-text] prefetch error:', err);
+        } finally {
+          setGhostTextLoading(false);
+        }
+      }, delay);
+    }));
+
+    // Inline provider 全局注册一次（读取 ref 共享数据）
+    if (!inlineProviderRef.current) {
+      inlineProviderRef.current = monaco.languages.registerInlineCompletionsProvider('sql', {
+        provideInlineCompletions: (model: any, position: any) => {
+          const currentState = useQueryStore.getState();
+          const tab = currentState.tabs.find(t => t.id === currentState.activeTabId);
+          if (!tab?.queryContext?.connectionId) return { items: [] };
+          if (!currentState.isGhostTextEnabled(tab.id)) return { items: [] };
+
+          const fullText = model.getValue();
+          const offset = model.getOffsetAt(position);
+          const sqlBefore = fullText.slice(0, offset);
+
+          // 1. 检查预取结果
+          const pending = pendingResultRef.current;
+          if (pending && pending.sqlBefore === sqlBefore) {
+            pendingResultRef.current = null;
+            return {
+              items: [{
+                insertText: pending.result,
+                range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+              }],
+            };
+          }
+
+          // 2. 检查前缀缓存
+          const cached = tryPrefixCache(sqlBefore, ghostCacheRef);
+          if (cached) {
+            return {
+              items: [{
+                insertText: cached,
+                range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+              }],
+            };
+          }
+
+          return { items: [] };
+        },
+        disposeInlineCompletions: () => {},
+      });
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      inlineProviderRef.current?.dispose();
+      editorDisposablesRef.current.forEach(d => d.dispose());
+      editorDisposablesRef.current = [];
+      if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
+    };
+  }, []);
+
+  // Detect AI-driven SQL changes and trigger Monaco line highlights
+  useEffect(() => {
+    const sql = sqlContent[activeTab] ?? '';
+    const prev = prevSqlRef.current;
+    prevSqlRef.current = sql;
+
+    if (!prev || prev === sql) return;
+
+    // Only trigger line highlight if the highlight store has a 'content' pulse for this tab
+    const highlights = useHighlightStore.getState().highlights.get(activeTab);
+    const hasContentPulse = highlights?.some(e => e.path === 'content' && e.phase === 'pulse');
+    if (hasContentPulse) {
+      notifyContentChange(prev, sql);
+    }
+  }, [sqlContent[activeTab], activeTab, notifyContentChange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clean up highlights when tab changes or unmounts
+  useEffect(() => {
+    return () => {
+      if (activeTab) {
+        useHighlightStore.getState().clearAll(activeTab);
+      }
+    };
+  }, [activeTab]);
 
   const activeTabObj = tabs.find(t => t.id === activeTab);
   const currentSql = sqlContent[activeTab] ?? '';
   const currentResults = results[activeTab] ?? [];
+
+  // Register UIObject for active query tab
+  const queryUIObject = useMemo(() => {
+    if (!activeTabObj || activeTabObj.type !== 'query') return null
+    return new QueryEditorAdapter(activeTabObj.id, activeTabObj.connectionId, activeTabObj.title)
+  }, [activeTabObj?.id, activeTabObj?.type, activeTabObj?.connectionId, activeTabObj?.title])
+  useUIObjectRegistry(queryUIObject)
+
+  const connHighlight = useFieldHighlight(activeTab, 'connectionId');
+  const dbHighlight = useFieldHighlight(activeTab, 'database');
+  const schemaHighlight = useFieldHighlight(activeTab, 'schema');
+
   const [selectedResultPane, setSelectedResultPane] = useState<number | 'explanation'>(0);
 
   // Reset selected result index when active editor tab changes
@@ -466,17 +674,6 @@ export const MainContent: React.FC<MainContentProps> = ({
     }
   }, [explanationStreaming, explanationContent, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Toast on execution error so user gets immediate feedback
-  useEffect(() => {
-    if (error) {
-      const ctx = buildErrorContext('sql_execute', { rawError: error });
-      if (showError) {
-        showError(ctx.userMessage, ctx.markdownContext);
-      } else {
-        showToast(ctx.userMessage, 'error');
-      }
-    }
-  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 结果集右键菜单：SQL 构建与复制
   const resultCopyToClipboard = async (text: string) => {
@@ -516,7 +713,11 @@ export const MainContent: React.FC<MainContentProps> = ({
   const handleExecute = useCallback(() => {
     const connId = activeTabObj?.queryContext?.connectionId ?? null;
     const database = activeTabObj?.queryContext?.database ?? null;
-    if (!connId || !database) {
+    const currentDriver = (() => {
+      const connNode = Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === connId);
+      return connNode?.meta.driver;
+    })();
+    if (!connId || (!database && currentDriver !== 'sqlite')) {
       showToast(t('mainContent.selectConnectionAndDatabase'), 'warning');
       return;
     }
@@ -528,7 +729,7 @@ export const MainContent: React.FC<MainContentProps> = ({
       : undefined;
     const schema = activeTabObj?.queryContext?.schema ?? null;
     executeQuery(connId, activeTab, selectedSql || undefined, database, schema);
-  }, [activeTabObj, activeTab, showToast, executeQuery, t]);
+  }, [activeTabObj, activeTab, showToast, executeQuery, t, nodes]);
 
   const handleClear = () => {
     setSql(activeTab, '');
@@ -622,20 +823,22 @@ export const MainContent: React.FC<MainContentProps> = ({
   const selectedConnNode = queryCtx?.connectionId != null
     ? Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === queryCtx.connectionId)
     : undefined;
-  const needsSchema = selectedConnNode?.meta.driver === 'postgres' || selectedConnNode?.meta.driver === 'oracle';
+  const driver = selectedConnNode?.meta.driver;
+  const isSqlite = driver === 'sqlite';
+  const needsSchema = driver === 'postgres' || driver === 'oracle';
   const contextSchemaKey = queryCtx?.connectionId != null && queryCtx?.database
     ? `${queryCtx.connectionId}/${queryCtx.database}`
     : null;
 
-  // 切换 tab 时，若 tab 已绑定连接但数据库列表还未缓存，自动加载
+  // 切换 tab 时，若 tab 已绑定连接但数据库列表还未缓存，自动加载（SQLite 无多数据库概念，跳过）
   useEffect(() => {
     const connId = queryCtx?.connectionId;
-    if (connId && !contextDatabases[connId]) {
+    if (connId && !isSqlite && !contextDatabases[connId]) {
       invoke<string[]>('list_databases', { connectionId: connId })
         .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
         .catch((err) => console.warn('[list_databases]', err));
     }
-  }, [queryCtx?.connectionId]);
+  }, [queryCtx?.connectionId, isSqlite]);
 
   // 切换 tab 时，若已有数据库但 schema 列表未缓存，自动加载
   useEffect(() => {
@@ -660,19 +863,42 @@ export const MainContent: React.FC<MainContentProps> = ({
     ? contextSchemas[contextSchemaKey]
     : [];
 
-  // 检测同名表数据 tab（不同数据库下相同表名），用于在 tab 标题中加数据库前缀做区分
-  const conflictingTableTabTitles = useMemo(() => {
-    const counts: Record<string, number> = {};
-    tabs.forEach(t => {
-      if (t.type === 'table' || t.type === 'table_structure') {
-        const key = `${t.type}__${t.title}`;
-        counts[key] = (counts[key] || 0) + 1;
-      }
+  // 为每个 table/table_structure tab 计算最小区分标签：
+  // 无冲突 → title；db 不同 → db.title；schema 不同 → schema.title；连接不同 → connName.db.title
+  const tabDisplayTitles = useMemo(() => {
+    const result = new Map<string, string>();
+    const tableTabs = tabs.filter(t => t.type === 'table' || t.type === 'table_structure');
+
+    // 按表名分组
+    const byTitle = new Map<string, typeof tableTabs>();
+    tableTabs.forEach(t => {
+      const group = byTitle.get(t.title) ?? [];
+      group.push(t);
+      byTitle.set(t.title, group);
     });
-    return new Set(
-      Object.entries(counts).filter(([, c]) => c > 1).map(([k]) => k)
-    );
-  }, [tabs]);
+
+    tableTabs.forEach(t => {
+      const group = byTitle.get(t.title)!;
+      if (group.length === 1) { result.set(t.id, t.title); return; }
+
+      const others = group.filter(o => o.id !== t.id);
+
+      // db 能区分
+      if (t.db && others.every(o => o.db !== t.db)) {
+        result.set(t.id, `${t.db}.${t.title}`); return;
+      }
+      // schema 能区分（同 db 不同 schema，如 PG/Oracle）
+      if (t.schema && others.every(o => o.schema !== t.schema)) {
+        result.set(t.id, `${t.schema}.${t.title}`); return;
+      }
+      // 需要连接名区分（不同连接但 db+schema 均相同）
+      const conn = connections.find(c => c.id === t.connectionId);
+      const connLabel = conn?.name ?? `#${t.connectionId}`;
+      result.set(t.id, `${connLabel}.${t.db ? `${t.db}.` : ''}${t.title}`);
+    });
+
+    return result;
+  }, [tabs, connections]);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
@@ -702,13 +928,14 @@ export const MainContent: React.FC<MainContentProps> = ({
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
             )}
-            <span className="truncate flex-1 text-xs">
-              {(tab.type === 'table' || tab.type === 'table_structure') &&
-               conflictingTableTabTitles.has(`${tab.type}__${tab.title}`) &&
-               tab.db
-                ? `${tab.db}.${tab.title}`
-                : tab.title}
-            </span>
+            <Tooltip
+              content={tabDisplayTitles.get(tab.id) ?? tab.title}
+              className="flex-1 min-w-0 overflow-hidden"
+            >
+              <span className="truncate block w-full text-xs">
+                {tabDisplayTitles.get(tab.id) ?? tab.title}
+              </span>
+            </Tooltip>
             <Tooltip content={t('mainContent.closeTab')}>
               <div
                 className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
@@ -740,18 +967,34 @@ export const MainContent: React.FC<MainContentProps> = ({
 
       {activeTabObj ? (
         activeTabObj.type === 'er_design' ? (
-          <ERCanvas projectId={activeTabObj.erProjectId!} />
+          <ERCanvas projectId={activeTabObj.erProjectId!} tabId={activeTabObj.id} />
         ) : activeTabObj.type === 'table' ? null
         : activeTabObj.type === 'table_structure' ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <TableStructureView
+              tabId={activeTabObj.id}
               connectionId={activeTabObj.connectionId!}
-              tableName={activeTabObj.isNewTable ? undefined : activeTabObj.title}
+              tableName={activeTabObj.id.includes('_new_') ? undefined : activeTabObj.title}
               database={activeTabObj.db}
               schema={activeTabObj.schema}
-              initialColumns={activeTabObj.initialColumns}
-              initialTableName={activeTabObj.initialTableName}
-              onSuccess={() => showToast('操作成功', 'success')}
+              onSuccess={() => {
+                const isNew = activeTabObj.id.includes('_new_');
+
+                // Refresh the tables category node in the tree
+                const connId = activeTabObj.connectionId!;
+                const db = activeTabObj.db;
+                const sch = activeTabObj.schema;
+                let catNid = connNid(connId);
+                if (db && !db.startsWith('conn_')) catNid = dbNodeId(catNid, db);
+                if (sch) catNid = schemaNodeId(catNid, sch);
+                catNid = catNodeId(catNid, 'tables');
+                useTreeStore.getState().refreshNode(catNid);
+
+                // Close the tab for new table creation
+                if (isNew) {
+                  useQueryStore.getState().closeTab(activeTabObj.id);
+                }
+              }}
               showToast={showToast}
             />
           </div>
@@ -760,6 +1003,8 @@ export const MainContent: React.FC<MainContentProps> = ({
             <MetricTab
               metricId={activeTabObj.metricId}
               newMetricScope={!activeTabObj.metricId ? activeTabObj.metricScope : undefined}
+              tabId={activeTabObj.id}
+              connectionId={activeTabObj.connectionId ?? activeTabObj.metricScope?.connectionId}
               onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(activeTab, id, title)}
               onDelete={() => useQueryStore.getState().closeTab(activeTab)}
             />
@@ -855,6 +1100,24 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </div>
                   )}
                 </div>
+                <Tooltip content={t('mainContent.aiCompletionTooltip')}>
+                  <button
+                    onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
+                    className={`p-1 rounded transition-colors ${
+                      ghostTextLoading
+                        ? 'text-[#00c9a7]'
+                        : isGhostTextEnabled
+                          ? 'text-[#00c9a7] hover:bg-[#003d2f]'
+                          : 'text-[#4a6a85] hover:bg-[#1a2639]'
+                    }`}
+                  >
+                    <Sparkles
+                      size={16}
+                      className={ghostTextLoading ? 'animate-spin' : ''}
+                      style={ghostTextLoading ? { animationDuration: '1.5s' } : undefined}
+                    />
+                  </button>
+                </Tooltip>
                 <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
                 <Tooltip content={t('mainContent.formatSql')}>
                   <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
@@ -865,50 +1128,65 @@ export const MainContent: React.FC<MainContentProps> = ({
 
               {/* 上下文选择器（右侧） */}
               <div className="flex items-center gap-1.5">
-                <DropdownSelect
-                  value={String(activeTabObj?.queryContext?.connectionId ?? '')}
-                  placeholder={t('mainContent.selectConnection')}
-                  className="w-32"
-                  options={Array.from(nodes.values())
-                    .filter(n => n.nodeType === 'connection')
-                    .map(n => ({ value: String(n.meta.connectionId ?? ''), label: n.label }))}
-                  onChange={(val) => {
-                    const connId = val ? Number(val) : null;
-                    updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
-                    if (connId && !contextDatabases[connId]) {
-                      invoke<string[]>('list_databases', { connectionId: connId })
-                        .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
-                        .catch((err) => console.warn('[list_databases]', err));
-                    }
-                  }}
-                />
-                <span className="text-[#7a9bb8] text-xs">›</span>
-                <DropdownSelect
-                  value={activeTabObj?.queryContext?.database ?? ''}
-                  placeholder={t('mainContent.selectDatabase')}
-                  className="w-28"
-                  options={availableDatabases.map(db => ({ value: db, label: db }))}
-                  onChange={(val) => {
-                    const db = val || null;
-                    updateTabContext(activeTab, { database: db, schema: null });
-                    const connId = activeTabObj?.queryContext?.connectionId;
-                    if (db && connId) {
-                      invoke<string[]>('list_schemas', { connectionId: connId, database: db })
-                        .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
-                        .catch((err) => console.warn('[list_schemas]', err));
-                    }
-                  }}
-                />
+                <div className={connHighlight.className}>
+                  <DropdownSelect
+                    value={String(activeTabObj?.queryContext?.connectionId ?? '')}
+                    placeholder={t('mainContent.selectConnection')}
+                    className="w-32"
+                    options={Array.from(nodes.values())
+                      .filter(n => n.nodeType === 'connection')
+                      .map(n => ({ value: String(n.meta.connectionId ?? ''), label: n.label }))}
+                    onChange={(val) => {
+                      connHighlight.onUserEdit();
+                      const connId = val ? Number(val) : null;
+                      updateTabContext(activeTab, { connectionId: connId, database: null, schema: null });
+                      if (connId && !contextDatabases[connId]) {
+                        const connNode = Array.from(nodes.values()).find(n => n.nodeType === 'connection' && n.meta.connectionId === connId);
+                        if (connNode?.meta.driver !== 'sqlite') {
+                          invoke<string[]>('list_databases', { connectionId: connId })
+                            .then(dbs => setContextDatabases(prev => ({ ...prev, [connId]: dbs })))
+                            .catch((err) => console.warn('[list_databases]', err));
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                {!isSqlite && (
+                  <>
+                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <div className={dbHighlight.className}>
+                      <DropdownSelect
+                        value={activeTabObj?.queryContext?.database ?? ''}
+                        placeholder={t('mainContent.selectDatabase')}
+                        className="w-28"
+                        options={availableDatabases.map(db => ({ value: db, label: db }))}
+                        onChange={(val) => {
+                          dbHighlight.onUserEdit();
+                          const db = val || null;
+                          updateTabContext(activeTab, { database: db, schema: null });
+                          const connId = activeTabObj?.queryContext?.connectionId;
+                          if (db && connId) {
+                            invoke<string[]>('list_schemas', { connectionId: connId, database: db })
+                              .then(schemas => setContextSchemas(prev => ({ ...prev, [`${connId}/${db}`]: schemas })))
+                              .catch((err) => console.warn('[list_schemas]', err));
+                          }
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
                 {needsSchema && availableSchemas.length > 0 && (
                   <>
                     <span className="text-[#7a9bb8] text-xs">›</span>
-                    <DropdownSelect
-                      value={queryCtx?.schema ?? ''}
-                      placeholder={t('mainContent.selectSchema')}
-                      className="w-24"
-                      options={availableSchemas.map(s => ({ value: s, label: s }))}
-                      onChange={(val) => updateTabContext(activeTab, { schema: val || null })}
-                    />
+                    <div className={schemaHighlight.className}>
+                      <DropdownSelect
+                        value={queryCtx?.schema ?? ''}
+                        placeholder={t('mainContent.selectSchema')}
+                        className="w-24"
+                        options={availableSchemas.map(s => ({ value: s, label: s }))}
+                        onChange={(val) => { schemaHighlight.onUserEdit(); updateTabContext(activeTab, { schema: val || null }); }}
+                      />
+                    </div>
                   </>
                 )}
               </div>
@@ -954,17 +1232,20 @@ export const MainContent: React.FC<MainContentProps> = ({
                   scrollBeyondLastLine: false,
                   wordWrap: 'on',
                   lineNumbers: 'on',
+                  lineNumbersMinChars: 3,
                   renderLineHighlight: 'line',
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
                   formatOnPaste: true,
                   tabSize: 2,
                   padding: { top: 12, bottom: 12 },
+                  glyphMargin: true,
                   automaticLayout: true,
                   overviewRulerBorder: false,
                   overviewRulerLanes: 0,
                   hideCursorInOverviewRuler: true,
                   contextmenu: false,
+                  inlineSuggest: { enabled: true },
                 }}
               />
             </div>
@@ -982,14 +1263,16 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === idx ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === idx ? `bg-[#080d12] ${result.kind === 'error' ? 'text-red-400 border-t-red-400' : 'text-[#00c9a7] border-t-[#00c9a7]'}` : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
                     onClick={() => setSelectedResultPane(idx)}
                     onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                   >
                     <span>
                       {result.kind === 'dml-report'
                         ? `${t('mainContent.dmlReport')}（${result.rows.length}${t('mainContent.dmlReportCount')}）`
-                        : `${t('mainContent.resultSet')} ${idx + 1}`}
+                        : result.kind === 'error'
+                          ? `${t('mainContent.errorLog')} ${idx + 1}`
+                          : `${t('mainContent.resultSet')} ${idx + 1}`}
                     </span>
                     <Tooltip content={t('mainContent.closeResult')}>
                       <span
@@ -1056,25 +1339,100 @@ export const MainContent: React.FC<MainContentProps> = ({
                   <>
                     {isExecuting ? (
                       <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
-                    ) : error ? (
-                      <div className="p-3 text-red-400 text-xs font-mono">
-                        {error}
-                        {diagnosis && (
-                          <div className="mt-2 p-2 bg-[#1a2639] rounded text-[#c8daea] whitespace-pre-wrap font-sans">
-                            <span className="text-[#3794ff]">{t('mainContent.aiDiagnosis')}</span>{diagnosis}
-                          </div>
-                        )}
-                      </div>
                     ) : currentResults.length === 0 ? (
                       <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
-                    ) : (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.kind === 'select' && (typeof selectedResultPane === 'number' ? currentResults[selectedResultPane] : undefined)?.columns.length === 0 ? (
-                      <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>
                     ) : (() => {
                       const activeResult = typeof selectedResultPane === 'number'
                         ? currentResults[selectedResultPane]
                         : undefined;
 
                       if (!activeResult) return null;
+
+                      // ── 错误面板 ──
+                      if (activeResult.kind === 'error') {
+                        const diagKey = `${activeTab}_${selectedResultPane}`;
+                        const diagContent = diagnosisContentMap[diagKey] ?? '';
+                        const diagStreaming = diagnosisStreamingMap[diagKey] ?? false;
+                        const connId = activeTabObj?.queryContext?.connectionId ?? null;
+                        const db = activeTabObj?.queryContext?.database ?? null;
+
+                        return (
+                          <div className="p-4 h-full overflow-auto">
+                            <div className="mb-3">
+                              <div className="flex items-center gap-2 text-red-400 text-sm font-medium mb-2">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                  <path d="M12 9v4" /><path d="M12 17h.01" />
+                                </svg>
+                                {t('mainContent.sqlExecutionError')}
+                              </div>
+                              {activeResult.sql && (
+                                <pre className="bg-[#0d1117] border border-[#1e2d42] rounded p-2 text-xs text-[#7a9bb8] font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
+                              )}
+                              <div className="flex items-center justify-between text-xs">
+                                <div>
+                                  <span className="text-[#7a9bb8]">{t('mainContent.errorMessage')}：</span>
+                                  <span className="text-red-400 font-mono">{activeResult.error_message}</span>
+                                </div>
+                                <button
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#243a55] transition-colors flex-shrink-0 ml-3"
+                                  onClick={() => {
+                                    const text = `请帮我分析以下 SQL 执行错误：\n\nSQL:\n\`\`\`sql\n${activeResult.sql ?? ''}\n\`\`\`\n\n错误信息:\n\`\`\`\n${activeResult.error_message ?? ''}\n\`\`\``;
+                                    askAiWithContext(text);
+                                  }}
+                                >
+                                  <MessageSquare size={12} />
+                                  {t('mainContent.sendToAssistant')}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="border-t border-[#1e2d42] pt-3">
+                              {!diagContent && !diagStreaming ? (
+                                <button
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-[#1a2639] text-[#00c9a7] hover:bg-[#1e2d42] transition-colors"
+                                  onClick={() => diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey)}
+                                >
+                                  <Sparkles size={13} />
+                                  {t('mainContent.aiDiagnoseBtn')}
+                                </button>
+                              ) : (
+                                <div>
+                                  <div className="flex items-center gap-1.5 text-xs text-[#00c9a7] mb-2">
+                                    <Sparkles size={13} />
+                                    <span>{t('mainContent.aiDiagnoseBtn')}</span>
+                                    {diagStreaming && (
+                                      <svg className="animate-spin ml-1" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                                      </svg>
+                                    )}
+                                    {!diagStreaming && (
+                                      <button
+                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#243a55] transition-colors"
+                                        onClick={() => {
+                                          clearDiagnosis(diagKey);
+                                          diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey);
+                                        }}
+                                      >
+                                        <RefreshCw size={11} className="inline -mt-0.5 mr-1" />
+                                        {t('mainContent.reDiagnose')}
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                                    <MarkdownContent content={diagContent} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // ── 以下是原有的 select / dml-report 渲染 ──
+                      if (activeResult.kind === 'select' && activeResult.columns.length === 0) {
+                        return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>;
+                      }
 
                       const allRows = activeResult.rows;
 
@@ -1278,7 +1636,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               </div>
 
               {/* Status Bar */}
-              {!isExecuting && !error && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
+              {!isExecuting && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
                 <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
                   <span>{currentResults[selectedResultPane]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultPane]?.duration_ms}ms</span>
                 </div>

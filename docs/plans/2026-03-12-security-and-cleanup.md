@@ -1,3 +1,4 @@
+<!-- STATUS: ✅ 已实现 -->
 # Security Fix & Page-Agent Cleanup Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers:executing-plans to implement this plan task-by-task.

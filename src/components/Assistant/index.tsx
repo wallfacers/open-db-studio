@@ -966,26 +966,30 @@ export const Assistant: React.FC<AssistantProps> = ({
           </div>
 
           {/* Patch 确认面板 */}
-          <PatchConfirmPanel />
+          <div className="px-3"><PatchConfirmPanel /></div>
 
           {/* 权限确认 Dock（固定在底部，脱离消息流） */}
           {pendingPermission && (
-            <PermissionDock
-              request={pendingPermission}
-              onRespond={(optionId, cancelled) =>
-                respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
-              }
-            />
+            <div className="px-3">
+              <PermissionDock
+                request={pendingPermission}
+                onRespond={(optionId, cancelled) =>
+                  respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
+                }
+              />
+            </div>
           )}
 
           {/* 问答 Dock（固定在底部） */}
           {pendingQuestion && (
-            <QuestionDock
-              request={pendingQuestion}
-              onAnswer={(questionId, answers, cancelled) =>
-                respondQuestion(currentSessionId, questionId, answers, cancelled)
-              }
-            />
+            <div className="px-3">
+              <QuestionDock
+                request={pendingQuestion}
+                onAnswer={(questionId, answers, cancelled) =>
+                  respondQuestion(currentSessionId, questionId, answers, cancelled)
+                }
+              />
+            </div>
           )}
 
           {/* 连接切换确认 banner */}

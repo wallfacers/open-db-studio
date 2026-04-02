@@ -55,7 +55,7 @@ export const PatchConfirmPanel: React.FC = () => {
   if (!pending) return null
 
   return (
-    <div className="border-t border-border-default bg-background-base">
+    <div className="border border-border-strong bg-background-base rounded-lg overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
         <span className="text-xs font-medium text-foreground-default">

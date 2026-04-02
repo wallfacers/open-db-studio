@@ -57,7 +57,7 @@ const PermissionDock: React.FC<PermissionDockProps> = ({ request, onRespond }) =
   return (
     <div
       ref={containerRef}
-      className="border-t border-border-strong bg-background-panel p-3"
+      className="border border-border-strong bg-background-panel rounded-lg p-3"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
@@ -204,7 +204,7 @@ const QuestionDock: React.FC<QuestionDockProps> = ({ request, onAnswer }) => {
   return (
     <div
       ref={containerRef}
-      className="border-t border-border-strong bg-background-panel p-3"
+      className="border border-border-strong bg-background-panel rounded-lg p-3"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >

@@ -21,6 +21,8 @@ export interface CommandContext {
   newSession: () => Promise<void>;
   clearHistory: (sessionId: string) => Promise<void>;
   showToast: (msg: string, level?: ToastLevel) => void;
+  /** 打开查询历史选择器 */
+  openHistoryPicker?: () => void;
 }
 
 export interface SlashCommand {

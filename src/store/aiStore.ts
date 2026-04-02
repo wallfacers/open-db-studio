@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import type { LlmConfig, CreateLlmConfigInput, UpdateLlmConfigInput, ChatMessage, ChatSession, PermissionRequest, QuestionRequest } from '../types';
 import { useAppStore } from './appStore';
+import { usePermissionRuleStore } from './permissionRuleStore';
 
 // ── 工具函数 ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,13 @@ async function requestAiTitle(sessionId: string, firstUser: string, firstAssista
 }
 
 // ── per-session 运行时状态（不持久化）────────────────────────────────────────
+/** 工具调用步骤（进度指示器用） */
+export interface ToolStep {
+  name: string;
+  status: 'done' | 'active' | 'pending';
+  description?: string;
+}
+
 interface SessionRuntimeState {
   isChatting: boolean;
   streamingContent: string;
@@ -55,6 +63,8 @@ interface SessionRuntimeState {
   lastUserMessageId: string | null;                     // OpenCode message ID，undo 用
   canRedo: boolean;                                     // redo 可用标志
   isCompacting: boolean;                                // compact 执行中（防重复触发）
+  toolSteps: ToolStep[];                                // 工具调用进度步骤列表
+  streamingParts: import('../types').MessagePart[];     // Part-based 流式消息构建
 }
 
 const defaultRuntimeState = (): SessionRuntimeState => ({
@@ -69,6 +79,8 @@ const defaultRuntimeState = (): SessionRuntimeState => ({
   lastUserMessageId: null,
   canRedo: false,
   isCompacting: false,
+  toolSteps: [],
+  streamingParts: [],
 });
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
@@ -708,6 +720,8 @@ export const useAiStore = create<AiState>()(
               streamingThinkingContent: '',
               activeToolName: null,
               sessionStatus: null,
+              toolSteps: [],
+              streamingParts: [],
             },
           },
           chatHistory: [...s.chatHistory, { role: 'user' as const, content: message }],
@@ -719,10 +733,13 @@ export const useAiStore = create<AiState>()(
           // Guard: 已被 cancel 或 session 已被删除（deleteSession 会同时清除 chatStates）
           if (!get().chatStates[sessionId]?.isChatting) return;
 
+          // 获取流式构建的 parts 快照
+          const finalParts = get().chatStates[sessionId]?.streamingParts ?? [];
           const newMsg = {
             role: 'assistant' as const,
             content,
             thinkingContent: thinking || undefined,
+            parts: finalParts.length > 0 ? finalParts : undefined,
           };
           const now = Date.now();
           const isCurrentSession = get().currentSessionId === sessionId;
@@ -799,29 +816,47 @@ export const useAiStore = create<AiState>()(
 
           const flushBuffers = () => {
             rafId = null;
+            const updates: Partial<SessionRuntimeState> = {};
+            let hasUpdates = false;
+
             if (contentBuf) {
               const delta = contentBuf; contentBuf = '';
               const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
-              const newContent = (currentState.streamingContent ?? '') + delta;
-
-              set((s) => ({
-                chatStates: {
-                  ...s.chatStates,
-                  [sessionId]: {
-                    ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
-                    streamingContent: newContent,
-                  },
-                },
-              }));
+              updates.streamingContent = (currentState.streamingContent ?? '') + delta;
+              // 更新 streamingParts: 追加到最后一个 TextPart 或创建新的
+              const parts = [...(currentState.streamingParts ?? [])];
+              const lastPart = parts[parts.length - 1];
+              if (lastPart && lastPart.type === 'text') {
+                parts[parts.length - 1] = { ...lastPart, content: lastPart.content + delta };
+              } else {
+                parts.push({ type: 'text', content: delta });
+              }
+              updates.streamingParts = parts;
+              hasUpdates = true;
             }
             if (thinkingBuf) {
               const delta = thinkingBuf; thinkingBuf = '';
+              const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
+              updates.streamingThinkingContent = (currentState.streamingThinkingContent ?? '') + delta;
+              // 更新 streamingParts: 追加到最后一个 ReasoningPart 或创建新的
+              const parts = updates.streamingParts ?? [...(currentState.streamingParts ?? [])];
+              const lastPart = parts[parts.length - 1];
+              if (lastPart && lastPart.type === 'reasoning') {
+                parts[parts.length - 1] = { ...lastPart, content: lastPart.content + delta };
+              } else {
+                parts.push({ type: 'reasoning', content: delta });
+              }
+              updates.streamingParts = parts;
+              hasUpdates = true;
+            }
+
+            if (hasUpdates) {
               set((s) => ({
                 chatStates: {
                   ...s.chatStates,
                   [sessionId]: {
                     ...(s.chatStates[sessionId] ?? defaultRuntimeState()),
-                    streamingThinkingContent: (s.chatStates[sessionId]?.streamingThinkingContent ?? '') + delta,
+                    ...updates,
                   },
                 },
               }));
@@ -858,16 +893,49 @@ export const useAiStore = create<AiState>()(
               scheduleFlush();
             } else if (event.type === 'ToolCallRequest' && event.data?.name) {
               flushNow();
-              setChatStateField({ activeToolName: event.data.name, sessionStatus: null });
+              // 更新进度步骤：将前一个 active 标记为 done，添加新 active 步骤
+              const prevSteps = get().chatStates[sessionId]?.toolSteps ?? [];
+              const updatedSteps = prevSteps.map((s) =>
+                s.status === 'active' ? { ...s, status: 'done' as const } : s
+              );
+              updatedSteps.push({ name: event.data.name, status: 'active' as const });
+              // 添加 ToolUsePart 到 streamingParts
+              const currentParts = [...(get().chatStates[sessionId]?.streamingParts ?? [])];
+              currentParts.push({
+                type: 'tool-use',
+                name: event.data.name,
+                arguments: event.data.arguments ?? '',
+                callId: event.data.call_id ?? '',
+              });
+              setChatStateField({ activeToolName: event.data.name, sessionStatus: null, toolSteps: updatedSteps, streamingParts: currentParts });
             } else if (event.type === 'PermissionRequest' && event.data?.permission_id) {
-              // PermissionRequest 在 isChatting=true 时到达（agent 暂停等待响应）
+              // 权限规则引擎：检查是否有预设规则可自动响应
+              const { matchRule } = usePermissionRuleStore.getState();
+              const toolName = event.data.message ?? '';
+              const matchedRule = matchRule(toolName);
+              if (matchedRule) {
+                // 规则匹配：自动响应
+                const autoOptionId = matchedRule.action === 'allow'
+                  ? (event.data.options ?? []).find((o: { kind: string }) => o.kind === 'allow_once')?.option_id
+                  : (event.data.options ?? []).find((o: { kind: string }) => o.kind === 'reject_once')?.option_id;
+                if (autoOptionId) {
+                  invoke('agent_permission_respond', {
+                    sessionId,
+                    permissionId: event.data.permission_id,
+                    response: autoOptionId,
+                    remember: false,
+                  }).catch(() => {});
+                  return; // 已自动处理，不显示面板
+                }
+              }
+              // 无匹配规则：显示确认面板
               setChatStateField({
                 pendingPermission: {
                   id: event.data.permission_id,
                   sessionId,
                   source: 'acp' as const,
                   message: event.data.message ?? '工具执行确认',
-                  options: (event.data.options ?? []).map((o) => ({
+                  options: (event.data.options ?? []).map((o: { option_id: string; label: string; kind: string }) => ({
                     option_id: o.option_id,
                     label: o.label,
                     kind: o.kind as 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | 'deny',
@@ -889,8 +957,9 @@ export const useAiStore = create<AiState>()(
             } else if (event.type === 'Done') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;
-              // 清空任何未完成的 pendingPermission（abort 场景兜底）
-              setChatStateField({ pendingPermission: null });
+              // 标记所有步骤为完成，清空权限
+              const doneSteps = (get().chatStates[sessionId]?.toolSteps ?? []).map((s) => ({ ...s, status: 'done' as const }));
+              setChatStateField({ pendingPermission: null, toolSteps: doneSteps });
               const state = get().chatStates[sessionId];
               const content = state?.streamingContent ?? '';
               // 如果内容为空，说明 opencode/provider 未能返回任何内容，给出提示
@@ -903,8 +972,8 @@ export const useAiStore = create<AiState>()(
             } else if (event.type === 'Error') {
               flushNow();
               if (!get().chatStates[sessionId]?.isChatting) return;
-              // 清空任何未完成的 pendingPermission（abort 场景兜底）
-              setChatStateField({ pendingPermission: null });
+              const errSteps = (get().chatStates[sessionId]?.toolSteps ?? []).map((s) => ({ ...s, status: 'done' as const }));
+              setChatStateField({ pendingPermission: null, toolSteps: errSteps });
               await commitAssistant(`Error: ${event.data?.message ?? 'Unknown error'}`, '');
             }
           };

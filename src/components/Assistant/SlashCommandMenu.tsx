@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { CornerDownLeft, CornerUpRight, Zap, Plus, Trash2 } from 'lucide-react';
+import { CornerDownLeft, CornerUpRight, Zap, Plus, Trash2, History } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SlashCommand, ChatCommandState, CommandContext } from './slashCommands';
 
@@ -98,6 +98,16 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
       execute: async (ctx) => {
         await ctx.clearHistory(ctx.sessionId);
         ctx.showToast(t('assistant.slashCommands.clear.done'), 'info');
+      },
+    },
+    {
+      name: 'history',
+      label: '/history',
+      description: t('assistant.slashCommands.history.description', { defaultValue: '引用查询历史' }),
+      icon: History,
+      isAvailable: () => true,
+      execute: async (ctx) => {
+        ctx.openHistoryPicker?.();
       },
     },
   ], [t]);

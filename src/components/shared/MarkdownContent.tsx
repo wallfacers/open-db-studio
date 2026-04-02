@@ -1,13 +1,25 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Maximize2, X } from 'lucide-react';
+import { Copy, Check, Maximize2, X, Play, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
 import { ChartBlock } from './ChartBlock';
 import { Tooltip } from '../common/Tooltip';
+import { LRUCache } from '../../utils/lruCache';
+import { useChatConnection } from '../Assistant/ChatConnectionContext';
+import { InlineResultCard } from '../Assistant/InlineResultCard';
+import { SqlDiffView } from '../Assistant/SqlDiffView';
+import type { QueryResult } from '../../types';
+
+// SQL Diff 暂存：用于检测 sql:original/sql:optimized 配对
+const sqlDiffStore = new Map<string, { original?: string; optimized?: string }>();
+
+// ── Markdown 渲染 LRU 缓存（非流式消息复用渲染结果）──────────────────────────
+const markdownCache = new LRUCache<string, React.ReactNode>(100);
 
 // ── 代码放大弹框 ─────────────────────────────────────────────────────────────
 const CodeExpandModal: React.FC<{
@@ -91,12 +103,19 @@ const CodeExpandModal: React.FC<{
   );
 });
 
-// ── 代码块 ───────────────────────────────────────────────────────────────────
+// ── 代码块（SQL 支持一键执行 + 内联结果）───────────────────────────────────────
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // SQL 一键执行：从 ChatConnectionContext 获取连接信息
+  const chatConn = useChatConnection();
+  const isSql = /^sql$/i.test(language);
+  const canExecute = isSql && chatConn.connectionId != null;
 
   React.useEffect(() => {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
@@ -115,12 +134,49 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
 
   const handleClose = useCallback(() => setExpanded(false), []);
 
+  const handleExecute = useCallback(async () => {
+    if (!chatConn.connectionId || executing) return;
+    setExecuting(true);
+    try {
+      const result = await invoke<QueryResult>('execute_query', {
+        connectionId: chatConn.connectionId,
+        sql: code,
+        database: chatConn.database ?? null,
+        schema: chatConn.schema ?? null,
+      });
+      setQueryResult(result);
+    } catch (e) {
+      setQueryResult({
+        columns: [],
+        rows: [],
+        row_count: 0,
+        duration_ms: 0,
+        kind: 'error',
+        error_message: String(e),
+      });
+    } finally {
+      setExecuting(false);
+    }
+  }, [chatConn, code, executing]);
+
   return (
     <>
       <div className="my-2 rounded overflow-hidden border border-border-default">
         <div className="flex items-center justify-between px-3 py-1.5 bg-background-code border-b border-border-default">
           <span className="text-xs text-foreground-muted font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
+            {/* SQL 执行按钮 */}
+            {canExecute && (
+              <Tooltip content={t('assistant.executeSql', { defaultValue: '执行 SQL' })} className="contents">
+                <button
+                  onClick={handleExecute}
+                  disabled={executing}
+                  className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover disabled:opacity-50 transition-colors"
+                >
+                  {executing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                </button>
+              </Tooltip>
+            )}
             <Tooltip content={t('commonComponents.markdownContent.expandView')} className="contents">
               <button
                 onClick={() => setExpanded(true)}
@@ -152,6 +208,8 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
           {code}
         </SyntaxHighlighter>
       </div>
+      {/* 内联执行结果 */}
+      {queryResult && <InlineResultCard result={queryResult} sql={code} />}
       {expanded && (
         <CodeExpandModal
           language={language}
@@ -167,8 +225,32 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
 function makeMdComponents(isStreaming: boolean) {
   return {
   code({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { className?: string }) {
-    const match = /language-(\w+)/.exec(className ?? '');
-    const language = match ? match[1] : '';
+    const match = /language-([\w:]+)/.exec(className ?? '');
+    const rawLang = match ? match[1] : '';
+    // 检测 sql:original / sql:optimized 标记
+    if (rawLang === 'sql:original' || rawLang === 'sql:optimized') {
+      const code = String(children).replace(/\n$/, '');
+      const key = 'current'; // 同一消息内的配对
+      const entry = sqlDiffStore.get(key) ?? {};
+      if (rawLang === 'sql:original') {
+        entry.original = code;
+        sqlDiffStore.set(key, entry);
+        // 等待 optimized 到来，暂时不渲染
+        return null;
+      } else {
+        entry.optimized = code;
+        sqlDiffStore.set(key, entry);
+        if (entry.original && entry.optimized) {
+          const orig = entry.original;
+          const opt = entry.optimized;
+          sqlDiffStore.delete(key);
+          return <SqlDiffView originalSql={orig} optimizedSql={opt} />;
+        }
+        // 没有 original 配对，当普通 SQL 渲染
+        return <CodeBlock language="sql" code={code} />;
+      }
+    }
+    const language = rawLang.split(':')[0]; // 取冒号前的部分
     if (match) {
       if (language === 'chart') {
         return <ChartBlock code={String(children).replace(/\n$/, '')} isStreaming={isStreaming} />;
@@ -239,10 +321,24 @@ function ensureListBlankLine(content: string): string {
 
 export const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = memo(({ content, isStreaming = false }) => {
   const components = isStreaming ? streamingMdComponents : staticMdComponents;
-  const processed = ensureListBlankLine(ensureCodeFenceOnNewLine(content));
-  return (
+  const processed = useMemo(() => ensureListBlankLine(ensureCodeFenceOnNewLine(content)), [content]);
+
+  // 非流式消息：走 LRU 缓存避免重复渲染
+  if (!isStreaming) {
+    const cached = markdownCache.get(processed);
+    if (cached) return <>{cached}</>;
+  }
+
+  const rendered = (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {processed}
     </ReactMarkdown>
   );
+
+  // 非流式渲染完成后缓存
+  if (!isStreaming) {
+    markdownCache.set(processed, rendered);
+  }
+
+  return rendered;
 });

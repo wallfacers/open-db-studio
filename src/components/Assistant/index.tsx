@@ -2,32 +2,65 @@ import React, { useRef, useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { createPortal } from 'react-dom';
-import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
+import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw, Pencil } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { PatchConfirmPanel } from './PatchConfirmPanel';
-import ElicitationPanel from './ElicitationPanel';
+import { PermissionDock, QuestionDock } from './ElicitationPanel';
 import { SlashCommandMenu } from './SlashCommandMenu';
+import { ProgressIndicator } from './ProgressIndicator';
+import { ToolCallCard } from './ToolCallCard';
+import { ChatConnectionProvider } from './ChatConnectionContext';
+import { SchemaAutocomplete } from './SchemaAutocomplete';
+import { QueryHistoryPicker } from './QueryHistoryPicker';
+import type { SchemaSuggestion } from '../../hooks/useSchemaCompletions';
 import { useAiStore } from '../../store';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
 import { useAppStore } from '../../store/appStore';
 import { useConfirmStore } from '../../store/confirmStore';
 import { Tooltip } from '../common/Tooltip';
+import { usePacedValue } from '../../hooks/usePacedValue';
 import type { ToastLevel } from '../Toast';
 
 // ── 历史消息（memo 隔离：chatHistory 不变时完全不重渲染）────────────────────
-const AssistantMessage: React.FC<{ content: string; thinkingContent?: string }> = memo(
-  ({ content, thinkingContent }) => (
-    <div className="flex flex-col items-start">
-      <div className="text-foreground-default text-[13px] w-full">
-        {thinkingContent && (
-          <ThinkingBlock content={thinkingContent} isStreaming={false} />
-        )}
-        <MarkdownContent content={content} />
+const AssistantMessage: React.FC<{ content: string; thinkingContent?: string; parts?: import('../../types').MessagePart[] }> = memo(
+  ({ content, thinkingContent, parts }) => {
+    // 优先使用 parts 渲染（Part-based），否则使用 flat 字段（向后兼容）
+    if (parts && parts.length > 0) {
+      return (
+        <div className="flex flex-col items-start">
+          <div className="text-foreground-default text-[13px] w-full">
+            {parts.map((part, i) => {
+              switch (part.type) {
+                case 'reasoning':
+                  return <ThinkingBlock key={i} content={part.content} isStreaming={false} />;
+                case 'text':
+                  return <MarkdownContent key={i} content={part.content} />;
+                case 'tool-use':
+                  return <ToolCallCard key={i} toolUse={part} />;
+                case 'tool-result':
+                  return null; // tool-result 被 ToolCallCard 内联处理
+                default:
+                  return null;
+              }
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col items-start">
+        <div className="text-foreground-default text-[13px] w-full">
+          {thinkingContent && (
+            <ThinkingBlock content={thinkingContent} isStreaming={false} />
+          )}
+          <MarkdownContent content={content} />
+        </div>
       </div>
-    </div>
-  )
+    );
+  }
 );
 
 // ── 等待第一个 Token 的弹跳动画（复用 ai-dot 样式，与 sessionStatus 视觉一致）────
@@ -60,7 +93,11 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
   const pendingQuestion = useAiStore((s) => s.chatStates[sessionId]?.pendingQuestion ?? null);
   const isChatting = useAiStore((s) => s.chatStates[sessionId]?.isChatting ?? false);
+  const toolSteps = useAiStore((s) => s.chatStates[sessionId]?.toolSteps ?? []);
   const { t } = useTranslation();
+
+  // PacedMarkdown：流式时节奏释放文本，非流式立即 snap
+  const pacedContent = usePacedValue(content, isChatting && !pendingQuestion);
 
   // 已收到任何内容（包含深度思考）则不再显示等待动画
   const hasFirstToken = !!(content || thinking);
@@ -70,7 +107,9 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
       <div className="text-foreground-default text-[13px] w-full">
         {/* ThinkingBlock 使用 isChatting：Q&A 期间保持展开，仅 AI 完成后才自动折叠 */}
         {thinking && <ThinkingBlock content={thinking} isStreaming={isChatting} />}
-        {content && <MarkdownContent content={content} isStreaming={!pendingQuestion} />}
+        {/* 工具调用进度指示器 */}
+        {toolSteps.length > 0 && <ProgressIndicator steps={toolSteps} />}
+        {pacedContent && <MarkdownContent content={pacedContent} isStreaming={!pendingQuestion} />}
         {pendingQuestion ? (
           <div className="mt-2 space-y-1">
             {/* 从 questions 字段提取问题文本展示 */}
@@ -169,8 +208,11 @@ export const Assistant: React.FC<AssistantProps> = ({
   const { connections, activeConnectionIds } = useConnectionStore();
 
   const [chatInput, setChatInput] = useState('');
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [showSchemaComplete, setShowSchemaComplete] = useState(true);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -375,6 +417,7 @@ export const Assistant: React.FC<AssistantProps> = ({
     newSession,
     clearHistory,
     showToast,
+    openHistoryPicker: () => setShowHistoryPicker(true),
   };
 
   // 输入框 JSX，在空状态和正常状态中复用
@@ -458,6 +501,42 @@ export const Assistant: React.FC<AssistantProps> = ({
           document.body,
         )}
       </div>
+
+      {/* 查询历史选择器 */}
+      {showHistoryPicker && (
+        <QueryHistoryPicker
+          connectionId={effectiveConnectionId}
+          onSelect={(entry) => {
+            // 将查询历史引用插入到输入框
+            const ref = `[查询历史: ${entry.sql.slice(0, 60)}${entry.sql.length > 60 ? '...' : ''} | ${entry.row_count ?? 0} rows, ${entry.duration_ms ?? 0}ms]`;
+            setChatInput((prev) => prev + ref);
+            setShowHistoryPicker(false);
+          }}
+          onClose={() => setShowHistoryPicker(false)}
+        />
+      )}
+      {/* Schema 感知补全（SQL 上下文时触发） */}
+      {showSchemaComplete && slashQuery === null && (
+        <SchemaAutocomplete
+          connectionId={effectiveConnectionId}
+          inputText={chatInput}
+          cursorPosition={cursorPosition}
+          onSelect={(suggestion: SchemaSuggestion, triggerStart: number) => {
+            // 将补全插入到 cursor 位置
+            const before = chatInput.slice(0, triggerStart);
+            const after = chatInput.slice(cursorPosition);
+            const newValue = before + suggestion.label + after;
+            setChatInput(newValue);
+            setCursorPosition(triggerStart + suggestion.label.length);
+            setShowSchemaComplete(false);
+            setTimeout(() => setShowSchemaComplete(true), 100);
+          }}
+          onClose={() => {
+            setShowSchemaComplete(false);
+            setTimeout(() => setShowSchemaComplete(true), 300);
+          }}
+        />
+      )}
       <textarea
         className="bg-transparent text-[13px] text-foreground-default outline-none resize-none h-16 w-full placeholder-foreground-muted"
         placeholder={isWaitingForAnswer ? t('assistant.answerPlaceholder') : t('assistant.inputPlaceholder')}
@@ -465,6 +544,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         onChange={(e) => {
           const val = e.target.value;
           setChatInput(val);
+          setCursorPosition(e.target.selectionStart ?? val.length);
           if (val.startsWith('/') && !val.includes(' ')) {
             setSlashQuery(val.slice(1));
             setSlashIndex(0);
@@ -472,6 +552,7 @@ export const Assistant: React.FC<AssistantProps> = ({
             setSlashQuery(null);
           }
         }}
+        onSelect={(e) => setCursorPosition((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
         onKeyDown={handleKeyDown}
         disabled={isChatting && !isWaitingForAnswer}
       />
@@ -787,40 +868,92 @@ export const Assistant: React.FC<AssistantProps> = ({
         </div>
       ) : (
         /* ── 对话状态：消息滚动区 + 底部固定输入框 ── */
-        <>
+        <ChatConnectionProvider value={{ connectionId: effectiveConnectionId }}>
           <div className="flex-1 overflow-auto p-4 space-y-6 min-h-0">
-            {chatHistory.map((msg, idx) =>
-              msg.role === 'user' ? (
-                <div key={idx} className="flex flex-col items-end">
+            {chatHistory.map((msg, idx) => {
+              const isLastUser = msg.role === 'user' && idx === chatHistory.length - 2;
+              const isLastAssistant = msg.role === 'assistant' && idx === chatHistory.length - 1;
+              const canEditOrRegen = !isChatting && chatHistory.length >= 2;
+
+              return msg.role === 'user' ? (
+                <div key={idx} className="flex flex-col items-end group/msg">
                   <div className="bg-border-default text-foreground-default px-3 py-2 rounded-lg max-w-[90%] text-[13px] leading-relaxed break-words">
                     {msg.content}
                   </div>
+                  {/* 编辑按钮：hover 显示，仅最后一条用户消息可用 */}
+                  {isLastUser && canEditOrRegen && (
+                    <button
+                      onClick={() => {
+                        const msgContent = msg.content;
+                        undoMessage(currentSessionId);
+                        setChatInput(msgContent);
+                      }}
+                      className="mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity text-[11px] text-foreground-ghost hover:text-foreground-muted flex items-center gap-1"
+                      title={t('assistant.editMessage', { defaultValue: '编辑并重新发送' })}
+                    >
+                      <Pencil size={10} />
+                      <span>{t('assistant.edit', { defaultValue: '编辑' })}</span>
+                    </button>
+                  )}
                 </div>
               ) : msg.role === 'system' ? null : (
-                <AssistantMessage
-                  key={idx}
-                  content={msg.content}
-                  thinkingContent={msg.thinkingContent}
-                />
-              )
-            )}
+                <div key={idx} className="group/msg">
+                  <AssistantMessage
+                    content={msg.content}
+                    thinkingContent={msg.thinkingContent}
+                    parts={msg.parts}
+                  />
+                  {/* 重新生成按钮：hover 显示，仅最后一条助手消息可用 */}
+                  {isLastAssistant && canEditOrRegen && (
+                    <button
+                      onClick={async () => {
+                        // 找到最后一条用户消息
+                        const lastUserMsg = chatHistory.slice(0, idx).reverse().find((m) => m.role === 'user');
+                        if (!lastUserMsg) return;
+                        await undoMessage(currentSessionId);
+                        // 获取有效连接 ID
+                        const effectiveConnId = linkedConnectionId ?? useConnectionStore.getState().activeConnectionId;
+                        sendAgentChatStream(lastUserMsg.content, effectiveConnId);
+                      }}
+                      className="mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity text-[11px] text-foreground-ghost hover:text-foreground-muted flex items-center gap-1"
+                      title={t('assistant.regenerate', { defaultValue: '重新生成' })}
+                    >
+                      <RefreshCw size={10} />
+                      <span>{t('assistant.regenerate', { defaultValue: '重新生成' })}</span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             {isChatting && <StreamingMessage sessionId={currentSessionId} />}
 
-              {/* 权限确认面板（isChatting=true 时，ACP native 路径） */}
-              {pendingPermission && (
-                <ElicitationPanel
-                  request={pendingPermission}
-                  onRespond={(optionId, cancelled) =>
-                    respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
-                  }
-                />
-              )}
+              {/* 权限/问答面板已移至底部 Dock 区域 */}
 
             <div ref={chatEndRef} />
           </div>
 
           {/* Patch 确认面板 */}
           <PatchConfirmPanel />
+
+          {/* 权限确认 Dock（固定在底部，脱离消息流） */}
+          {pendingPermission && (
+            <PermissionDock
+              request={pendingPermission}
+              onRespond={(optionId, cancelled) =>
+                respondPermission(currentSessionId, pendingPermission.id, optionId, cancelled)
+              }
+            />
+          )}
+
+          {/* 问答 Dock（固定在底部） */}
+          {pendingQuestion && (
+            <QuestionDock
+              request={pendingQuestion}
+              onAnswer={(questionId, answers, cancelled) =>
+                respondQuestion(currentSessionId, questionId, answers, cancelled)
+              }
+            />
+          )}
 
           {/* 连接切换确认 banner */}
           {pendingConnectionSwitch && (
@@ -861,7 +994,7 @@ export const Assistant: React.FC<AssistantProps> = ({
           <div className="p-3 border-t border-border-default flex-shrink-0">
             {renderInputBox()}
           </div>
-        </>
+        </ChatConnectionProvider>
       )}
     </div>
   );

@@ -439,6 +439,127 @@ body {
   transform-origin: bottom;
 }
 
+/* ============================================================
+   TextShimmer — 文字流光闪烁动画
+   ============================================================ */
+@keyframes text-shimmer-slide {
+  0%   { background-position: 200% 50%; }
+  100% { background-position: -200% 50%; }
+}
+
+[data-component="text-shimmer"] {
+  display: inline-flex;
+  position: relative;
+}
+
+[data-slot="text-shimmer-char"] {
+  position: relative;
+  display: inline;
+}
+
+[data-slot="text-shimmer-char-base"] {
+  color: var(--foreground-subtle);
+  transition: opacity var(--text-shimmer-swap, 220ms) ease;
+}
+
+[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-base"] {
+  opacity: 0.5;
+}
+
+[data-slot="text-shimmer-char-shimmer"] {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--foreground-subtle) 0%,
+    var(--accent) 25%,
+    var(--foreground-default) 50%,
+    var(--accent) 75%,
+    var(--foreground-subtle) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  transition: opacity var(--text-shimmer-swap, 220ms) ease;
+}
+
+[data-slot="text-shimmer-char-shimmer"][data-run="true"] {
+  opacity: 1;
+  animation: text-shimmer-slide 2.5s linear infinite;
+}
+
+/* ============================================================
+   TextReveal — 文字切换 mask 动画
+   ============================================================ */
+[data-component="text-reveal"] {
+  display: inline-flex;
+  position: relative;
+  overflow: hidden;
+  vertical-align: baseline;
+}
+
+[data-component="text-reveal"]:not([data-ready="true"]) {
+  visibility: hidden;
+}
+
+[data-slot="text-reveal-track"] {
+  display: inline-flex;
+  position: relative;
+  transition: width var(--text-reveal-duration, 450ms) var(--text-reveal-spring-soft, cubic-bezier(0.34, 1, 0.64, 1));
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+[data-slot="text-reveal-entering"] {
+  display: inline;
+  white-space: nowrap;
+  mask-image: linear-gradient(
+    to right,
+    black calc(100% - var(--text-reveal-edge, 17%)),
+    transparent 100%
+  );
+  transition: transform var(--text-reveal-duration, 450ms) var(--text-reveal-spring, cubic-bezier(0.34, 1.08, 0.64, 1)),
+              opacity var(--text-reveal-duration, 450ms) ease;
+}
+
+[data-component="text-reveal"][data-swapping="true"] [data-slot="text-reveal-entering"] {
+  transform: translateY(var(--text-reveal-travel, 0));
+  opacity: 0;
+}
+
+[data-slot="text-reveal-leaving"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline;
+  white-space: nowrap;
+  transition: transform var(--text-reveal-duration, 450ms) var(--text-reveal-spring, cubic-bezier(0.34, 1.08, 0.64, 1)),
+              opacity var(--text-reveal-duration, 450ms) ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-component="text-reveal"][data-swapping="true"] [data-slot="text-reveal-leaving"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+[data-component="text-reveal"]:not([data-swapping="true"]) [data-slot="text-reveal-leaving"] {
+  transform: translateY(calc(-1 * var(--text-reveal-travel, 0)));
+}
+
+[data-component="text-reveal"][data-truncate="true"] [data-slot="text-reveal-track"] {
+  width: 100% !important;
+}
+
+[data-component="text-reveal"][data-truncate="true"] [data-slot="text-reveal-entering"],
+[data-component="text-reveal"][data-truncate="true"] [data-slot="text-reveal-leaving"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Tooltip 淡入动画（光标下方，从上方轻微滑入） */
 @keyframes tooltip-fade-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-4px); }

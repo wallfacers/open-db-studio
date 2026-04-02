@@ -966,11 +966,11 @@ export const Assistant: React.FC<AssistantProps> = ({
           </div>
 
           {/* Patch 确认面板 */}
-          <div className="px-3"><PatchConfirmPanel /></div>
+          <div className="px-3 pb-3"><PatchConfirmPanel /></div>
 
           {/* 权限确认 Dock（固定在底部，脱离消息流） */}
           {pendingPermission && (
-            <div className="px-3">
+            <div className="px-3 pb-3">
               <PermissionDock
                 request={pendingPermission}
                 onRespond={(optionId, cancelled) =>
@@ -982,7 +982,7 @@ export const Assistant: React.FC<AssistantProps> = ({
 
           {/* 问答 Dock（固定在底部） */}
           {pendingQuestion && (
-            <div className="px-3">
+            <div className="px-3 pb-3">
               <QuestionDock
                 request={pendingQuestion}
                 onAnswer={(questionId, answers, cancelled) =>

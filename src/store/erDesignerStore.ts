@@ -482,6 +482,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           ...s.columns,
           [tableId]: (s.columns[tableId] ?? []).filter((c) => c.id !== id),
         },
+        // SQLite ON DELETE CASCADE 会级联删除引用该 column 的 relation，前端同步清理
+        relations: s.relations.filter(
+          (r) => r.source_column_id !== id && r.target_column_id !== id
+        ),
       }));
       set((s) => {
         const next = { ...s.dialectWarnings };

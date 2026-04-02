@@ -553,10 +553,8 @@ pub fn update_relation(id: i64, req: &UpdateRelationRequest) -> AppResult<ErRela
 
 pub fn delete_relation(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_relations WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER relation {} not found", id)));
-    }
+    // 幂等删除：可能已被 ON DELETE CASCADE 级联删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_relations WHERE id = ?1", [id])?;
     Ok(())
 }
 

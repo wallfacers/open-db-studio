@@ -110,14 +110,14 @@ export function SeaTunnelConnectionModal({
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-96"
+        className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-96"
         onKeyDown={handleKeyDown}
       >
         {/* 标题栏 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-strong)]">
-          <span className="text-sm font-medium text-[var(--foreground-default)]">{title}</span>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-strong">
+          <span className="text-sm font-medium text-foreground-default">{title}</span>
           <button
-            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+            className="text-foreground-muted hover:text-foreground-default transition-colors"
             onClick={onClose}
           >
             <X size={16} />
@@ -128,8 +128,8 @@ export function SeaTunnelConnectionModal({
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           {/* 名称 */}
           <div>
-            <label className="block text-xs text-[var(--foreground-muted)] mb-1">
-              {t('seaTunnel.connectionModal.connectionName')} <span className="text-[var(--error)]">*</span>
+            <label className="block text-xs text-foreground-muted mb-1">
+              {t('seaTunnel.connectionModal.connectionName')} <span className="text-error">*</span>
             </label>
             <input
               ref={nameRef}
@@ -137,28 +137,28 @@ export function SeaTunnelConnectionModal({
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder={t('seaTunnel.connectionModal.namePlaceholder')}
-              className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] placeholder-[var(--foreground-muted)] outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-background-base border border-border-strong rounded px-3 py-1.5 text-sm text-foreground-default placeholder-foreground-muted outline-none focus:border-accent transition-colors"
             />
           </div>
 
           {/* 集群地址 */}
           <div>
-            <label className="block text-xs text-[var(--foreground-muted)] mb-1">
-              {t('seaTunnel.connectionModal.clusterUrl')} <span className="text-[var(--error)]">*</span>
+            <label className="block text-xs text-foreground-muted mb-1">
+              {t('seaTunnel.connectionModal.clusterUrl')} <span className="text-error">*</span>
             </label>
             <input
               type="text"
               value={url}
               onChange={e => setUrl(e.target.value)}
               placeholder={t('seaTunnel.connectionModal.urlPlaceholder')}
-              className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] placeholder-[var(--foreground-muted)] outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-background-base border border-border-strong rounded px-3 py-1.5 text-sm text-foreground-default placeholder-foreground-muted outline-none focus:border-accent transition-colors"
             />
           </div>
 
           {/* Auth Token（可选） */}
           <div>
-            <label className="block text-xs text-[var(--foreground-muted)] mb-1">
-              Auth Token <span className="text-[var(--foreground-muted)]">({t('seaTunnel.connectionModal.optional')})</span>
+            <label className="block text-xs text-foreground-muted mb-1">
+              Auth Token <span className="text-foreground-muted">({t('seaTunnel.connectionModal.optional')})</span>
             </label>
             <div className="relative">
               <input
@@ -166,12 +166,12 @@ export function SeaTunnelConnectionModal({
                 value={authToken}
                 onChange={e => setAuthToken(e.target.value)}
                 placeholder={t('seaTunnel.connectionModal.tokenPlaceholder')}
-                className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-3 py-1.5 pr-9 text-sm text-[var(--foreground-default)] placeholder-[var(--foreground-muted)] outline-none focus:border-[var(--accent)] transition-colors"
+                className="w-full bg-background-base border border-border-strong rounded px-3 py-1.5 pr-9 text-sm text-foreground-default placeholder-foreground-muted outline-none focus:border-accent transition-colors"
               />
               <button
                 type="button"
                 onClick={() => setShowToken(v => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-foreground-muted hover:text-foreground-default transition-colors"
               >
                 {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
@@ -179,13 +179,13 @@ export function SeaTunnelConnectionModal({
           </div>
 
           {error && (
-            <div className="text-xs text-[var(--error)] bg-[var(--error-subtle)] border border-[var(--error)]/30 rounded px-3 py-2">
+            <div className="text-xs text-error bg-error-subtle border border-error/30 rounded px-3 py-2">
               {error}
             </div>
           )}
 
           {testResult && (
-            <div className={`text-xs rounded px-3 py-2 ${testResult.ok ? 'text-[var(--accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/30' : 'text-[var(--error)] bg-[var(--error-subtle)] border border-[var(--error)]/30'}`}>
+            <div className={`text-xs rounded px-3 py-2 ${testResult.ok ? 'text-accent bg-accent/10 border border-accent/30' : 'text-error bg-error-subtle border border-error/30'}`}>
               {testResult.msg}
             </div>
           )}
@@ -196,7 +196,7 @@ export function SeaTunnelConnectionModal({
               type="button"
               onClick={handleTest}
               disabled={testing}
-              className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] border border-[var(--border-strong)] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground-default border border-border-strong rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {testing ? t('seaTunnel.connectionModal.testing') : t('seaTunnel.connectionModal.testConnection')}
             </button>
@@ -204,14 +204,14 @@ export function SeaTunnelConnectionModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] border border-[var(--border-strong)] rounded transition-colors"
+                className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground-default border border-border-strong rounded transition-colors"
               >
                 {t('common.cancel')}
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="px-3 py-1.5 text-xs text-[var(--background-base)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 text-xs text-background-base bg-accent hover:bg-accent-hover rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? t('common.saving') : t('common.save')}
               </button>

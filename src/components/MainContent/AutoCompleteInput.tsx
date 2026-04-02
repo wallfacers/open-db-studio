@@ -215,7 +215,7 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
     <div ref={containerRef} className="relative flex items-center flex-1">
       <input
         ref={inputRef}
-        className={`bg-transparent outline-none text-[var(--foreground-default)] w-full ${className}`}
+        className={`bg-transparent outline-none text-foreground-default w-full ${className}`}
         placeholder={placeholder}
         value={inputValue}
         onChange={handleInputChange}
@@ -228,7 +228,7 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
       <Tooltip content={t('tableDataView.search')}>
         <button
           onClick={onSearch}
-          className="p-1 hover:bg-[var(--background-hover)] rounded text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors ml-1 flex-shrink-0"
+          className="p-1 hover:bg-background-hover rounded text-foreground-muted hover:text-accent transition-colors ml-1 flex-shrink-0"
         >
           <Search size={14} />
         </button>
@@ -236,14 +236,14 @@ export const AutoCompleteInput: React.FC<AutoCompleteInputProps> = ({
 
       {/* 自动补全下拉列表 - 宽度自适应内容 */}
       {showSuggestions && currentSuggestions.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg z-50 max-h-40 overflow-y-auto min-w-[120px] w-auto whitespace-nowrap">
+        <div className="absolute top-full left-0 mt-1 bg-background-elevated border border-border-strong rounded shadow-lg z-50 max-h-40 overflow-y-auto min-w-[120px] w-auto whitespace-nowrap">
           {currentSuggestions.map((col, idx) => (
             <div
               key={col}
-              className={`px-3 py-1.5 text-xs cursor-pointer ${
+              className={`px-3 py-1.5 text-xs cursor-pointer transition-colors duration-150 ${
                 idx === highlightIndex
-                  ? 'bg-[var(--background-hover)] text-[var(--accent)]'
-                  : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)]'
+                  ? 'bg-background-hover text-accent'
+                  : 'text-foreground-default hover:bg-background-hover'
               }`}
               onMouseDown={e => e.preventDefault()}
               onClick={() => applySuggestion(col)}

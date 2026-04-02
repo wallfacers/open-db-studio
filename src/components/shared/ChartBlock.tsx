@@ -157,13 +157,13 @@ const ChartExpandModal: React.FC<{
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--background-code)] border-b border-[var(--border-default)] flex-shrink-0">
-          <span className="text-xs text-[var(--foreground-muted)] font-mono">{chartType}</span>
+      <div className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-background-code border-b border-border-default flex-shrink-0">
+          <span className="text-xs text-foreground-muted font-mono">{chartType}</span>
           <Tooltip content="关闭" className="contents">
             <button
               onClick={onClose}
-              className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+              className="text-foreground-muted hover:text-foreground-default transition-colors"
             >
               <X size={16} />
             </button>
@@ -356,18 +356,18 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
     // 柱高序列：低→中→高→中→低，营造波形感
     const barHeights = [20, 32, 44, 32, 20];
     return (
-      <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--background-code)] border-b border-[var(--border-default)]">
-          <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[var(--accent)] flex-shrink-0" />
-          <span className="text-xs text-[var(--foreground-muted)] animate-pulse">{t('commonComponents.chartBlock.generatingChart')}</span>
+      <div data-testid="chart-streaming" className="my-2 rounded overflow-hidden border border-border-default">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-background-code border-b border-border-default">
+          <span className="ai-dot w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+          <span className="text-xs text-foreground-muted animate-pulse">{t('commonComponents.chartBlock.generatingChart')}</span>
         </div>
-        <div className="bg-[var(--background-base)] flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
+        <div className="bg-background-base flex items-center justify-center" style={{ height: CHART_DEFAULT_HEIGHT }}>
           <div className="flex flex-col items-center gap-3">
             <div className="flex gap-2 items-end">
               {barHeights.map((h, i) => (
                 <div
                   key={i}
-                  className="w-3 rounded-t bg-[var(--accent)]/70 chart-bar-anim"
+                  className="w-3 rounded-t bg-accent/70 chart-bar-anim"
                   style={{ height: h, animationDelay: `-${(i * 0.22).toFixed(2)}s` }}
                 />
               ))}
@@ -381,12 +381,12 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
   // ── 错误状态（非流式，JSON 确实有误）──
   if (error) {
     return (
-      <div data-testid="chart-error" className="my-2 rounded overflow-hidden border border-[var(--error)]/30">
-        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--error-subtle)] border-b border-[var(--error)]/30">
-          <AlertTriangle size={13} className="text-[var(--error)] flex-shrink-0" />
-          <span className="text-xs text-[var(--error)]">{t('commonComponents.chartBlock.chartDataError')}</span>
+      <div data-testid="chart-error" className="my-2 rounded overflow-hidden border border-error/30">
+        <div className="flex items-center gap-2 px-3 py-2 bg-error-subtle border-b border-error/30">
+          <AlertTriangle size={13} className="text-error flex-shrink-0" />
+          <span className="text-xs text-error">{t('commonComponents.chartBlock.chartDataError')}</span>
         </div>
-        <pre className="bg-[var(--background-base)] text-[var(--error)] text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
+        <pre className="bg-background-base text-error text-xs p-3 overflow-x-auto font-mono whitespace-pre-wrap">
           {code}
         </pre>
       </div>
@@ -403,25 +403,25 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
 
   // ── 正常渲染 ──
   return (
-    <div data-testid="chart-block" className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
+    <div data-testid="chart-block" className="my-2 rounded overflow-hidden border border-border-default">
       {/* 工具栏（与 CodeBlock 风格一致） */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--background-code)] border-b border-[var(--border-default)]">
-        <span className="text-xs text-[var(--foreground-muted)] font-mono">{chartType}</span>
+      <div className="flex items-center justify-between px-3 py-1.5 bg-background-code border-b border-border-default">
+        <span className="text-xs text-foreground-muted font-mono">{chartType}</span>
         <div className="flex items-center gap-3">
           <Tooltip content="放大查看" className="contents">
             <button
               onClick={() => setExpanded(true)}
-              className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+              className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
             >
               <Maximize2 size={12} />
             </button>
           </Tooltip>
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+            className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
           >
             {copied ? (
-              <><Check size={12} className="text-[var(--accent)]" /><span className="text-[var(--accent)]">{t('commonComponents.chartBlock.copied')}</span></>
+              <><Check size={12} className="text-accent" /><span className="text-accent">{t('commonComponents.chartBlock.copied')}</span></>
             ) : (
               <><Copy size={12} /><span>{t('commonComponents.chartBlock.copy')}</span></>
             )}
@@ -433,7 +433,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
       <ChartErrorBoundary
         key={code}
         fallback={
-          <div className="bg-[var(--background-base)] text-[var(--foreground-muted)] text-xs p-4 text-center">
+          <div className="bg-background-base text-foreground-muted text-xs p-4 text-center">
             {t('commonComponents.chartBlock.renderFailed')}
           </div>
         }

@@ -88,14 +88,14 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
     return `DELETE FROM \`${tableName}\` WHERE \`${pkColumn}\` = '${String(pkVal ?? '').replace(/'/g, "\\'")}';`;
   };
 
-  const itemClass = 'px-4 py-1.5 hover:bg-[var(--background-hover)] cursor-pointer text-[var(--foreground-default)] flex items-center justify-between';
-  const dividerClass = 'border-t border-[var(--border-default)] my-1';
+  const itemClass = 'px-4 py-1.5 hover:bg-background-hover cursor-pointer text-foreground-default flex items-center justify-between transition-colors duration-150';
+  const dividerClass = 'border-t border-border-default my-1';
 
   return (
     <div
       ref={menuRef}
       style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
-      className="bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl text-xs min-w-[160px] py-1"
+      className="bg-background-base border border-border-default rounded shadow-xl text-xs min-w-[160px] py-1"
       onContextMenu={e => e.preventDefault()}
     >
       {target === 'cell' && (
@@ -123,7 +123,7 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
         {t('tableDataView.cloneRow')}
       </div>
       <div className={itemClass} onClick={() => { onDeleteRow(); onClose(); }}>
-        <span className="text-[var(--error)]">{t('tableDataView.deleteRowMenuItem')}</span>
+        <span className="text-error">{t('tableDataView.deleteRowMenuItem')}</span>
       </div>
 
       <div className={dividerClass} />
@@ -143,9 +143,9 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
         }}
       >
         <span>{t('tableDataView.copyAsSql')}</span>
-        <ChevronRight size={12} className="text-[var(--foreground-muted)]" />
+        <ChevronRight size={12} className="text-foreground-muted" />
         {sqlSubmenuOpen && (
-          <div className={`absolute ${sqlSubmenuToLeft ? 'right-full' : 'left-full'} ${sqlSubmenuToTop ? 'bottom-0' : 'top-0'} bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl text-xs min-w-[140px] py-1`}>
+          <div className={`absolute ${sqlSubmenuToLeft ? 'right-full' : 'left-full'} ${sqlSubmenuToTop ? 'bottom-0' : 'top-0'} bg-background-base border border-border-default rounded shadow-xl text-xs min-w-[140px] py-1`}>
             <div className={itemClass} onClick={() => copyToClipboard(buildInsertSql())}>
               {t('tableDataView.copyAsInsertSql')}
             </div>

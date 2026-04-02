@@ -70,7 +70,7 @@ function BaseNode({
 }: {
   data: GraphNodeData;
   borderClass: string;
-  badgeBgClass: string;  // 仅背景+文字色，如 "bg-[var(--node-table-bg)] text-[var(--node-table)]"
+  badgeBgClass: string;  // 仅背景+文字色，如 "bg-node-table-bg text-node-table"
   badgeLabel: string;
   icon: React.ElementType;
 }) {
@@ -89,33 +89,33 @@ function BaseNode({
 
   return (
     <div
-      className={`w-60 rounded-md border bg-[var(--background-panel)] shadow-lg ${borderClass} group relative transition-opacity ${
+      className={`w-60 rounded-md border bg-background-panel shadow-lg ${borderClass} group relative transition-opacity ${
         data.isDimmed ? 'opacity-30' : ''
       } ${data.isHighlighted ? 'accent-glow' : ''}`}
     >
       <NodeRoleBadge isPathFrom={data.isPathFrom as boolean | undefined} isPathTo={data.isPathTo as boolean | undefined} />
-      <Handle type="target" position={Position.Left} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
+      <Handle type="target" position={Position.Left} className="!bg-border-default !border-border-strong" />
 
       {/* Header: icon + name + counts */}
-      <div className="px-3 py-2 border-b border-[var(--border-default)] flex items-center gap-2">
+      <div className="px-3 py-2 border-b border-border-default flex items-center gap-2">
         <div className={`flex-shrink-0 ${badgeBgClass} p-1 rounded`}>
           <Icon size={13} />
         </div>
         <div className="flex-1 min-w-0">
           <Tooltip content={data.name} className="w-full">
-            <p className="text-[var(--foreground-default)] text-xs font-semibold truncate">{data.name}</p>
+            <p className="text-foreground-default text-xs font-semibold truncate">{data.name}</p>
           </Tooltip>
-          <p className="text-[var(--foreground-ghost)] text-[9px]">Object Type · {badgeLabel.toUpperCase()}</p>
+          <p className="text-foreground-ghost text-[9px]">Object Type · {badgeLabel.toUpperCase()}</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {propCount > 0 && (
-            <span className="text-[9px] text-[var(--foreground-muted)] bg-[var(--background-base)] px-1 rounded">{propCount}✦</span>
+            <span className="text-[9px] text-foreground-muted bg-background-base px-1 rounded">{propCount}✦</span>
           )}
           {linkCount > 0 && (
             <Tooltip content={t('graphExplorer.highlightLinks')} className="contents">
               <button
                 onClick={(e) => { e.stopPropagation(); data.onHighlightLinks?.(data.id); }}
-                className="text-[9px] text-[var(--accent)] bg-[var(--accent-subtle)] px-1 rounded hover:bg-[var(--accent)22] transition-colors"
+                className="text-[9px] text-accent bg-accent-subtle px-1 rounded hover:bg-accent/15 transition-colors"
               >
                 {linkCount}⇌
               </button>
@@ -124,7 +124,7 @@ function BaseNode({
           <Tooltip content={t('graphExplorer.addAlias')} className="contents">
             <button
               onClick={handleAddAlias}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--border-default)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-border-default text-foreground-muted hover:text-foreground-default"
             >
               <Plus size={11} />
             </button>
@@ -134,14 +134,14 @@ function BaseNode({
 
       {/* Key Properties */}
       {fields.length > 0 && (
-        <div className="px-3 py-1.5 border-b border-[var(--border-default)]">
+        <div className="px-3 py-1.5 border-b border-border-default">
           {fields.map((f, i) => (
             <div key={i} className="flex items-center justify-between py-0.5">
-              <span className="text-[var(--foreground-default)] text-[10px] font-mono truncate flex-1">
-                {f.is_primary_key && <span className="text-[var(--key-primary)] mr-1">⬡</span>}
+              <span className="text-foreground-default text-[10px] font-mono truncate flex-1">
+                {f.is_primary_key && <span className="text-key-primary mr-1">⬡</span>}
                 {f.name}
               </span>
-              {f.type && <span className="text-[var(--foreground-muted)] text-[9px] font-mono ml-2 flex-shrink-0">{f.type}</span>}
+              {f.type && <span className="text-foreground-muted text-[9px] font-mono ml-2 flex-shrink-0">{f.type}</span>}
             </div>
           ))}
         </div>
@@ -151,14 +151,14 @@ function BaseNode({
       {aliases.length > 0 && (
         <div className="px-3 py-1.5 flex flex-wrap gap-1">
           {aliases.slice(0, 3).map(a => (
-            <span key={a} className="text-[9px] text-[var(--node-alias)] bg-[var(--node-alias-bg)] border border-[var(--node-alias)]/25 rounded px-1">
+            <span key={a} className="text-[9px] text-node-alias bg-node-alias-bg border border-node-alias/25 rounded px-1">
               #{a}
             </span>
           ))}
         </div>
       )}
 
-      <Handle type="source" position={Position.Right} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
+      <Handle type="source" position={Position.Right} className="!bg-border-default !border-border-strong" />
     </div>
   );
 }
@@ -175,44 +175,44 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
 
   return (
     <div
-      className={`w-60 rounded-md border border-[var(--node-table)] bg-[var(--background-panel)] shadow-lg group relative transition-opacity ${
+      className={`w-60 rounded-md border border-node-table bg-background-panel shadow-lg group relative transition-opacity ${
         nodeData.isDimmed ? 'opacity-30' : ''
       } ${nodeData.isHighlighted ? 'accent-glow' : ''}`}
     >
       <NodeRoleBadge isPathFrom={nodeData.isPathFrom as boolean | undefined} isPathTo={nodeData.isPathTo as boolean | undefined} />
-      <Handle type="target" position={Position.Left} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
+      <Handle type="target" position={Position.Left} className="!bg-border-default !border-border-strong" />
       {/* 自引用 FK 额外 handles：to_link 从 Top 出发，from_link 从 Bottom 返回 */}
-      <Handle type="source" position={Position.Top} id="top-source" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
-      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
+      <Handle type="source" position={Position.Top} id="top-source" className="!bg-border-default !border-edge-reference" />
+      <Handle type="target" position={Position.Bottom} id="bottom-target" className="!bg-border-default !border-edge-reference" />
 
       {/* Header */}
-      <div className="px-3 py-2 border-b border-[var(--border-default)] flex items-center gap-2">
-        <div className="flex-shrink-0 bg-[var(--node-table-bg)] text-[var(--node-table)] p-1 rounded">
+      <div className="px-3 py-2 border-b border-border-default flex items-center gap-2">
+        <div className="flex-shrink-0 bg-node-table-bg text-node-table p-1 rounded">
           <Database size={13} />
         </div>
         <div className="flex-1 min-w-0">
           <Tooltip content={nodeData.name} className="w-full">
-            <p className="text-[var(--foreground-default)] text-xs font-semibold truncate">{nodeData.name}</p>
+            <p className="text-foreground-default text-xs font-semibold truncate">{nodeData.name}</p>
           </Tooltip>
-          <p className="text-[var(--foreground-ghost)] text-[9px]">Object Type · TABLE</p>
+          <p className="text-foreground-ghost text-[9px]">Object Type · TABLE</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {tableColumns.length > 0 && (
-            <span className="text-[9px] text-[var(--foreground-muted)] bg-[var(--background-base)] px-1 rounded">
+            <span className="text-[9px] text-foreground-muted bg-background-base px-1 rounded">
               {tableColumns.length}✦
             </span>
           )}
           {(nodeData.linkCount as number ?? 0) > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); nodeData.onHighlightLinks?.(nodeData.id); }}
-              className="text-[9px] text-[var(--accent)] bg-[var(--accent-subtle)] px-1 rounded hover:bg-[var(--accent)22] transition-colors"
+              className="text-[9px] text-accent bg-accent-subtle px-1 rounded hover:bg-accent/15 transition-colors"
             >
               {nodeData.linkCount as number}⇌
             </button>
           )}
           <button
             onClick={(e) => { e.stopPropagation(); nodeData.onAddAlias?.(nodeData.id); }}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--border-default)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-border-default text-foreground-muted hover:text-foreground-default"
           >
             <Plus size={11} />
           </button>
@@ -221,16 +221,16 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
 
       {/* Columns */}
       {tableColumns.length > 0 && (
-        <div className="border-b border-[var(--border-default)]">
+        <div className="border-b border-border-default">
           <div className="px-3 py-1.5">
             {shownCols.map((col, i) => (
               <div key={i} className="flex items-center justify-between py-0.5">
-                <span className="text-[var(--foreground-default)] text-[10px] font-mono truncate flex-1">
-                  {col.is_primary_key && <span className="text-[var(--key-primary)] mr-1">⬡</span>}
+                <span className="text-foreground-default text-[10px] font-mono truncate flex-1">
+                  {col.is_primary_key && <span className="text-key-primary mr-1">⬡</span>}
                   {col.name}
                 </span>
                 {col.data_type && (
-                  <span className="text-[var(--foreground-muted)] text-[9px] font-mono ml-2 flex-shrink-0">
+                  <span className="text-foreground-muted text-[9px] font-mono ml-2 flex-shrink-0">
                     {col.data_type}
                   </span>
                 )}
@@ -240,7 +240,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
           {tableColumns.length > COLS_PREVIEW && (
             <button
               onClick={(e) => { e.stopPropagation(); setColsExpanded(v => !v); }}
-              className="w-full px-3 py-1 text-[9px] text-[var(--node-table)] hover:bg-[var(--background-base)] transition-colors text-left border-t border-[var(--border-default)]"
+              className="w-full px-3 py-1 text-[9px] text-node-table hover:bg-background-base transition-colors text-left border-t border-border-default"
             >
               {colsExpanded
                 ? '▲ 收起'
@@ -258,7 +258,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
         return aliases.length > 0 ? (
           <div className="px-3 py-1.5 flex flex-wrap gap-1">
             {aliases.slice(0, 3).map(a => (
-              <span key={a} className="text-[9px] text-[var(--node-alias)] bg-[var(--node-alias-bg)] border border-[var(--node-alias)]/25 rounded px-1">
+              <span key={a} className="text-[9px] text-node-alias bg-node-alias-bg border border-node-alias/25 rounded px-1">
                 #{a}
               </span>
             ))}
@@ -266,7 +266,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
         ) : null;
       })()}
 
-      <Handle type="source" position={Position.Right} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
+      <Handle type="source" position={Position.Right} className="!bg-border-default !border-border-strong" />
     </div>
   );
 });
@@ -275,8 +275,8 @@ TableNodeComponent.displayName = 'TableNodeComponent';
 export const MetricNodeComponent = memo(({ data }: NodeProps) => (
   <BaseNode
     data={data as GraphNodeData}
-    borderClass="border-[var(--node-metric)]"
-    badgeBgClass="bg-[var(--node-metric-bg)] text-[var(--node-metric)]"
+    borderClass="border-node-metric"
+    badgeBgClass="bg-node-metric-bg text-node-metric"
     badgeLabel="metric"
     icon={BarChart2}
   />
@@ -286,8 +286,8 @@ MetricNodeComponent.displayName = 'MetricNodeComponent';
 export const AliasNodeComponent = memo(({ data }: NodeProps) => (
   <BaseNode
     data={data as GraphNodeData}
-    borderClass="border-[var(--node-alias)]"
-    badgeBgClass="bg-[var(--node-alias-bg)] text-[var(--node-alias)]"
+    borderClass="border-node-alias"
+    badgeBgClass="bg-node-alias-bg text-node-alias"
     badgeLabel="alias"
     icon={Hash}
   />
@@ -314,47 +314,47 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
   const isSelfRef = Boolean(meta.source_table && meta.source_table === meta.target_table);
   const isDimmed = Boolean(nodeData.isDimmed);
   const borderClass = isInferred
-    ? 'border-dashed border-[var(--accent)]'
-    : 'border-[var(--accent)]';
+    ? 'border-dashed border-accent'
+    : 'border-accent';
 
   return (
     <div
-      className={`w-64 rounded-md border bg-[var(--background-panel)] shadow-lg ${borderClass} transition-opacity`}
+      className={`w-64 rounded-md border bg-background-panel shadow-lg ${borderClass} transition-opacity`}
       style={{ opacity: isDimmed ? 0.3 : 1 }}
     >
       {/* Handles: 自引用用 Top/Bottom 避免边交叉，普通用 Left/Right */}
       {isSelfRef ? (
-        <Handle type="target" position={Position.Top} id="self-target" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
+        <Handle type="target" position={Position.Top} id="self-target" className="!bg-border-default !border-edge-reference" />
       ) : (
-        <Handle type="target" position={Position.Left} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
+        <Handle type="target" position={Position.Left} className="!bg-border-default !border-border-strong" />
       )}
 
       {/* Row 1: edge_type + cardinality */}
-      <div className="px-3 py-1.5 border-b border-[var(--border-default)] flex items-center gap-2">
+      <div className="px-3 py-1.5 border-b border-border-default flex items-center gap-2">
         {isSelfRef
-          ? <RotateCcw size={12} className="text-[var(--edge-reference)] flex-shrink-0" />
-          : <ArrowLeftRight size={12} className="text-[var(--accent)] flex-shrink-0" />
+          ? <RotateCcw size={12} className="text-edge-reference flex-shrink-0" />
+          : <ArrowLeftRight size={12} className="text-accent flex-shrink-0" />
         }
-        <span className="text-[var(--accent)] text-[11px] font-semibold flex-1">
+        <span className="text-accent text-[11px] font-semibold flex-1">
           {(meta.edge_type ?? 'fk').toUpperCase()}
-          {isSelfRef && <span className="text-[var(--edge-reference)] ml-1 text-[9px]">(self-ref)</span>}
+          {isSelfRef && <span className="text-edge-reference ml-1 text-[9px]">(self-ref)</span>}
         </span>
         {meta.cardinality && (
-          <span className="text-[var(--edge-reference)] text-[10px] font-mono">{meta.cardinality}</span>
+          <span className="text-edge-reference text-[10px] font-mono">{meta.cardinality}</span>
         )}
       </div>
 
       {/* Row 2: via + on_delete（条件渲染，无内容时不显示） */}
       {(meta.via || meta.on_delete) && (
-        <div className="px-3 py-1 border-b border-[var(--border-default)] flex items-center gap-1.5">
+        <div className="px-3 py-1 border-b border-border-default flex items-center gap-1.5">
           {meta.via && (
-            <span className="text-[var(--foreground-muted)] text-[9px]">
-              via: <span className="text-[var(--foreground-default)] font-mono">{meta.via}</span>
+            <span className="text-foreground-muted text-[9px]">
+              via: <span className="text-foreground-default font-mono">{meta.via}</span>
             </span>
           )}
           {meta.on_delete && (
-            <span className="text-[var(--foreground-muted)] text-[9px] ml-1">
-              · <span className="text-[var(--warning)]">{meta.on_delete}</span>
+            <span className="text-foreground-muted text-[9px] ml-1">
+              · <span className="text-warning">{meta.on_delete}</span>
             </span>
           )}
         </div>
@@ -362,25 +362,25 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
 
       {/* Row 3: direction */}
       <div className="px-3 py-1 flex items-center">
-        <span className="text-[var(--foreground-ghost)] text-[9px] truncate">
+        <span className="text-foreground-ghost text-[9px] truncate">
           {nodeData.display_name || `${meta.source_table ?? ''} → ${meta.target_table ?? ''}`}
         </span>
         {isInferred && (
-          <span className="ml-auto text-[8px] text-[var(--foreground-ghost)] flex-shrink-0">AI</span>
+          <span className="ml-auto text-[8px] text-foreground-ghost flex-shrink-0">AI</span>
         )}
       </div>
 
       {/* Row 4 (optional): description */}
       {meta.description && (
-        <div className="px-3 py-1 border-t border-[var(--border-default)]">
-          <span className="text-[var(--foreground-muted)] text-[9px] italic truncate block">{meta.description}</span>
+        <div className="px-3 py-1 border-t border-border-default">
+          <span className="text-foreground-muted text-[9px] italic truncate block">{meta.description}</span>
         </div>
       )}
 
       {isSelfRef ? (
-        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-[var(--border-default)] !border-[var(--edge-reference)]" />
+        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-border-default !border-edge-reference" />
       ) : (
-        <Handle type="source" position={Position.Right} className="!bg-[var(--border-default)] !border-[var(--border-strong)]" />
+        <Handle type="source" position={Position.Right} className="!bg-border-default !border-border-strong" />
       )}
     </div>
   );

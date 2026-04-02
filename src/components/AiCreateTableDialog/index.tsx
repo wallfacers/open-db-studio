@@ -49,19 +49,19 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[640px] max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
-          <div className="flex items-center gap-2 text-[var(--foreground-default)] text-sm font-medium">
-            <Sparkles size={14} className="text-[var(--accent)]"/>
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[640px] max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <div className="flex items-center gap-2 text-foreground-default text-sm font-medium">
+            <Sparkles size={14} className="text-accent"/>
             {t('aiCreateTable.title')}
           </div>
-          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"><X size={16}/></button>
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200"><X size={16}/></button>
         </div>
         <div className="flex-1 overflow-auto p-4 flex flex-col gap-3">
           <div>
-            <label className="text-xs text-[var(--foreground-muted)] mb-1 block">{t('aiCreateTable.describeTable')}</label>
+            <label className="text-xs text-foreground-muted mb-1 block">{t('aiCreateTable.describeTable')}</label>
             <textarea
-              className="w-full bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 text-xs text-[var(--foreground-default)] outline-none resize-none h-24 focus:border-[var(--border-focus)]"
+              className="w-full bg-background-base border border-border-default rounded p-3 text-xs text-foreground-default outline-none resize-none h-24 focus:border-border-focus"
               placeholder={t('aiCreateTable.descriptionPlaceholder')}
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -71,16 +71,16 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
           <button
             onClick={handleGenerate}
             disabled={isCreatingTable || !description.trim() || !activeConnectionId}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] text-[var(--background-base)] text-xs font-medium rounded disabled:opacity-50 w-fit hover:bg-[var(--accent-hover)] transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-accent text-background-base text-xs font-medium rounded disabled:opacity-50 w-fit hover:bg-accent-hover transition-colors"
           >
             <Sparkles size={12}/>
             {isCreatingTable ? t('aiCreateTable.generating') : t('aiCreateTable.generate')}
           </button>
           {generatedDdl && (
             <div className="flex-1 flex flex-col">
-              <label className="text-xs text-[var(--foreground-muted)] mb-1">{t('aiCreateTable.reviewDdl')}</label>
+              <label className="text-xs text-foreground-muted mb-1">{t('aiCreateTable.reviewDdl')}</label>
               <textarea
-                className="flex-1 bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 font-mono text-xs text-[var(--foreground-default)] outline-none resize-none min-h-[150px] focus:border-[var(--border-focus)]"
+                className="flex-1 bg-background-base border border-border-default rounded p-3 font-mono text-xs text-foreground-default outline-none resize-none min-h-[150px] focus:border-border-focus"
                 value={generatedDdl}
                 onChange={e => setGeneratedDdl(e.target.value)}
                 spellCheck={false}
@@ -88,15 +88,15 @@ export const AiCreateTableDialog: React.FC<Props> = ({ onClose, showToast, onRef
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t border-[var(--border-default)]">
-          <button onClick={onClose} className="px-3 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-muted)] text-xs rounded">
+        <div className="flex justify-end gap-2 p-4 border-t border-border-default">
+          <button onClick={onClose} className="px-3 py-1.5 bg-background-hover text-foreground-muted text-xs rounded">
             {t('common.cancel')}
           </button>
           {generatedDdl && (
             <button
               onClick={handleExecute}
               disabled={isExecuting}
-              className="px-3 py-1.5 bg-[var(--accent)] text-[var(--background-base)] text-xs font-medium rounded disabled:opacity-50 hover:bg-[var(--accent-hover)] transition-colors"
+              className="px-3 py-1.5 bg-accent text-background-base text-xs font-medium rounded disabled:opacity-50 hover:bg-accent-hover transition-colors"
             >
               {isExecuting ? t('common.executing') : t('aiCreateTable.executeAndCreate')}
             </button>

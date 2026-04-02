@@ -23,23 +23,23 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <div className={`flex flex-col py-2 border-r border-[var(--border-default)] bg-[var(--background-base)] justify-between flex-shrink-0 z-20 transition-all duration-300 ${isExpanded ? 'w-48' : 'w-14'}`}>
+    <div className={`flex flex-col py-2 border-r border-border-default bg-background-base justify-between flex-shrink-0 z-20 transition-all duration-300 ${isExpanded ? 'w-48' : 'w-14'}`}>
       <div className="flex flex-col w-full">
-        <div className={`flex items-center justify-between transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} hover:bg-[var(--border-default)] border-l-[3px] border-transparent`}>
+        <div className={`flex items-center justify-between transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} hover:bg-border-default border-l-[3px] border-transparent`}>
           {isExpanded ? (
             <>
               <div
                 className="flex items-center cursor-pointer overflow-hidden flex-1"
                 onClick={() => showToast(t('activity.openUserProfile'), 'info')}
               >
-                <div className="w-6 h-6 rounded-full bg-[var(--accent)] flex items-center justify-center text-[var(--foreground)] mr-3 flex-shrink-0">
+                <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-foreground mr-3 flex-shrink-0">
                   <User size={14} />
                 </div>
-                <span className="text-[var(--foreground-default)] text-[13px] truncate">{t('activity.userProfile')}</span>
+                <span className="text-foreground-default text-[13px] truncate">{t('activity.userProfile')}</span>
               </div>
               <Tooltip content={t('activity.collapse')}>
                 <div
-                  className="flex items-center justify-center cursor-pointer text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+                  className="flex items-center justify-center cursor-pointer text-foreground-muted hover:text-foreground transition-colors duration-200"
                   onClick={() => setIsExpanded(false)}
                 >
                   <ChevronLeft size={20} />
@@ -49,7 +49,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           ) : (
             <Tooltip content={t('activity.expand')}>
               <div
-                className="w-12 h-12 flex items-center justify-center cursor-pointer text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+                className="w-12 h-12 flex items-center justify-center cursor-pointer text-foreground-muted hover:text-foreground transition-colors duration-200"
                 onClick={() => setIsExpanded(true)}
               >
                 <ChevronRight size={24} />
@@ -60,7 +60,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
         <Tooltip content={!isExpanded ? t('activity.databaseExplorer') : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'database' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'database' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
             onClick={() => {
               setActiveActivity('database');
               setIsSidebarOpen(true);
@@ -75,7 +75,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         {false && (
           <Tooltip content={!isExpanded ? t('activity.metrics') : undefined}>
             <div
-              className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+              className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'metrics' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
               onClick={() => {
                 setActiveActivity('metrics');
                 setIsSidebarOpen(true);
@@ -89,7 +89,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
         <Tooltip content={!isExpanded ? t('activity.knowledgeGraph') : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'graph' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'graph' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
             onClick={() => {
               setActiveActivity('graph');
               setIsSidebarOpen(true);
@@ -102,7 +102,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
         <Tooltip content={!isExpanded ? t('activity.erDesigner') : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'er_designer' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'er_designer' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
             onClick={() => {
               setActiveActivity('er_designer');
               setIsSidebarOpen(true);
@@ -115,7 +115,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
         <Tooltip content={!isExpanded ? t('activity.migrationCenter') : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'seatunnel' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'seatunnel' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
             onClick={() => {
               setActiveActivity('seatunnel');
               setIsSidebarOpen(true);
@@ -128,7 +128,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
         <Tooltip content={!isExpanded ? t('activity.myTasks') : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'tasks' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'tasks' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
             onClick={() => {
               setActiveActivity('tasks');
               setIsSidebarOpen(true);
@@ -143,7 +143,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       <div className="flex flex-col w-full">
         <Tooltip content={!isExpanded ? t('activity.settings') : undefined}>
           <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-[var(--foreground)] border-l-[3px] border-[var(--accent)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--border-default)] border-l-[3px] border-transparent'}`}
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'settings' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
             onClick={() => { setActiveActivity('settings'); setIsSidebarOpen(true); }}
           >
             <Settings size={24} className={`transition-transform duration-300 hover:rotate-90 ${isExpanded ? 'mr-3 flex-shrink-0' : ''}`} />

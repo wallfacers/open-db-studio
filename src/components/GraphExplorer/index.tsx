@@ -874,18 +874,18 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   };
 
   const typeButtons = [
-    { type: 'table', label: t('graphExplorer.typeTable'), activeClass: 'bg-[var(--node-table-bg)] text-[var(--node-table)] border-[var(--node-table)]/50' },
-    { type: 'metric', label: t('graphExplorer.typeMetric'), activeClass: 'bg-[var(--node-metric-bg)] text-[var(--node-metric)] border-[var(--node-metric)]/50' },
-    { type: 'alias', label: t('graphExplorer.typeAlias'), activeClass: 'bg-[var(--node-alias-bg)] text-[var(--node-alias)] border-[var(--node-alias)]/50' },
-    { type: 'link', label: t('graphExplorer.typeLink'), activeClass: 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent)]/50' },
+    { type: 'table', label: t('graphExplorer.typeTable'), activeClass: 'bg-node-table-bg text-node-table border-node-table/50' },
+    { type: 'metric', label: t('graphExplorer.typeMetric'), activeClass: 'bg-node-metric-bg text-node-metric border-node-metric/50' },
+    { type: 'alias', label: t('graphExplorer.typeAlias'), activeClass: 'bg-node-alias-bg text-node-alias border-node-alias/50' },
+    { type: 'link', label: t('graphExplorer.typeLink'), activeClass: 'bg-accent-subtle text-accent border-accent/50' },
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-base)] overflow-hidden" style={{ display: hidden ? 'none' : undefined }}>
+    <div className="flex-1 flex flex-col min-w-0 bg-background-base overflow-hidden" style={{ display: hidden ? 'none' : undefined }}>
       {/* Toolbar */}
-      <div className="h-10 flex items-center gap-2 px-4 border-b border-[var(--border-default)] flex-shrink-0 bg-[var(--background-base)]">
-        <Network size={16} className="text-[var(--accent)] flex-shrink-0" />
-        <span className="text-[var(--foreground-default)] text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
+      <div className="h-10 flex items-center gap-2 px-4 border-b border-border-default flex-shrink-0 bg-background-base">
+        <Network size={16} className="text-accent flex-shrink-0" />
+        <span className="text-foreground-default text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 
         {/* Connection selector */}
         <DropdownSelect
@@ -910,10 +910,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           />
         )}
         {internalConnId !== null && dbLoading && (
-          <Loader2 size={14} className="animate-spin text-[var(--foreground-muted)]" />
+          <Loader2 size={14} className="animate-spin text-foreground-muted" />
         )}
         {internalConnId !== null && !dbLoading && dbError && (
-          <span className="text-[11px] text-[var(--error)]" title={dbError}>{dbError}</span>
+          <span className="text-[11px] text-error" title={dbError}>{dbError}</span>
         )}
 
         {/* Type filter */}
@@ -925,7 +925,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
               className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
                 typeFilter.includes(type)
                   ? activeClass
-                  : 'text-[var(--foreground-muted)] border-[var(--border-default)] hover:border-[var(--border-strong)] hover:text-[var(--foreground-default)]'
+                  : 'text-foreground-muted border-border-default hover:border-border-strong hover:text-foreground-default'
               }`}
             >
               {label}
@@ -935,13 +935,13 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
         {/* Search */}
         <div className="relative flex-1 max-w-xs ml-2">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] pointer-events-none" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground-muted pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('graphExplorer.searchPlaceholder')}
-            className="w-full pl-7 pr-3 py-1 text-xs bg-[var(--background-panel)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[var(--foreground-ghost)] focus:outline-none focus:border-[var(--accent)]/50 transition-colors"
+            className="w-full pl-7 pr-3 py-1 text-xs bg-background-panel border border-border-default rounded text-foreground-default placeholder-foreground-ghost focus:outline-none focus:border-accent/50 transition-colors"
           />
         </div>
 
@@ -959,8 +959,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
               }}
               className={`flex items-center gap-1 px-2 py-1 text-xs border rounded transition-colors ${
                 activePanel === 'search'
-                  ? 'text-[var(--accent)] bg-[var(--accent-subtle)] border-[var(--accent-hover)55]'
-                  : 'text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] bg-[var(--background-panel)] hover:bg-[var(--border-default)] border-[var(--border-default)]'
+                  ? 'text-accent bg-accent-subtle border-accent-hover/35'
+                  : 'text-foreground-muted hover:text-foreground-default bg-background-panel hover:bg-border-default border-border-default'
               }`}
             >
               <Search size={13} />
@@ -1006,7 +1006,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
             onClick={handleAutoLayout}
             disabled={rfNodes.length === 0}
             title={t('graphExplorer.autoLayout')}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] bg-[var(--background-panel)] hover:bg-[var(--border-default)] border border-[var(--border-default)] rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 px-2 py-1 text-xs text-foreground-muted hover:text-foreground-default bg-background-panel hover:bg-border-default border border-border-default rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <LayoutTemplate size={13} />
           </button>
@@ -1015,7 +1015,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           <button
             onClick={handleBuildGraph}
             disabled={isBuilding || loading}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] bg-[var(--background-panel)] hover:bg-[var(--border-default)] border border-[var(--border-default)] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-foreground-muted hover:text-foreground-default bg-background-panel hover:bg-border-default border border-border-default rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isBuilding || loading
               ? <Loader2 size={13} className="animate-spin" />
@@ -1027,25 +1027,25 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
       {/* Error banner */}
       {error && (
-        <div className="px-4 py-2 bg-[var(--error-subtle)] border-b border-[var(--error)]/30 text-[var(--error)] text-xs flex-shrink-0">
+        <div className="px-4 py-2 bg-error-subtle border-b border-error/30 text-error text-xs flex-shrink-0">
           {error}
         </div>
       )}
 
       {/* Build task info banner */}
       {buildInfo && (
-        <div className="flex items-center gap-2 px-4 py-2 text-xs text-[var(--accent)] bg-[var(--accent-subtle)] border-b border-[var(--accent)]/30 flex-shrink-0">
+        <div className="flex items-center gap-2 px-4 py-2 text-xs text-accent bg-accent-subtle border-b border-accent/30 flex-shrink-0">
           <Sparkles size={12} className="flex-shrink-0" />
           <span className="flex-1">{buildInfo}</span>
           <button
-            className="flex items-center gap-1 text-[var(--accent)] hover:text-[var(--accent-hover)] underline underline-offset-2 flex-shrink-0"
+            className="flex items-center gap-1 text-accent hover:text-accent-hover underline underline-offset-2 flex-shrink-0 transition-colors duration-200"
             onClick={() => { setBuildInfo(null); useTaskStore.getState().setVisible(true); }}
           >
             <ListTodo size={12} />
             {t('graphExplorer.viewTasks')}
           </button>
           <button
-            className="text-[var(--foreground-muted)] hover:text-[var(--foreground)] flex-shrink-0 ml-1"
+            className="text-foreground-muted hover:text-foreground flex-shrink-0 ml-1 transition-colors duration-200"
             onClick={() => setBuildInfo(null)}
             aria-label="关闭"
           >×</button>
@@ -1058,8 +1058,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           {/* Empty state overlay */}
           {!loading && (internalConnId === null || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
-              <Network size={36} className="text-[var(--border-strong)] mb-3" />
-              <p className="text-[var(--foreground-muted)] text-sm">
+              <Network size={36} className="text-border-strong mb-3" />
+              <p className="text-foreground-muted text-sm">
                 {internalConnId === null
                   ? t('graphExplorer.selectConnection')
                   : rawNodes.length === 0
@@ -1101,7 +1101,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           >
             <Background id="graph-explorer-bg" color="var(--border-default)" gap={20} size={1} />
             <Controls
-              className="!bg-[var(--background-panel)] border border-[var(--border-strong)] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[var(--background-panel)] [&_button]:!border-b [&_button]:!border-[var(--border-strong)] [&_button:last-child]:!border-b-0 [&_button]:!fill-[var(--foreground-default)] hover:[&_button]:!bg-[var(--border-default)]"
+              className="!bg-background-panel border border-border-strong shadow-lg rounded-md overflow-hidden [&_button]:!bg-background-panel [&_button]:!border-b [&_button]:!border-border-strong [&_button:last-child]:!border-b-0 [&_button]:!fill-foreground-default hover:[&_button]:!bg-border-default"
             />
             <MiniMap
               position="bottom-left"
@@ -1114,31 +1114,31 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
                 return 'var(--border-default)';
               }}
               maskColor="rgba(13, 17, 23, 0.7)"
-              className="!bg-[var(--background-panel)] !border !border-[var(--border-default)] !rounded-md"
+              className="!bg-background-panel !border !border-border-default !rounded-md"
             />
           </ReactFlow>
 
           {/* Edge tooltip */}
           {edgeTooltip && (
             <div
-              className="fixed z-[9998] pointer-events-none px-2.5 py-1.5 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg text-[var(--foreground-default)] text-xs"
+              className="fixed z-[9998] pointer-events-none px-2.5 py-1.5 bg-background-elevated border border-border-strong rounded shadow-lg text-foreground-default text-xs"
               style={{ left: edgeTooltip.x + 12, top: edgeTooltip.y - 36 }}
             >
-              <span className="text-[var(--foreground-muted)]">{t('graphExplorer.edgeTooltipType')}: </span>{edgeTooltip.edge_type}
-              <span className="mx-2 text-[var(--border-default)]">|</span>
-              <span className="text-[var(--foreground-muted)]">{t('graphExplorer.edgeTooltipWeight')}: </span>{edgeTooltip.weight.toFixed(2)}
+              <span className="text-foreground-muted">{t('graphExplorer.edgeTooltipType')}: </span>{edgeTooltip.edge_type}
+              <span className="mx-2 text-border-default">|</span>
+              <span className="text-foreground-muted">{t('graphExplorer.edgeTooltipWeight')}: </span>{edgeTooltip.weight.toFixed(2)}
             </div>
           )}
 
           {/* 右键上下文菜单 */}
           {contextMenu && (
             <div
-              className="fixed z-[9999] min-w-[120px] bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded-md shadow-xl py-1"
+              className="fixed z-[9999] min-w-[120px] bg-background-elevated border border-border-strong rounded-md shadow-xl py-1"
               style={{ left: contextMenu.x, top: contextMenu.y }}
             >
               <button
                 onClick={handleContextMenuDelete}
-                className="w-full text-left px-3 py-1.5 text-xs text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors"
+                className="w-full text-left px-3 py-1.5 text-xs text-error hover:bg-error-subtle transition-colors"
               >
                 删除{contextMenu.type === 'edge' ? '关系' : '节点'}
               </button>
@@ -1209,7 +1209,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           ]}
         >
           <div className="px-1">
-            <label className="block text-xs text-[var(--foreground-muted)] mb-1.5 uppercase tracking-wide">节点名称</label>
+            <label className="block text-xs text-foreground-muted mb-1.5 uppercase tracking-wide">节点名称</label>
             <input
               autoFocus
               type="text"
@@ -1217,7 +1217,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
               onChange={(e) => setAddNodeName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && addNodeName.trim()) handleAddNodeSubmit(); }}
               placeholder="请输入节点名称"
-              className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground-default)] placeholder-[var(--foreground-subtle)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+              className="w-full bg-background-hover border border-border-strong rounded px-3 py-1.5 text-sm text-foreground-default placeholder-foreground-subtle focus:outline-none focus:border-accent transition-colors"
             />
           </div>
         </BaseModal>
@@ -1235,27 +1235,27 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           ]}
         >
           <div className="px-1">
-            <label className="block text-xs text-[var(--foreground-muted)] mb-1.5 uppercase tracking-wide">边类型</label>
+            <label className="block text-xs text-foreground-muted mb-1.5 uppercase tracking-wide">边类型</label>
             <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-[var(--foreground-default)]">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-foreground-default">
                 <input
                   type="radio"
                   name="edgeType"
                   checked={connectEdgeType === 'user_defined'}
                   onChange={() => setConnectEdgeType('user_defined')}
-                  className="accent-[var(--accent)]"
+                  className="accent-accent"
                 />
-                用户自定义 <span className="text-[var(--foreground-subtle)] text-xs">(user_defined)</span>
+                用户自定义 <span className="text-foreground-subtle text-xs">(user_defined)</span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-[var(--foreground-default)]">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-foreground-default">
                 <input
                   type="radio"
                   name="edgeType"
                   checked={connectEdgeType === 'join_path'}
                   onChange={() => setConnectEdgeType('join_path')}
-                  className="accent-[var(--accent)]"
+                  className="accent-accent"
                 />
-                连接路径 <span className="text-[var(--foreground-subtle)] text-xs">(join_path)</span>
+                连接路径 <span className="text-foreground-subtle text-xs">(join_path)</span>
               </label>
             </div>
           </div>

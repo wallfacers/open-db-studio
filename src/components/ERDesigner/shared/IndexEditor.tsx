@@ -81,24 +81,24 @@ function IndexRow({
   };
 
   return (
-    <div className="border border-[var(--border-strong)] rounded overflow-hidden">
+    <div className="border border-border-strong rounded overflow-hidden">
       {/* Collapsed row */}
       <div
-        className="flex items-center gap-2 px-2 py-1.5 hover:bg-[var(--background-hover)] cursor-pointer transition-colors"
+        className="flex items-center gap-2 px-2 py-1.5 hover:bg-background-hover cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        {expanded ? <ChevronUp size={12} className="text-[var(--foreground-muted)] shrink-0" /> : <ChevronDown size={12} className="text-[var(--foreground-muted)] shrink-0" />}
-        <span className="text-[13px] text-[var(--foreground)] truncate flex-1">{index.name}</span>
+        {expanded ? <ChevronUp size={12} className="text-foreground-muted shrink-0" /> : <ChevronDown size={12} className="text-foreground-muted shrink-0" />}
+        <span className="text-[13px] text-foreground truncate flex-1">{index.name}</span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${badgeClass} shrink-0`}>{index.type}</span>
         <Tooltip content={colNames} className="flex-shrink-0 max-w-[120px]">
-          <span className="text-[11px] text-[var(--foreground-muted)] truncate">
+          <span className="text-[11px] text-foreground-muted truncate">
             {colNames || '-'}
           </span>
         </Tooltip>
         <Tooltip content="删除索引">
           <button
             type="button"
-            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-[var(--foreground-ghost)] hover:text-[var(--error)] transition-colors"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-foreground-ghost hover:text-error transition-colors"
             onClick={(e) => { e.stopPropagation(); onDelete(index.id, tableId); }}
           >
             <Trash2 size={12} />
@@ -108,12 +108,12 @@ function IndexRow({
 
       {/* Expanded details */}
       {expanded && (
-        <div className="px-3 py-2 border-t border-[var(--border-strong)] space-y-2 bg-[var(--background-base)]/50">
+        <div className="px-3 py-2 border-t border-border-strong space-y-2 bg-background-base/50">
           {/* Name */}
           <div>
-            <div className="text-[11px] text-[var(--foreground-muted)] mb-0.5">索引名</div>
+            <div className="text-[11px] text-foreground-muted mb-0.5">索引名</div>
             <input
-              className="w-full bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded text-[var(--foreground)] text-[13px] px-2 py-1 outline-none focus:border-[var(--accent)]"
+              className="w-full bg-background-elevated border border-border-strong rounded text-foreground text-[13px] px-2 py-1 outline-none focus:border-accent"
               value={index.name}
               onChange={(e) => onUpdate(index.id, { name: e.target.value })}
             />
@@ -121,7 +121,7 @@ function IndexRow({
 
           {/* Type */}
           <div>
-            <div className="text-[11px] text-[var(--foreground-muted)] mb-0.5">类型</div>
+            <div className="text-[11px] text-foreground-muted mb-0.5">类型</div>
             <DropdownSelect
               value={index.type}
               options={INDEX_TYPE_OPTIONS}
@@ -131,7 +131,7 @@ function IndexRow({
 
           {/* Column checkboxes with ASC/DESC */}
           <div>
-            <div className="text-[11px] text-[var(--foreground-muted)] mb-1">列</div>
+            <div className="text-[11px] text-foreground-muted mb-1">列</div>
             <div className="space-y-1">
               {columns.map(col => {
                 const entry = indexColumns.find(c => c.name === col.name);
@@ -141,16 +141,16 @@ function IndexRow({
                     <label className="flex items-center gap-1.5 cursor-pointer flex-1 min-w-0">
                       <input
                         type="checkbox"
-                        className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
+                        className="accent-accent w-3.5 h-3.5 cursor-pointer"
                         checked={isChecked}
                         onChange={() => toggleColumn(col.name)}
                       />
-                      <span className="text-[12px] text-[var(--foreground)] truncate">{col.name}</span>
+                      <span className="text-[12px] text-foreground truncate">{col.name}</span>
                     </label>
                     {isChecked && (
                       <button
                         type="button"
-                        className="text-[10px] text-[var(--foreground-muted)] hover:text-[var(--accent)] cursor-pointer outline-none px-1 py-0.5 rounded hover:bg-[var(--border-default)] transition-colors"
+                        className="text-[10px] text-foreground-muted hover:text-accent cursor-pointer outline-none px-1 py-0.5 rounded hover:bg-border-default transition-colors"
                         onClick={() => toggleOrder(col.name)}
                       >
                         {entry!.order}
@@ -196,7 +196,7 @@ export default function IndexEditor({
 
       <button
         type="button"
-        className="w-full flex items-center justify-center gap-1 py-1.5 text-[12px] text-[var(--accent)] hover:bg-[var(--background-hover)] rounded border border-dashed border-[var(--border-strong)] hover:border-[var(--accent)] transition-colors cursor-pointer outline-none"
+        className="w-full flex items-center justify-center gap-1 py-1.5 text-[12px] text-accent hover:bg-background-hover rounded border border-dashed border-border-strong hover:border-accent transition-colors cursor-pointer outline-none"
         onClick={handleAddIndex}
       >
         <Plus size={12} />

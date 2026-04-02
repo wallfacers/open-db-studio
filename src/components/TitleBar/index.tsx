@@ -24,7 +24,7 @@ export const TitleBar: React.FC = () => {
 
   return (
     <div
-      className="flex items-center justify-between h-8 bg-[var(--background-base)] border-b border-[var(--border-subtle)] flex-shrink-0 select-none"
+      className="flex items-center justify-between h-8 bg-background-base border-b border-border-subtle flex-shrink-0 select-none"
       data-tauri-drag-region
     >
       <div className="flex items-center px-3 gap-2" data-tauri-drag-region>
@@ -35,22 +35,22 @@ export const TitleBar: React.FC = () => {
               {[0, 0.2, 0.4].map((delay) => (
                 <span
                   key={delay}
-                  className="ai-dot w-1 h-1 rounded-full bg-[var(--accent)] flex-shrink-0"
+                  className="ai-dot w-1 h-1 rounded-full bg-accent flex-shrink-0"
                   style={{ animationDelay: `${delay}s` }}
                 />
               ))}
             </span>
-            <span className="text-[var(--accent)] text-[11px]">AI 正在响应</span>
+            <span className="text-accent text-[11px]">AI 正在响应</span>
           </>
         ) : (
-          <span className="text-[var(--foreground-subtle)] text-[11px]">Open DB Studio</span>
+          <span className="text-foreground-subtle text-[11px]">Open DB Studio</span>
         )}
       </div>
 
       <div className="flex items-center h-full">
         <Tooltip content={t('titleBar.minimize')}>
           <button
-            className="w-8 h-8 flex items-center justify-center text-[var(--foreground-subtle)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-foreground-subtle hover:text-foreground-default hover:bg-background-hover transition-colors"
             onClick={() => appWindow.minimize()}
           >
             <Minus size={12} />
@@ -58,7 +58,7 @@ export const TitleBar: React.FC = () => {
         </Tooltip>
         <Tooltip content={isMaximized ? t('titleBar.restore') : t('titleBar.maximize')}>
           <button
-            className="w-8 h-8 flex items-center justify-center text-[var(--foreground-subtle)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-foreground-subtle hover:text-foreground-default hover:bg-background-hover transition-colors"
             onClick={() => appWindow.toggleMaximize()}
           >
             {isMaximized ? <Square size={11} /> : <Maximize2 size={11} />}
@@ -66,7 +66,7 @@ export const TitleBar: React.FC = () => {
         </Tooltip>
         <Tooltip content={t('titleBar.close')}>
           <button
-            className="w-8 h-8 flex items-center justify-center text-[var(--foreground-subtle)] hover:text-[var(--foreground)] hover:bg-[var(--window-close-hover)] transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-foreground-subtle hover:text-foreground hover:bg-window-close-hover transition-colors"
             onClick={() => appWindow.close()}
           >
             <X size={13} />

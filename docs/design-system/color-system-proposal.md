@@ -482,40 +482,39 @@
 | `#2a2a0e` / `#2a3319` | `var(--warning-subtle)` | warning 淡背景 |
 | `#3a2a19` | `var(--warning-subtle)` | warning 淡背景 |
 
-### Tailwind 颜色类替换规则
+### Tailwind 颜色类替换规则（@theme 语义类名）
 
-| Tailwind 类 | 替换为 |
+通过 `src/index.css` 的 `@theme` 指令，CSS 变量已映射为 Tailwind 语义类名。
+**禁止使用 `var()` 包装器**（如 `text-[var(--error)]`），直接使用语义类名。
+
+| Tailwind 原生类 | 替换为（语义类名） |
 |-------------|--------|
-| `text-white` | `text-[var(--foreground)]` |
-| `hover:text-white` | `hover:text-[var(--foreground)]` |
-| `text-gray-200` | `text-[var(--foreground-default)]` |
-| `text-gray-300` | `text-[var(--foreground-default)]` |
-| `text-gray-400` | `text-[var(--foreground-muted)]` |
-| `text-gray-500` | `text-[var(--foreground-subtle)]` |
-| `text-gray-600` | `text-[var(--foreground-ghost)]` |
-| `text-red-400` | `text-[var(--error)]` |
-| `text-red-300` | `text-[var(--error-foreground)]` |
-| `bg-red-400/10` | `bg-[var(--error-subtle)]` |
-| `bg-red-600` | `bg-[var(--error)]` |
-| `bg-red-600/80` | `bg-[var(--error)]/80` |
-| `bg-red-600/20` | `bg-[var(--error-subtle)]` |
-| `bg-red-900/20` | `bg-[var(--error-subtle)]` |
-| `bg-red-900/40` | `bg-[var(--error-subtle)]` |
-| `border-red-400/30` | `border-[var(--error)]/30` |
-| `border-red-900/40` | `border-[var(--error)]/30` |
-| `text-green-400` | `text-[var(--success)]` |
-| `bg-green-400` | `bg-[var(--success)]` |
-| `bg-green-900/10` | `bg-[var(--success-subtle)]` |
-| `text-yellow-300` | `text-[var(--warning)]` |
-| `text-yellow-400` | `text-[var(--warning)]` |
-| `bg-yellow-400` | `bg-[var(--warning)]` |
-| `bg-yellow-900/20` | `bg-[var(--warning-subtle)]` |
-| `bg-yellow-900/30` | `bg-[var(--warning-subtle)]` |
-| `border-yellow-600` | `border-[var(--warning)]` |
-| `border-yellow-700/50` | `border-[var(--warning)]/50` |
-| `bg-blue-600` | `bg-[var(--primary)]` |
-| `bg-blue-500` | `bg-[var(--primary)]` |
-| `hover:bg-red-950` | `hover:bg-[var(--error-subtle)]` |
+| `text-white` | `text-foreground` |
+| `hover:text-white` | `hover:text-foreground` |
+| `text-gray-200` | `text-foreground-default` |
+| `text-gray-300` | `text-foreground-default` |
+| `text-gray-400` | `text-foreground-muted` |
+| `text-gray-500` | `text-foreground-subtle` |
+| `text-gray-600` | `text-foreground-ghost` |
+| `text-red-400` | `text-error` |
+| `text-red-300` | `text-error-foreground` |
+| `bg-red-400/10` | `bg-error-subtle` |
+| `bg-red-600` | `bg-error` |
+| `bg-red-600/80` | `bg-error/80` |
+| `bg-red-600/20` | `bg-error-subtle` |
+| `border-red-400/30` | `border-error/30` |
+| `text-green-400` | `text-success` |
+| `bg-green-400` | `bg-success` |
+| `bg-green-900/10` | `bg-success-subtle` |
+| `text-yellow-300` | `text-warning` |
+| `text-yellow-400` | `text-warning` |
+| `bg-yellow-400` | `bg-warning` |
+| `bg-yellow-900/20` | `bg-warning-subtle` |
+| `border-yellow-600` | `border-warning` |
+| `border-yellow-700/50` | `border-warning/50` |
+| `bg-blue-600` | `bg-primary` |
+| `bg-blue-500` | `bg-primary` |
+| `hover:bg-red-950` | `hover:bg-error-subtle` |
 
 ### 禁止用法
 
@@ -526,22 +525,34 @@ color: #009e84;
 color: #3794ff;
 background: #161b22;
 
-/* 正确：使用语义变量 */
+/* 正确：使用语义变量（CSS 上下文） */
 color: var(--accent);
 color: var(--node-table);
 background: var(--background-code);
 
-/* 错误：直接使用 Tailwind 颜色类 */
+/* 错误：直接使用 Tailwind 原生颜色类 */
 className="text-red-400"
 className="bg-green-400"
 className="text-gray-400"
 className="text-white"
 
-/* 正确：使用 CSS 变量的 Tailwind arbitrary value */
+/* 错误：使用 var() 包装器（反模式） */
 className="text-[var(--error)]"
 className="bg-[var(--success)]"
 className="text-[var(--foreground-muted)]"
-className="text-[var(--foreground)]"
+
+/* 正确：使用 @theme 映射的语义类名 */
+className="text-error"
+className="bg-success"
+className="text-foreground-muted"
+className="text-foreground"
+className="bg-primary/80"  /* 支持透明度修饰符 */
+
+/* 错误：无过渡的颜色变化交互 */
+className="bg-primary hover:bg-primary-hover"
+
+/* 正确：强制搭配过渡动画 */
+className="bg-primary hover:bg-primary-hover transition-colors duration-200"
 
 /* 错误：背景与文字对比度不足 */
 background: #334155; color: #64748B;

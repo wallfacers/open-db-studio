@@ -209,9 +209,9 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
 
   const statusBadge = (status: MetricStatus) => {
     const map: Record<MetricStatus, { cls: string; label: string }> = {
-      approved: { cls: 'bg-[var(--accent-subtle)] text-[var(--accent)]', label: `✅ ${t('metricsExplorer.metricList.statusApproved')}` },
-      rejected: { cls: 'bg-[var(--error-subtle)] text-[var(--error)]', label: `❌ ${t('metricsExplorer.metricList.statusRejected')}` },
-      draft:    { cls: 'bg-[var(--border-default)] text-[var(--foreground-muted)]',  label: `📝 ${t('metricsExplorer.metricList.statusDraft')}` },
+      approved: { cls: 'bg-accent-subtle text-accent', label: `✅ ${t('metricsExplorer.metricList.statusApproved')}` },
+      rejected: { cls: 'bg-error-subtle text-error', label: `❌ ${t('metricsExplorer.metricList.statusRejected')}` },
+      draft:    { cls: 'bg-border-default text-foreground-muted',  label: `📝 ${t('metricsExplorer.metricList.statusDraft')}` },
     };
     const s = map[status];
     return <span className={`px-1.5 py-0.5 rounded text-[10px] ${s.cls}`}>{s.label}</span>;
@@ -246,20 +246,20 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[var(--background-void)] text-[var(--foreground)]">
+    <div className="flex flex-col h-full bg-background-void text-foreground">
       {/* 过滤栏 */}
-      <div className="flex items-center gap-2 px-4 h-10 border-b border-[var(--border-default)] flex-wrap flex-shrink-0">
+      <div className="flex items-center gap-2 px-4 h-10 border-b border-border-default flex-wrap flex-shrink-0">
         {/* 分页控件 */}
         <Tooltip content={t('metricsExplorer.metricList.firstPage')} className="contents">
           <button
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--foreground-muted)] hover:bg-[var(--background-panel)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-6 h-6 rounded text-foreground-muted hover:bg-background-panel hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-200"
             onClick={() => setPage(1)}
             disabled={page <= 1}
           ><ChevronFirst size={13} /></button>
         </Tooltip>
         <Tooltip content={t('metricsExplorer.metricList.prevPage')} className="contents">
           <button
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--foreground-muted)] hover:bg-[var(--background-panel)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-6 h-6 rounded text-foreground-muted hover:bg-background-panel hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-200"
             onClick={() => setPage(p => p - 1)}
             disabled={page <= 1}
           ><ChevronLeft size={13} /></button>
@@ -270,17 +270,17 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           onChange={v => setPage(Number(v))}
           plain
         />
-        <span className="text-xs text-[var(--foreground-subtle)]">/ {totalPages}</span>
+        <span className="text-xs text-foreground-subtle">/ {totalPages}</span>
         <Tooltip content={t('metricsExplorer.metricList.nextPage')} className="contents">
           <button
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--foreground-muted)] hover:bg-[var(--background-panel)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-6 h-6 rounded text-foreground-muted hover:bg-background-panel hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-200"
             onClick={() => setPage(p => p + 1)}
             disabled={page >= totalPages}
           ><ChevronRight size={13} /></button>
         </Tooltip>
         <Tooltip content={t('tableDataView.lastPage')} className="contents">
           <button
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--foreground-muted)] hover:bg-[var(--background-panel)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:cursor-not-allowed text-xs"
+            className="flex items-center justify-center w-6 h-6 rounded text-foreground-muted hover:bg-background-panel hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed text-xs transition-colors duration-200"
             onClick={() => setPage(totalPages)}
             disabled={page >= totalPages}
           >&gt;|</button>
@@ -291,114 +291,114 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
           onChange={handlePageSizeChange}
           plain
         />
-        <span className="text-xs text-[var(--foreground-subtle)]">{t('metricsExplorer.metricList.rowsPerPage')}</span>
+        <span className="text-xs text-foreground-subtle">{t('metricsExplorer.metricList.rowsPerPage')}</span>
         <Tooltip content={t('metricsExplorer.refresh')} className="contents">
           <button
-            className="flex items-center justify-center w-6 h-6 rounded text-[var(--foreground-muted)] hover:bg-[var(--background-panel)] hover:text-[var(--foreground)]"
+            className="flex items-center justify-center w-6 h-6 rounded text-foreground-muted hover:bg-background-panel hover:text-foreground transition-colors duration-200"
             onClick={load}
           ><RefreshCw size={12} /></button>
         </Tooltip>
-        <div className="w-px h-4 bg-[var(--border-default)] mx-1" />
+        <div className="w-px h-4 bg-border-default mx-1" />
         <div className="flex gap-1">
           {TABS.map(t => (
             <button
               key={t.key}
-              className={`px-2 py-1 text-xs rounded ${filterTab === t.key
-                ? 'bg-[var(--accent)] text-black font-medium'
-                : 'text-[var(--foreground-muted)] hover:bg-[var(--background-panel)] hover:text-[var(--foreground)]'}`}
+              className={`px-2 py-1 text-xs rounded transition-colors duration-200 ${filterTab === t.key
+                ? 'bg-accent text-black font-medium'
+                : 'text-foreground-muted hover:bg-background-panel hover:text-foreground'}`}
               onClick={() => setFilterTab(t.key)}
             >{t.label}</button>
           ))}
         </div>
         <input
-          className="w-40 bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs
-                     text-[var(--foreground)] placeholder-[var(--foreground-subtle)] focus:outline-none focus:border-[var(--accent)]"
+          className="w-40 bg-background-panel border border-border-strong rounded px-2 py-1 text-xs
+                     text-foreground placeholder-foreground-subtle focus:outline-none focus:border-accent"
           placeholder={t('metricsExplorer.metricList.searchPlaceholder')}
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
         />
         <button
-          className="flex items-center gap-1 px-2 py-1 bg-[var(--background-panel)] border border-[var(--border-strong)] rounded
-                     text-xs text-[var(--foreground-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          className="flex items-center gap-1 px-2 py-1 bg-background-panel border border-border-strong rounded
+                     text-xs text-foreground-muted hover:border-accent hover:text-accent transition-colors duration-200"
           onClick={doCreate}
         ><Plus size={12} /> {t('metricsExplorer.metricList.add')}</button>
         <button
-          className="flex items-center gap-1 px-2 py-1 bg-[var(--background-panel)] border border-[var(--border-strong)] rounded
-                     text-xs text-[var(--foreground-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          className="flex items-center gap-1 px-2 py-1 bg-background-panel border border-border-strong rounded
+                     text-xs text-foreground-muted hover:border-accent hover:text-accent transition-colors duration-200"
           onClick={() => setShowTablePicker(true)}
         ><Sparkles size={12} /> {t('metricsExplorer.metricList.aiGenerate')}</button>
       </div>
 
       {/* 表格 */}
       <div className="flex-1 overflow-auto">
-        {error && <div className="px-4 py-2 text-xs text-[var(--error)]">{error}</div>}
+        {error && <div className="px-4 py-2 text-xs text-error">{error}</div>}
         {genInfo && (
-          <div className="flex items-center gap-2 px-4 py-2 text-xs text-[var(--accent)] bg-[var(--accent-subtle)] border-b border-[var(--accent-subtle)]">
+          <div className="flex items-center gap-2 px-4 py-2 text-xs text-accent bg-accent-subtle border-b border-accent-subtle">
             <Sparkles size={12} className="flex-shrink-0" />
             <span className="flex-1">{genInfo}</span>
             <button
-              className="flex items-center gap-1 text-[var(--accent)] hover:text-[var(--accent-hover)] underline underline-offset-2 flex-shrink-0"
+              className="flex items-center gap-1 text-accent hover:text-accent-hover underline underline-offset-2 flex-shrink-0 transition-colors duration-200"
               onClick={() => { setGenInfo(null); useTaskStore.getState().setVisible(true); }}
             >
               <ListTodo size={12} />
               {t('metricsExplorer.metricList.viewTasks')}
             </button>
             <button
-              className="text-[var(--foreground-muted)] hover:text-[var(--foreground)] flex-shrink-0 ml-1"
+              className="text-foreground-muted hover:text-foreground flex-shrink-0 ml-1 transition-colors duration-200"
               onClick={() => setGenInfo(null)}
               aria-label="关闭"
             >×</button>
           </div>
         )}
         <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
-          <thead className="sticky top-0 bg-[var(--background-base)] z-10">
+          <thead className="sticky top-0 bg-background-base z-10">
             <tr>
-              <th className="w-8 border-b border-r border-[var(--border-default)] text-[var(--foreground-muted)] font-normal">
+              <th className="w-8 border-b border-r border-border-default text-foreground-muted font-normal">
                 <div className="flex items-center justify-center h-full py-1.5">
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-[var(--accent)] block" />
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-accent block" />
                 </div>
               </th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('metricsExplorer.metricList.displayName')}</th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('metricsExplorer.metricList.relatedTable')}</th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('metricsExplorer.metricList.relatedColumn')}</th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('metricsExplorer.metricList.aggregation')}</th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('metricsExplorer.metricList.type')}</th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('metricsExplorer.metricList.status')}</th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal text-right">{t('metricsExplorer.metricList.actions')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('metricsExplorer.metricList.displayName')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('metricsExplorer.metricList.relatedTable')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('metricsExplorer.metricList.relatedColumn')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('metricsExplorer.metricList.aggregation')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('metricsExplorer.metricList.type')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('metricsExplorer.metricList.status')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal text-right">{t('metricsExplorer.metricList.actions')}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={8} className="text-center py-8 text-[var(--foreground-muted)]">{t('metricsExplorer.loading')}</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-foreground-muted">{t('metricsExplorer.loading')}</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-8 text-[var(--foreground-subtle)]">{t('metricsExplorer.metricList.noMetrics')}</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-foreground-subtle">{t('metricsExplorer.metricList.noMetrics')}</td></tr>
             )}
             {filtered.map(m => (
-              <tr key={m.id} className="hover:bg-[var(--background-hover)] border-b border-[var(--border-default)] group cursor-pointer" onClick={() => toggleSelect(m.id)}>
-                <td className="border-r border-[var(--border-default)]">
+              <tr key={m.id} className="hover:bg-background-hover border-b border-border-default group cursor-pointer transition-colors duration-150" onClick={() => toggleSelect(m.id)}>
+                <td className="border-r border-border-default">
                   <div className="flex items-center justify-center py-1.5">
                     <input type="checkbox" checked={selected.has(m.id)}
-                      onChange={() => toggleSelect(m.id)} onClick={e => e.stopPropagation()} className="accent-[var(--accent)] block" />
+                      onChange={() => toggleSelect(m.id)} onClick={e => e.stopPropagation()} className="accent-accent block" />
                   </div>
                 </td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground)] font-medium">{m.display_name}</td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)]">{m.table_name || '-'}</td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)]">{m.column_name || '-'}</td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)]">{m.aggregation ?? '-'}</td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)]">
+                <td className="px-3 py-1.5 border-r border-border-default text-foreground font-medium">{m.display_name}</td>
+                <td className="px-3 py-1.5 border-r border-border-default text-foreground-muted">{m.table_name || '-'}</td>
+                <td className="px-3 py-1.5 border-r border-border-default text-foreground-muted">{m.column_name || '-'}</td>
+                <td className="px-3 py-1.5 border-r border-border-default text-foreground-muted">{m.aggregation ?? '-'}</td>
+                <td className="px-3 py-1.5 border-r border-border-default">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                    m.metric_type === 'composite' ? 'bg-[var(--node-alias-bg)] text-[var(--data-purple)]' : 'bg-[var(--background-panel)] text-[var(--foreground-muted)]'
+                    m.metric_type === 'composite' ? 'bg-node-alias-bg text-data-purple' : 'bg-background-panel text-foreground-muted'
                   }`}>
                     {m.metric_type === 'composite' ? t('metricsExplorer.metricList.typeComposite') : t('metricsExplorer.metricList.typeAtomic')}
                   </span>
                 </td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)]">{statusBadge(m.status)}</td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)]" onClick={e => e.stopPropagation()}>
+                <td className="px-3 py-1.5 border-r border-border-default">{statusBadge(m.status)}</td>
+                <td className="px-3 py-1.5 border-r border-border-default" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center gap-2 justify-end">
                     <Tooltip content={t('metricsExplorer.metricList.edit')} className="contents">
                       <button
-                        className="flex items-center justify-center text-[var(--foreground-muted)] hover:text-[var(--foreground)]"
+                        className="flex items-center justify-center text-foreground-muted hover:text-foreground transition-colors duration-200"
                         onClick={() => onOpenMetric?.(m.id, m.display_name)}
                       >
                         <Pencil size={12} />
@@ -406,7 +406,7 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
                     </Tooltip>
                     <Tooltip content={t('metricsExplorer.metricList.delete')} className="contents">
                       <button
-                        className="flex items-center justify-center text-[var(--error)] hover:text-[var(--error-foreground)]"
+                        className="flex items-center justify-center text-error hover:text-error-foreground transition-colors duration-200"
                         onClick={() => doDelete([m.id])}
                       >
                         <Trash2 size={12} />
@@ -421,19 +421,19 @@ export function MetricListPanel({ scope, onOpenMetric }: Props) {
       </div>
 
       {/* 状态栏 */}
-      <div className="flex items-center px-4 h-7 bg-[var(--background-void)] border-t border-[var(--border-default)] flex-shrink-0">
-        <span className="text-xs text-[var(--foreground-muted)]">
+      <div className="flex items-center px-4 h-7 bg-background-void border-t border-border-default flex-shrink-0">
+        <span className="text-xs text-foreground-muted">
           {search ? filtered.length : rowCount} {t('metricsExplorer.metricList.rows')} · {durationMs}ms
         </span>
       </div>
 
       {/* 批量操作栏 */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-[var(--background-panel)] border-t border-[var(--border-strong)] text-xs flex-shrink-0">
-          <span className="text-[var(--foreground-muted)]">{t('metricsExplorer.metricList.selected', { count: selected.size })}</span>
-          <button className="text-[var(--error)] hover:text-[var(--error-foreground)]" onClick={() => doDelete([...selected])}>{t('metricsExplorer.metricList.batchDelete')}</button>
-          <button className="text-[var(--accent)] hover:text-[var(--accent-hover)]" onClick={() => doSetStatus([...selected], 'approved')}>{t('metricsExplorer.metricList.batchApprove')}</button>
-          <button className="text-[var(--error)] hover:text-[var(--error-foreground)]" onClick={() => doSetStatus([...selected], 'rejected')}>{t('metricsExplorer.metricList.batchReject')}</button>
+        <div className="flex items-center gap-3 px-4 py-2 bg-background-panel border-t border-border-strong text-xs flex-shrink-0">
+          <span className="text-foreground-muted">{t('metricsExplorer.metricList.selected', { count: selected.size })}</span>
+          <button className="text-error hover:text-error-foreground transition-colors duration-200" onClick={() => doDelete([...selected])}>{t('metricsExplorer.metricList.batchDelete')}</button>
+          <button className="text-accent hover:text-accent-hover transition-colors duration-200" onClick={() => doSetStatus([...selected], 'approved')}>{t('metricsExplorer.metricList.batchApprove')}</button>
+          <button className="text-error hover:text-error-foreground transition-colors duration-200" onClick={() => doSetStatus([...selected], 'rejected')}>{t('metricsExplorer.metricList.batchReject')}</button>
         </div>
       )}
 

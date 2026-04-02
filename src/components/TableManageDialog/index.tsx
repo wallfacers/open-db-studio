@@ -252,49 +252,49 @@ export const TableManageDialog: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[800px] max-h-[85vh] flex flex-col relative">
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
-          <span className="text-[var(--foreground-default)] text-sm font-medium">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[800px] max-h-[85vh] flex flex-col relative">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <span className="text-foreground-default text-sm font-medium">
             {tableName ? t('tableManage.editTable', { table: tableName }) : t('tableManage.createTable')}
           </span>
-          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"><X size={16} /></button>
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200"><X size={16} /></button>
         </div>
 
         <div className="overflow-auto flex-1 p-4">
           {/* AI 建表面板（仅新建表时显示）*/}
           {!tableName && (
-            <div className="mb-3 border border-[var(--border-default)] rounded overflow-hidden">
+            <div className="mb-3 border border-border-default rounded overflow-hidden">
               <button
-                className="w-full flex items-center justify-between px-3 py-2 bg-[var(--background-base)] text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
+                className="w-full flex items-center justify-between px-3 py-2 bg-background-base text-xs text-foreground-muted hover:text-foreground-default transition-colors duration-200"
                 onClick={() => setAiPanelOpen(v => !v)}
               >
                 <span className="flex items-center gap-1.5">
-                  <Sparkles size={13} className="text-[var(--accent)]" />
+                  <Sparkles size={13} className="text-accent" />
                   AI 建表
                 </span>
                 {aiPanelOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
 
               {aiPanelOpen && (
-                <div className="p-3 bg-[var(--background-panel)] space-y-2">
+                <div className="p-3 bg-background-panel space-y-2">
                   <textarea
-                    className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-1.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)] resize-none h-[60px] disabled:opacity-50"
+                    className="w-full bg-background-base border border-border-strong rounded px-2 py-1.5 text-xs text-foreground-default outline-none focus:border-border-focus resize-none h-[60px] disabled:opacity-50"
                     placeholder='描述你想要的表，例如："用户表，包含昵称、头像、手机号、注册时间"'
                     value={aiDescription}
                     onChange={e => setAiDescription(e.target.value)}
                     disabled={aiState === 'loading'}
                   />
                   {aiError && (
-                    <p className="text-xs text-[var(--error)]">{aiError}</p>
+                    <p className="text-xs text-error">{aiError}</p>
                   )}
                   <div className="flex justify-end">
                     <button
                       onClick={handleAiGenerate}
                       disabled={aiState === 'loading' || !aiDescription.trim()}
-                      className="px-3 py-1 bg-[var(--accent)] text-[var(--foreground)] rounded text-xs hover:bg-[var(--accent-hover)] disabled:opacity-50 flex items-center gap-1"
+                      className="px-3 py-1 bg-accent text-foreground rounded text-xs hover:bg-accent-hover disabled:opacity-50 flex items-center gap-1 transition-colors duration-200"
                     >
                       {aiState === 'loading' ? (
-                        <><span className="animate-spin inline-block w-3 h-3 border border-[var(--foreground)] border-t-transparent rounded-full" /> 正在生成...</>
+                        <><span className="animate-spin inline-block w-3 h-3 border border-foreground border-t-transparent rounded-full" /> 正在生成...</>
                       ) : '生成字段 →'}
                     </button>
                   </div>
@@ -306,9 +306,9 @@ export const TableManageDialog: React.FC<Props> = ({
           {/* 新建表时显示表名输入 */}
           {!tableName && (
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-[var(--foreground-muted)] whitespace-nowrap">{t('tableManage.tableName')}</span>
+              <span className="text-xs text-foreground-muted whitespace-nowrap">{t('tableManage.tableName')}</span>
               <input
-                className="flex-1 bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)]"
+                className="flex-1 bg-background-base border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
                 value={localTableName}
                 onChange={e => setLocalTableName(e.target.value)}
                 placeholder="e.g. users"
@@ -317,27 +317,27 @@ export const TableManageDialog: React.FC<Props> = ({
           )}
 
           {isLoadingData ? (
-            <div className="text-center text-xs text-[var(--foreground-muted)] py-8">{t('tableDataView.loading')}</div>
+            <div className="text-center text-xs text-foreground-muted py-8">{t('tableDataView.loading')}</div>
           ) : (
-            <table className="w-full text-xs text-[var(--foreground-default)] border-collapse">
+            <table className="w-full text-xs text-foreground-default border-collapse">
               <thead>
-                <tr className="border-b border-[var(--border-default)]">
-                  <th className="text-left py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[120px]">{t('tableManage.columnName')}</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[110px]">{t('tableManage.dataType')}</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[60px]">{t('tableManage.length')}</th>
-                  <th className="text-center py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[50px]">{t('tableManage.nullable')}</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[100px]">{t('tableManage.defaultValue')}</th>
-                  <th className="text-center py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[40px]">{t('tableManage.primaryKey')}</th>
-                  <th className="text-center py-1.5 px-2 font-medium text-[var(--foreground-muted)] w-[80px]">Extra</th>
+                <tr className="border-b border-border-default">
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[120px]">{t('tableManage.columnName')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[110px]">{t('tableManage.dataType')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[60px]">{t('tableManage.length')}</th>
+                  <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[50px]">{t('tableManage.nullable')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">{t('tableManage.defaultValue')}</th>
+                  <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[40px]">{t('tableManage.primaryKey')}</th>
+                  <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[80px]">Extra</th>
                   <th className="w-[70px]"></th>
                 </tr>
               </thead>
               <tbody>
                 {visibleColumns.map((col, idx) => (
-                  <tr key={col.id} className="border-b border-[var(--background-hover)] hover:bg-[var(--background-hover)]/40">
+                  <tr key={col.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.name}
                         onChange={e => updateColumn(col.id, { name: e.target.value })}
                         disabled={isAiBusy}
@@ -355,7 +355,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.length ?? ''}
                         onChange={e => updateColumn(col.id, { length: e.target.value })}
                         placeholder="—"
@@ -367,13 +367,13 @@ export const TableManageDialog: React.FC<Props> = ({
                         type="checkbox"
                         checked={col.isNullable}
                         onChange={e => updateColumn(col.id, { isNullable: e.target.checked })}
-                        className="accent-[var(--accent)]"
+                        className="accent-accent"
                         disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.defaultValue ?? ''}
                         onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
                         placeholder="—"
@@ -385,13 +385,13 @@ export const TableManageDialog: React.FC<Props> = ({
                         type="checkbox"
                         checked={col.isPrimaryKey}
                         onChange={e => updateColumn(col.id, { isPrimaryKey: e.target.checked })}
-                        className="accent-[var(--info)]"
+                        className="accent-info"
                         disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[var(--background-base)] border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.extra}
                         onChange={e => updateColumn(col.id, { extra: e.target.value })}
                         placeholder="—"
@@ -403,12 +403,12 @@ export const TableManageDialog: React.FC<Props> = ({
                         <button
                           onClick={() => moveColumn(col.id, 'up')}
                           disabled={idx === 0 || isAiBusy}
-                          className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] disabled:opacity-30 p-0.5"
+                          className="text-foreground-muted hover:text-foreground-default disabled:opacity-30 p-0.5 transition-colors duration-200"
                         ><ChevronUp size={12} /></button>
                         <button
                           onClick={() => moveColumn(col.id, 'down')}
                           disabled={idx === visibleColumns.length - 1 || isAiBusy}
-                          className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] disabled:opacity-30 p-0.5"
+                          className="text-foreground-muted hover:text-foreground-default disabled:opacity-30 p-0.5 transition-colors duration-200"
                         ><ChevronDown size={12} /></button>
                         <button
                           disabled={isAiBusy}
@@ -416,7 +416,7 @@ export const TableManageDialog: React.FC<Props> = ({
                             ? setColumns(prev => prev.filter(c => c.id !== col.id))
                             : updateColumn(col.id, { _isDeleted: true })
                           )}
-                          className="text-[var(--error)]/70 hover:text-[var(--error)] p-0.5 disabled:opacity-30"
+                          className="text-error/70 hover:text-error p-0.5 disabled:opacity-30 transition-colors duration-200"
                         ><Trash2 size={12} /></button>
                       </div>
                     </td>
@@ -428,7 +428,7 @@ export const TableManageDialog: React.FC<Props> = ({
           <button
             onClick={addColumn}
             disabled={isAiBusy}
-            className="mt-2 flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--accent)] px-2 py-1 disabled:opacity-40"
+            className="mt-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 disabled:opacity-40 transition-colors duration-200"
           >
             <Plus size={13} />
             {t('tableManage.addColumn')}
@@ -436,26 +436,26 @@ export const TableManageDialog: React.FC<Props> = ({
         </div>
 
         <div className="px-4 pb-2">
-          <div className="text-xs text-[var(--foreground-muted)] mb-1">
+          <div className="text-xs text-foreground-muted mb-1">
             {tableName ? t('tableManage.alterPreview') : t('tableManage.createPreview')}
           </div>
           <textarea
             readOnly
-            className="w-full bg-[var(--background-base)] border border-[var(--border-default)] rounded p-2 font-mono text-xs text-[var(--foreground-default)] outline-none resize-none h-[80px]"
+            className="w-full bg-background-base border border-border-default rounded p-2 font-mono text-xs text-foreground-default outline-none resize-none h-[80px]"
             value={previewSql}
             spellCheck={false}
           />
         </div>
 
-        <div className="flex justify-end gap-2 p-4 border-t border-[var(--border-default)]">
+        <div className="flex justify-end gap-2 p-4 border-t border-border-default">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] rounded text-xs"
+            className="px-3 py-1.5 bg-background-hover text-foreground-muted hover:text-foreground-default rounded text-xs transition-colors duration-200"
           >{t('common.cancel')}</button>
           <button
             onClick={handleExecute}
             disabled={isLoading || previewSql.startsWith('-- ') || isLoadingData || isAiBusy}
-            className="px-3 py-1.5 bg-[var(--primary)] text-[var(--foreground-default)] hover:bg-[var(--primary-hover)] rounded text-xs disabled:opacity-50"
+            className="px-3 py-1.5 bg-primary text-foreground-default hover:bg-primary-hover rounded text-xs disabled:opacity-50 transition-colors duration-200"
           >
             {isLoading
               ? t('common.executing')
@@ -466,9 +466,9 @@ export const TableManageDialog: React.FC<Props> = ({
         {/* AI 字段应用确认弹窗 */}
         {aiState === 'confirming' && pendingAiCols && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10 rounded-lg">
-            <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg p-5 w-[320px] space-y-3">
-              <p className="text-sm text-[var(--foreground-default)] font-medium">应用 AI 生成的字段</p>
-              <p className="text-xs text-[var(--foreground-muted)]">
+            <div className="bg-background-panel border border-border-strong rounded-lg p-5 w-[320px] space-y-3">
+              <p className="text-sm text-foreground-default font-medium">应用 AI 生成的字段</p>
+              <p className="text-xs text-foreground-muted">
                 AI 已生成 {pendingAiCols.count} 个字段，当前表格已有 {pendingAiCols.existingCount} 个字段。
               </p>
               <div className="flex gap-2 pt-1">
@@ -478,7 +478,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     fillColumns(pendingAiCols.cols, 'replace');
                     setPendingAiCols(null);
                   }}
-                  className="flex-1 px-2 py-1.5 bg-[var(--primary)] text-[var(--foreground)] rounded text-xs hover:bg-[var(--primary-hover)]"
+                  className="flex-1 px-2 py-1.5 bg-primary text-foreground rounded text-xs hover:bg-primary-hover transition-colors duration-200"
                 >替换现有字段</button>
                 <button
                   onClick={() => {
@@ -486,14 +486,14 @@ export const TableManageDialog: React.FC<Props> = ({
                     fillColumns(pendingAiCols.cols, 'append');
                     setPendingAiCols(null);
                   }}
-                  className="flex-1 px-2 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-default)] rounded text-xs hover:bg-[var(--border-strong)]"
+                  className="flex-1 px-2 py-1.5 bg-background-hover text-foreground-default rounded text-xs hover:bg-border-strong transition-colors duration-200"
                 >追加到末尾</button>
                 <button
                   onClick={() => {
                     setAiState('idle');
                     setPendingAiCols(null);
                   }}
-                  className="px-2 py-1.5 text-[var(--foreground-muted)] rounded text-xs hover:text-[var(--foreground-default)]"
+                  className="px-2 py-1.5 text-foreground-muted rounded text-xs hover:text-foreground-default transition-colors duration-200"
                 >取消</button>
               </div>
             </div>

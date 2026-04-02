@@ -93,20 +93,20 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     <div
       ref={sidebarRef}
       style={{ width }}
-      className="flex-shrink-0 bg-[var(--background-base)] border-r border-[var(--border-default)] flex flex-col h-full"
+      className="flex-shrink-0 bg-background-base border-r border-border-default flex flex-col h-full"
       onClick={closeContextMenu}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border-default)]">
+      <div className="flex items-center justify-between px-3 h-10 border-b border-border-default">
         <div className="flex items-center gap-2">
-          <Grid3x3 size={14} className="text-[var(--accent)]" />
-          <span className="font-medium text-[var(--foreground-default)]">
+          <Grid3x3 size={14} className="text-accent" />
+          <span className="font-medium text-foreground-default">
             {t('erDesigner.title') || 'ER 设计器'}
           </span>
         </div>
         <Tooltip content={t('erDesigner.newProject') || '新建项目'}>
           <button
-            className="p-1 rounded hover:bg-[var(--border-default)] text-[var(--foreground-muted)] hover:text-[var(--accent)]"
+            className="p-1 rounded hover:bg-border-default text-foreground-muted hover:text-accent transition-colors duration-200"
             onClick={() => setShowCreateDialog(true)}
           >
             <Plus size={14} />
@@ -115,19 +115,19 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
       </div>
 
       {/* 搜索框 */}
-      <div className="h-10 flex items-center px-2 border-b border-[var(--border-default)]">
-        <div className="flex items-center bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 flex-1 focus-within:border-[var(--accent-hover)] transition-colors">
-          <Search size={14} className="text-[var(--foreground-muted)] mr-1 flex-shrink-0" />
+      <div className="h-10 flex items-center px-2 border-b border-border-default">
+        <div className="flex items-center bg-background-elevated border border-border-strong rounded px-2 py-1 flex-1 focus-within:border-accent-hover transition-colors">
+          <Search size={14} className="text-foreground-muted mr-1 flex-shrink-0" />
           <input
             type="text"
             placeholder={t('erDesigner.searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="bg-transparent border-none outline-none text-[var(--foreground-default)] w-full text-xs placeholder-[var(--foreground-muted)]"
+            className="bg-transparent border-none outline-none text-foreground-default w-full text-xs placeholder-foreground-muted"
           />
           {searchQuery && (
             <button
-              className="text-[var(--foreground-muted)] ml-1 hover:text-[var(--foreground-default)] flex-shrink-0"
+              className="text-foreground-muted ml-1 hover:text-foreground-default flex-shrink-0 transition-colors duration-200"
               onClick={() => setSearchQuery('')}
             >
               <X size={14} />
@@ -139,7 +139,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
       {/* Project List */}
       <div className="flex-1 overflow-y-auto py-1">
         {projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-[var(--foreground-muted)] text-xs px-4 text-center">
+          <div className="flex flex-col items-center justify-center h-full text-foreground-muted text-xs px-4 text-center">
             <Database size={32} className="mb-2 opacity-40" />
             <span>{t('erDesigner.noProjects') || '暂无 ER 项目'}</span>
             <span className="text-[10px] opacity-60 mt-1">{t('erDesigner.clickPlus') || '点击 + 创建新项目'}</span>
@@ -156,28 +156,28 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
               {/* Project Node */}
               <div
                 className={`flex items-center py-1 px-2 cursor-pointer transition-colors group ${
-                  activeProjectId === project.id ? 'bg-[var(--border-default)]' : 'hover:bg-[var(--background-hover)]'
+                  activeProjectId === project.id ? 'bg-border-default' : 'hover:bg-background-hover'
                 }`}
                 onClick={() => handleProjectClick(project)}
                 onDoubleClick={() => handleProjectDoubleClick(project)}
                 onContextMenu={(e) => handleContextMenu(e, 'project', { projectId: project.id })}
               >
-                <div className="w-4 h-4 mr-1 flex items-center justify-center text-[var(--foreground-muted)] flex-shrink-0">
+                <div className="w-4 h-4 mr-1 flex items-center justify-center text-foreground-muted flex-shrink-0">
                   {expandedProjects.has(project.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </div>
                 {expandedProjects.has(project.id) ? (
-                  <FolderOpen size={14} className="mr-1.5 text-[var(--accent)] flex-shrink-0" />
+                  <FolderOpen size={14} className="mr-1.5 text-accent flex-shrink-0" />
                 ) : (
-                  <Folder size={14} className="mr-1.5 text-[var(--foreground-muted)] flex-shrink-0" />
+                  <Folder size={14} className="mr-1.5 text-foreground-muted flex-shrink-0" />
                 )}
-                <span className="text-[13px] text-[var(--foreground)] flex-1 truncate">{project.name}</span>
+                <span className="text-[13px] text-foreground flex-1 truncate">{project.name}</span>
                 {project.connection_id && (
                   <Tooltip content={t('erDesigner.connectionBound') || '已绑定连接'}>
-                    <Link2 size={10} className="mr-1 text-[var(--accent)]" />
+                    <Link2 size={10} className="mr-1 text-accent" />
                   </Tooltip>
                 )}
                 <button
-                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--border-strong)] text-[var(--foreground-muted)]"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-border-strong text-foreground-muted transition-colors duration-200"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleContextMenu(e, 'project', { projectId: project.id });
@@ -198,33 +198,33 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                         <div key={table.id}>
                           {/* Table Node */}
                           <div
-                            className="flex items-center py-1 px-2 cursor-pointer transition-colors group hover:bg-[var(--background-hover)]"
+                            className="flex items-center py-1 px-2 cursor-pointer transition-colors group hover:bg-background-hover"
                             style={{ paddingLeft: '32px' }}
                             onClick={() => hasColumns && toggleTableExpand(table.id)}
                             onDoubleClick={() => handleTableDoubleClick(project.id, table.name)}
                             onContextMenu={(e) => handleContextMenu(e, 'table', { projectId: project.id, tableId: table.id })}
                           >
-                            <div className="w-4 h-4 mr-1 flex items-center justify-center text-[var(--foreground-muted)] flex-shrink-0">
+                            <div className="w-4 h-4 mr-1 flex items-center justify-center text-foreground-muted flex-shrink-0">
                               {hasColumns ? (
                                 isTableExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
                               ) : null}
                             </div>
                             <TableProperties
                               size={14}
-                              className={`mr-1.5 flex-shrink-0 ${table.color ? '' : (isTableExpanded ? 'text-[var(--accent)]' : 'text-[var(--foreground-muted)]')}`}
+                              className={`mr-1.5 flex-shrink-0 ${table.color ? '' : (isTableExpanded ? 'text-accent' : 'text-foreground-muted')}`}
                               style={table.color ? { color: table.color } : undefined}
                             />
-                            <span className="text-[13px] text-[var(--foreground)] flex-1 truncate">{table.name}</span>
-                            <span className="text-[11px] text-[var(--foreground-muted)] mr-1">
+                            <span className="text-[13px] text-foreground flex-1 truncate">{table.name}</span>
+                            <span className="text-[11px] text-foreground-muted mr-1">
                               {getTableColumns(table.id).length}
                             </span>
                             {getRelationCount(table.id) > 0 && (
                               <Tooltip content={`${getRelationCount(table.id)} ${t('erDesigner.relations') || '个关系'}`}>
-                                <Link2 size={10} className="text-[var(--node-alias)] mr-1" />
+                                <Link2 size={10} className="text-node-alias mr-1" />
                               </Tooltip>
                             )}
                             <button
-                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--accent)] transition-all"
+                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-accent transition-all"
                               onClick={(e) => { e.stopPropagation(); openDrawer(table.id); }}
                               title="在属性面板中编辑"
                             >
@@ -236,17 +236,17 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
                           {isTableExpanded && getTableColumns(table.id).map(column => (
                             <div
                               key={column.id}
-                              className="flex items-center gap-1.5 py-0.5 px-2 h-[26px] hover:bg-[var(--background-hover)] transition-colors text-[13px] text-[var(--foreground)] cursor-default"
+                              className="flex items-center gap-1.5 py-0.5 px-2 h-[26px] hover:bg-background-hover transition-colors text-[13px] text-foreground cursor-default"
                               style={{ paddingLeft: '56px' }}
                               onDoubleClick={() => openDrawer(table.id, column.id)}
                             >
                               <div className="w-[14px] shrink-0 flex items-center justify-center">
                                 {column.is_primary_key && (
-                                  <Key size={12} className="text-[var(--key-primary)]" />
+                                  <Key size={12} className="text-key-primary" />
                                 )}
                               </div>
                               <span className="truncate">{column.name}</span>
-                              <span className="ml-auto shrink-0 text-[11px] text-[var(--foreground-subtle)]">{formatTypeDisplay(column)}</span>
+                              <span className="ml-auto shrink-0 text-[11px] text-foreground-subtle">{formatTypeDisplay(column)}</span>
                             </div>
                           ))}
                         </div>
@@ -261,11 +261,11 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
       {/* Create Project Dialog */}
       {showCreateDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreateDialog(false)}>
-          <div className="bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded-lg p-4 w-72" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm text-[var(--foreground-default)] mb-3">{t('erDesigner.newProject') || '新建 ER 项目'}</h3>
+          <div className="bg-background-elevated border border-border-strong rounded-lg p-4 w-72" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm text-foreground-default mb-3">{t('erDesigner.newProject') || '新建 ER 项目'}</h3>
             <input
               type="text"
-              className="w-full px-3 py-2 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded text-xs text-[var(--foreground-default)] placeholder-[var(--foreground-subtle)] focus:outline-none focus:border-[var(--accent)]"
+              className="w-full px-3 py-2 bg-background-hover border border-border-strong rounded text-xs text-foreground-default placeholder-foreground-subtle focus:outline-none focus:border-accent"
               placeholder={t('erDesigner.projectName') || '项目名称'}
               value={newProjectName}
               onChange={e => setNewProjectName(e.target.value)}
@@ -274,13 +274,13 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
             />
             <div className="flex justify-end mt-3 gap-2">
               <button
-                className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] rounded"
+                className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground-default rounded transition-colors duration-200"
                 onClick={() => setShowCreateDialog(false)}
               >
                 {t('common.cancel') || '取消'}
               </button>
               <button
-                className="px-3 py-1.5 text-xs bg-[var(--accent)] text-[var(--background-void)] rounded hover:bg-[var(--accent-hover)]"
+                className="px-3 py-1.5 text-xs bg-accent text-background-void rounded hover:bg-accent-hover transition-colors duration-200"
                 onClick={handleCreateProject}
               >
                 {t('common.create') || '创建'}

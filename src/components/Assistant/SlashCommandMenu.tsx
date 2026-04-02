@@ -160,7 +160,7 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="absolute bottom-full left-0 w-full z-50 mb-1 bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-lg overflow-hidden"
+      className="absolute bottom-full left-0 w-full z-50 mb-1 bg-background-panel border border-border-strong rounded-lg shadow-lg overflow-hidden"
     >
       {filtered.map((cmd, idx) => {
         const available = cmd.isAvailable(commandState);
@@ -172,15 +172,15 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
           <div
             key={cmd.name}
             className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-              isActive ? 'bg-[var(--border-default)]' : 'hover:bg-[var(--background-elevated)]'
+              isActive ? 'bg-border-default' : 'hover:bg-background-elevated'
             } ${!available ? 'opacity-40 cursor-not-allowed' : ''}`}
             onMouseEnter={() => onIndexChange(idx)}
             onClick={() => executeCommand(cmd)}
             title={reason}
           >
-            <Icon size={14} className="flex-shrink-0 text-[var(--accent)]" />
-            <span className="text-[13px] font-medium text-[var(--foreground-default)] w-20 flex-shrink-0">{cmd.label}</span>
-            <span className="text-[12px] text-[var(--foreground-muted)] truncate">{cmd.description}</span>
+            <Icon size={14} className="flex-shrink-0 text-accent" />
+            <span className="text-[13px] font-medium text-foreground-default w-20 flex-shrink-0">{cmd.label}</span>
+            <span className="text-[12px] text-foreground-muted truncate">{cmd.description}</span>
             {!available && reason && (
               <span className="ml-auto text-[11px] text-[#5b8ab0] flex-shrink-0 hidden group-hover:block">
                 {reason}

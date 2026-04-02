@@ -88,21 +88,93 @@
 --data-pink:   #EC4899
 ```
 
+### Tailwind 主题映射（@theme 指令）
+
+**禁止直接在组件中使用 `var()` 包装器**（如 `text-[var(--error)]`）。这是反模式：
+- 降低代码可读性
+- 无法使用 Tailwind 透明度修饰符（如 `bg-primary/80`）
+- 不利于 IDE 自动补全
+
+所有 CSS 变量必须通过 `src/index.css` 的 `@theme` 指令映射为 Tailwind 语义类名：
+
+```css
+@theme {
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-subtle: var(--primary-subtle);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-background: var(--background);
+  --color-background-void: var(--background-void);
+  --color-background-base: var(--background-base);
+  --color-background-panel: var(--background-panel);
+  --color-background-card: var(--background-card);
+  --color-background-elevated: var(--background-elevated);
+  --color-background-hover: var(--background-hover);
+  --color-background-active: var(--background-active);
+  --color-background-deep: var(--background-deep);
+  --color-background-code: var(--background-code);
+
+  --color-foreground: var(--foreground);
+  --color-foreground-default: var(--foreground-default);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-ghost: var(--foreground-ghost);
+
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-focus: var(--border-focus);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-subtle: var(--error-subtle);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+
+  --color-ring: var(--ring);
+  --color-ring-accent: var(--ring-accent);
+  --color-overlay: var(--overlay);
+
+  --color-danger-hover-bg: var(--danger-hover-bg);
+  --color-window-close-hover: var(--window-close-hover);
+}
+```
+
 ### 使用示例
 
 ```tsx
-// 主按钮
-<button className="bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]">
+// ✅ 正确：使用 Tailwind 语义类名（支持透明度修饰符）
+<button className="bg-primary text-primary-foreground hover:bg-primary-hover transition-colors duration-200">
+<div className="bg-background-panel border border-border">
+<h1 className="text-foreground">主标题</h1>
+<p className="text-foreground-muted">次要描述</p>
+<div className="bg-error-subtle text-error">错误信息</div>
+<div className="bg-primary/80">80% 透明度</div>
 
-// 面板容器
-<div className="bg-[var(--background-panel)] border border-[var(--border)]">
-
-// 文字层级
-<h1 className="text-[var(--foreground)]">主标题</h1>
-<p className="text-[var(--foreground-muted)]">次要描述</p>
-
-// 状态提示
-<div className="bg-[var(--error-subtle)] text-[var(--error)]">错误信息</div>
+// ❌ 禁止：var() 包装器
+<button className="bg-[var(--primary)] text-[var(--primary-foreground)]">
+<div className="text-[var(--foreground-muted)]">
 ```
 
 ### 颜色使用规范
@@ -111,6 +183,32 @@
 2. **语义化命名**：根据用途选择变量，而非直接选择颜色
 3. **对比度要求**：文字与背景对比度必须 ≥ 4.5:1（WCAG AA）
 4. **浅色模式**：支持 `prefers-color-scheme: light` 媒体查询
+5. **禁止 var() 包装器**：使用 `@theme` 映射后的语义类名（`text-error` 而非 `text-[var(--error)]`）
+6. **强制交互过渡**：所有涉及颜色变化的交互状态必须搭配 `transition-colors duration-200`（或 `duration-300`），避免状态突变
+
+### 交互过渡规范（Transition）
+
+所有涉及颜色变化的交互必须添加过渡动画，避免状态突变产生廉价感：
+
+| 场景 | 必须搭配的 Tailwind 类 |
+|------|----------------------|
+| 按钮 hover/active | `transition-colors duration-200` |
+| 列表项 hover | `transition-colors duration-150` |
+| 焦点边框 | `transition-colors duration-200` |
+| 背景色切换（Tab/选中） | `transition-colors duration-200` |
+| 图标 hover 变色 | `transition-colors duration-150` |
+| 复杂多属性过渡（颜色+阴影+变换） | `transition-all duration-200` |
+
+```tsx
+// ✅ 正确：带过渡的交互
+<button className="bg-primary hover:bg-primary-hover transition-colors duration-200">
+<li className="hover:bg-background-hover transition-colors duration-150">
+<input className="border-border focus:border-border-focus transition-colors duration-200">
+
+// ❌ 禁止：无过渡的颜色变化
+<button className="bg-primary hover:bg-primary-hover">
+<li className="hover:bg-background-hover">
+```
 
 ### 旧版兼容（已废弃）
 

@@ -47,18 +47,18 @@ export function SearchTab({
   return (
     <div className="flex flex-col h-full">
       {/* Search Input */}
-      <div className="p-3 border-b border-[var(--border-default)]">
+      <div className="p-3 border-b border-border-default">
         <div className="relative">
-          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] pointer-events-none" />
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground-muted pointer-events-none" />
           {loading && (
-            <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--foreground-muted)] animate-spin" />
+            <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground-muted animate-spin" />
           )}
           <input
             type="text"
             value={keyword}
             onChange={e => setKeyword(e.target.value)}
             placeholder={t('graphExplorer.searchTab.searchPlaceholder')}
-            className="w-full pl-7 pr-7 py-1.5 text-xs bg-[var(--background-panel)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] placeholder-[var(--foreground-ghost)] focus:outline-none focus:border-[var(--accent-hover)] transition-colors"
+            className="w-full pl-7 pr-7 py-1.5 text-xs bg-background-panel border border-border-default rounded text-foreground-default placeholder-foreground-ghost focus:outline-none focus:border-accent-hover transition-colors"
           />
         </div>
       </div>
@@ -66,11 +66,11 @@ export function SearchTab({
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {!searched && !loading && (
-          <p className="text-[var(--foreground-ghost)] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.searchHint')}</p>
+          <p className="text-foreground-ghost text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.searchHint')}</p>
         )}
 
         {searched && results.length === 0 && !loading && (
-          <p className="text-[var(--foreground-muted)] text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.noResults')}</p>
+          <p className="text-foreground-muted text-xs text-center mt-8 px-4">{t('graphExplorer.searchTab.noResults')}</p>
         )}
 
         {results.map(node => {
@@ -80,7 +80,7 @@ export function SearchTab({
             <div
               key={node.id}
               onClick={() => handleItemClick(node)}
-              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[var(--background-hover)] border-b border-[var(--border-default)]/50 group"
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-background-hover border-b border-border-default/50 group transition-colors duration-150"
             >
               <span
                 className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded font-mono"
@@ -97,12 +97,12 @@ export function SearchTab({
               </span>
 
               <div className="flex-1 min-w-0">
-                <p className="text-[var(--foreground-default)] text-xs truncate">{node.name}</p>
+                <p className="text-foreground-default text-xs truncate">{node.name}</p>
                 {node.display_name && node.display_name !== node.name && (
-                  <p className="text-[var(--foreground-ghost)] text-[10px] truncate">{node.display_name}</p>
+                  <p className="text-foreground-ghost text-[10px] truncate">{node.display_name}</p>
                 )}
                 {isHidden && (
-                  <p className="text-[var(--warning)] text-[9px]">{t('graphExplorer.searchTab.filteredHidden')}</p>
+                  <p className="text-warning text-[9px]">{t('graphExplorer.searchTab.filteredHidden')}</p>
                 )}
               </div>
 

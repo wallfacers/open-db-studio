@@ -72,7 +72,7 @@ export function PathTab({
   return (
     <div className="flex flex-col h-full">
       {/* Endpoint slots */}
-      <div className="p-3 border-b border-[var(--border-default)] space-y-2">
+      <div className="p-3 border-b border-border-default space-y-2">
         <div className="flex items-center gap-2">
           <span
             className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
@@ -82,13 +82,13 @@ export function PathTab({
           </span>
           {pathFrom ? (
             <div className="flex-1 flex items-center gap-1 min-w-0">
-              <span className="text-[var(--foreground-default)] text-xs truncate flex-1">{pathFrom.name}</span>
-              <button onClick={onClearFrom} className="flex-shrink-0 text-[var(--foreground-muted)] hover:text-[var(--foreground)]">
+              <span className="text-foreground-default text-xs truncate flex-1">{pathFrom.name}</span>
+              <button onClick={onClearFrom} className="flex-shrink-0 text-foreground-muted hover:text-foreground transition-colors duration-200">
                 <X size={11} />
               </button>
             </div>
           ) : (
-            <span className="text-[var(--foreground-ghost)] text-xs">在搜索结果中点击 [S] 设置</span>
+            <span className="text-foreground-ghost text-xs">在搜索结果中点击 [S] 设置</span>
           )}
         </div>
 
@@ -101,33 +101,33 @@ export function PathTab({
           </span>
           {pathTo ? (
             <div className="flex-1 flex items-center gap-1 min-w-0">
-              <span className="text-[var(--foreground-default)] text-xs truncate flex-1">{pathTo.name}</span>
-              <button onClick={onClearTo} className="flex-shrink-0 text-[var(--foreground-muted)] hover:text-[var(--foreground)]">
+              <span className="text-foreground-default text-xs truncate flex-1">{pathTo.name}</span>
+              <button onClick={onClearTo} className="flex-shrink-0 text-foreground-muted hover:text-foreground transition-colors duration-200">
                 <X size={11} />
               </button>
             </div>
           ) : (
-            <span className="text-[var(--foreground-ghost)] text-xs">在搜索结果中点击 [T] 设置</span>
+            <span className="text-foreground-ghost text-xs">在搜索结果中点击 [T] 设置</span>
           )}
         </div>
 
         <div className="flex items-center gap-2 pt-1">
-          <label className="text-[var(--foreground-muted)] text-xs flex-shrink-0">最大跳数</label>
-          <div className="flex items-stretch border border-[var(--border-default)] rounded overflow-hidden focus-within:border-[var(--accent-hover)] transition-colors" style={{ width: '56px' }}>
+          <label className="text-foreground-muted text-xs flex-shrink-0">最大跳数</label>
+          <div className="flex items-stretch border border-border-default rounded overflow-hidden focus-within:border-accent-hover transition-colors" style={{ width: '56px' }}>
             <input
               type="number"
               min={1}
               value={maxHops}
               onChange={e => setMaxHops(Math.max(1, Number(e.target.value) || 1))}
-              className="flex-1 min-w-0 bg-[var(--background-panel)] px-2 py-1 text-xs text-[var(--foreground-default)] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="flex-1 min-w-0 bg-background-panel px-2 py-1 text-xs text-foreground-default focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
-            <div className="flex flex-col border-l border-[var(--border-default)] bg-[var(--background-panel)]">
+            <div className="flex flex-col border-l border-border-default bg-background-panel">
               <button type="button" onClick={() => setMaxHops(v => v + 1)}
-                className="flex-1 flex items-center justify-center px-1 text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--background-elevated)] transition-colors border-b border-[var(--border-default)]">
+                className="flex-1 flex items-center justify-center px-1 text-accent hover:text-accent hover:bg-background-elevated transition-colors border-b border-border-default">
                 <svg width="7" height="4" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
               </button>
               <button type="button" onClick={() => setMaxHops(v => Math.max(1, v - 1))}
-                className="flex-1 flex items-center justify-center px-1 text-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--background-elevated)] transition-colors">
+                className="flex-1 flex items-center justify-center px-1 text-accent hover:text-accent hover:bg-background-elevated transition-colors">
                 <svg width="7" height="4" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
               </button>
             </div>
@@ -148,7 +148,7 @@ export function PathTab({
 
       <div className="flex-1 overflow-y-auto">
         {error && (
-          <div className="m-3 p-2 rounded text-xs text-[var(--error)] bg-[var(--error-subtle)] border border-[var(--error)]/30">
+          <div className="m-3 p-2 rounded text-xs text-error bg-error-subtle border border-error/30">
             {error}
             <button
               onClick={handleFindPath}
@@ -160,13 +160,13 @@ export function PathTab({
         )}
 
         {subgraph && shownPaths.length === 0 && (
-          <p className="text-[var(--foreground-muted)] text-xs text-center mt-8 px-4">
+          <p className="text-foreground-muted text-xs text-center mt-8 px-4">
             在 {maxHops} 跳范围内未找到路径，可尝试增大跳数
           </p>
         )}
 
         {truncated && (
-          <p className="text-[var(--foreground-muted)] text-[10px] text-center py-2 border-b border-[var(--border-default)]">
+          <p className="text-foreground-muted text-[10px] text-center py-2 border-b border-border-default">
             仅显示前 {MAX_PATHS_SHOWN} 条路径
           </p>
         )}
@@ -175,20 +175,20 @@ export function PathTab({
           <div
             key={idx}
             onClick={() => handleSelectPath(idx)}
-            className={`px-3 py-2 cursor-pointer border-b border-[var(--border-default)]/50 text-xs transition-colors ${
+            className={`px-3 py-2 cursor-pointer border-b border-border-default/50 text-xs transition-colors ${
               selectedPathIndex === idx
-                ? 'bg-[var(--accent-subtle)] border-l-2 border-l-[var(--accent)]'
-                : 'hover:bg-[var(--background-hover)]'
+                ? 'bg-accent-subtle border-l-2 border-l-accent'
+                : 'hover:bg-background-hover'
             }`}
           >
-            <p className="text-[var(--foreground-ghost)] text-[9px] mb-1">路径 {idx + 1} · {path.length} 节点</p>
-            <p className="text-[var(--foreground-default)] leading-relaxed">
+            <p className="text-foreground-ghost text-[9px] mb-1">路径 {idx + 1} · {path.length} 节点</p>
+            <p className="text-foreground-default leading-relaxed">
               {path.map((id, i) => (
                 <span key={id}>
-                  <span className={i === 0 ? 'text-[var(--success)]' : i === path.length - 1 ? 'text-[var(--info)]' : 'text-[var(--foreground-default)]'}>
+                  <span className={i === 0 ? 'text-success' : i === path.length - 1 ? 'text-info' : 'text-foreground-default'}>
                     {nodeDisplayMap[id] ?? id}
                   </span>
-                  {i < path.length - 1 && <span className="text-[var(--foreground-ghost)] mx-1">→</span>}
+                  {i < path.length - 1 && <span className="text-foreground-ghost mx-1">→</span>}
                 </span>
               ))}
             </p>
@@ -196,7 +196,7 @@ export function PathTab({
         ))}
 
         {subgraph && shownPaths.length > 0 && (
-          <div className="p-3 border-t border-[var(--border-default)]">
+          <div className="p-3 border-t border-border-default">
             {subgraphMode ? (
               <button
                 onClick={onExitSubgraph}

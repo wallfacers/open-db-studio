@@ -33,17 +33,17 @@ interface ChangeItemProps {
 }
 
 const ChangeItem: React.FC<ChangeItemProps> = ({ checked, onCheck, icon, label, detail }) => (
-  <label className="flex items-start gap-2 cursor-pointer hover:bg-[var(--border-default)] px-2 py-1 rounded">
+  <label className="flex items-start gap-2 cursor-pointer hover:bg-border-default px-2 py-1 rounded transition-colors duration-150">
     <input
       type="checkbox"
       checked={checked}
       onChange={(e) => onCheck(e.target.checked)}
-      className="accent-[var(--accent)] w-3 h-3 mt-0.5 flex-shrink-0"
+      className="accent-accent w-3 h-3 mt-0.5 flex-shrink-0"
     />
-    <span className="text-[var(--foreground-muted)] flex-shrink-0">{icon}</span>
+    <span className="text-foreground-muted flex-shrink-0">{icon}</span>
     <div className="flex-1 min-w-0">
-      <div className="text-xs text-[var(--foreground-default)] truncate">{label}</div>
-      {detail && <div className="text-xs text-[#5a7a9a] truncate">{detail}</div>}
+      <div className="text-xs text-foreground-default truncate">{label}</div>
+      {detail && <div className="text-xs text-foreground-muted truncate">{detail}</div>}
     </div>
   </label>
 );
@@ -245,21 +245,21 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
       <div className="flex flex-col gap-4">
         {/* 连接信息 */}
         {connectionInfo && (
-          <div className="text-xs text-[var(--foreground-muted)]">
+          <div className="text-xs text-foreground-muted">
             {`${t('erDesigner.erVsDb')} ${connectionInfo.name} / ${connectionInfo.database}`}
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-8 text-xs text-[var(--foreground-muted)]">{t('erDesigner.loadingDiff')}</div>
+          <div className="text-center py-8 text-xs text-foreground-muted">{t('erDesigner.loadingDiff')}</div>
         ) : !diffResult ? (
-          <div className="text-center py-8 text-xs text-[var(--foreground-muted)]">{t('erDesigner.diffFailed')}</div>
+          <div className="text-center py-8 text-xs text-foreground-muted">{t('erDesigner.diffFailed')}</div>
         ) : (
           <div className="flex flex-col gap-4 max-h-96 overflow-y-auto">
             {/* 新增（仅 ER 图有） */}
             {diffResult.added_tables.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 text-xs text-[var(--accent)] mb-2">
+                <div className="flex items-center gap-2 text-xs text-accent mb-2">
                   <CheckCircle2 size={14} />
                   <span>{t('erDesigner.addedSection')}</span>
                 </div>
@@ -283,14 +283,14 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {/* 变更 */}
             {diffResult.modified_tables.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 text-xs text-[#f0b90b] mb-2">
+                <div className="flex items-center gap-2 text-xs text-warning mb-2">
                   <AlertTriangle size={14} />
                   <span>{t('erDesigner.modifiedSection')}</span>
                 </div>
                 <div className="space-y-1">
                   {diffResult.modified_tables.map((table) => (
-                    <div key={table.table_name} className="pl-2 border-l border-[var(--border-strong)]">
-                      <div className="text-xs text-[var(--foreground-default)] mb-1">{table.table_name}</div>
+                    <div key={table.table_name} className="pl-2 border-l border-border-strong">
+                      <div className="text-xs text-foreground-default mb-1">{table.table_name}</div>
                       <div className="pl-3 space-y-1">
                         {/* 新增列 */}
                         {table.added_columns.map((col) => {
@@ -377,7 +377,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {/* 删除（仅数据库有） */}
             {diffResult.removed_tables.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 text-xs text-[#ef4444] mb-2">
+                <div className="flex items-center gap-2 text-xs text-error mb-2">
                   <Trash2 size={14} />
                   <span>{t('erDesigner.removedSection')}</span>
                 </div>
@@ -403,7 +403,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {diffResult.added_tables.length === 0 &&
               diffResult.removed_tables.length === 0 &&
               diffResult.modified_tables.length === 0 && (
-                <div className="text-center py-4 text-xs text-[var(--accent)]">{t('erDesigner.noDiff')}</div>
+                <div className="text-center py-4 text-xs text-accent">{t('erDesigner.noDiff')}</div>
               )}
           </div>
         )}

@@ -35,33 +35,33 @@ export const TaskCenter: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-panel)] overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-background-panel overflow-hidden">
       {/* Header */}
-      <div className="h-10 flex items-center justify-between px-6 border-b border-[var(--border-default)] flex-shrink-0 bg-[var(--background-base)]">
-        <h2 className="text-[var(--foreground)] font-semibold text-base">{t('activity.myTasks')}</h2>
+      <div className="h-10 flex items-center justify-between px-6 border-b border-border-default flex-shrink-0 bg-background-base">
+        <h2 className="text-foreground font-semibold text-base">{t('activity.myTasks')}</h2>
         <button
           onClick={handleClearCompleted}
-          className="text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors px-2.5 py-1 bg-[var(--background-panel)] hover:bg-[var(--border-default)] rounded border border-[var(--border-default)]"
+          className="text-xs text-foreground-muted hover:text-foreground-default transition-colors px-2.5 py-1 bg-background-panel hover:bg-border-default rounded border border-border-default"
         >
           {t('taskCenter.clearCompleted')}
         </button>
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex border-b border-[var(--border-default)] flex-shrink-0 px-6">
+      <div className="flex border-b border-border-default flex-shrink-0 px-6">
         {(['all', 'running', 'completed', 'failed'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setFilter(tab)}
             className={`px-4 py-2.5 text-sm transition-colors ${
               filter === tab
-                ? 'text-[var(--accent)] border-b-2 border-[var(--accent)]'
-                : 'text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]'
+                ? 'text-accent border-b-2 border-accent'
+                : 'text-foreground-muted hover:text-foreground-default'
             }`}
           >
             {t(`taskCenter.tab.${tab}`)}
             {counts[tab] > 0 && (
-              <span className="ml-1.5 px-1.5 py-0.5 bg-[var(--background-hover)] rounded-full text-xs">
+              <span className="ml-1.5 px-1.5 py-0.5 bg-background-hover rounded-full text-xs">
                 {counts[tab]}
               </span>
             )}
@@ -72,7 +72,7 @@ export const TaskCenter: React.FC = () => {
       {/* Task List */}
       <div className="flex-1 overflow-y-auto p-6">
         {filteredTasks.length === 0 ? (
-          <div className="text-center text-[var(--foreground-muted)] text-sm py-16">
+          <div className="text-center text-foreground-muted text-sm py-16">
             {t('taskCenter.empty')}
           </div>
         ) : (

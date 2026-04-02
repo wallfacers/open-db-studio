@@ -17,23 +17,23 @@ export default function ERPropertyDrawer() {
   if (!table) return null;
 
   return (
-    <div className="w-[420px] shrink-0 bg-[var(--background-panel)] border-l border-[var(--border-strong)] flex flex-col h-full">
+    <div className="w-[420px] shrink-0 bg-background-panel border-l border-border-strong flex flex-col h-full">
       {/* Title bar */}
-      <div className="bg-[var(--background-hover)] px-3 py-2 flex items-center justify-between border-b border-[var(--border-strong)]">
-        <span className="text-[13px] text-[var(--foreground-default)] font-medium truncate">{table.name}</span>
-        <button onClick={closeDrawer} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]">
+      <div className="bg-background-hover px-3 py-2 flex items-center justify-between border-b border-border-strong">
+        <span className="text-[13px] text-foreground-default font-medium truncate">{table.name}</span>
+        <button onClick={closeDrawer} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200">
           <X size={14} />
         </button>
       </div>
       {/* Tab bar */}
-      <div className="flex border-b border-[var(--border-strong)]">
+      <div className="flex border-b border-border-strong">
         {(['columns', 'indexes', 'properties'] as TabType[]).map(tab => (
           <button
             key={tab}
             className={`px-4 py-2 text-[12px] transition-colors ${
               activeTab === tab
-                ? 'text-[var(--accent)] border-b-2 border-[var(--accent)]'
-                : 'text-[var(--foreground-subtle)] hover:text-[var(--foreground-muted)]'
+                ? 'text-accent border-b-2 border-accent'
+                : 'text-foreground-subtle hover:text-foreground-muted'
             }`}
             onClick={() => setActiveTab(tab)}
           >

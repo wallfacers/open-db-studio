@@ -17,12 +17,12 @@ export const NormalTable: React.FC<NormalTableProps> = ({
     style={{ width: 'max-content', minWidth: '100%' }}
     className="text-left border-collapse whitespace-nowrap text-xs"
   >
-    <thead className="sticky top-0 bg-[var(--background-base)] z-10">
+    <thead className="sticky top-0 bg-background-base z-10">
       {thead}
     </thead>
     <tbody>
       {Array.from({ length: rowCount }, (_, i) => (
-        <tr key={i} className="hover:bg-[var(--background-hover)]">
+        <tr key={i} className="hover:bg-background-hover transition-colors duration-150">
           {renderRow(i)}
         </tr>
       ))}

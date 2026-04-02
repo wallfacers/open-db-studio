@@ -82,14 +82,14 @@ export function TablePickerModal({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-[var(--background-base)] border border-[var(--border-strong)] rounded-lg shadow-2xl flex flex-col"
+        className="bg-background-base border border-border-strong rounded-lg shadow-2xl flex flex-col"
         style={{ width: '100%', maxWidth: 480 }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-strong)]">
-          <span className="text-sm font-medium text-[var(--foreground-default)]">{t('metricsExplorer.tablePicker.title')}</span>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-strong">
+          <span className="text-sm font-medium text-foreground-default">{t('metricsExplorer.tablePicker.title')}</span>
           <button
-            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+            className="text-foreground-muted hover:text-foreground-default transition-colors"
             onClick={onClose}
             aria-label="关闭"
           >
@@ -99,26 +99,26 @@ export function TablePickerModal({
 
         {/* Scope label */}
         {scopeLabel && (
-          <div className="px-4 pt-3 pb-1 text-xs text-[var(--foreground-muted)]">{scopeLabel}</div>
+          <div className="px-4 pt-3 pb-1 text-xs text-foreground-muted">{scopeLabel}</div>
         )}
 
         {/* Table list */}
         <div className="flex-1 overflow-y-auto px-2 py-1" style={{ maxHeight: 320 }}>
           {loading && (
-            <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">{t('metricsExplorer.loading')}</div>
+            <div className="py-6 text-center text-sm text-foreground-muted">{t('metricsExplorer.loading')}</div>
           )}
           {!loading && error && (
-            <div className="py-4 px-3 text-sm text-[var(--error)]">{error}</div>
+            <div className="py-4 px-3 text-sm text-error">{error}</div>
           )}
           {!loading && !error && tables.length === 0 && (
-            <div className="py-6 text-center text-sm text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.noTables')}</div>
+            <div className="py-6 text-center text-sm text-foreground-muted">{t('metricsExplorer.tablePicker.noTables')}</div>
           )}
           {!loading && !error && tables.map((table) => {
             const isChecked = selected.has(table.name);
             return (
               <div
                 key={table.name}
-                className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[var(--background-hover)] select-none"
+                className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-background-hover select-none transition-colors duration-150"
                 onClick={() => toggleRow(table.name)}
               >
                 <input
@@ -126,10 +126,10 @@ export function TablePickerModal({
                   checked={isChecked}
                   onChange={() => toggleRow(table.name)}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-shrink-0 cursor-pointer accent-[var(--accent)]"
+                  className="flex-shrink-0 cursor-pointer accent-accent"
                 />
-                <span className="flex-1 text-sm text-[var(--foreground-default)] truncate">{table.name}</span>
-                <span className="text-xs text-[var(--foreground-muted)] flex-shrink-0">
+                <span className="flex-1 text-sm text-foreground-default truncate">{table.name}</span>
+                <span className="text-xs text-foreground-muted flex-shrink-0">
                   ({t('metricsExplorer.tablePicker.columns', { count: table.column_count })})
                 </span>
               </div>
@@ -138,18 +138,18 @@ export function TablePickerModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[var(--border-strong)] px-4 py-3 flex flex-col gap-2">
+        <div className="border-t border-border-strong px-4 py-3 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.selected', { count: selected.size })}</span>
+              <span className="text-xs text-foreground-muted">{t('metricsExplorer.tablePicker.selected', { count: selected.size })}</span>
               <button
-                className="text-xs text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors"
+                className="text-xs text-foreground-muted hover:text-accent transition-colors"
                 onClick={selectAll}
               >
                 {t('metricsExplorer.tablePicker.selectAll')}
               </button>
               <button
-                className="text-xs text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors"
+                className="text-xs text-foreground-muted hover:text-accent transition-colors"
                 onClick={clearAll}
               >
                 {t('metricsExplorer.tablePicker.deselectAll')}
@@ -157,13 +157,13 @@ export function TablePickerModal({
             </div>
             <div className="flex items-center gap-2">
               <button
-                className="px-3 py-1.5 rounded text-xs bg-[var(--background-panel)] text-[var(--foreground-muted)] hover:bg-[var(--background-hover)] transition-colors"
+                className="px-3 py-1.5 rounded text-xs bg-background-panel text-foreground-muted hover:bg-background-hover transition-colors"
                 onClick={onClose}
               >
                 {t('common.cancel')}
               </button>
               <button
-                className="px-3 py-1.5 rounded text-xs bg-[var(--accent)] text-black hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 rounded text-xs bg-accent text-black hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 disabled={selected.size === 0}
                 onClick={() => onConfirm(Array.from(selected), goToTasks)}
               >
@@ -176,9 +176,9 @@ export function TablePickerModal({
               type="checkbox"
               checked={goToTasks}
               onChange={(e) => setGoToTasks(e.target.checked)}
-              className="accent-[var(--accent)] cursor-pointer"
+              className="accent-accent cursor-pointer"
             />
-            <span className="text-xs text-[var(--foreground-muted)]">{t('metricsExplorer.tablePicker.goToTasks')}</span>
+            <span className="text-xs text-foreground-muted">{t('metricsExplorer.tablePicker.goToTasks')}</span>
           </label>
         </div>
       </div>

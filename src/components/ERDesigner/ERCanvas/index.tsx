@@ -438,7 +438,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
 
   return (
     <div className="flex-1 flex min-h-0">
-    <div className="flex-1 flex flex-col min-h-0 bg-[var(--background-base)]">
+    <div className="flex-1 flex flex-col min-h-0 bg-background-base">
       <ERToolbar
         projectId={projectId}
         onOpenDDL={() => setShowDDL(true)}

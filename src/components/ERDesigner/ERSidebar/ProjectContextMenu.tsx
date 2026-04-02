@@ -139,7 +139,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     return createPortal(
       <div
         ref={menuRef}
-        className="fixed bg-[var(--background-base)] border border-[var(--border-default)] rounded-md shadow-lg p-2 z-[200] min-w-[180px]"
+        className="fixed bg-background-base border border-border-default rounded-md shadow-lg p-2 z-[200] min-w-[180px]"
         style={{ left: x, top: y }}
       >
         <input
@@ -149,7 +149,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
           onChange={(e) => setRenameName(e.target.value)}
           onKeyDown={handleRenameKeyDown}
           onBlur={handleRenameConfirm}
-          className="w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] focus:outline-none focus:border-[var(--accent)]"
+          className="w-full bg-background-hover border border-border-strong rounded px-2 py-1 text-xs text-foreground-default focus:outline-none focus:border-accent"
         />
       </div>,
       document.body
@@ -176,21 +176,21 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed bg-[var(--background-base)] border border-[var(--border-default)] rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
+      className="fixed bg-background-base border border-border-default rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
       style={{ left: x, top: y }}
     >
       {menuItems.map((item, idx) => {
         if (item.type === 'divider') {
-          return <div key={idx} className="h-px bg-[var(--border-default)] my-1" />;
+          return <div key={idx} className="h-px bg-border-default my-1" />;
         }
         if (item.show === false) return null;
         return (
           <div
             key={idx}
-            className={`flex items-center px-3 py-1.5 cursor-pointer text-xs ${
+            className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors duration-150 ${
               item.danger
-                ? 'text-[var(--error)] hover:bg-[var(--danger-hover-bg)]'
-                : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)]'
+                ? 'text-error hover:bg-danger-hover-bg'
+                : 'text-foreground-default hover:bg-background-hover'
             }`}
             onClick={item.onClick}
           >

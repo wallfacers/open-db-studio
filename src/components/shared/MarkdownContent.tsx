@@ -47,17 +47,17 @@ const CodeExpandModal: React.FC<{
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* 弹框头部 */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--background-code)] border-b border-[var(--border-default)] flex-shrink-0">
-          <span className="text-xs text-[var(--foreground-muted)] font-mono">{language || 'plaintext'}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-background-code border-b border-border-default flex-shrink-0">
+          <span className="text-xs text-foreground-muted font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+              className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
             >
               {copied ? (
-                <><Check size={13} className="text-[var(--accent)]" /><span className="text-[var(--accent)]">{t('commonComponents.markdownContent.copied')}</span></>
+                <><Check size={13} className="text-accent" /><span className="text-accent">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
                 <><Copy size={13} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
@@ -65,7 +65,7 @@ const CodeExpandModal: React.FC<{
             <Tooltip content={t('commonComponents.markdownContent.close')} className="contents">
               <button
                 onClick={onClose}
-                className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+                className="text-foreground-muted hover:text-foreground-default transition-colors"
               >
                 <X size={16} />
               </button>
@@ -117,24 +117,24 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
 
   return (
     <>
-      <div className="my-2 rounded overflow-hidden border border-[var(--border-default)]">
-        <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--background-code)] border-b border-[var(--border-default)]">
-          <span className="text-xs text-[var(--foreground-muted)] font-mono">{language || 'plaintext'}</span>
+      <div className="my-2 rounded overflow-hidden border border-border-default">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-background-code border-b border-border-default">
+          <span className="text-xs text-foreground-muted font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <Tooltip content={t('commonComponents.markdownContent.expandView')} className="contents">
               <button
                 onClick={() => setExpanded(true)}
-                className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+                className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
               >
                 <Maximize2 size={12} />
               </button>
             </Tooltip>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+              className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
             >
               {copied ? (
-                <><Check size={12} className="text-[var(--accent)]" /><span className="text-[var(--accent)]">{t('commonComponents.markdownContent.copied')}</span></>
+                <><Check size={12} className="text-accent" /><span className="text-accent">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
                 <><Copy size={12} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
@@ -176,7 +176,7 @@ function makeMdComponents(isStreaming: boolean) {
       return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
     }
     return (
-      <code className="bg-[var(--background-panel)] text-[var(--node-table)] px-1 py-0.5 rounded text-xs font-mono" {...props}>
+      <code className="bg-background-panel text-node-table px-1 py-0.5 rounded text-xs font-mono" {...props}>
         {children}
       </code>
     );
@@ -191,22 +191,22 @@ function makeMdComponents(isStreaming: boolean) {
     return <ol className="list-decimal space-y-1 mb-2 pl-5">{children}</ol>;
   },
   li({ children }: React.ComponentPropsWithoutRef<'li'>) {
-    return <li className="text-[var(--foreground-default)] [&>p]:inline">{children}</li>;
+    return <li className="text-foreground-default [&>p]:inline">{children}</li>;
   },
   h1({ children }: React.ComponentPropsWithoutRef<'h1'>) {
-    return <h1 className="text-base font-semibold text-[var(--foreground)] mb-2 mt-3 first:mt-0">{children}</h1>;
+    return <h1 className="text-base font-semibold text-foreground mb-2 mt-3 first:mt-0">{children}</h1>;
   },
   h2({ children }: React.ComponentPropsWithoutRef<'h2'>) {
-    return <h2 className="text-sm font-semibold text-[var(--foreground)] mb-2 mt-3 first:mt-0">{children}</h2>;
+    return <h2 className="text-sm font-semibold text-foreground mb-2 mt-3 first:mt-0">{children}</h2>;
   },
   h3({ children }: React.ComponentPropsWithoutRef<'h3'>) {
-    return <h3 className="text-sm font-medium text-[var(--foreground)] mb-1 mt-2 first:mt-0">{children}</h3>;
+    return <h3 className="text-sm font-medium text-foreground mb-1 mt-2 first:mt-0">{children}</h3>;
   },
   strong({ children }: React.ComponentPropsWithoutRef<'strong'>) {
-    return <strong className="font-semibold text-[var(--foreground)]">{children}</strong>;
+    return <strong className="font-semibold text-foreground">{children}</strong>;
   },
   blockquote({ children }: React.ComponentPropsWithoutRef<'blockquote'>) {
-    return <blockquote className="border-l-2 border-[var(--border-strong)] pl-3 text-[var(--foreground-muted)] italic my-2">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-border-strong pl-3 text-foreground-muted italic my-2">{children}</blockquote>;
   },
   table({ children }: React.ComponentPropsWithoutRef<'table'>) {
     return (
@@ -216,10 +216,10 @@ function makeMdComponents(isStreaming: boolean) {
     );
   },
   th({ children }: React.ComponentPropsWithoutRef<'th'>) {
-    return <th className="border border-[var(--border-default)] bg-[var(--background-panel)] px-2 py-1 text-left font-medium text-[var(--foreground-default)]">{children}</th>;
+    return <th className="border border-border-default bg-background-panel px-2 py-1 text-left font-medium text-foreground-default">{children}</th>;
   },
   td({ children }: React.ComponentPropsWithoutRef<'td'>) {
-    return <td className="border border-[var(--border-default)] px-2 py-1 text-[var(--foreground-default)]">{children}</td>;
+    return <td className="border border-border-default px-2 py-1 text-foreground-default">{children}</td>;
   },
   };
 }

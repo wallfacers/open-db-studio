@@ -54,13 +54,13 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
     <div className="flex flex-col h-full">
       {/* 搜索栏 */}
       <div className="flex items-center gap-2 mb-2">
-        <div className="flex-1 flex items-center gap-1.5 bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5">
-          <Search size={13} className="text-[var(--foreground-muted)] flex-shrink-0" />
+        <div className="flex-1 flex items-center gap-1.5 bg-background-hover border border-border-strong rounded px-3 py-1.5">
+          <Search size={13} className="text-foreground-muted flex-shrink-0" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('tableSelector.searchPlaceholder')}
-            className="flex-1 bg-transparent text-sm text-[var(--foreground)] placeholder-[var(--foreground-ghost)] outline-none"
+            className="flex-1 bg-transparent text-sm text-foreground placeholder-foreground-ghost outline-none"
           />
         </div>
       </div>
@@ -68,21 +68,21 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
       {/* 表格 */}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
-          <thead className="sticky top-0 bg-[var(--background-base)] z-10">
+          <thead className="sticky top-0 bg-background-base z-10">
             <tr>
-              <th className="w-8 px-2 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-muted)] font-normal">
+              <th className="w-8 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal">
                 <input
                   ref={headerCheckboxRef}
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleAll}
-                  className="accent-[var(--accent)] cursor-pointer"
+                  className="accent-accent cursor-pointer"
                   title={allSelected ? t('tableSelector.deselectAll') : t('tableSelector.selectAll')}
                 />
               </th>
-              <th className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal">{t('tableSelector.colName')}</th>
-              <th className="w-28 px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal text-right">{t('tableSelector.colRows')}</th>
-              <th className="w-24 px-3 py-1.5 border-b border-[var(--border-default)] text-[var(--foreground-default)] font-normal text-right">{t('tableSelector.colSize')}</th>
+              <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal">{t('tableSelector.colName')}</th>
+              <th className="w-28 px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal text-right">{t('tableSelector.colRows')}</th>
+              <th className="w-24 px-3 py-1.5 border-b border-border-default text-foreground-default font-normal text-right">{t('tableSelector.colSize')}</th>
             </tr>
           </thead>
           <tbody>
@@ -90,29 +90,29 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
               <tr
                 key={t.name}
                 onClick={() => toggleTable(t.name)}
-                className={`border-b border-[var(--border-default)] cursor-pointer hover:bg-[var(--background-hover)] ${selected.includes(t.name) ? 'bg-[var(--background-active)]' : ''}`}
+                className={`border-b border-border-default cursor-pointer hover:bg-background-hover transition-colors duration-150 ${selected.includes(t.name) ? 'bg-background-active' : ''}`}
               >
-                <td className="px-2 py-1.5 border-r border-[var(--border-default)]">
+                <td className="px-2 py-1.5 border-r border-border-default">
                   <input
                     type="checkbox"
                     checked={selected.includes(t.name)}
                     onChange={() => toggleTable(t.name)}
                     onClick={(e) => e.stopPropagation()}
-                    className="accent-[var(--accent)]"
+                    className="accent-accent"
                   />
                 </td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground)] max-w-[200px] truncate">{t.name}</td>
-                <td className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)] text-right">
+                <td className="px-3 py-1.5 border-r border-border-default text-foreground max-w-[200px] truncate">{t.name}</td>
+                <td className="px-3 py-1.5 border-r border-border-default text-foreground-muted text-right">
                   {t.rowCount ? t.rowCount.toLocaleString() : '-'}
                 </td>
-                <td className="px-3 py-1.5 text-[var(--foreground-muted)] text-right">{t.size ?? '-'}</td>
+                <td className="px-3 py-1.5 text-foreground-muted text-right">{t.size ?? '-'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <div className="text-sm text-[var(--foreground-muted)] mt-2 pt-2 border-t border-[var(--border-strong)]">
+      <div className="text-sm text-foreground-muted mt-2 pt-2 border-t border-border-strong">
         {t('tableSelector.selectedCount', { selected: selected.length, total: tables.length })}
       </div>
     </div>

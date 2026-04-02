@@ -177,20 +177,20 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-[var(--background-base)] border border-[var(--border-default)] rounded shadow-xl py-1 min-w-[160px]"
+      className="fixed z-50 bg-background-base border border-border-default rounded shadow-xl py-1 min-w-[160px]"
       style={{ left: pos.left, top: pos.top, visibility: pos.visible ? 'visible' : 'hidden' }}
     >
       {items.map((item) => (
         <React.Fragment key={item.label}>
-          {item.dividerBefore && <div className="h-px bg-[var(--border-strong)] my-1" />}
+          {item.dividerBefore && <div className="h-px bg-border-strong my-1" />}
           <button
             disabled={item.disabled}
-            className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${
+            className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors duration-150 ${
               item.disabled
-                ? 'opacity-40 cursor-not-allowed text-[var(--foreground-muted)]'
+                ? 'opacity-40 cursor-not-allowed text-foreground-muted'
                 : item.danger
-                ? 'text-[var(--error)] hover:bg-[var(--background-hover)] hover:text-[var(--error-foreground)]'
-                : 'text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]'
+                ? 'text-error hover:bg-background-hover hover:text-error-foreground'
+                : 'text-foreground-default hover:bg-background-hover hover:text-foreground'
             }`}
             onClick={() => { if (!item.disabled) { onClose(); item.onClick(); } }}
           >

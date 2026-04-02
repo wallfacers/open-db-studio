@@ -42,27 +42,27 @@ export const DdlViewerDialog: React.FC<Props> = ({
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[640px] max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
-          <span className="text-[var(--foreground-default)] text-sm font-medium">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[640px] max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <span className="text-foreground-default text-sm font-medium">
             {t('ddlViewer.title')} — {tableName}
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] bg-[var(--background-hover)] rounded"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-foreground-muted hover:text-foreground-default bg-background-hover rounded transition-colors duration-200"
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
               {copied ? t('ddlViewer.copied') : t('ddlViewer.copy')}
             </button>
-            <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]">
+            <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200">
               <X size={16} />
             </button>
           </div>
         </div>
         <textarea
           readOnly
-          className="flex-1 m-4 bg-[var(--background-base)] border border-[var(--border-default)] rounded p-3 font-mono text-xs text-[var(--foreground-default)] outline-none resize-none min-h-[300px]"
+          className="flex-1 m-4 bg-background-base border border-border-default rounded p-3 font-mono text-xs text-foreground-default outline-none resize-none min-h-[300px]"
           value={ddl}
           spellCheck={false}
         />

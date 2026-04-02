@@ -43,30 +43,30 @@ export const ConfirmDialog: React.FC = () => {
   const Icon = isDanger ? AlertTriangle : Info;
 
   const confirmCls = isDanger
-    ? 'px-4 py-1.5 text-xs rounded bg-[var(--error)]/80 hover:bg-[var(--error)] text-[var(--foreground)] transition-colors'
-    : 'px-4 py-1.5 text-xs rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] transition-colors';
+    ? 'px-4 py-1.5 text-xs rounded bg-error/80 hover:bg-error text-foreground transition-colors'
+    : 'px-4 py-1.5 text-xs rounded bg-accent hover:bg-accent-hover text-foreground transition-colors';
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
       onMouseDown={(e) => { if (e.target === e.currentTarget) _cancel(); }}
     >
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[360px] p-5 flex flex-col gap-4">
+      <div className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-[360px] p-5 flex flex-col gap-4">
         {/* 标题行 */}
         <div className="flex items-center gap-2.5">
-          <div className={`flex-shrink-0 p-1.5 rounded-full ${isDanger ? 'bg-[var(--error-subtle)]' : 'bg-[var(--background-panel)]'}`}>
+          <div className={`flex-shrink-0 p-1.5 rounded-full ${isDanger ? 'bg-error-subtle' : 'bg-background-panel'}`}>
             <Icon
               size={16}
-              className={isDanger ? 'text-[var(--error)]' : 'text-[var(--accent)]'}
+              className={isDanger ? 'text-error' : 'text-accent'}
             />
           </div>
-          <span className="text-[var(--foreground)] font-medium text-sm">
+          <span className="text-foreground font-medium text-sm">
             {pending.title ?? (isDanger ? t('common.confirmTitle') : t('common.infoTitle'))}
           </span>
         </div>
 
         {/* 内容 */}
-        <p className="text-[var(--foreground)] text-[13px] leading-relaxed pl-[38px]">
+        <p className="text-foreground text-[13px] leading-relaxed pl-[38px]">
           {pending.message}
         </p>
 
@@ -75,7 +75,7 @@ export const ConfirmDialog: React.FC = () => {
           <button
             ref={cancelBtnRef}
             onClick={_cancel}
-            className="px-4 py-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+            className="px-4 py-1.5 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
           >
             {pending.cancelLabel ?? t('common.cancel')}
           </button>

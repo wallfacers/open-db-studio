@@ -29,11 +29,11 @@ type StatusFilter = 'all' | 'draft' | 'approved' | 'rejected';
 const statusBadge = (status: string) => {
   switch (status) {
     case 'approved':
-      return 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]/30';
+      return 'bg-accent-subtle text-accent border border-accent/30';
     case 'rejected':
-      return 'bg-[var(--error-subtle)] text-[var(--error)] border border-[var(--error)]/30';
+      return 'bg-error-subtle text-error border border-error/30';
     default:
-      return 'bg-[var(--border-default)] text-[var(--foreground-muted)] border border-[var(--border-strong)]';
+      return 'bg-border-default text-foreground-muted border border-border-strong';
   }
 };
 
@@ -111,9 +111,9 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
 
   if (connectionId === null) {
     return (
-      <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-panel)] items-center justify-center">
-        <BarChart2 size={40} className="text-[var(--border-strong)] mb-3" />
-        <p className="text-[var(--foreground-muted)] text-sm">{t('metricsExplorer.noConnections')}</p>
+      <div className="flex-1 flex flex-col min-w-0 bg-background-panel items-center justify-center">
+        <BarChart2 size={40} className="text-border-strong mb-3" />
+        <p className="text-foreground-muted text-sm">{t('metricsExplorer.noConnections')}</p>
       </div>
     );
   }
@@ -128,18 +128,18 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[var(--background-panel)] overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-background-panel overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)] flex-shrink-0">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border-default flex-shrink-0">
         <div className="flex items-center gap-2">
-          <BarChart2 size={18} className="text-[var(--accent)]" />
-          <h2 className="text-[var(--foreground)] font-semibold text-base">{t('metricsExplorer.title')}</h2>
+          <BarChart2 size={18} className="text-accent" />
+          <h2 className="text-foreground font-semibold text-base">{t('metricsExplorer.title')}</h2>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleAiGenerate}
             disabled={isGenerating}
-            className="flex items-center gap-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors px-3 py-1.5 bg-[var(--background-hover)] hover:bg-[var(--border-strong)] rounded border border-[var(--border-strong)] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 text-xs text-foreground-muted hover:text-foreground-default transition-colors px-3 py-1.5 bg-background-hover hover:bg-border-strong rounded border border-border-strong disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isGenerating
               ? <Loader2 size={13} className="animate-spin" />
@@ -149,7 +149,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
           </button>
           <button
             onClick={() => {/* TODO: open create dialog */}}
-            className="flex items-center gap-1.5 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors px-3 py-1.5 bg-[var(--background-hover)] hover:bg-[var(--border-strong)] rounded border border-[var(--border-strong)]"
+            className="flex items-center gap-1.5 text-xs text-foreground-muted hover:text-foreground-default transition-colors px-3 py-1.5 bg-background-hover hover:bg-border-strong rounded border border-border-strong"
           >
             <Plus size={13} />
             {t('metricsExplorer.metricList.add')}
@@ -158,7 +158,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex border-b border-[var(--border-default)] flex-shrink-0 px-6">
+      <div className="flex border-b border-border-default flex-shrink-0 px-6">
         {(['all', 'draft', 'approved', 'rejected'] as const).map((tab) => {
           const labelMap: Record<StatusFilter, string> = {
             all: t('metricsExplorer.metricList.all'),
@@ -172,8 +172,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
               onClick={() => setFilter(tab)}
               className={`px-4 py-2.5 text-sm transition-colors ${
                 filter === tab
-                  ? 'text-[var(--accent)] border-b-2 border-[var(--accent)]'
-                  : 'text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]'
+                  ? 'text-accent border-b-2 border-accent'
+                  : 'text-foreground-muted hover:text-foreground-default'
               }`}
             >
               {labelMap[tab]}
@@ -186,45 +186,45 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-32">
-            <Loader2 size={24} className="animate-spin text-[var(--foreground-muted)]" />
+            <Loader2 size={24} className="animate-spin text-foreground-muted" />
           </div>
         ) : filteredMetrics.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-[var(--foreground-muted)] text-sm">
-            <BarChart2 size={28} className="mb-2 text-[var(--border-strong)]" />
+          <div className="flex flex-col items-center justify-center h-32 text-foreground-muted text-sm">
+            <BarChart2 size={28} className="mb-2 text-border-strong" />
             {t('metricsExplorer.metricList.noMetrics')}
           </div>
         ) : (
-          <div className="divide-y divide-[var(--border-default)]">
+          <div className="divide-y divide-border-default">
             {filteredMetrics.map((metric) => (
               <div
                 key={metric.id}
-                className="flex items-center px-6 py-3 hover:bg-[var(--background-base)] transition-colors group"
+                className="flex items-center px-6 py-3 hover:bg-background-base transition-colors group"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[var(--foreground-default)] text-sm font-medium truncate">
+                    <span className="text-foreground-default text-sm font-medium truncate">
                       {metric.display_name}
                     </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${statusBadge(metric.status)}`}>
                       {statusLabel(metric.status)}
                     </span>
                     {metric.source === 'ai' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--info-subtle)] text-[var(--data-indigo)] border border-[var(--data-indigo)]/30 flex-shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-info-subtle text-data-indigo border border-data-indigo/30 flex-shrink-0">
                         AI
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 text-[11px] text-[var(--foreground-muted)]">
+                  <div className="flex items-center gap-3 text-[11px] text-foreground-muted">
                     <span>{metric.table_name}</span>
                     {metric.aggregation && (
                       <>
-                        <span className="text-[var(--border-strong)]">·</span>
+                        <span className="text-border-strong">·</span>
                         <span>{metric.aggregation}</span>
                       </>
                     )}
                     {metric.column_name && (
                       <>
-                        <span className="text-[var(--border-strong)]">·</span>
+                        <span className="text-border-strong">·</span>
                         <span>{metric.column_name}</span>
                       </>
                     )}
@@ -238,7 +238,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                       <Tooltip content={t('metricsExplorer.metricsTree.open')} className="contents">
                         <button
                           onClick={() => handleApprove(metric.id)}
-                          className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-subtle)] transition-colors"
+                          className="p-1.5 rounded text-foreground-muted hover:text-accent hover:bg-accent-subtle transition-colors"
                         >
                           <Check size={14} />
                         </button>
@@ -246,7 +246,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                       <Tooltip content={t('metricsExplorer.metricList.rejected')} className="contents">
                         <button
                           onClick={() => handleReject(metric.id)}
-                          className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors"
+                          className="p-1.5 rounded text-foreground-muted hover:text-error hover:bg-error-subtle transition-colors"
                         >
                           <X size={14} />
                         </button>
@@ -256,7 +256,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ connectionId }) => {
                   <Tooltip content={t('metricsExplorer.metricList.delete')} className="contents">
                     <button
                       onClick={() => handleDelete(metric.id)}
-                      className="p-1.5 rounded text-[var(--foreground-muted)] hover:text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors"
+                      className="p-1.5 rounded text-foreground-muted hover:text-error hover:bg-error-subtle transition-colors"
                     >
                       <Trash2 size={14} />
                     </button>

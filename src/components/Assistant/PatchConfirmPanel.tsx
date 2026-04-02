@@ -10,28 +10,28 @@ const PATCH_TIMEOUT_MS = 60_000 // auto-reject after 60s
 function OpLine({ op }: { op: JsonPatchOp }) {
   const label = { add: '+', remove: '-', replace: '~', move: '>', copy: '=', test: '?' }[op.op] ?? '?'
   const colorMap: Record<string, string> = {
-    add: 'text-[var(--success)]',
-    remove: 'text-[var(--error)]',
-    replace: 'text-[var(--diff-modify)]',
-    move: 'text-[var(--data-purple)]',
-    copy: 'text-[var(--foreground-muted)]',
-    test: 'text-[var(--warning)]',
+    add: 'text-success',
+    remove: 'text-error',
+    replace: 'text-diff-modify',
+    move: 'text-data-purple',
+    copy: 'text-foreground-muted',
+    test: 'text-warning',
   }
   const bgMap: Record<string, string> = {
-    add: 'bg-[var(--diff-add-bg)]',
-    remove: 'bg-[var(--diff-remove-bg)]',
-    replace: 'bg-[var(--diff-modify-bg)]',
-    test: 'bg-[var(--warning-subtle)]',
+    add: 'bg-diff-add-bg',
+    remove: 'bg-diff-remove-bg',
+    replace: 'bg-diff-modify-bg',
+    test: 'bg-warning-subtle',
   }
-  const colorClass = colorMap[op.op] ?? 'text-[var(--foreground-muted)]'
+  const colorClass = colorMap[op.op] ?? 'text-foreground-muted'
   const bgClass = bgMap[op.op] ?? ''
 
   return (
     <div className={`flex items-start gap-2 px-3 py-0.5 font-mono text-xs ${bgClass}`}>
       <span className={`select-none w-3 flex-shrink-0 font-bold ${colorClass}`}>{label}</span>
-      <span className="text-[var(--foreground-muted)]">{op.path}</span>
+      <span className="text-foreground-muted">{op.path}</span>
       {op.value !== undefined && (
-        <span className="text-[var(--foreground-default)]">
+        <span className="text-foreground-default">
           {typeof op.value === 'object' ? JSON.stringify(op.value) : String(op.value)}
         </span>
       )}
@@ -55,16 +55,16 @@ export const PatchConfirmPanel: React.FC = () => {
   if (!pending) return null
 
   return (
-    <div className="border-t border-[var(--border-default)] bg-[var(--background-base)]">
+    <div className="border-t border-border-default bg-background-base">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
-        <span className="text-xs font-medium text-[var(--foreground-default)]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
+        <span className="text-xs font-medium text-foreground-default">
           AI Patch: <strong>{pending.objectType}</strong>
         </span>
         <Tooltip content={t('common.cancel')} className="contents">
           <button
             onClick={reject}
-            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors"
+            className="text-foreground-muted hover:text-foreground-default transition-colors"
           >
             <X size={14} />
           </button>
@@ -73,7 +73,7 @@ export const PatchConfirmPanel: React.FC = () => {
 
       {/* Reason */}
       {pending.reason && (
-        <div className="px-3 py-1.5 text-xs text-[var(--foreground-muted)] bg-[var(--background-base)] border-b border-[var(--border-default)]">
+        <div className="px-3 py-1.5 text-xs text-foreground-muted bg-background-base border-b border-border-default">
           {pending.reason}
         </div>
       )}
@@ -84,16 +84,16 @@ export const PatchConfirmPanel: React.FC = () => {
       </div>
 
       {/* Action buttons */}
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[var(--border-default)]">
+      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-border-default">
         <button
           onClick={reject}
-          className="text-xs px-3 py-1 rounded border border-[var(--border-strong)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:border-[var(--foreground-muted)] transition-colors"
+          className="text-xs px-3 py-1 rounded border border-border-strong text-foreground-muted hover:text-foreground-default hover:border-foreground-muted transition-colors"
         >
           {t('common.cancel')}
         </button>
         <button
           onClick={confirm}
-          className="text-xs px-3 py-1 rounded bg-[var(--accent)] text-[var(--foreground)] hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-1"
+          className="text-xs px-3 py-1 rounded bg-accent text-foreground hover:bg-accent-hover transition-colors flex items-center gap-1"
         >
           <Check size={12} />
           {t('assistant.diffPanel.apply')}

@@ -58,32 +58,32 @@ export const TruncateConfirmDialog: React.FC<Props> = ({
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[420px] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
-          <span className="text-[var(--error)] text-sm font-medium flex items-center gap-2">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[420px] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <span className="text-error text-sm font-medium flex items-center gap-2">
             <AlertTriangle size={15} />
             {t('truncateConfirm.title')}
           </span>
-          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]">
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200">
             <X size={16} />
           </button>
         </div>
         <div className="p-5">
-          <p className="text-[var(--foreground-default)] text-sm">
+          <p className="text-foreground-default text-sm">
             {t('truncateConfirm.warning', { table: tableName })}
           </p>
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t border-[var(--border-default)]">
+        <div className="flex justify-end gap-2 p-4 border-t border-border-default">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] rounded text-xs"
+            className="px-3 py-1.5 bg-background-hover text-foreground-muted hover:text-foreground-default rounded text-xs transition-colors duration-200"
           >
             {t('common.cancel')}
           </button>
           <button
             onClick={handleTruncate}
             disabled={isLoading}
-            className="px-3 py-1.5 bg-[var(--error)]/80 text-[var(--foreground)] hover:bg-[var(--error)] rounded text-xs disabled:opacity-50"
+            className="px-3 py-1.5 bg-error/80 text-foreground hover:bg-error rounded text-xs disabled:opacity-50 transition-colors duration-200"
           >
             {isLoading ? t('common.executing') : t('truncateConfirm.confirm')}
           </button>

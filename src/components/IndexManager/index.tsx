@@ -68,15 +68,15 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[560px] max-h-[70vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border-default)]">
-          <span className="text-[var(--foreground-default)] text-sm font-medium">{t('indexManager.title')} — {tableName}</span>
-          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"><X size={16}/></button>
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[560px] max-h-[70vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <span className="text-foreground-default text-sm font-medium">{t('indexManager.title')} — {tableName}</span>
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200"><X size={16}/></button>
         </div>
         <div className="flex-1 overflow-auto p-4">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-[var(--foreground-muted)] border-b border-[var(--border-default)]">
+              <tr className="text-foreground-muted border-b border-border-default">
                 <th className="text-left py-1 pr-4">{t('indexManager.name')}</th>
                 <th className="text-left py-1 pr-4">{t('indexManager.columns')}</th>
                 <th className="text-left py-1 pr-4">{t('indexManager.unique')}</th>
@@ -85,12 +85,12 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
             </thead>
             <tbody>
               {indexes.map(idx => (
-                <tr key={idx.index_name} className="border-b border-[var(--border-default)] text-[var(--foreground-default)] hover:bg-[var(--background-hover)]">
+                <tr key={idx.index_name} className="border-b border-border-default text-foreground-default hover:bg-background-hover transition-colors duration-150">
                   <td className="py-1.5 pr-4">{idx.index_name}</td>
                   <td className="py-1.5 pr-4">{idx.columns.join(', ')}</td>
                   <td className="py-1.5 pr-4">{idx.is_unique ? '✓' : ''}</td>
                   <td>
-                    <button onClick={() => handleDrop(idx.index_name)} className="text-[var(--foreground-muted)] hover:text-[var(--error)] p-1">
+                    <button onClick={() => handleDrop(idx.index_name)} className="text-foreground-muted hover:text-error p-1 transition-colors duration-200">
                       <Trash2 size={12}/>
                     </button>
                   </td>
@@ -99,36 +99,36 @@ export const IndexManager: React.FC<Props> = ({ connectionId, tableName, onClose
             </tbody>
           </table>
           {isAdding && (
-            <div className="mt-3 p-3 bg-[var(--background-base)] border border-[var(--border-default)] rounded space-y-2">
+            <div className="mt-3 p-3 bg-background-base border border-border-default rounded space-y-2">
               <input
-                className="w-full bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)]"
+                className="w-full bg-background-panel border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
                 placeholder={t('indexManager.indexName')}
                 value={newIndex.name}
                 onChange={e => setNewIndex(p => ({...p, name: e.target.value}))}
               />
               <input
-                className="w-full bg-[var(--background-panel)] border border-[var(--border-strong)] rounded px-2 py-1 text-xs text-[var(--foreground-default)] outline-none focus:border-[var(--border-focus)]"
+                className="w-full bg-background-panel border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
                 placeholder={t('indexManager.columnsHint')}
                 value={newIndex.columns}
                 onChange={e => setNewIndex(p => ({...p, columns: e.target.value}))}
               />
-              <label className="flex items-center gap-2 text-xs text-[var(--foreground-default)]">
+              <label className="flex items-center gap-2 text-xs text-foreground-default">
                 <input type="checkbox" checked={newIndex.unique} onChange={e => setNewIndex(p => ({...p, unique: e.target.checked}))}/>
                 {t('indexManager.uniqueIndex')}
               </label>
               <div className="flex gap-2">
-                <button onClick={handleCreate} className="px-3 py-1 bg-[var(--primary)] text-[var(--foreground-default)] text-xs rounded">{t('common.create')}</button>
-                <button onClick={() => setIsAdding(false)} className="px-3 py-1 bg-[var(--background-hover)] text-[var(--foreground-muted)] text-xs rounded">{t('common.cancel')}</button>
+                <button onClick={handleCreate} className="px-3 py-1 bg-primary text-foreground-default text-xs rounded">{t('common.create')}</button>
+                <button onClick={() => setIsAdding(false)} className="px-3 py-1 bg-background-hover text-foreground-muted text-xs rounded">{t('common.cancel')}</button>
               </div>
             </div>
           )}
         </div>
-        <div className="p-3 border-t border-[var(--border-default)] flex justify-between">
+        <div className="p-3 border-t border-border-default flex justify-between">
           <button onClick={() => setIsAdding(true)} disabled={isAdding}
-            className="flex items-center gap-1 text-xs text-[var(--primary)] hover:opacity-80 disabled:opacity-30">
+            className="flex items-center gap-1 text-xs text-primary hover:opacity-80 disabled:opacity-30">
             <Plus size={12}/> {t('indexManager.addIndex')}
           </button>
-          <button onClick={onClose} className="px-3 py-1.5 bg-[var(--background-hover)] text-[var(--foreground-muted)] text-xs rounded">
+          <button onClick={onClose} className="px-3 py-1.5 bg-background-hover text-foreground-muted text-xs rounded">
             {t('common.close')}
           </button>
         </div>

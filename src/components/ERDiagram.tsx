@@ -181,7 +181,7 @@ export default function ERDiagram() {
   }, []);
 
   return (
-    <div className="w-full h-full bg-[var(--background-void)]" ref={reactFlowWrapper}>
+    <div className="w-full h-full bg-background-void" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -194,13 +194,13 @@ export default function ERDiagram() {
         fitViewOptions={{ maxZoom: 0.8, padding: 0.2 }}
         deleteKeyCode={['Backspace', 'Delete']}
         selectionKeyCode={['Shift', 'Meta', 'Control']}
-        defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: '#8bafc9', strokeWidth: 2 }, interactionWidth: 20 }}
-        className="bg-[var(--background-void)]"
+        defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: 'var(--key-foreign)', strokeWidth: 2 }, interactionWidth: 20 }}
+        className="bg-background-void"
       >
         <Background color="var(--border-default)" gap={20} size={1} />
         <Controls 
           showZoom={false} 
-          className="!bg-[var(--background-panel)] border border-[var(--border-strong)] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[var(--background-panel)] [&_button]:!border-b [&_button]:!border-[var(--border-strong)] [&_button:last-child]:!border-b-0 [&_button]:!fill-[var(--foreground-default)] hover:[&_button]:!bg-[var(--border-default)] hover:[&_button]:!fill-[var(--foreground)] hover:[&_button_svg]:text-[var(--foreground)] [&_button_svg]:text-[var(--foreground-default)]"
+          className="!bg-background-panel border border-border-strong shadow-lg rounded-md overflow-hidden [&_button]:!bg-background-panel [&_button]:!border-b [&_button]:!border-border-strong [&_button:last-child]:!border-b-0 [&_button]:!fill-foreground-default hover:[&_button]:!bg-border-default hover:[&_button]:!fill-foreground hover:[&_button_svg]:text-foreground [&_button_svg]:text-foreground-default"
         >
           <ControlButton onClick={onAddTable} title={t('erDiagram.addTable')}>
             <Plus size={16} strokeWidth={2.5} />

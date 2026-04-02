@@ -59,7 +59,7 @@ const TableScrollContainer = React.memo(({
   return (
     <div ref={scrollRef} className="flex-1 overflow-auto relative">
       {!hasData && (
-        <div className="absolute inset-0 flex items-center justify-center text-[var(--foreground-muted)] text-sm transition-opacity duration-200"
+        <div className="absolute inset-0 flex items-center justify-center text-foreground-muted text-sm transition-opacity duration-200"
           style={{ opacity: isLoading ? 0.5 : 1 }}>
           {isLoading ? t('tableDataView.loading') : t('tableDataView.noData')}
         </div>
@@ -67,7 +67,7 @@ const TableScrollContainer = React.memo(({
       {hasData && (
         <>
           <div
-            className="absolute inset-0 bg-[var(--background-void)]/40 z-10 pointer-events-none transition-opacity duration-200"
+            className="absolute inset-0 bg-background-void/40 z-10 pointer-events-none transition-opacity duration-200"
             style={{ opacity: isLoading ? 1 : 0, visibility: isLoading ? 'visible' : 'hidden' }}
           />
           {useVirtual ? (
@@ -400,8 +400,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   };
 
   const rowBgClass = useCallback((rowIdx: number) => {
-    if (isRowDeleted(rowIdx)) return 'bg-[var(--error-subtle)]';
-    if (pending.edits.some(e => e.rowIdx === rowIdx)) return 'bg-[var(--warning-subtle)]';
+    if (isRowDeleted(rowIdx)) return 'bg-error-subtle';
+    if (pending.edits.some(e => e.rowIdx === rowIdx)) return 'bg-warning-subtle';
     return '';
   }, [pending.edits, isRowDeleted]);
 
@@ -415,19 +415,19 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       if (!row) return null;
       return (
         <>
-          <td style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-[var(--border-default)] text-[var(--success)] text-center text-xs select-none">
+          <td style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-b border-border-default text-success text-center text-xs select-none">
             <Tooltip content={t('tableDataView.deleteRowMenuItem')} className="contents">
               <button
                 onClick={() => removeClonedRow(cloneIdx)}
-                className="text-[var(--error)] hover:text-[var(--error-foreground)] leading-none"
+                className="text-error hover:text-error-foreground leading-none transition-colors duration-200"
               >×</button>
             </Tooltip>
           </td>
           {row.map((cell, ji) => {
             const w = colWidths[ji] ?? 150;
             return (
-              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 text-[var(--success)] border-r border-b border-[var(--border-default)] overflow-hidden">
-                <div className="truncate">{cell === null ? <span className="text-[var(--foreground-muted)]">NULL</span> : String(cell)}</div>
+              <td key={ji} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 text-success border-r border-b border-border-default overflow-hidden">
+                <div className="truncate">{cell === null ? <span className="text-foreground-muted">NULL</span> : String(cell)}</div>
               </td>
             );
           })}
@@ -440,7 +440,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       <>
         <td
           style={{ flex: '0 0 40px', minWidth: '40px' }}
-          className={`px-2 py-1.5 border-r border-b border-[var(--border-default)] text-[var(--foreground-muted)] text-center text-xs cursor-default select-none ${rowBgClass(ri)}`}
+          className={`px-2 py-1.5 border-r border-b border-border-default text-foreground-muted text-center text-xs cursor-default select-none ${rowBgClass(ri)}`}
           onContextMenu={e => handleContextMenu(e, ri, -1, 'row')}
         >
           {(page - 1) * pageSize + ri + 1}
@@ -474,8 +474,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         : t('tableDataView.sortAsc')
       }>
         <button
-          className={`flex-shrink-0 leading-none transition-colors ${
-            sortCol === col ? 'text-[var(--accent)]' : 'text-[var(--foreground-ghost)] hover:text-[var(--foreground-muted)]'
+          className={`flex-shrink-0 leading-none transition-colors duration-200 ${
+            sortCol === col ? 'text-accent' : 'text-foreground-ghost hover:text-foreground-muted'
           }`}
           onClick={() => {
             if (sortCol !== col) { setSortCol(col); setSortDir('ASC'); }
@@ -494,13 +494,13 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   // flex 布局版（VirtualTable 使用）
   const thead = useMemo(() => data ? (
     <tr style={{ display: 'flex', borderBottom: '1px solid var(--border-default)' }}>
-      <th style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-muted)] font-normal">
+      <th style={{ flex: '0 0 40px', minWidth: '40px' }} className="px-2 py-1.5 border-r border-border-default text-foreground-muted font-normal">
         {t('tableDataView.serialNo')}
       </th>
       {data.columns.map((col, ci) => {
         const w = colWidths[ci] ?? 150;
         return (
-          <th key={col} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal group/th overflow-hidden">
+          <th key={col} style={{ flex: `0 0 ${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` }} className="px-3 py-1.5 border-r border-border-default text-foreground-default font-normal group/th overflow-hidden">
             {colSortButtons(col)}
           </th>
         );
@@ -511,13 +511,13 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   // 标准表格布局版（NormalTable 使用）
   const normalThead = useMemo(() => data ? (
     <tr>
-      <th className="w-10 px-2 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-muted)] font-normal text-center">
+      <th className="w-10 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal text-center">
         {t('tableDataView.serialNo')}
       </th>
       {data.columns.map((col, ci) => {
         const w = colWidths[ci] ?? 150;
         return (
-          <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[var(--border-default)] text-[var(--foreground-default)] font-normal group/th overflow-hidden">
+          <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal group/th overflow-hidden">
             {colSortButtons(col)}
           </th>
         );
@@ -528,15 +528,15 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   const hasData = !!(data && (data.rows.length > 0 || pending.clonedRows.length > 0));
 
   return (
-    <div className="flex-1 flex flex-col bg-[var(--background-void)] overflow-hidden min-h-0">
+    <div className="flex-1 flex flex-col bg-background-void overflow-hidden min-h-0">
       {/* Toolbar */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-[var(--border-default)] bg-[var(--background-void)] text-xs">
-        <div className="flex items-center space-x-2 text-[var(--foreground-muted)]">
+      <div className="h-10 flex items-center justify-between px-3 border-b border-border-default bg-background-void text-xs">
+        <div className="flex items-center space-x-2 text-foreground-muted">
           <Tooltip content={t('tableDataView.firstPage')}>
-            <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30">|&lt;</button>
+            <button disabled={page <= 1} onClick={() => setPage(1)} className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200">|&lt;</button>
           </Tooltip>
           <Tooltip content={t('tableDataView.prevPage')}>
-            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30"><ChevronLeft size={14}/></button>
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200"><ChevronLeft size={14}/></button>
           </Tooltip>
           <DropdownSelect
             value={String(page)}
@@ -544,19 +544,19 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
             onChange={v => setPage(Number(v))}
             plain
           />
-          <span className="text-[var(--foreground-muted)]">/ {totalPages}</span>
+          <span className="text-foreground-muted">/ {totalPages}</span>
           <Tooltip content={t('tableDataView.nextPage')}>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage(p => p + 1)}
-              className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30"
+              className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200"
             ><ChevronRight size={14}/></button>
           </Tooltip>
           <Tooltip content={t('tableDataView.lastPage')}>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage(totalPages)}
-              className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30"
+              className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200"
             >&gt;|</button>
           </Tooltip>
           <DropdownSelect
@@ -565,22 +565,22 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
             onChange={handlePageSizeChange}
             plain
           />
-          <span className="text-[var(--foreground-muted)]">{t('tableDataView.rowsPerPage')}</span>
+          <span className="text-foreground-muted">{t('tableDataView.rowsPerPage')}</span>
           <Tooltip content={t('tableDataView.refreshData')}>
-            <button onClick={handleSearch} className="p-1 hover:bg-[var(--background-hover)] rounded">
+            <button onClick={handleSearch} className="p-1 hover:bg-background-hover rounded transition-colors duration-200">
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''}/>
             </button>
           </Tooltip>
         </div>
 
-        <div className="flex items-center gap-2 text-[var(--foreground-muted)]">
+        <div className="flex items-center gap-2 text-foreground-muted">
           {hasPending && (
             <>
               <Tooltip content={t('tableDataView.commit')}>
                 <button
                   onClick={handleCommit}
                   disabled={isCommitting}
-                  className="flex items-center gap-1 px-2 py-1 bg-[var(--accent-hover)] hover:bg-[var(--accent)] text-[var(--foreground)] rounded disabled:opacity-50 text-xs"
+                  className="flex items-center gap-1 px-2 py-1 bg-accent-hover hover:bg-accent text-foreground rounded disabled:opacity-50 text-xs transition-colors duration-200"
                 >
                   <Check size={12}/>
                   {t('tableDataView.commitWithCount', { count: totalCount })}
@@ -589,7 +589,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
               <Tooltip content={t('tableDataView.discardChanges')}>
                 <button
                   onClick={discard}
-                  className="flex items-center gap-1 px-2 py-1 hover:bg-[var(--background-hover)] rounded text-xs"
+                  className="flex items-center gap-1 px-2 py-1 hover:bg-background-hover rounded text-xs transition-colors duration-200"
                 >
                   <RotateCcw size={12}/>
                   {t('tableDataView.discardChanges')}
@@ -601,13 +601,13 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
             <button
               onClick={() => data && addEmptyRow(data.columns.length)}
               disabled={!data}
-              className="p-1 hover:bg-[var(--background-hover)] rounded disabled:opacity-30"
+              className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200"
             >
               <Plus size={14}/>
             </button>
           </Tooltip>
           <Tooltip content={t('export.exportData')}>
-            <button onClick={() => setShowExport(true)} className="p-1 hover:bg-[var(--background-hover)] rounded">
+            <button onClick={() => setShowExport(true)} className="p-1 hover:bg-background-hover rounded transition-colors duration-200">
               <Download size={14}/>
             </button>
           </Tooltip>
@@ -615,8 +615,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       </div>
 
       {/* FilterRow — 可视化查询行 */}
-      <div className="h-8 flex items-center px-3 border-b border-[var(--border-default)] bg-[var(--background-void)] text-xs gap-2">
-        <Filter size={12} className="text-[var(--foreground-muted)] flex-shrink-0"/>
+      <div className="h-8 flex items-center px-3 border-b border-border-default bg-background-void text-xs gap-2">
+        <Filter size={12} className="text-foreground-muted flex-shrink-0"/>
         <DropdownSelect
           value={filterField}
           options={columns.map(c => ({ value: c.name, label: c.name }))}
@@ -645,7 +645,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         />
         {!['IS NULL', 'IS NOT NULL'].includes(filterOp) && (
           <input
-            className="bg-transparent outline-none text-[var(--foreground-default)] flex-1 min-w-0"
+            className="bg-transparent outline-none text-foreground-default flex-1 min-w-0"
             placeholder={filterOp === 'LIKE'
               ? t('tableDataView.filterValueLikePlaceholder')
               : t('tableDataView.filterValuePlaceholder')}
@@ -657,7 +657,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         <Tooltip content={t('tableDataView.search')}>
           <button
             onClick={handleSearch}
-            className="p-1 hover:bg-[var(--background-hover)] rounded text-[var(--foreground-muted)] hover:text-[var(--accent)] transition-colors flex-shrink-0"
+            className="p-1 hover:bg-background-hover rounded text-foreground-muted hover:text-accent transition-colors flex-shrink-0"
           >
             <Search size={14}/>
           </button>
@@ -665,9 +665,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       </div>
 
       {/* Filter Bar */}
-      <div className="h-8 flex items-center px-3 border-b border-[var(--border-default)] bg-[var(--background-void)] text-xs gap-3">
-        <Filter size={12} className="text-[var(--foreground-muted)]"/>
-        <span className="text-[var(--foreground-muted)]">WHERE</span>
+      <div className="h-8 flex items-center px-3 border-b border-border-default bg-background-void text-xs gap-3">
+        <Filter size={12} className="text-foreground-muted"/>
+        <span className="text-foreground-muted">WHERE</span>
         <AutoCompleteInput
           value={whereClause}
           onChange={(v) => { latestWhereRef.current = v; setWhereClause(v); }}
@@ -675,7 +675,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           placeholder={t('tableDataView.enterCondition')}
           columns={columns.map(c => c.name)}
         />
-        <span className="text-[var(--foreground-muted)]">ORDER BY</span>
+        <span className="text-foreground-muted">ORDER BY</span>
         <AutoCompleteInput
           value={orderClause}
           onChange={(v) => { latestOrderRef.current = v; setOrderClause(v); }}
@@ -700,7 +700,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       />
 
       {/* Status Bar */}
-      <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[var(--border-default)] bg-[var(--background-void)] text-[var(--foreground-muted)] text-xs">
+      <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-border-default bg-background-void text-foreground-muted text-xs">
         {data && <span>{data.row_count} {t('tableDataView.row')} · {data.duration_ms}ms</span>}
       </div>
 

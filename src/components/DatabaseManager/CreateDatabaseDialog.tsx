@@ -56,18 +56,18 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
     }
   };
 
-  const inputClass = 'w-full bg-[var(--background-hover)] border border-[var(--border-strong)] rounded px-3 py-1.5 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--border-focus)]';
-  const labelClass = 'block text-xs text-[var(--foreground-muted)] mb-1';
+  const inputClass = 'w-full bg-background-hover border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-border-focus';
+  const labelClass = 'block text-xs text-foreground-muted mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg w-[400px] p-6">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[400px] p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Database size={14} className="text-[var(--accent)]" />
-            <h3 className="text-[var(--foreground)] font-semibold">{t('createDatabase.title')}</h3>
+            <Database size={14} className="text-accent" />
+            <h3 className="text-foreground font-semibold">{t('createDatabase.title')}</h3>
           </div>
-          <button onClick={onClose} className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors">
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -75,7 +75,7 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
         <div className="space-y-3">
           <div>
             <label className={labelClass}>
-              {t('createDatabase.dbName')} <span className="text-[var(--error)]">*</span>
+              {t('createDatabase.dbName')} <span className="text-error">*</span>
             </label>
             <input
               value={name}
@@ -151,13 +151,13 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
               type="checkbox"
               checked={switchAfterCreate}
               onChange={(e) => setSwitchAfterCreate(e.target.checked)}
-              className="accent-[var(--accent)]"
+              className="accent-accent"
             />
-            <span className="text-sm text-[var(--foreground)]">{t('createDatabase.switchAfterCreate')}</span>
+            <span className="text-sm text-foreground">{t('createDatabase.switchAfterCreate')}</span>
           </label>
 
           {error && (
-            <div className="text-sm text-[var(--error)] bg-[var(--error-subtle)] px-3 py-1.5 rounded border border-[var(--error)]/30">
+            <div className="text-sm text-error bg-error-subtle px-3 py-1.5 rounded border border-error/30">
               {error}
             </div>
           )}
@@ -166,14 +166,14 @@ export const CreateDatabaseDialog: React.FC<Props> = ({
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm bg-[var(--background-hover)] hover:bg-[var(--border-strong)] text-[var(--foreground)] rounded"
+            className="px-3 py-1.5 text-sm bg-background-hover hover:bg-border-strong text-foreground rounded transition-colors duration-200"
           >
             {t('createDatabase.cancel')}
           </button>
           <button
             onClick={handleCreate}
             disabled={isLoading || !name.trim()}
-            className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--foreground)] rounded disabled:opacity-50"
+            className="px-3 py-1.5 text-sm bg-accent hover:bg-accent-hover text-foreground rounded disabled:opacity-50 transition-colors duration-200"
           >
             {isLoading ? t('createDatabase.creating') : t('createDatabase.create')}
           </button>

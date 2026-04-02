@@ -1,5 +1,125 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Tailwind v4 @theme — CSS 变量 → 语义类名映射
+   使用: text-error / bg-primary / border-border-focus 等
+   禁止: text-[var(--error)] / bg-[var(--primary)] 等 var() 包装器
+   ============================================================ */
+@theme {
+  /* --- 核心语义色 --- */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-subtle: var(--primary-subtle);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
+  /* --- 背景层级 --- */
+  --color-background: var(--background);
+  --color-background-void: var(--background-void);
+  --color-background-base: var(--background-base);
+  --color-background-panel: var(--background-panel);
+  --color-background-card: var(--background-card);
+  --color-background-elevated: var(--background-elevated);
+  --color-background-hover: var(--background-hover);
+  --color-background-active: var(--background-active);
+  --color-background-deep: var(--background-deep);
+  --color-background-code: var(--background-code);
+
+  /* --- 前景/文字层级 --- */
+  --color-foreground: var(--foreground);
+  --color-foreground-default: var(--foreground-default);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-ghost: var(--foreground-ghost);
+
+  /* --- 边框层级 --- */
+  --color-border: var(--border);
+  --color-border-default: var(--border-default);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-focus: var(--border-focus);
+
+  /* --- 语义状态色 --- */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-subtle: var(--error-subtle);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+
+  /* --- 功能色 --- */
+  --color-ring: var(--ring);
+  --color-ring-accent: var(--ring-accent);
+  --color-overlay: var(--overlay);
+  --color-scrim: var(--scrim);
+
+  /* --- Diff/Patch 色 --- */
+  --color-diff-add: var(--diff-add);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-remove: var(--diff-remove);
+  --color-diff-remove-bg: var(--diff-remove-bg);
+  --color-diff-modify: var(--diff-modify);
+  --color-diff-modify-bg: var(--diff-modify-bg);
+
+  /* --- 数据库对象指示色 --- */
+  --color-key-primary: var(--key-primary);
+  --color-key-foreign: var(--key-foreign);
+
+  /* --- 知识图谱节点/边 --- */
+  --color-node-table: var(--node-table);
+  --color-node-table-bg: var(--node-table-bg);
+  --color-node-metric: var(--node-metric);
+  --color-node-metric-bg: var(--node-metric-bg);
+  --color-node-alias: var(--node-alias);
+  --color-node-alias-bg: var(--node-alias-bg);
+
+  --color-edge-fk: var(--edge-fk);
+  --color-edge-reference: var(--edge-reference);
+  --color-edge-alias: var(--edge-alias);
+  --color-edge-default: var(--edge-default);
+
+  /* --- 窗口控件/危险操作 --- */
+  --color-window-close-hover: var(--window-close-hover);
+  --color-danger-hover-bg: var(--danger-hover-bg);
+
+  /* --- 数据可视化色板 --- */
+  --color-data-blue: var(--data-blue);
+  --color-data-green: var(--data-green);
+  --color-data-amber: var(--data-amber);
+  --color-data-red: var(--data-red);
+  --color-data-purple: var(--data-purple);
+  --color-data-cyan: var(--data-cyan);
+  --color-data-pink: var(--data-pink);
+  --color-data-indigo: var(--data-indigo);
+
+  /* --- ECharts 图表色板 --- */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+}
+
 /* 隐藏浏览器原生密码查看按钮（Edge/IE） */
 .no-password-reveal::-ms-reveal,
 .no-password-reveal::-ms-clear {

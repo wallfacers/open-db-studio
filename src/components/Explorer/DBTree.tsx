@@ -267,7 +267,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
 
   if (visibleNodes.length === 0 && !searchQuery) {
     return (
-      <div className="px-3 py-4 text-center text-xs text-[var(--foreground-muted)]">
+      <div className="px-3 py-4 text-center text-xs text-foreground-muted">
         <p>{t('dbTree.noConnections')}</p>
       </div>
     );
@@ -275,7 +275,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
 
   if (visibleNodes.length === 0 && searchQuery) {
     return (
-      <div className="px-3 py-4 text-center text-xs text-[var(--foreground-muted)]">
+      <div className="px-3 py-4 text-center text-xs text-foreground-muted">
         <p>{t('dbTree.noSearchResults')}</p>
       </div>
     );
@@ -299,7 +299,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
         const metricCountBadge = node.nodeType === 'metrics_folder' ? (() => {
           const count = metricCounts.get(node.id);
           return count !== undefined && count > 0
-            ? <span className="text-[10px] text-[var(--foreground-muted)] flex-shrink-0 ml-1">[{count}]</span>
+            ? <span className="text-[10px] text-foreground-muted flex-shrink-0 ml-1">[{count}]</span>
             : null;
         })() : null;
 
@@ -554,23 +554,23 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
       {moveToGroupPicker && (
         <div
           ref={groupPickerRef}
-          className="fixed z-50 bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded shadow-lg py-1 min-w-[180px]"
+          className="fixed z-50 bg-background-elevated border border-border-strong rounded shadow-lg py-1 min-w-[180px]"
           style={{ left: safePickerX, top: safePickerY }}
         >
-          <div className="px-3 py-1 text-[10px] text-[var(--foreground-subtle)] uppercase tracking-wide select-none">
+          <div className="px-3 py-1 text-[10px] text-foreground-subtle uppercase tracking-wide select-none">
             {t('contextMenu.moveToGroup')}
           </div>
-          <div className="h-px bg-[var(--border-strong)] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           {groupNodes.length === 0 ? (
-            <div className="px-3 py-1.5 text-xs text-[var(--foreground-subtle)]">—</div>
+            <div className="px-3 py-1.5 text-xs text-foreground-subtle">—</div>
           ) : (
             groupNodes.map(g => (
               <button
                 key={g.id}
-                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--background-hover)] hover:text-[var(--foreground)] ${
+                className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-background-hover hover:text-foreground transition-colors duration-150 ${
                   moveToGroupPicker.currentGroupId === g.id
-                    ? 'text-[var(--accent)]'
-                    : 'text-[var(--foreground-default)]'
+                    ? 'text-accent'
+                    : 'text-foreground-default'
                 }`}
                 onClick={() => handleMoveToGroup(
                   moveToGroupPicker.connectionId,
@@ -585,9 +585,9 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           {/* 当前连接在某个分组中，才显示"取消分组"选项 */}
           {moveToGroupPicker.currentGroupId !== null && (
             <>
-              <div className="h-px bg-[var(--border-strong)] my-1" />
+              <div className="h-px bg-border-strong my-1" />
               <button
-                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-[var(--foreground-default)] hover:bg-[var(--background-hover)] hover:text-[var(--foreground)]"
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover hover:text-foreground transition-colors duration-150"
                 onClick={() => handleMoveToGroup(moveToGroupPicker.connectionId, null)}
               >
                 <FolderX size={13} />

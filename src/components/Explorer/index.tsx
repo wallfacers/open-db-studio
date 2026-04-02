@@ -224,61 +224,61 @@ export const Explorer: React.FC<ExplorerProps> = ({
   return (
     <>
       <div
-        className="flex flex-col border-r border-[var(--border-default)] bg-[var(--background-base)] flex-shrink-0 relative"
+        className="flex flex-col border-r border-border-default bg-background-base flex-shrink-0 relative"
         style={{ width: sidebarWidth }}
       >
         <div
-          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[var(--accent)] z-20 transition-colors"
+          className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent z-20 transition-colors"
           onMouseDown={handleSidebarResize}
         />
 
         {activeActivity === 'database' ? (
           <>
-            <div className="h-10 flex items-center justify-between px-3 border-b border-[var(--border-default)]">
+            <div className="h-10 flex items-center justify-between px-3 border-b border-border-default">
               <div className="flex items-center gap-2">
-                <DatabaseZap size={14} className="text-[var(--accent)]" />
-                <span className="font-medium text-[var(--foreground-default)]">{t('explorer.database')}</span>
+                <DatabaseZap size={14} className="text-accent" />
+                <span className="font-medium text-foreground-default">{t('explorer.database')}</span>
               </div>
-              <div className="flex items-center space-x-2 text-[var(--foreground-muted)]">
+              <div className="flex items-center space-x-2 text-foreground-muted">
                 <Tooltip content={t('groupModal.createTitle')}>
                   <FolderPlus
                     size={16}
-                    className="cursor-pointer hover:text-[var(--foreground-default)]"
+                    className="cursor-pointer hover:text-foreground-default transition-colors duration-200"
                     onClick={() => setShowGroupModal(true)}
                   />
                 </Tooltip>
                 <Tooltip content={t('connectionModal.newConnection')}>
                   <Plus
                     size={16}
-                    className="cursor-pointer hover:text-[var(--foreground-default)]"
+                    className="cursor-pointer hover:text-foreground-default transition-colors duration-200"
                     onClick={() => setShowModal(true)}
                   />
                 </Tooltip>
                 <Tooltip content={t('explorer.refresh')}>
                   <RefreshCw
                     size={16}
-                    className="cursor-pointer hover:text-[var(--foreground-default)]"
+                    className="cursor-pointer hover:text-foreground-default transition-colors duration-200"
                     onClick={() => refresh()}
                   />
                 </Tooltip>
               </div>
             </div>
 
-            <div className="h-10 flex items-center px-2 border-b border-[var(--border-default)]">
-              <div className="flex items-center bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 flex-1 focus-within:border-[var(--accent-hover)] transition-colors">
-                <Search size={14} className="text-[var(--foreground-muted)] mr-1" />
+            <div className="h-10 flex items-center px-2 border-b border-border-default">
+              <div className="flex items-center bg-background-elevated border border-border-strong rounded px-2 py-1 flex-1 focus-within:border-accent-hover transition-colors">
+                <Search size={14} className="text-foreground-muted mr-1" />
                 <input
                   type="text"
                   placeholder={t('explorer.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent border-none outline-none text-[var(--foreground-default)] w-full text-xs placeholder-[var(--foreground-muted)]"
+                  className="bg-transparent border-none outline-none text-foreground-default w-full text-xs placeholder-foreground-muted"
                 />
                 {searchQuery && (
                   <Tooltip content={t('explorer.clearSearch')}>
                     <X
                       size={14}
-                      className="text-[var(--foreground-muted)] ml-1 cursor-pointer hover:text-[var(--foreground-default)]"
+                      className="text-foreground-muted ml-1 cursor-pointer hover:text-foreground-default transition-colors duration-200"
                       onClick={() => setSearchQuery('')}
                     />
                   </Tooltip>
@@ -287,11 +287,11 @@ export const Explorer: React.FC<ExplorerProps> = ({
             </div>
 
             {nodes.size === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-[var(--foreground-muted)]">
+              <div className="px-3 py-4 text-center text-xs text-foreground-muted">
                 <DatabaseZap size={24} className="mx-auto mb-2 opacity-30" />
                 <p>{t('explorer.noConnections')}</p>
                 <p
-                  className="mt-1 text-[var(--accent)] cursor-pointer hover:underline"
+                  className="mt-1 text-accent cursor-pointer hover:underline"
                   onClick={() => setShowModal(true)}
                 >
                   {t('explorer.newConnection')}
@@ -313,7 +313,7 @@ export const Explorer: React.FC<ExplorerProps> = ({
             )}
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-[var(--foreground-muted)]">
+          <div className="flex-1 flex items-center justify-center text-foreground-muted">
             <p className="text-sm">{t('explorer.selectActivityBar')}</p>
           </div>
         )}

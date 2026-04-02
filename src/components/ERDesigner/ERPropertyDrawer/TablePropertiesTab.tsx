@@ -33,26 +33,26 @@ export default function TablePropertiesTab({ tableId }: TablePropertiesTabProps)
   return (
     <div className="p-3 space-y-4">
       <div>
-        <label className="text-[11px] text-[var(--foreground-subtle)] block mb-1">表名</label>
+        <label className="text-[11px] text-foreground-subtle block mb-1">表名</label>
         <input
           value={name}
           onChange={e => setName(e.target.value)}
           onBlur={saveName}
-          className="w-full bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 text-[13px] text-[var(--foreground)] focus:border-[var(--accent)] outline-none"
+          className="w-full bg-background-elevated border border-border-strong rounded px-2 py-1 text-[13px] text-foreground focus:border-accent outline-none"
         />
       </div>
       <div>
-        <label className="text-[11px] text-[var(--foreground-subtle)] block mb-1">注释</label>
+        <label className="text-[11px] text-foreground-subtle block mb-1">注释</label>
         <textarea
           value={comment}
           onChange={e => setComment(e.target.value)}
           onBlur={saveComment}
           rows={3}
-          className="w-full bg-[var(--background-elevated)] border border-[var(--border-strong)] rounded px-2 py-1 text-[13px] text-[var(--foreground)] focus:border-[var(--accent)] outline-none resize-none"
+          className="w-full bg-background-elevated border border-border-strong rounded px-2 py-1 text-[13px] text-foreground focus:border-accent outline-none resize-none"
         />
       </div>
       <div>
-        <label className="text-[11px] text-[var(--foreground-subtle)] block mb-1">颜色</label>
+        <label className="text-[11px] text-foreground-subtle block mb-1">颜色</label>
         <div className="flex gap-2 items-center">
           {PRESET_COLORS.map(c => (
             <button
@@ -66,8 +66,8 @@ export default function TablePropertiesTab({ tableId }: TablePropertiesTabProps)
           ))}
           <button
             onClick={() => updateTable(table.id, { color: null })}
-            className={`px-2 py-0.5 text-[11px] rounded ${
-              !table.color ? 'text-[var(--accent)] bg-[var(--accent-subtle)]' : 'text-[var(--foreground-subtle)] hover:text-[var(--foreground-muted)]'
+            className={`px-2 py-0.5 text-[11px] rounded transition-colors duration-200 ${
+              !table.color ? 'text-accent bg-accent-subtle' : 'text-foreground-subtle hover:text-foreground-muted'
             }`}
           >
             无

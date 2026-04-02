@@ -57,24 +57,24 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-[var(--background-panel)] border border-[var(--border-strong)] rounded-lg shadow-2xl w-[600px] flex flex-col"
+        className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-[600px] flex flex-col"
         style={{ maxHeight: '70vh' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border-default)]">
-          <span className="text-[var(--foreground-default)] text-xs font-medium font-mono">{columnName}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-default">
+          <span className="text-foreground-default text-xs font-medium font-mono">{columnName}</span>
           <div className="flex items-center gap-2">
             {isJson && (
               <button
                 onClick={handleFormatJson}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--background-hover)] hover:bg-[var(--background-active)] text-[var(--border-focus)] rounded"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-background-hover hover:bg-background-active text-border-focus rounded transition-colors duration-200"
               >
                 <Code size={11} />
                 {t('tableDataView.formatJson')}
               </button>
             )}
-            <button onClick={onClose} className="p-1 hover:bg-[var(--background-hover)] rounded text-[var(--foreground-muted)]">
+            <button onClick={onClose} className="p-1 hover:bg-background-hover rounded text-foreground-muted transition-colors duration-200">
               <X size={13} />
             </button>
           </div>
@@ -83,7 +83,7 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className={`flex-1 min-h-[220px] m-4 bg-[var(--background-panel)] border border-[var(--border-default)] rounded p-3 text-[var(--foreground-default)] text-xs font-mono outline-none resize-none focus:border-[var(--accent)] transition-colors ${readOnly ? 'cursor-default select-all' : ''}`}
+          className={`flex-1 min-h-[220px] m-4 bg-background-panel border border-border-default rounded p-3 text-foreground-default text-xs font-mono outline-none resize-none focus:border-accent transition-colors ${readOnly ? 'cursor-default select-all' : ''}`}
           value={draft}
           readOnly={readOnly}
           onChange={readOnly ? undefined : e => {
@@ -94,26 +94,26 @@ export const CellEditorModal: React.FC<CellEditorModalProps> = ({
         />
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-[var(--border-default)]">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-default">
           {readOnly ? (
             <button
               onClick={onClose}
-              className="px-3 py-1 text-xs bg-[var(--background-hover)] hover:bg-[var(--background-active)] text-[var(--foreground-default)] rounded"
+              className="px-3 py-1 text-xs bg-background-hover hover:bg-background-active text-foreground-default rounded transition-colors duration-200"
             >
               {t('common.close')}
             </button>
           ) : (
             <>
-              <span className="text-[var(--foreground-subtle)] text-xs mr-auto">Ctrl+Enter {t('common.confirm')} · Esc {t('common.cancel')}</span>
+              <span className="text-foreground-subtle text-xs mr-auto">Ctrl+Enter {t('common.confirm')} · Esc {t('common.cancel')}</span>
               <button
                 onClick={onClose}
-                className="px-3 py-1 text-xs text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] hover:bg-[var(--background-hover)] rounded"
+                className="px-3 py-1 text-xs text-foreground-muted hover:text-foreground-default hover:bg-background-hover rounded transition-colors duration-200"
               >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={handleConfirm}
-                className="px-3 py-1 text-xs bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--foreground)] rounded"
+                className="px-3 py-1 text-xs bg-primary hover:bg-primary-hover text-foreground rounded transition-colors duration-200"
               >
                 {t('common.confirm')}
               </button>

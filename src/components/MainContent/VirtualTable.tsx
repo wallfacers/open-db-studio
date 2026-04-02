@@ -29,7 +29,7 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
       style={{ width: '100%', minWidth: `${totalWidth}px` }}
       className="text-left whitespace-nowrap text-xs"
     >
-      <thead className="sticky top-0 bg-[var(--background-base)] z-10" style={{ display: 'block' }}>
+      <thead className="sticky top-0 bg-background-base z-10" style={{ display: 'block' }}>
         {thead}
       </thead>
 
@@ -51,7 +51,7 @@ export const VirtualTable: React.FC<VirtualTableProps> = ({
               width: '100%',
               overflow: 'hidden',
             }}
-            className="hover:bg-[var(--background-hover)]"
+            className="hover:bg-background-hover transition-colors duration-150"
           >
             {renderRow(vRow.index)}
           </tr>

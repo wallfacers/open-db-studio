@@ -14,7 +14,7 @@ export default function CompatibilityWarning({ typeName, dialect }: Compatibilit
   return (
     <Tooltip content={warning}>
       <span className="inline-flex">
-        <AlertTriangle size={12} className="text-[#f59e0b]" />
+        <AlertTriangle size={12} className="text-warning" />
       </span>
     </Tooltip>
   );

@@ -95,7 +95,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
 
   return (
     <div className="px-4 py-3 flex-1 overflow-y-auto">
-      <p className="text-[var(--foreground-muted)] text-[11px] uppercase tracking-wide mb-2">
+      <p className="text-foreground-muted text-[11px] uppercase tracking-wide mb-2">
         {t('graphExplorer.nodeDetail.linkProps')}
       </p>
 
@@ -103,8 +103,8 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
       <div className="mb-3">
         <span className={`text-[9px] px-2 py-0.5 rounded border ${
           meta.is_inferred !== false
-            ? 'bg-[var(--node-table-bg)] text-[var(--node-table)] border-[var(--node-table)]/30'
-            : 'bg-[var(--border-default)] text-[var(--foreground-muted)] border-[var(--border-strong)]'
+            ? 'bg-node-table-bg text-node-table border-node-table/30'
+            : 'bg-border-default text-foreground-muted border-border-strong'
         }`}>
           {meta.is_inferred !== false
             ? t('graphExplorer.nodeDetail.inferredBadge')
@@ -115,23 +115,23 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
       {/* 属性行 */}
       <div className="space-y-1.5 mb-4">
         {rows.map(r => (
-          <div key={r.label} className="flex items-center justify-between py-1 px-2 rounded hover:bg-[var(--background-base)]">
-            <span className="text-[var(--foreground-muted)] text-[10px]">{r.label}</span>
-            <span className="text-[10px] font-mono text-[var(--foreground-default)]" style={r.color ? { color: r.color } : undefined}>{r.value}</span>
+          <div key={r.label} className="flex items-center justify-between py-1 px-2 rounded hover:bg-background-base transition-colors duration-150">
+            <span className="text-foreground-muted text-[10px]">{r.label}</span>
+            <span className="text-[10px] font-mono text-foreground-default" style={r.color ? { color: r.color } : undefined}>{r.value}</span>
           </div>
         ))}
       </div>
 
       {/* Description 编辑 */}
-      <div className="border-t border-[var(--border-default)] pt-3">
+      <div className="border-t border-border-default pt-3">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[var(--foreground-muted)] text-[11px] uppercase tracking-wide">
+          <span className="text-foreground-muted text-[11px] uppercase tracking-wide">
             {t('graphExplorer.nodeDetail.linkDescription')}
           </span>
           {!editing && (
             <button
               onClick={() => setEditing(true)}
-              className="text-[10px] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] px-1.5 py-0.5 rounded hover:bg-[var(--border-default)]"
+              className="text-[10px] text-foreground-muted hover:text-foreground-default px-1.5 py-0.5 rounded hover:bg-border-default transition-colors duration-200"
             >
               {t('graphExplorer.nodeDetail.editBtn')}
             </button>
@@ -142,7 +142,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="w-full text-xs bg-[var(--background-base)] border border-[var(--border-strong)] rounded p-2 text-[var(--foreground-default)] placeholder-[var(--foreground-ghost)] focus:outline-none focus:border-[var(--accent)]/50 resize-none"
+              className="w-full text-xs bg-background-base border border-border-strong rounded p-2 text-foreground-default placeholder-foreground-ghost focus:outline-none focus:border-accent/50 resize-none"
               rows={3}
               placeholder={t('graphExplorer.nodeDetail.descriptionPlaceholder')}
             />
@@ -150,21 +150,21 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 text-[10px] py-1 bg-[var(--accent)] text-[var(--background-base)] rounded font-medium hover:bg-[var(--accent)]/80 disabled:opacity-50"
+                className="flex-1 text-[10px] py-1 bg-accent text-background-base rounded font-medium hover:bg-accent/80 disabled:opacity-50 transition-colors duration-200"
               >
                 {saving ? t('graphExplorer.nodeDetail.saving') : t('graphExplorer.nodeDetail.save')}
               </button>
               <button
                 onClick={() => setEditing(false)}
-                className="flex-1 text-[10px] py-1 bg-[var(--border-default)] text-[var(--foreground-muted)] rounded hover:bg-[var(--border-strong)]"
+                className="flex-1 text-[10px] py-1 bg-border-default text-foreground-muted rounded hover:bg-border-strong transition-colors duration-200"
               >
                 {t('graphExplorer.nodeDetail.cancel')}
               </button>
             </div>
           </div>
         ) : (
-          <p className="text-[var(--foreground-default)] text-xs italic">
-            {description || <span className="text-[var(--foreground-ghost)]">{t('graphExplorer.nodeDetail.noDescription')}</span>}
+          <p className="text-foreground-default text-xs italic">
+            {description || <span className="text-foreground-ghost">{t('graphExplorer.nodeDetail.noDescription')}</span>}
           </p>
         )}
       </div>
@@ -209,28 +209,28 @@ function parseMetadata(raw: string): ParsedField[] {
 
 function nodeTypeIcon(nodeType: string) {
   switch (nodeType) {
-    case 'table': return <Table2 size={14} className="text-[var(--node-table)]" />;
-    case 'metric': return <BarChart2 size={14} className="text-[var(--node-metric)]" />;
-    case 'alias': return <Hash size={14} className="text-[var(--node-alias)]" />;
-    default: return <Tag size={14} className="text-[var(--foreground-muted)]" />;
+    case 'table': return <Table2 size={14} className="text-node-table" />;
+    case 'metric': return <BarChart2 size={14} className="text-node-metric" />;
+    case 'alias': return <Hash size={14} className="text-node-alias" />;
+    default: return <Tag size={14} className="text-foreground-muted" />;
   }
 }
 
 function nodeTypeBadgeClass(nodeType: string): string {
   switch (nodeType) {
-    case 'table': return 'bg-[var(--node-table-bg)] text-[var(--node-table)] border border-[var(--node-table)]/30';
-    case 'metric': return 'bg-[var(--node-metric-bg)] text-[var(--node-metric)] border border-[var(--node-metric)]/30';
-    case 'alias': return 'bg-[var(--node-alias-bg)] text-[var(--node-alias)] border border-[var(--node-alias)]/30';
-    default: return 'bg-[var(--border-default)] text-[var(--foreground-muted)] border border-[var(--border-strong)]';
+    case 'table': return 'bg-node-table-bg text-node-table border border-node-table/30';
+    case 'metric': return 'bg-node-metric-bg text-node-metric border border-node-metric/30';
+    case 'alias': return 'bg-node-alias-bg text-node-alias border border-node-alias/30';
+    default: return 'bg-border-default text-foreground-muted border border-border-strong';
   }
 }
 
 function edgeTypeColor(edgeType: string): string {
   switch (edgeType) {
-    case 'fk': return 'text-[var(--edge-fk)]';
-    case 'alias_of': return 'text-[var(--edge-alias)]';
-    case 'references': return 'text-[var(--edge-reference)]';
-    default: return 'text-[var(--foreground-muted)]';
+    case 'fk': return 'text-edge-fk';
+    case 'alias_of': return 'text-edge-alias';
+    case 'references': return 'text-edge-reference';
+    default: return 'text-foreground-muted';
   }
 }
 
@@ -260,20 +260,20 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
 
   return (
     <>
-      <div className="w-72 flex-shrink-0 h-full flex flex-col bg-[var(--background-panel)] border-l border-[var(--border-default)] overflow-hidden">
+      <div className="w-72 flex-shrink-0 h-full flex flex-col bg-background-panel border-l border-border-default overflow-hidden">
         {/* Header */}
-        <div className="flex items-start justify-between px-4 py-3 border-b border-[var(--border-default)] flex-shrink-0">
+        <div className="flex items-start justify-between px-4 py-3 border-b border-border-default flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {nodeTypeIcon(node.node_type)}
             <div className="min-w-0">
               <Tooltip content={node.node_type === 'link' ? (node.display_name || node.name) : node.name} className="w-full">
-                <p className="text-[var(--foreground-default)] text-sm font-semibold truncate">
+                <p className="text-foreground-default text-sm font-semibold truncate">
                   {node.node_type === 'link' ? (node.display_name || node.name) : node.name}
                 </p>
               </Tooltip>
               {node.node_type !== 'link' && node.display_name && node.display_name !== node.name && (
                 <Tooltip content={node.display_name} className="w-full">
-                  <p className="text-[var(--foreground-muted)] text-xs truncate mt-0.5">
+                  <p className="text-foreground-muted text-xs truncate mt-0.5">
                     {node.display_name}
                   </p>
                 </Tooltip>
@@ -282,14 +282,14 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors p-1 rounded hover:bg-[var(--border-default)] flex-shrink-0 ml-2"
+            className="text-foreground-muted hover:text-foreground-default transition-colors p-1 rounded hover:bg-border-default flex-shrink-0 ml-2"
           >
             <X size={15} />
           </button>
         </div>
 
         {/* Type badge + source badge */}
-        <div className="px-4 py-2 border-b border-[var(--border-default)] flex-shrink-0">
+        <div className="px-4 py-2 border-b border-border-default flex-shrink-0">
           <div className="flex items-center mb-1.5">
             <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-medium ${nodeTypeBadgeClass(node.node_type)}`}>
               {nodeTypeIcon(node.node_type)}
@@ -344,19 +344,19 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           <div className="flex-1 overflow-y-auto">
             {/* Fields section */}
             {fields.length > 0 && (
-              <div className="px-4 py-3 border-b border-[var(--border-default)]">
-                <p className="text-[var(--foreground-muted)] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
+              <div className="px-4 py-3 border-b border-border-default">
+                <p className="text-foreground-muted text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
                 <div className="space-y-1">
                   {fields.map((field, idx) => (
                     <div
                       key={`${field.name}-${idx}`}
-                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-[var(--background-base)] transition-colors"
+                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-background-base transition-colors"
                     >
-                      <span className="text-[var(--foreground-default)] text-xs font-mono truncate flex-1">
+                      <span className="text-foreground-default text-xs font-mono truncate flex-1">
                         {field.name}
                       </span>
                       {field.type && (
-                        <span className="text-[var(--foreground-muted)] text-[10px] font-mono ml-2 flex-shrink-0">
+                        <span className="text-foreground-muted text-[10px] font-mono ml-2 flex-shrink-0">
                           {field.type}
                         </span>
                       )}
@@ -367,27 +367,27 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
             )}
 
             {/* Aliases section */}
-            <div className="px-4 py-3 border-b border-[var(--border-default)]">
+            <div className="px-4 py-3 border-b border-border-default">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[var(--foreground-muted)] text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
+                <p className="text-foreground-muted text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
                 <button
                   onClick={() => setShowAliasEditor(true)}
-                  className="flex items-center gap-0.5 text-[10px] text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] transition-colors px-1.5 py-0.5 rounded hover:bg-[var(--border-default)]"
+                  className="flex items-center gap-0.5 text-[10px] text-foreground-muted hover:text-foreground-default transition-colors px-1.5 py-0.5 rounded hover:bg-border-default"
                 >
                   <Plus size={11} />
                   {t('graphExplorer.aliasEditor.add')}
                 </button>
               </div>
               {aliases.length === 0 ? (
-                <p className="text-[var(--foreground-muted)] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
+                <p className="text-foreground-muted text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {aliases.map((alias) => (
                     <span
                       key={alias}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--background-base)] border border-[var(--border-default)] rounded text-[var(--foreground-default)] text-xs"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-background-base border border-border-default rounded text-foreground-default text-xs"
                     >
-                      <Hash size={10} className="text-[var(--foreground-muted)]" />
+                      <Hash size={10} className="text-foreground-muted" />
                       {alias}
                     </span>
                   ))}
@@ -398,7 +398,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
             {/* Related edges */}
             {relatedEdges.length > 0 && (
               <div className="px-4 py-3">
-                <p className="text-[var(--foreground-muted)] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
+                <p className="text-foreground-muted text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
                 <div className="space-y-1">
                   {relatedEdges.map((edge) => {
                     const isOutgoing = edge.from_node === node.id;
@@ -407,7 +407,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                     return (
                       <div
                         key={edge.id}
-                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-[var(--background-base)] transition-colors flex-wrap"
+                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-background-base transition-colors flex-wrap"
                       >
                         <ArrowRight
                           size={11}
@@ -418,7 +418,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                           {edge.edge_type}
                         </span>
                         <Tooltip content={peerName} className="truncate flex-1">
-                          <span className="text-[var(--foreground-default)] text-[10px] font-mono truncate">
+                          <span className="text-foreground-default text-[10px] font-mono truncate">
                             {peerName}
                           </span>
                         </Tooltip>

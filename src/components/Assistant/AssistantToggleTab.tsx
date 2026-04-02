@@ -77,11 +77,11 @@ export const AssistantToggleTab: React.FC<AssistantToggleTabProps> = ({
         'select-none',
         isDragging.current ? 'cursor-grabbing' : 'cursor-grab',
         isOpen
-          ? 'bg-[var(--background-base)] border-[var(--border-default)] text-[var(--foreground-subtle)] hover:bg-[var(--background-hover)] hover:border-[var(--border-strong)] hover:text-[var(--accent)]'
+          ? 'bg-background-base border-border-default text-foreground-subtle hover:bg-background-hover hover:border-border-strong hover:text-accent'
           : [
-              'bg-gradient-to-b from-[var(--background-base)] to-[var(--background-void)]',
-              'border-[var(--border-strong)] text-[var(--accent)]',
-              'hover:from-[var(--background-hover)] hover:to-[var(--background-base)] hover:border-[var(--border-focus)]',
+              'bg-gradient-to-b from-background-base to-background-void',
+              'border-border-strong text-accent',
+              'hover:from-background-hover hover:to-background-base hover:border-border-focus',
               'shadow-[0_0_14px_rgba(99,102,241,0.12)]',
               'hover:shadow-[0_0_20px_rgba(99,102,241,0.25)]',
             ].join(' '),

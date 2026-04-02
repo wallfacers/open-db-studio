@@ -482,15 +482,25 @@ function resolveVarRefs(value: unknown, results: unknown[]): unknown {
     if (m[2]) {
       // Walk dot-path, supporting array index like "columnIds[0]"
       const segments = m[2].slice(1).split('.') // remove leading dot
+      const walkedPath: string[] = [`$${idx}`]
       for (const seg of segments) {
-        if (resolved == null) break
+        if (resolved == null) {
+          throw new Error(`Variable ${walkedPath.join('.')}.${seg} failed: ${walkedPath.join('.')} is ${resolved === null ? 'null' : 'undefined'}`)
+        }
+        walkedPath.push(seg)
         const arrMatch = seg.match(/^(\w+)\[(\d+)\]$/)
         if (arrMatch) {
           resolved = (resolved as Record<string, unknown>)[arrMatch[1]]
+          if (resolved == null) {
+            throw new Error(`Variable ${walkedPath.join('.')} failed: property '${arrMatch[1]}' is ${resolved === null ? 'null' : 'undefined'}`)
+          }
           resolved = (resolved as unknown[])?.[Number(arrMatch[2])]
         } else {
           resolved = (resolved as Record<string, unknown>)[seg]
         }
+      }
+      if (resolved === undefined) {
+        throw new Error(`Variable ${m[0]} resolved to undefined (full path: ${walkedPath.join('.')})`)
       }
     }
     return resolved

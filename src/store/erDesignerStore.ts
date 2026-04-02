@@ -419,6 +419,9 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateColumn: async (id, updates) => {
     try {
+      if (!updates || typeof updates !== 'object') {
+        throw new Error(`updateColumn: 'updates' must be a non-null object, got ${updates === null ? 'null' : typeof updates}`);
+      }
       // When removing primary key, also clear auto_increment
       if (updates.is_primary_key === false) {
         updates = { ...updates, is_auto_increment: false };

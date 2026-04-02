@@ -15,6 +15,7 @@ import { SchemaAutocomplete } from './SchemaAutocomplete';
 import { QueryHistoryPicker } from './QueryHistoryPicker';
 import type { SchemaSuggestion } from '../../hooks/useSchemaCompletions';
 import { useAiStore } from '../../store';
+import { useShallow } from 'zustand/react/shallow';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useQueryStore } from '../../store/queryStore';
 import { useAppStore } from '../../store/appStore';
@@ -176,7 +177,30 @@ export const Assistant: React.FC<AssistantProps> = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 精准订阅：只取主面板需要的字段，不含 streamingContent（由 StreamingMessage 自己订阅）
   const chatHistory = useAiStore((s) => s.chatHistory);
-  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondQuestion, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore();
+  const { sendAgentChatStream, clearHistory, newSession, switchSession, deleteSession, deleteAllSessions, sessions, currentSessionId, configs, setSessionConfigId, loadConfigs, loadSessions, cancelChat, respondPermission, respondQuestion, linkedConnectionId, setLinkedConnectionId, undoMessage, redoMessage, compactSession } = useAiStore(
+    useShallow((s) => ({
+      sendAgentChatStream: s.sendAgentChatStream,
+      clearHistory: s.clearHistory,
+      newSession: s.newSession,
+      switchSession: s.switchSession,
+      deleteSession: s.deleteSession,
+      deleteAllSessions: s.deleteAllSessions,
+      sessions: s.sessions,
+      currentSessionId: s.currentSessionId,
+      configs: s.configs,
+      setSessionConfigId: s.setSessionConfigId,
+      loadConfigs: s.loadConfigs,
+      loadSessions: s.loadSessions,
+      cancelChat: s.cancelChat,
+      respondPermission: s.respondPermission,
+      respondQuestion: s.respondQuestion,
+      linkedConnectionId: s.linkedConnectionId,
+      setLinkedConnectionId: s.setLinkedConnectionId,
+      undoMessage: s.undoMessage,
+      redoMessage: s.redoMessage,
+      compactSession: s.compactSession,
+    }))
+  );
   const isChatting = useAiStore((s) => s.chatStates[currentSessionId]?.isChatting ?? false);
   const lastUserMessageId = useAiStore((s) => s.chatStates[currentSessionId]?.lastUserMessageId ?? null);
   const canRedo = useAiStore((s) => s.chatStates[currentSessionId]?.canRedo ?? false);
@@ -188,11 +212,13 @@ export const Assistant: React.FC<AssistantProps> = ({
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 使用 ref 缓存结果，只有当 chatting 列表真正变化时才更新
   const chattingSessionIdsRef = useRef<Set<string>>(new Set());
-  const rawChattingIds = useAiStore((s) =>
-    Object.entries(s.chatStates)
-      .filter(([, v]) => v.isChatting)
-      .map(([k]) => k)
-      .sort()
+  const rawChattingIds = useAiStore(
+    useShallow((s) =>
+      Object.entries(s.chatStates)
+        .filter(([, v]) => v.isChatting)
+        .map(([k]) => k)
+        .sort()
+    )
   );
   if (
     rawChattingIds.length !== chattingSessionIdsRef.current.size ||

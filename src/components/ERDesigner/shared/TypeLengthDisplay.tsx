@@ -39,19 +39,19 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
   };
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 min-w-0">
       <DropdownSelect
         value={column.data_type}
         options={typeOptions}
         onChange={handleTypeChange}
-        className="w-[90px]"
+        className="w-[78px]"
         plain
       />
 
       {typeDef?.hasLength && (
         <input
           type="number"
-          className="w-[48px] h-[20px] bg-background-elevated border border-border-strong rounded text-foreground text-[12px] px-1 outline-none focus:border-accent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-[42px] h-[20px] bg-background-elevated border border-border-strong rounded text-foreground text-[12px] px-1 outline-none focus:border-accent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           value={column.length ?? ''}
           placeholder="长度"
           onChange={(e) => {
@@ -64,7 +64,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
       {typeDef?.hasScale && (
         <input
           type="number"
-          className="w-[40px] h-[20px] bg-background-elevated border border-border-strong rounded text-foreground text-[12px] px-1 outline-none focus:border-accent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-[36px] h-[20px] bg-background-elevated border border-border-strong rounded text-foreground text-[12px] px-1 outline-none focus:border-accent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           value={column.scale ?? ''}
           placeholder="精度"
           onChange={(e) => {

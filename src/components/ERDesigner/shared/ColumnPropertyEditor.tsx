@@ -122,7 +122,7 @@ function CompactRow({
       </div>
 
       {/* Field name */}
-      <div className="w-[100px] shrink-0 min-w-0 flex items-center">
+      <div className="w-[88px] shrink-0 min-w-0 flex items-center">
         {isEditingName ? (
           <input
             ref={nameRef}

@@ -205,11 +205,13 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       const currentRelIds = new Set(relations.map(r => r.id))
       const currentTableIds = new Set(tables.map(t => t.id))
       // Remove edges for deleted relations or deleted tables
-      const filtered = eds.filter(e =>
-        currentRelIds.has(parseInt(e.id)) &&
-        currentTableIds.has(parseErTableNodeId(e.source)!) &&
-        currentTableIds.has(parseErTableNodeId(e.target)!)
-      )
+      const filtered = eds.filter(e => {
+        const relId = parseErEdgeNodeId(e.id)
+        return relId != null &&
+          currentRelIds.has(relId) &&
+          currentTableIds.has(parseErTableNodeId(e.source)!) &&
+          currentTableIds.has(parseErTableNodeId(e.target)!)
+      })
       // Add edges for new relations
       const existingIds = new Set(filtered.map(e => e.id))
       const newEdges = relations

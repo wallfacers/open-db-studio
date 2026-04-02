@@ -377,87 +377,33 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
     },
   },
   {
-    name: 'batch_create_tables',
+    name: 'batch',
     description:
-      'Create multiple tables with columns, indexes, and cross-table relations in one call. ' +
-      'Ideal for scaffolding an entire schema (e.g. e-commerce orders + users + products). ' +
-      'Relations reference tables/columns by name (resolved internally). ' +
-      'Returns { tables: [{ name, tableId, columnMap }], relationIds }.',
+      'Execute a sequence of actions in one call with variable binding. ' +
+      'Each op is { action, params }; results are stored and can be referenced by later ops ' +
+      'via "$N.path" syntax (e.g. "$0.tableId", "$1.columnMap.user_id", "$2.columnIds[0]"). ' +
+      'Stops on first failure. Returns { results: [...] } with each op\'s result. ' +
+      'Use this for ANY multi-step workflow: create tables + add relations, modify multiple columns, etc.',
     paramsSchema: {
       type: 'object',
       properties: {
-        tables: {
+        ops: {
           type: 'array',
-          description: 'Array of table definitions (same shape as batch_create_table params)',
+          description: 'Ordered operations. Each op reuses any existing action (add_table, add_column, batch_create_table, etc.)',
           items: {
             type: 'object',
             properties: {
-              name: { type: 'string' },
-              comment: { type: 'string' },
-              position: {
+              action: { type: 'string', description: 'Action name (any action listed in this adapter)' },
+              params: {
                 type: 'object',
-                properties: { x: { type: 'number' }, y: { type: 'number' } },
-              },
-              columns: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    data_type: { type: 'string' },
-                    length: { type: ['number', 'null'] },
-                    scale: { type: ['number', 'null'] },
-                    nullable: { type: 'boolean', default: true },
-                    is_primary_key: { type: 'boolean', default: false },
-                    is_auto_increment: { type: 'boolean', default: false },
-                    is_unique: { type: 'boolean', default: false },
-                    unsigned: { type: 'boolean', default: false },
-                    default_value: { type: ['string', 'null'] },
-                    comment: { type: ['string', 'null'] },
-                  },
-                  required: ['name', 'data_type'],
-                },
-              },
-              indexes: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    columns: { type: 'array', items: { type: 'string' } },
-                    type: { type: 'string', enum: ['INDEX', 'UNIQUE', 'FULLTEXT'], default: 'INDEX' },
-                  },
-                  required: ['name', 'columns'],
-                },
+                description: 'Action params. String values like "$0.tableId" are resolved to previous op results.',
               },
             },
-            required: ['name', 'columns'],
+            required: ['action'],
           },
-        },
-        relations: {
-          type: 'array',
-          description: 'Cross-table relations (reference tables/columns by name)',
-          items: {
-            type: 'object',
-            properties: {
-              source_table: { type: 'string', description: 'Source table name' },
-              source_column: { type: 'string', description: 'Source column name (FK side)' },
-              target_table: { type: 'string', description: 'Target table name (PK side)' },
-              target_column: { type: 'string', description: 'Target column name' },
-              relation_type: { type: 'string', default: 'one_to_many' },
-              on_delete: { type: 'string', default: 'NO ACTION' },
-              on_update: { type: 'string', default: 'NO ACTION' },
-            },
-            required: ['source_table', 'source_column', 'target_table', 'target_column'],
-          },
-        },
-        auto_layout: {
-          type: 'boolean',
-          description: 'Trigger auto-layout after creation (default false)',
-          default: false,
         },
       },
-      required: ['tables'],
+      required: ['ops'],
     },
   },
   // Connection binding
@@ -513,6 +459,53 @@ function normalizeIndexColumns(indexDef: { columns?: string[] | string }): void 
   if (Array.isArray(indexDef.columns)) {
     (indexDef as { columns: string }).columns = JSON.stringify(indexDef.columns)
   }
+}
+
+// ── Variable reference resolver for batch operations ────────────────────
+// Syntax:
+//   "$0.tableId"          → result of ops[0].tableId
+//   "$1.columnMap.user_id" → result of ops[1].columnMap.user_id
+//   "$2.columnIds[0]"     → result of ops[2].columnIds[0]
+//   "$0"                  → entire result of ops[0]
+
+const VAR_REF_RE = /^\$(\d+)(\..*)?$/
+
+function resolveVarRefs(value: unknown, results: unknown[]): unknown {
+  if (typeof value === 'string') {
+    const m = value.match(VAR_REF_RE)
+    if (!m) return value
+    const idx = Number(m[1])
+    if (idx >= results.length) {
+      throw new Error(`Variable $${idx} references op[${idx}] which hasn't executed yet (only ${results.length} results available)`)
+    }
+    let resolved: unknown = results[idx]
+    if (m[2]) {
+      // Walk dot-path, supporting array index like "columnIds[0]"
+      const segments = m[2].slice(1).split('.') // remove leading dot
+      for (const seg of segments) {
+        if (resolved == null) break
+        const arrMatch = seg.match(/^(\w+)\[(\d+)\]$/)
+        if (arrMatch) {
+          resolved = (resolved as Record<string, unknown>)[arrMatch[1]]
+          resolved = (resolved as unknown[])?.[Number(arrMatch[2])]
+        } else {
+          resolved = (resolved as Record<string, unknown>)[seg]
+        }
+      }
+    }
+    return resolved
+  }
+  if (Array.isArray(value)) {
+    return value.map(v => resolveVarRefs(v, results))
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = resolveVarRefs(v, results)
+    }
+    return out
+  }
+  return value
 }
 
 function resolveField(entity: 'table' | 'column', field: string): string {
@@ -858,8 +851,8 @@ export class ERCanvasAdapter implements UIObject {
       case 'batch_create_table':
         return this._batchCreateTable(store, params)
 
-      case 'batch_create_tables':
-        return this._batchCreateTables(store, params)
+      case 'batch':
+        return this._batchExec(params)
 
       default:
         return { success: false, error: `Unknown action: ${action}` }
@@ -907,103 +900,40 @@ export class ERCanvasAdapter implements UIObject {
     }
   }
 
-  // ── Batch: multiple tables with cross-table relations ──────────
+  // ── Batch: generic sequential execution with variable binding ──
 
-  private async _batchCreateTables(
-    store: ReturnType<typeof useErDesignerStore.getState>,
-    params: any,
-  ): Promise<ExecResult> {
-    try {
-      // Phase 1: Create all tables with columns and indexes
-      const tableResults: Array<{
-        name: string
-        tableId: number
-        columnMap: Record<string, number>
-        indexIds: number[]
-      }> = []
+  private async _batchExec(params: any): Promise<ExecResult> {
+    const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
+    const results: unknown[] = []
 
-      for (const tableDef of params.tables ?? []) {
-        const result = await this._batchCreateTable(store, tableDef)
-        if (!result.success) {
-          return {
-            success: false,
-            error: `Failed to create table "${tableDef.name}": ${result.error}`,
-          }
-        }
-        tableResults.push({
-          name: tableDef.name,
-          tableId: result.data.tableId,
-          columnMap: result.data.columnMap,
-          indexIds: result.data.indexIds,
-        })
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]
+      if (op.action === 'batch') {
+        return { success: false, error: `op[${i}]: nested batch is not allowed` }
       }
 
-      // Build lookup maps: tableName → tableId, (tableName, colName) → colId
-      const tableNameToId: Record<string, number> = {}
-      const columnLookup: Record<string, Record<string, number>> = {}
-      for (const t of tableResults) {
-        tableNameToId[t.name] = t.tableId
-        columnLookup[t.name] = t.columnMap
-      }
-      // Also include pre-existing tables in lookups so relations can reference them
-      const existingState = useErDesignerStore.getState()
-      for (const t of existingState.tables) {
-        if (!tableNameToId[t.name]) {
-          tableNameToId[t.name] = t.id
-          const cols = existingState.columns[t.id] ?? []
-          columnLookup[t.name] = Object.fromEntries(cols.map(c => [c.name, c.id]))
+      let resolvedParams: unknown
+      try {
+        resolvedParams = resolveVarRefs(op.params, results)
+      } catch (e) {
+        return {
+          success: false,
+          error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
+          data: { completedOps: i, results },
         }
       }
 
-      // Phase 2: Create cross-table relations
-      const relationIds: number[] = []
-      for (const rel of params.relations ?? []) {
-        const srcTableId = tableNameToId[rel.source_table]
-        const tgtTableId = tableNameToId[rel.target_table]
-        if (!srcTableId) {
-          return { success: false, error: `Relation source table "${rel.source_table}" not found` }
+      const result = await this.exec(op.action, resolvedParams)
+      if (!result.success) {
+        return {
+          success: false,
+          error: `op[${i}] ${op.action} failed: ${result.error}`,
+          data: { completedOps: i, results },
         }
-        if (!tgtTableId) {
-          return { success: false, error: `Relation target table "${rel.target_table}" not found` }
-        }
-        const srcColId = columnLookup[rel.source_table]?.[rel.source_column]
-        const tgtColId = columnLookup[rel.target_table]?.[rel.target_column]
-        if (!srcColId) {
-          return {
-            success: false,
-            error: `Relation source column "${rel.source_table}.${rel.source_column}" not found`,
-          }
-        }
-        if (!tgtColId) {
-          return {
-            success: false,
-            error: `Relation target column "${rel.target_table}.${rel.target_column}" not found`,
-          }
-        }
-
-        const created = await store.addRelation({
-          source_table_id: srcTableId,
-          source_column_id: srcColId,
-          target_table_id: tgtTableId,
-          target_column_id: tgtColId,
-          relation_type: rel.relation_type ?? 'one_to_many',
-          on_delete: rel.on_delete ?? 'NO ACTION',
-          on_update: rel.on_update ?? 'NO ACTION',
-        })
-        relationIds.push(created.id)
       }
-
-      // Phase 3: Optional auto-layout
-      if (params.auto_layout) {
-        await emit('er-canvas-auto-layout', { projectId: this._projectId })
-      }
-
-      return {
-        success: true,
-        data: { tables: tableResults, relationIds },
-      }
-    } catch (e) {
-      return { success: false, error: String(e) }
+      results.push(result.data ?? {})
     }
+
+    return { success: true, data: { results } }
   }
 }

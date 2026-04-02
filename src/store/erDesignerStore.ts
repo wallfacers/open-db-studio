@@ -333,6 +333,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       }));
     } catch (e) {
       console.error('Failed to update ER table:', e);
+      throw e;
     }
   },
 
@@ -383,6 +384,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       });
     } catch (e) {
       console.error('Failed to delete ER table:', e);
+      throw e;
     }
   },
 
@@ -468,6 +470,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       get().checkColumnCompatibility(id);
     } catch (e) {
       console.error('Failed to update ER column:', e);
+      throw e;
     }
   },
 
@@ -487,6 +490,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       });
     } catch (e) {
       console.error('Failed to delete ER column:', e);
+      throw e;
     }
   },
 
@@ -532,6 +536,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       }));
     } catch (e) {
       console.error('Failed to update ER relation:', e);
+      throw e;
     }
   },
 
@@ -541,6 +546,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       set((s) => ({ relations: s.relations.filter((r) => r.id !== id) }));
     } catch (e) {
       console.error('Failed to delete ER relation:', e);
+      throw e;
     }
   },
 
@@ -578,6 +584,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       });
     } catch (e) {
       console.error('Failed to update ER index:', e);
+      throw e;
     }
   },
 
@@ -592,6 +599,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       }));
     } catch (e) {
       console.error('Failed to delete ER index:', e);
+      throw e;
     }
   },
 

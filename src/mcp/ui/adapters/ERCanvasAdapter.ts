@@ -37,7 +37,14 @@ const ER_CANVAS_STATE_SCHEMA = {
                 nullable: { type: 'boolean' },
                 is_primary_key: { type: 'boolean' },
                 is_auto_increment: { type: 'boolean' },
+                is_unique: { type: 'boolean' },
+                unsigned: { type: 'boolean' },
+                default_value: { type: ['string', 'null'] },
                 comment: { type: ['string', 'null'] },
+                length: { type: ['number', 'null'] },
+                scale: { type: ['number', 'null'] },
+                enum_values: { type: ['array', 'null'], items: { type: 'string' } },
+                sort_order: { type: 'number' },
               },
               required: ['id', 'name', 'data_type'],
               'x-addressable-by': 'id',
@@ -70,11 +77,14 @@ const ER_CANVAS_STATE_SCHEMA = {
         type: 'object',
         properties: {
           id: { type: 'number' },
+          name: { type: ['string', 'null'] },
           source_table_id: { type: 'number' },
           source_column_id: { type: 'number' },
           target_table_id: { type: 'number' },
           target_column_id: { type: 'number' },
           relation_type: { type: 'string', enum: ['one_to_one', 'one_to_many', 'many_to_many'] },
+          on_delete: { type: 'string' },
+          on_update: { type: 'string' },
         },
         required: ['id', 'source_table_id', 'source_column_id', 'target_table_id', 'target_column_id', 'relation_type'],
         'x-addressable-by': 'id',
@@ -197,6 +207,18 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
     },
   },
   {
+    name: 'update_relation',
+    description: 'Update relation properties (relation_type, on_delete, on_update, name)',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        relationId: { type: 'number' },
+        updates: { type: 'object', description: 'Partial ErRelation fields to update (relation_type, on_delete, on_update, name)' },
+      },
+      required: ['relationId', 'updates'],
+    },
+  },
+  {
     name: 'delete_relation',
     description: 'Delete a relation edge by ID',
     paramsSchema: {
@@ -284,6 +306,38 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
   {
     name: 'auto_layout',
     description: 'Trigger automatic layout of all nodes on the ER canvas',
+    paramsSchema: { type: 'object', properties: {} },
+  },
+  // Column reorder
+  {
+    name: 'reorder_columns',
+    description: 'Reorder columns within a table by providing the desired column ID sequence',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        tableId: { type: 'number' },
+        columnIds: { type: 'array', items: { type: 'number' }, description: 'Ordered array of column IDs' },
+      },
+      required: ['tableId', 'columnIds'],
+    },
+  },
+  // Connection binding
+  {
+    name: 'bind_connection',
+    description: 'Programmatically bind this ER project to a database connection',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        connectionId: { type: 'number' },
+        database: { type: 'string', description: 'Database name to bind' },
+        schema: { type: 'string', description: 'Schema name (optional, for PostgreSQL)' },
+      },
+      required: ['connectionId', 'database'],
+    },
+  },
+  {
+    name: 'unbind_connection',
+    description: 'Unbind this ER project from its database connection',
     paramsSchema: { type: 'object', properties: {} },
   },
 ]
@@ -374,7 +428,14 @@ export class ERCanvasAdapter implements UIObject {
           nullable: c.nullable,
           is_primary_key: c.is_primary_key,
           is_auto_increment: c.is_auto_increment,
+          is_unique: c.is_unique,
+          unsigned: c.unsigned,
+          default_value: c.default_value,
           comment: c.comment,
+          length: c.length,
+          scale: c.scale,
+          enum_values: c.enum_values,
+          sort_order: c.sort_order,
         })),
         indexes: (indexes[t.id] ?? []).map(idx => {
           let parsedColumns: string[] = []
@@ -394,11 +455,14 @@ export class ERCanvasAdapter implements UIObject {
       })),
       relations: relations.map(r => ({
         id: r.id,
+        name: r.name,
         source_table_id: r.source_table_id,
         source_column_id: r.source_column_id,
         target_table_id: r.target_table_id,
         target_column_id: r.target_column_id,
         relation_type: r.relation_type,
+        on_delete: r.on_delete,
+        on_update: r.on_update,
       })),
     }
   }
@@ -437,17 +501,17 @@ export class ERCanvasAdapter implements UIObject {
       }
     }
 
-    await emit('er-canvas-reload', { projectId: this._projectId })
     return { status: 'applied' }
   }
 
   // ── exec() ────────────────────────────────────────────────────────────
 
-  /** Execute fn, emit reload on success, return standardized result. */
+  /** Execute fn and return standardized result. Store's optimistic updates +
+   *  ERCanvas useEffect sync handle ReactFlow state propagation automatically,
+   *  so no full-project reload is needed. */
   private async withReload(fn: () => Promise<Record<string, unknown> | undefined | void>): Promise<ExecResult> {
     try {
       const data = await fn()
-      await emit('er-canvas-reload', { projectId: this._projectId })
       return { success: true, ...(data ? { data } : {}) }
     } catch (e) {
       return { success: false, error: String(e) }
@@ -491,6 +555,9 @@ export class ERCanvasAdapter implements UIObject {
           const created = await store.addRelation(params)
           return { relationId: created.id }
         })
+
+      case 'update_relation':
+        return this.withReload(() => store.updateRelation(params.relationId, params.updates))
 
       case 'delete_relation':
         return this.withReload(() => store.deleteRelation(params.relationId))
@@ -546,6 +613,19 @@ export class ERCanvasAdapter implements UIObject {
       case 'auto_layout':
         await emit('er-canvas-auto-layout', { projectId: this._projectId })
         return { success: true }
+
+      // ── Column reorder ──────────────────────────────────────────────
+      case 'reorder_columns':
+        return this.withReload(() => store.reorderColumns(params.tableId, params.columnIds))
+
+      // ── Connection binding ──────────────────────────────────────────
+      case 'bind_connection':
+        return this.withReload(() =>
+          store.bindConnection(this._projectId, params.connectionId, params.database, params.schema)
+        )
+
+      case 'unbind_connection':
+        return this.withReload(() => store.unbindConnection(this._projectId))
 
       default:
         return { success: false, error: `Unknown action: ${action}` }

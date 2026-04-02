@@ -279,8 +279,10 @@ impl PostgresDataSource {
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
         use crate::AppError;
-        let host = config.host.as_deref()
+        let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = config.port
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()

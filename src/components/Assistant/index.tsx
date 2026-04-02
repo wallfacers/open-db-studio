@@ -186,18 +186,21 @@ export const Assistant: React.FC<AssistantProps> = ({
   const pendingQuestion = useAiStore((s) => s.chatStates[currentSessionId]?.pendingQuestion ?? null);
   const isWaitingForAnswer = isChatting && !!pendingQuestion;
   // 后台流式 session 的 isChatting map（用于历史列表角标）
-  // 返回稳定字符串避免每次 selector 返回新 Set 对象导致无限循环
-  const chattingSessionIdsStr = useAiStore((s) =>
+  // 使用 ref 缓存结果，只有当 chatting 列表真正变化时才更新
+  const chattingSessionIdsRef = useRef<Set<string>>(new Set());
+  const rawChattingIds = useAiStore((s) =>
     Object.entries(s.chatStates)
       .filter(([, v]) => v.isChatting)
       .map(([k]) => k)
       .sort()
-      .join(',')
   );
-  const chattingSessionIds = useMemo(
-    () => new Set(chattingSessionIdsStr ? chattingSessionIdsStr.split(',') : []),
-    [chattingSessionIdsStr]
-  );
+  if (
+    rawChattingIds.length !== chattingSessionIdsRef.current.size ||
+    !rawChattingIds.every((id) => chattingSessionIdsRef.current.has(id))
+  ) {
+    chattingSessionIdsRef.current = new Set(rawChattingIds);
+  }
+  const chattingSessionIds = chattingSessionIdsRef.current;
   // 当前 session 的模型配置 ID：优先 chatStates.pendingConfigId（切换后立即生效），fallback sessions
   const pendingConfigId = useAiStore((s) => s.chatStates[currentSessionId]?.pendingConfigId ?? null);
   const activeConfigId =

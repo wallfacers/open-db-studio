@@ -816,41 +816,41 @@ export const useAiStore = create<AiState>()(
 
           const flushBuffers = () => {
             rafId = null;
+            // 一次性读取当前状态，避免重复调用 get()
+            const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
             const updates: Partial<SessionRuntimeState> = {};
             let hasUpdates = false;
 
+            // 复用同一个 parts 数组，避免多次复制
+            const parts = [...(currentState.streamingParts ?? [])];
+
             if (contentBuf) {
               const delta = contentBuf; contentBuf = '';
-              const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
               updates.streamingContent = (currentState.streamingContent ?? '') + delta;
               // 更新 streamingParts: 追加到最后一个 TextPart 或创建新的
-              const parts = [...(currentState.streamingParts ?? [])];
               const lastPart = parts[parts.length - 1];
               if (lastPart && lastPart.type === 'text') {
                 parts[parts.length - 1] = { ...lastPart, content: lastPart.content + delta };
               } else {
                 parts.push({ type: 'text', content: delta });
               }
-              updates.streamingParts = parts;
               hasUpdates = true;
             }
             if (thinkingBuf) {
               const delta = thinkingBuf; thinkingBuf = '';
-              const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
               updates.streamingThinkingContent = (currentState.streamingThinkingContent ?? '') + delta;
               // 更新 streamingParts: 追加到最后一个 ReasoningPart 或创建新的
-              const parts = updates.streamingParts ?? [...(currentState.streamingParts ?? [])];
               const lastPart = parts[parts.length - 1];
               if (lastPart && lastPart.type === 'reasoning') {
                 parts[parts.length - 1] = { ...lastPart, content: lastPart.content + delta };
               } else {
                 parts.push({ type: 'reasoning', content: delta });
               }
-              updates.streamingParts = parts;
               hasUpdates = true;
             }
 
             if (hasUpdates) {
+              updates.streamingParts = parts;
               set((s) => ({
                 chatStates: {
                   ...s.chatStates,

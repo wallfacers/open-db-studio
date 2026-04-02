@@ -321,6 +321,145 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
       required: ['tableId', 'columnIds'],
     },
   },
+  // ── Batch operations ────────────────────────────────────────
+  {
+    name: 'batch_create_table',
+    description:
+      'Create a complete table with all columns and indexes in one call. ' +
+      'Much faster than calling add_table + add_column × N + add_index × N separately. ' +
+      'Returns { tableId, columnIds, indexIds }.',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Table name' },
+        comment: { type: 'string', description: 'Table comment' },
+        position: {
+          type: 'object',
+          properties: { x: { type: 'number' }, y: { type: 'number' } },
+        },
+        columns: {
+          type: 'array',
+          description: 'Column definitions (ordered)',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              data_type: { type: 'string' },
+              length: { type: ['number', 'null'] },
+              scale: { type: ['number', 'null'] },
+              nullable: { type: 'boolean', default: true },
+              is_primary_key: { type: 'boolean', default: false },
+              is_auto_increment: { type: 'boolean', default: false },
+              is_unique: { type: 'boolean', default: false },
+              unsigned: { type: 'boolean', default: false },
+              default_value: { type: ['string', 'null'] },
+              comment: { type: ['string', 'null'] },
+              enum_values: { type: ['array', 'null'], items: { type: 'string' } },
+            },
+            required: ['name', 'data_type'],
+          },
+        },
+        indexes: {
+          type: 'array',
+          description: 'Index definitions',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              columns: { type: 'array', items: { type: 'string' }, description: 'Column names' },
+              type: { type: 'string', enum: ['INDEX', 'UNIQUE', 'FULLTEXT'], default: 'INDEX' },
+            },
+            required: ['name', 'columns'],
+          },
+        },
+      },
+      required: ['name', 'columns'],
+    },
+  },
+  {
+    name: 'batch_create_tables',
+    description:
+      'Create multiple tables with columns, indexes, and cross-table relations in one call. ' +
+      'Ideal for scaffolding an entire schema (e.g. e-commerce orders + users + products). ' +
+      'Relations reference tables/columns by name (resolved internally). ' +
+      'Returns { tables: [{ name, tableId, columnMap }], relationIds }.',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        tables: {
+          type: 'array',
+          description: 'Array of table definitions (same shape as batch_create_table params)',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              comment: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: { x: { type: 'number' }, y: { type: 'number' } },
+              },
+              columns: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    data_type: { type: 'string' },
+                    length: { type: ['number', 'null'] },
+                    scale: { type: ['number', 'null'] },
+                    nullable: { type: 'boolean', default: true },
+                    is_primary_key: { type: 'boolean', default: false },
+                    is_auto_increment: { type: 'boolean', default: false },
+                    is_unique: { type: 'boolean', default: false },
+                    unsigned: { type: 'boolean', default: false },
+                    default_value: { type: ['string', 'null'] },
+                    comment: { type: ['string', 'null'] },
+                  },
+                  required: ['name', 'data_type'],
+                },
+              },
+              indexes: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    columns: { type: 'array', items: { type: 'string' } },
+                    type: { type: 'string', enum: ['INDEX', 'UNIQUE', 'FULLTEXT'], default: 'INDEX' },
+                  },
+                  required: ['name', 'columns'],
+                },
+              },
+            },
+            required: ['name', 'columns'],
+          },
+        },
+        relations: {
+          type: 'array',
+          description: 'Cross-table relations (reference tables/columns by name)',
+          items: {
+            type: 'object',
+            properties: {
+              source_table: { type: 'string', description: 'Source table name' },
+              source_column: { type: 'string', description: 'Source column name (FK side)' },
+              target_table: { type: 'string', description: 'Target table name (PK side)' },
+              target_column: { type: 'string', description: 'Target column name' },
+              relation_type: { type: 'string', default: 'one_to_many' },
+              on_delete: { type: 'string', default: 'NO ACTION' },
+              on_update: { type: 'string', default: 'NO ACTION' },
+            },
+            required: ['source_table', 'source_column', 'target_table', 'target_column'],
+          },
+        },
+        auto_layout: {
+          type: 'boolean',
+          description: 'Trigger auto-layout after creation (default false)',
+          default: false,
+        },
+      },
+      required: ['tables'],
+    },
+  },
   // Connection binding
   {
     name: 'bind_connection',
@@ -350,10 +489,30 @@ interface ParsedPath {
   field: string
 }
 
+// Parsed add/remove paths like /tables/[id=5]/columns/- or /tables/[id=5]/indexes/-
+interface ParsedCollectionPath {
+  tableId: number
+  collection: 'columns' | 'indexes'
+}
+
+// Parsed remove paths like /columns/[id=10] or /indexes/[id=3]
+interface ParsedEntityRemovePath {
+  entity: 'column' | 'index' | 'relation'
+  entityId: number
+  tableId?: number  // needed for column/index deletion
+}
+
 // Maps nested patch paths to flat store field names
 const FIELD_ALIASES: Record<string, Record<string, string>> = {
   table: { 'position/x': 'position_x', 'position/y': 'position_y' },
   column: {},
+}
+
+/** Normalize index columns: AI passes string[], store expects JSON string */
+function normalizeIndexColumns(indexDef: { columns?: string[] | string }): void {
+  if (Array.isArray(indexDef.columns)) {
+    (indexDef as { columns: string }).columns = JSON.stringify(indexDef.columns)
+  }
 }
 
 function resolveField(entity: 'table' | 'column', field: string): string {
@@ -368,6 +527,29 @@ function parsePatchPath(path: string): ParsedPath | null {
   const columnMatch = path.match(/^\/columns\/\[id=(\d+)\]\/(.+)$/)
   if (columnMatch) {
     return { entity: 'column', entityId: Number(columnMatch[1]), field: columnMatch[2] }
+  }
+  return null
+}
+
+/** Parse /tables/[id=5]/columns/- or /tables/[id=5]/indexes/- for add ops */
+function parseCollectionAppendPath(path: string): ParsedCollectionPath | null {
+  const m = path.match(/^\/tables\/\[id=(\d+)\]\/(columns|indexes)\/-$/)
+  if (m) return { tableId: Number(m[1]), collection: m[2] as 'columns' | 'indexes' }
+  return null
+}
+
+/** Parse /columns/[id=10] or /indexes/[id=3] or /relations/[id=7] for remove ops */
+function parseEntityRemovePath(path: string): ParsedEntityRemovePath | null {
+  const m = path.match(/^\/(columns|indexes|relations)\/\[id=(\d+)\](?:\/\[tableId=(\d+)\])?$/)
+  if (m) {
+    const entityMap: Record<string, 'column' | 'index' | 'relation'> = {
+      columns: 'column', indexes: 'index', relations: 'relation',
+    }
+    return {
+      entity: entityMap[m[1]],
+      entityId: Number(m[2]),
+      tableId: m[3] ? Number(m[3]) : undefined,
+    }
   }
   return null
 }
@@ -472,29 +654,77 @@ export class ERCanvasAdapter implements UIObject {
   // so we intentionally skip pending_confirm and apply directly.
 
   async patch(ops: JsonPatchOp[], _reason?: string): Promise<PatchResult> {
+    const store = useErDesignerStore.getState()
+
     for (const op of ops) {
-      if (op.op !== 'replace') {
-        return {
-          status: 'error',
-          message: `Unsupported patch op "${op.op}" — er_canvas patch only supports "replace"`,
-        }
-      }
-
-      const parsed = parsePatchPath(op.path)
-      if (!parsed) {
-        return {
-          status: 'error',
-          message: `Cannot parse patch path "${op.path}". Expected format: /tables/[id=<n>]/<field> or /columns/[id=<n>]/<field>`,
-        }
-      }
-
-      const field = resolveField(parsed.entity, parsed.field)
-      const store = useErDesignerStore.getState()
       try {
-        if (parsed.entity === 'table') {
-          await store.updateTable(parsed.entityId, { [field]: op.value })
-        } else {
-          await store.updateColumn(parsed.entityId, { [field]: op.value })
+        switch (op.op) {
+          case 'replace': {
+            const parsed = parsePatchPath(op.path)
+            if (!parsed) {
+              return {
+                status: 'error',
+                message: `Cannot parse replace path "${op.path}". Expected: /tables/[id=<n>]/<field> or /columns/[id=<n>]/<field>`,
+              }
+            }
+            const field = resolveField(parsed.entity, parsed.field)
+            if (parsed.entity === 'table') {
+              await store.updateTable(parsed.entityId, { [field]: op.value })
+            } else {
+              await store.updateColumn(parsed.entityId, { [field]: op.value })
+            }
+            break
+          }
+
+          case 'add': {
+            // Support: /tables/[id=5]/columns/- and /tables/[id=5]/indexes/-
+            const col = parseCollectionAppendPath(op.path)
+            if (!col) {
+              return {
+                status: 'error',
+                message: `Cannot parse add path "${op.path}". Expected: /tables/[id=<n>]/columns/- or /tables/[id=<n>]/indexes/-`,
+              }
+            }
+            if (col.collection === 'columns') {
+              await store.addColumn(col.tableId, op.value)
+            } else {
+              const indexDef = { ...op.value }
+              normalizeIndexColumns(indexDef)
+              await store.addIndex(col.tableId, indexDef)
+            }
+            break
+          }
+
+          case 'remove': {
+            // Support: /columns/[id=10]/[tableId=5], /indexes/[id=3]/[tableId=5], /relations/[id=7]
+            const target = parseEntityRemovePath(op.path)
+            if (!target) {
+              return {
+                status: 'error',
+                message: `Cannot parse remove path "${op.path}". Expected: /columns/[id=<n>]/[tableId=<n>], /indexes/[id=<n>]/[tableId=<n>], or /relations/[id=<n>]`,
+              }
+            }
+            if (target.entity === 'column') {
+              if (!target.tableId) {
+                return { status: 'error', message: `remove /columns requires tableId: /columns/[id=<n>]/[tableId=<n>]` }
+              }
+              await store.deleteColumn(target.entityId, target.tableId)
+            } else if (target.entity === 'index') {
+              if (!target.tableId) {
+                return { status: 'error', message: `remove /indexes requires tableId: /indexes/[id=<n>]/[tableId=<n>]` }
+              }
+              await store.deleteIndex(target.entityId, target.tableId)
+            } else {
+              await store.deleteRelation(target.entityId)
+            }
+            break
+          }
+
+          default:
+            return {
+              status: 'error',
+              message: `Unsupported patch op "${op.op}" — er_canvas supports "replace", "add", and "remove"`,
+            }
         }
       } catch (e) {
         return { status: 'error', message: String(e) }
@@ -565,11 +795,8 @@ export class ERCanvasAdapter implements UIObject {
       // ── Index CRUD ──────────────────────────────────────────────────
       case 'add_index':
         return this.withReload(async () => {
-          // AI passes columns as string[]; store expects JSON string
           const indexDef = { ...params.index }
-          if (Array.isArray(indexDef.columns)) {
-            indexDef.columns = JSON.stringify(indexDef.columns)
-          }
+          normalizeIndexColumns(indexDef)
           const created = await store.addIndex(params.tableId, indexDef)
           return { indexId: created.id }
         })
@@ -627,8 +854,156 @@ export class ERCanvasAdapter implements UIObject {
       case 'unbind_connection':
         return this.withReload(() => store.unbindConnection(this._projectId))
 
+      // ── Batch operations ────────────────────────────────────────
+      case 'batch_create_table':
+        return this._batchCreateTable(store, params)
+
+      case 'batch_create_tables':
+        return this._batchCreateTables(store, params)
+
       default:
         return { success: false, error: `Unknown action: ${action}` }
+    }
+  }
+
+  // ── Batch: single table with columns + indexes ─────────────────
+
+  private async _batchCreateTable(
+    store: ReturnType<typeof useErDesignerStore.getState>,
+    params: any,
+  ): Promise<ExecResult> {
+    try {
+      const position = params.position ?? { x: 100, y: 100 }
+      const table = await store.addTable(params.name, position)
+
+      if (params.comment) {
+        await store.updateTable(table.id, { comment: params.comment })
+      }
+
+      // Create columns sequentially to preserve order
+      const columnIds: number[] = []
+      const columnNameToId: Record<string, number> = {}
+      for (const col of params.columns ?? []) {
+        const created = await store.addColumn(table.id, col)
+        columnIds.push(created.id)
+        columnNameToId[col.name] = created.id
+      }
+
+      // Create indexes
+      const indexIds: number[] = []
+      for (const idx of params.indexes ?? []) {
+        const indexDef = { ...idx }
+        normalizeIndexColumns(indexDef)
+        const created = await store.addIndex(table.id, indexDef)
+        indexIds.push(created.id)
+      }
+
+      return {
+        success: true,
+        data: { tableId: table.id, columnIds, columnMap: columnNameToId, indexIds },
+      }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
+
+  // ── Batch: multiple tables with cross-table relations ──────────
+
+  private async _batchCreateTables(
+    store: ReturnType<typeof useErDesignerStore.getState>,
+    params: any,
+  ): Promise<ExecResult> {
+    try {
+      // Phase 1: Create all tables with columns and indexes
+      const tableResults: Array<{
+        name: string
+        tableId: number
+        columnMap: Record<string, number>
+        indexIds: number[]
+      }> = []
+
+      for (const tableDef of params.tables ?? []) {
+        const result = await this._batchCreateTable(store, tableDef)
+        if (!result.success) {
+          return {
+            success: false,
+            error: `Failed to create table "${tableDef.name}": ${result.error}`,
+          }
+        }
+        tableResults.push({
+          name: tableDef.name,
+          tableId: result.data.tableId,
+          columnMap: result.data.columnMap,
+          indexIds: result.data.indexIds,
+        })
+      }
+
+      // Build lookup maps: tableName → tableId, (tableName, colName) → colId
+      const tableNameToId: Record<string, number> = {}
+      const columnLookup: Record<string, Record<string, number>> = {}
+      for (const t of tableResults) {
+        tableNameToId[t.name] = t.tableId
+        columnLookup[t.name] = t.columnMap
+      }
+      // Also include pre-existing tables in lookups so relations can reference them
+      const existingState = useErDesignerStore.getState()
+      for (const t of existingState.tables) {
+        if (!tableNameToId[t.name]) {
+          tableNameToId[t.name] = t.id
+          const cols = existingState.columns[t.id] ?? []
+          columnLookup[t.name] = Object.fromEntries(cols.map(c => [c.name, c.id]))
+        }
+      }
+
+      // Phase 2: Create cross-table relations
+      const relationIds: number[] = []
+      for (const rel of params.relations ?? []) {
+        const srcTableId = tableNameToId[rel.source_table]
+        const tgtTableId = tableNameToId[rel.target_table]
+        if (!srcTableId) {
+          return { success: false, error: `Relation source table "${rel.source_table}" not found` }
+        }
+        if (!tgtTableId) {
+          return { success: false, error: `Relation target table "${rel.target_table}" not found` }
+        }
+        const srcColId = columnLookup[rel.source_table]?.[rel.source_column]
+        const tgtColId = columnLookup[rel.target_table]?.[rel.target_column]
+        if (!srcColId) {
+          return {
+            success: false,
+            error: `Relation source column "${rel.source_table}.${rel.source_column}" not found`,
+          }
+        }
+        if (!tgtColId) {
+          return {
+            success: false,
+            error: `Relation target column "${rel.target_table}.${rel.target_column}" not found`,
+          }
+        }
+
+        const created = await store.addRelation({
+          source_table_id: srcTableId,
+          source_column_id: srcColId,
+          target_table_id: tgtTableId,
+          target_column_id: tgtColId,
+          relation_type: rel.relation_type ?? 'one_to_many',
+          on_delete: rel.on_delete ?? 'NO ACTION',
+          on_update: rel.on_update ?? 'NO ACTION',
+        })
+        relationIds.push(created.id)
+      }
+
+      // Phase 3: Optional auto-layout
+      if (params.auto_layout) {
+        await emit('er-canvas-auto-layout', { projectId: this._projectId })
+      }
+
+      return {
+        success: true,
+        data: { tables: tableResults, relationIds },
+      }
+    } catch (e) {
+      return { success: false, error: String(e) }
     }
   }
 }

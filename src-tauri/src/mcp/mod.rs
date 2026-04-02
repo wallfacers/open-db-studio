@@ -226,7 +226,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "init_table_form",
-                "description": "Initialize a new table design form with a complete table definition in one call. This is much faster than using ui_patch multiple times. Opens a new table_form tab and populates it with the given table name, columns, and indexes. Returns the new tab objectId.",
+                "description": "Open a table design form for a CONNECTED DATABASE and populate it with columns/indexes. This is for editing real database tables (generates DDL). Do NOT use this for ER diagram design — use init_er_table instead. Requires connection_id and database.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -269,6 +269,135 @@ fn tool_definitions() -> Value {
                         "charset": { "type": "string", "default": "utf8mb4" }
                     },
                     "required": ["connection_id", "database", "table_name", "columns"]
+                }
+            }),
+            json!({
+                "name": "init_er_table",
+                "description": "Create a complete table with columns and indexes in the active ER diagram in one call. This is for ER DESIGN projects (visual schema design), NOT for connected databases. If you need to create a table in a connected database, use init_table_form instead. Equivalent to batch_create_table action on er_canvas but as a top-level tool for convenience.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "description": "ER canvas objectId. Use 'active' to target the currently open ER canvas." },
+                        "table_name": { "type": "string", "description": "Table name" },
+                        "comment": { "type": "string", "description": "Table comment" },
+                        "position": {
+                            "type": "object",
+                            "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+                            "description": "Canvas position (defaults to {x:100, y:100})"
+                        },
+                        "columns": {
+                            "type": "array",
+                            "description": "Column definitions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "data_type": { "type": "string", "description": "e.g. VARCHAR, BIGINT, DECIMAL, DATETIME, TEXT, ENUM" },
+                                    "length": { "type": "integer" },
+                                    "scale": { "type": "integer" },
+                                    "nullable": { "type": "boolean", "default": true },
+                                    "is_primary_key": { "type": "boolean", "default": false },
+                                    "is_auto_increment": { "type": "boolean", "default": false },
+                                    "is_unique": { "type": "boolean", "default": false },
+                                    "unsigned": { "type": "boolean", "default": false },
+                                    "default_value": { "type": "string" },
+                                    "comment": { "type": "string" }
+                                },
+                                "required": ["name", "data_type"]
+                            }
+                        },
+                        "indexes": {
+                            "type": "array",
+                            "description": "Index definitions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "columns": { "type": "array", "items": { "type": "string" }, "description": "Column names for the index" },
+                                    "type": { "type": "string", "enum": ["INDEX", "UNIQUE", "FULLTEXT"], "default": "INDEX" }
+                                },
+                                "required": ["name", "columns"]
+                            }
+                        }
+                    },
+                    "required": ["table_name", "columns"]
+                }
+            }),
+            json!({
+                "name": "init_er_tables",
+                "description": "Create multiple tables with columns, indexes, and cross-table relations in the active ER diagram in one call. Ideal for scaffolding an entire schema. Relations reference tables/columns by name. Use this instead of calling init_er_table multiple times when you need to create related tables.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "description": "ER canvas objectId. Use 'active' to target the currently open ER canvas." },
+                        "tables": {
+                            "type": "array",
+                            "description": "Array of table definitions (same shape as init_er_table)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "table_name": { "type": "string" },
+                                    "comment": { "type": "string" },
+                                    "position": {
+                                        "type": "object",
+                                        "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+                                    },
+                                    "columns": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": { "type": "string" },
+                                                "data_type": { "type": "string" },
+                                                "length": { "type": "integer" },
+                                                "scale": { "type": "integer" },
+                                                "nullable": { "type": "boolean", "default": true },
+                                                "is_primary_key": { "type": "boolean", "default": false },
+                                                "is_auto_increment": { "type": "boolean", "default": false },
+                                                "is_unique": { "type": "boolean", "default": false },
+                                                "unsigned": { "type": "boolean", "default": false },
+                                                "default_value": { "type": "string" },
+                                                "comment": { "type": "string" }
+                                            },
+                                            "required": ["name", "data_type"]
+                                        }
+                                    },
+                                    "indexes": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": { "type": "string" },
+                                                "columns": { "type": "array", "items": { "type": "string" } },
+                                                "type": { "type": "string", "enum": ["INDEX", "UNIQUE", "FULLTEXT"], "default": "INDEX" }
+                                            },
+                                            "required": ["name", "columns"]
+                                        }
+                                    }
+                                },
+                                "required": ["table_name", "columns"]
+                            }
+                        },
+                        "relations": {
+                            "type": "array",
+                            "description": "Cross-table relations (reference tables/columns by name)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "source_table": { "type": "string", "description": "Source table name (FK side)" },
+                                    "source_column": { "type": "string", "description": "Source column name" },
+                                    "target_table": { "type": "string", "description": "Target table name (PK side)" },
+                                    "target_column": { "type": "string", "description": "Target column name" },
+                                    "relation_type": { "type": "string", "default": "one_to_many", "enum": ["one_to_one", "one_to_many", "many_to_many"] },
+                                    "on_delete": { "type": "string", "default": "NO ACTION" },
+                                    "on_update": { "type": "string", "default": "NO ACTION" }
+                                },
+                                "required": ["source_table", "source_column", "target_table", "target_column"]
+                            }
+                        },
+                        "auto_layout": { "type": "boolean", "description": "Trigger auto-layout after creation", "default": false }
+                    },
+                    "required": ["tables"]
                 }
             }),
             json!({
@@ -644,6 +773,72 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 "patch_status": patch_result.get("data").and_then(|d| d.get("status")).unwrap_or(&json!("unknown")),
             });
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
+        }
+        "init_er_table" => {
+            // Convenience wrapper: single ui_exec call to batch_create_table on er_canvas
+            let target = args.get("target").and_then(|v| v.as_str()).unwrap_or("active");
+            let exec_params = json!({
+                "name": args["table_name"],
+                "comment": args.get("comment"),
+                "position": args.get("position"),
+                "columns": args.get("columns").cloned().unwrap_or(json!([])),
+                "indexes": args.get("indexes").cloned().unwrap_or(json!([])),
+            });
+            let payload = json!({
+                "tool": "ui_exec",
+                "object": "er_canvas",
+                "target": target,
+                "payload": {
+                    "action": "batch_create_table",
+                    "params": exec_params
+                }
+            });
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", payload,
+            ).await?;
+
+            if let Some(err) = result.get("error").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                return Err(crate::AppError::Other(format!("init_er_table failed: {}", err)));
+            }
+            Ok(serde_json::to_string_pretty(&result.get("data").unwrap_or(&json!({}))).unwrap_or_default())
+        }
+        "init_er_tables" => {
+            // Convenience wrapper: single ui_exec call to batch_create_tables on er_canvas
+            let target = args.get("target").and_then(|v| v.as_str()).unwrap_or("active");
+            // Remap tables: field name table_name → name (frontend expects "name")
+            let tables_raw = args.get("tables").cloned().unwrap_or(json!([]));
+            let tables_mapped: Vec<Value> = tables_raw.as_array().unwrap_or(&vec![]).iter().map(|t| {
+                let mut mapped = t.clone();
+                if let Some(obj) = mapped.as_object_mut() {
+                    if let Some(tn) = obj.remove("table_name") {
+                        obj.insert("name".to_string(), tn);
+                    }
+                }
+                mapped
+            }).collect();
+
+            let exec_params = json!({
+                "tables": tables_mapped,
+                "relations": args.get("relations").cloned().unwrap_or(json!([])),
+                "auto_layout": args.get("auto_layout").and_then(|v| v.as_bool()).unwrap_or(false),
+            });
+            let payload = json!({
+                "tool": "ui_exec",
+                "object": "er_canvas",
+                "target": target,
+                "payload": {
+                    "action": "batch_create_tables",
+                    "params": exec_params
+                }
+            });
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", payload,
+            ).await?;
+
+            if let Some(err) = result.get("error").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                return Err(crate::AppError::Other(format!("init_er_tables failed: {}", err)));
+            }
+            Ok(serde_json::to_string_pretty(&result.get("data").unwrap_or(&json!({}))).unwrap_or_default())
         }
         "ui_read" | "ui_patch" | "ui_exec" | "ui_list" => {
             let payload = json!({

@@ -46,8 +46,15 @@ pub fn run() {
             } else {
                 log::error!("Could not find 'main' window for icon");
             }
-            let app_data_dir = app.path().app_data_dir()
-                .expect("Failed to get app data dir");
+            // 数据目录优先级：环境变量 > Tauri 默认目录
+            // WSL 可通过 OPEN_DB_STUDIO_DATA_DIR=/mnt/c/Users/xxx/AppData/Roaming/com.open-db-studio.app 指向 Windows 目录
+            let app_data_dir = std::env::var("OPEN_DB_STUDIO_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    app.path().app_data_dir()
+                        .expect("Failed to get app data dir")
+                });
+            log::info!("Using app data dir: {:?}", app_data_dir);
             crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
 

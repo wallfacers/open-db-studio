@@ -13,6 +13,16 @@
 
 :root {
   /* ========================================================
+     字体系统
+     ======================================================== */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei",
+    "Noto Sans CJK SC", "Source Han Sans SC",
+    sans-serif;
+
+  /* ========================================================
      核心语义色彩 (Semantic Colors)
      完整规范: docs/design-system/color-system-proposal.md
      ======================================================== */
@@ -251,6 +261,10 @@
 /* ============================================================
    全局微纹理 — 给深色背景增加深度感
    ============================================================ */
+* {
+  font-family: var(--font-sans);
+}
+
 body {
   background-color: var(--background-void);
 }

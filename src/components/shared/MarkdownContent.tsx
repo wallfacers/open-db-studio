@@ -15,8 +15,8 @@ import { InlineResultCard } from '../Assistant/InlineResultCard';
 import { SqlDiffView } from '../Assistant/SqlDiffView';
 import type { QueryResult } from '../../types';
 
-// SQL Diff 暂存：用于检测 sql:original/sql:optimized 配对
-const sqlDiffStore = new Map<string, { original?: string; optimized?: string }>();
+// SQL Diff 暂存：用于检测 sql:original/sql:optimized 配对（使用 LRU 避免内存泄漏）
+const sqlDiffStore = new LRUCache<string, { original?: string; optimized?: string }>(10);
 
 // ── Markdown 渲染 LRU 缓存（非流式消息复用渲染结果）──────────────────────────
 const markdownCache = new LRUCache<string, React.ReactNode>(100);

@@ -816,8 +816,13 @@ export const useAiStore = create<AiState>()(
 
           const flushBuffers = () => {
             rafId = null;
-            // 一次性读取当前状态，避免重复调用 get()
-            const currentState = get().chatStates[sessionId] ?? defaultRuntimeState();
+            // Guard: 如果已取消或会话已结束，跳过状态更新
+            const currentState = get().chatStates[sessionId];
+            if (!currentState?.isChatting) {
+              contentBuf = '';
+              thinkingBuf = '';
+              return;
+            }
             const updates: Partial<SessionRuntimeState> = {};
             let hasUpdates = false;
 

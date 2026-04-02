@@ -30,11 +30,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ steps }) =
               <span className="w-2.5 h-2.5 rounded-full border border-border-default flex-shrink-0" />
             )}
             <span className={`truncate ${
-              step.status === 'active'
-                ? 'text-foreground-default'
-                : step.status === 'done'
-                  ? 'text-foreground-ghost'
-                  : 'text-foreground-ghost'
+              step.status === 'active' ? 'text-foreground-default' : 'text-foreground-ghost'
             }`}>
               {step.name}
               {step.description && (

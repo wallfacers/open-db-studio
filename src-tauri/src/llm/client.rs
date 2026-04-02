@@ -161,10 +161,21 @@ impl LlmClient {
             ApiType::Anthropic => "https://api.anthropic.com",
             ApiType::Openai => "https://api.openai.com/v1",
         };
+        let raw_base = base_url.filter(|b| !b.is_empty()).unwrap_or_else(|| default_base.to_string());
+        // 规范化 base_url：去掉末尾斜杠，Anthropic 类型去掉末尾 /v1 防止拼出 /v1/v1/messages
+        let base_url = {
+            let trimmed = raw_base.trim_end_matches('/');
+            match resolved_type {
+                ApiType::Anthropic if trimmed.ends_with("/v1") => {
+                    trimmed[..trimmed.len() - 3].to_string()
+                }
+                _ => raw_base,
+            }
+        };
         Self {
             client: SHARED_CLIENT.clone(),
             api_key,
-            base_url: base_url.filter(|b| !b.is_empty()).unwrap_or_else(|| default_base.to_string()),
+            base_url,
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
             api_type: resolved_type,
         }

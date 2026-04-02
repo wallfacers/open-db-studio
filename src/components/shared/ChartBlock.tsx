@@ -9,71 +9,86 @@ import { useTranslation } from 'react-i18next';
 import { Tooltip } from '../common/Tooltip';
 
 // ── ODS 暗色主题（与项目色系一致）────────────────────────────────────────────
+// 注意：ECharts 使用 Canvas 渲染，不支持 CSS var()，所有颜色必须用实际值
+const C = {
+  accent:       '#10B981',
+  accentHover:  '#059669',
+  error:        '#EF4444',
+  bgBase:       '#0F172A',
+  bgPanel:      '#1E293B',
+  bgElevated:   '#27354F',
+  fgDefault:    '#E2E8F0',
+  fgMuted:      '#94A3B8',
+  fg:           '#F8FAFC',
+  borderDefault:'#334155',
+  borderStrong: '#475569',
+} as const;
+
 const COLOR_PALETTE = [
-  'var(--accent)', // 品牌青绿（主系列）
-  '#4a9eca', // 天蓝
-  '#7b8ff0', // 蓝紫
-  '#e07b54', // 暖橙
-  '#f0c94a', // 琥珀黄
-  '#a78bfa', // 柔紫
-  '#34d399', // 翠绿
-  'var(--error)', // 玫红
+  C.accent,      // 品牌青绿（主系列）
+  '#4a9eca',     // 天蓝
+  '#7b8ff0',     // 蓝紫
+  '#e07b54',     // 暖橙
+  '#f0c94a',     // 琥珀黄
+  '#a78bfa',     // 柔紫
+  '#34d399',     // 翠绿
+  C.error,       // 玫红
 ];
 
 const ODS_CHART_THEME = {
   color: COLOR_PALETTE,
-  backgroundColor: 'var(--background-base)',
+  backgroundColor: C.bgPanel,
   textStyle: {
-    color: 'var(--foreground-default)',
+    color: C.fgDefault,
     fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
     fontSize: 12,
   },
   title: {
-    textStyle: { color: 'var(--foreground-default)', fontSize: 13, fontWeight: 'normal' },
-    subtextStyle: { color: 'var(--foreground-muted)', fontSize: 11 },
+    textStyle: { color: C.fgDefault, fontSize: 13, fontWeight: 'normal' },
+    subtextStyle: { color: C.fgMuted, fontSize: 11 },
   },
   legend: {
-    textStyle: { color: 'var(--foreground-muted)' },
-    inactiveColor: 'var(--border-strong)',
-    pageTextStyle: { color: 'var(--foreground-muted)' },
+    textStyle: { color: C.fgMuted },
+    inactiveColor: C.borderStrong,
+    pageTextStyle: { color: C.fgMuted },
   },
   tooltip: {
-    backgroundColor: 'var(--background-elevated)',
-    borderColor: 'var(--border-strong)',
+    backgroundColor: C.bgElevated,
+    borderColor: C.borderStrong,
     borderWidth: 1,
-    textStyle: { color: 'var(--foreground-default)', fontSize: 12 },
+    textStyle: { color: C.fgDefault, fontSize: 12 },
     extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.5);',
   },
   axisPointer: {
-    lineStyle: { color: 'var(--border-strong)' },
-    crossStyle: { color: 'var(--border-strong)' },
-    label: { backgroundColor: 'var(--background-elevated)', borderColor: 'var(--border-strong)', color: 'var(--foreground-default)' },
+    lineStyle: { color: C.borderStrong },
+    crossStyle: { color: C.borderStrong },
+    label: { backgroundColor: C.bgElevated, borderColor: C.borderStrong, color: C.fgDefault },
   },
   categoryAxis: {
-    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
-    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
-    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
-    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: C.borderDefault } },
+    axisTick:  { lineStyle: { color: C.borderDefault } },
+    axisLabel: { color: C.fgMuted, fontSize: 11 },
+    splitLine: { lineStyle: { color: C.borderDefault, type: 'dashed' } },
     splitArea: { areaStyle: { color: ['rgba(30,45,66,0.15)', 'rgba(30,45,66,0.05)'] } },
   },
   valueAxis: {
-    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
-    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
-    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
-    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: C.borderDefault } },
+    axisTick:  { lineStyle: { color: C.borderDefault } },
+    axisLabel: { color: C.fgMuted, fontSize: 11 },
+    splitLine: { lineStyle: { color: C.borderDefault, type: 'dashed' } },
     splitArea: { areaStyle: { color: ['rgba(30,45,66,0.15)', 'rgba(30,45,66,0.05)'] } },
   },
   logAxis: {
-    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
-    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
-    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
-    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: C.borderDefault } },
+    axisTick:  { lineStyle: { color: C.borderDefault } },
+    axisLabel: { color: C.fgMuted, fontSize: 11 },
+    splitLine: { lineStyle: { color: C.borderDefault, type: 'dashed' } },
   },
   timeAxis: {
-    axisLine:  { lineStyle: { color: 'var(--border-default)' } },
-    axisTick:  { lineStyle: { color: 'var(--border-default)' } },
-    axisLabel: { color: 'var(--foreground-muted)', fontSize: 11 },
-    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
+    axisLine:  { lineStyle: { color: C.borderDefault } },
+    axisTick:  { lineStyle: { color: C.borderDefault } },
+    axisLabel: { color: C.fgMuted, fontSize: 11 },
+    splitLine: { lineStyle: { color: C.borderDefault, type: 'dashed' } },
   },
   line: {
     symbol: 'circle',
@@ -89,9 +104,9 @@ const ODS_CHART_THEME = {
   },
   pie: {
     radius: ['0%', '65%'],
-    label: { color: 'var(--foreground-default)', fontSize: 11 },
-    labelLine: { lineStyle: { color: 'var(--border-strong)' } },
-    emphasis: { label: { color: 'var(--foreground)', fontWeight: 'bold' } },
+    label: { color: C.fgDefault, fontSize: 11 },
+    labelLine: { lineStyle: { color: C.borderStrong } },
+    emphasis: { label: { color: C.fg, fontWeight: 'bold' } },
   },
   scatter: {
     symbolSize: 8,
@@ -99,41 +114,41 @@ const ODS_CHART_THEME = {
   },
   candlestick: {
     itemStyle: {
-      color: 'var(--accent)',
-      color0: 'var(--error)',
-      borderColor: 'var(--accent)',
-      borderColor0: 'var(--error)',
+      color: C.accent,
+      color0: C.error,
+      borderColor: C.accent,
+      borderColor0: C.error,
     },
   },
   radar: {
-    name: { textStyle: { color: 'var(--foreground-muted)' } },
-    axisLine: { lineStyle: { color: 'var(--border-default)' } },
-    splitLine: { lineStyle: { color: 'var(--border-default)', type: 'dashed' } },
+    name: { textStyle: { color: C.fgMuted } },
+    axisLine: { lineStyle: { color: C.borderDefault } },
+    splitLine: { lineStyle: { color: C.borderDefault, type: 'dashed' } },
     splitArea: { areaStyle: { color: ['rgba(30,45,66,0.2)', 'rgba(30,45,66,0.05)'] } },
   },
   dataZoom: {
-    backgroundColor: 'var(--background-panel)',
+    backgroundColor: C.bgPanel,
     dataBackground: {
-      lineStyle: { color: 'var(--border-strong)' },
+      lineStyle: { color: C.borderStrong },
       areaStyle: { color: 'rgba(42,63,90,0.3)' },
     },
     fillerColor: 'rgba(16,185,129,0.12)',
-    handleStyle: { color: 'var(--accent)', borderColor: 'var(--accent-hover)' },
-    textStyle: { color: 'var(--foreground-muted)' },
+    handleStyle: { color: C.accent, borderColor: C.accentHover },
+    textStyle: { color: C.fgMuted },
   },
   visualMap: {
-    color: ['var(--accent)', '#4a9eca', 'var(--background-elevated)'],
-    textStyle: { color: 'var(--foreground-muted)' },
+    color: [C.accent, '#4a9eca', C.bgElevated],
+    textStyle: { color: C.fgMuted },
   },
   toolbox: {
-    iconStyle: { borderColor: 'var(--border-strong)' },
-    emphasis: { iconStyle: { borderColor: 'var(--accent)' } },
+    iconStyle: { borderColor: C.borderStrong },
+    emphasis: { iconStyle: { borderColor: C.accent } },
   },
   timeline: {
-    lineStyle: { color: 'var(--border-strong)' },
-    itemStyle: { color: 'var(--accent)' },
-    label: { color: 'var(--foreground-muted)' },
-    controlStyle: { color: 'var(--foreground-muted)', borderColor: 'var(--border-strong)' },
+    lineStyle: { color: C.borderStrong },
+    itemStyle: { color: C.accent },
+    label: { color: C.fgMuted },
+    controlStyle: { color: C.fgMuted, borderColor: C.borderStrong },
   },
 };
 
@@ -399,7 +414,7 @@ export const ChartBlock: React.FC<{ code: string; isStreaming?: boolean }> = mem
   );
 
   // 背景色始终强制覆盖（放在 spread 后，防止 AI 输出把它覆盖掉）
-  const mergedOption = { ...option!, backgroundColor: 'var(--background-base)' };
+  const mergedOption = { ...option!, backgroundColor: C.bgPanel };
 
   // ── 正常渲染 ──
   return (

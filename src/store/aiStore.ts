@@ -733,8 +733,23 @@ export const useAiStore = create<AiState>()(
           // Guard: 已被 cancel 或 session 已被删除（deleteSession 会同时清除 chatStates）
           if (!get().chatStates[sessionId]?.isChatting) return;
 
-          // 获取流式构建的 parts 快照
-          const finalParts = get().chatStates[sessionId]?.streamingParts ?? [];
+          // 获取流式构建的 parts 快照，合并连续的同类型 text/reasoning parts
+          const rawParts = get().chatStates[sessionId]?.streamingParts ?? [];
+          const finalParts = rawParts.reduce<typeof rawParts>((merged, part) => {
+            const last = merged[merged.length - 1];
+            if (last && last.type === part.type) {
+              if (part.type === 'reasoning' && last.type === 'reasoning') {
+                merged[merged.length - 1] = { type: 'reasoning', content: last.content + part.content };
+                return merged;
+              }
+              if (part.type === 'text' && last.type === 'text') {
+                merged[merged.length - 1] = { type: 'text', content: last.content + part.content };
+                return merged;
+              }
+            }
+            merged.push(part);
+            return merged;
+          }, []);
           const newMsg = {
             role: 'assistant' as const,
             content,

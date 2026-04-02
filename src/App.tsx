@@ -54,6 +54,10 @@ export default function App() {
     activeTab?.metricScope?.database ??
     activeTab?.db ??
     null;
+  const activeSchema =
+    activeTab?.queryContext?.schema ??
+    activeTab?.schema ??
+    null;
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP 双向桥接（UI action / query request）
   useMcpBridge();
@@ -324,6 +328,8 @@ export default function App() {
           handleAssistantResize={handleAssistantResize}
           showToast={showToast}
           activeConnectionId={activeConnectionId}
+          activeDatabase={activeDatabase}
+          activeSchema={activeSchema}
           onOpenSettings={() => setActiveActivity('settings')}
         />
       </div>

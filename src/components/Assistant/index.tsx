@@ -155,6 +155,8 @@ interface AssistantProps {
   handleAssistantResize: (e: React.MouseEvent) => void;
   showToast: (msg: string, level?: ToastLevel) => void;
   activeConnectionId: number | null;
+  activeDatabase: string | null;
+  activeSchema: string | null;
   onOpenSettings: () => void;
 }
 
@@ -163,6 +165,8 @@ export const Assistant: React.FC<AssistantProps> = ({
   handleAssistantResize,
   showToast,
   activeConnectionId,
+  activeDatabase,
+  activeSchema,
   onOpenSettings,
 }) => {
   const { t } = useTranslation();
@@ -897,7 +901,7 @@ export const Assistant: React.FC<AssistantProps> = ({
         </div>
       ) : (
         /* ── 对话状态：消息滚动区 + 底部固定输入框 ── */
-        <ChatConnectionProvider value={{ connectionId: effectiveConnectionId }}>
+        <ChatConnectionProvider value={{ connectionId: effectiveConnectionId, database: activeDatabase ?? undefined, schema: activeSchema ?? undefined }}>
           <div className="flex-1 overflow-auto p-4 space-y-6 min-h-0">
             {chatHistory.map((msg, idx) => {
               const isLastUser = msg.role === 'user' && idx === chatHistory.length - 2;

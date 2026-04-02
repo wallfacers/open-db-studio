@@ -12,6 +12,14 @@
    ============================================================ */
 
 :root {
+  /* --- 字体系统 --- */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei",
+    "Noto Sans CJK SC", "Source Han Sans SC",
+    sans-serif;
+
   /* --- 背景层级 (深度从深到浅) --- */
   --bg-void:     #080d12;  /* 最深背景，app根节点 */
   --bg-base:     #0d1117;  /* 面板/侧边栏 */
@@ -117,6 +125,10 @@
 /* ============================================================
    全局微纹理 — 给深色背景增加深度感
    ============================================================ */
+* {
+  font-family: var(--font-sans);
+}
+
 body {
   background-color: #080d12;
 }

@@ -42,7 +42,11 @@ impl Db2DataSource {
     #[allow(unused_variables)]
     pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
         #[cfg(feature = "db2-driver")]
-        let host = config.host.as_deref().unwrap_or("localhost");
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = match config.host.as_deref().unwrap_or("localhost") {
+            h if h.eq_ignore_ascii_case("localhost") => "127.0.0.1",
+            h => h,
+        };
         #[cfg(feature = "db2-driver")]
         let port = config.port.unwrap_or(50000);
         #[cfg(feature = "db2-driver")]

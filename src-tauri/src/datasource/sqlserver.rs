@@ -17,8 +17,10 @@ pub struct SqlServerDataSource {
 
 impl SqlServerDataSource {
     pub async fn new(cfg: &ConnectionConfig) -> AppResult<Self> {
-        let host = cfg.host.as_deref()
+        let raw_host = cfg.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = cfg.port
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let mut config = Config::new();

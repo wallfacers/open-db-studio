@@ -40,8 +40,10 @@ impl GaussDbDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
-        let host = config.host.as_deref()
+        let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = config.port.unwrap_or(8000);
         let username = config.username.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;

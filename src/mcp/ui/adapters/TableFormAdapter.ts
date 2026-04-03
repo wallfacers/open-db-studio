@@ -1,6 +1,6 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
 import { applyPatch } from '../jsonPatch'
-import { useTableFormStore, type TableFormState } from '../../../store/tableFormStore'
+import { useTableFormStore, type TableFormState, type TableFormIndex, type TableFormForeignKey } from '../../../store/tableFormStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { useConnectionStore } from '../../../store/connectionStore'
@@ -43,6 +43,22 @@ const TABLE_FORM_SCHEMA = {
         'x-addressable-by': 'name',
       },
     },
+    foreignKeys: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          constraintName: { type: 'string' },
+          column: { type: 'string' },
+          referencedTable: { type: 'string' },
+          referencedColumn: { type: 'string' },
+          onDelete: { type: 'string', enum: ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT'], default: 'NO ACTION' },
+          onUpdate: { type: 'string', enum: ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT'], default: 'NO ACTION' },
+        },
+        required: ['constraintName', 'column', 'referencedTable', 'referencedColumn'],
+        'x-addressable-by': 'constraintName',
+      },
+    },
   },
 }
 
@@ -75,11 +91,59 @@ function colDef(c: Column, isPg: boolean): string {
   return [q(c.name, isPg), typ, nullable, def, extra, comment].filter(Boolean).join(' ')
 }
 
+// ── Index SQL helpers ─────────────────────────────────────────────────────
+
+function generateIndexCreateSql(tableName: string, idx: TableFormIndex, isPg: boolean): string {
+  const tbl = q(tableName, isPg)
+  const idxName = q(idx.name, isPg)
+  let cols: string[]
+  try {
+    cols = (JSON.parse(idx.columns) as Array<{ name: string; order?: string }>)
+      .map(c => `${q(c.name, isPg)}${c.order && c.order !== 'ASC' ? ` ${c.order}` : ''}`)
+  } catch {
+    cols = [idx.columns]
+  }
+  const unique = idx.type === 'UNIQUE' ? 'UNIQUE ' : ''
+  const fulltext = idx.type === 'FULLTEXT' ? 'FULLTEXT ' : ''
+  return `CREATE ${unique}${fulltext}INDEX ${idxName} ON ${tbl} (${cols.join(', ')});`
+}
+
+function generateIndexDropSql(tableName: string, indexName: string, isPg: boolean): string {
+  if (isPg) return `DROP INDEX ${q(indexName, isPg)};`
+  return `ALTER TABLE ${q(tableName, isPg)} DROP INDEX ${q(indexName, isPg)};`
+}
+
+// ── Foreign Key SQL helpers ──────────────────────────────────────────────
+
+function generateFkConstraintLine(fk: TableFormForeignKey, isPg: boolean): string {
+  return `  CONSTRAINT ${q(fk.constraintName, isPg)} FOREIGN KEY (${q(fk.column, isPg)}) REFERENCES ${q(fk.referencedTable, isPg)} (${q(fk.referencedColumn, isPg)}) ON DELETE ${fk.onDelete} ON UPDATE ${fk.onUpdate}`
+}
+
+function generateFkAddSql(tableName: string, fk: TableFormForeignKey, isPg: boolean): string {
+  const tbl = q(tableName, isPg)
+  return `ALTER TABLE ${tbl} ADD CONSTRAINT ${q(fk.constraintName, isPg)} FOREIGN KEY (${q(fk.column, isPg)}) REFERENCES ${q(fk.referencedTable, isPg)} (${q(fk.referencedColumn, isPg)}) ON DELETE ${fk.onDelete} ON UPDATE ${fk.onUpdate};`
+}
+
+function generateFkDropSql(tableName: string, constraintName: string, isPg: boolean): string {
+  const tbl = q(tableName, isPg)
+  if (isPg) return `ALTER TABLE ${tbl} DROP CONSTRAINT ${q(constraintName, isPg)};`
+  return `ALTER TABLE ${tbl} DROP FOREIGN KEY ${q(constraintName, isPg)};`
+}
+
+function isFkComplete(fk: TableFormForeignKey): boolean {
+  return !!(fk.constraintName && fk.column && fk.referencedTable && fk.referencedColumn)
+}
+
 function generateCreateSql(state: TableFormState, isPg: boolean): string {
   const activeCols = state.columns.filter(c => !c._isDeleted)
   const pkCols = activeCols.filter(c => c.isPrimaryKey).map(c => q(c.name, isPg))
   const lines = activeCols.map(c => `  ${colDef(c, isPg)}`)
   if (pkCols.length) lines.push(`  PRIMARY KEY (${pkCols.join(', ')})`)
+
+  const activeFks = (state.foreignKeys ?? []).filter(fk => !fk._isDeleted && isFkComplete(fk))
+  for (const fk of activeFks) {
+    lines.push(generateFkConstraintLine(fk, isPg))
+  }
 
   const stmts = [`CREATE TABLE ${q(state.tableName, isPg)} (\n${lines.join(',\n')}\n);`]
   if (isPg) {
@@ -160,6 +224,31 @@ function generateAlterSql(state: TableFormState, original: Column[], isPg: boole
       statements.push(`ALTER TABLE ${tbl} DROP PRIMARY KEY;`)
     }
     if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`)
+  }
+
+  // ── Foreign Key diff ──
+  const origFks = state.originalForeignKeys ?? []
+  const editedFks = state.foreignKeys ?? []
+
+  for (const fk of editedFks) {
+    if (fk._isDeleted && !fk._isNew) {
+      statements.push(generateFkDropSql(state.tableName, fk._originalName ?? fk.constraintName, isPg))
+    } else if (fk._isNew && !fk._isDeleted) {
+      if (isFkComplete(fk)) statements.push(generateFkAddSql(state.tableName, fk, isPg))
+    } else if (!fk._isNew && !fk._isDeleted) {
+      const orig = origFks.find(o => (o._originalName ?? o.constraintName) === (fk._originalName ?? fk.constraintName))
+      if (orig && (
+        orig.constraintName !== fk.constraintName ||
+        orig.column !== fk.column ||
+        orig.referencedTable !== fk.referencedTable ||
+        orig.referencedColumn !== fk.referencedColumn ||
+        orig.onDelete !== fk.onDelete ||
+        orig.onUpdate !== fk.onUpdate
+      )) {
+        statements.push(generateFkDropSql(state.tableName, orig._originalName ?? orig.constraintName, isPg))
+        if (isFkComplete(fk)) statements.push(generateFkAddSql(state.tableName, fk, isPg))
+      }
+    }
   }
 
   return statements.length > 0 ? statements.join('\n') : '-- No changes'

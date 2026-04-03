@@ -8,6 +8,8 @@ import type {
   ErRelation,
   ErIndex,
   DiffResult,
+  ImportPreview,
+  ConflictResolution,
 } from '../types';
 import { checkTypeCompatibility, type DialectName } from '@/components/ERDesigner/shared/dataTypes';
 
@@ -102,6 +104,8 @@ interface ErDesignerState {
   // Import/Export
   exportJson: (projectId: number) => Promise<string>;
   importJson: (json: string) => Promise<ErProject>;
+  previewImport: (json: string, projectId?: number) => Promise<ImportPreview>;
+  executeImport: (json: string, projectId?: number, conflicts?: ConflictResolution[]) => Promise<ErProject>;
 
   // Undo/Redo
   undoStack: OperationRecord[];
@@ -692,6 +696,34 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       return project;
     } catch (e) {
       console.error('Failed to import ER project:', e);
+      throw e;
+    }
+  },
+
+  previewImport: async (json, projectId) => {
+    try {
+      const preview = await invoke<ImportPreview>('er_preview_import', {
+        json,
+        projectId: projectId ?? null,
+      });
+      return preview;
+    } catch (e) {
+      console.error('Failed to preview import:', e);
+      throw e;
+    }
+  },
+
+  executeImport: async (json, projectId, conflicts) => {
+    try {
+      const project = await invoke<ErProject>('er_execute_import', {
+        json,
+        projectId: projectId ?? null,
+        conflicts: conflicts ?? [],
+      });
+      await get().loadProjects();
+      return project;
+    } catch (e) {
+      console.error('Failed to execute import:', e);
       throw e;
     }
   },

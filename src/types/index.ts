@@ -598,3 +598,19 @@ export interface SyncExecutionResult {
   success: boolean;
   error: string | null;
 }
+
+// ─── ER Import types ───────────────────────────────────────────────────────
+
+export interface ImportPreview {
+  project_name: string;
+  table_count: number;
+  new_tables: string[];
+  conflict_tables: string[];
+}
+
+export type ConflictAction = 'skip' | 'overwrite' | 'rename';
+
+export interface ConflictResolution {
+  table_name: string;
+  action: ConflictAction;
+}

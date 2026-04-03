@@ -61,7 +61,7 @@ const ColumnRow: React.FC<{
 
   return (
     <tr className={`hover:bg-background-hover border-b border-border-default group transition-colors duration-150 ${!isNewTable && col._isNew ? 'bg-success-subtle' : ''} ${hlClass}`}>
-      <td className="w-[30px] px-1 py-1.5 border-r border-border-default text-foreground-muted bg-background-base text-center text-xs cursor-default select-none">
+      <td className="w-10 px-2 py-1.5 border-r border-border-default text-foreground-muted text-center text-xs cursor-default select-none">
         {idx + 1}
       </td>
       <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">

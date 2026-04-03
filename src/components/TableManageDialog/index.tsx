@@ -7,7 +7,7 @@ import { useConnectionStore } from '../../store/connectionStore';
 import { generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
-import type { EditableColumn } from '../../store/tableFormStore';
+import type { EditableColumn, TableFormForeignKey, TableFormIndex } from '../../store/tableFormStore';
 import { makeId } from '../../utils/makeId';
 
 interface AiColumnDef {
@@ -68,6 +68,12 @@ export const TableManageDialog: React.FC<Props> = ({
   connectionId, tableName, database, schema, onClose, onSuccess, showToast
 }) => {
   const { t } = useTranslation();
+  type ActiveTab = 'columns' | 'foreignKeys' | 'indexes'
+  const [activeTab, setActiveTab] = useState<ActiveTab>('columns')
+  const [foreignKeys, setForeignKeys] = useState<TableFormForeignKey[]>([])
+  const [originalForeignKeys, setOriginalForeignKeys] = useState<TableFormForeignKey[]>([])
+  const [indexes, setIndexes] = useState<TableFormIndex[]>([])
+  const [originalIndexes, setOriginalIndexes] = useState<TableFormIndex[]>([])
   const [columns, setColumns] = useState<EditableColumn[]>([]);
   const [originalColumns, setOriginalColumns] = useState<EditableColumn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,6 +126,17 @@ export const TableManageDialog: React.FC<Props> = ({
         name: string; data_type: string; is_nullable: boolean;
         column_default: string | null; is_primary_key: boolean; extra: string | null;
       }>;
+      foreign_keys: Array<{
+        constraint_name: string;
+        column: string;
+        referenced_table: string;
+        referenced_column: string;
+      }>;
+      indexes: Array<{
+        index_name: string;
+        is_unique: boolean;
+        columns: string[];
+      }>;
     }>('get_table_detail', {
       connectionId, database: database ?? null, schema: schema ?? null, table: tableName
     }).then(detail => {
@@ -136,6 +153,29 @@ export const TableManageDialog: React.FC<Props> = ({
       }));
       setColumns(cols);
       setOriginalColumns(cols.map(c => ({ ...c })));
+
+      const fks: TableFormForeignKey[] = (detail.foreign_keys ?? []).map(fk => ({
+        id: makeId(),
+        constraintName: fk.constraint_name,
+        column: fk.column,
+        referencedTable: fk.referenced_table,
+        referencedColumn: fk.referenced_column,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+        _originalName: fk.constraint_name,
+      }))
+      setForeignKeys(fks)
+      setOriginalForeignKeys(fks.map(f => ({ ...f })))
+
+      const idxs: TableFormIndex[] = (detail.indexes ?? []).map(idx => ({
+        id: makeId(),
+        name: idx.index_name,
+        type: idx.is_unique ? 'UNIQUE' : 'INDEX',
+        columns: JSON.stringify(idx.columns.map(c => ({ name: c, order: 'ASC' }))),
+        _originalName: idx.index_name,
+      }))
+      setIndexes(idxs)
+      setOriginalIndexes(idxs.map(i => ({ ...i })))
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
     }).finally(() => setIsLoadingData(false));
@@ -222,13 +262,20 @@ export const TableManageDialog: React.FC<Props> = ({
     tableName: effectiveTableName,
     engine: 'InnoDB', charset: 'utf8mb4', comment: '',
     columns, originalColumns: tableName ? originalColumns : undefined,
-    indexes: [], isNewTable: !tableName,
+    indexes, originalIndexes: tableName ? originalIndexes : undefined,
+    foreignKeys, originalForeignKeys: tableName ? originalForeignKeys : undefined,
+    isNewTable: !tableName,
   }, driver);
 
   const handleExecute = async () => {
     if (previewSql.startsWith('-- ')) return;
     if (visibleColumns.some(c => !c.name.trim())) {
       showToast(t('tableManage.columnNameRequired'), 'error');
+      return;
+    }
+    const visibleFks = foreignKeys.filter(fk => !fk._isDeleted)
+    if (visibleFks.some(fk => !fk.constraintName || !fk.column || !fk.referencedTable || !fk.referencedColumn)) {
+      showToast('外键配置不完整，请填写约束名、列名、引用表和引用列', 'error');
       return;
     }
     setIsLoading(true);
@@ -251,7 +298,7 @@ export const TableManageDialog: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-background-panel border border-border-strong rounded-lg w-[800px] max-h-[85vh] flex flex-col relative">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[960px] max-h-[85vh] flex flex-col relative">
         <div className="flex items-center justify-between p-4 border-b border-border-default">
           <span className="text-foreground-default text-sm font-medium">
             {tableName ? t('tableManage.editTable', { table: tableName }) : t('tableManage.createTable')}
@@ -315,6 +362,28 @@ export const TableManageDialog: React.FC<Props> = ({
             </div>
           )}
 
+          {/* Tab 导航 */}
+          <div className="flex border-b border-[#1e2d42] mb-3">
+            {(['columns', 'foreignKeys', 'indexes'] as ActiveTab[]).map(tab => {
+              const labels: Record<ActiveTab, string> = { columns: '字段', foreignKeys: '外键', indexes: '索引' }
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-2 text-xs transition-colors duration-200 border-b-2 -mb-px ${
+                    activeTab === tab
+                      ? 'border-[#009e84] text-[#009e84]'
+                      : 'border-transparent text-[#7a9bb8] hover:text-[#c8daea]'
+                  }`}
+                >
+                  {labels[tab]}
+                </button>
+              )
+            })}
+          </div>
+
+          {activeTab === 'columns' && (
+            <>
           {isLoadingData ? (
             <div className="text-center text-xs text-foreground-muted py-8">{t('tableDataView.loading')}</div>
           ) : (
@@ -328,6 +397,7 @@ export const TableManageDialog: React.FC<Props> = ({
                   <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">{t('tableManage.defaultValue')}</th>
                   <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[40px]">{t('tableManage.primaryKey')}</th>
                   <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[80px]">Extra</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[130px]">Comment</th>
                   <th className="w-[70px]"></th>
                 </tr>
               </thead>
@@ -398,6 +468,15 @@ export const TableManageDialog: React.FC<Props> = ({
                       />
                     </td>
                     <td className="py-1 px-2">
+                      <input
+                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
+                        value={col.comment ?? ''}
+                        onChange={e => updateColumn(col.id, { comment: e.target.value })}
+                        placeholder="—"
+                        disabled={isAiBusy}
+                      />
+                    </td>
+                    <td className="py-1 px-2">
                       <div className="flex items-center gap-0.5 justify-center">
                         <button
                           onClick={() => moveColumn(col.id, 'up')}
@@ -432,6 +511,8 @@ export const TableManageDialog: React.FC<Props> = ({
             <Plus size={13} />
             {t('tableManage.addColumn')}
           </button>
+            </>
+          )}
         </div>
 
         <div className="px-4 pb-2">

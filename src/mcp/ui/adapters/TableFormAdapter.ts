@@ -316,6 +316,13 @@ export class TableFormUIObject implements UIObject {
     if (!current) return patchError(`No form state for ${this.objectId}`)
     try {
       const patched = applyPatch(current, ops)
+      // Ensure all columns have id (for React key) and _isNew for new columns
+      for (const col of patched.columns) {
+        if (!col.id) {
+          col.id = Math.random().toString(36).slice(2)
+          col._isNew = true
+        }
+      }
       useTableFormStore.getState().setForm(this.objectId, patched)
       // Extract changed paths and trigger highlights
       const paths = this.extractChangedPaths(ops, patched)

@@ -124,8 +124,11 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         {hasParts ? (
           streamingParts.map((part, i) => {
             switch (part.type) {
-              case 'reasoning':
-                return <ThinkingBlock key={i} content={part.content} isStreaming={isChatting} />;
+              case 'reasoning': {
+                // Only the last reasoning part is actively streaming; earlier ones are completed (auto-collapsed)
+                const isLastReasoning = isChatting && !streamingParts.slice(i + 1).some(p => p.type === 'reasoning');
+                return <ThinkingBlock key={i} content={part.content} isStreaming={isLastReasoning} />;
+              }
               case 'text':
                 return <MarkdownContent key={i} content={part.content} isStreaming={isChatting && !pendingQuestion} />;
               default:

@@ -317,15 +317,19 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
 
   const visibleColumns = columns.filter(c => !c._isDeleted);
   const effectiveTableName = tableName ?? newTableName;
-  const previewSql = useMemo(() => effectiveTableName.trim()
-    ? generateTableSql({
+  const previewSql = useMemo(() => {
+    if (!effectiveTableName.trim()) return '-- 请先填写表名';
+    try {
+      return generateTableSql({
         tableName: effectiveTableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns, originalColumns: tableName ? originalColumns : undefined,
         indexes: [], isNewTable: !tableName,
-      }, driver)
-    : '-- 请先填写表名',
-    [effectiveTableName, columns, originalColumns, tableName, driver]);
+      }, driver);
+    } catch {
+      return '-- 表单数据不完整，请检查列定义';
+    }
+  }, [effectiveTableName, columns, originalColumns, tableName, driver]);
 
   const hasChanges = !previewSql.startsWith('-- ');
 

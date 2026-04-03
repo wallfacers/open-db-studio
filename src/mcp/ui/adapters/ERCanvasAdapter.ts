@@ -1,5 +1,7 @@
 import { emit } from '@tauri-apps/api/event'
-import type { UIObject, JsonPatchOp, PatchResult, ExecResult, ActionDef } from '../types'
+import type { UIObject, JsonPatchOp, PatchResult, ExecResult, ActionDef, PatchCapability } from '../types'
+import { parsePath } from '../pathResolver'
+import { patchError } from '../errors'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
 
 // ── JSON Schema describing the er_canvas state shape ───────────────────────
@@ -486,25 +488,6 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
 
 // ── Helper: parse patch path like /tables/[id=5]/name ─────────────────────
 
-interface ParsedPath {
-  entity: 'table' | 'column'
-  entityId: number
-  field: string
-}
-
-// Parsed add/remove paths like /tables/[id=5]/columns/- or /tables/[id=5]/indexes/-
-interface ParsedCollectionPath {
-  tableId: number
-  collection: 'columns' | 'indexes'
-}
-
-// Parsed remove paths like /columns/[id=10] or /indexes/[id=3]
-interface ParsedEntityRemovePath {
-  entity: 'column' | 'index' | 'relation'
-  entityId: number
-  tableId?: number  // needed for column/index deletion
-}
-
 // Maps nested patch paths to flat store field names
 const FIELD_ALIASES: Record<string, Record<string, string>> = {
   table: { 'position/x': 'position_x', 'position/y': 'position_y' },
@@ -579,41 +562,6 @@ function resolveField(entity: 'table' | 'column', field: string): string {
   return FIELD_ALIASES[entity]?.[field] ?? field
 }
 
-function parsePatchPath(path: string): ParsedPath | null {
-  const tableMatch = path.match(/^\/tables\/\[id=(\d+)\]\/(.+)$/)
-  if (tableMatch) {
-    return { entity: 'table', entityId: Number(tableMatch[1]), field: tableMatch[2] }
-  }
-  const columnMatch = path.match(/^\/columns\/\[id=(\d+)\]\/(.+)$/)
-  if (columnMatch) {
-    return { entity: 'column', entityId: Number(columnMatch[1]), field: columnMatch[2] }
-  }
-  return null
-}
-
-/** Parse /tables/[id=5]/columns/- or /tables/[id=5]/indexes/- for add ops */
-function parseCollectionAppendPath(path: string): ParsedCollectionPath | null {
-  const m = path.match(/^\/tables\/\[id=(\d+)\]\/(columns|indexes)\/-$/)
-  if (m) return { tableId: Number(m[1]), collection: m[2] as 'columns' | 'indexes' }
-  return null
-}
-
-/** Parse /columns/[id=10] or /indexes/[id=3] or /relations/[id=7] for remove ops */
-function parseEntityRemovePath(path: string): ParsedEntityRemovePath | null {
-  const m = path.match(/^\/(columns|indexes|relations)\/\[id=(\d+)\](?:\/\[tableId=(\d+)\])?$/)
-  if (m) {
-    const entityMap: Record<string, 'column' | 'index' | 'relation'> = {
-      columns: 'column', indexes: 'index', relations: 'relation',
-    }
-    return {
-      entity: entityMap[m[1]],
-      entityId: Number(m[2]),
-      tableId: m[3] ? Number(m[3]) : undefined,
-    }
-  }
-  return null
-}
-
 // ── ERCanvasAdapter ────────────────────────────────────────────────────────
 
 export class ERCanvasAdapter implements UIObject {
@@ -638,6 +586,47 @@ export class ERCanvasAdapter implements UIObject {
     return useErDesignerStore.getState().projects.find(p => p.id === this._projectId)
   }
 
+  get patchCapabilities(): PatchCapability[] {
+    return [
+      {
+        pathPattern: '/tables/[<key>=<val>]/<field>',
+        ops: ['replace'],
+        description: 'Update table properties (name, comment, color, position/x, position/y)',
+        addressableBy: ['id', 'name'],
+      },
+      {
+        pathPattern: '/tables/[<key>=<val>]/columns/-',
+        ops: ['add'],
+        description: 'Append a column to a table',
+        addressableBy: ['id', 'name'],
+      },
+      {
+        pathPattern: '/tables/[<key>=<val>]/indexes/-',
+        ops: ['add'],
+        description: 'Append an index to a table',
+        addressableBy: ['id', 'name'],
+      },
+      {
+        pathPattern: '/columns/[id=<n>]/[tableId=<n>]',
+        ops: ['remove'],
+        description: 'Delete a column (requires tableId)',
+        addressableBy: ['id'],
+      },
+      {
+        pathPattern: '/indexes/[id=<n>]/[tableId=<n>]',
+        ops: ['remove'],
+        description: 'Delete an index (requires tableId)',
+        addressableBy: ['id'],
+      },
+      {
+        pathPattern: '/relations/[id=<n>]',
+        ops: ['remove'],
+        description: 'Delete a relation. To add/update relations, use ui_exec with add_relation/update_relation',
+        addressableBy: ['id'],
+      },
+    ]
+  }
+
   // ── read() ────────────────────────────────────────────────────────────
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -645,7 +634,7 @@ export class ERCanvasAdapter implements UIObject {
       case 'state':
         return this._readState()
       case 'schema':
-        return ER_CANVAS_STATE_SCHEMA
+        return { ...ER_CANVAS_STATE_SCHEMA, patchCapabilities: this.patchCapabilities }
       case 'actions':
         return ER_CANVAS_ACTIONS
     }
@@ -720,74 +709,135 @@ export class ERCanvasAdapter implements UIObject {
       try {
         switch (op.op) {
           case 'replace': {
-            const parsed = parsePatchPath(op.path)
-            if (!parsed) {
-              return {
-                status: 'error',
-                message: `Cannot parse replace path "${op.path}". Expected: /tables/[id=<n>]/<field> or /columns/[id=<n>]/<field>`,
-              }
+            const segments = parsePath(op.path)
+            if (segments.length < 2 || !segments[0].filters) {
+              return patchError(
+                `Cannot parse replace path "${op.path}"`,
+                `/tables/[id=<n>]/<field> or /tables/[name=<s>]/<field> or /columns/[id=<n>]/<field>`,
+              )
             }
-            const field = resolveField(parsed.entity, parsed.field)
-            if (parsed.entity === 'table') {
-              await store.updateTable(parsed.entityId, { [field]: op.value })
+            const entity = segments[0].field
+            const filters = segments[0].filters
+            const field = segments.slice(1).map(s => s.field).join('/')
+
+            if (entity === 'tables') {
+              const table = store.tables.find(t =>
+                Object.entries(filters).every(([k, v]) => String((t as any)[k]) === v),
+              )
+              if (!table) {
+                return patchError(
+                  `Table not found: ${JSON.stringify(filters)}`,
+                  `/tables/[id=<n>]/<field> or /tables/[name=<s>]/<field>`,
+                )
+              }
+              const resolvedField = resolveField('table', field)
+              await store.updateTable(table.id, { [resolvedField]: op.value })
+            } else if (entity === 'columns') {
+              const colId = Number(filters.id)
+              if (!colId) {
+                return patchError(
+                  `Column addressing requires [id=<n>]`,
+                  `/columns/[id=<n>]/<field>`,
+                )
+              }
+              const resolvedField = resolveField('column', field)
+              await store.updateColumn(colId, { [resolvedField]: op.value })
             } else {
-              await store.updateColumn(parsed.entityId, { [field]: op.value })
+              return patchError(
+                `Cannot parse replace path "${op.path}"`,
+                `/tables/[id=<n>]/<field> or /columns/[id=<n>]/<field>`,
+              )
             }
             break
           }
 
           case 'add': {
-            // Support: /tables/[id=5]/columns/- and /tables/[id=5]/indexes/-
-            const col = parseCollectionAppendPath(op.path)
-            if (!col) {
-              return {
-                status: 'error',
-                message: `Cannot parse add path "${op.path}". Expected: /tables/[id=<n>]/columns/- or /tables/[id=<n>]/indexes/-`,
-              }
+            const segments = parsePath(op.path)
+            // Expect: /tables/[filter]/collection/- where collection has isAppend
+            const tableSegment = segments[0]
+            const collSegment = segments.find(s => s.isAppend)
+            if (!tableSegment?.filters || !collSegment) {
+              return patchError(
+                `Cannot parse add path "${op.path}"`,
+                `/tables/[id=<n>]/columns/- or /tables/[name=<s>]/indexes/-`,
+              )
             }
-            if (col.collection === 'columns') {
-              await store.addColumn(col.tableId, op.value)
-            } else {
+            const table = store.tables.find(t =>
+              Object.entries(tableSegment.filters!).every(([k, v]) => String((t as any)[k]) === v),
+            )
+            if (!table) {
+              return patchError(
+                `Table not found: ${JSON.stringify(tableSegment.filters)}`,
+                `/tables/[id=<n>]/columns/- or /tables/[name=<s>]/columns/-`,
+              )
+            }
+            if (collSegment.field === 'columns') {
+              await store.addColumn(table.id, op.value)
+            } else if (collSegment.field === 'indexes') {
               const indexDef = { ...op.value }
               normalizeIndexColumns(indexDef)
-              await store.addIndex(col.tableId, indexDef)
+              await store.addIndex(table.id, indexDef)
+            } else {
+              return patchError(
+                `Cannot parse add path "${op.path}"`,
+                `/tables/[id=<n>]/columns/- or /tables/[id=<n>]/indexes/-`,
+              )
             }
             break
           }
 
           case 'remove': {
-            // Support: /columns/[id=10]/[tableId=5], /indexes/[id=3]/[tableId=5], /relations/[id=7]
-            const target = parseEntityRemovePath(op.path)
-            if (!target) {
-              return {
-                status: 'error',
-                message: `Cannot parse remove path "${op.path}". Expected: /columns/[id=<n>]/[tableId=<n>], /indexes/[id=<n>]/[tableId=<n>], or /relations/[id=<n>]`,
-              }
+            const segments = parsePath(op.path)
+            const entitySegment = segments[0]
+            if (!entitySegment?.filters) {
+              return patchError(
+                `Cannot parse remove path "${op.path}"`,
+                `/columns/[id=<n>]/[tableId=<n>], /indexes/[id=<n>]/[tableId=<n>], or /relations/[id=<n>]`,
+              )
             }
-            if (target.entity === 'column') {
-              if (!target.tableId) {
-                return { status: 'error', message: `remove /columns requires tableId: /columns/[id=<n>]/[tableId=<n>]` }
+            const entityId = Number(entitySegment.filters.id)
+            const entity = entitySegment.field
+
+            // Extract tableId from context segment (e.g. /[tableId=5])
+            const ctxSegment = segments.find(s => s.field === '' && s.filters?.tableId)
+            const tableId = ctxSegment ? Number(ctxSegment.filters!.tableId) : undefined
+
+            if (entity === 'columns') {
+              if (!tableId) {
+                return patchError(
+                  `remove /columns requires tableId`,
+                  `/columns/[id=<n>]/[tableId=<n>]`,
+                )
               }
-              await store.deleteColumn(target.entityId, target.tableId)
-            } else if (target.entity === 'index') {
-              if (!target.tableId) {
-                return { status: 'error', message: `remove /indexes requires tableId: /indexes/[id=<n>]/[tableId=<n>]` }
+              await store.deleteColumn(entityId, tableId)
+            } else if (entity === 'indexes') {
+              if (!tableId) {
+                return patchError(
+                  `remove /indexes requires tableId`,
+                  `/indexes/[id=<n>]/[tableId=<n>]`,
+                )
               }
-              await store.deleteIndex(target.entityId, target.tableId)
+              await store.deleteIndex(entityId, tableId)
+            } else if (entity === 'relations') {
+              await store.deleteRelation(entityId)
             } else {
-              await store.deleteRelation(target.entityId)
+              return patchError(
+                `Cannot parse remove path "${op.path}"`,
+                `/columns/[id=<n>]/[tableId=<n>], /indexes/[id=<n>]/[tableId=<n>], or /relations/[id=<n>]`,
+              )
             }
             break
           }
 
           default:
-            return {
-              status: 'error',
-              message: `Unsupported patch op "${op.op}" — er_canvas supports "replace", "add", and "remove"`,
-            }
+            return patchError(
+              `Unsupported patch op "${op.op}"`,
+              `er_canvas supports "replace", "add", and "remove"`,
+              `Use ui_exec for complex operations like add_relation`,
+            )
         }
       } catch (e) {
-        return { status: 'error', message: String(e) }
+        return patchError(String(e))
       }
     }
 

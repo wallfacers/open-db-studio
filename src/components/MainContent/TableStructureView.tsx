@@ -50,16 +50,17 @@ const ColumnRow: React.FC<{
   idx: number;
   tabId: string;
   visibleCount: number;
+  isNewTable: boolean;
   updateColumn: (id: string, updates: Partial<EditableColumn>) => void;
   moveColumn: (id: string, dir: 'up' | 'down') => void;
   setColumns: (updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => void;
   iconBtn: string;
   iconBtnDanger: string;
-}> = ({ col, idx, tabId, visibleCount, updateColumn, moveColumn, setColumns, iconBtn, iconBtnDanger }) => {
+}> = ({ col, idx, tabId, visibleCount, isNewTable, updateColumn, moveColumn, setColumns, iconBtn, iconBtnDanger }) => {
   const { className: hlClass, onUserEdit } = useRowHighlight(tabId, col.name);
 
   return (
-    <tr className={`hover:bg-background-hover border-b border-border-default group transition-colors duration-150 ${col._isNew ? 'bg-success-subtle' : ''} ${hlClass}`}>
+    <tr className={`hover:bg-background-hover border-b border-border-default group transition-colors duration-150 ${!isNewTable && col._isNew ? 'bg-success-subtle' : ''} ${hlClass}`}>
       <td className="w-[30px] px-1 py-1.5 border-r border-border-default text-foreground-muted bg-background-base text-center text-xs cursor-default select-none">
         {idx + 1}
       </td>
@@ -70,7 +71,7 @@ const ColumnRow: React.FC<{
           onChange={e => { onUserEdit(); updateColumn(col.id, { name: e.target.value }); }}
         />
       </td>
-      <td className="px-1.5 py-1 border-r border-border-default">
+      <td className="px-1 py-px border-r border-border-default">
         <DropdownSelect
           value={col.dataType}
           options={getTypeOptions(col.dataType)}
@@ -86,7 +87,7 @@ const ColumnRow: React.FC<{
           placeholder="—"
         />
       </td>
-      <td className="px-1.5 py-1 border-r border-border-default text-center">
+      <td className="px-1.5 py-px border-r border-border-default text-center">
         <input
           type="checkbox"
           checked={col.isNullable ?? true}
@@ -102,7 +103,7 @@ const ColumnRow: React.FC<{
           placeholder="—"
         />
       </td>
-      <td className="px-1.5 py-1 border-r border-border-default text-center">
+      <td className="px-1.5 py-px border-r border-border-default text-center">
         <input
           type="checkbox"
           checked={col.isPrimaryKey ?? false}
@@ -126,7 +127,7 @@ const ColumnRow: React.FC<{
           placeholder="—"
         />
       </td>
-      <td className="px-1.5 py-1">
+      <td className="px-1.5 py-px">
         <div className="flex items-center gap-0.5 justify-center">
           <button
             onClick={() => moveColumn(col.id, 'up')}
@@ -529,6 +530,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                     idx={idx}
                     tabId={tabId}
                     visibleCount={visibleColumns.length}
+                    isNewTable={!tableName}
                     updateColumn={updateColumn}
                     moveColumn={moveColumn}
                     setColumns={setColumns}

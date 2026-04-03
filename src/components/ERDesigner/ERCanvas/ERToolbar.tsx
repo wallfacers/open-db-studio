@@ -12,7 +12,8 @@ import {
   Link2,
 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
-import type { ErTable } from '../../../types';
+import ImportConflictDialog from '../ImportConflictDialog';
+import type { ErTable, ConflictResolution, ImportPreview } from '../../../types';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import type { Node, Edge } from '@xyflow/react';
@@ -53,13 +54,21 @@ export default function ERToolbar({
     syncFromDatabase,
     exportJson,
     importJson,
+    previewImport,
+    executeImport,
     projects,
+    activeProjectId,
   } = useErDesignerStore();
 
   const projectName = projects.find(p => p.id === projectId)?.name;
 
   const [isAutoLayouting, setIsAutoLayouting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [importState, setImportState] = useState<{
+    json: string;
+    preview: ImportPreview;
+    targetProjectId?: number;
+  } | null>(null);
 
   // 新建表
   const handleAddTable = async () => {
@@ -143,26 +152,54 @@ export default function ERToolbar({
     }
   };
 
-  // 导入 JSON
+  // 导入 JSON（两步导入流程）
   const handleImportJson = async () => {
     try {
       const openPath = await open({
         multiple: false,
-        filters: [
-          {
-            name: 'JSON',
-            extensions: ['json'],
-          },
-        ],
+        filters: [{ name: 'JSON', extensions: ['json'] }],
       });
+      if (!openPath || typeof openPath !== 'string') return;
 
-      if (openPath && typeof openPath === 'string') {
-        const json = await invoke<string>('read_text_file', { path: openPath });
-        await importJson(json);
+      const json = await invoke<string>('read_text_file', { path: openPath });
+
+      // Ask user: import into current project or create new?
+      const hasCurrentProject = !!projectId;
+      let targetProjectId: number | undefined;
+
+      if (hasCurrentProject) {
+        const importToCurrent = window.confirm(
+          t('erDesigner.importTargetPrompt') ||
+            '选择导入方式：\n\n点击"确定"导入到当前项目\n点击"取消"新建项目'
+        );
+        targetProjectId = importToCurrent ? projectId : undefined;
+      }
+
+      const preview = await previewImport(json, targetProjectId);
+
+      if (preview.conflict_tables.length > 0) {
+        setImportState({ json, preview, targetProjectId });
+      } else {
+        await executeImport(json, targetProjectId, []);
       }
     } catch (e) {
       console.error('Import JSON failed:', e);
     }
+  };
+
+  const handleImportConfirm = async (resolutions: ConflictResolution[]) => {
+    if (!importState) return;
+    try {
+      await executeImport(importState.json, importState.targetProjectId, resolutions);
+    } catch (e) {
+      console.error('Import execute failed:', e);
+    } finally {
+      setImportState(null);
+    }
+  };
+
+  const handleImportCancel = () => {
+    setImportState(null);
   };
 
   return (
@@ -260,6 +297,15 @@ export default function ERToolbar({
         <Upload size={14} />
         <span>{t('erDesigner.importJson')}</span>
       </button>
+
+      {importState && (
+        <ImportConflictDialog
+          open={true}
+          conflictTables={importState.preview.conflict_tables}
+          onConfirm={handleImportConfirm}
+          onCancel={handleImportCancel}
+        />
+      )}
     </div>
   );
 }

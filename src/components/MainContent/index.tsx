@@ -81,6 +81,13 @@ import { useMonacoHighlight } from '../../hooks/useMonacoHighlight';
 import { useFieldHighlight } from '../../hooks/useFieldHighlight';
 import { useHighlightStore } from '../../store/highlightStore';
 
+/** Lightweight component that registers a QueryEditorAdapter for a single query tab. */
+function QueryTabRegistrar({ tabId, connectionId, title }: { tabId: string; connectionId?: number; title: string }) {
+  const uiObject = useMemo(() => new QueryEditorAdapter(tabId, connectionId, title), [tabId, connectionId, title]);
+  useUIObjectRegistry(uiObject);
+  return null; // no DOM
+}
+
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'ON',
   'AS', 'SET', 'VALUES', 'INTO', 'NULL', 'IS', 'LIKE', 'BETWEEN',
@@ -635,12 +642,10 @@ export const MainContent: React.FC<MainContentProps> = ({
   const currentSql = sqlContent[activeTab] ?? '';
   const currentResults = results[activeTab] ?? [];
 
-  // Register UIObject for active query tab
-  const queryUIObject = useMemo(() => {
-    if (!activeTabObj || activeTabObj.type !== 'query') return null
-    return new QueryEditorAdapter(activeTabObj.id, activeTabObj.connectionId, activeTabObj.title)
-  }, [activeTabObj?.id, activeTabObj?.type, activeTabObj?.connectionId, activeTabObj?.title])
-  useUIObjectRegistry(queryUIObject)
+  // Register UIObjects for ALL open query tabs (not just active).
+  // Query editors are too heavy to keep all mounted, but their UIObject adapters
+  // are lightweight — registering them all ensures ui_list can discover every open tab.
+  const queryTabs = useMemo(() => tabs.filter(t => t.type === 'query'), [tabs]);
 
   const connHighlight = useFieldHighlight(activeTab, 'connectionId');
   const dbHighlight = useFieldHighlight(activeTab, 'database');
@@ -949,7 +954,15 @@ export const MainContent: React.FC<MainContentProps> = ({
         ))}
       </div>
 
-      {/* table 类型 tab 始终保持 mounted，通过 display 控制显隐，避免切换时 unmount 导致闪烁 */}
+      {/* ── Persistent tab panels: always mounted, display-controlled ── */}
+      {/* This ensures UIObject registration survives tab switches, so ui_list can discover all open tabs. */}
+
+      {/* query tab UIObject adapters (lightweight, no DOM) */}
+      {queryTabs.map(tab => (
+        <QueryTabRegistrar key={tab.id} tabId={tab.id} connectionId={tab.connectionId} title={tab.title} />
+      ))}
+
+      {/* table */}
       {tabs.filter(t => t.type === 'table').map(tab => (
         <div
           key={tab.id}
@@ -966,60 +979,87 @@ export const MainContent: React.FC<MainContentProps> = ({
         </div>
       ))}
 
+      {/* er_design */}
+      {tabs.filter(t => t.type === 'er_design').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <ERCanvas projectId={tab.erProjectId!} tabId={tab.id} />
+        </div>
+      ))}
+
+      {/* table_structure */}
+      {tabs.filter(t => t.type === 'table_structure').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <TableStructureView
+            tabId={tab.id}
+            connectionId={tab.connectionId!}
+            tableName={tab.id.includes('_new_') ? undefined : tab.title}
+            database={tab.db}
+            schema={tab.schema}
+            onSuccess={() => {
+              const isNew = tab.id.includes('_new_');
+              const connId = tab.connectionId!;
+              const db = tab.db;
+              const sch = tab.schema;
+              let catNid = connNid(connId);
+              if (db && !db.startsWith('conn_')) catNid = dbNodeId(catNid, db);
+              if (sch) catNid = schemaNodeId(catNid, sch);
+              catNid = catNodeId(catNid, 'tables');
+              useTreeStore.getState().refreshNode(catNid);
+              if (isNew) {
+                useQueryStore.getState().closeTab(tab.id);
+              }
+            }}
+            showToast={showToast}
+          />
+        </div>
+      ))}
+
+      {/* metric */}
+      {tabs.filter(t => t.type === 'metric').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <MetricTab
+            metricId={tab.metricId}
+            newMetricScope={!tab.metricId ? tab.metricScope : undefined}
+            tabId={tab.id}
+            connectionId={tab.connectionId ?? tab.metricScope?.connectionId}
+            onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(tab.id, id, title)}
+            onDelete={() => useQueryStore.getState().closeTab(tab.id)}
+          />
+        </div>
+      ))}
+
+      {/* seatunnel_job */}
+      {tabs.filter(t => t.type === 'seatunnel_job').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <SeaTunnelJobTab tab={tab} key={tab.id} showToast={showToast} />
+        </div>
+      ))}
+
+      {/* ── Active-only tabs (too heavy to keep all mounted) ── */}
       {activeTabObj ? (
-        activeTabObj.type === 'er_design' ? (
-          <ERCanvas projectId={activeTabObj.erProjectId!} tabId={activeTabObj.id} />
-        ) : activeTabObj.type === 'table' ? null
-        : activeTabObj.type === 'table_structure' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <TableStructureView
-              tabId={activeTabObj.id}
-              connectionId={activeTabObj.connectionId!}
-              tableName={activeTabObj.id.includes('_new_') ? undefined : activeTabObj.title}
-              database={activeTabObj.db}
-              schema={activeTabObj.schema}
-              onSuccess={() => {
-                const isNew = activeTabObj.id.includes('_new_');
-
-                // Refresh the tables category node in the tree
-                const connId = activeTabObj.connectionId!;
-                const db = activeTabObj.db;
-                const sch = activeTabObj.schema;
-                let catNid = connNid(connId);
-                if (db && !db.startsWith('conn_')) catNid = dbNodeId(catNid, db);
-                if (sch) catNid = schemaNodeId(catNid, sch);
-                catNid = catNodeId(catNid, 'tables');
-                useTreeStore.getState().refreshNode(catNid);
-
-                // Close the tab for new table creation
-                if (isNew) {
-                  useQueryStore.getState().closeTab(activeTabObj.id);
-                }
-              }}
-              showToast={showToast}
-            />
-          </div>
-        ) : activeTabObj.type === 'metric' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <MetricTab
-              metricId={activeTabObj.metricId}
-              newMetricScope={!activeTabObj.metricId ? activeTabObj.metricScope : undefined}
-              tabId={activeTabObj.id}
-              connectionId={activeTabObj.connectionId ?? activeTabObj.metricScope?.connectionId}
-              onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(activeTab, id, title)}
-              onDelete={() => useQueryStore.getState().closeTab(activeTab)}
-            />
-          </div>
-        ) : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
+        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'seatunnel_job' ? null
+        : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <MetricListPanel
               scope={activeTabObj.metricScope}
               onOpenMetric={(id, title) => useQueryStore.getState().openMetricTab(id, title)}
             />
-          </div>
-        ) : activeTabObj.type === 'seatunnel_job' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <SeaTunnelJobTab tab={activeTabObj} key={activeTabObj.id} showToast={showToast} />
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">

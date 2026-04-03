@@ -693,6 +693,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
     try {
       const project = await invoke<ErProject>('er_import_json', { json });
       await get().loadProjects();
+      await get().loadProject(project.id);
       return project;
     } catch (e) {
       console.error('Failed to import ER project:', e);
@@ -721,6 +722,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         conflicts: conflicts ?? [],
       });
       await get().loadProjects();
+      await get().loadProject(project.id);
       return project;
     } catch (e) {
       console.error('Failed to execute import:', e);

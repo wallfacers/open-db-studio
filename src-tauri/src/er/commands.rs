@@ -591,9 +591,10 @@ pub async fn er_export_json(project_id: i64) -> AppResult<String> {
 pub async fn er_import_json(json: String) -> AppResult<ErProject> {
     let data = super::export::parse_import(&json)?;
 
-    // Create the project
+    // Create the project with a unique name (auto-rename if duplicate)
+    let unique_name = crate::er::repository::generate_unique_project_name(&data.project.name)?;
     let project = crate::er::repository::create_project(&CreateProjectRequest {
-        name: data.project.name.clone(),
+        name: unique_name,
         description: data.project.description.clone(),
     })?;
 

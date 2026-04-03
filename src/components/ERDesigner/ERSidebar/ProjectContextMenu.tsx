@@ -72,7 +72,15 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   const handleRenameConfirm = async () => {
     const trimmed = renameName.trim();
     if (trimmed && trimmed !== project?.name) {
-      await updateProject(projectId, { name: trimmed });
+      try {
+        await updateProject(projectId, { name: trimmed });
+      } catch (e: any) {
+        const msg = typeof e === 'string' ? e : e?.message || '';
+        if (msg.includes('已存在') || msg.includes('already exists')) {
+          alert(t('erDesigner.projectNameExists') || '项目名称已存在');
+          return; // Don't close menu, let user retry
+        }
+      }
     }
     onClose();
   };

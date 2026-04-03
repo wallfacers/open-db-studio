@@ -203,14 +203,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   updateProject: async (id, updates) => {
-    try {
-      await invoke('er_update_project', { id, req: updates });
-      set((s) => ({
-        projects: s.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-      }));
-    } catch (e) {
-      console.error('Failed to update ER project:', e);
-    }
+    await invoke('er_update_project', { id, req: updates });
+    set((s) => ({
+      projects: s.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+    }));
   },
 
   deleteProject: async (id) => {

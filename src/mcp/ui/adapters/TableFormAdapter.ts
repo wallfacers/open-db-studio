@@ -1,4 +1,4 @@
-import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
 import { applyPatch } from '../jsonPatch'
 import { useTableFormStore, type TableFormState } from '../../../store/tableFormStore'
 import { useAppStore } from '../../../store/appStore'
@@ -186,7 +186,7 @@ export class TableFormUIObject implements UIObject {
   objectId: string
   title: string
   connectionId: number
-  private database: string
+  database: string
 
   constructor(tabId: string, connectionId: number, database: string) {
     this.objectId = tabId
@@ -195,16 +195,55 @@ export class TableFormUIObject implements UIObject {
     this.title = useTableFormStore.getState().getForm(tabId)?.tableName || 'New Table'
   }
 
+  get patchCapabilities(): PatchCapability[] {
+    return [
+      { pathPattern: '/tableName', ops: ['replace'], description: 'Rename the table' },
+      { pathPattern: '/engine', ops: ['replace'], description: 'Change storage engine' },
+      { pathPattern: '/charset', ops: ['replace'], description: 'Change charset' },
+      { pathPattern: '/comment', ops: ['replace'], description: 'Change table comment' },
+      {
+        pathPattern: '/columns[name=<s>]/<field>',
+        ops: ['replace', 'remove'],
+        description: 'Modify or remove a column by name',
+        addressableBy: ['name'],
+      },
+      {
+        pathPattern: '/columns/-',
+        ops: ['add'],
+        description: 'Append a new column',
+      },
+      {
+        pathPattern: '/indexes[name=<s>]/<field>',
+        ops: ['replace', 'remove'],
+        description: 'Modify or remove an index by name',
+        addressableBy: ['name'],
+      },
+      {
+        pathPattern: '/indexes/-',
+        ops: ['add'],
+        description: 'Append a new index',
+      },
+    ]
+  }
+
   read(mode: 'state' | 'schema' | 'actions') {
     switch (mode) {
       case 'state':
         return useTableFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
-        return TABLE_FORM_SCHEMA
+        return { ...TABLE_FORM_SCHEMA, patchCapabilities: this.patchCapabilities }
       case 'actions':
         return [
-          { name: 'preview_sql', description: 'Preview CREATE/ALTER TABLE SQL' },
-          { name: 'save', description: 'Generate SQL and write to query tab for review' },
+          {
+            name: 'preview_sql',
+            description: 'Preview CREATE/ALTER TABLE SQL based on current form state',
+            paramsSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'save',
+            description: 'Generate SQL and write to query tab for review',
+            paramsSchema: { type: 'object', properties: {} },
+          },
         ]
     }
   }

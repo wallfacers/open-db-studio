@@ -233,7 +233,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
           initForm(tabId, {
             tableName: '',
             engine: 'InnoDB', charset: 'utf8mb4', comment: '',
-            columns: initCols, originalColumns: [], indexes: [], isNewTable: true,
+            columns: initCols, originalColumns: [], indexes: [], foreignKeys: [], isNewTable: true,
           })
         }
       })
@@ -265,7 +265,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       initForm(tabId, {
         tableName: tableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
-        columns: cols, originalColumns: cols.map(c => ({ ...c })), indexes: [], isNewTable: false,
+        columns: cols, originalColumns: cols.map(c => ({ ...c })), indexes: [], foreignKeys: [], isNewTable: false,
       })
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
@@ -322,7 +322,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         tableName: effectiveTableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns, originalColumns: tableName ? originalColumns : undefined,
-        indexes: [], isNewTable: !tableName,
+        indexes: [], foreignKeys: [], isNewTable: !tableName,
       }, driver)
     : '-- 请先填写表名',
     [effectiveTableName, columns, originalColumns, tableName, driver]);

@@ -32,6 +32,7 @@ describe('TableFormUIObject', () => {
         { id: 'c2', name: 'email', dataType: 'VARCHAR', length: '255' },
       ],
       indexes: [],
+      foreignKeys: [],
     })
   })
 

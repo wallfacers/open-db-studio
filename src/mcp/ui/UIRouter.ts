@@ -1,4 +1,6 @@
-import type { UIObject, UIRequest, UIResponse, UIObjectInfo } from './types'
+import type { UIObject, UIRequest, UIResponse, UIObjectInfo, ActionDef } from './types'
+import { patchError, execError } from './errors'
+import { matchPathPattern } from './pathResolver'
 
 export class UIRouter {
   private instances = new Map<string, UIObject>()
@@ -33,31 +35,101 @@ export class UIRouter {
           const data = instance.read(req.payload?.mode ?? 'state')
           return { data }
         }
-        case 'ui_patch': {
-          const result = await instance.patch(
-            req.payload?.ops ?? [],
-            req.payload?.reason
-          )
-          return {
-            data: result,
-            status: result.status === 'error' ? undefined : result.status,
-            confirm_id: result.confirm_id,
-            error: result.status === 'error' ? result.message : undefined,
-          }
-        }
-        case 'ui_exec': {
-          const result = await instance.exec(
-            req.payload?.action ?? '',
-            req.payload?.params
-          )
-          return { data: result, error: result.success ? undefined : result.error }
-        }
+        case 'ui_patch':
+          return this.handlePatch(instance, req.payload)
+        case 'ui_exec':
+          return this.handleExec(instance, req.payload)
         default:
           return { error: `Unknown tool: ${req.tool}` }
       }
     } catch (e) {
       return { error: String(e) }
     }
+  }
+
+  // ── Patch pre-check ───────────────────────────────────────
+
+  private async handlePatch(instance: UIObject, payload: any): Promise<UIResponse> {
+    const ops = payload?.ops ?? []
+    const capabilities = instance.patchCapabilities
+
+    // No capabilities declared → passthrough (backward compatible)
+    if (!capabilities?.length) {
+      const result = await instance.patch(ops, payload?.reason)
+      return {
+        data: result,
+        status: result.status === 'error' ? undefined : result.status,
+        confirm_id: result.confirm_id,
+        error: result.status === 'error' ? result.message : undefined,
+      }
+    }
+
+    // Validate each op against declared capabilities
+    for (const op of ops) {
+      const match = capabilities.find(
+        cap => cap.ops.includes(op.op) && matchPathPattern(op.path, cap.pathPattern),
+      )
+      if (!match) {
+        const supported = capabilities
+          .map(c => `${c.ops.join('/')} ${c.pathPattern}`)
+          .join(', ')
+        const result = patchError(
+          `Unsupported: ${op.op} ${op.path}`,
+          `Supported paths: [${supported}]`,
+          `Use ui_read(mode='actions') for operations not available via patch`,
+        )
+        return { error: result.message }
+      }
+    }
+
+    const result = await instance.patch(ops, payload?.reason)
+    return {
+      data: result,
+      status: result.status === 'error' ? undefined : result.status,
+      confirm_id: result.confirm_id,
+      error: result.status === 'error' ? result.message : undefined,
+    }
+  }
+
+  // ── Exec pre-check ────────────────────────────────────────
+
+  private async handleExec(instance: UIObject, payload: any): Promise<UIResponse> {
+    const action = payload?.action ?? ''
+    const params = payload?.params
+
+    // Get action definitions for validation
+    const rawActions = instance.read('actions')
+
+    // Only validate if the adapter declares actions as an array
+    if (Array.isArray(rawActions) && rawActions.length > 0) {
+      const actions: ActionDef[] = rawActions
+
+      // Check action exists
+      const def = actions.find(a => a.name === action)
+      if (!def) {
+        const available = actions.map(a => a.name).join(', ')
+        const result = execError(
+          `Unknown action '${action}'`,
+          `Available actions: [${available}]`,
+        )
+        return { data: result, error: result.error }
+      }
+
+      // Check required params
+      const required = def.paramsSchema?.required ?? []
+      const missing = required.filter(key => params?.[key] === undefined)
+      if (missing.length) {
+        const result = execError(
+          `Missing required params: ${missing.join(', ')}`,
+          `Schema: ${JSON.stringify(def.paramsSchema)}`,
+        )
+        return { data: result, error: result.error }
+      }
+    }
+
+    // Forward to adapter
+    const result = await instance.exec(action, params)
+    return { data: result, error: result.success ? undefined : result.error }
   }
 
   private resolveTarget(objectType: string, target: string): UIObject | null {

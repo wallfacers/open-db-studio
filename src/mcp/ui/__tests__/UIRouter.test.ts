@@ -94,4 +94,105 @@ describe('UIRouter', () => {
     })
     expect(res.error).toBeTruthy()
   })
+
+  // ── Exec pre-check tests ────────────────────────────────
+  it('exec pre-check: rejects unknown action with available list', async () => {
+    const obj = mockUIObject({
+      read: vi.fn().mockReturnValue([
+        { name: 'save', description: 'Save', paramsSchema: { type: 'object', properties: {} } },
+        { name: 'run', description: 'Run', paramsSchema: { type: 'object', properties: {} } },
+      ]),
+    })
+    router.registerInstance('test_1', obj)
+    const res = await router.handle({
+      tool: 'ui_exec', object: 'test_form', target: 'test_1',
+      payload: { action: 'nonexistent', params: {} },
+    })
+    expect(res.error).toContain("Unknown action 'nonexistent'")
+    expect(res.error).toContain('save')
+    expect(res.error).toContain('run')
+    expect(obj.exec).not.toHaveBeenCalled()
+  })
+
+  it('exec pre-check: rejects missing required params', async () => {
+    const obj = mockUIObject({
+      read: vi.fn().mockReturnValue([
+        {
+          name: 'add_column',
+          description: 'Add column',
+          paramsSchema: { type: 'object', properties: { tableId: { type: 'number' }, column: { type: 'object' } }, required: ['tableId', 'column'] },
+        },
+      ]),
+    })
+    router.registerInstance('test_1', obj)
+    const res = await router.handle({
+      tool: 'ui_exec', object: 'test_form', target: 'test_1',
+      payload: { action: 'add_column', params: {} },
+    })
+    expect(res.error).toContain('Missing required params')
+    expect(res.error).toContain('tableId')
+    expect(res.error).toContain('column')
+    expect(obj.exec).not.toHaveBeenCalled()
+  })
+
+  it('exec pre-check: passes through when action and params are valid', async () => {
+    const obj = mockUIObject({
+      read: vi.fn().mockReturnValue([
+        {
+          name: 'save',
+          description: 'Save',
+          paramsSchema: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
+        },
+      ]),
+    })
+    router.registerInstance('test_1', obj)
+    const res = await router.handle({
+      tool: 'ui_exec', object: 'test_form', target: 'test_1',
+      payload: { action: 'save', params: { id: 1 } },
+    })
+    expect(obj.exec).toHaveBeenCalledWith('save', { id: 1 })
+    expect(res.data?.success).toBe(true)
+  })
+
+  // ── Patch pre-check tests ───────────────────────────────
+  it('patch pre-check: rejects unsupported path when capabilities declared', async () => {
+    const obj = mockUIObject({
+      patchCapabilities: [
+        { pathPattern: '/content', ops: ['replace'], description: 'Replace content' },
+      ],
+    } as any)
+    router.registerInstance('test_1', obj)
+    const res = await router.handle({
+      tool: 'ui_patch', object: 'test_form', target: 'test_1',
+      payload: { ops: [{ op: 'add', path: '/relations/-', value: {} }] },
+    })
+    expect(res.error).toContain('Unsupported')
+    expect(res.error).toContain('/relations/-')
+    expect(obj.patch).not.toHaveBeenCalled()
+  })
+
+  it('patch pre-check: passes through when no capabilities declared', async () => {
+    const obj = mockUIObject() // no patchCapabilities
+    router.registerInstance('test_1', obj)
+    const res = await router.handle({
+      tool: 'ui_patch', object: 'test_form', target: 'test_1',
+      payload: { ops: [{ op: 'replace', path: '/anything', value: 'ok' }] },
+    })
+    expect(obj.patch).toHaveBeenCalled()
+    expect(res.status).toBe('applied')
+  })
+
+  it('patch pre-check: allows matching path', async () => {
+    const obj = mockUIObject({
+      patchCapabilities: [
+        { pathPattern: '/tables/[<key>=<val>]/<field>', ops: ['replace'], description: 'Update table' },
+      ],
+    } as any)
+    router.registerInstance('test_1', obj)
+    const res = await router.handle({
+      tool: 'ui_patch', object: 'test_form', target: 'test_1',
+      payload: { ops: [{ op: 'replace', path: '/tables/[id=5]/name', value: 'new' }] },
+    })
+    expect(obj.patch).toHaveBeenCalled()
+  })
 })

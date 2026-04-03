@@ -231,3 +231,27 @@ pub struct DdlOptions {
     pub include_comments: Option<bool>,
     pub include_foreign_keys: Option<bool>,
 }
+
+// ─── Import types ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportPreview {
+    pub project_name: String,
+    pub table_count: usize,
+    pub new_tables: Vec<String>,
+    pub conflict_tables: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConflictResolution {
+    pub table_name: String,
+    pub action: ConflictAction,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictAction {
+    Skip,
+    Overwrite,
+    Rename,
+}

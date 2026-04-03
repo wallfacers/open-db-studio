@@ -384,6 +384,8 @@ pub fn run() {
             er::commands::er_execute_sync_ddl,
             er::commands::er_export_json,
             er::commands::er_import_json,
+            er::commands::er_preview_import,
+            er::commands::er_execute_import,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

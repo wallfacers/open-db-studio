@@ -717,3 +717,299 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
 
     Ok(project)
 }
+
+#[tauri::command]
+pub async fn er_preview_import(
+    json: String,
+    project_id: Option<i64>,
+) -> AppResult<ImportPreview> {
+    let data = super::export::parse_import(&json)?;
+
+    match project_id {
+        None => {
+            // New project mode: generate unique name
+            let unique_name =
+                crate::er::repository::generate_unique_project_name(&data.project.name)?;
+            let table_names: Vec<String> =
+                data.project.tables.iter().map(|t| t.name.clone()).collect();
+            Ok(ImportPreview {
+                project_name: unique_name,
+                table_count: table_names.len(),
+                new_tables: table_names,
+                conflict_tables: vec![],
+            })
+        }
+        Some(pid) => {
+            // Import into existing project: detect conflicts
+            let full = crate::er::repository::get_project_full(pid)?;
+            let existing_names: std::collections::HashSet<String> = full
+                .tables
+                .iter()
+                .map(|tf| tf.table.name.clone())
+                .collect();
+
+            let mut new_tables = vec![];
+            let mut conflict_tables = vec![];
+            for et in &data.project.tables {
+                if existing_names.contains(&et.name) {
+                    conflict_tables.push(et.name.clone());
+                } else {
+                    new_tables.push(et.name.clone());
+                }
+            }
+
+            Ok(ImportPreview {
+                project_name: full.project.name.clone(),
+                table_count: data.project.tables.len(),
+                new_tables,
+                conflict_tables,
+            })
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn er_execute_import(
+    json: String,
+    project_id: Option<i64>,
+    conflicts: Vec<ConflictResolution>,
+) -> AppResult<ErProject> {
+    let data = super::export::parse_import(&json)?;
+
+    // Build conflict action map: table_name -> action
+    let conflict_map: std::collections::HashMap<String, &ConflictAction> = conflicts
+        .iter()
+        .map(|c| (c.table_name.clone(), &c.action))
+        .collect();
+
+    // Determine target project
+    let project = match project_id {
+        None => {
+            let unique_name =
+                crate::er::repository::generate_unique_project_name(&data.project.name)?;
+            crate::er::repository::create_project(&CreateProjectRequest {
+                name: unique_name,
+                description: data.project.description.clone(),
+            })?
+        }
+        Some(pid) => {
+            let full = crate::er::repository::get_project_full(pid)?;
+            full.project
+        }
+    };
+
+    // If importing into existing project, build existing table name -> id map
+    let existing_tables: std::collections::HashMap<String, i64> = if project_id.is_some() {
+        let full = crate::er::repository::get_project_full(project.id)?;
+        full.tables
+            .iter()
+            .map(|tf| (tf.table.name.clone(), tf.table.id))
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Track table name -> new id, and (table_name, col_name) -> col_id for relations
+    let mut table_name_to_id: HashMap<String, i64> = HashMap::new();
+    let mut column_key_to_id: HashMap<(String, String), i64> = HashMap::new();
+
+    // Pre-populate with existing tables (for relations that reference non-imported tables)
+    if project_id.is_some() {
+        let full = crate::er::repository::get_project_full(project.id)?;
+        for tf in &full.tables {
+            table_name_to_id.insert(tf.table.name.clone(), tf.table.id);
+            for col in &tf.columns {
+                column_key_to_id.insert(
+                    (tf.table.name.clone(), col.name.clone()),
+                    col.id,
+                );
+            }
+        }
+    }
+
+    for export_table in &data.project.tables {
+        let is_conflict = existing_tables.contains_key(&export_table.name);
+
+        if is_conflict {
+            let action = conflict_map
+                .get(&export_table.name)
+                .copied()
+                .unwrap_or(&ConflictAction::Skip);
+
+            match action {
+                ConflictAction::Skip => {
+                    // Keep existing table, no changes
+                    continue;
+                }
+                ConflictAction::Overwrite => {
+                    // Delete existing table, then create new one
+                    let old_id = existing_tables[&export_table.name];
+                    crate::er::repository::delete_table(old_id)?;
+                    // Remove from tracking maps
+                    table_name_to_id.remove(&export_table.name);
+                    // Fall through to create
+                }
+                ConflictAction::Rename => {
+                    // Generate a renamed table name with _1, _2, etc.
+                    let mut all_names: std::collections::HashSet<String> = existing_tables
+                        .keys()
+                        .cloned()
+                        .collect();
+                    // Also include names of tables we've already imported in this batch
+                    for name in table_name_to_id.keys() {
+                        all_names.insert(name.clone());
+                    }
+                    let base = &export_table.name;
+                    let mut suffix = 1;
+                    let renamed = loop {
+                        let candidate = format!("{}_{}", base, suffix);
+                        if !all_names.contains(&candidate) {
+                            break candidate;
+                        }
+                        suffix += 1;
+                    };
+
+                    let table = create_import_table(
+                        project.id,
+                        &renamed,
+                        export_table,
+                    )?;
+                    table_name_to_id.insert(renamed.clone(), table.id);
+                    create_import_columns(
+                        table.id,
+                        &renamed,
+                        export_table,
+                        &mut column_key_to_id,
+                    )?;
+                    create_import_indexes(table.id, export_table)?;
+                    continue;
+                }
+            }
+        }
+
+        // Create table (new or after overwrite-delete)
+        let table = create_import_table(
+            project.id,
+            &export_table.name,
+            export_table,
+        )?;
+        table_name_to_id.insert(export_table.name.clone(), table.id);
+        create_import_columns(
+            table.id,
+            &export_table.name,
+            export_table,
+            &mut column_key_to_id,
+        )?;
+        create_import_indexes(table.id, export_table)?;
+    }
+
+    // Create relations
+    for export_rel in &data.project.relations {
+        let src_table_id = match table_name_to_id.get(&export_rel.source.table) {
+            Some(id) => *id,
+            None => continue, // Source table was skipped
+        };
+        let src_col_id = match column_key_to_id.get(&(
+            export_rel.source.table.clone(),
+            export_rel.source.column.clone(),
+        )) {
+            Some(id) => *id,
+            None => continue,
+        };
+        let tgt_table_id = match table_name_to_id.get(&export_rel.target.table) {
+            Some(id) => *id,
+            None => continue,
+        };
+        let tgt_col_id = match column_key_to_id.get(&(
+            export_rel.target.table.clone(),
+            export_rel.target.column.clone(),
+        )) {
+            Some(id) => *id,
+            None => continue,
+        };
+
+        crate::er::repository::create_relation(&CreateRelationRequest {
+            project_id: project.id,
+            name: export_rel.name.clone(),
+            source_table_id: src_table_id,
+            source_column_id: src_col_id,
+            target_table_id: tgt_table_id,
+            target_column_id: tgt_col_id,
+            relation_type: Some(export_rel.relation_type.clone()),
+            on_delete: Some(export_rel.on_delete.clone()),
+            on_update: None,
+            source: export_rel.source_type.clone(),
+            comment_marker: export_rel.comment_marker.clone(),
+        })?;
+    }
+
+    Ok(project)
+}
+
+// ─── Import helpers ─────────────────────────────────────────────────────────
+
+fn create_import_table(
+    project_id: i64,
+    name: &str,
+    export_table: &super::export::ExportTable,
+) -> AppResult<ErTable> {
+    crate::er::repository::create_table(&CreateTableRequest {
+        project_id,
+        name: name.to_string(),
+        comment: export_table.comment.clone(),
+        position_x: Some(export_table.position.x),
+        position_y: Some(export_table.position.y),
+        color: export_table.color.clone(),
+    })
+}
+
+fn create_import_columns(
+    table_id: i64,
+    table_name: &str,
+    export_table: &super::export::ExportTable,
+    column_key_to_id: &mut HashMap<(String, String), i64>,
+) -> AppResult<()> {
+    for (i, export_col) in export_table.columns.iter().enumerate() {
+        let col = crate::er::repository::create_column(&CreateColumnRequest {
+            table_id,
+            name: export_col.name.clone(),
+            data_type: export_col.data_type.clone(),
+            nullable: Some(export_col.nullable),
+            default_value: export_col.default_value.clone(),
+            is_primary_key: Some(export_col.is_primary_key),
+            is_auto_increment: Some(export_col.is_auto_increment),
+            comment: export_col.comment.clone(),
+            length: None,
+            scale: None,
+            is_unique: None,
+            unsigned: None,
+            charset: None,
+            collation: None,
+            on_update: None,
+            enum_values: None,
+            sort_order: Some(i as i64),
+        })?;
+        column_key_to_id.insert(
+            (table_name.to_string(), export_col.name.clone()),
+            col.id,
+        );
+    }
+    Ok(())
+}
+
+fn create_import_indexes(
+    table_id: i64,
+    export_table: &super::export::ExportTable,
+) -> AppResult<()> {
+    for export_idx in &export_table.indexes {
+        let columns_json =
+            serde_json::to_string(&export_idx.columns).unwrap_or_else(|_| "[]".to_string());
+        crate::er::repository::create_index(&CreateIndexRequest {
+            table_id,
+            name: export_idx.name.clone(),
+            index_type: Some(export_idx.index_type.clone()),
+            columns: columns_json,
+        })?;
+    }
+    Ok(())
+}

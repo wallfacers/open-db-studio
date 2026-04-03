@@ -139,6 +139,24 @@ const QuestionDock: React.FC<QuestionDockProps> = ({ request, onAnswer }) => {
     })
   }
 
+  /** 直接提交指定 answers（绕过 stale state 问题） */
+  const submitDirect = (directAnswers: string[][]) => {
+    const finalAnswers = directAnswers.map((a, i) => {
+      if (a.length === 0 && i === currentStep && customInput.trim()) {
+        return [customInput.trim()]
+      }
+      return a
+    })
+    if (isLastStep) {
+      onAnswer(request.question_id, finalAnswers, false)
+    } else {
+      setAnswers(finalAnswers)
+      setCustomInput('')
+      setFocusedIndex(0)
+      setCurrentStep((s) => s + 1)
+    }
+  }
+
   const handleSubmit = () => {
     // 如果有自定义输入且没有选中任何选项，使用自定义输入
     const finalAnswers = answers.map((a, i) => {
@@ -163,6 +181,14 @@ const QuestionDock: React.FC<QuestionDockProps> = ({ request, onAnswer }) => {
     }
   }
 
+  /** 单选时直接构建 answers 并提交（避免 setState 异步导致 stale closure） */
+  const submitSingleSelect = (label: string) => {
+    const directAnswers = answers.map((a, i) =>
+      i === currentStep ? [label] : a
+    )
+    submitDirect(directAnswers)
+  }
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const optCount = question.options.length + (allowCustom ? 1 : 0) // +1 for custom input
     switch (e.key) {
@@ -178,15 +204,8 @@ const QuestionDock: React.FC<QuestionDockProps> = ({ request, onAnswer }) => {
         e.preventDefault()
         if (focusedIndex < question.options.length) {
           if (!isMultiple) {
-            // 单选直接提交
-            const label = question.options[focusedIndex].label
-            setAnswers((prev) => {
-              const copy = [...prev]
-              copy[currentStep] = [label]
-              return copy
-            })
-            // 延迟提交让 state 更新
-            setTimeout(handleSubmit, 0)
+            // 单选直接提交（同步构建 answers 避免 stale closure）
+            submitSingleSelect(question.options[focusedIndex].label)
           } else {
             toggleOption(question.options[focusedIndex].label)
           }
@@ -241,8 +260,11 @@ const QuestionDock: React.FC<QuestionDockProps> = ({ request, onAnswer }) => {
             <button
               key={i}
               onClick={() => {
-                toggleOption(opt.label)
-                if (!isMultiple) setTimeout(handleSubmit, 0)
+                if (!isMultiple) {
+                  submitSingleSelect(opt.label)
+                } else {
+                  toggleOption(opt.label)
+                }
               }}
               onMouseEnter={() => setFocusedIndex(i)}
               className={`w-full text-left rounded px-2.5 py-1.5 text-[12px] transition-all outline-none flex items-center gap-2 ${

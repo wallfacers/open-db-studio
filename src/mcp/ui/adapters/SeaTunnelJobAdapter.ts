@@ -1,4 +1,5 @@
-import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
+import { execError } from '../errors'
 import { applyPatch } from '../jsonPatch'
 import { useSeaTunnelJobFormStore } from '../../../store/seatunnelJobStore'
 import { useSeaTunnelStore } from '../../../store/seaTunnelStore'
@@ -32,17 +33,38 @@ export class SeaTunnelJobUIObject implements UIObject {
     this.connectionId = form?.connectionId
   }
 
+  get patchCapabilities(): PatchCapability[] {
+    return [
+      { pathPattern: '/jobName', ops: ['replace'], description: 'Change job name' },
+      { pathPattern: '/configJson', ops: ['replace'], description: 'Replace entire job config JSON' },
+      { pathPattern: '/connectionId', ops: ['replace'], description: 'Change connection' },
+      { pathPattern: '/categoryId', ops: ['replace'], description: 'Change category' },
+    ]
+  }
+
   read(mode: 'state' | 'schema' | 'actions') {
     switch (mode) {
       case 'state':
         return useSeaTunnelJobFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
-        return SEATUNNEL_JOB_SCHEMA
+        return { ...SEATUNNEL_JOB_SCHEMA, patchCapabilities: this.patchCapabilities }
       case 'actions':
         return [
-          { name: 'save', description: 'Save job configuration' },
-          { name: 'submit', description: 'Submit job for execution' },
-          { name: 'stop', description: 'Stop running job' },
+          {
+            name: 'save',
+            description: 'Save job configuration to database',
+            paramsSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'submit',
+            description: 'Submit job for execution (must be saved first)',
+            paramsSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'stop',
+            description: 'Stop a running job',
+            paramsSchema: { type: 'object', properties: {} },
+          },
         ]
     }
   }
@@ -107,7 +129,7 @@ export class SeaTunnelJobUIObject implements UIObject {
 
   async exec(action: string, _params?: any): Promise<ExecResult> {
     const state = useSeaTunnelJobFormStore.getState().getForm(this.objectId)
-    if (!state) return { success: false, error: 'No form state' }
+    if (!state) return execError('No form state', `SeaTunnel job form ${this.objectId} not initialized`)
 
     switch (action) {
       case 'save': {
@@ -128,7 +150,7 @@ export class SeaTunnelJobUIObject implements UIObject {
       }
       case 'submit': {
         try {
-          if (!state.jobId) return { success: false, error: 'Job not saved yet' }
+          if (!state.jobId) return execError('Job not saved yet', 'Call save action first')
           const result = await invoke('submit_st_job', { jobId: state.jobId })
           return { success: true, data: result }
         } catch (e) {
@@ -137,7 +159,7 @@ export class SeaTunnelJobUIObject implements UIObject {
       }
       case 'stop': {
         try {
-          if (!state.jobId) return { success: false, error: 'No job to stop' }
+          if (!state.jobId) return execError('No job to stop', 'Job must be saved and submitted first')
           await invoke('stop_st_job', { jobId: state.jobId })
           return { success: true }
         } catch (e) {
@@ -145,7 +167,7 @@ export class SeaTunnelJobUIObject implements UIObject {
         }
       }
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: save, submit, stop')
     }
   }
 }

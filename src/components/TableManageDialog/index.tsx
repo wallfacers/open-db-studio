@@ -326,6 +326,22 @@ export const TableManageDialog: React.FC<Props> = ({
     }))
   }
 
+  const visibleIndexes = indexes.filter(idx => !idx._isDeleted)
+
+  const addIndex = () => {
+    setIndexes(prev => [...prev, {
+      id: makeId(),
+      name: '',
+      type: 'INDEX',
+      columns: JSON.stringify([{ name: '', order: 'ASC' }]),
+      _isNew: true,
+    }])
+  }
+
+  const updateIndex = (id: string, patch: Partial<TableFormIndex>) => {
+    setIndexes(prev => prev.map(idx => idx.id === id ? { ...idx, ...patch } : idx))
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-[960px] max-h-[85vh] flex flex-col relative">
@@ -646,6 +662,81 @@ export const TableManageDialog: React.FC<Props> = ({
               >
                 <Plus size={13} />
                 添加外键
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'indexes' && (
+            <div className="space-y-1">
+              {visibleIndexes.length === 0 && (
+                <div className="text-xs text-[#7a9bb8] py-4 text-center">暂无索引</div>
+              )}
+              {visibleIndexes.length > 0 && (
+                <table className="w-full text-xs text-[#c8daea] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#1e2d42]">
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[200px]">索引名</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">类型</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8]">列（JSON）</th>
+                      <th className="w-[30px]"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleIndexes.map(idx => {
+                      const typeOptions = [
+                        { value: 'INDEX', label: 'INDEX' },
+                        { value: 'UNIQUE', label: 'UNIQUE' },
+                        { value: 'FULLTEXT', label: 'FULLTEXT' },
+                      ]
+                      return (
+                        <tr key={idx.id} className="border-b border-[#1a2639] hover:bg-[#1a2639]/40">
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              value={idx.name}
+                              onChange={e => updateIndex(idx.id, { name: e.target.value })}
+                              placeholder="idx_table_col"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={idx.type}
+                              options={typeOptions}
+                              onChange={v => updateIndex(idx.id, { type: v as TableFormIndex['type'] })}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs font-mono text-[#c8daea] outline-none focus:border-[#009e84]"
+                              value={idx.columns}
+                              onChange={e => updateIndex(idx.id, { columns: e.target.value })}
+                              placeholder='[{"name":"col","order":"ASC"}]'
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center">
+                            <button
+                              onClick={() => idx._isNew
+                                ? setIndexes(prev => prev.filter(i => i.id !== idx.id))
+                                : updateIndex(idx.id, { _isDeleted: true })
+                              }
+                              className="text-red-500/70 hover:text-red-400 p-0.5"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <button
+                onClick={addIndex}
+                className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1"
+              >
+                <Plus size={13} />
+                添加索引
               </button>
             </div>
           )}

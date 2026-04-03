@@ -149,22 +149,22 @@ function applyProjectFull(projectFull: ErProjectFull) {
   const projectId = projectFull.project.id;
 
   return (s: ErDesignerState) => {
-    // Keep tables from OTHER projects, replace tables from THIS project
-    const otherTables = s.tables.filter(t => t.project_id !== projectId);
-    const tables = [...otherTables, ...incomingTables];
+    // Single pass: collect oldTableIds and otherTables
+    const otherTables: ErTable[] = [];
+    const oldTableIds = new Set<number>();
+    for (const t of s.tables) {
+      if (t.project_id === projectId) oldTableIds.add(t.id);
+      else otherTables.push(t);
+    }
 
-    // Keep columns/indexes from other projects, replace for this project
     const columns = { ...s.columns };
     const indexes = { ...s.indexes };
-    // Remove old entries for tables that no longer exist in this project
-    const oldTableIds = new Set(s.tables.filter(t => t.project_id === projectId).map(t => t.id));
     for (const tid of oldTableIds) {
       if (!incomingTableIds.has(tid)) {
         delete columns[tid];
         delete indexes[tid];
       }
     }
-    // Add/overwrite with incoming data
     for (const [tid, cols] of Object.entries(incomingColumns)) {
       columns[Number(tid)] = cols;
     }
@@ -172,12 +172,11 @@ function applyProjectFull(projectFull: ErProjectFull) {
       indexes[Number(tid)] = idx;
     }
 
-    // Keep relations from other projects, replace for this project
     const otherRelations = s.relations.filter(r => !oldTableIds.has(r.source_table_id) && !oldTableIds.has(r.target_table_id));
 
     return {
       activeProjectId: projectId,
-      tables,
+      tables: [...otherTables, ...incomingTables],
       columns,
       relations: [...otherRelations, ...projectFull.relations],
       indexes,

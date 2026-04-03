@@ -109,6 +109,7 @@ describe('TableFormUIObject - upsert on add', () => {
         { id: 'c2', name: 'email', dataType: 'VARCHAR', length: '255', _isNew: true },
       ],
       indexes: [],
+      foreignKeys: [],
       isNewTable: true,
     })
   })
@@ -172,6 +173,7 @@ describe('TableFormUIObject - remove column by name', () => {
         { id: 'c2', name: 'amount', dataType: 'DECIMAL', length: '10,2', _isNew: true },
       ],
       indexes: [],
+      foreignKeys: [],
       isNewTable: true,
     })
   })
@@ -203,6 +205,7 @@ describe('TableFormUIObject - remove column by name', () => {
         { id: 'c2', name: 'amount', dataType: 'DECIMAL', length: '10,2' },
       ],
       indexes: [],
+      foreignKeys: [],
       isNewTable: false,
     })
     const obj = new TableFormUIObject(tabId, 1, 'testdb')

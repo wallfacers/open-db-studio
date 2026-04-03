@@ -514,7 +514,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.comment ?? ''}
                         onChange={e => updateColumn(col.id, { comment: e.target.value })}
                         placeholder="—"
@@ -562,18 +562,18 @@ export const TableManageDialog: React.FC<Props> = ({
           {activeTab === 'foreignKeys' && (
             <div className="space-y-1">
               {visibleForeignKeys.length === 0 && (
-                <div className="text-xs text-[#7a9bb8] py-4 text-center">暂无外键约束</div>
+                <div className="text-xs text-foreground-muted py-4 text-center">暂无外键约束</div>
               )}
               {visibleForeignKeys.length > 0 && (
-                <table className="w-full text-xs text-[#c8daea] border-collapse">
+                <table className="w-full text-xs text-foreground-default border-collapse">
                   <thead>
-                    <tr className="border-b border-[#1e2d42]">
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[180px]">约束名</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[120px]">当前列</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[120px]">引用表</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">引用列</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">ON DELETE</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">ON UPDATE</th>
+                    <tr className="border-b border-border-default">
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[180px]">约束名</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[120px]">当前列</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[120px]">引用表</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">引用列</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">ON DELETE</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">ON UPDATE</th>
                       <th className="w-[30px]"></th>
                     </tr>
                   </thead>
@@ -588,10 +588,10 @@ export const TableManageDialog: React.FC<Props> = ({
                         { value: 'SET DEFAULT', label: 'SET DEFAULT' },
                       ]
                       return (
-                        <tr key={fk.id} className="border-b border-[#1a2639] hover:bg-[#1a2639]/40">
+                        <tr key={fk.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
                           <td className="py-1 px-2">
                             <input
-                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
                               value={fk.constraintName}
                               onChange={e => updateForeignKey(fk.id, { constraintName: e.target.value })}
                               placeholder="fk_table_col"
@@ -608,7 +608,7 @@ export const TableManageDialog: React.FC<Props> = ({
                           </td>
                           <td className="py-1 px-2">
                             <input
-                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
                               value={fk.referencedTable}
                               onChange={e => updateForeignKey(fk.id, { referencedTable: e.target.value })}
                               placeholder="users"
@@ -616,7 +616,7 @@ export const TableManageDialog: React.FC<Props> = ({
                           </td>
                           <td className="py-1 px-2">
                             <input
-                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
                               value={fk.referencedColumn}
                               onChange={e => updateForeignKey(fk.id, { referencedColumn: e.target.value })}
                               placeholder="id"
@@ -644,7 +644,7 @@ export const TableManageDialog: React.FC<Props> = ({
                                 ? setForeignKeys(prev => prev.filter(f => f.id !== fk.id))
                                 : updateForeignKey(fk.id, { _isDeleted: true })
                               }
-                              className="text-red-500/70 hover:text-red-400 p-0.5"
+                              className="text-error/70 hover:text-error p-0.5 transition-colors duration-200"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -657,7 +657,7 @@ export const TableManageDialog: React.FC<Props> = ({
               )}
               <button
                 onClick={addForeignKey}
-                className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1"
+                className="mt-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
               >
                 <Plus size={13} />
                 添加外键
@@ -668,15 +668,15 @@ export const TableManageDialog: React.FC<Props> = ({
           {activeTab === 'indexes' && (
             <div className="space-y-1">
               {visibleIndexes.length === 0 && (
-                <div className="text-xs text-[#7a9bb8] py-4 text-center">暂无索引</div>
+                <div className="text-xs text-foreground-muted py-4 text-center">暂无索引</div>
               )}
               {visibleIndexes.length > 0 && (
-                <table className="w-full text-xs text-[#c8daea] border-collapse">
+                <table className="w-full text-xs text-foreground-default border-collapse">
                   <thead>
-                    <tr className="border-b border-[#1e2d42]">
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[200px]">索引名</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">类型</th>
-                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8]">列（JSON）</th>
+                    <tr className="border-b border-border-default">
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[200px]">索引名</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">类型</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted">列（JSON）</th>
                       <th className="w-[30px]"></th>
                     </tr>
                   </thead>
@@ -688,10 +688,10 @@ export const TableManageDialog: React.FC<Props> = ({
                         { value: 'FULLTEXT', label: 'FULLTEXT' },
                       ]
                       return (
-                        <tr key={idx.id} className="border-b border-[#1a2639] hover:bg-[#1a2639]/40">
+                        <tr key={idx.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
                           <td className="py-1 px-2">
                             <input
-                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
                               value={idx.name}
                               onChange={e => updateIndex(idx.id, { name: e.target.value })}
                               placeholder="idx_table_col"
@@ -707,7 +707,7 @@ export const TableManageDialog: React.FC<Props> = ({
                           </td>
                           <td className="py-1 px-2">
                             <input
-                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs font-mono text-[#c8daea] outline-none focus:border-[#009e84]"
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs font-mono text-foreground-default outline-none focus:border-border-focus"
                               value={idx.columns}
                               onChange={e => updateIndex(idx.id, { columns: e.target.value })}
                               placeholder='[{"name":"col","order":"ASC"}]'
@@ -719,7 +719,7 @@ export const TableManageDialog: React.FC<Props> = ({
                                 ? setIndexes(prev => prev.filter(i => i.id !== idx.id))
                                 : updateIndex(idx.id, { _isDeleted: true })
                               }
-                              className="text-red-500/70 hover:text-red-400 p-0.5"
+                              className="text-error/70 hover:text-error p-0.5 transition-colors duration-200"
                             >
                               <Trash2 size={12} />
                             </button>
@@ -732,7 +732,7 @@ export const TableManageDialog: React.FC<Props> = ({
               )}
               <button
                 onClick={addIndex}
-                className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1"
+                className="mt-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
               >
                 <Plus size={13} />
                 添加索引

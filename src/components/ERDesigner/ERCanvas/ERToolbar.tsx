@@ -53,7 +53,6 @@ export default function ERToolbar({
     addTable,
     syncFromDatabase,
     exportJson,
-    importJson,
     previewImport,
     executeImport,
     projects,
@@ -152,7 +151,7 @@ export default function ERToolbar({
     }
   };
 
-  // 导入 JSON（两步导入流程）
+  // 导入 JSON 到当前项目
   const handleImportJson = async () => {
     try {
       const openPath = await open({
@@ -163,24 +162,12 @@ export default function ERToolbar({
 
       const json = await invoke<string>('read_text_file', { path: openPath });
 
-      // Ask user: import into current project or create new?
-      const hasCurrentProject = !!projectId;
-      let targetProjectId: number | undefined;
-
-      if (hasCurrentProject) {
-        const importToCurrent = window.confirm(
-          t('erDesigner.importTargetPrompt') ||
-            '选择导入方式：\n\n点击"确定"导入到当前项目\n点击"取消"新建项目'
-        );
-        targetProjectId = importToCurrent ? projectId : undefined;
-      }
-
-      const preview = await previewImport(json, targetProjectId);
+      const preview = await previewImport(json, projectId);
 
       if (preview.conflict_tables.length > 0) {
-        setImportState({ json, preview, targetProjectId });
+        setImportState({ json, preview, targetProjectId: projectId });
       } else {
-        await executeImport(json, targetProjectId, []);
+        await executeImport(json, projectId, []);
       }
     } catch (e) {
       console.error('Import JSON failed:', e);

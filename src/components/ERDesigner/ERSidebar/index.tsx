@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, FolderOpen, Plus, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3, Key, Search, X } from 'lucide-react';
+import { Folder, FolderOpen, Plus, Upload, Database, TableProperties, Link2, MoreVertical, ChevronRight, ChevronDown, Grid3x3, Edit3, Key, Search, X } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import type { ErProject, ErTable, ErColumn } from '../../../types';
@@ -8,6 +8,8 @@ import { Tooltip } from '../../common/Tooltip';
 import { ProjectContextMenu } from './ProjectContextMenu';
 import { TableContextMenu } from './TableContextMenu';
 import { formatTypeDisplay } from '../shared/dataTypes';
+import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 
 interface ERSidebarProps {
   width: number;
@@ -44,6 +46,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     toggleTableExpand,
     restoreExpandedState,
     openDrawer,
+    importJson,
   } = useErDesignerStore();
 
   const { openERDesignTab } = useQueryStore();
@@ -79,6 +82,20 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     setShowCreateDialog(false);
   };
 
+  const handleImportProject = async () => {
+    try {
+      const openPath = await open({
+        multiple: false,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (!openPath || typeof openPath !== 'string') return;
+      const json = await invoke<string>('read_text_file', { path: openPath });
+      await importJson(json);
+    } catch (e) {
+      console.error('Import project failed:', e);
+    }
+  };
+
   if (hidden) return null;
 
   const getTableColumns = (tableId: number): ErColumn[] => {
@@ -104,14 +121,24 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
             {t('erDesigner.title') || 'ER 设计器'}
           </span>
         </div>
-        <Tooltip content={t('erDesigner.newProject') || '新建项目'}>
-          <button
-            className="p-1 rounded hover:bg-border-default text-foreground-muted hover:text-accent transition-colors duration-200"
-            onClick={() => setShowCreateDialog(true)}
-          >
-            <Plus size={14} />
-          </button>
-        </Tooltip>
+        <div className="flex items-center gap-1">
+          <Tooltip content={t('erDesigner.importProject') || '导入项目'}>
+            <button
+              className="p-1 rounded hover:bg-border-default text-foreground-muted hover:text-accent transition-colors duration-200"
+              onClick={handleImportProject}
+            >
+              <Upload size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content={t('erDesigner.newProject') || '新建项目'}>
+            <button
+              className="p-1 rounded hover:bg-border-default text-foreground-muted hover:text-accent transition-colors duration-200"
+              onClick={() => setShowCreateDialog(true)}
+            >
+              <Plus size={14} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
       {/* 搜索框 */}

@@ -188,7 +188,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_patch",
-                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements. IMPORTANT: Always batch ALL changes into a single ui_patch call with multiple ops. For table_form, set tableName AND add ALL columns in one call. Example: [{\"op\":\"replace\",\"path\":\"/tableName\",\"value\":\"users\"},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"id\",\"dataType\":\"INT\",...}},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"email\",\"dataType\":\"VARCHAR\",...}}]",
+                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements. IMPORTANT: Always batch ALL changes into a single ui_patch call with multiple ops. For table_form, set tableName AND add ALL columns in one call. Example: [{\"op\":\"replace\",\"path\":\"/tableName\",\"value\":\"users\"},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"id\",\"dataType\":\"INT\",...}},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"email\",\"dataType\":\"VARCHAR\",...}}] Tip: call ui_read(mode='schema') first to see supported patch paths and addressable keys for the target object.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -202,7 +202,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_exec",
-                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, format).",
+                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, format). Tip: call ui_read(mode='actions') first to see all available actions with parameter schemas.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -273,7 +273,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "init_er_table",
-                "description": "Create a complete table with columns and indexes in the active ER diagram in one call. This is for ER DESIGN projects (visual schema design), NOT for connected databases. If you need to create a table in a connected database, use init_table_form instead. Equivalent to batch_create_table action on er_canvas but as a top-level tool for convenience.",
+                "description": "Create ONE complete table with columns and indexes in the active ER diagram. For single-table creation this is the simplest choice. For multi-table + relations, use er_batch instead (supports variable binding across operations). This is for ER DESIGN projects (visual schema design), NOT for connected databases — use init_table_form for that.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -325,7 +325,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "er_batch",
-                "description": "Execute a sequence of ER canvas actions in one call with variable binding. Each op is {action, params}. Results from earlier ops can be referenced by later ops via \"$N.path\" syntax (e.g. \"$0.tableId\", \"$1.columnMap.user_id\"). Stops on first failure. Use this for ANY multi-step ER workflow: create multiple tables then add relations, batch modify columns, etc.",
+                "description": "Execute a sequence of ER canvas actions in one call with variable binding. Each op is {action, params}. Results from earlier ops can be referenced via \"$N.path\" syntax (e.g. \"$0.tableId\", \"$1.columnMap.user_id\", \"$2.columnIds[0]\"). Stops on first failure. Available actions: batch_create_table, add_table, update_table, delete_table, add_column, update_column, delete_column, add_relation, update_relation, delete_relation, add_index, update_index, delete_index, replace_columns, replace_indexes. Common patterns: create tables + relations (batch_create_table x N then add_relation), modify existing table (update_column/delete_column/add_column), rebuild columns (replace_columns).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

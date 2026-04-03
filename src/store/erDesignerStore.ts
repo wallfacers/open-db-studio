@@ -129,29 +129,61 @@ interface ErDesignerState {
   clearDialectWarnings: () => void;
 }
 
-/** Helper: apply ErProjectFull to state */
+/** Helper: apply ErProjectFull to state, merging with existing multi-project data */
 function applyProjectFull(projectFull: ErProjectFull) {
-  const columns: Record<number, ErColumn[]> = {};
-  const indexes: Record<number, ErIndex[]> = {};
-  const tables: ErTable[] = [];
+  const incomingColumns: Record<number, ErColumn[]> = {};
+  const incomingIndexes: Record<number, ErIndex[]> = {};
+  const incomingTables: ErTable[] = [];
+  const incomingTableIds = new Set<number>();
 
   for (const tf of projectFull.tables) {
-    tables.push(tf.table);
-    columns[tf.table.id] = tf.columns.map((col: any) => ({
+    incomingTables.push(tf.table);
+    incomingTableIds.add(tf.table.id);
+    incomingColumns[tf.table.id] = tf.columns.map((col: any) => ({
       ...col,
       enum_values: col.enum_values ? JSON.parse(col.enum_values) : null,
     }));
-    indexes[tf.table.id] = tf.indexes;
+    incomingIndexes[tf.table.id] = tf.indexes;
   }
 
-  return {
-    activeProjectId: projectFull.project.id,
-    tables,
-    columns,
-    relations: projectFull.relations,
-    indexes,
-    undoStack: [] as OperationRecord[],
-    redoStack: [] as OperationRecord[],
+  const projectId = projectFull.project.id;
+
+  return (s: ErDesignerState) => {
+    // Keep tables from OTHER projects, replace tables from THIS project
+    const otherTables = s.tables.filter(t => t.project_id !== projectId);
+    const tables = [...otherTables, ...incomingTables];
+
+    // Keep columns/indexes from other projects, replace for this project
+    const columns = { ...s.columns };
+    const indexes = { ...s.indexes };
+    // Remove old entries for tables that no longer exist in this project
+    const oldTableIds = new Set(s.tables.filter(t => t.project_id === projectId).map(t => t.id));
+    for (const tid of oldTableIds) {
+      if (!incomingTableIds.has(tid)) {
+        delete columns[tid];
+        delete indexes[tid];
+      }
+    }
+    // Add/overwrite with incoming data
+    for (const [tid, cols] of Object.entries(incomingColumns)) {
+      columns[Number(tid)] = cols;
+    }
+    for (const [tid, idx] of Object.entries(incomingIndexes)) {
+      indexes[Number(tid)] = idx;
+    }
+
+    // Keep relations from other projects, replace for this project
+    const otherRelations = s.relations.filter(r => !oldTableIds.has(r.source_table_id) && !oldTableIds.has(r.target_table_id));
+
+    return {
+      activeProjectId: projectId,
+      tables,
+      columns,
+      relations: [...otherRelations, ...projectFull.relations],
+      indexes,
+      undoStack: [] as OperationRecord[],
+      redoStack: [] as OperationRecord[],
+    };
   };
 }
 

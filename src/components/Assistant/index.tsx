@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { createPortal } from 'react-dom';
-import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw, Pencil } from 'lucide-react';
+import { Plus, History, X, DatabaseZap, ChevronDown, Send, Trash2, Copy, Check, Square, ChevronLeft, MessageSquare, RefreshCw, Pencil, Clock } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MarkdownContent } from '../shared/MarkdownContent';
 import { PatchConfirmPanel } from './PatchConfirmPanel';
@@ -91,6 +91,7 @@ const TypingIndicator: React.FC = () => {
 const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const content = useAiStore((s) => s.chatStates[sessionId]?.streamingContent ?? '');
   const thinking = useAiStore((s) => s.chatStates[sessionId]?.streamingThinkingContent ?? '');
+  const streamingParts = useAiStore((s) => s.chatStates[sessionId]?.streamingParts ?? []);
   const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
   const pendingQuestion = useAiStore((s) => s.chatStates[sessionId]?.pendingQuestion ?? null);
   const isChatting = useAiStore((s) => s.chatStates[sessionId]?.isChatting ?? false);
@@ -101,16 +102,34 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const pacedContent = usePacedValue(content, isChatting && !pendingQuestion);
 
   // 已收到任何内容（包含深度思考）则不再显示等待动画
-  const hasFirstToken = !!(content || thinking);
+  const hasFirstToken = !!(content || thinking || streamingParts.length > 0);
+
+  // 优先使用 streamingParts 渲染（与历史消息一致，支持多次 thinking/text 交替）
+  const hasParts = streamingParts.length > 0;
 
   return (
     <div className="flex flex-col items-start">
       <div className="text-foreground-default text-[13px] w-full">
-        {/* ThinkingBlock 使用 isChatting：Q&A 期间保持展开，仅 AI 完成后才自动折叠 */}
-        {thinking && <ThinkingBlock content={thinking} isStreaming={isChatting} />}
+        {hasParts ? (
+          streamingParts.map((part, i) => {
+            switch (part.type) {
+              case 'reasoning':
+                return <ThinkingBlock key={i} content={part.content} isStreaming={isChatting} />;
+              case 'text':
+                return <MarkdownContent key={i} content={part.content} isStreaming={isChatting && !pendingQuestion} />;
+              default:
+                return null;
+            }
+          })
+        ) : (
+          <>
+            {/* 向后兼容：parts 尚未构建时走旧路径 */}
+            {thinking && <ThinkingBlock content={thinking} isStreaming={isChatting} />}
+            {pacedContent && <MarkdownContent content={pacedContent} isStreaming={!pendingQuestion} />}
+          </>
+        )}
         {/* 工具调用进度指示器 */}
         {toolSteps.length > 0 && <ProgressIndicator steps={toolSteps} />}
-        {pacedContent && <MarkdownContent content={pacedContent} isStreaming={!pendingQuestion} />}
         {pendingQuestion ? (
           <div className="mt-2 space-y-1">
             {/* 从 questions 字段提取问题文本展示 */}
@@ -213,6 +232,10 @@ export const Assistant: React.FC<AssistantProps> = ({
   const pendingPermission = useAiStore((s) => s.chatStates[currentSessionId]?.pendingPermission ?? null);
   const pendingQuestion = useAiStore((s) => s.chatStates[currentSessionId]?.pendingQuestion ?? null);
   const isWaitingForAnswer = isChatting && !!pendingQuestion;
+  // 耗时统计
+  const chatStartRef = useRef<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [lastElapsedMs, setLastElapsedMs] = useState(0);
   // 后台流式 session 的 isChatting map（用于历史列表角标）
   // 使用 ref 缓存结果，只有当 chatting 列表真正变化时才更新
   const chattingSessionIdsRef = useRef<Set<string>>(new Set());
@@ -333,6 +356,33 @@ export const Assistant: React.FC<AssistantProps> = ({
       pendingConnSwitchAfterChatRef.current = null;
     }
   }, [isChatting]);
+
+  // 聊天耗时计时器：isChatting 开始时计时，结束时保存耗时
+  useEffect(() => {
+    if (isChatting) {
+      chatStartRef.current = Date.now();
+      const id = setInterval(() => {
+        if (chatStartRef.current) {
+          setElapsedMs(Date.now() - chatStartRef.current);
+        }
+      }, 100);
+      return () => clearInterval(id);
+    } else {
+      if (chatStartRef.current) {
+        setLastElapsedMs(Date.now() - chatStartRef.current);
+        chatStartRef.current = null;
+      }
+      setElapsedMs(0);
+    }
+  }, [isChatting]);
+
+  // 切换会话时重置耗时
+  useEffect(() => {
+    setLastElapsedMs(0);
+    chatStartRef.current = null;
+    setElapsedMs(0);
+  }, [currentSessionId]);
+
   const connectionMenuRef = useRef<HTMLDivElement>(null);
   const connectionDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -725,6 +775,15 @@ export const Assistant: React.FC<AssistantProps> = ({
 
   const isEmpty = chatHistory.length === 0 && !isChatting;
 
+  const formatElapsed = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const tenths = Math.floor((ms % 1000) / 100);
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}.${tenths}s`;
+  };
+
   return (
     <div className="flex flex-col bg-background-void flex-shrink-0 border-l border-border-default relative h-full" style={{ width: assistantWidth }}>
       <div
@@ -913,7 +972,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                   <div className="bg-border-default text-foreground-default px-3 py-2 rounded-lg max-w-[90%] text-[13px] leading-relaxed break-words">
                     {msg.content}
                   </div>
-                  {/* 编辑按钮：hover 显示，仅最后一条用户消息可用 */}
+                  {/* 编辑按钮：常驻显示，仅最后一条用户消息可用 */}
                   {isLastUser && canEditOrRegen && (
                     <button
                       onClick={() => {
@@ -921,7 +980,7 @@ export const Assistant: React.FC<AssistantProps> = ({
                         undoMessage(currentSessionId);
                         setChatInput(msgContent);
                       }}
-                      className="mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity text-[11px] text-foreground-ghost hover:text-foreground-muted flex items-center gap-1"
+                      className="mt-1 text-[11px] text-foreground-ghost hover:text-foreground-muted flex items-center gap-1 transition-colors"
                       title={t('assistant.editMessage', { defaultValue: '编辑并重新发送' })}
                     >
                       <Pencil size={10} />
@@ -936,29 +995,44 @@ export const Assistant: React.FC<AssistantProps> = ({
                     thinkingContent={msg.thinkingContent}
                     parts={msg.parts}
                   />
-                  {/* 重新生成按钮：hover 显示，仅最后一条助手消息可用 */}
-                  {isLastAssistant && canEditOrRegen && (
-                    <button
-                      onClick={async () => {
-                        // 找到最后一条用户消息
-                        const lastUserMsg = chatHistory.slice(0, idx).reverse().find((m) => m.role === 'user');
-                        if (!lastUserMsg) return;
-                        await undoMessage(currentSessionId);
-                        // 获取有效连接 ID
-                        const effectiveConnId = linkedConnectionId ?? useConnectionStore.getState().activeConnectionId;
-                        sendAgentChatStream(lastUserMsg.content, effectiveConnId);
-                      }}
-                      className="mt-1 opacity-0 group-hover/msg:opacity-100 transition-opacity text-[11px] text-foreground-ghost hover:text-foreground-muted flex items-center gap-1"
-                      title={t('assistant.regenerate', { defaultValue: '重新生成' })}
-                    >
-                      <RefreshCw size={10} />
-                      <span>{t('assistant.regenerate', { defaultValue: '重新生成' })}</span>
-                    </button>
+                  {/* 操作栏：重新生成 + 耗时统计，仅最后一条助手消息 */}
+                  {isLastAssistant && (
+                    <div className="mt-1 flex items-center gap-3">
+                      {canEditOrRegen && (
+                        <button
+                          onClick={async () => {
+                            const lastUserMsg = chatHistory.slice(0, idx).reverse().find((m) => m.role === 'user');
+                            if (!lastUserMsg) return;
+                            await undoMessage(currentSessionId);
+                            const effectiveConnId = linkedConnectionId ?? useConnectionStore.getState().activeConnectionId;
+                            sendAgentChatStream(lastUserMsg.content, effectiveConnId);
+                          }}
+                          className="text-[11px] text-foreground-ghost hover:text-foreground-muted flex items-center gap-1 transition-colors"
+                          title={t('assistant.regenerate', { defaultValue: '重新生成' })}
+                        >
+                          <RefreshCw size={10} />
+                          <span>{t('assistant.regenerate', { defaultValue: '重新生成' })}</span>
+                        </button>
+                      )}
+                      {lastElapsedMs > 0 && (
+                        <span className="flex items-center gap-1 text-[11px] text-foreground-ghost">
+                          <Clock size={10} />
+                          <span>{formatElapsed(lastElapsedMs)}</span>
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               );
             })}
             {isChatting && <StreamingMessage sessionId={currentSessionId} />}
+            {/* 生成中实时耗时 */}
+            {isChatting && elapsedMs > 0 && (
+              <span className="flex items-center gap-1 text-[11px] text-foreground-ghost">
+                <Clock size={10} />
+                <span>{formatElapsed(elapsedMs)}</span>
+              </span>
+            )}
 
               {/* 权限/问答面板已移至底部 Dock 区域 */}
 

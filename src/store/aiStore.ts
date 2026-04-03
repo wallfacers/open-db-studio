@@ -532,6 +532,7 @@ export const useAiStore = create<AiState>()(
             role: string;
             content: string;
             thinking_content: string | null;
+            parts?: Array<{ type: string; content: string }>;
           }>>('agent_get_session_messages', { sessionId });
 
           const chatMessages: ChatMessage[] = messages
@@ -540,6 +541,7 @@ export const useAiStore = create<AiState>()(
               role: m.role as 'user' | 'assistant',
               content: m.content,
               ...(m.thinking_content ? { thinkingContent: m.thinking_content } : {}),
+              ...(m.parts && m.parts.length > 0 ? { parts: m.parts as import('../types').MessagePart[] } : {}),
             }));
 
           const isCurrentSession = get().currentSessionId === sessionId;

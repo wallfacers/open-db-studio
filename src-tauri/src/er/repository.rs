@@ -217,14 +217,8 @@ pub fn update_project(id: i64, req: &UpdateProjectRequest) -> AppResult<ErProjec
     maybe_set!(req.viewport_y, "viewport_y");
     maybe_set!(req.viewport_zoom, "viewport_zoom");
 
-    if sets.is_empty() {
-        // Nothing to update, just refresh updated_at
-        sets.push(format!("updated_at = ?{}", idx));
-        params.push(Box::new(now.clone()));
-    } else {
-        sets.push(format!("updated_at = ?{}", idx));
-        params.push(Box::new(now.clone()));
-    }
+    sets.push(format!("updated_at = ?{}", idx));
+    params.push(Box::new(now.clone()));
     idx += 1;
 
     let sql = format!(

@@ -603,56 +603,10 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
     let mut column_key_to_id: HashMap<(String, String), i64> = HashMap::new();
 
     for export_table in &data.project.tables {
-        let table = crate::er::repository::create_table(&CreateTableRequest {
-            project_id: project.id,
-            name: export_table.name.clone(),
-            comment: export_table.comment.clone(),
-            position_x: Some(export_table.position.x),
-            position_y: Some(export_table.position.y),
-            color: export_table.color.clone(),
-        })?;
-
+        let table = create_import_table(project.id, &export_table.name, export_table)?;
         table_name_to_id.insert(export_table.name.clone(), table.id);
-
-        // Create columns
-        for (i, export_col) in export_table.columns.iter().enumerate() {
-            let col = crate::er::repository::create_column(&CreateColumnRequest {
-                table_id: table.id,
-                name: export_col.name.clone(),
-                data_type: export_col.data_type.clone(),
-                nullable: Some(export_col.nullable),
-                default_value: export_col.default_value.clone(),
-                is_primary_key: Some(export_col.is_primary_key),
-                is_auto_increment: Some(export_col.is_auto_increment),
-                comment: export_col.comment.clone(),
-                length: None,
-                scale: None,
-                is_unique: None,
-                unsigned: None,
-                charset: None,
-                collation: None,
-                on_update: None,
-                enum_values: None,
-                sort_order: Some(i as i64),
-            })?;
-
-            column_key_to_id.insert(
-                (export_table.name.clone(), export_col.name.clone()),
-                col.id,
-            );
-        }
-
-        // Create indexes
-        for export_idx in &export_table.indexes {
-            let columns_json = serde_json::to_string(&export_idx.columns)
-                .unwrap_or_else(|_| "[]".to_string());
-            crate::er::repository::create_index(&CreateIndexRequest {
-                table_id: table.id,
-                name: export_idx.name.clone(),
-                index_type: Some(export_idx.index_type.clone()),
-                columns: columns_json,
-            })?;
-        }
+        create_import_columns(table.id, &export_table.name, export_table, &mut column_key_to_id)?;
+        create_import_indexes(table.id, export_table)?;
     }
 
     // Create relations
@@ -782,25 +736,26 @@ pub async fn er_execute_import(
         .map(|c| (c.table_name.clone(), &c.action))
         .collect();
 
-    // Determine target project
-    let project = match project_id {
+    // Determine target project and load existing data in one query
+    let (project, existing_full) = match project_id {
         None => {
             let unique_name =
                 crate::er::repository::generate_unique_project_name(&data.project.name)?;
-            crate::er::repository::create_project(&CreateProjectRequest {
+            let proj = crate::er::repository::create_project(&CreateProjectRequest {
                 name: unique_name,
                 description: data.project.description.clone(),
-            })?
+            })?;
+            (proj, None)
         }
         Some(pid) => {
             let full = crate::er::repository::get_project_full(pid)?;
-            full.project
+            let proj = full.project.clone();
+            (proj, Some(full))
         }
     };
 
     // If importing into existing project, build existing table name -> id map
-    let existing_tables: std::collections::HashMap<String, i64> = if project_id.is_some() {
-        let full = crate::er::repository::get_project_full(project.id)?;
+    let existing_tables: std::collections::HashMap<String, i64> = if let Some(ref full) = existing_full {
         full.tables
             .iter()
             .map(|tf| (tf.table.name.clone(), tf.table.id))
@@ -814,8 +769,7 @@ pub async fn er_execute_import(
     let mut column_key_to_id: HashMap<(String, String), i64> = HashMap::new();
 
     // Pre-populate with existing tables (for relations that reference non-imported tables)
-    if project_id.is_some() {
-        let full = crate::er::repository::get_project_full(project.id)?;
+    if let Some(ref full) = existing_full {
         for tf in &full.tables {
             table_name_to_id.insert(tf.table.name.clone(), tf.table.id);
             for col in &tf.columns {

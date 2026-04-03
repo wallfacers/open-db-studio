@@ -104,9 +104,64 @@ const INDEX_COLS: &str = "id, table_id, name, type, columns, created_at";
 
 // ─── Project CRUD ───────────────────────────────────────────────────────────
 
+/// Check if a project name already exists, optionally excluding a specific project ID.
+pub fn project_name_exists(name: &str, exclude_id: Option<i64>) -> AppResult<bool> {
+    let conn = crate::db::get().lock().unwrap();
+    let count: i64 = match exclude_id {
+        Some(eid) => conn.query_row(
+            "SELECT COUNT(*) FROM er_projects WHERE name = ?1 AND id != ?2",
+            rusqlite::params![name, eid],
+            |r| r.get(0),
+        )?,
+        None => conn.query_row(
+            "SELECT COUNT(*) FROM er_projects WHERE name = ?1",
+            rusqlite::params![name],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(count > 0)
+}
+
+/// Generate a unique project name by appending _副本, _副本2, _副本3, etc.
+pub fn generate_unique_project_name(base_name: &str) -> AppResult<String> {
+    if !project_name_exists(base_name, None)? {
+        return Ok(base_name.to_string());
+    }
+    let candidate = format!("{}_副本", base_name);
+    if !project_name_exists(&candidate, None)? {
+        return Ok(candidate);
+    }
+    let mut i = 2;
+    loop {
+        let candidate = format!("{}_副本{}", base_name, i);
+        if !project_name_exists(&candidate, None)? {
+            return Ok(candidate);
+        }
+        i += 1;
+        if i > 100 {
+            return Err(crate::AppError::Other(
+                "Too many duplicate project names".to_string(),
+            ));
+        }
+    }
+}
+
 pub fn create_project(req: &CreateProjectRequest) -> AppResult<ErProject> {
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
+
+    // Check name uniqueness
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM er_projects WHERE name = ?1",
+        rusqlite::params![req.name],
+        |r| r.get(0),
+    )?;
+    if count > 0 {
+        return Err(crate::AppError::Other(format!(
+            "项目名称 '{}' 已存在",
+            req.name
+        )));
+    }
 
     conn.execute(
         "INSERT INTO er_projects (name, description, created_at, updated_at)
@@ -126,6 +181,21 @@ pub fn create_project(req: &CreateProjectRequest) -> AppResult<ErProject> {
 pub fn update_project(id: i64, req: &UpdateProjectRequest) -> AppResult<ErProject> {
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
+
+    // If renaming, check name uniqueness (exclude self)
+    if let Some(ref new_name) = req.name {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM er_projects WHERE name = ?1 AND id != ?2",
+            rusqlite::params![new_name, id],
+            |r| r.get(0),
+        )?;
+        if count > 0 {
+            return Err(crate::AppError::Other(format!(
+                "项目名称 '{}' 已存在",
+                new_name
+            )));
+        }
+    }
 
     let mut sets = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();

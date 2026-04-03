@@ -1,6 +1,7 @@
 import { emit } from '@tauri-apps/api/event'
-import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
 import { applyPatch } from '../jsonPatch'
+import { execError } from '../errors'
 import { useQueryStore } from '../../../store/queryStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
@@ -16,6 +17,15 @@ export class QueryEditorAdapter implements UIObject {
     this.objectId = tabId
     this.connectionId = connectionId
     this.title = title ?? 'Query'
+  }
+
+  get patchCapabilities(): PatchCapability[] {
+    return [
+      { pathPattern: '/content', ops: ['replace'], description: 'Replace SQL content' },
+      { pathPattern: '/connectionId', ops: ['replace'], description: 'Switch connection' },
+      { pathPattern: '/database', ops: ['replace'], description: 'Switch database' },
+      { pathPattern: '/schema', ops: ['replace'], description: 'Switch schema' },
+    ]
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -42,14 +52,26 @@ export class QueryEditorAdapter implements UIObject {
             database: { type: 'string', description: 'Target database name' },
             schema: { type: 'string', description: 'Target schema name (PostgreSQL/Oracle)' },
           },
+          patchCapabilities: this.patchCapabilities,
         }
       case 'actions':
         return [
-          { name: 'run_sql', description: 'Execute the SQL in this tab' },
-          { name: 'format', description: 'Format/beautify the SQL' },
-          { name: 'undo', description: 'Undo last change' },
-          { name: 'focus', description: 'Switch to this tab' },
-          { name: 'set_context', description: 'Set connection/database/schema context. Params: { connectionId?: number, database?: string, schema?: string }' },
+          { name: 'run_sql', description: 'Execute the SQL in this tab', paramsSchema: { type: 'object', properties: {} } },
+          { name: 'format', description: 'Format/beautify the SQL', paramsSchema: { type: 'object', properties: {} } },
+          { name: 'undo', description: 'Undo last change', paramsSchema: { type: 'object', properties: {} } },
+          { name: 'focus', description: 'Switch to this tab', paramsSchema: { type: 'object', properties: {} } },
+          {
+            name: 'set_context',
+            description: 'Set connection/database/schema context for this query tab',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                connectionId: { type: 'number', description: 'Database connection ID' },
+                database: { type: 'string', description: 'Database name' },
+                schema: { type: 'string', description: 'Schema name (PostgreSQL/Oracle)' },
+              },
+            },
+          },
         ]
     }
   }
@@ -142,14 +164,14 @@ export class QueryEditorAdapter implements UIObject {
         if (database !== undefined) ctx.database = database
         if (schema !== undefined) ctx.schema = schema
         if (Object.keys(ctx).length === 0) {
-          return { success: false, error: 'No context fields provided. Use connectionId, database, or schema.' }
+          return execError('No context fields provided', 'Pass at least one of: connectionId, database, schema')
         }
         useQueryStore.getState().updateTabContext(this.objectId, ctx)
         return { success: true }
       }
 
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: run_sql, format, undo, focus, set_context')
     }
   }
 }

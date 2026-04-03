@@ -323,7 +323,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
           initForm(tabId, {
             tableName: '',
             engine: 'InnoDB', charset: 'utf8mb4', comment: '',
-            columns: initCols, originalColumns: [], indexes: [], isNewTable: true,
+            columns: initCols, originalColumns: [], indexes: [], foreignKeys: [], isNewTable: true,
           })
         }
       })
@@ -362,6 +362,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns: cols, originalColumns: cols.map(c => ({ ...c })),
         indexes: idxs, originalIndexes: idxs.map(i => ({ ...i })),
+        foreignKeys: [],
         isNewTable: false,
       })
     }).catch(e => {
@@ -424,6 +425,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns, originalColumns: tableName ? originalColumns : undefined,
         indexes, originalIndexes: tableName ? originalIndexes : undefined,
+        foreignKeys: [],
         isNewTable: !tableName,
       }, driver);
     } catch {

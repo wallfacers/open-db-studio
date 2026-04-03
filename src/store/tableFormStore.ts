@@ -22,10 +22,23 @@ export interface TableFormIndex {
   id: string
   name: string
   type: 'INDEX' | 'UNIQUE' | 'FULLTEXT'
-  columns: string  // JSON: [{"name":"col","order":"ASC"}]
+  columns: string           // JSON string: [{ name: string, order: 'ASC' | 'DESC' }]
   _isNew?: boolean
   _isDeleted?: boolean
-  _originalName?: string
+  _originalName?: string    // for ALTER tracking
+}
+
+export interface TableFormForeignKey {
+  id: string
+  constraintName: string        // e.g. fk_orders_user_id
+  column: string                // 当前表的列名
+  referencedTable: string       // 引用目标表名
+  referencedColumn: string      // 引用目标列名
+  onDelete: string              // NO ACTION | CASCADE | SET NULL | RESTRICT | SET DEFAULT
+  onUpdate: string
+  _isNew?: boolean
+  _isDeleted?: boolean
+  _originalName?: string        // 用于 ALTER 时追踪约束名变化
 }
 
 export interface TableFormState {
@@ -37,6 +50,8 @@ export interface TableFormState {
   originalColumns?: TableFormColumn[]
   indexes: TableFormIndex[]
   originalIndexes?: TableFormIndex[]
+  foreignKeys: TableFormForeignKey[]
+  originalForeignKeys?: TableFormForeignKey[]
   isNewTable?: boolean
 }
 
@@ -73,7 +88,8 @@ export async function loadPersistedFormState(tabId: string): Promise<TableFormSt
     const parsed = JSON.parse(raw) as TableFormState
     // 基本校验：必须有 columns 数组
     if (!Array.isArray(parsed.columns)) return null
-    if (parsed.indexes && !Array.isArray(parsed.indexes)) parsed.indexes = []
+    if (!Array.isArray(parsed.indexes)) parsed.indexes = []
+    if (!Array.isArray(parsed.foreignKeys)) parsed.foreignKeys = []
     return parsed
   } catch {
     return null

@@ -130,7 +130,9 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           displayParts.map((part, i) => {
             switch (part.type) {
               case 'reasoning':
-                return <ThinkingBlock key={i} content={part.content} isStreaming={isCurrentlyThinking} />;
+                // 只有最后一个 reasoning 块才可能处于流式状态，前面的已完成
+                const isLastPart = i === displayParts.length - 1;
+                return <ThinkingBlock key={i} content={part.content} isStreaming={isCurrentlyThinking && isLastPart} />;
               case 'text':
                 return <MarkdownContent key={i} content={part.content} isStreaming={isChatting && !pendingQuestion} />;
               default:

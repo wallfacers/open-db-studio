@@ -17,7 +17,7 @@ export default function ERPropertyDrawer() {
   if (!table) return null;
 
   return (
-    <div className="w-[420px] shrink-0 bg-background-panel border-l border-border-strong flex flex-col h-full">
+    <div className="absolute right-0 top-0 w-[420px] max-w-[60vw] bg-background-panel border-l border-border-strong flex flex-col h-full z-10 shadow-lg">
       {/* Title bar */}
       <div className="bg-background-hover px-3 py-2 flex items-center justify-between border-b border-border-strong">
         <span className="text-[13px] text-foreground-default font-medium truncate">{table.name}</span>

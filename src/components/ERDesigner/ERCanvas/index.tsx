@@ -135,21 +135,25 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const reloadCanvas = useCallback(() => {
     loadProject(projectId).then(() => {
       const state = useErDesignerStore.getState()
-      const newNodes: Node<NodeData>[] = state.tables.map((table) => ({
+      const projectTables = state.tables.filter(t => t.project_id === projectId)
+      const tableIdSet = new Set(projectTables.map(t => t.id))
+      const newNodes: Node<NodeData>[] = projectTables.map((table) => ({
         id: erTableNodeId(table.id),
         type: 'erTable',
         position: { x: table.position_x, y: table.position_y },
         data: buildNodeData(table, state.columns[table.id] || []),
       }))
-      const newEdges = state.relations.map((rel) => ({
-        id: erEdgeNodeId(rel.id),
-        source: erTableNodeId(rel.source_table_id),
-        sourceHandle: `${rel.source_column_id}-source`,
-        target: erTableNodeId(rel.target_table_id),
-        targetHandle: `${rel.target_column_id}-target`,
-        type: 'erEdge',
-        data: { relation_type: rel.relation_type, source_type: rel.source },
-      }))
+      const newEdges = state.relations
+        .filter(r => tableIdSet.has(r.source_table_id) || tableIdSet.has(r.target_table_id))
+        .map((rel) => ({
+          id: erEdgeNodeId(rel.id),
+          source: erTableNodeId(rel.source_table_id),
+          sourceHandle: `${rel.source_column_id}-source`,
+          target: erTableNodeId(rel.target_table_id),
+          targetHandle: `${rel.target_column_id}-target`,
+          type: 'erEdge',
+          data: { relation_type: rel.relation_type, source_type: rel.source },
+        }))
       setNodes(newNodes)
       setEdges(newEdges)
     })
@@ -160,36 +164,31 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   }, [reloadCanvas])
 
   // Sync store changes to ReactFlow nodes/edges (for sidebar operations)
+  // Filter by projectId — each Canvas instance only reacts to its own project data
   useEffect(() => {
-    // Only sync when we have loaded data (activeProjectId matches)
-    const state = useErDesignerStore.getState()
-    if (state.activeProjectId !== projectId) return
+    const projectTables = tables.filter(t => t.project_id === projectId)
+    const tableIdSet = new Set(projectTables.map(t => t.id))
+    const projectRelations = relations.filter(
+      r => tableIdSet.has(r.source_table_id) || tableIdSet.has(r.target_table_id)
+    )
 
-    // Update nodes based on current tables (sync table name, columns, etc.)
     setNodes(nds => {
-      const currentTableIds = new Set(tables.map(t => t.id))
-      // Update existing nodes and remove deleted ones
+      const currentTableIds = new Set(projectTables.map(t => t.id))
       const updated = nds
         .filter(n => currentTableIds.has(parseErTableNodeId(n.id)!))
         .map(n => {
           const tableId = parseErTableNodeId(n.id)!
-          const table = tables.find(t => t.id === tableId)
+          const table = projectTables.find(t => t.id === tableId)
           if (!table) return n
           const cols = columns[tableId] || []
-          // Update node data with latest table and columns
           return {
             ...n,
             position: { x: table.position_x, y: table.position_y },
-            data: {
-              ...n.data,
-              table,
-              columns: cols,
-            },
+            data: { ...n.data, table, columns: cols },
           }
         })
-      // Add new nodes for tables not yet on canvas
       const existingIds = new Set(updated.map(n => n.id))
-      const newNodes = tables
+      const newNodes = projectTables
         .filter(t => !existingIds.has(erTableNodeId(t.id)))
         .map(table => ({
           id: erTableNodeId(table.id),
@@ -200,21 +199,17 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       return [...updated, ...newNodes]
     })
 
-    // Update edges based on current relations
     setEdges(eds => {
-      const currentRelIds = new Set(relations.map(r => r.id))
-      const currentTableIds = new Set(tables.map(t => t.id))
-      // Remove edges for deleted relations or deleted tables
+      const currentRelIds = new Set(projectRelations.map(r => r.id))
       const filtered = eds.filter(e => {
         const relId = parseErEdgeNodeId(e.id)
         return relId != null &&
           currentRelIds.has(relId) &&
-          currentTableIds.has(parseErTableNodeId(e.source)!) &&
-          currentTableIds.has(parseErTableNodeId(e.target)!)
+          tableIdSet.has(parseErTableNodeId(e.source)!) &&
+          tableIdSet.has(parseErTableNodeId(e.target)!)
       })
-      // Add edges for new relations
       const existingIds = new Set(filtered.map(e => e.id))
-      const newEdges = relations
+      const newEdges = projectRelations
         .filter(r => !existingIds.has(erEdgeNodeId(r.id)))
         .map(rel => ({
           id: erEdgeNodeId(rel.id),

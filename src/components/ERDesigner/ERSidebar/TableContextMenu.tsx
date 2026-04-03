@@ -25,7 +25,7 @@ interface MenuItem {
 export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projectId, tableId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { tables, columns, deleteTable, loadProject, addTable, addColumn, openDrawer } = useErDesignerStore();
+  const { tables, columns, deleteTable, addTable, addColumn, openDrawer } = useErDesignerStore();
   const { openERDesignTab } = useQueryStore();
 
   const table = tables.find(t => t.id === tableId);
@@ -83,7 +83,7 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   const handleDuplicate = async () => {
     if (!table) return;
     const srcCols = columns[tableId] || [];
-    const newTable = await addTable(`${table.name}_copy`, {
+    const newTable = await addTable(table.project_id, `${table.name}_copy`, {
       x: table.position_x + 50,
       y: table.position_y + 50,
     });

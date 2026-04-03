@@ -20,6 +20,8 @@ const mockStore = {
   updateColumn: vi.fn(),
   addColumn: vi.fn().mockResolvedValue({ id: 999 }),
   addIndex: vi.fn().mockResolvedValue({ id: 888 }),
+  addTable: vi.fn(),
+  addRelation: vi.fn(),
   deleteColumn: vi.fn(),
   deleteIndex: vi.fn(),
   deleteRelation: vi.fn(),

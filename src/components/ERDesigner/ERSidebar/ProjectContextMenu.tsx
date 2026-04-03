@@ -122,7 +122,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
     while (existing.has(name)) {
       name = `new_table_${++i}`;
     }
-    await addTable(name, { x: 100, y: 100 });
+    await addTable(projectId, name, { x: 100, y: 100 });
     // Open the ER design tab so the user can see the new table
     openERDesignTab(projectId, project?.name || '');
     onClose();

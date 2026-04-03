@@ -56,7 +56,7 @@ describe('ERCanvasAdapter', () => {
 
   describe('read("schema") includes patchCapabilities', () => {
     it('includes patchCapabilities in schema response', () => {
-      const schema = adapter.read('schema')
+      const schema = adapter.read('schema') as any
       expect(schema.patchCapabilities).toBeDefined()
       expect(schema.patchCapabilities.length).toBeGreaterThanOrEqual(6)
     })

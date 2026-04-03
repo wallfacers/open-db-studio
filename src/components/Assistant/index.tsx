@@ -22,6 +22,7 @@ import { useAppStore } from '../../store/appStore';
 import { useConfirmStore } from '../../store/confirmStore';
 import { Tooltip } from '../common/Tooltip';
 import { usePacedValue } from '../../hooks/usePacedValue';
+import { mergeReasoningForDisplay } from '../../utils/messageAdapter';
 import type { ToastLevel } from '../Toast';
 
 const EMPTY_PARTS: import('../../types').MessagePart[] = [];
@@ -40,10 +41,11 @@ const AssistantMessage: React.FC<{ content: string; thinkingContent?: string; pa
   ({ content, thinkingContent, parts }) => {
     // 优先使用 parts 渲染（Part-based），否则使用 flat 字段（向后兼容）
     if (parts && parts.length > 0) {
+      const displayParts = mergeReasoningForDisplay(parts);
       return (
         <div className="flex flex-col items-start">
           <div className="text-foreground-default text-[13px] w-full">
-            {parts.map((part, i) => {
+            {displayParts.map((part, i) => {
               switch (part.type) {
                 case 'reasoning':
                   return <ThinkingBlock key={i} content={part.content} isStreaming={false} />;
@@ -115,20 +117,20 @@ const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   // 已收到任何内容（包含深度思考）则不再显示等待动画
   const hasFirstToken = !!(content || thinking || streamingParts.length > 0);
 
-  // 优先使用 streamingParts 渲染（与历史消息一致，支持多次 thinking/text 交替）
+  // 合并多个 reasoning 为单个思考块显示
+  const displayParts = useMemo(() => mergeReasoningForDisplay(streamingParts), [streamingParts]);
   const hasParts = streamingParts.length > 0;
+  // 判断 AI 当前是否在思考阶段（用原始 parts 判断，因为合并后只有一个 reasoning）
+  const isCurrentlyThinking = isChatting && streamingParts.length > 0 && streamingParts[streamingParts.length - 1].type === 'reasoning';
 
   return (
     <div className="flex flex-col items-start">
       <div className="text-foreground-default text-[13px] w-full">
         {hasParts ? (
-          streamingParts.map((part, i) => {
+          displayParts.map((part, i) => {
             switch (part.type) {
-              case 'reasoning': {
-                // Only the last reasoning part is actively streaming; earlier ones are completed (auto-collapsed)
-                const isLastReasoning = isChatting && !streamingParts.slice(i + 1).some(p => p.type === 'reasoning');
-                return <ThinkingBlock key={i} content={part.content} isStreaming={isLastReasoning} />;
-              }
+              case 'reasoning':
+                return <ThinkingBlock key={i} content={part.content} isStreaming={isCurrentlyThinking} />;
               case 'text':
                 return <MarkdownContent key={i} content={part.content} isStreaming={isChatting && !pendingQuestion} />;
               default:

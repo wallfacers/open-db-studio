@@ -50,3 +50,31 @@ export function flattenParts(parts: MessagePart[]): { content: string; thinkingC
 
   return { content, thinkingContent: thinkingContent || undefined };
 }
+
+/**
+ * 将消息中所有 reasoning parts 合并为一个，放在第一个 reasoning 的位置。
+ * 其余非 reasoning parts 保持原序。用于渲染层减少重复的思考块。
+ */
+export function mergeReasoningForDisplay(parts: MessagePart[]): MessagePart[] {
+  const reasoningContents: string[] = []
+  for (const part of parts) {
+    if (part.type === 'reasoning' && part.content) {
+      reasoningContents.push(part.content)
+    }
+  }
+  if (reasoningContents.length <= 1) return parts
+
+  const result: MessagePart[] = []
+  let inserted = false
+  for (const part of parts) {
+    if (part.type === 'reasoning') {
+      if (!inserted) {
+        result.push({ type: 'reasoning', content: reasoningContents.join('\n\n') })
+        inserted = true
+      }
+    } else {
+      result.push(part)
+    }
+  }
+  return result
+}

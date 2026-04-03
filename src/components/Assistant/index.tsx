@@ -1034,13 +1034,17 @@ export const Assistant: React.FC<AssistantProps> = ({
                 </div>
               );
             })}
-            {isChatting && <StreamingMessage sessionId={currentSessionId} />}
-            {/* 生成中实时耗时 */}
-            {isChatting && elapsedMs > 0 && (
-              <span className="flex items-center gap-1 text-[11px] text-foreground-ghost">
-                <Clock size={10} />
-                <span>{formatElapsed(elapsedMs)}</span>
-              </span>
+            {isChatting && (
+              <div>
+                <StreamingMessage sessionId={currentSessionId} />
+                {/* 生成中实时耗时 */}
+                {elapsedMs > 0 && (
+                  <div className="mt-1 flex items-center gap-1 text-[11px] text-foreground-ghost">
+                    <Clock size={10} />
+                    <span>{formatElapsed(elapsedMs)}</span>
+                  </div>
+                )}
+              </div>
             )}
 
               {/* 权限/问答面板已移至底部 Dock 区域 */}

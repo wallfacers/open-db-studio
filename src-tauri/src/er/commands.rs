@@ -609,7 +609,7 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
             comment: export_table.comment.clone(),
             position_x: Some(export_table.position.x),
             position_y: Some(export_table.position.y),
-            color: None,
+            color: export_table.color.clone(),
         })?;
 
         table_name_to_id.insert(export_table.name.clone(), table.id);

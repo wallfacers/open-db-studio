@@ -25,6 +25,8 @@ pub struct ExportProject {
 pub struct ExportTable {
     pub name: String,
     pub comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub position: ExportPosition,
     pub columns: Vec<ExportColumn>,
     pub indexes: Vec<ExportIndex>,
@@ -121,6 +123,7 @@ pub fn export_project(
             ExportTable {
                 name: t.name.clone(),
                 comment: t.comment.clone(),
+                color: t.color.clone(),
                 position: ExportPosition {
                     x: t.position_x,
                     y: t.position_y,
@@ -256,7 +259,7 @@ mod tests {
             comment: None,
             position_x: 100.0,
             position_y: 200.0,
-            color: None,
+            color: Some("#ff0000".to_string()),
             created_at: String::new(),
             updated_at: String::new(),
         }];
@@ -301,6 +304,7 @@ mod tests {
         assert_eq!(imported.project.tables[0].columns.len(), 1);
         assert_eq!(imported.project.tables[0].columns[0].name, "id");
         assert!(imported.project.tables[0].columns[0].is_primary_key);
+        assert_eq!(imported.project.tables[0].color, Some("#ff0000".to_string()));
     }
 
     #[test]

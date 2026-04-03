@@ -7,6 +7,13 @@ import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { useHighlightStore } from '../../../store/highlightStore'
 
+const QUERY_EDITOR_PATCH_CAPABILITIES: PatchCapability[] = [
+  { pathPattern: '/content', ops: ['replace'], description: 'Replace SQL content' },
+  { pathPattern: '/connectionId', ops: ['replace'], description: 'Switch connection' },
+  { pathPattern: '/database', ops: ['replace'], description: 'Switch database' },
+  { pathPattern: '/schema', ops: ['replace'], description: 'Switch schema' },
+]
+
 export class QueryEditorAdapter implements UIObject {
   type = 'query_editor'
   objectId: string
@@ -20,12 +27,7 @@ export class QueryEditorAdapter implements UIObject {
   }
 
   get patchCapabilities(): PatchCapability[] {
-    return [
-      { pathPattern: '/content', ops: ['replace'], description: 'Replace SQL content' },
-      { pathPattern: '/connectionId', ops: ['replace'], description: 'Switch connection' },
-      { pathPattern: '/database', ops: ['replace'], description: 'Switch database' },
-      { pathPattern: '/schema', ops: ['replace'], description: 'Switch schema' },
-    ]
+    return QUERY_EDITOR_PATCH_CAPABILITIES
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -52,7 +54,7 @@ export class QueryEditorAdapter implements UIObject {
             database: { type: 'string', description: 'Target database name' },
             schema: { type: 'string', description: 'Target schema name (PostgreSQL/Oracle)' },
           },
-          patchCapabilities: this.patchCapabilities,
+          patchCapabilities: QUERY_EDITOR_PATCH_CAPABILITIES,
         }
       case 'actions':
         return [

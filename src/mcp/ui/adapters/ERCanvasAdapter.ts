@@ -1,7 +1,7 @@
 import { emit } from '@tauri-apps/api/event'
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult, ActionDef, PatchCapability } from '../types'
 import { parsePath } from '../pathResolver'
-import { patchError } from '../errors'
+import { patchError, execError } from '../errors'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
 
 // ── JSON Schema describing the er_canvas state shape ───────────────────────
@@ -562,6 +562,47 @@ function resolveField(entity: 'table' | 'column', field: string): string {
   return FIELD_ALIASES[entity]?.[field] ?? field
 }
 
+// ── Static patch capabilities (cached, no allocation per call) ──────────
+
+const ER_PATCH_CAPABILITIES: PatchCapability[] = [
+  {
+    pathPattern: '/tables/[<key>=<val>]/<field>',
+    ops: ['replace'],
+    description: 'Update table properties (name, comment, color, position/x, position/y)',
+    addressableBy: ['id', 'name'],
+  },
+  {
+    pathPattern: '/tables/[<key>=<val>]/columns/-',
+    ops: ['add'],
+    description: 'Append a column to a table',
+    addressableBy: ['id', 'name'],
+  },
+  {
+    pathPattern: '/tables/[<key>=<val>]/indexes/-',
+    ops: ['add'],
+    description: 'Append an index to a table',
+    addressableBy: ['id', 'name'],
+  },
+  {
+    pathPattern: '/columns/[id=<n>]/[tableId=<n>]',
+    ops: ['remove'],
+    description: 'Delete a column (requires tableId)',
+    addressableBy: ['id'],
+  },
+  {
+    pathPattern: '/indexes/[id=<n>]/[tableId=<n>]',
+    ops: ['remove'],
+    description: 'Delete an index (requires tableId)',
+    addressableBy: ['id'],
+  },
+  {
+    pathPattern: '/relations/[id=<n>]',
+    ops: ['remove'],
+    description: 'Delete a relation. To add/update relations, use ui_exec with add_relation/update_relation',
+    addressableBy: ['id'],
+  },
+]
+
 // ── ERCanvasAdapter ────────────────────────────────────────────────────────
 
 export class ERCanvasAdapter implements UIObject {
@@ -587,44 +628,7 @@ export class ERCanvasAdapter implements UIObject {
   }
 
   get patchCapabilities(): PatchCapability[] {
-    return [
-      {
-        pathPattern: '/tables/[<key>=<val>]/<field>',
-        ops: ['replace'],
-        description: 'Update table properties (name, comment, color, position/x, position/y)',
-        addressableBy: ['id', 'name'],
-      },
-      {
-        pathPattern: '/tables/[<key>=<val>]/columns/-',
-        ops: ['add'],
-        description: 'Append a column to a table',
-        addressableBy: ['id', 'name'],
-      },
-      {
-        pathPattern: '/tables/[<key>=<val>]/indexes/-',
-        ops: ['add'],
-        description: 'Append an index to a table',
-        addressableBy: ['id', 'name'],
-      },
-      {
-        pathPattern: '/columns/[id=<n>]/[tableId=<n>]',
-        ops: ['remove'],
-        description: 'Delete a column (requires tableId)',
-        addressableBy: ['id'],
-      },
-      {
-        pathPattern: '/indexes/[id=<n>]/[tableId=<n>]',
-        ops: ['remove'],
-        description: 'Delete an index (requires tableId)',
-        addressableBy: ['id'],
-      },
-      {
-        pathPattern: '/relations/[id=<n>]',
-        ops: ['remove'],
-        description: 'Delete a relation. To add/update relations, use ui_exec with add_relation/update_relation',
-        addressableBy: ['id'],
-      },
-    ]
+    return ER_PATCH_CAPABILITIES
   }
 
   // ── read() ────────────────────────────────────────────────────────────
@@ -634,7 +638,7 @@ export class ERCanvasAdapter implements UIObject {
       case 'state':
         return this._readState()
       case 'schema':
-        return { ...ER_CANVAS_STATE_SCHEMA, patchCapabilities: this.patchCapabilities }
+        return { ...ER_CANVAS_STATE_SCHEMA, patchCapabilities: ER_PATCH_CAPABILITIES }
       case 'actions':
         return ER_CANVAS_ACTIONS
     }
@@ -854,7 +858,7 @@ export class ERCanvasAdapter implements UIObject {
       const data = await fn()
       return { success: true, ...(data ? { data } : {}) }
     } catch (e) {
-      return { success: false, error: String(e) }
+      return execError(String(e))
     }
   }
 
@@ -1011,7 +1015,7 @@ export class ERCanvasAdapter implements UIObject {
         return this._batchExec(params)
 
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Call ui_read(mode="actions") to see all available actions')
     }
   }
 

@@ -14,6 +14,15 @@ export interface PathSegment {
 // Matches: [key=value] — no spaces, value can contain letters/digits/underscore/hyphen
 const FILTER_RE = /\[(\w+)=([^\]]+)\]/g
 
+/** Extract all [key=value] pairs from a string using matchAll (no shared mutable state). */
+function extractFilters(s: string): Record<string, string> {
+  const filters: Record<string, string> = {}
+  for (const m of s.matchAll(FILTER_RE)) {
+    filters[m[1]] = m[2]
+  }
+  return filters
+}
+
 /**
  * Parse unified path syntax into segments.
  *
@@ -42,12 +51,7 @@ export function parsePath(path: string): PathSegment[] {
 
     // Check if token is purely a filter: [key=value]
     if (token.startsWith('[')) {
-      const filters: Record<string, string> = {}
-      let m: RegExpExecArray | null
-      FILTER_RE.lastIndex = 0
-      while ((m = FILTER_RE.exec(token)) !== null) {
-        filters[m[1]] = m[2]
-      }
+      const filters = extractFilters(token)
       if (Object.keys(filters).length > 0) {
         // Standalone filter — attach to previous segment if possible, else create empty-field segment
         if (segments.length > 0 && !segments[segments.length - 1].filters) {
@@ -60,16 +64,9 @@ export function parsePath(path: string): PathSegment[] {
     }
 
     // Check if token has inline filters: field[key=value]
-    FILTER_RE.lastIndex = 0
     const inlineMatch = token.match(/^([^[]+)/)
     const fieldName = inlineMatch ? inlineMatch[1] : token
-
-    const filters: Record<string, string> = {}
-    let m: RegExpExecArray | null
-    FILTER_RE.lastIndex = 0
-    while ((m = FILTER_RE.exec(token)) !== null) {
-      filters[m[1]] = m[2]
-    }
+    const filters = extractFilters(token)
 
     const segment: PathSegment = { field: fieldName }
     if (Object.keys(filters).length > 0) {
@@ -127,7 +124,7 @@ export function matchPathPattern(path: string, pattern: string): boolean {
     }
 
     // Plain tokens must match exactly
-    if (pathToken !== patternToken && patternToken !== '<field>') {
+    if (pathToken !== patternToken) {
       return false
     }
 

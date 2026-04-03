@@ -1,5 +1,5 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
-import { execError } from '../errors'
+import { patchError, execError } from '../errors'
 import { applyPatch } from '../jsonPatch'
 import { useSeaTunnelJobFormStore } from '../../../store/seatunnelJobStore'
 import { useSeaTunnelStore } from '../../../store/seaTunnelStore'
@@ -20,6 +20,13 @@ const SEATUNNEL_JOB_SCHEMA = {
   required: ['jobName', 'configJson'],
 }
 
+const SEATUNNEL_PATCH_CAPABILITIES: PatchCapability[] = [
+  { pathPattern: '/jobName', ops: ['replace'], description: 'Change job name' },
+  { pathPattern: '/configJson', ops: ['replace'], description: 'Replace entire job config JSON' },
+  { pathPattern: '/connectionId', ops: ['replace'], description: 'Change connection' },
+  { pathPattern: '/categoryId', ops: ['replace'], description: 'Change category' },
+]
+
 export class SeaTunnelJobUIObject implements UIObject {
   type = 'seatunnel_job'
   objectId: string
@@ -34,12 +41,7 @@ export class SeaTunnelJobUIObject implements UIObject {
   }
 
   get patchCapabilities(): PatchCapability[] {
-    return [
-      { pathPattern: '/jobName', ops: ['replace'], description: 'Change job name' },
-      { pathPattern: '/configJson', ops: ['replace'], description: 'Replace entire job config JSON' },
-      { pathPattern: '/connectionId', ops: ['replace'], description: 'Change connection' },
-      { pathPattern: '/categoryId', ops: ['replace'], description: 'Change category' },
-    ]
+    return SEATUNNEL_PATCH_CAPABILITIES
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -47,7 +49,7 @@ export class SeaTunnelJobUIObject implements UIObject {
       case 'state':
         return useSeaTunnelJobFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
-        return { ...SEATUNNEL_JOB_SCHEMA, patchCapabilities: this.patchCapabilities }
+        return { ...SEATUNNEL_JOB_SCHEMA, patchCapabilities: SEATUNNEL_PATCH_CAPABILITIES }
       case 'actions':
         return [
           {
@@ -85,7 +87,7 @@ export class SeaTunnelJobUIObject implements UIObject {
 
   patchDirect(ops: JsonPatchOp[]): PatchResult {
     const current = useSeaTunnelJobFormStore.getState().getForm(this.objectId)
-    if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
+    if (!current) return patchError(`No form state for ${this.objectId}`)
     const oldConfigJson = current.configJson
     try {
       const patched = applyPatch(current, ops)
@@ -103,7 +105,7 @@ export class SeaTunnelJobUIObject implements UIObject {
 
       return { status: 'applied' }
     } catch (e) {
-      return { status: 'error', message: String(e) }
+      return patchError(String(e))
     }
   }
 

@@ -1,4 +1,4 @@
-import type { UIObject, UIRequest, UIResponse, UIObjectInfo, ActionDef } from './types'
+import type { UIObject, UIRequest, UIResponse, UIObjectInfo, ActionDef, PatchResult } from './types'
 import { patchError, execError } from './errors'
 import { matchPathPattern } from './pathResolver'
 
@@ -49,6 +49,15 @@ export class UIRouter {
 
   // ── Patch pre-check ───────────────────────────────────────
 
+  private patchResponse(result: PatchResult): UIResponse {
+    return {
+      data: result,
+      status: result.status === 'error' ? undefined : result.status,
+      confirm_id: result.confirm_id,
+      error: result.status === 'error' ? result.message : undefined,
+    }
+  }
+
   private async handlePatch(instance: UIObject, payload: any): Promise<UIResponse> {
     const ops = payload?.ops ?? []
     const capabilities = instance.patchCapabilities
@@ -56,12 +65,7 @@ export class UIRouter {
     // No capabilities declared → passthrough (backward compatible)
     if (!capabilities?.length) {
       const result = await instance.patch(ops, payload?.reason)
-      return {
-        data: result,
-        status: result.status === 'error' ? undefined : result.status,
-        confirm_id: result.confirm_id,
-        error: result.status === 'error' ? result.message : undefined,
-      }
+      return this.patchResponse(result)
     }
 
     // Validate each op against declared capabilities
@@ -83,12 +87,7 @@ export class UIRouter {
     }
 
     const result = await instance.patch(ops, payload?.reason)
-    return {
-      data: result,
-      status: result.status === 'error' ? undefined : result.status,
-      confirm_id: result.confirm_id,
-      error: result.status === 'error' ? result.message : undefined,
-    }
+    return this.patchResponse(result)
   }
 
   // ── Exec pre-check ────────────────────────────────────────

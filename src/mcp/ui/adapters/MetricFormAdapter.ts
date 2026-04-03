@@ -1,5 +1,5 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
-import { execError } from '../errors'
+import { patchError, execError } from '../errors'
 import { applyPatch } from '../jsonPatch'
 import { useMetricFormStore } from '../../../store/metricFormStore'
 import { useAppStore } from '../../../store/appStore'
@@ -23,6 +23,18 @@ const METRIC_FORM_SCHEMA = {
   required: ['displayName', 'name'],
 }
 
+const METRIC_PATCH_CAPABILITIES: PatchCapability[] = [
+  { pathPattern: '/displayName', ops: ['replace'], description: 'Change display name' },
+  { pathPattern: '/name', ops: ['replace'], description: 'Change identifier' },
+  { pathPattern: '/metricType', ops: ['replace'], description: 'Change metric type (atomic/composite)' },
+  { pathPattern: '/tableName', ops: ['replace'], description: 'Change source table' },
+  { pathPattern: '/columnName', ops: ['replace'], description: 'Change aggregation column' },
+  { pathPattern: '/aggregation', ops: ['replace'], description: 'Change aggregation function' },
+  { pathPattern: '/filterSql', ops: ['replace'], description: 'Change SQL filter clause' },
+  { pathPattern: '/category', ops: ['replace'], description: 'Change category' },
+  { pathPattern: '/description', ops: ['replace'], description: 'Change description' },
+]
+
 export class MetricFormUIObject implements UIObject {
   type = 'metric_form'
   objectId: string
@@ -36,17 +48,7 @@ export class MetricFormUIObject implements UIObject {
   }
 
   get patchCapabilities(): PatchCapability[] {
-    return [
-      { pathPattern: '/displayName', ops: ['replace'], description: 'Change display name' },
-      { pathPattern: '/name', ops: ['replace'], description: 'Change identifier' },
-      { pathPattern: '/metricType', ops: ['replace'], description: 'Change metric type (atomic/composite)' },
-      { pathPattern: '/tableName', ops: ['replace'], description: 'Change source table' },
-      { pathPattern: '/columnName', ops: ['replace'], description: 'Change aggregation column' },
-      { pathPattern: '/aggregation', ops: ['replace'], description: 'Change aggregation function' },
-      { pathPattern: '/filterSql', ops: ['replace'], description: 'Change SQL filter clause' },
-      { pathPattern: '/category', ops: ['replace'], description: 'Change category' },
-      { pathPattern: '/description', ops: ['replace'], description: 'Change description' },
-    ]
+    return METRIC_PATCH_CAPABILITIES
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -54,7 +56,7 @@ export class MetricFormUIObject implements UIObject {
       case 'state':
         return useMetricFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
-        return { ...METRIC_FORM_SCHEMA, patchCapabilities: this.patchCapabilities }
+        return { ...METRIC_FORM_SCHEMA, patchCapabilities: METRIC_PATCH_CAPABILITIES }
       case 'actions':
         return [
           {
@@ -87,7 +89,7 @@ export class MetricFormUIObject implements UIObject {
 
   patchDirect(ops: JsonPatchOp[]): PatchResult {
     const current = useMetricFormStore.getState().getForm(this.objectId)
-    if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
+    if (!current) return patchError(`No form state for ${this.objectId}`)
     try {
       const patched = applyPatch(current, ops)
       useMetricFormStore.getState().setForm(this.objectId, patched)

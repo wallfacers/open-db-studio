@@ -1,4 +1,5 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import { patchError, execError } from '../errors'
 import { useTreeStore } from '../../../store/treeStore'
 import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId, objectNodeId } from '../../../utils/nodeId'
 
@@ -101,7 +102,7 @@ export class DbTreeAdapter implements UIObject {
   }
 
   patch(_ops: JsonPatchOp[]): PatchResult {
-    return { status: 'error', message: 'db_tree does not support patch' }
+    return patchError('db_tree does not support patch')
   }
 
   async exec(action: string, params?: any): Promise<ExecResult> {
@@ -206,7 +207,7 @@ export class DbTreeAdapter implements UIObject {
         return { success: true, data: { nodeId: tableNodeId } }
       }
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: search, refresh, expand, select, locate_table')
     }
   }
 }

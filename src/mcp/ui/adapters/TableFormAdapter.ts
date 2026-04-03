@@ -1,4 +1,5 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
+import { patchError, execError } from '../errors'
 import { applyPatch } from '../jsonPatch'
 import { useTableFormStore, type TableFormState } from '../../../store/tableFormStore'
 import { useAppStore } from '../../../store/appStore'
@@ -181,6 +182,35 @@ export function generateTableSql(state: TableFormState, driver: string): string 
   return isNew ? generateCreateSql(state, isPg) : generateAlterSql(state, state.originalColumns!, isPg)
 }
 
+const TABLE_FORM_PATCH_CAPABILITIES: PatchCapability[] = [
+  { pathPattern: '/tableName', ops: ['replace'], description: 'Rename the table' },
+  { pathPattern: '/engine', ops: ['replace'], description: 'Change storage engine' },
+  { pathPattern: '/charset', ops: ['replace'], description: 'Change charset' },
+  { pathPattern: '/comment', ops: ['replace'], description: 'Change table comment' },
+  {
+    pathPattern: '/columns[name=<s>]/<field>',
+    ops: ['replace', 'remove'],
+    description: 'Modify or remove a column by name',
+    addressableBy: ['name'],
+  },
+  {
+    pathPattern: '/columns/-',
+    ops: ['add'],
+    description: 'Append a new column',
+  },
+  {
+    pathPattern: '/indexes[name=<s>]/<field>',
+    ops: ['replace', 'remove'],
+    description: 'Modify or remove an index by name',
+    addressableBy: ['name'],
+  },
+  {
+    pathPattern: '/indexes/-',
+    ops: ['add'],
+    description: 'Append a new index',
+  },
+]
+
 export class TableFormUIObject implements UIObject {
   type = 'table_form'
   objectId: string
@@ -196,34 +226,7 @@ export class TableFormUIObject implements UIObject {
   }
 
   get patchCapabilities(): PatchCapability[] {
-    return [
-      { pathPattern: '/tableName', ops: ['replace'], description: 'Rename the table' },
-      { pathPattern: '/engine', ops: ['replace'], description: 'Change storage engine' },
-      { pathPattern: '/charset', ops: ['replace'], description: 'Change charset' },
-      { pathPattern: '/comment', ops: ['replace'], description: 'Change table comment' },
-      {
-        pathPattern: '/columns[name=<s>]/<field>',
-        ops: ['replace', 'remove'],
-        description: 'Modify or remove a column by name',
-        addressableBy: ['name'],
-      },
-      {
-        pathPattern: '/columns/-',
-        ops: ['add'],
-        description: 'Append a new column',
-      },
-      {
-        pathPattern: '/indexes[name=<s>]/<field>',
-        ops: ['replace', 'remove'],
-        description: 'Modify or remove an index by name',
-        addressableBy: ['name'],
-      },
-      {
-        pathPattern: '/indexes/-',
-        ops: ['add'],
-        description: 'Append a new index',
-      },
-    ]
+    return TABLE_FORM_PATCH_CAPABILITIES
   }
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -231,7 +234,7 @@ export class TableFormUIObject implements UIObject {
       case 'state':
         return useTableFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
-        return { ...TABLE_FORM_SCHEMA, patchCapabilities: this.patchCapabilities }
+        return { ...TABLE_FORM_SCHEMA, patchCapabilities: TABLE_FORM_PATCH_CAPABILITIES }
       case 'actions':
         return [
           {
@@ -310,7 +313,7 @@ export class TableFormUIObject implements UIObject {
 
   patchDirect(ops: JsonPatchOp[]): PatchResult {
     const current = useTableFormStore.getState().getForm(this.objectId)
-    if (!current) return { status: 'error', message: `No form state for ${this.objectId}` }
+    if (!current) return patchError(`No form state for ${this.objectId}`)
     try {
       const patched = applyPatch(current, ops)
       useTableFormStore.getState().setForm(this.objectId, patched)
@@ -321,7 +324,7 @@ export class TableFormUIObject implements UIObject {
       }
       return { status: 'applied' }
     } catch (e) {
-      return { status: 'error', message: String(e) }
+      return patchError(String(e))
     }
   }
 
@@ -336,7 +339,7 @@ export class TableFormUIObject implements UIObject {
 
   async exec(action: string, _params?: any): Promise<ExecResult> {
     const state = useTableFormStore.getState().getForm(this.objectId)
-    if (!state) return { success: false, error: 'No form state' }
+    if (!state) return execError('No form state', `Table form ${this.objectId} not initialized`)
 
     switch (action) {
       case 'preview_sql': {
@@ -344,7 +347,7 @@ export class TableFormUIObject implements UIObject {
           const sql = generateTableSql(state, this.getDriver())
           return { success: true, data: { sql } }
         } catch (e) {
-          return { success: false, error: String(e) }
+          return execError(String(e))
         }
       }
       case 'save': {
@@ -353,7 +356,7 @@ export class TableFormUIObject implements UIObject {
         return { success: true, data: { sql: previewResult.data.sql, message: 'SQL generated. Open query tab to execute.' } }
       }
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: preview_sql, save')
     }
   }
 }

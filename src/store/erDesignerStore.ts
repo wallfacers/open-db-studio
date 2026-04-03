@@ -67,7 +67,7 @@ interface ErDesignerState {
   restoreExpandedState: () => Promise<void>;
 
   // Table operations
-  addTable: (name: string, position: { x: number; y: number }) => Promise<ErTable>;
+  addTable: (projectId: number, name: string, position: { x: number; y: number }) => Promise<ErTable>;
   updateTable: (id: number, updates: Partial<ErTable>) => Promise<void>;
   updateTablePositions: (positions: { id: number; x: number; y: number }[]) => Promise<void>;
   deleteTable: (id: number) => Promise<void>;
@@ -79,7 +79,7 @@ interface ErDesignerState {
   reorderColumns: (tableId: number, columnIds: number[]) => Promise<void>;
 
   // Relation operations
-  addRelation: (rel: Partial<ErRelation>) => Promise<ErRelation>;
+  addRelation: (projectId: number, rel: Partial<ErRelation>) => Promise<ErRelation>;
   updateRelation: (id: number, updates: Partial<ErRelation>) => Promise<void>;
   deleteRelation: (id: number) => Promise<void>;
 
@@ -334,11 +334,11 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   // ── Table operations ──────────────────────────────────────────────────
-  addTable: async (name, position) => {
-    const { activeProjectId, pushOperation } = get();
+  addTable: async (projectId, name, position) => {
+    const { pushOperation } = get();
     try {
       const table = await invoke<ErTable>('er_create_table', {
-        req: { project_id: activeProjectId, name, position_x: position.x, position_y: position.y },
+        req: { project_id: projectId, name, position_x: position.x, position_y: position.y },
       });
       set((s) => ({
         tables: [...s.tables, table],
@@ -554,11 +554,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   // ── Relation operations ───────────────────────────────────────────────
-  addRelation: async (rel) => {
-    const { activeProjectId } = get();
+  addRelation: async (projectId, rel) => {
     try {
       const created = await invoke<ErRelation>('er_create_relation', {
-        req: { project_id: activeProjectId, ...rel },
+        req: { project_id: projectId, ...rel },
       });
       set((s) => ({ relations: [...s.relations, created] }));
       return created;

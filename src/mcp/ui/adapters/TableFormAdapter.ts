@@ -6,6 +6,9 @@ import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { useConnectionStore } from '../../../store/connectionStore'
 import { useHighlightStore } from '../../../store/highlightStore'
+import { makeId } from '../../../utils/makeId'
+import { parseIndexColumns } from '../../../utils/indexColumns'
+import type { IndexColumnEntry } from '../../../utils/indexColumns'
 
 const TABLE_FORM_SCHEMA = {
   type: 'object',
@@ -78,22 +81,6 @@ function colDef(c: Column, isPg: boolean): string {
 }
 
 // ── Index SQL helpers ─────────────────────────────────────────────────────
-
-interface IndexColumnEntry { name: string; order: 'ASC' | 'DESC' }
-
-function parseIndexColumns(json: string): IndexColumnEntry[] {
-  try {
-    const parsed = JSON.parse(json)
-    if (Array.isArray(parsed)) {
-      return parsed.map(item =>
-        typeof item === 'string'
-          ? { name: item, order: 'ASC' as const }
-          : { name: item.name ?? item, order: item.order ?? 'ASC' },
-      )
-    }
-  } catch { /* ignore */ }
-  return []
-}
 
 function generateIndexCreateSql(tableName: string, index: TableFormIndex, isPg: boolean): string {
   const cols = parseIndexColumns(index.columns)
@@ -397,14 +384,14 @@ export class TableFormUIObject implements UIObject {
       // Ensure all columns have id (for React key) and _isNew for new columns
       for (const col of patched.columns) {
         if (!col.id) {
-          col.id = Math.random().toString(36).slice(2)
+          col.id = makeId()
           col._isNew = true
         }
       }
       // Ensure all indexes have id and _isNew for new indexes
       for (const idx of patched.indexes ?? []) {
         if (!idx.id) {
-          idx.id = Math.random().toString(36).slice(2)
+          idx.id = makeId()
           idx._isNew = true
         }
       }

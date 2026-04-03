@@ -4,6 +4,8 @@
  */
 import type { ErIndex, ErColumn, IndexMeta } from '@/types'
 import type { TableFormColumn, TableFormIndex } from '@/store/tableFormStore'
+import { makeId } from '@/utils/makeId'
+import { stringifyIndexColumns } from '@/utils/indexColumns'
 
 // ── ID mapping (string ↔ number) ─────────────────────────────────────────
 
@@ -80,14 +82,6 @@ export function tableFormIndexesToErIndexes(
 }
 
 // ── IndexMeta (backend) → TableFormIndex ──────────────────────────────────
-
-function makeId() {
-  return Math.random().toString(36).slice(2)
-}
-
-function stringifyIndexColumns(cols: { name: string; order: string }[]): string {
-  return JSON.stringify(cols.map(c => ({ name: c.name, order: c.order })))
-}
 
 export function indexMetaToTableFormIndex(meta: IndexMeta): TableFormIndex {
   return {

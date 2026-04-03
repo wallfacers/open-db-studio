@@ -19,6 +19,7 @@ import {
   tableFormIndexesToErIndexes,
   indexMetaToTableFormIndex,
 } from './tableFormIndexAdapter';
+import { makeId } from '../../utils/makeId';
 
 const HighlightedField: React.FC<{
   scopeId: string;
@@ -43,8 +44,6 @@ const getTypeOptions = (dataType: string) => {
   }
   return opts;
 };
-
-function makeId() { return Math.random().toString(36).slice(2); }
 
 const ColumnRow: React.FC<{
   col: EditableColumn;

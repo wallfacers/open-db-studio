@@ -3,6 +3,8 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import type { ErIndex, ErColumn } from '@/types';
 import { DropdownSelect } from '@/components/common/DropdownSelect';
 import { Tooltip } from '@/components/common/Tooltip';
+import { parseIndexColumns, stringifyIndexColumns } from '@/utils/indexColumns';
+import type { IndexColumnEntry } from '@/utils/indexColumns';
 
 interface IndexEditorProps {
   indexes: ErIndex[];
@@ -12,11 +14,6 @@ interface IndexEditorProps {
   onAdd: (tableId: number, index: Partial<ErIndex>) => void;
   onUpdate: (id: number, updates: Partial<ErIndex>) => void;
   onDelete: (id: number, tableId: number) => void;
-}
-
-interface IndexColumnEntry {
-  name: string;
-  order: 'ASC' | 'DESC';
 }
 
 const INDEX_TYPE_OPTIONS = [
@@ -30,23 +27,6 @@ const TYPE_BADGE_COLORS: Record<string, string> = {
   UNIQUE: 'bg-[#2a3319] text-[#a3e635]',
   FULLTEXT: 'bg-[#3a2a19] text-[#f59e0b]',
 };
-
-function parseIndexColumns(json: string): IndexColumnEntry[] {
-  try {
-    const parsed = JSON.parse(json);
-    if (Array.isArray(parsed)) {
-      return parsed.map(item => {
-        if (typeof item === 'string') return { name: item, order: 'ASC' as const };
-        return { name: item.name ?? item, order: item.order ?? 'ASC' };
-      });
-    }
-  } catch { /* ignore */ }
-  return [];
-}
-
-function stringifyIndexColumns(entries: IndexColumnEntry[]): string {
-  return JSON.stringify(entries.map(e => ({ name: e.name, order: e.order })));
-}
 
 function IndexRow({
   index, columns, tableId, onUpdate, onDelete,

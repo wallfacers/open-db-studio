@@ -8,6 +8,7 @@ import { generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
 import type { EditableColumn } from '../../store/tableFormStore';
+import { makeId } from '../../utils/makeId';
 
 interface AiColumnDef {
   name: string;
@@ -34,8 +35,6 @@ const getTypeOptions = (dataType: string) => {
   }
   return opts;
 };
-
-function makeId() { return Math.random().toString(36).slice(2); }
 
 function mapAiColumn(col: AiColumnDef, driver: string): EditableColumn {
   const isPostgres = driver === 'postgres' || driver === 'postgresql';

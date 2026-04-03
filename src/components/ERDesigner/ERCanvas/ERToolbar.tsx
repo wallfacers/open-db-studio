@@ -248,7 +248,7 @@ export default function ERToolbar({
         className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.exportJson')}
       >
-        <Upload size={14} />
+        <Download size={14} />
         <span>{t('erDesigner.exportJson')}</span>
       </button>
 
@@ -257,7 +257,7 @@ export default function ERToolbar({
         className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
         title={t('erDesigner.importJson')}
       >
-        <Download size={14} />
+        <Upload size={14} />
         <span>{t('erDesigner.importJson')}</span>
       </button>
     </div>

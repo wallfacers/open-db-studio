@@ -83,72 +83,63 @@ List all currently open UI objects. Use this to discover what's available.
 - `ui_list(filter={type:"table_form"})` — List only table forms
 - `ui_list(filter={keyword:"orders"})` — Search by title keyword
 
----
+### Discovery-First Workflow
 
-## Table Creation Workflow (Multi-Round)
+Before operating any UI object for the first time, discover its capabilities:
 
-**The table form now supports multi-round editing.** You can open an empty form, then iteratively add/modify columns through `ui_patch`.
+1. `ui_read(object="<type>", mode="actions")` — See all available actions with parameter schemas
+2. `ui_read(object="<type>", mode="schema")` — See patchable paths, addressable keys, and field types
+3. Then choose: `ui_patch` for simple field updates, `ui_exec` for structured actions
 
-**Recommended flow for creating a new table:**
-
-1. Open the table form:
-   `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app"})`
-
-2. Set the table name:
-   `ui_patch(object="table_form", ops=[{op:"replace",path:"/tableName",value:"orders"}])`
-
-3. Add columns (one or multiple at a time):
-   ```
-   ui_patch(object="table_form", ops=[
-     {op:"add", path:"/columns/-", value:{name:"id", dataType:"INT", isPrimaryKey:true, extra:"auto_increment"}},
-     {op:"add", path:"/columns/-", value:{name:"user_id", dataType:"INT"}},
-     {op:"add", path:"/columns/-", value:{name:"amount", dataType:"DECIMAL", length:"10,2"}},
-     {op:"add", path:"/columns/-", value:{name:"status", dataType:"VARCHAR", length:"20", defaultValue:"'pending'"}},
-     {op:"add", path:"/columns/-", value:{name:"created_at", dataType:"DATETIME", defaultValue:"CURRENT_TIMESTAMP"}}
-   ])
-   ```
-
-4. User says "add a notes field" → add one more column:
-   `ui_patch(object="table_form", ops=[{op:"add",path:"/columns/-",value:{name:"notes",dataType:"TEXT",isNullable:true}}])`
-
-5. User says "change amount to total_amount" → rename:
-   `ui_patch(object="table_form", ops=[{op:"replace",path:"/columns[name=amount]/name",value:"total_amount"}])`
-
-6. Preview the SQL:
-   `ui_exec(object="table_form", action="preview_sql")`
-
-**Tips:**
-- Read the schema first (`ui_read(object="table_form", mode="schema")`) to see all patchable fields
-- Use `[name=xxx]` to address columns by name: `/columns[name=email]/dataType`
-- You can batch multiple operations in a single `ui_patch` call
-- Each patch is atomic — if any op fails, none are applied
+**When to use which:**
+- `ui_patch`: Updating individual fields visible in the schema (rename, change type, toggle a flag)
+- `ui_exec`: Creating/deleting entities, batch operations, triggering side effects (save, run, import)
+- When in doubt, use `ui_exec` — it covers everything `ui_patch` can do and more
 
 ---
 
-## Editing an Existing Table (ALTER TABLE workflow)
+## ER Diagram Workflow
 
-When the user asks to edit an existing table's structure:
+ER diagrams use `er_canvas` objects. Two convenience top-level tools are available:
 
-1. Locate the table in the tree (provides visual feedback):
-   `ui_exec(object="db_tree", action="locate_table", params={connection_id:1, database:"app", table:"users"})`
+- `init_er_table(table_name, columns, indexes?)` — Create one complete table in one call
+- `er_batch(ops)` — Multi-step workflows with variable binding (`$0.tableId`, `$1.columnMap.user_id`)
 
-2. Open the table for editing:
-   `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app", table:"users"})`
+**Create multiple tables with relations (创建多表并建立关系):**
+```
+er_batch(ops=[
+  {action:"batch_create_table", params:{name:"users", columns:[
+    {name:"id", data_type:"BIGINT", is_primary_key:true, is_auto_increment:true},
+    {name:"email", data_type:"VARCHAR", length:255}
+  ]}},
+  {action:"batch_create_table", params:{name:"orders", columns:[
+    {name:"id", data_type:"BIGINT", is_primary_key:true, is_auto_increment:true},
+    {name:"user_id", data_type:"BIGINT"}
+  ]}},
+  {action:"add_relation", params:{
+    source_table_id:"$0.tableId", source_column_id:"$0.columnMap.id",
+    target_table_id:"$1.tableId", target_column_id:"$1.columnMap.user_id"
+  }}
+])
+```
 
-3. The form loads with the existing columns. Modify as needed:
-   ```
-   ui_patch(object="table_form", ops=[
-     {op:"add", path:"/columns/-", value:{name:"phone", dataType:"VARCHAR", length:"20"}},
-     {op:"replace", path:"/columns[name=email]/dataType", value:"TEXT"},
-     {op:"remove", path:"/columns[name=temp_field]"}
-   ])
-   ```
+**Modify existing tables (修改现有表):** Use `ui_exec(object="er_canvas", action="add_column"/"update_column"/...)` or `ui_patch` for simple field updates.
 
-4. Preview generates ALTER TABLE SQL (not CREATE TABLE):
-   `ui_exec(object="table_form", action="preview_sql")`
-   → Returns `ALTER TABLE ... ADD COLUMN ...`, `ALTER TABLE ... MODIFY COLUMN ...`, etc.
+**Patch addressing:** ER canvas supports both `[id=5]` and `[name=users]`:
+- `ui_patch(object="er_canvas", ops=[{op:"replace", path:"/tables/[name=users]/comment", value:"User accounts"}])`
 
-**Note:** For existing tables, `preview_sql` automatically generates diff-based ALTER TABLE statements comparing current state against original columns.
+**Relations cannot be added/updated via patch** — use `ui_exec` with `add_relation`/`update_relation`.
+
+---
+
+## Table Form Workflow (CREATE / ALTER TABLE)
+
+1. Open: `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app"})`
+   - For existing table: add `table:"users"` to edit its structure
+2. Edit: `ui_patch(object="table_form", ops=[...])` — use `[name=xxx]` to address columns by name
+3. Preview: `ui_exec(object="table_form", action="preview_sql")` — generates CREATE or ALTER TABLE SQL
+
+Use `ui_read(object="table_form", mode="schema")` to see all patchable fields and `x-addressable-by` hints.
 
 ---
 

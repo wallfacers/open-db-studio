@@ -45,7 +45,7 @@ Apply JSON Patch operations to modify UI state. In Auto mode, patches apply imme
 
 **JSON Patch operations:**
 - `{ op: "replace", path: "/tableName", value: "orders" }` — Replace a scalar
-- `{ op: "add", path: "/columns/-", value: { name: "age", dataType: "INT" } }` — Append to array
+- `{ op: "add", path: "/columns/-", value: { name: "age", dataType: "INT" } }` — Append to array (upsert: if a column with the same name exists, its properties are updated instead of creating a duplicate)
 - `{ op: "replace", path: "/columns[name=email]/dataType", value: "TEXT" }` — Modify by name
 - `{ op: "remove", path: "/columns[name=temp]" }` — Remove by name
 - `{ op: "replace", path: "/content", value: "SELECT * FROM users" }` — Replace SQL content

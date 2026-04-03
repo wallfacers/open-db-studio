@@ -261,7 +261,13 @@ const TABLE_FORM_PATCH_CAPABILITIES: PatchCapability[] = [
   {
     pathPattern: '/columns/-',
     ops: ['add'],
-    description: 'Append a new column',
+    description: 'Append a new column (upsert: if a column with the same name exists, its properties are updated instead of creating a duplicate)',
+  },
+  {
+    pathPattern: '/columns[name=<s>]',
+    ops: ['remove'],
+    description: 'Remove a column by name',
+    addressableBy: ['name'],
   },
   {
     pathPattern: '/indexes[name=<s>]/<field>',
@@ -273,6 +279,12 @@ const TABLE_FORM_PATCH_CAPABILITIES: PatchCapability[] = [
     pathPattern: '/indexes/-',
     ops: ['add'],
     description: 'Append a new index',
+  },
+  {
+    pathPattern: '/indexes[name=<s>]',
+    ops: ['remove'],
+    description: 'Remove an index by name',
+    addressableBy: ['name'],
   },
 ]
 
@@ -376,11 +388,60 @@ export class TableFormUIObject implements UIObject {
     return [...new Set(paths)]
   }
 
+  /**
+   * Normalize column ops before applying:
+   * - Upsert: add /columns/- with existing name → replace existing column properties
+   * - Remove by name: remove /columns[name=xxx] → soft-delete for existing, physical for new
+   */
+  private normalizeColumnOps(ops: JsonPatchOp[], current: TableFormState): JsonPatchOp[] {
+    const normalized: JsonPatchOp[] = []
+    const workingColumns = current.columns.map(c => ({ ...c }))
+
+    for (const op of ops) {
+      // Upsert: add /columns/- with a name that already exists
+      if (op.op === 'add' && op.path === '/columns/-' && op.value?.name) {
+        const existingIdx = workingColumns.findIndex(
+          c => c.name === op.value.name && !c._isDeleted
+        )
+        if (existingIdx !== -1) {
+          for (const [key, val] of Object.entries(op.value)) {
+            if (['id', '_isNew', '_isDeleted', '_originalName'].includes(key)) continue
+            normalized.push({ op: 'replace', path: `/columns/${existingIdx}/${key}`, value: val })
+            ;(workingColumns[existingIdx] as any)[key] = val
+          }
+          continue
+        }
+        workingColumns.push({ ...op.value } as any)
+      }
+
+      // Remove column by name: soft-delete for existing columns, physical for new
+      if (op.op === 'remove' && /^\/columns\[name=[^\]]+\]$/.test(op.path)) {
+        const nameMatch = op.path.match(/\[name=([^\]]+)\]/)
+        if (nameMatch) {
+          const idx = workingColumns.findIndex(c => c.name === nameMatch[1] && !c._isDeleted)
+          if (idx !== -1) {
+            if (workingColumns[idx]._isNew) {
+              normalized.push(op)
+            } else {
+              normalized.push({ op: 'add', path: `/columns/${idx}/_isDeleted`, value: true })
+            }
+            workingColumns[idx]._isDeleted = true
+            continue
+          }
+        }
+      }
+
+      normalized.push(op)
+    }
+    return normalized
+  }
+
   patchDirect(ops: JsonPatchOp[]): PatchResult {
     const current = useTableFormStore.getState().getForm(this.objectId)
     if (!current) return patchError(`No form state for ${this.objectId}`)
     try {
-      const patched = applyPatch(current, ops)
+      const normalizedOps = this.normalizeColumnOps(ops, current)
+      const patched = applyPatch(current, normalizedOps)
       // Ensure all columns have id (for React key) and _isNew for new columns
       for (const col of patched.columns) {
         if (!col.id) {
@@ -396,8 +457,8 @@ export class TableFormUIObject implements UIObject {
         }
       }
       useTableFormStore.getState().setForm(this.objectId, patched)
-      // Extract changed paths and trigger highlights
-      const paths = this.extractChangedPaths(ops, patched)
+      // Extract changed paths and trigger highlights (use both original + normalized for complete coverage)
+      const paths = this.extractChangedPaths([...ops, ...normalizedOps], patched)
       if (paths.length > 0) {
         useHighlightStore.getState().addHighlights(this.objectId, paths)
       }

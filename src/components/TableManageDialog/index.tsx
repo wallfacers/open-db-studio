@@ -297,6 +297,35 @@ export const TableManageDialog: React.FC<Props> = ({
 
   const visibleColumns = columns.filter(c => !c._isDeleted);
 
+  const visibleForeignKeys = foreignKeys.filter(fk => !fk._isDeleted)
+
+  const addForeignKey = () => {
+    setForeignKeys(prev => [...prev, {
+      id: makeId(),
+      constraintName: '',
+      column: '',
+      referencedTable: '',
+      referencedColumn: '',
+      onDelete: 'NO ACTION',
+      onUpdate: 'NO ACTION',
+      _isNew: true,
+    }])
+  }
+
+  const updateForeignKey = (id: string, patch: Partial<TableFormForeignKey>) => {
+    setForeignKeys(prev => prev.map(fk => fk.id === id ? { ...fk, ...patch } : fk))
+  }
+
+  const handleFkColumnChange = (id: string, col: string) => {
+    setForeignKeys(prev => prev.map(fk => {
+      if (fk.id !== id) return fk
+      const autoName = !fk.constraintName && col
+        ? `fk_${effectiveTableName}_${col}`
+        : fk.constraintName
+      return { ...fk, column: col, constraintName: autoName }
+    }))
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-[#111922] border border-[#253347] rounded-lg w-[960px] max-h-[85vh] flex flex-col relative">
@@ -513,6 +542,112 @@ export const TableManageDialog: React.FC<Props> = ({
             {t('tableManage.addColumn')}
           </button>
             </>
+          )}
+
+          {activeTab === 'foreignKeys' && (
+            <div className="space-y-1">
+              {visibleForeignKeys.length === 0 && (
+                <div className="text-xs text-[#7a9bb8] py-4 text-center">暂无外键约束</div>
+              )}
+              {visibleForeignKeys.length > 0 && (
+                <table className="w-full text-xs text-[#c8daea] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#1e2d42]">
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[180px]">约束名</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[120px]">当前列</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[120px]">引用表</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">引用列</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">ON DELETE</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">ON UPDATE</th>
+                      <th className="w-[30px]"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleForeignKeys.map(fk => {
+                      const colOptions = visibleColumns.map(c => ({ value: c.name, label: c.name }))
+                      const actionOptions = [
+                        { value: 'NO ACTION', label: 'NO ACTION' },
+                        { value: 'CASCADE', label: 'CASCADE' },
+                        { value: 'SET NULL', label: 'SET NULL' },
+                        { value: 'RESTRICT', label: 'RESTRICT' },
+                        { value: 'SET DEFAULT', label: 'SET DEFAULT' },
+                      ]
+                      return (
+                        <tr key={fk.id} className="border-b border-[#1a2639] hover:bg-[#1a2639]/40">
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              value={fk.constraintName}
+                              onChange={e => updateForeignKey(fk.id, { constraintName: e.target.value })}
+                              placeholder="fk_table_col"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={fk.column}
+                              options={colOptions}
+                              placeholder="选择列"
+                              onChange={col => handleFkColumnChange(fk.id, col)}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              value={fk.referencedTable}
+                              onChange={e => updateForeignKey(fk.id, { referencedTable: e.target.value })}
+                              placeholder="users"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                              value={fk.referencedColumn}
+                              onChange={e => updateForeignKey(fk.id, { referencedColumn: e.target.value })}
+                              placeholder="id"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={fk.onDelete}
+                              options={actionOptions}
+                              onChange={v => updateForeignKey(fk.id, { onDelete: v })}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={fk.onUpdate}
+                              options={actionOptions}
+                              onChange={v => updateForeignKey(fk.id, { onUpdate: v })}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center">
+                            <button
+                              onClick={() => fk._isNew
+                                ? setForeignKeys(prev => prev.filter(f => f.id !== fk.id))
+                                : updateForeignKey(fk.id, { _isDeleted: true })
+                              }
+                              className="text-red-500/70 hover:text-red-400 p-0.5"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <button
+                onClick={addForeignKey}
+                className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1"
+              >
+                <Plus size={13} />
+                添加外键
+              </button>
+            </div>
           )}
         </div>
 

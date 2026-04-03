@@ -24,6 +24,17 @@ import { Tooltip } from '../common/Tooltip';
 import { usePacedValue } from '../../hooks/usePacedValue';
 import type { ToastLevel } from '../Toast';
 
+const EMPTY_PARTS: import('../../types').MessagePart[] = [];
+
+const formatElapsed = (ms: number) => {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const tenths = Math.floor((ms % 1000) / 100);
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}.${tenths}s`;
+};
+
 // ── 历史消息（memo 隔离：chatHistory 不变时完全不重渲染）────────────────────
 const AssistantMessage: React.FC<{ content: string; thinkingContent?: string; parts?: import('../../types').MessagePart[] }> = memo(
   ({ content, thinkingContent, parts }) => {
@@ -91,7 +102,7 @@ const TypingIndicator: React.FC = () => {
 const StreamingMessage: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const content = useAiStore((s) => s.chatStates[sessionId]?.streamingContent ?? '');
   const thinking = useAiStore((s) => s.chatStates[sessionId]?.streamingThinkingContent ?? '');
-  const streamingParts = useAiStore((s) => s.chatStates[sessionId]?.streamingParts ?? []);
+  const streamingParts = useAiStore((s) => s.chatStates[sessionId]?.streamingParts ?? EMPTY_PARTS);
   const sessionStatus = useAiStore((s) => s.chatStates[sessionId]?.sessionStatus ?? null);
   const pendingQuestion = useAiStore((s) => s.chatStates[sessionId]?.pendingQuestion ?? null);
   const isChatting = useAiStore((s) => s.chatStates[sessionId]?.isChatting ?? false);
@@ -376,12 +387,14 @@ export const Assistant: React.FC<AssistantProps> = ({
     }
   }, [isChatting]);
 
-  // 切换会话时重置耗时
+  // 切换会话时重置耗时（仅当非聊天中时清除 ref，避免与计时器竞争）
   useEffect(() => {
     setLastElapsedMs(0);
-    chatStartRef.current = null;
     setElapsedMs(0);
-  }, [currentSessionId]);
+    if (!isChatting) {
+      chatStartRef.current = null;
+    }
+  }, [currentSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const connectionMenuRef = useRef<HTMLDivElement>(null);
   const connectionDropdownRef = useRef<HTMLDivElement>(null);
@@ -774,15 +787,6 @@ export const Assistant: React.FC<AssistantProps> = ({
   );
 
   const isEmpty = chatHistory.length === 0 && !isChatting;
-
-  const formatElapsed = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const tenths = Math.floor((ms % 1000) / 100);
-    if (minutes > 0) return `${minutes}m ${seconds}s`;
-    return `${seconds}.${tenths}s`;
-  };
 
   return (
     <div className="flex flex-col bg-background-void flex-shrink-0 border-l border-border-default relative h-full" style={{ width: assistantWidth }}>

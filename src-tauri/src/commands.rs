@@ -3081,7 +3081,7 @@ pub enum MessagePart {
     Reasoning { content: String },
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct ParsedChatMessage {
     pub role: String,
     pub content: String,
@@ -3146,39 +3146,31 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
 
         let mut content = String::new();
         let mut thinking = String::new();
-        // 构建有序 parts 列表（保留 reasoning/text 交替结构）
         let mut parts: Vec<MessagePart> = Vec::new();
 
         if let Some(msg_parts) = msg["parts"].as_array() {
             for part in msg_parts {
-                match part["type"].as_str().unwrap_or("") {
-                    "text" => {
-                        if let Some(t) = part["text"].as_str() {
-                            if !t.is_empty() {
-                                content.push_str(t);
-                                // 相邻 text 合并为一个 part
-                                if let Some(MessagePart::Text { content: last }) = parts.last_mut() {
-                                    last.push_str(t);
-                                } else {
-                                    parts.push(MessagePart::Text { content: t.to_string() });
-                                }
+                if let Some(t) = part["text"].as_str() {
+                    if t.is_empty() { continue; }
+                    match part["type"].as_str().unwrap_or("") {
+                        "text" => {
+                            content.push_str(t);
+                            if let Some(MessagePart::Text { content: last }) = parts.last_mut() {
+                                last.push_str(t);
+                            } else {
+                                parts.push(MessagePart::Text { content: t.to_string() });
                             }
                         }
-                    }
-                    "reasoning" => {
-                        if let Some(t) = part["text"].as_str() {
-                            if !t.is_empty() {
-                                thinking.push_str(t);
-                                // 相邻 reasoning 合并为一个 part
-                                if let Some(MessagePart::Reasoning { content: last }) = parts.last_mut() {
-                                    last.push_str(t);
-                                } else {
-                                    parts.push(MessagePart::Reasoning { content: t.to_string() });
-                                }
+                        "reasoning" => {
+                            thinking.push_str(t);
+                            if let Some(MessagePart::Reasoning { content: last }) = parts.last_mut() {
+                                last.push_str(t);
+                            } else {
+                                parts.push(MessagePart::Reasoning { content: t.to_string() });
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -3188,10 +3180,7 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
             continue;
         }
 
-        let has_parts = !parts.is_empty();
-
         if role == "user" {
-            // 剥离注入的上下文前缀，只保留用户实际输入
             let (_, user_input) = split_user_context(&content);
             if !user_input.is_empty() {
                 result.push(ParsedChatMessage {
@@ -3206,7 +3195,7 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
                 role: role.to_string(),
                 content,
                 thinking_content: if thinking.is_empty() { None } else { Some(thinking) },
-                parts: if has_parts { Some(parts) } else { None },
+                parts: if parts.is_empty() { None } else { Some(parts) },
             });
         }
     }
@@ -3233,7 +3222,6 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
                             None => last.thinking_content = Some(t),
                         }
                     }
-                    // 合并 parts：直接追加，保留交替结构
                     if let Some(msg_parts) = msg.parts {
                         let last_parts = last.parts.get_or_insert_with(Vec::new);
                         last_parts.extend(msg_parts);

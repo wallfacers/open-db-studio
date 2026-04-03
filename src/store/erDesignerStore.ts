@@ -216,6 +216,8 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   deleteProject: async (id) => {
     try {
       await invoke('er_delete_project', { id });
+      const { closeERDesignTab } = await import('./queryStore').then(m => m.useQueryStore.getState());
+      closeERDesignTab(id);
       set((s) => {
         const expandedProjects = new Set(s.expandedProjects);
         expandedProjects.delete(id);

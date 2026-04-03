@@ -58,6 +58,7 @@ interface QueryState {
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
   openERDesignTab: (projectId: number, projectName: string) => void;
+  closeERDesignTab: (projectId: number) => void;
 
   closeTab: (tabId: string) => void;
   closeMetricTabById: (metricId: number) => void;
@@ -285,6 +286,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   closeSeaTunnelJobTab: (jobId) => {
     set(s => {
       const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
+      if (!tab) return {};
+      const newTabs = s.tabs.filter(t => t.id !== tab.id);
+      const newActiveId = s.activeTabId === tab.id
+        ? (newTabs[newTabs.length - 1]?.id ?? '')
+        : s.activeTabId;
+      return { tabs: newTabs, activeTabId: newActiveId };
+    });
+  },
+
+  closeERDesignTab: (projectId) => {
+    set(s => {
+      const tab = s.tabs.find(t => t.type === 'er_design' && t.erProjectId === projectId);
       if (!tab) return {};
       const newTabs = s.tabs.filter(t => t.id !== tab.id);
       const newActiveId = s.activeTabId === tab.id

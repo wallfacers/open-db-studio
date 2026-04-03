@@ -1,4 +1,5 @@
-import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
+import { execError } from '../errors'
 import { applyPatch } from '../jsonPatch'
 import { useMetricFormStore } from '../../../store/metricFormStore'
 import { useAppStore } from '../../../store/appStore'
@@ -34,16 +35,38 @@ export class MetricFormUIObject implements UIObject {
     this.title = useMetricFormStore.getState().getForm(tabId)?.displayName || 'New Metric'
   }
 
+  get patchCapabilities(): PatchCapability[] {
+    return [
+      { pathPattern: '/displayName', ops: ['replace'], description: 'Change display name' },
+      { pathPattern: '/name', ops: ['replace'], description: 'Change identifier' },
+      { pathPattern: '/metricType', ops: ['replace'], description: 'Change metric type (atomic/composite)' },
+      { pathPattern: '/tableName', ops: ['replace'], description: 'Change source table' },
+      { pathPattern: '/columnName', ops: ['replace'], description: 'Change aggregation column' },
+      { pathPattern: '/aggregation', ops: ['replace'], description: 'Change aggregation function' },
+      { pathPattern: '/filterSql', ops: ['replace'], description: 'Change SQL filter clause' },
+      { pathPattern: '/category', ops: ['replace'], description: 'Change category' },
+      { pathPattern: '/description', ops: ['replace'], description: 'Change description' },
+    ]
+  }
+
   read(mode: 'state' | 'schema' | 'actions') {
     switch (mode) {
       case 'state':
         return useMetricFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
-        return METRIC_FORM_SCHEMA
+        return { ...METRIC_FORM_SCHEMA, patchCapabilities: this.patchCapabilities }
       case 'actions':
         return [
-          { name: 'save', description: 'Save metric definition' },
-          { name: 'validate', description: 'Validate metric fields' },
+          {
+            name: 'save',
+            description: 'Save metric definition to database',
+            paramsSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'validate',
+            description: 'Validate metric fields and return any errors',
+            paramsSchema: { type: 'object', properties: {} },
+          },
         ]
     }
   }
@@ -86,7 +109,7 @@ export class MetricFormUIObject implements UIObject {
 
   async exec(action: string, _params?: any): Promise<ExecResult> {
     const state = useMetricFormStore.getState().getForm(this.objectId)
-    if (!state) return { success: false, error: 'No form state' }
+    if (!state) return execError('No form state', `Metric form ${this.objectId} not initialized`)
 
     switch (action) {
       case 'save': {
@@ -108,7 +131,7 @@ export class MetricFormUIObject implements UIObject {
         return { success: errors.length === 0, data: { errors } }
       }
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: save, validate')
     }
   }
 }

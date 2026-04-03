@@ -98,4 +98,39 @@ describe('ERCanvasAdapter', () => {
       expect(result.message).toContain('Expected')
     })
   })
+
+  describe('exec add_table uses adapter projectId', () => {
+    it('calls store.addTable with this._projectId as first arg', async () => {
+      const addTableMock = vi.fn().mockResolvedValue({
+        id: 1, project_id: 1, name: 'foo', position_x: 100, position_y: 100,
+        comment: null, color: null,
+      })
+      mockStore.addTable = addTableMock
+
+      const result = await adapter.exec('add_table', { name: 'foo', position: { x: 100, y: 100 } })
+
+      expect(result.success).toBe(true)
+      expect(addTableMock).toHaveBeenCalledWith(1, 'foo', { x: 100, y: 100 })
+    })
+  })
+
+  describe('exec add_relation uses adapter projectId', () => {
+    it('calls store.addRelation with this._projectId as first arg', async () => {
+      const addRelationMock = vi.fn().mockResolvedValue({ id: 5, project_id: 1 })
+      mockStore.addRelation = addRelationMock
+
+      const result = await adapter.exec('add_relation', {
+        source_table_id: 10, source_column_id: 100,
+        target_table_id: 20, target_column_id: 200,
+        relation_type: 'one_to_many',
+      })
+
+      expect(result.success).toBe(true)
+      expect(addRelationMock).toHaveBeenCalledWith(1, {
+        source_table_id: 10, source_column_id: 100,
+        target_table_id: 20, target_column_id: 200,
+        relation_type: 'one_to_many',
+      })
+    })
+  })
 })

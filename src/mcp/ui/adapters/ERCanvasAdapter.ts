@@ -870,7 +870,7 @@ export class ERCanvasAdapter implements UIObject {
       case 'add_table':
         return this.withReload(async () => {
           const position = params?.position ?? { x: 100, y: 100 }
-          const table = await store.addTable(params.name, position)
+          const table = await store.addTable(this._projectId, params.name, position)
           return { tableId: table.id }
         })
 
@@ -896,7 +896,7 @@ export class ERCanvasAdapter implements UIObject {
       // ── Relation CRUD ───────────────────────────────────────────────
       case 'add_relation':
         return this.withReload(async () => {
-          const created = await store.addRelation(params)
+          const created = await store.addRelation(this._projectId, params)
           return { relationId: created.id }
         })
 
@@ -1027,7 +1027,7 @@ export class ERCanvasAdapter implements UIObject {
   ): Promise<ExecResult> {
     try {
       const position = params.position ?? { x: 100, y: 100 }
-      const table = await store.addTable(params.name, position)
+      const table = await store.addTable(this._projectId, params.name, position)
 
       if (params.comment) {
         await store.updateTable(table.id, { comment: params.comment })

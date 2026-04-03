@@ -269,7 +269,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
               placeholder={t('erDesigner.projectName') || '项目名称'}
               value={newProjectName}
               onChange={e => setNewProjectName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); else if (e.key === 'Escape') setShowCreateDialog(false); }}
               autoFocus
             />
             <div className="flex justify-end mt-3 gap-2">

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Edit3, Trash2, Link2, Unlink, Download, Table2, LucideIcon, FolderOpen } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { emit } from '@tauri-apps/api/event';
+import { save } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import { useConfirmStore } from '../../../store/confirmStore';
@@ -123,7 +125,13 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
   const handleExport = async () => {
     try {
       const json = await exportJson(projectId);
-      await navigator.clipboard.writeText(json);
+      const defaultFileName = project?.name ? `${project.name}.json` : 'er-project.json';
+      const path = await save({
+        defaultPath: defaultFileName,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (!path) return;
+      await invoke('write_text_file', { path, content: json });
     } catch (e) {
       console.error('Export failed:', e);
     }

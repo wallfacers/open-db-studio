@@ -32,8 +32,21 @@ export class HistoryAdapter implements UIObject {
         }
       case 'actions':
         return [
-          { name: 'list', description: 'List change history entries', paramsSchema: { limit: 'number' } },
-          { name: 'undo', description: 'Undo last change' },
+          {
+            name: 'list',
+            description: 'List change history entries',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number', description: 'Maximum entries to return (default: 50)' },
+              },
+            },
+          },
+          {
+            name: 'undo',
+            description: 'Undo last change',
+            paramsSchema: { type: 'object', properties: {} },
+          },
         ]
     }
   }

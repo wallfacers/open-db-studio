@@ -18,6 +18,16 @@ export interface TableFormColumn {
 
 export type EditableColumn = TableFormColumn
 
+export interface TableFormIndex {
+  id: string
+  name: string
+  type: 'INDEX' | 'UNIQUE' | 'FULLTEXT'
+  columns: string  // JSON: [{"name":"col","order":"ASC"}]
+  _isNew?: boolean
+  _isDeleted?: boolean
+  _originalName?: string
+}
+
 export interface TableFormState {
   tableName: string
   engine: string
@@ -25,7 +35,8 @@ export interface TableFormState {
   comment: string
   columns: TableFormColumn[]
   originalColumns?: TableFormColumn[]
-  indexes: any[]
+  indexes: TableFormIndex[]
+  originalIndexes?: TableFormIndex[]
   isNewTable?: boolean
 }
 
@@ -62,6 +73,7 @@ export async function loadPersistedFormState(tabId: string): Promise<TableFormSt
     const parsed = JSON.parse(raw) as TableFormState
     // 基本校验：必须有 columns 数组
     if (!Array.isArray(parsed.columns)) return null
+    if (parsed.indexes && !Array.isArray(parsed.indexes)) parsed.indexes = []
     return parsed
   } catch {
     return null

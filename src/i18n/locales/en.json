@@ -563,6 +563,8 @@
     "dropSuccess": "Table dropped successfully",
     "manageIndexes": "Manage Indexes",
     "addColumn": "Add Column",
+    "columnsTab": "Columns",
+    "indexesTab": "Indexes",
     "actions": "Actions",
     "extra": "Extra",
     "comment": "Comment",

@@ -564,6 +564,8 @@
     "dropSuccess": "表删除成功",
     "manageIndexes": "管理索引",
     "addColumn": "添加列",
+    "columnsTab": "列",
+    "indexesTab": "索引",
     "actions": "操作",
     "extra": "附加属性",
     "comment": "描述",

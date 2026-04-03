@@ -1,7 +1,7 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
 import { patchError, execError } from '../errors'
 import { applyPatch } from '../jsonPatch'
-import { useTableFormStore, type TableFormState } from '../../../store/tableFormStore'
+import { useTableFormStore, type TableFormState, type TableFormIndex } from '../../../store/tableFormStore'
 import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { useConnectionStore } from '../../../store/connectionStore'
@@ -38,9 +38,10 @@ const TABLE_FORM_SCHEMA = {
         type: 'object',
         properties: {
           name: { type: 'string' },
-          columns: { type: 'array', items: { type: 'string' } },
-          unique: { type: 'boolean', default: false },
+          type: { type: 'string', enum: ['INDEX', 'UNIQUE', 'FULLTEXT'], default: 'INDEX' },
+          columns: { type: 'string', description: 'JSON array: [{"name":"col","order":"ASC|DESC"}]' },
         },
+        required: ['name'],
         'x-addressable-by': 'name',
       },
     },
@@ -76,6 +77,46 @@ function colDef(c: Column, isPg: boolean): string {
   return [q(c.name, isPg), typ, nullable, def, extra, comment].filter(Boolean).join(' ')
 }
 
+// ── Index SQL helpers ─────────────────────────────────────────────────────
+
+interface IndexColumnEntry { name: string; order: 'ASC' | 'DESC' }
+
+function parseIndexColumns(json: string): IndexColumnEntry[] {
+  try {
+    const parsed = JSON.parse(json)
+    if (Array.isArray(parsed)) {
+      return parsed.map(item =>
+        typeof item === 'string'
+          ? { name: item, order: 'ASC' as const }
+          : { name: item.name ?? item, order: item.order ?? 'ASC' },
+      )
+    }
+  } catch { /* ignore */ }
+  return []
+}
+
+function generateIndexCreateSql(tableName: string, index: TableFormIndex, isPg: boolean): string {
+  const cols = parseIndexColumns(index.columns)
+  if (cols.length === 0) return ''
+  const quotedCols = cols.map(c => {
+    const quoted = q(c.name, isPg)
+    return c.order === 'DESC' ? `${quoted} DESC` : quoted
+  })
+  // FULLTEXT is MySQL-only; not supported on PostgreSQL
+  if (isPg && index.type === 'FULLTEXT') return ''
+  const unique = index.type === 'UNIQUE' ? 'UNIQUE ' : ''
+  const fulltext = (!isPg && index.type === 'FULLTEXT') ? 'FULLTEXT ' : ''
+  const prefix = unique || fulltext
+  return `CREATE ${prefix}INDEX ${q(index.name, isPg)} ON ${q(tableName, isPg)} (${quotedCols.join(', ')});`
+}
+
+function generateIndexDropSql(indexName: string, tableName: string, isPg: boolean): string {
+  if (isPg) {
+    return `DROP INDEX IF EXISTS ${q(indexName, isPg)};`
+  }
+  return `DROP INDEX ${q(indexName, isPg)} ON ${q(tableName, isPg)};`
+}
+
 function generateCreateSql(state: TableFormState, isPg: boolean): string {
   const activeCols = state.columns.filter(c => !c._isDeleted)
   const pkCols = activeCols.filter(c => c.isPrimaryKey).map(c => q(c.name, isPg))
@@ -89,6 +130,12 @@ function generateCreateSql(state: TableFormState, isPg: boolean): string {
         stmts.push(`COMMENT ON COLUMN ${q(state.tableName, true)}.${q(c.name, true)} IS '${esc(c.comment)}';`)
       }
     }
+  }
+  // Append index creation statements
+  const activeIndexes = (state.indexes ?? []).filter(i => !i._isDeleted)
+  for (const idx of activeIndexes) {
+    const idxSql = generateIndexCreateSql(state.tableName, idx, isPg)
+    if (idxSql) stmts.push(idxSql)
   }
   return stmts.join('\n')
 }
@@ -161,6 +208,37 @@ function generateAlterSql(state: TableFormState, original: Column[], isPg: boole
       statements.push(`ALTER TABLE ${tbl} DROP PRIMARY KEY;`)
     }
     if (newPks.length > 0) statements.push(`ALTER TABLE ${tbl} ADD PRIMARY KEY (${newPks.join(', ')});`)
+  }
+
+  // ── Index diff ──
+  const originalIndexes = state.originalIndexes ?? []
+  const editedIndexes = state.indexes ?? []
+
+  // Dropped indexes
+  for (const idx of editedIndexes) {
+    if (idx._isDeleted && !idx._isNew) {
+      statements.push(generateIndexDropSql(idx._originalName ?? idx.name, state.tableName, isPg))
+    }
+  }
+
+  // New indexes
+  for (const idx of editedIndexes) {
+    if (idx._isNew && !idx._isDeleted) {
+      const sql = generateIndexCreateSql(state.tableName, idx, isPg)
+      if (sql) statements.push(sql)
+    }
+  }
+
+  // Modified indexes (name, type, or columns changed): DROP old + CREATE new
+  for (const idx of editedIndexes) {
+    if (!idx._isNew && !idx._isDeleted && idx._originalName) {
+      const orig = originalIndexes.find(o => (o._originalName ?? o.name) === idx._originalName)
+      if (orig && (orig.name !== idx.name || orig.type !== idx.type || orig.columns !== idx.columns)) {
+        statements.push(generateIndexDropSql(idx._originalName, state.tableName, isPg))
+        const sql = generateIndexCreateSql(state.tableName, idx, isPg)
+        if (sql) statements.push(sql)
+      }
+    }
   }
 
   return statements.length > 0 ? statements.join('\n') : '-- No changes'
@@ -321,6 +399,13 @@ export class TableFormUIObject implements UIObject {
         if (!col.id) {
           col.id = Math.random().toString(36).slice(2)
           col._isNew = true
+        }
+      }
+      // Ensure all indexes have id and _isNew for new indexes
+      for (const idx of patched.indexes ?? []) {
+        if (!idx.id) {
+          idx.id = Math.random().toString(36).slice(2)
+          idx._isNew = true
         }
       }
       useTableFormStore.getState().setForm(this.objectId, patched)

@@ -4,13 +4,21 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useTableFormStore, loadPersistedFormState } from '../../store/tableFormStore';
+import type { EditableColumn, TableFormIndex } from '../../store/tableFormStore';
 import { useUIObjectRegistry } from '../../mcp/ui';
 import { TableFormUIObject, generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
-import type { EditableColumn } from '../../store/tableFormStore';
 import { useFieldHighlight } from '../../hooks/useFieldHighlight';
 import { useHighlightStore } from '../../store/highlightStore';
+import IndexEditor from '../ERDesigner/shared/IndexEditor';
+import type { ErIndex } from '@/types';
+import {
+  makeIdMap,
+  tableFormColumnsToErColumns,
+  tableFormIndexesToErIndexes,
+  indexMetaToTableFormIndex,
+} from './tableFormIndexAdapter';
 
 const HighlightedField: React.FC<{
   scopeId: string;
@@ -144,6 +152,78 @@ const ColumnRow: React.FC<{
   );
 };
 
+// ── Index Editor Wrapper (bridges TableForm types → ErIndex/ErColumn for IndexEditor) ──
+
+const IndexEditorWrapper: React.FC<{
+  indexes: TableFormIndex[];
+  columns: EditableColumn[];
+  tableName: string;
+  setIndexes: (updater: (prev: TableFormIndex[]) => TableFormIndex[]) => void;
+}> = ({ indexes, columns, tableName, setIndexes }) => {
+  const idMap = useMemo(() => makeIdMap(), []);
+
+  const visibleIndexes = useMemo(() => indexes.filter(i => !i._isDeleted), [indexes]);
+  const visibleColumns = useMemo(() => columns.filter(c => !c._isDeleted), [columns]);
+
+  const erIndexes = useMemo(
+    () => tableFormIndexesToErIndexes(visibleIndexes, idMap),
+    [visibleIndexes, idMap],
+  );
+  const erColumns = useMemo(
+    () => tableFormColumnsToErColumns(visibleColumns, idMap),
+    [visibleColumns, idMap],
+  );
+
+  const handleAdd = useCallback((_tableId: number, partial: Partial<ErIndex>) => {
+    const newIdx: TableFormIndex = {
+      id: makeId(),
+      name: partial.name ?? '',
+      type: (partial.type ?? 'INDEX') as TableFormIndex['type'],
+      columns: partial.columns ?? '[]',
+      _isNew: true,
+    };
+    setIndexes(prev => [...prev, newIdx]);
+  }, [setIndexes]);
+
+  const handleUpdate = useCallback((numId: number, updates: Partial<ErIndex>) => {
+    const strId = idMap.toStr(numId);
+    setIndexes(prev => prev.map(idx => {
+      if (idx.id !== strId) return idx;
+      const patch: Partial<TableFormIndex> = {};
+      if (updates.name !== undefined) patch.name = updates.name;
+      if (updates.type !== undefined) patch.type = updates.type as TableFormIndex['type'];
+      if (updates.columns !== undefined) patch.columns = updates.columns;
+      return { ...idx, ...patch };
+    }));
+  }, [setIndexes, idMap]);
+
+  const handleDelete = useCallback((numId: number, _tableId: number) => {
+    const strId = idMap.toStr(numId);
+    setIndexes(prev => prev.flatMap(idx => {
+      if (idx.id !== strId) return [idx];
+      return idx._isNew ? [] : [{ ...idx, _isDeleted: true }];
+    }));
+  }, [setIndexes, idMap]);
+
+  return (
+    <div className="p-3">
+      <IndexEditor
+        indexes={erIndexes}
+        columns={erColumns}
+        tableId={0}
+        tableName={tableName}
+        onAdd={handleAdd}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
+      />
+    </div>
+  );
+};
+
+// ── Tab type ──
+
+type StructureTab = 'columns' | 'indexes';
+
 interface TableStructureViewProps {
   tabId: string;
   connectionId: number;
@@ -160,6 +240,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [activeTab, setActiveTab] = useState<StructureTab>('columns');
 
   // SQL Preview panel resizable height
   const [previewHeight, setPreviewHeight] = useState(140);
@@ -197,12 +278,21 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
 
   const columns = formState?.columns ?? []
   const originalColumns = formState?.originalColumns ?? []
+  const indexes = formState?.indexes ?? []
+  const originalIndexes = formState?.originalIndexes ?? []
   const newTableName = formState?.tableName ?? ''
 
   const setColumns = useCallback((updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => {
     useTableFormStore.getState().patchForm(tabId, s => ({
       ...s,
       columns: typeof updater === 'function' ? updater(s.columns as EditableColumn[]) : updater,
+    }))
+  }, [tabId])
+
+  const setIndexes = useCallback((updater: TableFormIndex[] | ((prev: TableFormIndex[]) => TableFormIndex[])) => {
+    useTableFormStore.getState().patchForm(tabId, s => ({
+      ...s,
+      indexes: typeof updater === 'function' ? updater(s.indexes) : updater,
     }))
   }, [tabId])
 
@@ -247,6 +337,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         column_default: string | null; is_primary_key: boolean; extra: string | null;
         comment: string | null;
       }>;
+      indexes: Array<{ index_name: string; is_unique: boolean; columns: string[] }>;
     }>('get_table_detail', {
       connectionId, database: database ?? null, schema: schema ?? null, table: tableName
     }).then(detail => {
@@ -262,10 +353,16 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         comment: c.comment ?? '',
         _originalName: c.name,
       }));
+      // Filter out PRIMARY key index to avoid duplication with PK checkboxes
+      const idxs: TableFormIndex[] = (detail.indexes ?? [])
+        .filter(idx => idx.index_name !== 'PRIMARY')
+        .map(indexMetaToTableFormIndex);
       initForm(tabId, {
         tableName: tableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
-        columns: cols, originalColumns: cols.map(c => ({ ...c })), indexes: [], isNewTable: false,
+        columns: cols, originalColumns: cols.map(c => ({ ...c })),
+        indexes: idxs, originalIndexes: idxs.map(i => ({ ...i })),
+        isNewTable: false,
       })
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
@@ -309,9 +406,11 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
       }];
       setColumns(initCols);
+      setIndexes([]);
       setNewTableName('');
     } else {
       setColumns(originalColumns.map(c => ({ ...c } as EditableColumn)));
+      setIndexes(originalIndexes.map(i => ({ ...i })));
     }
   };
 
@@ -324,12 +423,13 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         tableName: effectiveTableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns, originalColumns: tableName ? originalColumns : undefined,
-        indexes: [], isNewTable: !tableName,
+        indexes, originalIndexes: tableName ? originalIndexes : undefined,
+        isNewTable: !tableName,
       }, driver);
     } catch {
       return '-- 表单数据不完整，请检查列定义';
     }
-  }, [effectiveTableName, columns, originalColumns, tableName, driver]);
+  }, [effectiveTableName, columns, originalColumns, indexes, originalIndexes, tableName, driver]);
 
   const hasChanges = !previewSql.startsWith('-- ');
 
@@ -384,51 +484,77 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         </div>
       )}
 
-      {/* Column Table */}
+      {/* Tab Bar */}
+      <div className="flex border-b border-border-default flex-shrink-0">
+        {(['columns', 'indexes'] as StructureTab[]).map(tab => (
+          <button
+            key={tab}
+            className={`px-4 py-1.5 text-xs transition-colors cursor-pointer outline-none ${
+              activeTab === tab
+                ? 'text-accent border-b-2 border-accent'
+                : 'text-foreground-muted hover:text-foreground-default'
+            }`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'columns' ? t('tableManage.columnsTab') : t('tableManage.indexesTab')}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
       <div className="flex-1 overflow-auto">
         {isLoadingData ? (
           <div className="p-4 text-foreground-muted text-sm">{t('tableDataView.loading')}</div>
+        ) : activeTab === 'columns' ? (
+          <>
+            <table className="w-full text-left border-collapse whitespace-nowrap text-xs table-fixed">
+              <thead className="sticky top-0 bg-background-base z-10">
+                <tr>
+                  <th className="w-10 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal text-center">{t('tableDataView.serialNo')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[160px]">{t('tableManage.columnName')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[130px]">{t('tableManage.dataType')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[80px]">{t('tableManage.length')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal text-center w-[70px]">{t('tableManage.nullable')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[120px]">{t('tableManage.defaultValue')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal text-center w-[50px]">PK</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[110px]">{t('tableManage.extra')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[180px]">{t('tableManage.comment')}</th>
+                  <th className="px-3 py-1.5 border-b border-border-default text-foreground-muted font-normal text-center w-[70px]">{t('tableManage.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleColumns.map((col, idx) => (
+                  <ColumnRow
+                    key={col.id}
+                    col={col}
+                    idx={idx}
+                    tabId={tabId}
+                    visibleCount={visibleColumns.length}
+                    updateColumn={updateColumn}
+                    moveColumn={moveColumn}
+                    setColumns={setColumns}
+                    iconBtn={iconBtn}
+                    iconBtnDanger={iconBtnDanger}
+                  />
+                ))}
+              </tbody>
+            </table>
+            <button
+              onClick={addColumn}
+              className="m-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
+            >
+              <Plus size={13} />
+              {t('tableManage.addColumn')}
+            </button>
+          </>
         ) : (
-          <table className="w-full text-left border-collapse whitespace-nowrap text-xs table-fixed">
-            <thead className="sticky top-0 bg-background-base z-10">
-              <tr>
-                <th className="w-10 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal text-center">{t('tableDataView.serialNo')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[160px]">{t('tableManage.columnName')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[130px]">{t('tableManage.dataType')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[80px]">{t('tableManage.length')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal text-center w-[70px]">{t('tableManage.nullable')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[120px]">{t('tableManage.defaultValue')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal text-center w-[50px]">PK</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[110px]">{t('tableManage.extra')}</th>
-                <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[180px]">{t('tableManage.comment')}</th>
-                <th className="px-3 py-1.5 border-b border-border-default text-foreground-muted font-normal text-center w-[70px]">{t('tableManage.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleColumns.map((col, idx) => (
-                <ColumnRow
-                  key={col.id}
-                  col={col}
-                  idx={idx}
-                  tabId={tabId}
-                  visibleCount={visibleColumns.length}
-                  updateColumn={updateColumn}
-                  moveColumn={moveColumn}
-                  setColumns={setColumns}
-                  iconBtn={iconBtn}
-                  iconBtnDanger={iconBtnDanger}
-                />
-              ))}
-            </tbody>
-          </table>
+          <IndexEditorWrapper
+            indexes={indexes}
+            columns={columns}
+            tableName={effectiveTableName}
+            setIndexes={setIndexes}
+          />
         )}
-        <button
-          onClick={addColumn}
-          className="m-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
-        >
-          <Plus size={13} />
-          {t('tableManage.addColumn')}
-        </button>
       </div>
 
       {/* Resize Handle */}

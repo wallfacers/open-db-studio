@@ -56,7 +56,6 @@ export default function ERToolbar({
     previewImport,
     executeImport,
     projects,
-    activeProjectId,
   } = useErDesignerStore();
 
   const projectName = projects.find(p => p.id === projectId)?.name;
@@ -79,7 +78,7 @@ export default function ERToolbar({
         name = `new_table_${++i}`;
       }
       const pos = { x: Math.random() * 300 + 100, y: Math.random() * 300 + 100 };
-      const table = await addTable(name, pos);
+      const table = await addTable(projectId, name, pos);
       onTableAdded?.(table);
     } catch (e) {
       console.error('Failed to add table:', e);

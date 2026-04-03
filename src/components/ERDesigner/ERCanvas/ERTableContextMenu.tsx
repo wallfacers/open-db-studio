@@ -23,7 +23,7 @@ interface MenuItem {
 export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableContextMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { tables, columns, deleteTable, addColumn, activeProjectId, loadProject, addTable, openDrawer } = useErDesignerStore();
+  const { tables, columns, deleteTable, addColumn, addTable, openDrawer } = useErDesignerStore();
 
   const table = tables.find(t => t.id === tableId);
 
@@ -66,9 +66,9 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
   };
 
   const handleDuplicate = async () => {
-    if (!table || !activeProjectId) return;
+    if (!table) return;
     const srcCols = columns[tableId] || [];
-    const newTable = await addTable(`${table.name}_copy`, {
+    const newTable = await addTable(table.project_id, `${table.name}_copy`, {
       x: table.position_x + 50,
       y: table.position_y + 50,
     });

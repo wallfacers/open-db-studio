@@ -348,7 +348,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))
     const sourceTableId = parseErTableNodeId(connection.source!)!
     const targetTableId = parseErTableNodeId(connection.target!)!
-    addRelation({
+    addRelation(projectId, {
       source_table_id: sourceTableId,
       source_column_id: sourceColumnId,
       target_table_id: targetTableId,
@@ -356,7 +356,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       relation_type: 'one_to_many',
       source: 'designer'
     })
-  }, [setEdges, addRelation])
+  }, [setEdges, addRelation, projectId])
 
   const handleTableAdded = useCallback((table: ErTable) => {
     setNodes(nds => [...nds, {
@@ -386,6 +386,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
 
   // Custom keyboard shortcuts
   useERKeyboard({
+    projectId,
     nodes,
     edges,
     selectedNodes: [], // Since we track selected inside nodes via ReactFlow's selected property, but the hook uses it.

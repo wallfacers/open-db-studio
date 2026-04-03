@@ -4,6 +4,7 @@ import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId';
 
 interface UseERKeyboardOptions {
+  projectId: number;
   nodes: Node[];
   edges: Edge[];
   selectedNodes: Node[];
@@ -26,6 +27,7 @@ interface UseERKeyboardOptions {
  * - Ctrl+E: 导出 DDL
  */
 export function useERKeyboard({
+  projectId,
   nodes,
   edges,
   selectedNodes,
@@ -41,7 +43,6 @@ export function useERKeyboard({
     redo,
     addTable,
     tables,
-    activeProjectId,
   } = useErDesignerStore();
 
   // 删除选中的节点或边
@@ -65,7 +66,7 @@ export function useERKeyboard({
 
   // 复制选中的表
   const handleDuplicate = useCallback(() => {
-    if (selectedNodes.length === 0 || !activeProjectId) return;
+    if (selectedNodes.length === 0) return;
 
     selectedNodes.forEach((node) => {
       const tableId = parseErTableNodeId(node.id);
@@ -74,12 +75,12 @@ export function useERKeyboard({
       if (!originalTable) return;
 
       // 创建新表，位置偏移
-      addTable(`${originalTable.name}_copy`, {
+      addTable(projectId, `${originalTable.name}_copy`, {
         x: originalTable.position_x + 50,
         y: originalTable.position_y + 50,
       });
     });
-  }, [selectedNodes, tables, activeProjectId, addTable]);
+  }, [selectedNodes, tables, projectId, addTable]);
 
   // 全选（目前仅支持全选所有节点）
   const handleSelectAll = useCallback(() => {

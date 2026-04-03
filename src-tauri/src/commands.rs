@@ -3127,7 +3127,9 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
     let mut result = Vec::new();
     for msg in arr {
         let role = msg["info"]["role"].as_str().unwrap_or("assistant");
-        if role == "system" {
+        // 只保留 user 和 assistant（前端同样过滤，但须在合并前过滤
+        // 以保证相邻 assistant 不被 tool/system 等中间消息打断合并链）
+        if role != "user" && role != "assistant" {
             continue;
         }
 

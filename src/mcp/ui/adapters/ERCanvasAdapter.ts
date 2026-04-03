@@ -272,6 +272,63 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
       required: ['indexId', 'tableId'],
     },
   },
+  {
+    name: 'replace_columns',
+    description: 'Replace all columns of a table with new definitions. Deletes existing columns and creates new ones in batch.',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        tableId: { type: 'number' },
+        columns: {
+          type: 'array',
+          description: 'New column definitions to create',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              data_type: { type: 'string' },
+              nullable: { type: 'boolean', default: true },
+              is_primary_key: { type: 'boolean', default: false },
+              is_auto_increment: { type: 'boolean', default: false },
+              is_unique: { type: 'boolean', default: false },
+              unsigned: { type: 'boolean', default: false },
+              default_value: { type: ['string', 'null'] },
+              comment: { type: ['string', 'null'] },
+              length: { type: ['number', 'null'] },
+              scale: { type: ['number', 'null'] },
+              enum_values: { type: ['array', 'null'], items: { type: 'string' } },
+            },
+            required: ['name', 'data_type'],
+          },
+        },
+      },
+      required: ['tableId', 'columns'],
+    },
+  },
+  {
+    name: 'replace_indexes',
+    description: 'Replace all indexes of a table with new definitions. Deletes existing indexes and creates new ones in batch.',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        tableId: { type: 'number' },
+        indexes: {
+          type: 'array',
+          description: 'New index definitions to create',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              type: { type: 'string', enum: ['INDEX', 'UNIQUE', 'FULLTEXT'], default: 'INDEX' },
+              columns: { type: 'array', items: { type: 'string' }, description: 'Column names for the index' },
+            },
+            required: ['name', 'columns'],
+          },
+        },
+      },
+      required: ['tableId', 'indexes'],
+    },
+  },
   // Text results
   {
     name: 'generate_ddl',
@@ -809,6 +866,45 @@ export class ERCanvasAdapter implements UIObject {
 
       case 'delete_index':
         return this.withReload(() => store.deleteIndex(params.indexId, params.tableId))
+
+      // ── Batch replace ─────────────────────────────────────────────────
+      case 'replace_columns':
+        return this.withReload(async () => {
+          const tableId = params.tableId
+          const existingCols = store.columns[tableId] ?? []
+          // Delete all existing columns (reverse order to avoid FK issues)
+          for (let i = existingCols.length - 1; i >= 0; i--) {
+            await store.deleteColumn(existingCols[i].id, tableId)
+          }
+          // Create new columns in order
+          const createdIds: number[] = []
+          for (const colDef of params.columns) {
+            const created = await store.addColumn(tableId, colDef)
+            createdIds.push(created.id)
+          }
+          return { columnIds: createdIds }
+        })
+
+      case 'replace_indexes':
+        return this.withReload(async () => {
+          const tableId = params.tableId
+          const existingIndexes = store.indexes[tableId] ?? []
+          // Delete all existing indexes
+          for (const idx of existingIndexes) {
+            await store.deleteIndex(idx.id, tableId)
+          }
+          // Create new indexes
+          const createdIds: number[] = []
+          for (const idxDef of params.indexes) {
+            const indexDef = { ...idxDef }
+            if (Array.isArray(indexDef.columns)) {
+              indexDef.columns = JSON.stringify(indexDef.columns)
+            }
+            const created = await store.addIndex(tableId, indexDef)
+            createdIds.push(created.id)
+          }
+          return { indexIds: createdIds }
+        })
 
       // ── Text result operations (no canvas reload needed) ────────────
       case 'generate_ddl':

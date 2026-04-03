@@ -160,9 +160,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   }, [reloadCanvas])
 
   // Sync store changes to ReactFlow nodes/edges (for sidebar operations)
-  // Only sync when this tab is active — skip heavy re-computation for hidden tabs
   useEffect(() => {
-    if (!isActiveTab) return
     // Only sync when we have loaded data (activeProjectId matches)
     const state = useErDesignerStore.getState()
     if (state.activeProjectId !== projectId) return
@@ -229,7 +227,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         }))
       return [...filtered, ...newEdges]
     })
-  }, [projectId, isActiveTab, tables, relations, columns, buildNodeData, setNodes, setEdges])
+  }, [projectId, tables, relations, columns, buildNodeData, setNodes, setEdges])
 
   // Refs for nodes/edges so MCP event listeners don't re-subscribe on every render
   const nodesRef = useRef(nodes)
@@ -457,17 +455,15 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         onAutoLayout={handleAutoLayout}
         hasConnection={hasConnection}
       />
-      <div className="flex-1 overflow-hidden relative graph-canvas-container">
-        {/* Skip ReactFlow rendering for inactive tabs — keeps nodes/edges state without heavy canvas work */}
-        {isActiveTab ? (
+      <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ display: isActiveTab ? 'block' : 'none' }}>
         <ReactFlow
           className="graph-canvas-container"
           nodes={nodes}
           edges={edges}
-          panActivationKeyCode="Space"
-          selectionKeyCode="Shift"
-          multiSelectionKeyCode="Meta"
-          zoomActivationKeyCode="Meta"
+          panActivationKeyCode={isActiveTab ? 'Space' : null}
+          selectionKeyCode={isActiveTab ? 'Shift' : null}
+          multiSelectionKeyCode={isActiveTab ? 'Meta' : null}
+          zoomActivationKeyCode={isActiveTab ? 'Meta' : null}
           onNodesChange={onNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
@@ -488,9 +484,6 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="var(--border-default)" bgColor="var(--background-base)" gap={20} size={1} />
           <Controls />
         </ReactFlow>
-        ) : (
-          <div className="w-full h-full bg-background-base" />
-        )}
       </div>
 
       {contextMenu && (

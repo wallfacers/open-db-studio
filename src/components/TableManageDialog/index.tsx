@@ -408,7 +408,7 @@ export const TableManageDialog: React.FC<Props> = ({
           )}
 
           {/* Tab 导航 */}
-          <div className="flex border-b border-[#1e2d42] mb-3">
+          <div className="flex border-b border-border-default mb-3">
             {(['columns', 'foreignKeys', 'indexes'] as ActiveTab[]).map(tab => {
               const labels: Record<ActiveTab, string> = { columns: '字段', foreignKeys: '外键', indexes: '索引' }
               return (
@@ -417,8 +417,8 @@ export const TableManageDialog: React.FC<Props> = ({
                   onClick={() => setActiveTab(tab)}
                   className={`px-4 py-2 text-xs transition-colors duration-200 border-b-2 -mb-px ${
                     activeTab === tab
-                      ? 'border-[#009e84] text-[#009e84]'
-                      : 'border-transparent text-[#7a9bb8] hover:text-[#c8daea]'
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-foreground-muted hover:text-foreground-default'
                   }`}
                 >
                   {labels[tab]}

@@ -464,6 +464,21 @@ export class TableFormUIObject implements UIObject {
           const idx = patched.indexes?.[Number(addressable)]
           if (idx?.name) paths.push(`indexes.${idx.name}`)
         }
+      } else if (topKey === 'foreignKeys' && segments.length >= 2) {
+        // FK change → merge to FK level by constraintName
+        const addressable = segments[1]
+        const nameMatch = addressable.match(/^\[name=(.+)\]$/)
+        if (nameMatch) {
+          if (segments.length >= 3) {
+            paths.push(`foreignKeys.${segments[2]}`)
+          } else {
+            paths.push('foreignKeys')
+          }
+        } else if (/^\d+$/.test(addressable)) {
+          const fk = patched.foreignKeys?.[Number(addressable)]
+          if (fk?.constraintName) paths.push(`foreignKeys.${fk.constraintName}`)
+        }
+        // /foreignKeys/- (array append) → no specific path pushed
       } else {
         // Top-level field: /tableName, /engine, /charset, /comment
         paths.push(topKey)

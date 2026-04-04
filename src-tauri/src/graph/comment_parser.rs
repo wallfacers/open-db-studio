@@ -7,6 +7,11 @@ static RE2: OnceLock<Regex> = OnceLock::new();
 static RE3: OnceLock<Regex> = OnceLock::new();
 static RE4: OnceLock<Regex> = OnceLock::new();
 
+static RE_S1: OnceLock<Regex> = OnceLock::new();
+static RE_S2: OnceLock<Regex> = OnceLock::new();
+static RE_S3: OnceLock<Regex> = OnceLock::new();
+static RE_S4: OnceLock<Regex> = OnceLock::new();
+
 /// 列注释中提取的虚拟关系引用
 #[derive(Debug, PartialEq, Clone)]
 pub struct CommentRef {
@@ -15,15 +20,24 @@ pub struct CommentRef {
     pub relation_type: String,  // 默认 "fk"
 }
 
-/// 解析列注释中的关系标记，返回去重后的引用列表
+/// 解析列注释的完整结果：引用列表 + 去除标记后的干净描述
+#[allow(dead_code)]
+#[derive(Debug, PartialEq, Clone)]
+pub struct ParsedComment {
+    pub refs: Vec<CommentRef>,
+    pub clean_text: String,
+}
+
+/// 解析列注释，返回引用列表和去除所有标记后的干净描述文本。
 /// 支持格式：
 ///   @ref:table.col
 ///   @fk(table=orders,col=id,type=one_to_many)
 ///   [ref:table.col]
 ///   $$ref(table.col)$$
-pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
+#[allow(dead_code)]
+pub fn parse_comment(comment: &str) -> ParsedComment {
     let mut seen: HashSet<(String, String)> = HashSet::new();
-    let mut result = Vec::new();
+    let mut refs = Vec::new();
 
     let re1 = RE1.get_or_init(|| Regex::new(r"@ref:([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)").unwrap());
     let re2 = RE2.get_or_init(|| Regex::new(r"@fk\(([^)]+)\)").unwrap());
@@ -35,7 +49,7 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
         let table = cap[1].to_string();
         let col = cap[2].to_string();
         if seen.insert((table.clone(), col.clone())) {
-            result.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
+            refs.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
         }
     }
 
@@ -57,7 +71,7 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
             }
         }
         if !table.is_empty() && !col.is_empty() && seen.insert((table.clone(), col.clone())) {
-            result.push(CommentRef { target_table: table, target_column: col, relation_type: rel_type });
+            refs.push(CommentRef { target_table: table, target_column: col, relation_type: rel_type });
         }
     }
 
@@ -66,7 +80,7 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
         let table = cap[1].to_string();
         let col = cap[2].to_string();
         if seen.insert((table.clone(), col.clone())) {
-            result.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
+            refs.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
         }
     }
 
@@ -75,33 +89,11 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
         let table = cap[1].to_string();
         let col = cap[2].to_string();
         if seen.insert((table.clone(), col.clone())) {
-            result.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
+            refs.push(CommentRef { target_table: table, target_column: col, relation_type: "fk".to_string() });
         }
     }
 
-    result
-}
-
-// ── parse_comment ─────────────────────────────────────────────────────────
-
-static RE_S1: OnceLock<Regex> = OnceLock::new();
-static RE_S2: OnceLock<Regex> = OnceLock::new();
-static RE_S3: OnceLock<Regex> = OnceLock::new();
-static RE_S4: OnceLock<Regex> = OnceLock::new();
-
-/// 解析列注释的完整结果：引用列表 + 去除标记后的干净描述
-#[allow(dead_code)]
-#[derive(Debug, PartialEq, Clone)]
-pub struct ParsedComment {
-    pub refs: Vec<CommentRef>,
-    pub clean_text: String,
-}
-
-/// 解析列注释，返回引用列表和去除所有标记后的干净描述文本。
-#[allow(dead_code)]
-pub fn parse_comment(comment: &str) -> ParsedComment {
-    let refs = parse_comment_refs(comment);
-
+    // Strip markers to produce clean_text
     let s1 = RE_S1.get_or_init(|| Regex::new(r"@ref:[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*").unwrap());
     let s2 = RE_S2.get_or_init(|| Regex::new(r"@fk\([^)]+\)").unwrap());
     let s3 = RE_S3.get_or_init(|| Regex::new(r"\[ref:[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\]").unwrap());
@@ -114,6 +106,12 @@ pub fn parse_comment(comment: &str) -> ParsedComment {
     let clean_text = t.split_whitespace().collect::<Vec<_>>().join(" ");
 
     ParsedComment { refs, clean_text }
+}
+
+/// 解析列注释中的关系标记，返回去重后的引用列表。
+/// 薄包装：内部委托给 parse_comment(comment).refs。
+pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
+    parse_comment(comment).refs
 }
 
 #[cfg(test)]

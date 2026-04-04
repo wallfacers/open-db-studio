@@ -226,4 +226,36 @@ mod tests {
             "用户ID @ref:users.id"
         );
     }
+
+    // ── resolve_comment_format ────────────────────────────────────────
+
+    #[test]
+    fn test_format_relation_overrides_all() {
+        let project = make_project("database_fk", "@ref");
+        let table = make_table(None, Some("@fk"));
+        let relation = make_relation(None, Some("[ref]"));
+        assert_eq!(resolve_comment_format(&relation, Some(&table), Some(&project)), "[ref]");
+    }
+
+    #[test]
+    fn test_format_table_overrides_project() {
+        let project = make_project("database_fk", "@ref");
+        let table = make_table(None, Some("@fk"));
+        let relation = make_relation(None, None);
+        assert_eq!(resolve_comment_format(&relation, Some(&table), Some(&project)), "@fk");
+    }
+
+    #[test]
+    fn test_format_falls_back_to_project() {
+        let project = make_project("database_fk", "$$ref$$");
+        let table = make_table(None, None);
+        let relation = make_relation(None, None);
+        assert_eq!(resolve_comment_format(&relation, Some(&table), Some(&project)), "$$ref$$");
+    }
+
+    #[test]
+    fn test_format_falls_back_to_default_when_no_project() {
+        let relation = make_relation(None, None);
+        assert_eq!(resolve_comment_format(&relation, None, None), "@ref");
+    }
 }

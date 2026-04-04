@@ -65,4 +65,25 @@ describe('erDesignerStore', () => {
       })
     })
   })
+
+  describe('setViewport', () => {
+    it('按 projectId 存储 viewport，不影响其他项目', () => {
+      useErDesignerStore.setState({ viewports: {} })
+
+      useErDesignerStore.getState().setViewport(1, { x: 100, y: 200, zoom: 1.5 })
+      useErDesignerStore.getState().setViewport(2, { x: 0, y: 0, zoom: 0.8 })
+
+      const { viewports } = useErDesignerStore.getState()
+      expect(viewports[1]).toEqual({ x: 100, y: 200, zoom: 1.5 })
+      expect(viewports[2]).toEqual({ x: 0, y: 0, zoom: 0.8 })
+    })
+
+    it('重复调用覆盖同一 projectId 的旧值', () => {
+      useErDesignerStore.setState({ viewports: { 5: { x: 10, y: 20, zoom: 1 } } })
+
+      useErDesignerStore.getState().setViewport(5, { x: 99, y: 88, zoom: 2 })
+
+      expect(useErDesignerStore.getState().viewports[5]).toEqual({ x: 99, y: 88, zoom: 2 })
+    })
+  })
 })

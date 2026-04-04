@@ -127,6 +127,10 @@ interface ErDesignerState {
   checkDialectCompatibility: () => void;
   checkColumnCompatibility: (columnId: number) => void;
   clearDialectWarnings: () => void;
+
+  // Canvas viewport persistence (in-memory, per projectId)
+  viewports: Record<number, { x: number; y: number; zoom: number }>;
+  setViewport: (projectId: number, viewport: { x: number; y: number; zoom: number }) => void;
 }
 
 /** Convert nullable constraint fields to empty strings for Rust backend. */
@@ -225,6 +229,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   expandedTables: new Set<number>(),
   undoStack: [],
   redoStack: [],
+  viewports: {},
 
   // ── Project list ───────────────────────────────────────────────────────
   loadProjects: async () => {
@@ -862,4 +867,9 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   clearDialectWarnings: () => set({ dialectWarnings: {} }),
+
+  // ── Viewport persistence ─────────────────────────────────────────────
+  setViewport: (projectId, viewport) => set((s) => ({
+    viewports: { ...s.viewports, [projectId]: viewport },
+  })),
 }));

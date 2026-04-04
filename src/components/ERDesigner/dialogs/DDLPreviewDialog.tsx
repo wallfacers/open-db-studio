@@ -146,7 +146,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
               type="checkbox"
               checked={includeCommentRefs}
               onChange={e => setIncludeCommentRefs(e.target.checked)}
-              className="accent-accent"
+              className="accent-accent w-4 h-4"
             />
             <span className="text-[12px] text-foreground-default">在列注释中生成引用标记 💬</span>
           </label>

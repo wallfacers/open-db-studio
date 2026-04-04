@@ -32,9 +32,16 @@ import { useERKeyboard } from '../hooks/useERKeyboard'
 import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
 import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import { layoutNodesWithDagre } from '../utils/dagreLayout'
-import type { ErTable, ErColumn } from '../../../types'
+import type { ErTable, ErColumn, ErRelation } from '../../../types'
 import { erTableNodeId, erEdgeNodeId, parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId'
 import { useQueryStore } from '../../../store/queryStore'
+
+const buildEdgeData = (rel: ErRelation) => ({
+  relation_type: rel.relation_type,
+  source_type: rel.source,
+  constraint_method: rel.constraint_method,
+  comment_format: rel.comment_format,
+})
 
 const nodeTypes = {
   erTable: ERTableNode,
@@ -156,7 +163,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           target: erTableNodeId(rel.target_table_id),
           targetHandle: `${rel.target_column_id}-target`,
           type: 'erEdge',
-          data: { relation_type: rel.relation_type, source_type: rel.source },
+          data: buildEdgeData(rel),
         }))
       setNodes(newNodes)
       setEdges(newEdges)
@@ -218,7 +225,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           target: erTableNodeId(rel.target_table_id),
           targetHandle: `${rel.target_column_id}-target`,
           type: 'erEdge',
-          data: { relation_type: rel.relation_type, source_type: rel.source },
+          data: buildEdgeData(rel),
         }))
       return [...filtered, ...newEdges]
     })
@@ -342,7 +349,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     setEdges((eds) => addEdge({
       ...connection,
       type: 'erEdge',
-      data: { relation_type: 'one_to_many', source_type: 'designer' }
+      data: { relation_type: 'one_to_many', source_type: 'designer', constraint_method: null, comment_format: null }
     }, eds))
     const sourceColumnId = parseInt(connection.sourceHandle!.replace('-source', ''))
     const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))

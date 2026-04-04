@@ -187,6 +187,25 @@ const RELATION_LABEL_MAP: Record<string, string> = {
   many_to_many: 'N:N',
 };
 
+const CONSTRAINT_BADGE: Record<string, string> = {
+  database_fk: '🔒',
+  comment_ref: '💬',
+};
+
+const CONSTRAINT_METHOD_OPTIONS = [
+  { value: '', label: '继承默认' },
+  { value: 'database_fk', label: '数据库外键 🔒' },
+  { value: 'comment_ref', label: '注释引用 💬' },
+] as const;
+
+const COMMENT_FORMAT_OPTIONS = [
+  { value: '', label: '继承默认' },
+  { value: '@ref', label: '@ref:table.col' },
+  { value: '@fk', label: '@fk(table,col,type)' },
+  { value: '[ref]', label: '[ref:table.col]' },
+  { value: '$$ref$$', label: '$$ref(table.col)$$' },
+] as const;
+
 const BG_COLOR = 'var(--background-base)';
 const SELECTED_COLOR = 'var(--accent)';
 
@@ -242,19 +261,43 @@ export default function EREdge({
     return resolveLabelPos(mySegs, placed) ?? { x: labelX, y: labelY };
   }, [edgePath, labelX, labelY, id, storeEdges, nodeLookup]);
 
+  // ── Store data ─────────────────────────────────────────────────
+  const relations = useErDesignerStore(s => s.relations);
+  const tables = useErDesignerStore(s => s.tables);
+  const activeProjectId = useErDesignerStore(s => s.activeProjectId);
+  const projects = useErDesignerStore(s => s.projects);
+  const updateRelation = useErDesignerStore(s => s.updateRelation);
+  const deleteRelation = useErDesignerStore(s => s.deleteRelation);
+
   // ── Styling ────────────────────────────────────────────────────
-  const sourceType = data?.source_type || 'schema';
   const relationType = (data?.relation_type as string) || 'one_to_many';
   const displayLabel = RELATION_LABEL_MAP[relationType] || relationType;
+
+  const rid = parseErEdgeNodeId(id);
+  const storeRelation = rid != null ? relations.find(r => r.id === rid) : undefined;
+  const sourceTable = storeRelation
+    ? tables.find(t => t.id === storeRelation.source_table_id)
+    : undefined;
+  const project = projects.find(p => p.id === activeProjectId);
+
+  // 三级继承：relation → table → project → 'database_fk'
+  const effectiveConstraintMethod =
+    storeRelation?.constraint_method
+    ?? sourceTable?.constraint_method
+    ?? project?.default_constraint_method
+    ?? 'database_fk';
+
+  const effectiveCommentFormat =
+    storeRelation?.comment_format
+    ?? sourceTable?.comment_format
+    ?? project?.default_comment_format
+    ?? '@ref';
 
   const [menuOpen, setMenuOpen] = useState(false);
   const labelRef = useRef<HTMLDivElement>(null);   // label container in EdgeLabelRenderer
   const dropdownRef = useRef<HTMLDivElement>(null); // portalled dropdown
   const labelBtnRef = useRef<HTMLButtonElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
-
-  const updateRelation = useErDesignerStore(s => s.updateRelation);
-  const deleteRelation = useErDesignerStore(s => s.deleteRelation);
 
   useEffect(() => { if (!selected) setMenuOpen(false); }, [selected]);
 
@@ -284,27 +327,35 @@ export default function EREdge({
   const handleChangeType = (newType: string) => {
     setMenuOpen(false);
     if (newType === relationType) return;
-    const rid = parseErEdgeNodeId(id);
     if (rid == null) return;
     updateRelation(rid, { relation_type: newType });
   };
 
+  const handleChangeConstraintMethod = (newMethod: string) => {
+    if (rid == null) return;
+    updateRelation(rid, { constraint_method: newMethod || null });
+  };
+
+  const handleChangeCommentFormat = (newFormat: string) => {
+    if (rid == null) return;
+    updateRelation(rid, { comment_format: newFormat || null });
+  };
+
   const handleDelete = () => {
     setMenuOpen(false);
-    const rid = parseErEdgeNodeId(id);
     if (rid == null) return;
     deleteRelation(rid);
   };
 
-  const baseColor = sourceType === 'comment' ? 'var(--edge-reference)'
-    : sourceType === 'designer' ? 'var(--edge-alias)'
+  const baseColor = effectiveConstraintMethod === 'comment_ref'
+    ? 'var(--edge-reference)'
     : 'var(--edge-fk)';
   const strokeColor = selected ? SELECTED_COLOR : baseColor;
 
   const edgeStyle: React.CSSProperties = {
     stroke: strokeColor,
     strokeWidth: selected ? 2.5 : 2,
-    strokeDasharray: sourceType === 'comment' ? '4 2' : sourceType === 'designer' ? '2 2' : undefined,
+    strokeDasharray: effectiveConstraintMethod === 'comment_ref' ? '6 3' : undefined,
     ...(selected ? { filter: `drop-shadow(0 0 6px ${SELECTED_COLOR})` } : {}),
   };
 
@@ -358,6 +409,7 @@ export default function EREdge({
                 : 'bg-background-panel border border-border-strong text-foreground-default hover:border-edge-fk hover:text-foreground'
               }`}
           >
+            <span className="opacity-70 mr-0.5">{CONSTRAINT_BADGE[effectiveConstraintMethod] ?? ''}</span>
             {displayLabel}
           </button>
 
@@ -396,6 +448,46 @@ export default function EREdge({
               {rt.label}
             </button>
           ))}
+
+          {/* 约束方式 */}
+          <div className="border-t border-border-strong my-1" />
+          <div className="px-2 pt-0.5 pb-0.5 text-[10px] text-foreground-muted flex items-center justify-between">
+            <span>约束方式</span>
+            {storeRelation?.constraint_method && (
+              <button type="button" onClick={() => handleChangeConstraintMethod('')}
+                className="text-[9px] text-warning hover:text-foreground-default">重置</button>
+            )}
+          </div>
+          {CONSTRAINT_METHOD_OPTIONS.map(opt => (
+            <button key={opt.value} type="button"
+              onClick={(e) => { e.stopPropagation(); handleChangeConstraintMethod(opt.value); }}
+              className={`block w-full px-3 py-1 text-xs text-left transition-colors
+                ${(storeRelation?.constraint_method ?? '') === opt.value ? 'text-accent bg-border-strong' : 'text-foreground-default hover:bg-border-strong hover:text-foreground'}`}>
+              {opt.label}
+            </button>
+          ))}
+
+          {/* 注释格式（仅 effectiveConstraintMethod === 'comment_ref' 时显示）*/}
+          {effectiveConstraintMethod === 'comment_ref' && (
+            <>
+              <div className="border-t border-border-strong my-1" />
+              <div className="px-2 pt-0.5 pb-0.5 text-[10px] text-foreground-muted flex items-center justify-between">
+                <span>注释格式</span>
+                {storeRelation?.comment_format && (
+                  <button type="button" onClick={() => handleChangeCommentFormat('')}
+                    className="text-[9px] text-warning hover:text-foreground-default">重置</button>
+                )}
+              </div>
+              {COMMENT_FORMAT_OPTIONS.map(opt => (
+                <button key={opt.value} type="button"
+                  onClick={(e) => { e.stopPropagation(); handleChangeCommentFormat(opt.value); }}
+                  className={`block w-full px-3 py-1 text-xs text-left font-mono transition-colors
+                    ${(storeRelation?.comment_format ?? '') === opt.value ? 'text-accent bg-border-strong' : 'text-foreground-default hover:bg-border-strong hover:text-foreground'}`}>
+                  {opt.label}
+                </button>
+              ))}
+            </>
+          )}
         </div>,
         document.body,
       )}

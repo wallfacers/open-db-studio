@@ -7,8 +7,11 @@ import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { useConnectionStore } from '../../../store/connectionStore'
 import { useHighlightStore } from '../../../store/highlightStore'
 import { makeId } from '../../../utils/makeId'
-import { parseIndexColumns } from '../../../utils/indexColumns'
+import { parseIndexColumns, stringifyIndexColumns } from '../../../utils/indexColumns'
 import type { IndexColumnEntry } from '../../../utils/indexColumns'
+
+const CASCADE_OPTS = ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT'] as const
+const INDEX_TYPES = ['INDEX', 'UNIQUE', 'FULLTEXT'] as const
 
 const TABLE_FORM_SCHEMA = {
   type: 'object',
@@ -160,7 +163,6 @@ function generateCreateSql(state: TableFormState, isPg: boolean): string {
       }
     }
   }
-  // Append index creation statements
   const activeIndexes = (state.indexes ?? []).filter(i => !i._isDeleted)
   for (const idx of activeIndexes) {
     const idxSql = generateIndexCreateSql(state.tableName, idx, isPg)
@@ -397,8 +399,6 @@ export class TableFormUIObject implements UIObject {
       case 'schema':
         return { ...TABLE_FORM_SCHEMA, patchCapabilities: TABLE_FORM_PATCH_CAPABILITIES }
       case 'actions': {
-        const CASCADE_OPTS = ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT']
-        const INDEX_TYPES = ['INDEX', 'UNIQUE', 'FULLTEXT']
         return [
           {
             name: 'preview_sql',
@@ -666,6 +666,14 @@ export class TableFormUIObject implements UIObject {
     return conn?.driver ?? 'mysql'
   }
 
+  /** Physically remove a _isNew item or soft-delete an existing one */
+  private softDeleteOrRemove<T extends { _isNew?: boolean; _isDeleted?: boolean }>(arr: T[], idx: number): T[] {
+    const item = arr[idx]
+    return item._isNew
+      ? arr.filter((_, i) => i !== idx)
+      : arr.map((el, i) => i === idx ? { ...el, _isDeleted: true } : el)
+  }
+
   async exec(action: string, params?: any): Promise<ExecResult> {
     const state = useTableFormStore.getState().getForm(this.objectId)
     if (!state) return execError('No form state', `Table form ${this.objectId} not initialized`)
@@ -718,14 +726,12 @@ export class TableFormUIObject implements UIObject {
       case 'remove_foreign_key': {
         const { constraintName } = params ?? {}
         if (!constraintName) return execError('constraintName is required')
-        const fks = state.foreignKeys ?? []
+        const fresh = useTableFormStore.getState().getForm(this.objectId)
+        if (!fresh) return execError('No form state')
+        const fks = fresh.foreignKeys ?? []
         const idx = fks.findIndex(fk => fk.constraintName === constraintName && !fk._isDeleted)
         if (idx === -1) return execError(`Foreign key not found: ${constraintName}`)
-        const fk = fks[idx]
-        const newFks = fk._isNew
-          ? fks.filter((_, i) => i !== idx)
-          : fks.map((f, i) => i === idx ? { ...f, _isDeleted: true } : f)
-        useTableFormStore.getState().setForm(this.objectId, { ...state, foreignKeys: newFks })
+        useTableFormStore.getState().setForm(this.objectId, { ...fresh, foreignKeys: this.softDeleteOrRemove(fks, idx) })
         useHighlightStore.getState().addHighlights(this.objectId, ['foreignKeys'])
         return { success: true, data: { removed: constraintName } }
       }
@@ -737,7 +743,7 @@ export class TableFormUIObject implements UIObject {
           return execError('columns array is required')
         }
         const indexName: string = name || `idx_${(columns as string[]).join('_')}`
-        const columnsJson = JSON.stringify((columns as string[]).map(c => ({ name: c, order: 'ASC' })))
+        const columnsJson = stringifyIndexColumns((columns as string[]).map(c => ({ name: c, order: 'ASC' as const })))
         const r = this.patchDirect([{
           op: 'add',
           path: '/indexes/-',
@@ -757,7 +763,7 @@ export class TableFormUIObject implements UIObject {
         }
         if (columns !== undefined) {
           if (!Array.isArray(columns)) return execError('columns must be an array of strings')
-          const columnsJson = JSON.stringify((columns as string[]).map(c => ({ name: c, order: 'ASC' })))
+          const columnsJson = stringifyIndexColumns((columns as string[]).map(c => ({ name: c, order: 'ASC' as const })))
           ops.push({ op: 'replace', path: `/indexes[name=${name}]/columns`, value: columnsJson })
         }
         if (ops.length === 0) return execError('No valid fields to update')
@@ -769,14 +775,12 @@ export class TableFormUIObject implements UIObject {
       case 'remove_index': {
         const { name } = params ?? {}
         if (!name) return execError('name is required')
-        const indexes = state.indexes ?? []
+        const fresh = useTableFormStore.getState().getForm(this.objectId)
+        if (!fresh) return execError('No form state')
+        const indexes = fresh.indexes ?? []
         const idx = indexes.findIndex(i => i.name === name && !i._isDeleted)
         if (idx === -1) return execError(`Index not found: ${name}`)
-        const index = indexes[idx]
-        const newIndexes = index._isNew
-          ? indexes.filter((_, i) => i !== idx)
-          : indexes.map((ix, i) => i === idx ? { ...ix, _isDeleted: true } : ix)
-        useTableFormStore.getState().setForm(this.objectId, { ...state, indexes: newIndexes })
+        useTableFormStore.getState().setForm(this.objectId, { ...fresh, indexes: this.softDeleteOrRemove(indexes, idx) })
         useHighlightStore.getState().addHighlights(this.objectId, ['indexes'])
         return { success: true, data: { removed: name } }
       }

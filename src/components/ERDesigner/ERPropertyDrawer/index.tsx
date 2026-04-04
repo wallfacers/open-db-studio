@@ -4,8 +4,9 @@ import { useErDesignerStore } from '@/store/erDesignerStore';
 import ColumnsTab from './ColumnsTab';
 import IndexesTab from './IndexesTab';
 import TablePropertiesTab from './TablePropertiesTab';
+import RelationsTab from './RelationsTab';
 
-type TabType = 'columns' | 'indexes' | 'properties';
+type TabType = 'columns' | 'indexes' | 'properties' | 'relations';
 
 export default function ERPropertyDrawer() {
   const { drawerOpen, drawerTableId, closeDrawer, tables } = useErDesignerStore();
@@ -27,7 +28,7 @@ export default function ERPropertyDrawer() {
       </div>
       {/* Tab bar */}
       <div className="flex border-b border-border-strong">
-        {(['columns', 'indexes', 'properties'] as TabType[]).map(tab => (
+        {(['columns', 'indexes', 'properties', 'relations'] as TabType[]).map(tab => (
           <button
             key={tab}
             className={`px-4 py-2 text-[12px] transition-colors ${
@@ -37,7 +38,7 @@ export default function ERPropertyDrawer() {
             }`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'columns' ? '列' : tab === 'indexes' ? '索引' : '表属性'}
+            {tab === 'columns' ? '列' : tab === 'indexes' ? '索引' : tab === 'properties' ? '表属性' : '关系'}
           </button>
         ))}
       </div>
@@ -46,6 +47,7 @@ export default function ERPropertyDrawer() {
         {activeTab === 'columns' && <ColumnsTab tableId={drawerTableId} />}
         {activeTab === 'indexes' && <IndexesTab tableId={drawerTableId} tableName={table.name} />}
         {activeTab === 'properties' && <TablePropertiesTab tableId={drawerTableId} />}
+        {activeTab === 'relations' && <RelationsTab tableId={drawerTableId} />}
       </div>
     </div>
   );

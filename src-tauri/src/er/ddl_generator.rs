@@ -784,10 +784,11 @@ pub fn generate_ddl(
 
     // Classify relations: database_fk relations are used for FK constraints;
     // comment_ref relations are injected into column comments.
-    let db_fk_relations: Vec<&ErRelation> = relations.iter().filter(|rel| {
+    // Built once as owned values to avoid N×K clones inside the table loop.
+    let db_fk_relations: Vec<ErRelation> = relations.iter().filter(|rel| {
         let src_table = tables_by_id.get(&rel.source_table_id).copied();
         resolve_constraint_method(rel, src_table, Some(project)) == "database_fk"
-    }).collect();
+    }).cloned().collect();
 
     let mut ddl_parts: Vec<String> = Vec::new();
 
@@ -827,14 +828,11 @@ pub fn generate_ddl(
             columns.to_vec()
         };
 
-        // Convert db_fk_relations (Vec<&ErRelation>) to slice of owned values for create_table
-        let db_fk_owned: Vec<ErRelation> = db_fk_relations.iter().map(|r| (*r).clone()).collect();
-
         let stmt = dialect_impl.create_table(
             table,
             &processed_columns,
             indexes,
-            &db_fk_owned,
+            &db_fk_relations,
             tables,
             columns_map,
             options,

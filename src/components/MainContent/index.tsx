@@ -954,6 +954,7 @@ export const MainContent: React.FC<MainContentProps> = ({
         ))}
       </div>
 
+      <div className="flex-1 relative flex flex-col min-h-0">
       {/* ── Persistent tab panels: always mounted, display-controlled ── */}
       {/* This ensures UIObject registration survives tab switches, so ui_list can discover all open tabs. */}
 
@@ -983,8 +984,8 @@ export const MainContent: React.FC<MainContentProps> = ({
       {tabs.filter(t => t.type === 'er_design').map(tab => (
         <div
           key={tab.id}
-          className="flex-1 flex flex-col overflow-hidden min-h-0"
-          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+          className={`flex-col overflow-hidden min-h-0 ${activeTab === tab.id ? 'flex-1 flex' : 'absolute inset-0 opacity-0 pointer-events-none z-[-1]'}`}
+          style={activeTab === tab.id ? {} : { visibility: 'hidden' }}
         >
           <ERCanvas projectId={tab.erProjectId!} tabId={tab.id} />
         </div>
@@ -2095,6 +2096,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           onClose={() => setResultCellViewer(null)}
         />
       )}
+      </div>
     </div>
   );
 };

@@ -342,6 +342,7 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
         includeIndexes: { type: 'boolean', default: true },
         includeComments: { type: 'boolean', default: true },
         includeForeignKeys: { type: 'boolean', default: true },
+        includeCommentRefs: { type: 'boolean', description: 'Whether to generate comment-ref markers in column comments' },
       },
       required: ['dialect'],
     },
@@ -967,6 +968,7 @@ export class ERCanvasAdapter implements UIObject {
             includeIndexes: params.includeIndexes ?? true,
             includeComments: params.includeComments ?? true,
             includeForeignKeys: params.includeForeignKeys ?? true,
+            includeCommentRefs: params.includeCommentRefs ?? true,
           })
           return { success: true, data: { ddl, dialect: params.dialect } }
         } catch (e) {

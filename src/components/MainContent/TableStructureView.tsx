@@ -380,10 +380,19 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   }, []);
 
   const addColumn = useCallback(() => {
-    setColumns(prev => [...prev, {
-      id: makeId(), name: 'new_column', dataType: 'VARCHAR', length: '255',
-      isNullable: true, defaultValue: '', isPrimaryKey: false, extra: '', comment: '', _isNew: true,
-    }]);
+    setColumns(prev => {
+      const base = 'new_column';
+      const existingNames = new Set(prev.map(c => c.name));
+      let name = base;
+      let i = 1;
+      while (existingNames.has(name)) {
+        name = `${base}_${i++}`;
+      }
+      return [...prev, {
+        id: makeId(), name, dataType: 'VARCHAR', length: '255',
+        isNullable: true, defaultValue: '', isPrimaryKey: false, extra: '', comment: '', _isNew: true,
+      }];
+    });
   }, []);
 
   const moveColumn = useCallback((id: string, dir: 'up' | 'down') => {

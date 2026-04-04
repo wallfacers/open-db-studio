@@ -326,10 +326,12 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const [refColumnsCache, setRefColumnsCache] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
-    invoke<Array<{ name: string }>>('get_tables', { connectionId })
-      .then(tables => setRefTables(tables.map(t => t.name)))
+    if (!database) return
+    invoke<Array<{ name: string }>>('list_tables_with_stats', {
+      connectionId, database, schema: schema ?? null,
+    }).then(tables => setRefTables(tables.map(t => t.name)))
       .catch(() => {})
-  }, [connectionId])
+  }, [connectionId, database, schema])
 
   const loadRefColumns = useCallback((tblName: string) => {
     if (!tblName || refColumnsCacheRef.current[tblName]) return
@@ -685,8 +687,10 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                         <DropdownSelect
                           value={fk.referencedTable}
                           options={refTables.map(t => ({ value: t, label: t }))}
-                          placeholder={t('tableManage.fkPlaceholderTable')}
+                          placeholder="选择表"
                           onChange={tbl => handleFkReferencedTableChange(fk.id, tbl)}
+                          searchable
+                          maxItems={20}
                           className="w-full"
                         />
                       </td>
@@ -694,7 +698,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                         <DropdownSelect
                           value={fk.referencedColumn}
                           options={(refColumnsCache[fk.referencedTable] ?? []).map(c => ({ value: c, label: c }))}
-                          placeholder={fk.referencedTable ? t('tableManage.fkPlaceholderColumn') : t('tableManage.fkPlaceholderRefColumn')}
+                          placeholder={fk.referencedTable ? '选择列' : '先选引用表'}
                           onChange={col => updateForeignKey(fk.id, { referencedColumn: col })}
                           className="w-full"
                         />

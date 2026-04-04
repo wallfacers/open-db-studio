@@ -118,7 +118,7 @@ export default function RelationsTab({ tableId }: Props) {
             {tableRelations.map(rel => {
               const effMethod = getRelationEffectiveMethod(rel);
               const effFormat = getRelationEffectiveFormat(rel);
-              const isOverriding = rel.constraint_method !== null;
+              const isOverriding = rel.constraint_method !== null || rel.comment_format !== null;
               return (
                 <div key={rel.id} className="border border-border-strong rounded p-2 space-y-1.5">
                   <div className="flex items-center justify-between">

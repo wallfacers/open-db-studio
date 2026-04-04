@@ -1,5 +1,6 @@
 import React from 'react';
 import { BaseModal } from '../../common/BaseModal';
+import { DropdownSelect } from '../../common/DropdownSelect';
 import { useErDesignerStore } from '@/store/erDesignerStore';
 import { CONSTRAINT_METHOD_LABELS, COMMENT_FORMAT_VALUES } from '../shared/constraintConstants';
 
@@ -60,15 +61,12 @@ export const ProjectSettingsDialog: React.FC<Props> = ({ visible, projectId, onC
             <div className="text-[12px] font-medium text-foreground-default mb-2">
               注释格式
             </div>
-            <select
+            <DropdownSelect
               value={project.default_comment_format}
-              onChange={e => handleCommentFormat(e.target.value)}
-              className="w-full bg-background-base border border-border-strong rounded px-2 py-1.5 text-[12px] text-foreground-default font-mono"
-            >
-              {COMMENT_FORMAT_VALUES.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              onChange={handleCommentFormat}
+              options={COMMENT_FORMAT_VALUES.map(o => ({ value: o.value, label: o.label }))}
+              className="w-full"
+            />
           </div>
         )}
 

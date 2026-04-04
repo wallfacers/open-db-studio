@@ -116,7 +116,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
 
   const handleAddTable = async () => {
     await loadProject(projectId);
-    const existing = new Set(tables.map(t => t.name));
+    const existing = new Set(useErDesignerStore.getState().tables.map(t => t.name));
     let name = 'new_table';
     let i = 1;
     while (existing.has(name)) {

@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { Node, Edge } from '@xyflow/react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId';
@@ -36,14 +37,12 @@ export function useERKeyboard({
   onExportDDL,
   enabled = true,
 }: UseERKeyboardOptions) {
-  const {
-    deleteTable,
-    deleteRelation,
-    undo,
-    redo,
-    addTable,
-    tables,
-  } = useErDesignerStore();
+  const deleteTable = useErDesignerStore(s => s.deleteTable);
+  const deleteRelation = useErDesignerStore(s => s.deleteRelation);
+  const undo = useErDesignerStore(s => s.undo);
+  const redo = useErDesignerStore(s => s.redo);
+  const addTable = useErDesignerStore(s => s.addTable);
+  const tables = useErDesignerStore(useShallow(s => s.tables.filter(t => t.project_id === projectId)));
 
   // 删除选中的节点或边
   const handleDelete = useCallback(() => {

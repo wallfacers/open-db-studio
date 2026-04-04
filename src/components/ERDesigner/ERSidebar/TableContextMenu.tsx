@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import { useConfirmStore } from '../../../store/confirmStore';
+import { duplicateTable } from '../shared/duplicateTable';
 
 interface TableContextMenuProps {
   x: number;
@@ -82,32 +83,7 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
 
   const handleDuplicate = async () => {
     if (!table) return;
-    const srcCols = columns[tableId] || [];
-    const newTable = await addTable(table.project_id, `${table.name}_copy`, {
-      x: table.position_x + 50,
-      y: table.position_y + 50,
-    });
-    for (let i = 0; i < srcCols.length; i++) {
-      const col = srcCols[i];
-      await addColumn(newTable.id, {
-        name: col.name,
-        data_type: col.data_type,
-        nullable: col.nullable,
-        default_value: col.default_value,
-        is_primary_key: col.is_primary_key,
-        is_auto_increment: col.is_auto_increment,
-        comment: col.comment,
-        length: col.length,
-        scale: col.scale,
-        is_unique: col.is_unique,
-        unsigned: col.unsigned,
-        charset: col.charset,
-        collation: col.collation,
-        on_update: col.on_update,
-        enum_values: col.enum_values,
-        sort_order: i,
-      });
-    }
+    await duplicateTable(table, columns[tableId] || [], addTable, addColumn);
     onClose();
   };
 

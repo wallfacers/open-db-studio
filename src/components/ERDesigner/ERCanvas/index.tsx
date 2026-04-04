@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
@@ -89,10 +90,13 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const addRelation = useErDesignerStore(s => s.addRelation)
   const syncFromDatabase = useErDesignerStore(s => s.syncFromDatabase)
 
-  // State values for rendering
+  // State values for rendering — scoped to this project to avoid cross-project re-renders
   const projects = useErDesignerStore(s => s.projects)
-  const tables = useErDesignerStore(s => s.tables)
-  const relations = useErDesignerStore(s => s.relations)
+  const projectTables = useErDesignerStore(useShallow(s => s.tables.filter(t => t.project_id === projectId)))
+  const projectRelations = useErDesignerStore(useShallow(s => {
+    const tableIds = new Set(s.tables.filter(t => t.project_id === projectId).map(t => t.id))
+    return s.relations.filter(r => tableIds.has(r.source_table_id) && tableIds.has(r.target_table_id))
+  }))
   const columns = useErDesignerStore(s => s.columns)
 
   const activeProject = projects.find(p => p.id === projectId) ?? null
@@ -135,16 +139,16 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const reloadCanvas = useCallback(() => {
     loadProject(projectId).then(() => {
       const state = useErDesignerStore.getState()
-      const projectTables = state.tables.filter(t => t.project_id === projectId)
-      const tableIdSet = new Set(projectTables.map(t => t.id))
-      const newNodes: Node<NodeData>[] = projectTables.map((table) => ({
+      const reloadTables = state.tables.filter(t => t.project_id === projectId)
+      const tableIdSet = new Set(reloadTables.map(t => t.id))
+      const newNodes: Node<NodeData>[] = reloadTables.map((table) => ({
         id: erTableNodeId(table.id),
         type: 'erTable',
         position: { x: table.position_x, y: table.position_y },
         data: buildNodeData(table, state.columns[table.id] || []),
       }))
       const newEdges = state.relations
-        .filter(r => tableIdSet.has(r.source_table_id) || tableIdSet.has(r.target_table_id))
+        .filter(r => tableIdSet.has(r.source_table_id) && tableIdSet.has(r.target_table_id))
         .map((rel) => ({
           id: erEdgeNodeId(rel.id),
           source: erTableNodeId(rel.source_table_id),
@@ -164,13 +168,9 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   }, [reloadCanvas])
 
   // Sync store changes to ReactFlow nodes/edges (for sidebar operations)
-  // Filter by projectId — each Canvas instance only reacts to its own project data
+  // projectTables/projectRelations are already scoped — only this project's data triggers this effect
   useEffect(() => {
-    const projectTables = tables.filter(t => t.project_id === projectId)
     const tableIdSet = new Set(projectTables.map(t => t.id))
-    const projectRelations = relations.filter(
-      r => tableIdSet.has(r.source_table_id) || tableIdSet.has(r.target_table_id)
-    )
 
     setNodes(nds => {
       const currentTableIds = new Set(projectTables.map(t => t.id))
@@ -222,7 +222,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         }))
       return [...filtered, ...newEdges]
     })
-  }, [projectId, tables, relations, columns, buildNodeData, setNodes, setEdges])
+  }, [projectTables, projectRelations, columns, buildNodeData, setNodes, setEdges])
 
   // Refs for nodes/edges so MCP event listeners don't re-subscribe on every render
   const nodesRef = useRef(nodes)
@@ -384,13 +384,16 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     }
   }, [nodes, edges, setNodes])
 
+  const selectedNodes = useMemo(() => nodes.filter(n => n.selected), [nodes])
+  const selectedEdges = useMemo(() => edges.filter(e => e.selected), [edges])
+
   // Custom keyboard shortcuts
   useERKeyboard({
     projectId,
     nodes,
     edges,
-    selectedNodes: [], // Since we track selected inside nodes via ReactFlow's selected property, but the hook uses it.
-    selectedEdges: [], // Same as above. The hook probably reads from the store or we should pass the mapped selected items.
+    selectedNodes,
+    selectedEdges,
     onAutoLayout: handleAutoLayout,
     onExportDDL: () => setShowDDL(true),
     enabled: isActiveTab,
@@ -447,7 +450,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         setNodes={setNodes as (nodes: Node[]) => void}
         nodes={nodes}
         edges={edges}
-        tables={tables}
+        tables={projectTables}
         onAutoLayout={handleAutoLayout}
         hasConnection={hasConnection}
       />

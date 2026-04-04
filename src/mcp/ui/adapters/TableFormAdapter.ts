@@ -705,7 +705,7 @@ export class TableFormUIObject implements UIObject {
         const p = params ?? {}
         const { constraintName, ...updates } = p
         if (!constraintName) return execError('constraintName is required')
-        const ALLOWED = ['column', 'referencedTable', 'referencedColumn', 'onDelete', 'onUpdate', 'constraintName']
+        const ALLOWED = ['column', 'referencedTable', 'referencedColumn', 'onDelete', 'onUpdate']
         const ops: JsonPatchOp[] = Object.entries(updates as Record<string, unknown>)
           .filter(([k]) => ALLOWED.includes(k))
           .map(([k, v]) => ({ op: 'replace' as const, path: `/foreignKeys[constraintName=${constraintName}]/${k}`, value: v }))

@@ -15,6 +15,7 @@ import {
   type Edge,
   type EdgeChange,
   type ReactFlowInstance,
+  type Viewport,
   ReactFlowProvider,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -72,6 +73,9 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const rfInstance = useRef<ReactFlowInstance<Node<NodeData>, Edge> | null>(null)
+
+  const savedViewport = useErDesignerStore(s => s.viewports[projectId] ?? null)
+  const storeSetViewport = useErDesignerStore(s => s.setViewport)
 
   const [showDDL, setShowDDL] = useState(false)
   const [showDiff, setShowDiff] = useState(false)
@@ -144,6 +148,10 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       ))
     },
   }), [updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
+
+  const onMoveEnd = useCallback((_: unknown, viewport: Viewport) => {
+    storeSetViewport(projectId, viewport)
+  }, [projectId, storeSetViewport])
 
   const reloadCanvas = useCallback(() => {
     loadProject(projectId).then(() => {
@@ -480,12 +488,18 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           onNodesDelete={onNodesDelete}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
-          onInit={(i) => { rfInstance.current = i }}
+          onInit={(i) => {
+            rfInstance.current = i
+            if (savedViewport) {
+              i.setViewport(savedViewport)
+            }
+          }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           deleteKeyCode={['Backspace', 'Delete']}
-          fitView
-          fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+          fitView={savedViewport === null}
+          fitViewOptions={savedViewport === null ? { maxZoom: 1, padding: 0.2 } : undefined}
+          onMoveEnd={onMoveEnd}
           minZoom={0.1}
           maxZoom={2}
         >

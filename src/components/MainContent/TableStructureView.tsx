@@ -317,6 +317,29 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
     useTableFormStore.getState().patchForm(tabId, s => ({ ...s, tableName: name }))
   }, [tabId])
 
+  // ── Referenced table/column dropdowns ────────────────────────────────────
+  const [refTables, setRefTables] = useState<string[]>([])
+  const refColumnsCacheRef = useRef<Record<string, string[]>>({})
+  const [refColumnsCache, setRefColumnsCache] = useState<Record<string, string[]>>({})
+
+  useEffect(() => {
+    invoke<Array<{ name: string }>>('get_tables', { connectionId })
+      .then(tables => setRefTables(tables.map(t => t.name)))
+      .catch(() => {})
+  }, [connectionId])
+
+  const loadRefColumns = useCallback((tblName: string) => {
+    if (!tblName || refColumnsCacheRef.current[tblName]) return
+    invoke<{ columns: Array<{ name: string }> }>('get_table_detail', {
+      connectionId, database: database ?? null, schema: schema ?? null, table: tblName,
+    }).then(detail => {
+      const cols = detail.columns.map(c => c.name)
+      refColumnsCacheRef.current = { ...refColumnsCacheRef.current, [tblName]: cols }
+      setRefColumnsCache(prev => ({ ...prev, [tblName]: cols }))
+    }).catch(() => {})
+  }, [connectionId, database, schema])
+
+
   // Register UIObject for AI access
   const uiObject = useMemo(
     () => formState ? new TableFormUIObject(tabId, connectionId, database ?? '') : null,
@@ -444,6 +467,11 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const updateForeignKey = useCallback((id: string, patch: Partial<TableFormForeignKey>) => {
     setForeignKeys(prev => prev.map(fk => fk.id === id ? { ...fk, ...patch } : fk))
   }, [setForeignKeys])
+
+  const handleFkReferencedTableChange = useCallback((id: string, tbl: string) => {
+    updateForeignKey(id, { referencedTable: tbl, referencedColumn: '' })
+    loadRefColumns(tbl)
+  }, [updateForeignKey, loadRefColumns])
 
   const handleFkColumnChange = useCallback((id: string, col: string) => {
     const tblName = tableName ?? newTableName
@@ -647,20 +675,22 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                           className="w-full"
                         />
                       </td>
-                      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
-                        <input
-                          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+                      <td className="px-1 py-px border-r border-border-default">
+                        <DropdownSelect
                           value={fk.referencedTable}
-                          onChange={e => updateForeignKey(fk.id, { referencedTable: e.target.value })}
-                          placeholder="users"
+                          options={refTables.map(t => ({ value: t, label: t }))}
+                          placeholder="选择表"
+                          onChange={tbl => handleFkReferencedTableChange(fk.id, tbl)}
+                          className="w-full"
                         />
                       </td>
-                      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
-                        <input
-                          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+                      <td className="px-1 py-px border-r border-border-default">
+                        <DropdownSelect
                           value={fk.referencedColumn}
-                          onChange={e => updateForeignKey(fk.id, { referencedColumn: e.target.value })}
-                          placeholder="id"
+                          options={(refColumnsCache[fk.referencedTable] ?? []).map(c => ({ value: c, label: c }))}
+                          placeholder={fk.referencedTable ? '选择列' : '先选引用表'}
+                          onChange={col => updateForeignKey(fk.id, { referencedColumn: col })}
+                          className="w-full"
                         />
                       </td>
                       <td className="px-1 py-px border-r border-border-default">

@@ -396,7 +396,9 @@ export class TableFormUIObject implements UIObject {
         return useTableFormStore.getState().getForm(this.objectId) ?? {}
       case 'schema':
         return { ...TABLE_FORM_SCHEMA, patchCapabilities: TABLE_FORM_PATCH_CAPABILITIES }
-      case 'actions':
+      case 'actions': {
+        const CASCADE_OPTS = ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT']
+        const INDEX_TYPES = ['INDEX', 'UNIQUE', 'FULLTEXT']
         return [
           {
             name: 'preview_sql',
@@ -408,7 +410,88 @@ export class TableFormUIObject implements UIObject {
             description: 'Generate SQL and write to query tab for review',
             paramsSchema: { type: 'object', properties: {} },
           },
+          {
+            name: 'add_foreign_key',
+            description: 'Add a foreign key constraint. constraintName is auto-generated as fk_{tableName}_{column} if omitted.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                column: { type: 'string', description: 'Column in this table (required)' },
+                referencedTable: { type: 'string', description: 'Referenced table name (required)' },
+                referencedColumn: { type: 'string', description: 'Referenced column name (required)' },
+                constraintName: { type: 'string', description: 'Constraint name (auto-generated if omitted)' },
+                onDelete: { type: 'string', enum: CASCADE_OPTS, default: 'NO ACTION' },
+                onUpdate: { type: 'string', enum: CASCADE_OPTS, default: 'NO ACTION' },
+              },
+              required: ['column', 'referencedTable', 'referencedColumn'],
+            },
+          },
+          {
+            name: 'update_foreign_key',
+            description: 'Update properties of an existing foreign key (located by constraintName).',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                constraintName: { type: 'string', description: 'Constraint name to locate the FK (required)' },
+                column: { type: 'string' },
+                referencedTable: { type: 'string' },
+                referencedColumn: { type: 'string' },
+                onDelete: { type: 'string', enum: CASCADE_OPTS },
+                onUpdate: { type: 'string', enum: CASCADE_OPTS },
+              },
+              required: ['constraintName'],
+            },
+          },
+          {
+            name: 'remove_foreign_key',
+            description: 'Remove a foreign key constraint. Soft-deletes for existing tables; physically removes for new tables.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                constraintName: { type: 'string', description: 'Constraint name to remove (required)' },
+              },
+              required: ['constraintName'],
+            },
+          },
+          {
+            name: 'add_index',
+            description: 'Add an index. name is auto-generated as idx_{columns} if omitted.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                columns: { type: 'array', items: { type: 'string' }, description: 'Column names for the index (required)' },
+                name: { type: 'string', description: 'Index name (auto-generated if omitted)' },
+                type: { type: 'string', enum: INDEX_TYPES, default: 'INDEX' },
+              },
+              required: ['columns'],
+            },
+          },
+          {
+            name: 'update_index',
+            description: 'Update properties of an existing index (located by name).',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Index name to locate (required)' },
+                columns: { type: 'array', items: { type: 'string' }, description: 'New column names' },
+                type: { type: 'string', enum: INDEX_TYPES },
+              },
+              required: ['name'],
+            },
+          },
+          {
+            name: 'remove_index',
+            description: 'Remove an index. Soft-deletes for existing tables; physically removes for new tables.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Index name to remove (required)' },
+              },
+              required: ['name'],
+            },
+          },
         ]
+      }
     }
   }
 
@@ -583,7 +666,7 @@ export class TableFormUIObject implements UIObject {
     return conn?.driver ?? 'mysql'
   }
 
-  async exec(action: string, _params?: any): Promise<ExecResult> {
+  async exec(action: string, params?: any): Promise<ExecResult> {
     const state = useTableFormStore.getState().getForm(this.objectId)
     if (!state) return execError('No form state', `Table form ${this.objectId} not initialized`)
 
@@ -601,8 +684,105 @@ export class TableFormUIObject implements UIObject {
         if (!previewResult.success) return previewResult
         return { success: true, data: { sql: previewResult.data.sql, message: 'SQL generated. Open query tab to execute.' } }
       }
+
+      case 'add_foreign_key': {
+        const p = params ?? {}
+        const { column, referencedTable, referencedColumn, onDelete = 'NO ACTION', onUpdate = 'NO ACTION' } = p
+        if (!column || !referencedTable || !referencedColumn) {
+          return execError('column, referencedTable, referencedColumn are required')
+        }
+        const constraintName = p.constraintName || `fk_${state.tableName}_${column}`
+        const r = this.patchDirect([{
+          op: 'add',
+          path: '/foreignKeys/-',
+          value: { constraintName, column, referencedTable, referencedColumn, onDelete, onUpdate },
+        }])
+        if (r.status === 'applied') return { success: true, data: { constraintName } }
+        return execError('Failed to add foreign key')
+      }
+
+      case 'update_foreign_key': {
+        const p = params ?? {}
+        const { constraintName, ...updates } = p
+        if (!constraintName) return execError('constraintName is required')
+        const ALLOWED = ['column', 'referencedTable', 'referencedColumn', 'onDelete', 'onUpdate', 'constraintName']
+        const ops: JsonPatchOp[] = Object.entries(updates as Record<string, unknown>)
+          .filter(([k]) => ALLOWED.includes(k))
+          .map(([k, v]) => ({ op: 'replace' as const, path: `/foreignKeys[constraintName=${constraintName}]/${k}`, value: v }))
+        if (ops.length === 0) return execError('No valid fields to update')
+        const r = this.patchDirect(ops)
+        if (r.status === 'applied') return { success: true, data: { updated: constraintName } }
+        return execError('Failed to update foreign key')
+      }
+
+      case 'remove_foreign_key': {
+        const { constraintName } = params ?? {}
+        if (!constraintName) return execError('constraintName is required')
+        const fks = state.foreignKeys ?? []
+        const idx = fks.findIndex(fk => fk.constraintName === constraintName && !fk._isDeleted)
+        if (idx === -1) return execError(`Foreign key not found: ${constraintName}`)
+        const fk = fks[idx]
+        const newFks = fk._isNew
+          ? fks.filter((_, i) => i !== idx)
+          : fks.map((f, i) => i === idx ? { ...f, _isDeleted: true } : f)
+        useTableFormStore.getState().setForm(this.objectId, { ...state, foreignKeys: newFks })
+        useHighlightStore.getState().addHighlights(this.objectId, ['foreignKeys'])
+        return { success: true, data: { removed: constraintName } }
+      }
+
+      case 'add_index': {
+        const p = params ?? {}
+        const { columns, type = 'INDEX', name } = p
+        if (!columns || !Array.isArray(columns) || columns.length === 0) {
+          return execError('columns array is required')
+        }
+        const indexName: string = name || `idx_${(columns as string[]).join('_')}`
+        const columnsJson = JSON.stringify((columns as string[]).map(c => ({ name: c, order: 'ASC' })))
+        const r = this.patchDirect([{
+          op: 'add',
+          path: '/indexes/-',
+          value: { name: indexName, type, columns: columnsJson },
+        }])
+        if (r.status === 'applied') return { success: true, data: { name: indexName } }
+        return execError('Failed to add index')
+      }
+
+      case 'update_index': {
+        const p = params ?? {}
+        const { name, columns, type } = p
+        if (!name) return execError('name is required')
+        const ops: JsonPatchOp[] = []
+        if (type !== undefined) {
+          ops.push({ op: 'replace', path: `/indexes[name=${name}]/type`, value: type })
+        }
+        if (columns !== undefined) {
+          if (!Array.isArray(columns)) return execError('columns must be an array of strings')
+          const columnsJson = JSON.stringify((columns as string[]).map(c => ({ name: c, order: 'ASC' })))
+          ops.push({ op: 'replace', path: `/indexes[name=${name}]/columns`, value: columnsJson })
+        }
+        if (ops.length === 0) return execError('No valid fields to update')
+        const r = this.patchDirect(ops)
+        if (r.status === 'applied') return { success: true, data: { updated: name } }
+        return execError('Failed to update index')
+      }
+
+      case 'remove_index': {
+        const { name } = params ?? {}
+        if (!name) return execError('name is required')
+        const indexes = state.indexes ?? []
+        const idx = indexes.findIndex(i => i.name === name && !i._isDeleted)
+        if (idx === -1) return execError(`Index not found: ${name}`)
+        const index = indexes[idx]
+        const newIndexes = index._isNew
+          ? indexes.filter((_, i) => i !== idx)
+          : indexes.map((ix, i) => i === idx ? { ...ix, _isDeleted: true } : ix)
+        useTableFormStore.getState().setForm(this.objectId, { ...state, indexes: newIndexes })
+        useHighlightStore.getState().addHighlights(this.objectId, ['indexes'])
+        return { success: true, data: { removed: name } }
+      }
+
       default:
-        return execError(`Unknown action: ${action}`, 'Available actions: preview_sql, save')
+        return execError(`Unknown action: ${action}`, 'Available actions: preview_sql, save, add_foreign_key, update_foreign_key, remove_foreign_key, add_index, update_index, remove_index')
     }
   }
 }

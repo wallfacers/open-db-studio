@@ -558,10 +558,15 @@ export const TableManageDialog: React.FC<Props> = ({
                         ><ChevronDown size={12} /></button>
                         <button
                           disabled={isAiBusy}
-                          onClick={() => !isAiBusy && (col._isNew
-                            ? setColumns(prev => prev.filter(c => c.id !== col.id))
-                            : updateColumn(col.id, { _isDeleted: true })
-                          )}
+                          onClick={() => {
+                            if (isAiBusy) return;
+                            if (col._isNew) {
+                              setColumns(prev => prev.filter(c => c.id !== col.id));
+                            } else {
+                              updateColumn(col.id, { _isDeleted: true });
+                            }
+                            setForeignKeys(prev => prev.filter(fk => fk.column !== col.name));
+                          }}
                           className="text-error/70 hover:text-error p-0.5 disabled:opacity-30 transition-colors duration-200"
                         ><Trash2 size={12} /></button>
                       </div>

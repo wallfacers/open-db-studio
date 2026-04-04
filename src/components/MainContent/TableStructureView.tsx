@@ -65,9 +65,10 @@ const ColumnRow: React.FC<{
   updateColumn: (id: string, updates: Partial<EditableColumn>) => void;
   moveColumn: (id: string, dir: 'up' | 'down') => void;
   setColumns: (updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => void;
+  setForeignKeys: (updater: TableFormForeignKey[] | ((prev: TableFormForeignKey[]) => TableFormForeignKey[])) => void;
   iconBtn: string;
   iconBtnDanger: string;
-}> = ({ col, idx, tabId, visibleCount, isNewTable, updateColumn, moveColumn, setColumns, iconBtn, iconBtnDanger }) => {
+}> = ({ col, idx, tabId, visibleCount, isNewTable, updateColumn, moveColumn, setColumns, setForeignKeys, iconBtn, iconBtnDanger }) => {
   const { className: hlClass, onUserEdit } = useRowHighlight(tabId, col.name);
 
   return (
@@ -151,10 +152,14 @@ const ColumnRow: React.FC<{
             className={iconBtn}
           ><ChevronDown size={12} /></button>
           <button
-            onClick={() => col._isNew
-              ? setColumns(prev => prev.filter(c => c.id !== col.id))
-              : updateColumn(col.id, { _isDeleted: true })
-            }
+            onClick={() => {
+              if (col._isNew) {
+                setColumns(prev => prev.filter(c => c.id !== col.id));
+              } else {
+                updateColumn(col.id, { _isDeleted: true });
+              }
+              setForeignKeys(prev => prev.filter(fk => fk.column !== col.name));
+            }}
             className={iconBtnDanger}
           ><Trash2 size={12} /></button>
         </div>
@@ -637,6 +642,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                     updateColumn={updateColumn}
                     moveColumn={moveColumn}
                     setColumns={setColumns}
+                    setForeignKeys={setForeignKeys}
                     iconBtn={iconBtn}
                     iconBtnDanger={iconBtnDanger}
                   />

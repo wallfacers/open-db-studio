@@ -1,16 +1,6 @@
 import { useErDesignerStore } from '@/store/erDesignerStore';
-
-const CONSTRAINT_METHOD_LABELS: Record<string, string> = {
-  database_fk: '数据库外键 🔒',
-  comment_ref: '注释引用 💬',
-};
-
-const COMMENT_FORMAT_OPTIONS = [
-  { value: '@ref', label: '@ref:table.col' },
-  { value: '@fk', label: '@fk(table,col,type)' },
-  { value: '[ref]', label: '[ref:table.col]' },
-  { value: '$$ref$$', label: '$$ref(table.col)$$' },
-];
+import { CONSTRAINT_METHOD_LABELS, COMMENT_FORMAT_VALUES } from '../shared/constraintConstants';
+import { resolveConstraintMethod, resolveCommentFormat } from '../shared/resolveConstraint';
 
 interface Props { tableId: number }
 
@@ -23,18 +13,14 @@ export default function RelationsTab({ tableId }: Props) {
   const table = tables.find(t => t.id === tableId);
   const project = projects.find(p => p.id === activeProjectId);
 
-  // 该表涉及的所有关系（作为 source 或 target）
   const tableRelations = relations.filter(
     r => r.source_table_id === tableId || r.target_table_id === tableId
   );
 
-  // 项目级生效值
-  const projectMethod = project?.default_constraint_method ?? 'database_fk';
-  const projectFormat = project?.default_comment_format ?? '@ref';
-
-  // 该表级别的生效值
-  const tableEffectiveMethod = table?.constraint_method ?? projectMethod;
-  const tableEffectiveFormat = table?.comment_format ?? projectFormat;
+  const projectMethod = resolveConstraintMethod(null, null, project);
+  const projectFormat = resolveCommentFormat(null, null, project);
+  const tableEffectiveMethod = resolveConstraintMethod(null, table, project);
+  const tableEffectiveFormat = resolveCommentFormat(null, table, project);
 
   const handleTableConstraintMethod = (value: string) => {
     updateTable(tableId, { constraint_method: value === '' ? null : value });
@@ -61,11 +47,11 @@ export default function RelationsTab({ tableId }: Props) {
   };
 
   const getRelationEffectiveMethod = (rel: typeof tableRelations[number]) => {
-    return rel.constraint_method ?? table?.constraint_method ?? projectMethod;
+    return resolveConstraintMethod(rel, table, project);
   };
 
   const getRelationEffectiveFormat = (rel: typeof tableRelations[number]) => {
-    return rel.comment_format ?? table?.comment_format ?? projectFormat;
+    return resolveCommentFormat(rel, table, project);
   };
 
   return (
@@ -76,7 +62,6 @@ export default function RelationsTab({ tableId }: Props) {
           表级默认（覆盖项目设置）
         </div>
 
-        {/* constraint_method */}
         <div className="flex items-center gap-2">
           <label className="text-[12px] text-foreground-default w-20 shrink-0">约束方式</label>
           <select
@@ -85,8 +70,9 @@ export default function RelationsTab({ tableId }: Props) {
             className="flex-1 bg-background-base border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default"
           >
             <option value="">继承项目（{CONSTRAINT_METHOD_LABELS[projectMethod] ?? projectMethod}）</option>
-            <option value="database_fk">数据库外键 🔒</option>
-            <option value="comment_ref">注释引用 💬</option>
+            {Object.entries(CONSTRAINT_METHOD_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
           </select>
         </div>
 
@@ -100,7 +86,7 @@ export default function RelationsTab({ tableId }: Props) {
               className="flex-1 bg-background-base border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default font-mono"
             >
               <option value="">继承项目（{projectFormat}）</option>
-              {COMMENT_FORMAT_OPTIONS.map(o => (
+              {COMMENT_FORMAT_VALUES.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
@@ -138,8 +124,9 @@ export default function RelationsTab({ tableId }: Props) {
                       className="flex-1 bg-background-base border border-border-strong rounded px-2 py-0.5 text-[11px] text-foreground-default"
                     >
                       <option value="">继承（{CONSTRAINT_METHOD_LABELS[tableEffectiveMethod] ?? tableEffectiveMethod}）</option>
-                      <option value="database_fk">数据库外键 🔒</option>
-                      <option value="comment_ref">注释引用 💬</option>
+                      {Object.entries(CONSTRAINT_METHOD_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
                     </select>
                   </div>
                   {/* 注释格式（仅 comment_ref 时显示）*/}
@@ -151,7 +138,7 @@ export default function RelationsTab({ tableId }: Props) {
                         className="flex-1 bg-background-base border border-border-strong rounded px-2 py-0.5 text-[11px] text-foreground-default font-mono"
                       >
                         <option value="">继承（{effFormat}）</option>
-                        {COMMENT_FORMAT_OPTIONS.map(o => (
+                        {COMMENT_FORMAT_VALUES.map(o => (
                           <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
                       </select>

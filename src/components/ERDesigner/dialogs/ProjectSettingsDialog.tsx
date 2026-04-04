@@ -1,19 +1,13 @@
 import React from 'react';
 import { BaseModal } from '../../common/BaseModal';
 import { useErDesignerStore } from '@/store/erDesignerStore';
+import { CONSTRAINT_METHOD_LABELS, COMMENT_FORMAT_VALUES } from '../shared/constraintConstants';
 
 interface Props {
   visible: boolean;
   projectId: number;
   onClose: () => void;
 }
-
-const COMMENT_FORMAT_OPTIONS = [
-  { value: '@ref', label: '@ref:table.col' },
-  { value: '@fk', label: '@fk(table,col,type)' },
-  { value: '[ref]', label: '[ref:table.col]' },
-  { value: '$$ref$$', label: '$$ref(table.col)$$' },
-];
 
 export const ProjectSettingsDialog: React.FC<Props> = ({ visible, projectId, onClose }) => {
   const { projects, updateProject } = useErDesignerStore();
@@ -38,30 +32,25 @@ export const ProjectSettingsDialog: React.FC<Props> = ({ visible, projectId, onC
             约束方式默认值
           </div>
           <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="constraint_method"
-                value="database_fk"
-                checked={project.default_constraint_method === 'database_fk'}
-                onChange={() => handleConstraintMethod('database_fk')}
-                className="accent-accent"
-              />
-              <span className="text-[12px] text-foreground-default">数据库外键 🔒</span>
-              <span className="text-[11px] text-foreground-muted">（DDL 生成 FOREIGN KEY 约束）</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="constraint_method"
-                value="comment_ref"
-                checked={project.default_constraint_method === 'comment_ref'}
-                onChange={() => handleConstraintMethod('comment_ref')}
-                className="accent-accent"
-              />
-              <span className="text-[12px] text-foreground-default">注释引用 💬</span>
-              <span className="text-[11px] text-foreground-muted">（在列注释中写入引用标记）</span>
-            </label>
+            {Object.entries(CONSTRAINT_METHOD_LABELS).map(([value, label]) => (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="constraint_method"
+                  value={value}
+                  checked={project.default_constraint_method === value}
+                  onChange={() => handleConstraintMethod(value)}
+                  className="accent-accent"
+                />
+                <span className="text-[12px] text-foreground-default">{label}</span>
+                {value === 'database_fk' && (
+                  <span className="text-[11px] text-foreground-muted">（DDL 生成 FOREIGN KEY 约束）</span>
+                )}
+                {value === 'comment_ref' && (
+                  <span className="text-[11px] text-foreground-muted">（在列注释中写入引用标记）</span>
+                )}
+              </label>
+            ))}
           </div>
         </div>
 
@@ -76,7 +65,7 @@ export const ProjectSettingsDialog: React.FC<Props> = ({ visible, projectId, onC
               onChange={e => handleCommentFormat(e.target.value)}
               className="w-full bg-background-base border border-border-strong rounded px-2 py-1.5 text-[12px] text-foreground-default font-mono"
             >
-              {COMMENT_FORMAT_OPTIONS.map(o => (
+              {COMMENT_FORMAT_VALUES.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>

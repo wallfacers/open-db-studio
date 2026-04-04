@@ -7,6 +7,7 @@ import { Tooltip } from '../../common/Tooltip';
 import { getTypeOptions, formatTypeDisplay, findTypeDef } from '../shared/dataTypes';
 import type { DialectName } from '../shared/dataTypes';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { resolveConstraintMethod } from '../shared/resolveConstraint';
 
 interface ERTableNodeData {
   table: import('../../../types').ErTable;
@@ -30,10 +31,9 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   );
   const majorityConstraintMethod = useMemo(() => {
     if (tableRelations.length === 0) return null;
-    const projectDefault = project?.default_constraint_method ?? 'database_fk';
     const counts: Record<string, number> = {};
     for (const rel of tableRelations) {
-      const method = rel.constraint_method ?? table.constraint_method ?? projectDefault;
+      const method = resolveConstraintMethod(rel, table, project);
       counts[method] = (counts[method] ?? 0) + 1;
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];

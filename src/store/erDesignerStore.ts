@@ -129,6 +129,18 @@ interface ErDesignerState {
   clearDialectWarnings: () => void;
 }
 
+/** Convert nullable constraint fields to empty strings for Rust backend. */
+function prepareErUpdatePayload(updates: Record<string, unknown>): Record<string, unknown> {
+  const req = { ...updates };
+  if (updates.constraint_method !== undefined) {
+    req.constraint_method = (updates.constraint_method as string | null) ?? '';
+  }
+  if (updates.comment_format !== undefined) {
+    req.comment_format = (updates.comment_format as string | null) ?? '';
+  }
+  return req;
+}
+
 /** Helper: apply ErProjectFull to state, merging with existing multi-project data */
 function applyProjectFull(projectFull: ErProjectFull) {
   const incomingColumns: Record<number, ErColumn[]> = {};
@@ -360,13 +372,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateTable: async (id, updates) => {
     try {
-      const req: Record<string, unknown> = { ...updates };
-      if (updates.constraint_method !== undefined) {
-        req.constraint_method = updates.constraint_method ?? '';
-      }
-      if (updates.comment_format !== undefined) {
-        req.comment_format = updates.comment_format ?? '';
-      }
+      const req = prepareErUpdatePayload(updates as Record<string, unknown>);
       await invoke('er_update_table', { id, req });
       set((s) => ({
         tables: s.tables.map((t) => (t.id === id ? { ...t, ...updates } : t)),
@@ -576,13 +582,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateRelation: async (id, updates) => {
     try {
-      const req: Record<string, unknown> = { ...updates };
-      if (updates.constraint_method !== undefined) {
-        req.constraint_method = updates.constraint_method ?? '';
-      }
-      if (updates.comment_format !== undefined) {
-        req.comment_format = updates.comment_format ?? '';
-      }
+      const req = prepareErUpdatePayload(updates as Record<string, unknown>);
       await invoke('er_update_relation', { id, req });
       set((s) => ({
         relations: s.relations.map((r) => (r.id === id ? { ...r, ...updates } : r)),

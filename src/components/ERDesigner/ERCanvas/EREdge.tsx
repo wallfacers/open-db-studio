@@ -6,6 +6,8 @@ import {
 } from '@xyflow/react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { parseErEdgeNodeId } from '../../../utils/nodeId';
+import { CONSTRAINT_BADGE, CONSTRAINT_METHOD_OPTIONS, COMMENT_FORMAT_OPTIONS } from '../shared/constraintConstants';
+import { resolveConstraintMethod, resolveCommentFormat } from '../shared/resolveConstraint';
 
 // ─── Crossing detection types ───────────────────────────────────────
 
@@ -187,25 +189,6 @@ const RELATION_LABEL_MAP: Record<string, string> = {
   many_to_many: 'N:N',
 };
 
-const CONSTRAINT_BADGE: Record<string, string> = {
-  database_fk: '🔒',
-  comment_ref: '💬',
-};
-
-const CONSTRAINT_METHOD_OPTIONS = [
-  { value: '', label: '继承默认' },
-  { value: 'database_fk', label: '数据库外键 🔒' },
-  { value: 'comment_ref', label: '注释引用 💬' },
-] as const;
-
-const COMMENT_FORMAT_OPTIONS = [
-  { value: '', label: '继承默认' },
-  { value: '@ref', label: '@ref:table.col' },
-  { value: '@fk', label: '@fk(table,col,type)' },
-  { value: '[ref]', label: '[ref:table.col]' },
-  { value: '$$ref$$', label: '$$ref(table.col)$$' },
-] as const;
-
 const BG_COLOR = 'var(--background-base)';
 const SELECTED_COLOR = 'var(--accent)';
 
@@ -280,18 +263,8 @@ export default function EREdge({
     : undefined;
   const project = projects.find(p => p.id === activeProjectId);
 
-  // 三级继承：relation → table → project → 'database_fk'
-  const effectiveConstraintMethod =
-    storeRelation?.constraint_method
-    ?? sourceTable?.constraint_method
-    ?? project?.default_constraint_method
-    ?? 'database_fk';
-
-  const effectiveCommentFormat =
-    storeRelation?.comment_format
-    ?? sourceTable?.comment_format
-    ?? project?.default_comment_format
-    ?? '@ref';
+  const effectiveConstraintMethod = resolveConstraintMethod(storeRelation, sourceTable, project);
+  const effectiveCommentFormat = resolveCommentFormat(storeRelation, sourceTable, project);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const labelRef = useRef<HTMLDivElement>(null);   // label container in EdgeLabelRenderer

@@ -99,7 +99,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const addRelation = useErDesignerStore(s => s.addRelation)
   const syncFromDatabase = useErDesignerStore(s => s.syncFromDatabase)
 
-  // State values for rendering — scoped to this project to avoid cross-project re-renders
+  // State values for rendering
   const projects = useErDesignerStore(s => s.projects)
   const projectTables = useErDesignerStore(useShallow(s => s.tables.filter(t => t.project_id === projectId)))
   const projectRelations = useErDesignerStore(useShallow(s => {
@@ -177,7 +177,6 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   }, [reloadCanvas])
 
   // Sync store changes to ReactFlow nodes/edges (for sidebar operations)
-  // projectTables/projectRelations are already scoped — only this project's data triggers this effect
   useEffect(() => {
     const tableIdSet = new Set(projectTables.map(t => t.id))
 

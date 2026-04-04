@@ -8,6 +8,15 @@ import RelationsTab from './RelationsTab';
 
 type TabType = 'columns' | 'indexes' | 'properties' | 'relations';
 
+const TAB_LABELS: Record<TabType, string> = {
+  columns: '列',
+  indexes: '索引',
+  properties: '表属性',
+  relations: '关系',
+};
+
+const TAB_ORDER: TabType[] = ['columns', 'indexes', 'properties', 'relations'];
+
 export default function ERPropertyDrawer() {
   const { drawerOpen, drawerTableId, closeDrawer, tables } = useErDesignerStore();
   const [activeTab, setActiveTab] = useState<TabType>('columns');
@@ -28,7 +37,7 @@ export default function ERPropertyDrawer() {
       </div>
       {/* Tab bar */}
       <div className="flex border-b border-border-strong">
-        {(['columns', 'indexes', 'properties', 'relations'] as TabType[]).map(tab => (
+        {TAB_ORDER.map(tab => (
           <button
             key={tab}
             className={`px-4 py-2 text-[12px] transition-colors ${
@@ -38,7 +47,7 @@ export default function ERPropertyDrawer() {
             }`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'columns' ? '列' : tab === 'indexes' ? '索引' : tab === 'properties' ? '表属性' : '关系'}
+            {TAB_LABELS[tab]}
           </button>
         ))}
       </div>

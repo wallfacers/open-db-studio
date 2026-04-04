@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useErDesignerStore } from '@/store/erDesignerStore';
+import { CONSTRAINT_METHOD_LABELS } from '../shared/constraintConstants';
+import { resolveConstraintMethod } from '../shared/resolveConstraint';
 
 const PRESET_COLORS = ['var(--accent)', 'var(--info)', 'var(--warning)', 'var(--error)', 'var(--node-alias)', 'var(--success)'];
 
@@ -11,8 +13,7 @@ export default function TablePropertiesTab({ tableId }: TablePropertiesTabProps)
   const { tables, updateTable, projects, activeProjectId } = useErDesignerStore();
   const table = tables.find(t => t.id === tableId);
   const project = projects.find(p => p.id === activeProjectId);
-  const projectMethod = project?.default_constraint_method ?? 'database_fk';
-  const effectiveMethod = table?.constraint_method ?? projectMethod;
+  const effectiveMethod = resolveConstraintMethod(null, table, project);
 
   const [name, setName] = useState(table?.name ?? '');
   const [comment, setComment] = useState(table?.comment ?? '');
@@ -82,7 +83,7 @@ export default function TablePropertiesTab({ tableId }: TablePropertiesTabProps)
         <div className="text-[11px] text-foreground-muted mb-1">默认约束方式</div>
         <div className="flex items-center gap-2">
           <span className="text-[12px]">
-            {effectiveMethod === 'database_fk' ? '数据库外键 🔒' : '注释引用 💬'}
+            {CONSTRAINT_METHOD_LABELS[effectiveMethod] ?? effectiveMethod}
           </span>
           {table.constraint_method
             ? <span className="text-[10px] text-warning">已覆盖</span>

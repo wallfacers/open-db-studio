@@ -266,7 +266,23 @@ fn tool_definitions() -> Value {
                         },
                         "comment": { "type": "string", "description": "Table comment" },
                         "engine": { "type": "string", "default": "InnoDB" },
-                        "charset": { "type": "string", "default": "utf8mb4" }
+                        "charset": { "type": "string", "default": "utf8mb4" },
+                        "foreignKeys": {
+                            "type": "array",
+                            "description": "Foreign key definitions (optional). Can also be added later via ui_exec add_foreign_key.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "constraintName": { "type": "string", "description": "Constraint name (auto-generated as fk_{tableName}_{column} if omitted)" },
+                                    "column": { "type": "string", "description": "Column in this table" },
+                                    "referencedTable": { "type": "string", "description": "Referenced table name" },
+                                    "referencedColumn": { "type": "string", "description": "Referenced column name" },
+                                    "onDelete": { "type": "string", "enum": ["NO ACTION", "CASCADE", "SET NULL", "RESTRICT", "SET DEFAULT"], "default": "NO ACTION" },
+                                    "onUpdate": { "type": "string", "enum": ["NO ACTION", "CASCADE", "SET NULL", "RESTRICT", "SET DEFAULT"], "default": "NO ACTION" }
+                                },
+                                "required": ["column", "referencedTable", "referencedColumn"]
+                            }
+                        }
                     },
                     "required": ["connection_id", "database", "table_name", "columns"]
                 }
@@ -698,6 +714,11 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                     ops.push(json!({"op": "add", "path": "/indexes/-", "value": idx}));
                 }
             }
+            if let Some(fks) = args.get("foreignKeys").and_then(|v| v.as_array()) {
+                for fk in fks {
+                    ops.push(json!({"op": "add", "path": "/foreignKeys/-", "value": fk}));
+                }
+            }
 
             let patch_payload = json!({
                 "tool": "ui_patch",
@@ -716,6 +737,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 "objectId": object_id,
                 "table_name": args["table_name"],
                 "columns_count": args["columns"].as_array().map(|a| a.len()).unwrap_or(0),
+                "foreign_keys_count": args.get("foreignKeys").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
                 "patch_status": patch_result.get("data").and_then(|d| d.get("status")).unwrap_or(&json!("unknown")),
             });
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())

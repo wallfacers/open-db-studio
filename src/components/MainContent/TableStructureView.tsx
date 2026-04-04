@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronUp, ChevronDown, Check, RotateCcw } from 'lucide-react';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useTableFormStore, loadPersistedFormState } from '../../store/tableFormStore';
-import type { EditableColumn, TableFormIndex } from '../../store/tableFormStore';
+import type { EditableColumn, TableFormIndex, TableFormForeignKey } from '../../store/tableFormStore';
 import { useUIObjectRegistry } from '../../mcp/ui';
 import { TableFormUIObject, generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
@@ -36,6 +36,14 @@ function useRowHighlight(scopeId: string, columnName: string) {
 }
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
+
+const FK_ACTION_OPTIONS = [
+  { value: 'NO ACTION', label: 'NO ACTION' },
+  { value: 'CASCADE', label: 'CASCADE' },
+  { value: 'SET NULL', label: 'SET NULL' },
+  { value: 'RESTRICT', label: 'RESTRICT' },
+  { value: 'SET DEFAULT', label: 'SET DEFAULT' },
+];
 
 const getTypeOptions = (dataType: string) => {
   const opts = COMMON_TYPES.map(tp => ({ value: tp, label: tp }));
@@ -222,7 +230,7 @@ const IndexEditorWrapper: React.FC<{
 
 // ── Tab type ──
 
-type StructureTab = 'columns' | 'indexes';
+type StructureTab = 'columns' | 'foreignKeys' | 'indexes';
 
 interface TableStructureViewProps {
   tabId: string;
@@ -280,6 +288,8 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const originalColumns = formState?.originalColumns ?? []
   const indexes = formState?.indexes ?? []
   const originalIndexes = formState?.originalIndexes ?? []
+  const foreignKeys = formState?.foreignKeys ?? []
+  const originalForeignKeys = formState?.originalForeignKeys ?? []
   const newTableName = formState?.tableName ?? ''
 
   const setColumns = useCallback((updater: EditableColumn[] | ((prev: EditableColumn[]) => EditableColumn[])) => {
@@ -293,6 +303,13 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
     useTableFormStore.getState().patchForm(tabId, s => ({
       ...s,
       indexes: typeof updater === 'function' ? updater(s.indexes) : updater,
+    }))
+  }, [tabId])
+
+  const setForeignKeys = useCallback((updater: TableFormForeignKey[] | ((prev: TableFormForeignKey[]) => TableFormForeignKey[])) => {
+    useTableFormStore.getState().patchForm(tabId, s => ({
+      ...s,
+      foreignKeys: typeof updater === 'function' ? updater(s.foreignKeys ?? []) : updater,
     }))
   }, [tabId])
 
@@ -409,6 +426,36 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
     });
   }, []);
 
+  const visibleForeignKeys = foreignKeys.filter(fk => !fk._isDeleted)
+
+  const addForeignKey = useCallback(() => {
+    setForeignKeys(prev => [...prev, {
+      id: makeId(),
+      constraintName: '',
+      column: '',
+      referencedTable: '',
+      referencedColumn: '',
+      onDelete: 'NO ACTION',
+      onUpdate: 'NO ACTION',
+      _isNew: true,
+    }])
+  }, [setForeignKeys])
+
+  const updateForeignKey = useCallback((id: string, patch: Partial<TableFormForeignKey>) => {
+    setForeignKeys(prev => prev.map(fk => fk.id === id ? { ...fk, ...patch } : fk))
+  }, [setForeignKeys])
+
+  const handleFkColumnChange = useCallback((id: string, col: string) => {
+    const tblName = tableName ?? newTableName
+    setForeignKeys(prev => prev.map(fk => {
+      if (fk.id !== id) return fk
+      const autoName = !fk.constraintName && col
+        ? `fk_${tblName}_${col}`
+        : fk.constraintName
+      return { ...fk, column: col, constraintName: autoName }
+    }))
+  }, [setForeignKeys, tableName, newTableName])
+
   const handleDiscard = () => {
     if (!tableName) {
       const initCols: EditableColumn[] = [{
@@ -417,10 +464,12 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       }];
       setColumns(initCols);
       setIndexes([]);
+      setForeignKeys([]);
       setNewTableName('');
     } else {
       setColumns(originalColumns.map(c => ({ ...c } as EditableColumn)));
       setIndexes(originalIndexes.map(i => ({ ...i })));
+      setForeignKeys(originalForeignKeys.map(f => ({ ...f })));
     }
   };
 
@@ -434,13 +483,13 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns, originalColumns: tableName ? originalColumns : undefined,
         indexes, originalIndexes: tableName ? originalIndexes : undefined,
-        foreignKeys: [],
+        foreignKeys, originalForeignKeys: tableName ? originalForeignKeys : undefined,
         isNewTable: !tableName,
       }, driver);
     } catch {
       return '-- 表单数据不完整，请检查列定义';
     }
-  }, [effectiveTableName, columns, originalColumns, indexes, originalIndexes, tableName, driver]);
+  }, [effectiveTableName, columns, originalColumns, indexes, originalIndexes, foreignKeys, originalForeignKeys, tableName, driver]);
 
   const hasChanges = !previewSql.startsWith('-- ');
 
@@ -497,19 +546,22 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
 
       {/* Tab Bar */}
       <div className="flex border-b border-border-default flex-shrink-0">
-        {(['columns', 'indexes'] as StructureTab[]).map(tab => (
-          <button
-            key={tab}
-            className={`px-4 py-1.5 text-xs transition-colors cursor-pointer outline-none ${
-              activeTab === tab
-                ? 'text-accent border-b-2 border-accent'
-                : 'text-foreground-muted hover:text-foreground-default'
-            }`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab === 'columns' ? t('tableManage.columnsTab') : t('tableManage.indexesTab')}
-          </button>
-        ))}
+        {(['columns', 'foreignKeys', 'indexes'] as StructureTab[]).map(tab => {
+          const label = tab === 'columns' ? t('tableManage.columnsTab') : tab === 'indexes' ? t('tableManage.indexesTab') : '外键'
+          return (
+            <button
+              key={tab}
+              className={`px-4 py-1.5 text-xs transition-colors cursor-pointer outline-none ${
+                activeTab === tab
+                  ? 'text-accent border-b-2 border-accent'
+                  : 'text-foreground-muted hover:text-foreground-default'
+              }`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Tab Content */}
@@ -557,6 +609,98 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
             >
               <Plus size={13} />
               {t('tableManage.addColumn')}
+            </button>
+          </>
+        ) : activeTab === 'foreignKeys' ? (
+          <>
+            <table className="w-full text-left border-collapse whitespace-nowrap text-xs table-fixed">
+              <thead className="sticky top-0 bg-background-base z-10">
+                <tr>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[200px]">约束名</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[150px]">当前列</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[150px]">引用表</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[130px]">引用列</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[120px]">ON DELETE</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[120px]">ON UPDATE</th>
+                  <th className="px-3 py-1.5 border-b border-border-default text-foreground-muted font-normal text-center w-[50px]">{t('tableManage.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleForeignKeys.map(fk => {
+                  const colOptions = visibleColumns.map(c => ({ value: c.name, label: c.name }))
+                  return (
+                    <tr key={fk.id} className="hover:bg-background-hover border-b border-border-default group transition-colors duration-150">
+                      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+                        <input
+                          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+                          value={fk.constraintName}
+                          onChange={e => updateForeignKey(fk.id, { constraintName: e.target.value })}
+                          placeholder="fk_table_col"
+                        />
+                      </td>
+                      <td className="px-1 py-px border-r border-border-default">
+                        <DropdownSelect
+                          value={fk.column}
+                          options={colOptions}
+                          placeholder="选择列"
+                          onChange={col => handleFkColumnChange(fk.id, col)}
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+                        <input
+                          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+                          value={fk.referencedTable}
+                          onChange={e => updateForeignKey(fk.id, { referencedTable: e.target.value })}
+                          placeholder="users"
+                        />
+                      </td>
+                      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+                        <input
+                          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+                          value={fk.referencedColumn}
+                          onChange={e => updateForeignKey(fk.id, { referencedColumn: e.target.value })}
+                          placeholder="id"
+                        />
+                      </td>
+                      <td className="px-1 py-px border-r border-border-default">
+                        <DropdownSelect
+                          value={fk.onDelete}
+                          options={FK_ACTION_OPTIONS}
+                          onChange={v => updateForeignKey(fk.id, { onDelete: v })}
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-1 py-px border-r border-border-default">
+                        <DropdownSelect
+                          value={fk.onUpdate}
+                          options={FK_ACTION_OPTIONS}
+                          onChange={v => updateForeignKey(fk.id, { onUpdate: v })}
+                          className="w-full"
+                        />
+                      </td>
+                      <td className="px-1.5 py-px text-center">
+                        <button
+                          onClick={() => fk._isNew
+                            ? setForeignKeys(prev => prev.filter(f => f.id !== fk.id))
+                            : updateForeignKey(fk.id, { _isDeleted: true })
+                          }
+                          className={iconBtnDanger}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <button
+              onClick={addForeignKey}
+              className="m-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
+            >
+              <Plus size={13} />
+              添加外键
             </button>
           </>
         ) : (

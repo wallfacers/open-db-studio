@@ -11,6 +11,8 @@ pub struct ErProject {
     pub viewport_x: f64,
     pub viewport_y: f64,
     pub viewport_zoom: f64,
+    pub default_constraint_method: String,
+    pub default_comment_format: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -24,6 +26,8 @@ pub struct ErTable {
     pub position_x: f64,
     pub position_y: f64,
     pub color: Option<String>,
+    pub constraint_method: Option<String>,
+    pub comment_format: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -68,6 +72,8 @@ pub struct ErRelation {
     pub on_update: String,
     pub source: String,
     pub comment_marker: Option<String>,
+    pub constraint_method: Option<String>,
+    pub comment_format: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -113,6 +119,8 @@ pub struct UpdateProjectRequest {
     pub viewport_x: Option<f64>,
     pub viewport_y: Option<f64>,
     pub viewport_zoom: Option<f64>,
+    pub default_constraint_method: Option<String>,
+    pub default_comment_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +140,8 @@ pub struct UpdateTableRequest {
     pub position_x: Option<f64>,
     pub position_y: Option<f64>,
     pub color: Option<String>,
+    pub constraint_method: Option<String>,
+    pub comment_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -188,6 +198,8 @@ pub struct CreateRelationRequest {
     pub on_update: Option<String>,
     pub source: Option<String>,
     pub comment_marker: Option<String>,
+    pub constraint_method: Option<String>,
+    pub comment_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -198,6 +210,8 @@ pub struct UpdateRelationRequest {
     pub on_update: Option<String>,
     pub source: Option<String>,
     pub comment_marker: Option<String>,
+    pub constraint_method: Option<String>,
+    pub comment_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

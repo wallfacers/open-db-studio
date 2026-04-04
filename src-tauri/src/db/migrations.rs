@@ -727,6 +727,63 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         log::info!("Migration V8: data_type cleanup completed");
     }
 
+    // V19: ER 关系约束方式（三级继承：项目→表→关系）
+    {
+        // er_projects 新增 default_constraint_method / default_comment_format
+        let project_cols: HashSet<String> = {
+            let mut stmt = conn.prepare("SELECT name FROM pragma_table_info('er_projects')")?;
+            let cols: HashSet<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols
+        };
+        for (col_name, col_type) in &[
+            ("default_constraint_method", "TEXT NOT NULL DEFAULT 'database_fk'"),
+            ("default_comment_format",    "TEXT NOT NULL DEFAULT '@ref'"),
+        ] {
+            if !project_cols.contains(*col_name) {
+                conn.execute_batch(&format!("ALTER TABLE er_projects ADD COLUMN {} {}", col_name, col_type))?;
+                log::info!("V19: added er_projects.{}", col_name);
+            }
+        }
+
+        // er_tables 新增 constraint_method / comment_format
+        let table_cols: HashSet<String> = {
+            let mut stmt = conn.prepare("SELECT name FROM pragma_table_info('er_tables')")?;
+            let cols: HashSet<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols
+        };
+        for (col_name, col_type) in &[
+            ("constraint_method", "TEXT NULL"),
+            ("comment_format",    "TEXT NULL"),
+        ] {
+            if !table_cols.contains(*col_name) {
+                conn.execute_batch(&format!("ALTER TABLE er_tables ADD COLUMN {} {}", col_name, col_type))?;
+                log::info!("V19: added er_tables.{}", col_name);
+            }
+        }
+
+        // er_relations 新增 constraint_method / comment_format
+        let rel_cols: HashSet<String> = {
+            let mut stmt = conn.prepare("SELECT name FROM pragma_table_info('er_relations')")?;
+            let cols: HashSet<String> = stmt.query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            cols
+        };
+        for (col_name, col_type) in &[
+            ("constraint_method", "TEXT NULL"),
+            ("comment_format",    "TEXT NULL"),
+        ] {
+            if !rel_cols.contains(*col_name) {
+                conn.execute_batch(&format!("ALTER TABLE er_relations ADD COLUMN {} {}", col_name, col_type))?;
+                log::info!("V19: added er_relations.{}", col_name);
+            }
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

@@ -244,6 +244,7 @@ pub struct DdlOptions {
     pub include_indexes: Option<bool>,
     pub include_comments: Option<bool>,
     pub include_foreign_keys: Option<bool>,
+    pub include_comment_refs: Option<bool>,
 }
 
 // ─── Import types ──────────────────────────────────────────────────────────

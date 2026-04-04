@@ -151,6 +151,7 @@ pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<
         include_indexes: options.include_indexes.unwrap_or(true),
         include_comments: options.include_comments.unwrap_or(true),
         include_foreign_keys: options.include_foreign_keys.unwrap_or(false),
+        include_comment_refs: options.include_comment_refs.unwrap_or(true),
     };
 
     super::ddl_generator::generate_ddl(
@@ -160,6 +161,7 @@ pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<
         &full.relations,
         &options.dialect,
         &gen_options,
+        &full.project,
     )
 }
 

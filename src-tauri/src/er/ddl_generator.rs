@@ -2,7 +2,11 @@ use std::collections::HashMap;
 
 use crate::AppResult;
 use crate::error::AppError;
-use super::models::{ErColumn, ErIndex, ErRelation, ErTable};
+use super::models::{ErColumn, ErIndex, ErProject, ErRelation, ErTable};
+use super::constraint::{
+    append_marker_to_comment, build_comment_marker,
+    resolve_comment_format, resolve_constraint_method,
+};
 
 // ---------------------------------------------------------------------------
 // GenerateOptions
@@ -13,6 +17,7 @@ pub struct GenerateOptions {
     pub include_indexes: bool,
     pub include_comments: bool,
     pub include_foreign_keys: bool,
+    pub include_comment_refs: bool,
 }
 
 impl Default for GenerateOptions {
@@ -21,6 +26,7 @@ impl Default for GenerateOptions {
             include_indexes: true,
             include_comments: true,
             include_foreign_keys: false,
+            include_comment_refs: true,
         }
     }
 }
@@ -763,6 +769,7 @@ pub fn generate_ddl(
     relations: &[ErRelation],
     dialect: &str,
     options: &GenerateOptions,
+    project: &ErProject,
 ) -> AppResult<String> {
     let dialect_impl: Box<dyn DdlDialect> = match dialect.to_lowercase().as_str() {
         "mysql" => Box::new(MySqlDialect),
@@ -773,6 +780,15 @@ pub fn generate_ddl(
         other => return Err(AppError::Other(format!("Unsupported DDL dialect: {}", other))),
     };
 
+    let tables_by_id: HashMap<i64, &ErTable> = tables.iter().map(|t| (t.id, t)).collect();
+
+    // Classify relations: database_fk relations are used for FK constraints;
+    // comment_ref relations are injected into column comments.
+    let db_fk_relations: Vec<&ErRelation> = relations.iter().filter(|rel| {
+        let src_table = tables_by_id.get(&rel.source_table_id).copied();
+        resolve_constraint_method(rel, src_table, Some(project)) == "database_fk"
+    }).collect();
+
     let mut ddl_parts: Vec<String> = Vec::new();
 
     for table in tables {
@@ -781,11 +797,44 @@ pub fn generate_ddl(
         let columns = columns_map.get(&table.id).unwrap_or(&empty_cols);
         let indexes = indexes_map.get(&table.id).unwrap_or(&empty_idxs);
 
+        // Inject comment_ref markers into columns when enabled
+        let processed_columns: Vec<ErColumn> = if options.include_comment_refs {
+            let mut cols = columns.clone();
+            for rel in relations.iter().filter(|r| r.source_table_id == table.id) {
+                let src_table = tables_by_id.get(&rel.source_table_id).copied();
+                if resolve_constraint_method(rel, src_table, Some(project)) != "comment_ref" {
+                    continue;
+                }
+                let format = resolve_comment_format(rel, src_table, Some(project));
+                let target_table_name = tables_by_id
+                    .get(&rel.target_table_id)
+                    .map(|t| t.name.as_str())
+                    .unwrap_or("unknown");
+                let target_col_name = columns_map
+                    .get(&rel.target_table_id)
+                    .and_then(|tcols| tcols.iter().find(|c| c.id == rel.target_column_id))
+                    .map(|c| c.name.as_str())
+                    .unwrap_or("id");
+                let marker = build_comment_marker(
+                    target_table_name, target_col_name, &rel.relation_type, format,
+                );
+                if let Some(col) = cols.iter_mut().find(|c| c.id == rel.source_column_id) {
+                    col.comment = Some(append_marker_to_comment(col.comment.as_deref(), &marker));
+                }
+            }
+            cols
+        } else {
+            columns.to_vec()
+        };
+
+        // Convert db_fk_relations (Vec<&ErRelation>) to slice of owned values for create_table
+        let db_fk_owned: Vec<ErRelation> = db_fk_relations.iter().map(|r| (*r).clone()).collect();
+
         let stmt = dialect_impl.create_table(
             table,
-            columns,
+            &processed_columns,
             indexes,
-            relations,
+            &db_fk_owned,
             tables,
             columns_map,
             options,
@@ -803,6 +852,24 @@ pub fn generate_ddl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_project() -> ErProject {
+        ErProject {
+            id: 1,
+            name: "test".to_string(),
+            description: None,
+            connection_id: None,
+            database_name: None,
+            schema_name: None,
+            viewport_x: 0.0,
+            viewport_y: 0.0,
+            viewport_zoom: 1.0,
+            default_constraint_method: "database_fk".to_string(),
+            default_comment_format: "@ref".to_string(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
 
     fn make_table(id: i64, name: &str) -> ErTable {
         ErTable {
@@ -865,7 +932,7 @@ mod tests {
         let im = HashMap::new();
         let opts = GenerateOptions::default();
 
-        let ddl = generate_ddl(&tables, &cm, &im, &[], "mysql", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "mysql", &opts, &make_project()).unwrap();
         assert!(ddl.contains("CREATE TABLE `users`"));
         assert!(ddl.contains("AUTO_INCREMENT"));
         assert!(ddl.contains("TINYINT(1)"));
@@ -886,7 +953,7 @@ mod tests {
         let im = HashMap::new();
         let opts = GenerateOptions::default();
 
-        let ddl = generate_ddl(&tables, &cm, &im, &[], "postgres", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "postgres", &opts, &make_project()).unwrap();
         assert!(ddl.contains("BIGSERIAL"));
         assert!(ddl.contains("VARCHAR(100)"));
         assert!(ddl.contains("COMMENT ON TABLE"));
@@ -904,7 +971,7 @@ mod tests {
         let im = HashMap::new();
         let opts = GenerateOptions::default();
 
-        let ddl = generate_ddl(&tables, &cm, &im, &[], "sqlite", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "sqlite", &opts, &make_project()).unwrap();
         assert!(ddl.contains("INTEGER"));
         assert!(ddl.contains("AUTOINCREMENT"));
         assert!(ddl.contains("TEXT")); // VARCHAR -> TEXT
@@ -921,7 +988,7 @@ mod tests {
         let im = HashMap::new();
         let opts = GenerateOptions { include_comments: false, ..Default::default() };
 
-        let ddl = generate_ddl(&tables, &cm, &im, &[], "oracle", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "oracle", &opts, &make_project()).unwrap();
         assert!(ddl.contains("GENERATED ALWAYS AS IDENTITY"));
         assert!(ddl.contains("NUMBER(19)"));
     }
@@ -938,14 +1005,14 @@ mod tests {
         let im = HashMap::new();
         let opts = GenerateOptions { include_comments: false, ..Default::default() };
 
-        let ddl = generate_ddl(&tables, &cm, &im, &[], "sqlserver", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "sqlserver", &opts, &make_project()).unwrap();
         assert!(ddl.contains("IDENTITY(1,1)"));
         assert!(ddl.contains("NVARCHAR(50)"));
     }
 
     #[test]
     fn test_unsupported_dialect() {
-        let result = generate_ddl(&[], &HashMap::new(), &HashMap::new(), &[], "mongo", &GenerateOptions::default());
+        let result = generate_ddl(&[], &HashMap::new(), &HashMap::new(), &[], "mongo", &GenerateOptions::default(), &make_project());
         assert!(result.is_err());
     }
 
@@ -970,7 +1037,7 @@ mod tests {
         im.insert(1, indexes);
         let opts = GenerateOptions::default();
 
-        let ddl = generate_ddl(&tables, &cm, &im, &[], "mysql", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &[], "mysql", &opts, &make_project()).unwrap();
         assert!(ddl.contains("CREATE UNIQUE INDEX"));
         assert!(ddl.contains("idx_email"));
     }
@@ -1015,7 +1082,7 @@ mod tests {
             ..Default::default()
         };
 
-        let ddl = generate_ddl(&tables, &cm, &im, &relations, "postgres", &opts).unwrap();
+        let ddl = generate_ddl(&tables, &cm, &im, &relations, "postgres", &opts, &make_project()).unwrap();
         assert!(ddl.contains("FOREIGN KEY"));
         assert!(ddl.contains("fk_order_user"));
         assert!(ddl.contains("CASCADE"));

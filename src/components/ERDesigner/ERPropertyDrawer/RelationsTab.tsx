@@ -1,4 +1,5 @@
 import { useErDesignerStore } from '@/store/erDesignerStore';
+import { DropdownSelect } from '@/components/common/DropdownSelect';
 import { CONSTRAINT_METHOD_LABELS, COMMENT_FORMAT_VALUES } from '../shared/constraintConstants';
 import { resolveConstraintMethod, resolveCommentFormat } from '../shared/resolveConstraint';
 
@@ -64,32 +65,26 @@ export default function RelationsTab({ tableId }: Props) {
 
         <div className="flex items-center gap-2">
           <label className="text-[12px] text-foreground-default w-20 shrink-0">约束方式</label>
-          <select
+          <DropdownSelect
             value={table?.constraint_method ?? ''}
-            onChange={e => handleTableConstraintMethod(e.target.value)}
-            className="flex-1 bg-background-base border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default"
-          >
-            <option value="">继承项目（{CONSTRAINT_METHOD_LABELS[projectMethod] ?? projectMethod}）</option>
-            {Object.entries(CONSTRAINT_METHOD_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
+            onChange={handleTableConstraintMethod}
+            placeholder={`继承项目（${CONSTRAINT_METHOD_LABELS[projectMethod] ?? projectMethod}）`}
+            options={Object.entries(CONSTRAINT_METHOD_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+            className="flex-1"
+          />
         </div>
 
         {/* comment_format（仅 comment_ref 时显示）*/}
         {tableEffectiveMethod === 'comment_ref' && (
           <div className="flex items-center gap-2">
             <label className="text-[12px] text-foreground-default w-20 shrink-0">注释格式</label>
-            <select
+            <DropdownSelect
               value={table?.comment_format ?? ''}
-              onChange={e => handleTableCommentFormat(e.target.value)}
-              className="flex-1 bg-background-base border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default font-mono"
-            >
-              <option value="">继承项目（{projectFormat}）</option>
-              {COMMENT_FORMAT_VALUES.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              onChange={handleTableCommentFormat}
+              placeholder={`继承项目（${projectFormat}）`}
+              options={COMMENT_FORMAT_VALUES.map(o => ({ value: o.value, label: o.label }))}
+              className="flex-1"
+            />
           </div>
         )}
       </div>
@@ -118,30 +113,24 @@ export default function RelationsTab({ tableId }: Props) {
                   </div>
                   {/* 关系级约束方式 */}
                   <div className="flex items-center gap-2">
-                    <select
+                    <DropdownSelect
                       value={rel.constraint_method ?? ''}
-                      onChange={e => handleRelationConstraintMethod(rel.id, e.target.value)}
-                      className="flex-1 bg-background-base border border-border-strong rounded px-2 py-0.5 text-[11px] text-foreground-default"
-                    >
-                      <option value="">继承（{CONSTRAINT_METHOD_LABELS[tableEffectiveMethod] ?? tableEffectiveMethod}）</option>
-                      {Object.entries(CONSTRAINT_METHOD_LABELS).map(([k, v]) => (
-                        <option key={k} value={k}>{v}</option>
-                      ))}
-                    </select>
+                      onChange={v => handleRelationConstraintMethod(rel.id, v)}
+                      placeholder={`继承（${CONSTRAINT_METHOD_LABELS[tableEffectiveMethod] ?? tableEffectiveMethod}）`}
+                      options={Object.entries(CONSTRAINT_METHOD_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+                      className="flex-1"
+                    />
                   </div>
                   {/* 注释格式（仅 comment_ref 时显示）*/}
                   {effMethod === 'comment_ref' && (
                     <div className="flex items-center gap-2">
-                      <select
+                      <DropdownSelect
                         value={rel.comment_format ?? ''}
-                        onChange={e => handleRelationCommentFormat(rel.id, e.target.value)}
-                        className="flex-1 bg-background-base border border-border-strong rounded px-2 py-0.5 text-[11px] text-foreground-default font-mono"
-                      >
-                        <option value="">继承（{effFormat}）</option>
-                        {COMMENT_FORMAT_VALUES.map(o => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
+                        onChange={v => handleRelationCommentFormat(rel.id, v)}
+                        placeholder={`继承（${effFormat}）`}
+                        options={COMMENT_FORMAT_VALUES.map(o => ({ value: o.value, label: o.label }))}
+                        className="flex-1"
+                      />
                     </div>
                   )}
                 </div>

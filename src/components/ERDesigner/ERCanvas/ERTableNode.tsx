@@ -21,7 +21,23 @@ interface ERTableNodeData {
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
   const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
-  const { boundDialect } = useErDesignerStore();
+  const { boundDialect, relations, projects, activeProjectId } = useErDesignerStore();
+
+  // 计算该表所有关系的多数派约束方式
+  const project = projects.find(p => p.id === activeProjectId);
+  const tableRelations = relations.filter(
+    r => r.source_table_id === table.id || r.target_table_id === table.id
+  );
+  const majorityConstraintMethod = useMemo(() => {
+    if (tableRelations.length === 0) return null;
+    const projectDefault = project?.default_constraint_method ?? 'database_fk';
+    const counts: Record<string, number> = {};
+    for (const rel of tableRelations) {
+      const method = rel.constraint_method ?? table.constraint_method ?? projectDefault;
+      counts[method] = (counts[method] ?? 0) + 1;
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  }, [tableRelations, table.constraint_method, project?.default_constraint_method]);
   const typeOptions = useMemo(() => getTypeOptions(boundDialect as DialectName | null), [boundDialect]);
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -249,6 +265,21 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
               <TableProperties size={14} className="shrink-0" style={{ color: table.color || 'var(--accent)' }} />
               <span className="truncate">{table.name}</span>
             </h3>
+          </Tooltip>
+        )}
+        {majorityConstraintMethod && (
+          <Tooltip
+            content={majorityConstraintMethod === 'database_fk' ? '约束方式：数据库外键' : '约束方式：注释引用'}
+            className="shrink-0 ml-1"
+          >
+            <span
+              className="w-2 h-2 rounded-full inline-block"
+              style={{
+                backgroundColor: majorityConstraintMethod === 'database_fk'
+                  ? 'var(--accent)'
+                  : 'var(--warning)',
+              }}
+            />
           </Tooltip>
         )}
       </div>

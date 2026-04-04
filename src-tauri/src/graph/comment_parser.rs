@@ -82,28 +82,22 @@ pub fn parse_comment_refs(comment: &str) -> Vec<CommentRef> {
     result
 }
 
-// ── parse_comment: 仅测试使用 ────────────────────────────────────────────
+// ── parse_comment ─────────────────────────────────────────────────────────
 
-#[cfg(test)]
 static RE_S1: OnceLock<Regex> = OnceLock::new();
-#[cfg(test)]
 static RE_S2: OnceLock<Regex> = OnceLock::new();
-#[cfg(test)]
 static RE_S3: OnceLock<Regex> = OnceLock::new();
-#[cfg(test)]
 static RE_S4: OnceLock<Regex> = OnceLock::new();
 
 /// 解析列注释的完整结果：引用列表 + 去除标记后的干净描述
-#[cfg(test)]
 #[derive(Debug, PartialEq, Clone)]
-struct ParsedComment {
-    refs: Vec<CommentRef>,
-    clean_text: String,
+pub struct ParsedComment {
+    pub refs: Vec<CommentRef>,
+    pub clean_text: String,
 }
 
 /// 解析列注释，返回引用列表和去除所有标记后的干净描述文本。
-#[cfg(test)]
-fn parse_comment(comment: &str) -> ParsedComment {
+pub fn parse_comment(comment: &str) -> ParsedComment {
     let refs = parse_comment_refs(comment);
 
     let s1 = RE_S1.get_or_init(|| Regex::new(r"@ref:[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*").unwrap());

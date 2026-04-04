@@ -353,6 +353,23 @@ const TABLE_FORM_PATCH_CAPABILITIES: PatchCapability[] = [
     description: 'Remove an index by name',
     addressableBy: ['name'],
   },
+  {
+    pathPattern: '/foreignKeys/-',
+    ops: ['add'],
+    description: 'Add a new FK constraint',
+  },
+  {
+    pathPattern: '/foreignKeys[name=<s>]',
+    ops: ['remove'],
+    description: 'Remove an FK by constraintName',
+    addressableBy: ['constraintName'],
+  },
+  {
+    pathPattern: '/foreignKeys[name=<s>]/<field>',
+    ops: ['replace'],
+    description: 'Modify FK properties',
+    addressableBy: ['constraintName'],
+  },
 ]
 
 export class TableFormUIObject implements UIObject {
@@ -521,6 +538,13 @@ export class TableFormUIObject implements UIObject {
         if (!idx.id) {
           idx.id = makeId()
           idx._isNew = true
+        }
+      }
+      // Ensure all foreignKeys have id and _isNew for new FKs
+      for (const fk of patched.foreignKeys ?? []) {
+        if (!fk.id) {
+          fk.id = makeId()
+          fk._isNew = true
         }
       }
       useTableFormStore.getState().setForm(this.objectId, patched)

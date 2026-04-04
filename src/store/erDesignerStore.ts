@@ -96,7 +96,7 @@ interface ErDesignerState {
   generateDDL: (
     projectId: number,
     dialect: string,
-    options?: { includeIndexes?: boolean; includeComments?: boolean; includeForeignKeys?: boolean }
+    options?: { includeIndexes?: boolean; includeComments?: boolean; includeForeignKeys?: boolean; includeCommentRefs?: boolean }
   ) => Promise<string>;
   diffWithDatabase: (projectId: number) => Promise<DiffResult>;
   syncFromDatabase: (projectId: number, tableNames?: string[]) => Promise<void>;
@@ -360,7 +360,14 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateTable: async (id, updates) => {
     try {
-      await invoke('er_update_table', { id, req: updates });
+      const req: Record<string, unknown> = { ...updates };
+      if (updates.constraint_method !== undefined) {
+        req.constraint_method = updates.constraint_method ?? '';
+      }
+      if (updates.comment_format !== undefined) {
+        req.comment_format = updates.comment_format ?? '';
+      }
+      await invoke('er_update_table', { id, req });
       set((s) => ({
         tables: s.tables.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       }));
@@ -569,7 +576,14 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateRelation: async (id, updates) => {
     try {
-      await invoke('er_update_relation', { id, req: updates });
+      const req: Record<string, unknown> = { ...updates };
+      if (updates.constraint_method !== undefined) {
+        req.constraint_method = updates.constraint_method ?? '';
+      }
+      if (updates.comment_format !== undefined) {
+        req.comment_format = updates.comment_format ?? '';
+      }
+      await invoke('er_update_relation', { id, req });
       set((s) => ({
         relations: s.relations.map((r) => (r.id === id ? { ...r, ...updates } : r)),
       }));
@@ -680,6 +694,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           include_indexes: options?.includeIndexes ?? true,
           include_comments: options?.includeComments ?? true,
           include_foreign_keys: options?.includeForeignKeys ?? true,
+          include_comment_refs: options?.includeCommentRefs ?? true,
         },
       });
       return ddl;

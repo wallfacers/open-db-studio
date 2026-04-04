@@ -473,6 +473,8 @@ export interface ErProject {
   viewport_x: number;
   viewport_y: number;
   viewport_zoom: number;
+  default_constraint_method: string;   // 'database_fk' | 'comment_ref'
+  default_comment_format: string;      // '@ref' | '@fk' | '[ref]' | '$$ref$$'
   created_at: string;
   updated_at: string;
 }
@@ -485,6 +487,8 @@ export interface ErTable {
   position_x: number;
   position_y: number;
   color: string | null;
+  constraint_method: string | null;    // null = 继承项目级
+  comment_format: string | null;       // null = 继承项目级
   created_at: string;
   updated_at: string;
 }
@@ -526,6 +530,8 @@ export interface ErRelation {
   on_update: string;
   source: string;  // 'schema' | 'comment' | 'designer'
   comment_marker: string | null;
+  constraint_method: string | null;    // null = 继承表级
+  comment_format: string | null;       // null = 继承
   created_at: string;
   updated_at: string;
 }

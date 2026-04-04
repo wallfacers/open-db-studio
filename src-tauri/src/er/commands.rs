@@ -667,6 +667,8 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
             on_update: None,
             source: export_rel.source_type.clone(),
             comment_marker: export_rel.comment_marker.clone(),
+            constraint_method: None,
+            comment_format: None,
         })?;
     }
 
@@ -895,6 +897,8 @@ pub async fn er_execute_import(
             on_update: None,
             source: export_rel.source_type.clone(),
             comment_marker: export_rel.comment_marker.clone(),
+            constraint_method: None,
+            comment_format: None,
         })?;
     }
 

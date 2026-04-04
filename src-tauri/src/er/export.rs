@@ -248,6 +248,8 @@ mod tests {
             viewport_x: 0.0,
             viewport_y: 0.0,
             viewport_zoom: 1.0,
+            default_constraint_method: "database_fk".to_string(),
+            default_comment_format: "@ref".to_string(),
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
         };
@@ -260,6 +262,8 @@ mod tests {
             position_x: 100.0,
             position_y: 200.0,
             color: Some("#ff0000".to_string()),
+            constraint_method: None,
+            comment_format: None,
             created_at: String::new(),
             updated_at: String::new(),
         }];
@@ -319,6 +323,8 @@ mod tests {
             viewport_x: 0.0,
             viewport_y: 0.0,
             viewport_zoom: 1.0,
+            default_constraint_method: "database_fk".to_string(),
+            default_comment_format: "@ref".to_string(),
             created_at: String::new(),
             updated_at: String::new(),
         };
@@ -332,6 +338,8 @@ mod tests {
                 position_x: 0.0,
                 position_y: 0.0,
                 color: None,
+                constraint_method: None,
+                comment_format: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             },
@@ -343,6 +351,8 @@ mod tests {
                 position_x: 0.0,
                 position_y: 0.0,
                 color: None,
+                constraint_method: None,
+                comment_format: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             },
@@ -416,6 +426,8 @@ mod tests {
             on_update: "NO ACTION".to_string(),
             source: "manual".to_string(),
             comment_marker: None,
+            constraint_method: None,
+            comment_format: None,
             created_at: String::new(),
             updated_at: String::new(),
         }];

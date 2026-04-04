@@ -562,6 +562,8 @@ mod tests {
             position_x: 0.0,
             position_y: 0.0,
             color: None,
+            constraint_method: None,
+            comment_format: None,
             created_at: String::new(),
             updated_at: String::new(),
         }

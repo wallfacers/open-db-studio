@@ -37,6 +37,9 @@ function useRowHighlight(scopeId: string, columnName: string) {
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
 
+const TD_EDITABLE = 'p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover';
+const INPUT_INLINE = 'w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block';
+
 const FK_ACTION_OPTIONS = [
   { value: 'NO ACTION', label: 'NO ACTION' },
   { value: 'CASCADE', label: 'CASCADE' },
@@ -72,9 +75,9 @@ const ColumnRow: React.FC<{
       <td className="w-10 px-2 py-1.5 border-r border-border-default text-foreground-muted text-center text-xs cursor-default select-none">
         {idx + 1}
       </td>
-      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+      <td className={TD_EDITABLE}>
         <input
-          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+          className={INPUT_INLINE}
           value={col.name}
           onChange={e => { onUserEdit(); updateColumn(col.id, { name: e.target.value }); }}
         />
@@ -87,9 +90,9 @@ const ColumnRow: React.FC<{
           className="w-full"
         />
       </td>
-      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+      <td className={TD_EDITABLE}>
         <input
-          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+          className={INPUT_INLINE}
           value={col.length ?? ''}
           onChange={e => { onUserEdit(); updateColumn(col.id, { length: e.target.value }); }}
           placeholder="—"
@@ -103,9 +106,9 @@ const ColumnRow: React.FC<{
           className="accent-accent"
         />
       </td>
-      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+      <td className={TD_EDITABLE}>
         <input
-          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+          className={INPUT_INLINE}
           value={col.defaultValue ?? ''}
           onChange={e => { onUserEdit(); updateColumn(col.id, { defaultValue: e.target.value }); }}
           placeholder="—"
@@ -119,17 +122,17 @@ const ColumnRow: React.FC<{
           className="accent-info"
         />
       </td>
-      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+      <td className={TD_EDITABLE}>
         <input
-          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+          className={INPUT_INLINE}
           value={col.extra ?? ''}
           onChange={e => { onUserEdit(); updateColumn(col.id, { extra: e.target.value }); }}
           placeholder="—"
         />
       </td>
-      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+      <td className={TD_EDITABLE}>
         <input
-          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+          className={INPUT_INLINE}
           value={col.comment ?? ''}
           onChange={e => { onUserEdit(); updateColumn(col.id, { comment: e.target.value }); }}
           placeholder="—"
@@ -502,6 +505,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   };
 
   const visibleColumns = columns.filter(c => !c._isDeleted);
+  const fkColOptions = useMemo(() => visibleColumns.map(c => ({ value: c.name, label: c.name })), [visibleColumns]);
   const effectiveTableName = tableName ?? newTableName;
   const previewSql = useMemo(() => {
     if (!effectiveTableName.trim()) return '-- 请先填写表名';
@@ -575,7 +579,11 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       {/* Tab Bar */}
       <div className="flex border-b border-border-default flex-shrink-0">
         {(['columns', 'foreignKeys', 'indexes'] as StructureTab[]).map(tab => {
-          const label = tab === 'columns' ? t('tableManage.columnsTab') : tab === 'indexes' ? t('tableManage.indexesTab') : '外键'
+          const tabLabels: Record<StructureTab, string> = {
+            columns: t('tableManage.columnsTab'),
+            foreignKeys: t('tableManage.foreignKeysTab'),
+            indexes: t('tableManage.indexesTab'),
+          }
           return (
             <button
               key={tab}
@@ -586,7 +594,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
               }`}
               onClick={() => setActiveTab(tab)}
             >
-              {label}
+              {tabLabels[tab]}
             </button>
           )
         })}
@@ -644,33 +652,31 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
             <table className="w-full text-left border-collapse whitespace-nowrap text-xs table-fixed">
               <thead className="sticky top-0 bg-background-base z-10">
                 <tr>
-                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[200px]">约束名</th>
-                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[150px]">当前列</th>
-                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[150px]">引用表</th>
-                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[130px]">引用列</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[200px]">{t('tableManage.fkConstraintName')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[150px]">{t('tableManage.fkColumn')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[150px]">{t('tableManage.fkReferencedTable')}</th>
+                  <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[130px]">{t('tableManage.fkReferencedColumn')}</th>
                   <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[120px]">ON DELETE</th>
                   <th className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal w-[120px]">ON UPDATE</th>
                   <th className="px-3 py-1.5 border-b border-border-default text-foreground-muted font-normal text-center w-[50px]">{t('tableManage.actions')}</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleForeignKeys.map(fk => {
-                  const colOptions = visibleColumns.map(c => ({ value: c.name, label: c.name }))
-                  return (
+                {visibleForeignKeys.map(fk => (
                     <tr key={fk.id} className="hover:bg-background-hover border-b border-border-default group transition-colors duration-150">
-                      <td className="p-0 border-r border-border-default [&:focus-within]:[outline:1px_solid_var(--border-focus)] [&:focus-within]:[-outline-offset:1px] [&:focus-within]:bg-background-hover">
+                      <td className={TD_EDITABLE}>
                         <input
-                          className="w-full h-full px-3 py-1.5 bg-transparent text-foreground-default outline-none text-xs block"
+                          className={INPUT_INLINE}
                           value={fk.constraintName}
                           onChange={e => updateForeignKey(fk.id, { constraintName: e.target.value })}
-                          placeholder="fk_table_col"
+                          placeholder={t('tableManage.fkPlaceholderConstraint')}
                         />
                       </td>
                       <td className="px-1 py-px border-r border-border-default">
                         <DropdownSelect
                           value={fk.column}
-                          options={colOptions}
-                          placeholder="选择列"
+                          options={fkColOptions}
+                          placeholder={t('tableManage.fkPlaceholderColumn')}
                           onChange={col => handleFkColumnChange(fk.id, col)}
                           className="w-full"
                         />
@@ -679,7 +685,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                         <DropdownSelect
                           value={fk.referencedTable}
                           options={refTables.map(t => ({ value: t, label: t }))}
-                          placeholder="选择表"
+                          placeholder={t('tableManage.fkPlaceholderTable')}
                           onChange={tbl => handleFkReferencedTableChange(fk.id, tbl)}
                           className="w-full"
                         />
@@ -688,7 +694,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                         <DropdownSelect
                           value={fk.referencedColumn}
                           options={(refColumnsCache[fk.referencedTable] ?? []).map(c => ({ value: c, label: c }))}
-                          placeholder={fk.referencedTable ? '选择列' : '先选引用表'}
+                          placeholder={fk.referencedTable ? t('tableManage.fkPlaceholderColumn') : t('tableManage.fkPlaceholderRefColumn')}
                           onChange={col => updateForeignKey(fk.id, { referencedColumn: col })}
                           className="w-full"
                         />
@@ -722,7 +728,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                       </td>
                     </tr>
                   )
-                })}
+                )}
               </tbody>
             </table>
             <button
@@ -730,7 +736,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
               className="m-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
             >
               <Plus size={13} />
-              添加外键
+              {t('tableManage.addForeignKey')}
             </button>
           </>
         ) : (

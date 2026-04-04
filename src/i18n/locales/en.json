@@ -581,7 +581,17 @@
     "noChanges": "-- No changes",
     "orderNotSupported": "-- PostgreSQL does not support column reordering, order changes ignored",
     "loadFailed": "Failed to load table structure",
-    "columnNameRequired": "Column name cannot be empty"
+    "columnNameRequired": "Column name cannot be empty",
+    "foreignKeysTab": "Foreign Keys",
+    "fkConstraintName": "Constraint Name",
+    "fkColumn": "Column",
+    "fkReferencedTable": "Referenced Table",
+    "fkReferencedColumn": "Referenced Column",
+    "addForeignKey": "Add Foreign Key",
+    "fkPlaceholderConstraint": "fk_table_col",
+    "fkPlaceholderColumn": "Select column",
+    "fkPlaceholderTable": "Select table",
+    "fkPlaceholderRefColumn": "Select referenced table first"
   },
   "ddlViewer": {
     "title": "View DDL",

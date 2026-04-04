@@ -575,8 +575,8 @@ pub fn create_relation(req: &CreateRelationRequest) -> AppResult<ErRelation> {
     let now = chrono::Utc::now().to_rfc3339();
 
     conn.execute(
-        "INSERT INTO er_relations (project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT INTO er_relations (project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, constraint_method, comment_format, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         rusqlite::params![
             req.project_id,
             req.name,
@@ -589,6 +589,8 @@ pub fn create_relation(req: &CreateRelationRequest) -> AppResult<ErRelation> {
             req.on_update.as_deref().unwrap_or("NO ACTION"),
             req.source.as_deref().unwrap_or("designer"),
             req.comment_marker,
+            req.constraint_method,
+            req.comment_format,
             &now,
             &now,
         ],

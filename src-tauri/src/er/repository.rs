@@ -14,13 +14,15 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<ErProject> {
         viewport_x: row.get(6)?,
         viewport_y: row.get(7)?,
         viewport_zoom: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        default_constraint_method: row.get(9)?,
+        default_comment_format: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }
 
 const PROJECT_COLS: &str =
-    "id, name, description, connection_id, database_name, schema_name, viewport_x, viewport_y, viewport_zoom, created_at, updated_at";
+    "id, name, description, connection_id, database_name, schema_name, viewport_x, viewport_y, viewport_zoom, default_constraint_method, default_comment_format, created_at, updated_at";
 
 fn row_to_table(row: &rusqlite::Row) -> rusqlite::Result<ErTable> {
     Ok(ErTable {
@@ -31,13 +33,15 @@ fn row_to_table(row: &rusqlite::Row) -> rusqlite::Result<ErTable> {
         position_x: row.get(4)?,
         position_y: row.get(5)?,
         color: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        constraint_method: row.get(7)?,
+        comment_format: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
 const TABLE_COLS: &str =
-    "id, project_id, name, comment, position_x, position_y, color, created_at, updated_at";
+    "id, project_id, name, comment, position_x, position_y, color, constraint_method, comment_format, created_at, updated_at";
 
 fn row_to_column(row: &rusqlite::Row) -> rusqlite::Result<ErColumn> {
     Ok(ErColumn {
@@ -81,13 +85,15 @@ fn row_to_relation(row: &rusqlite::Row) -> rusqlite::Result<ErRelation> {
         on_update: row.get(9)?,
         source: row.get(10)?,
         comment_marker: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        constraint_method: row.get(12)?,
+        comment_format: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 
 const RELATION_COLS: &str =
-    "id, project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, created_at, updated_at";
+    "id, project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, constraint_method, comment_format, created_at, updated_at";
 
 fn row_to_index(row: &rusqlite::Row) -> rusqlite::Result<ErIndex> {
     Ok(ErIndex {
@@ -216,6 +222,8 @@ pub fn update_project(id: i64, req: &UpdateProjectRequest) -> AppResult<ErProjec
     maybe_set!(req.viewport_x, "viewport_x");
     maybe_set!(req.viewport_y, "viewport_y");
     maybe_set!(req.viewport_zoom, "viewport_zoom");
+    maybe_set!(req.default_constraint_method, "default_constraint_method");
+    maybe_set!(req.default_comment_format, "default_comment_format");
 
     sets.push(format!("updated_at = ?{}", idx));
     params.push(Box::new(now.clone()));
@@ -370,6 +378,32 @@ pub fn update_table(id: i64, req: &UpdateTableRequest) -> AppResult<ErTable> {
     maybe_set!(req.position_x, "position_x");
     maybe_set!(req.position_y, "position_y");
     maybe_set!(req.color, "color");
+    match &req.constraint_method {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
+    match &req.comment_format {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
 
     sets.push(format!("updated_at = ?{}", idx));
     params.push(Box::new(now.clone()));
@@ -593,6 +627,32 @@ pub fn update_relation(id: i64, req: &UpdateRelationRequest) -> AppResult<ErRela
     maybe_set!(req.on_update, "on_update");
     maybe_set!(req.source, "source");
     maybe_set!(req.comment_marker, "comment_marker");
+    match &req.constraint_method {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
+    match &req.comment_format {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
 
     sets.push(format!("updated_at = ?{}", idx));
     params.push(Box::new(now.clone()));

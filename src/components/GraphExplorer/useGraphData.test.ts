@@ -91,7 +91,7 @@ describe('正常加载流程', () => {
       expect(result.current.loading).toBe(false);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith('get_graph_nodes', { connectionId: 1 });
+    expect(mockInvoke).toHaveBeenCalledWith('get_graph_nodes', { connectionId: 1, database: null });
   });
 
   it('节点加载成功后调用 get_graph_edges 传入 nodeIds', async () => {
@@ -149,7 +149,7 @@ describe('节点列表为空', () => {
 
     // 只调用了一次（get_graph_nodes），没有调用 get_graph_edges
     expect(mockInvoke).toHaveBeenCalledTimes(1);
-    expect(mockInvoke).toHaveBeenCalledWith('get_graph_nodes', { connectionId: 1 });
+    expect(mockInvoke).toHaveBeenCalledWith('get_graph_nodes', { connectionId: 1, database: null });
     expect(result.current.nodes).toEqual([]);
     expect(result.current.edges).toEqual([]);
   });

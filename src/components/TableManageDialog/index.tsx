@@ -28,6 +28,20 @@ interface TableSchemaResult {
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
 
+const FK_ACTION_OPTIONS = [
+  { value: 'NO ACTION', label: 'NO ACTION' },
+  { value: 'CASCADE', label: 'CASCADE' },
+  { value: 'SET NULL', label: 'SET NULL' },
+  { value: 'RESTRICT', label: 'RESTRICT' },
+  { value: 'SET DEFAULT', label: 'SET DEFAULT' },
+];
+
+const INDEX_TYPE_OPTIONS = [
+  { value: 'INDEX', label: 'INDEX' },
+  { value: 'UNIQUE', label: 'UNIQUE' },
+  { value: 'FULLTEXT', label: 'FULLTEXT' },
+];
+
 const getTypeOptions = (dataType: string) => {
   const opts = COMMON_TYPES.map(tp => ({ value: tp, label: tp }));
   if (dataType && !COMMON_TYPES.includes(dataType)) {
@@ -580,13 +594,6 @@ export const TableManageDialog: React.FC<Props> = ({
                   <tbody>
                     {visibleForeignKeys.map(fk => {
                       const colOptions = visibleColumns.map(c => ({ value: c.name, label: c.name }))
-                      const actionOptions = [
-                        { value: 'NO ACTION', label: 'NO ACTION' },
-                        { value: 'CASCADE', label: 'CASCADE' },
-                        { value: 'SET NULL', label: 'SET NULL' },
-                        { value: 'RESTRICT', label: 'RESTRICT' },
-                        { value: 'SET DEFAULT', label: 'SET DEFAULT' },
-                      ]
                       return (
                         <tr key={fk.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
                           <td className="py-1 px-2">
@@ -625,7 +632,7 @@ export const TableManageDialog: React.FC<Props> = ({
                           <td className="py-1 px-2">
                             <DropdownSelect
                               value={fk.onDelete}
-                              options={actionOptions}
+                              options={FK_ACTION_OPTIONS}
                               onChange={v => updateForeignKey(fk.id, { onDelete: v })}
                               className="w-full"
                             />
@@ -633,7 +640,7 @@ export const TableManageDialog: React.FC<Props> = ({
                           <td className="py-1 px-2">
                             <DropdownSelect
                               value={fk.onUpdate}
-                              options={actionOptions}
+                              options={FK_ACTION_OPTIONS}
                               onChange={v => updateForeignKey(fk.id, { onUpdate: v })}
                               className="w-full"
                             />
@@ -682,11 +689,6 @@ export const TableManageDialog: React.FC<Props> = ({
                   </thead>
                   <tbody>
                     {visibleIndexes.map(idx => {
-                      const typeOptions = [
-                        { value: 'INDEX', label: 'INDEX' },
-                        { value: 'UNIQUE', label: 'UNIQUE' },
-                        { value: 'FULLTEXT', label: 'FULLTEXT' },
-                      ]
                       return (
                         <tr key={idx.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
                           <td className="py-1 px-2">
@@ -700,7 +702,7 @@ export const TableManageDialog: React.FC<Props> = ({
                           <td className="py-1 px-2">
                             <DropdownSelect
                               value={idx.type}
-                              options={typeOptions}
+                              options={INDEX_TYPE_OPTIONS}
                               onChange={v => updateIndex(idx.id, { type: v as TableFormIndex['type'] })}
                               className="w-full"
                             />

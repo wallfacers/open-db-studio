@@ -461,7 +461,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         onAutoLayout={handleAutoLayout}
         hasConnection={hasConnection}
       />
-      <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ display: isActiveTab ? 'block' : 'none' }}>
+      <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ visibility: isActiveTab ? 'visible' : 'hidden', pointerEvents: isActiveTab ? 'auto' : 'none' }}>
         <ReactFlow
           className="graph-canvas-container"
           nodes={nodes}

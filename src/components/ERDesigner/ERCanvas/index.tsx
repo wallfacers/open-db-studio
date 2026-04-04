@@ -497,6 +497,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           deleteKeyCode={['Backspace', 'Delete']}
+          // fitView and onInit.setViewport are mutually exclusive: when savedViewport exists, fitView is suppressed and onInit restores the exact position
           fitView={savedViewport === null}
           fitViewOptions={savedViewport === null ? { maxZoom: 1, padding: 0.2 } : undefined}
           onMoveEnd={onMoveEnd}

@@ -274,10 +274,12 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         const expandedTables = new Set(s.expandedTables);
         for (const tid of tableIdsToRemove) expandedTables.delete(tid);
         persistExpandedState(expandedProjects, expandedTables);
+        const { [id]: _removedViewport, ...remainingViewports } = s.viewports;
         return {
           projects: s.projects.filter((p) => p.id !== id),
           expandedProjects,
           expandedTables,
+          viewports: remainingViewports,
           ...(s.activeProjectId === id
             ? { activeProjectId: null, tables: [], columns: {}, relations: [], indexes: {} }
             : {}),

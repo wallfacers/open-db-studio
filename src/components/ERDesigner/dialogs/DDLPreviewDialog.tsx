@@ -36,6 +36,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
   const [includeIndexes, setIncludeIndexes] = useState(true);
   const [includeComments, setIncludeComments] = useState(true);
   const [includeForeignKeys, setIncludeForeignKeys] = useState(false);
+  const [includeCommentRefs, setIncludeCommentRefs] = useState(true);
   const [ddl, setDdl] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -48,6 +49,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
         includeIndexes,
         includeComments,
         includeForeignKeys,
+        includeCommentRefs,
       })
         .then((result) => {
           setDdl(result);
@@ -60,7 +62,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
           setLoading(false);
         });
     }
-  }, [visible, projectId, dialect, includeIndexes, includeComments, includeForeignKeys, generateDDL]);
+  }, [visible, projectId, dialect, includeIndexes, includeComments, includeForeignKeys, includeCommentRefs, generateDDL]);
 
   const handleCopy = async () => {
     try {
@@ -138,6 +140,15 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
               className="accent-accent w-4 h-4"
             />
             <span className="text-xs text-foreground-default">{t('erDesigner.includeForeignKeys')}</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeCommentRefs}
+              onChange={e => setIncludeCommentRefs(e.target.checked)}
+              className="accent-accent w-4 h-4"
+            />
+            <span className="text-[12px] text-foreground-default">在列注释中生成引用标记 💬</span>
           </label>
         </div>
 

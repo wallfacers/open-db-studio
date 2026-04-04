@@ -90,6 +90,7 @@ static RE_S3: OnceLock<Regex> = OnceLock::new();
 static RE_S4: OnceLock<Regex> = OnceLock::new();
 
 /// 解析列注释的完整结果：引用列表 + 去除标记后的干净描述
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct ParsedComment {
     pub refs: Vec<CommentRef>,
@@ -97,6 +98,7 @@ pub struct ParsedComment {
 }
 
 /// 解析列注释，返回引用列表和去除所有标记后的干净描述文本。
+#[allow(dead_code)]
 pub fn parse_comment(comment: &str) -> ParsedComment {
     let refs = parse_comment_refs(comment);
 

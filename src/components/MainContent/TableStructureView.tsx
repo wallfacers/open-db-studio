@@ -326,11 +326,13 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   const [refColumnsCache, setRefColumnsCache] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
+    refColumnsCacheRef.current = {}
+    setRefColumnsCache({})
     if (!database) return
     invoke<Array<{ name: string }>>('list_tables_with_stats', {
       connectionId, database, schema: schema ?? null,
     }).then(tables => setRefTables(tables.map(t => t.name)))
-      .catch(() => {})
+      .catch(() => setRefTables([]))
   }, [connectionId, database, schema])
 
   const loadRefColumns = useCallback((tblName: string) => {
@@ -341,7 +343,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       const cols = detail.columns.map(c => c.name)
       refColumnsCacheRef.current = { ...refColumnsCacheRef.current, [tblName]: cols }
       setRefColumnsCache(prev => ({ ...prev, [tblName]: cols }))
-    }).catch(() => {})
+    }).catch(e => showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error'))
   }, [connectionId, database, schema])
 
 
@@ -687,7 +689,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                         <DropdownSelect
                           value={fk.referencedTable}
                           options={refTables.map(t => ({ value: t, label: t }))}
-                          placeholder="选择表"
+                          placeholder={t('tableManage.fkPlaceholderTable')}
                           onChange={tbl => handleFkReferencedTableChange(fk.id, tbl)}
                           searchable
                           maxItems={20}
@@ -698,7 +700,7 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
                         <DropdownSelect
                           value={fk.referencedColumn}
                           options={(refColumnsCache[fk.referencedTable] ?? []).map(c => ({ value: c, label: c }))}
-                          placeholder={fk.referencedTable ? '选择列' : '先选引用表'}
+                          placeholder={fk.referencedTable ? t('tableManage.fkPlaceholderColumn') : t('tableManage.fkPlaceholderRefColumn')}
                           onChange={col => updateForeignKey(fk.id, { referencedColumn: col })}
                           className="w-full"
                         />

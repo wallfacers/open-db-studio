@@ -964,6 +964,11 @@
     "baseModal": {
       "processing": "Processing..."
     },
+    "dropdown": {
+      "searchPlaceholder": "Search...",
+      "noResults": "No results",
+      "moreItems": "{{count}} items total — type to search"
+    },
     "chartBlock": {
       "generatingChart": "AI is generating chart data",
       "chartDataError": "Invalid chart data format",

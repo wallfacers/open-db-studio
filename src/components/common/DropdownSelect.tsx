@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Option {
   value: string;
@@ -48,6 +49,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<DropdownPos | null>(null);
   const [searchText, setSearchText] = useState('');
+  const { t } = useTranslation();
   const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -119,16 +121,20 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
     }
   };
 
-  // 搜索打开后自动聚焦输入框
   useEffect(() => {
     if (open && searchable) {
-      setTimeout(() => searchInputRef.current?.focus(), 30);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
     }
   }, [open, searchable]);
 
-  const filteredOptions = searchable && searchText
-    ? options.filter(o => o.label.toLowerCase().includes(searchText.toLowerCase()))
-    : maxItems ? options.slice(0, maxItems) : options;
+  const filteredOptions = useMemo(() => {
+    if (!open) return options;
+    if (searchable && searchText) {
+      const lower = searchText.toLowerCase();
+      return options.filter(o => o.label.toLowerCase().includes(lower));
+    }
+    return maxItems ? options.slice(0, maxItems) : options;
+  }, [open, searchable, searchText, options, maxItems]);
 
   const selected = options.find(o => o.value === value);
   const displayLabel = displayValue ?? selected?.label ?? placeholder;
@@ -180,7 +186,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
               <input
                 ref={searchInputRef}
                 className="w-full bg-background-base border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
-                placeholder="搜索..."
+                placeholder={t('commonComponents.dropdown.searchPlaceholder')}
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
                 onClick={e => e.stopPropagation()}
@@ -197,7 +203,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
             </div>
           )}
           {filteredOptions.length === 0 && (
-            <div className="px-3 py-1.5 text-xs text-foreground-muted">无匹配结果</div>
+            <div className="px-3 py-1.5 text-xs text-foreground-muted">{t('commonComponents.dropdown.noResults')}</div>
           )}
           {filteredOptions.map(opt => (
             <div
@@ -211,7 +217,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
           ))}
           {!searchText && maxItems && options.length > maxItems && (
             <div className="px-3 py-1.5 text-[11px] text-foreground-ghost border-t border-border-default">
-              共 {options.length} 条，输入搜索查看更多
+              {t('commonComponents.dropdown.moreItems', { count: options.length })}
             </div>
           )}
         </div>,

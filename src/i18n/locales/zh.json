@@ -965,6 +965,11 @@
     "baseModal": {
       "processing": "处理中..."
     },
+    "dropdown": {
+      "searchPlaceholder": "搜索...",
+      "noResults": "无匹配结果",
+      "moreItems": "共 {{count}} 条，输入搜索查看更多"
+    },
     "chartBlock": {
       "generatingChart": "AI 正在生成图表数据",
       "chartDataError": "图表数据格式有误",

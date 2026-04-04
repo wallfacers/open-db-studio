@@ -25,6 +25,7 @@ import EREdge from './EREdge'
 import ERToolbar from './ERToolbar'
 import ERPropertyDrawer from '../ERPropertyDrawer'
 import { DDLPreviewDialog } from '../dialogs/DDLPreviewDialog'
+import { ProjectSettingsDialog } from '../dialogs/ProjectSettingsDialog'
 import { DiffReportDialog } from '../dialogs/DiffReportDialog'
 import { BindConnectionDialog } from '../dialogs/BindConnectionDialog'
 import { ImportTableDialog } from '../dialogs/ImportTableDialog'
@@ -76,6 +77,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const [showDiff, setShowDiff] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tableId: number } | null>(null)
   const isActiveTab = useQueryStore(s => s.activeTabId === tabId)
 
@@ -460,6 +462,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         tables={projectTables}
         onAutoLayout={handleAutoLayout}
         hasConnection={hasConnection}
+        onOpenSettings={() => setShowSettings(true)}
       />
       <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ visibility: isActiveTab ? 'visible' : 'hidden', pointerEvents: isActiveTab ? 'auto' : 'none' }}>
         <ReactFlow
@@ -544,6 +547,11 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         databaseName={activeProject?.database_name ?? null}
         onClose={() => setShowImport(false)}
         onImported={() => { setShowImport(false); reloadCanvas() }}
+      />
+      <ProjectSettingsDialog
+        visible={showSettings}
+        projectId={projectId}
+        onClose={() => setShowSettings(false)}
       />
     </div>
     <ERPropertyDrawer />

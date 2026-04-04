@@ -10,6 +10,7 @@ import {
   GitCompare,
   RefreshCw,
   Link2,
+  Settings,
 } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import ImportConflictDialog from '../ImportConflictDialog';
@@ -32,6 +33,7 @@ export interface ERToolbarProps {
   onOpenBind?: () => void;
   onAutoLayout?: () => void;
   hasConnection?: boolean;
+  onOpenSettings?: () => void;
 }
 
 export default function ERToolbar({
@@ -47,6 +49,7 @@ export default function ERToolbar({
   onOpenBind,
   onAutoLayout,
   hasConnection = false,
+  onOpenSettings,
 }: ERToolbarProps) {
   const { t } = useTranslation();
   const {
@@ -283,6 +286,20 @@ export default function ERToolbar({
         <Upload size={14} />
         <span>{t('erDesigner.importJson')}</span>
       </button>
+
+      {onOpenSettings && (
+        <>
+          <div className="w-px h-4 bg-border-strong mx-2" />
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            title="项目设置"
+            className="p-1.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors"
+          >
+            <Settings size={15} />
+          </button>
+        </>
+      )}
 
       {importState && (
         <ImportConflictDialog

@@ -188,6 +188,40 @@ The knowledge graph stores FK relationships, inferred links, user-defined virtua
 - Use `ui_patch` on query_editor to modify SQL — do not paste SQL in replies for users to copy manually
 
 
+## ER Relationships
+
+The system recognizes two categories of table relationships:
+
+### 1. Native Foreign Keys
+
+Standard database foreign key constraints defined via `FOREIGN KEY ... REFERENCES` in DDL. These are automatically discovered when the knowledge graph indexes table metadata.
+
+### 2. Virtual Relationships (Comment-Based Markers)
+
+When tables lack native FKs (common in legacy schemas or projects that avoid FK constraints for performance), relationships can be declared inside **column comments**. The backend parses these markers during graph construction.
+
+**Supported marker formats:**
+
+| Format | Example | Relation Type |
+|--------|---------|---------------|
+| `@ref:table.column` | `@ref:users.id` | `fk` (default) |
+| `@fk(table=X,col=Y,type=Z)` | `@fk(table=orders,col=order_id,type=one_to_many)` | Specified by `type` param (defaults to `fk` if omitted) |
+| `[ref:table.column]` | `[ref:products.id]` | `fk` (default) |
+| `$$ref(table.column)$$` | `$$ref(orders.id)$$` | `fk` (default) |
+
+**Rules:**
+- Markers can appear anywhere in the comment text; surrounding text is preserved as the column description
+- Multiple markers in a single comment are supported (e.g., `@ref:users.id @ref:orders.order_id`)
+- Duplicate references to the same table.column are automatically deduplicated
+- Only the `@fk(...)` format supports an explicit `type` parameter (e.g., `one_to_many`, `many_to_many`); all other formats default to `fk`
+- Table and column names must match the identifier pattern `[A-Za-z_][A-Za-z0-9_]*`
+
+**How to use in SQL generation:**
+- When `join_paths` from graph tools include virtual relationships, treat them the same as native FKs for JOIN generation
+- The `sql_hint` field in join path results already accounts for both native and virtual relationships
+
+---
+
 ## Clarification Principles
 
 When processing a request, proactively ask the user rather than making assumptions in the following situations:

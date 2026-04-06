@@ -351,6 +351,15 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
     }).catch(e => showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error'))
   }, [connectionId, database, schema])
 
+  // Auto-load referenced columns when foreignKeys change (e.g. via AI actions)
+  useEffect(() => {
+    for (const fk of foreignKeys) {
+      if (fk.referencedTable && !refColumnsCacheRef.current[fk.referencedTable]) {
+        loadRefColumns(fk.referencedTable)
+      }
+    }
+  }, [foreignKeys, loadRefColumns])
+
 
   // Register UIObject for AI access
   const uiObject = useMemo(

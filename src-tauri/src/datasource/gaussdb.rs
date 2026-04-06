@@ -391,6 +391,7 @@ impl DataSource for GaussDbDataSource {
             referenced_table: r.get::<_, Option<String>>(2).unwrap_or_default(),
             referenced_column: r.get::<_, Option<String>>(3).unwrap_or_default(),
             on_delete: r.get::<_, Option<String>>(4),
+            on_update: None,
         }).collect())
     }
 

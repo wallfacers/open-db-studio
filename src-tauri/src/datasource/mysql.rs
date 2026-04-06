@@ -276,7 +276,7 @@ impl DataSource for MySqlDataSource {
         let rows = sqlx::query(
             "SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
                     kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
-                    rc.DELETE_RULE
+                    rc.DELETE_RULE, rc.UPDATE_RULE
              FROM information_schema.KEY_COLUMN_USAGE kcu
              LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
                  ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
@@ -295,6 +295,10 @@ impl DataSource for MySqlDataSource {
             referenced_column: get_str(r, 3),
             on_delete: {
                 let v = get_str(r, 4);
+                if v.is_empty() { None } else { Some(v) }
+            },
+            on_update: {
+                let v = get_str(r, 5);
                 if v.is_empty() { None } else { Some(v) }
             },
         }).collect())

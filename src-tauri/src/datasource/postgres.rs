@@ -496,7 +496,7 @@ impl DataSource for PostgresDataSource {
             "SELECT tc.constraint_name, kcu.column_name,
                     ccu.table_schema AS referenced_schema,
                     ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
-                    rc.delete_rule
+                    rc.delete_rule, rc.update_rule
              FROM information_schema.table_constraints tc
              JOIN information_schema.key_column_usage kcu
                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
@@ -522,6 +522,7 @@ impl DataSource for PostgresDataSource {
                 referenced_table: format!("{}.{}", ref_schema, ref_table),
                 referenced_column: r.try_get::<String, _>(4).unwrap_or_default(),
                 on_delete: r.try_get::<Option<String>, _>(5).ok().flatten(),
+                on_update: r.try_get::<Option<String>, _>(6).ok().flatten(),
             }
         }).collect())
     }

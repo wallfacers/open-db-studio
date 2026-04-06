@@ -234,6 +234,7 @@ impl DataSource for SqliteDataSource {
                         referenced_table: to_table,
                         referenced_column: to_col,
                         on_delete: on_delete.filter(|s| s != "NO ACTION"),
+                        on_update: None,
                     })
                 })
                 .map_err(|e| AppError::Datasource(e.to_string()))?

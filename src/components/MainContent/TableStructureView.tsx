@@ -390,6 +390,12 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
         comment: string | null;
       }>;
       indexes: Array<{ index_name: string; is_unique: boolean; columns: string[] }>;
+      foreign_keys: Array<{
+        constraint_name: string; column: string;
+        referenced_table: string; referenced_column: string;
+        on_delete: string | null;
+        on_update: string | null;
+      }>;
     }>('get_table_detail', {
       connectionId, database: database ?? null, schema: schema ?? null, table: tableName
     }).then(detail => {
@@ -409,12 +415,22 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
       const idxs: TableFormIndex[] = (detail.indexes ?? [])
         .filter(idx => idx.index_name !== 'PRIMARY')
         .map(indexMetaToTableFormIndex);
+      const fks: TableFormForeignKey[] = (detail.foreign_keys ?? []).map(fk => ({
+        id: makeId(),
+        constraintName: fk.constraint_name,
+        column: fk.column,
+        referencedTable: fk.referenced_table,
+        referencedColumn: fk.referenced_column,
+        onDelete: fk.on_delete ?? 'NO ACTION',
+        onUpdate: fk.on_update ?? 'NO ACTION',
+        _originalName: fk.constraint_name,
+      }));
       initForm(tabId, {
         tableName: tableName,
         engine: 'InnoDB', charset: 'utf8mb4', comment: '',
         columns: cols, originalColumns: cols.map(c => ({ ...c })),
         indexes: idxs, originalIndexes: idxs.map(i => ({ ...i })),
-        foreignKeys: [],
+        foreignKeys: fks, originalForeignKeys: fks.map(f => ({ ...f })),
         isNewTable: false,
       })
     }).catch(e => {

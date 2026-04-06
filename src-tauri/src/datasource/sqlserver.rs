@@ -298,6 +298,7 @@ impl DataSource for SqlServerDataSource {
             referenced_table: row_str(r, 2),
             referenced_column: row_str(r, 3),
             on_delete: Some(row_str(r, 4)),
+            on_update: None,
         }).collect())
     }
 

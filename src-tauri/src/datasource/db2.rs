@@ -471,7 +471,7 @@ impl DataSource for Db2DataSource {
                         "R" => "RESTRICT".to_string(),
                         _ => "NO ACTION".to_string(),
                     });
-                    ForeignKeyMeta { constraint_name, column, referenced_table, referenced_column, on_delete }
+                    ForeignKeyMeta { constraint_name, column, referenced_table, referenced_column, on_delete, on_update: None }
                 }).collect())
             }).await
         }

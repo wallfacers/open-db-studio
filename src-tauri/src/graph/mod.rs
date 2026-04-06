@@ -222,14 +222,6 @@ async fn build_single_database(
         schema
     };
 
-    // 解析列注释生成虚拟关系 Link Node
-    let known_tables: std::collections::HashSet<String> =
-        schema_for_detect.tables.iter().map(|t| t.name.clone()).collect();
-    match build_comment_links(connection_id, &table_columns, &known_tables, config.database.as_deref()) {
-        Ok(n) => log_and_emit(app, task_id, logs, "INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
-        Err(e) => log_and_emit(app, task_id, logs, "WARN", &format!("注释关系解析失败: {}", e)),
-    }
-
     // 检测变更并写入 schema_change_log
     crate::graph::change_detector::detect_and_log_changes(
         connection_id,
@@ -240,10 +232,18 @@ async fn build_single_database(
     )
     .map_err(|e| format!("变更检测失败: {}", e))?;
 
-    // 处理待消费事件
+    // 处理待消费事件（创建 table/column 节点）
     event_processor::process_pending_events(app, connection_id, task_id)
         .await
         .map_err(|e| format!("增量更新失败: {}", e))?;
+
+    // 解析列注释生成虚拟关系 Link Node（必须在事件处理之后，确保 table 节点已存在）
+    let known_tables: std::collections::HashSet<String> =
+        schema_for_detect.tables.iter().map(|t| t.name.clone()).collect();
+    match build_comment_links(connection_id, &table_columns, &known_tables, config.database.as_deref()) {
+        Ok(n) => log_and_emit(app, task_id, logs, "INFO", &format!("注释关系解析完成，共 {} 条虚拟边", n)),
+        Err(e) => log_and_emit(app, task_id, logs, "WARN", &format!("注释关系解析失败: {}", e)),
+    }
 
     Ok(table_count)
 }

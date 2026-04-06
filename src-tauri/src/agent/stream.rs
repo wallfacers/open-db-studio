@@ -73,8 +73,8 @@ pub async fn collect_text_via_global_events(
     // 本 session 的 part_id 集合（从 message.part.updated 注册）
     let mut session_part_ids: std::collections::HashSet<String> =
         std::collections::HashSet::new();
-    // 收到过 delta 事件的 part_id 集合（用于过滤用户消息快照）
-    let mut parts_with_deltas: std::collections::HashSet<String> =
+    // 首次快照为空文本的 part（助手 part 特征：逐步构建，初始为空；用户 part 初始即为完整文本）
+    let mut parts_starting_empty: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     let mut result = String::new();
     // 上一个发送过内容的 text part ID，用于在切换 part 时插入换行分隔
@@ -103,11 +103,15 @@ pub async fn collect_text_via_global_events(
                         let part_id = part["id"].as_str().unwrap_or("").to_string();
                         session_part_ids.insert(part_id.clone());
 
-                        // 快照回退：仅对已收到 delta 的 part 应用，过滤用户消息完整快照
+                        // 快照回退：仅对助手 part 应用（首次快照为空），过滤用户消息完整快照
                         if part["type"].as_str() == Some("text") {
                             let full = part["text"].as_str().unwrap_or("");
                             let prev = *part_offsets.get(&part_id).unwrap_or(&0);
-                            if full.len() > prev && parts_with_deltas.contains(&part_id) {
+                            // 首次见到该 part 且初始文本为空 → 助手 part，标记为可回退
+                            if prev == 0 && full.is_empty() {
+                                parts_starting_empty.insert(part_id.clone());
+                            }
+                            if full.len() > prev && parts_starting_empty.contains(&part_id) {
                                 if last_text_part_id.as_deref() != Some(&part_id)
                                     && last_text_part_id.is_some()
                                 {
@@ -129,7 +133,6 @@ pub async fn collect_text_via_global_events(
                     if props["field"].as_str() == Some("text") {
                         let delta = props["delta"].as_str().unwrap_or("");
                         if !delta.is_empty() {
-                            parts_with_deltas.insert(part_id.to_string());
                             if last_text_part_id.as_deref() != Some(part_id)
                                 && last_text_part_id.is_some()
                             {

@@ -425,7 +425,7 @@ export interface PermissionRequest {
 /** OpenCode question.asked — AI agent 请求用户回答选择题/自定义输入 */
 export interface QuestionOption {
   label: string
-  description: string
+  description?: string
 }
 
 export interface QuestionInfo {

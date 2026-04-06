@@ -689,7 +689,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 &handle, "mcp://ui-request", "ui_request", open_payload,
             ).await?;
 
-            let object_id = open_result["data"]["objectId"].as_str().unwrap_or("").to_string();
+            let object_id = open_result["data"]["data"]["objectId"].as_str().unwrap_or("").to_string();
             if object_id.is_empty() {
                 return Err(crate::AppError::Other("Failed to open table_form tab".into()));
             }
@@ -708,6 +708,14 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
             }
             if let Some(columns) = args["columns"].as_array() {
                 for col in columns {
+                    let mut col = col.clone();
+                    // Normalize isAutoIncrement -> extra: "auto_increment"
+                    if col.get("isAutoIncrement").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        if col.get("extra").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                            col["extra"] = json!("auto_increment");
+                        }
+                        col.as_object_mut().map(|m| m.remove("isAutoIncrement"));
+                    }
                     ops.push(json!({"op": "add", "path": "/columns/-", "value": col}));
                 }
             }

@@ -844,9 +844,17 @@ export class TableFormUIObject implements UIObject {
 
       case 'add_index': {
         const p = params ?? {}
-        const { columns, type = 'INDEX', name } = p
+        let { columns, type = 'INDEX', name } = p
+        // Defensive: parse stringified JSON
+        if (typeof columns === 'string') {
+          try { columns = JSON.parse(columns) } catch { /* keep as-is */ }
+        }
+        // Defensive: convert object-form [{name:"col",order:"ASC"}] to string[]
+        if (Array.isArray(columns) && columns.length > 0 && typeof columns[0] === 'object') {
+          columns = columns.map((c: any) => (typeof c === 'string' ? c : c.name)).filter(Boolean)
+        }
         if (!columns || !Array.isArray(columns) || columns.length === 0) {
-          return execError('columns array is required')
+          return execError(`columns must be a non-empty array of column name strings. Received: ${JSON.stringify(p.columns)}`)
         }
         const indexName: string = name || `idx_${(columns as string[]).join('_')}`
         const columnsJson = stringifyIndexColumns((columns as string[]).map(c => ({ name: c, order: 'ASC' as const })))
@@ -904,7 +912,13 @@ export class TableFormUIObject implements UIObject {
         if (engine) ops.push({ op: 'replace', path: '/engine', value: engine })
         if (charset) ops.push({ op: 'replace', path: '/charset', value: charset })
         if (comment) ops.push({ op: 'replace', path: '/comment', value: comment })
-        for (const col of columns) {
+        for (const raw of columns) {
+          const col = { ...raw }
+          // Normalize isAutoIncrement -> extra: "auto_increment"
+          if (col.isAutoIncrement && !col.extra) {
+            col.extra = 'auto_increment'
+          }
+          delete col.isAutoIncrement
           ops.push({ op: 'add', path: '/columns/-', value: col })
         }
         const patchResult = this.patchDirect(ops)

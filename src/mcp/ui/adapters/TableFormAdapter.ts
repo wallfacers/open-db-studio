@@ -9,6 +9,7 @@ import { useHighlightStore } from '../../../store/highlightStore'
 import { makeId } from '../../../utils/makeId'
 import { parseIndexColumns, stringifyIndexColumns } from '../../../utils/indexColumns'
 import type { IndexColumnEntry } from '../../../utils/indexColumns'
+import { resolveVarRefs, validateBatchVarRefs } from '../batchUtils'
 
 const CASCADE_OPTS = ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT'] as const
 const INDEX_TYPES = ['INDEX', 'UNIQUE', 'FULLTEXT'] as const
@@ -490,6 +491,99 @@ export class TableFormUIObject implements UIObject {
               required: ['name'],
             },
           },
+          {
+            name: 'batch_create_table',
+            description:
+              'Create a complete table with all columns, indexes, and foreign keys in one call. ' +
+              'Much faster than calling ui_patch + add_index × N + add_foreign_key × N separately. ' +
+              'Returns { tableName, columnCount, indexCount, fkCount, previewSql }.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                tableName: { type: 'string', description: 'Table name (required)' },
+                columns: {
+                  type: 'array',
+                  description: 'Column definitions (ordered)',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                      dataType: { type: 'string' },
+                      length: { type: 'string' },
+                      isNullable: { type: 'boolean', default: true },
+                      defaultValue: { type: 'string' },
+                      isPrimaryKey: { type: 'boolean', default: false },
+                      extra: { type: 'string', description: 'e.g. "auto_increment"' },
+                      comment: { type: 'string' },
+                    },
+                    required: ['name', 'dataType'],
+                  },
+                },
+                indexes: {
+                  type: 'array',
+                  description: 'Index definitions (optional)',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string', description: 'Auto-generated as idx_{columns} if omitted' },
+                      columns: { type: 'array', items: { type: 'string' } },
+                      type: { type: 'string', enum: ['INDEX', 'UNIQUE', 'FULLTEXT'], default: 'INDEX' },
+                    },
+                    required: ['columns'],
+                  },
+                },
+                foreignKeys: {
+                  type: 'array',
+                  description: 'Foreign key definitions (optional)',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      column: { type: 'string' },
+                      referencedTable: { type: 'string' },
+                      referencedColumn: { type: 'string' },
+                      constraintName: { type: 'string', description: 'Auto-generated if omitted' },
+                      onDelete: { type: 'string', enum: CASCADE_OPTS, default: 'NO ACTION' },
+                      onUpdate: { type: 'string', enum: CASCADE_OPTS, default: 'NO ACTION' },
+                    },
+                    required: ['column', 'referencedTable', 'referencedColumn'],
+                  },
+                },
+                engine: { type: 'string', default: 'InnoDB' },
+                charset: { type: 'string', default: 'utf8mb4' },
+                comment: { type: 'string' },
+              },
+              required: ['tableName', 'columns'],
+            },
+          },
+          {
+            name: 'batch',
+            description:
+              'Execute a sequence of actions in one call with variable binding. ' +
+              'Each op is { action, params }; results are stored and can be referenced by later ops ' +
+              'via "$N.path" syntax (e.g. "$0.name", "$1.constraintName"). ' +
+              'Stops on first failure. Returns { results: [...] }. ' +
+              'Set dryRun=true to validate without executing.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                ops: {
+                  type: 'array',
+                  description: 'Ordered operations. Each op reuses any existing action (add_index, add_foreign_key, etc.)',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      action: { type: 'string', description: 'Action name' },
+                      params: { type: 'object', description: 'Action params. "$N.path" references previous op results.' },
+                    },
+                    required: ['action'],
+                  },
+                },
+                dryRun: { type: 'boolean', default: false, description: 'Validate all ops without executing' },
+                returnState: { type: 'boolean', default: false, description: 'Include current form state in response' },
+              },
+              required: ['ops'],
+            },
+          },
         ]
       }
     }
@@ -655,7 +749,15 @@ export class TableFormUIObject implements UIObject {
       if (paths.length > 0) {
         useHighlightStore.getState().addHighlights(this.objectId, paths)
       }
-      return { status: 'applied' }
+      return {
+        status: 'applied',
+        summary: {
+          changedPaths: paths,
+          columnCount: patched.columns.filter(c => !c._isDeleted).length,
+          indexCount: (patched.indexes ?? []).filter(i => !i._isDeleted).length,
+          fkCount: (patched.foreignKeys ?? []).filter(f => !f._isDeleted).length,
+        },
+      }
     } catch (e) {
       return patchError(String(e))
     }
@@ -789,8 +891,156 @@ export class TableFormUIObject implements UIObject {
         return { success: true, data: { removed: name } }
       }
 
+      case 'batch_create_table': {
+        const p = params ?? {}
+        const { tableName, columns, indexes, foreignKeys, engine, charset, comment } = p
+        if (!tableName || !columns || !Array.isArray(columns) || columns.length === 0) {
+          return execError('tableName and columns (non-empty array) are required')
+        }
+
+        // Step 1: Build patch ops for table metadata + all columns
+        const ops: JsonPatchOp[] = [
+          { op: 'replace', path: '/tableName', value: tableName },
+        ]
+        if (engine) ops.push({ op: 'replace', path: '/engine', value: engine })
+        if (charset) ops.push({ op: 'replace', path: '/charset', value: charset })
+        if (comment) ops.push({ op: 'replace', path: '/comment', value: comment })
+        for (const col of columns) {
+          ops.push({ op: 'add', path: '/columns/-', value: col })
+        }
+        const patchResult = this.patchDirect(ops)
+        if (patchResult.status === 'error') {
+          return execError(`Failed to apply columns: ${patchResult.message}`)
+        }
+
+        // Step 2: Add indexes via exec
+        const indexResults: string[] = []
+        if (Array.isArray(indexes)) {
+          for (const idx of indexes) {
+            const r = await this.exec('add_index', idx)
+            if (!r.success) return { ...r, data: { ...r.data, completedColumns: columns.length, completedIndexes: indexResults } }
+            indexResults.push(r.data?.name ?? idx.name)
+          }
+        }
+
+        // Step 3: Add foreign keys via exec
+        const fkResults: string[] = []
+        if (Array.isArray(foreignKeys)) {
+          for (const fk of foreignKeys) {
+            const r = await this.exec('add_foreign_key', fk)
+            if (!r.success) return { ...r, data: { ...r.data, completedColumns: columns.length, completedIndexes: indexResults, completedFKs: fkResults } }
+            fkResults.push(r.data?.constraintName ?? fk.constraintName)
+          }
+        }
+
+        // Step 4: Generate preview SQL
+        const freshState = useTableFormStore.getState().getForm(this.objectId)
+        let previewSql = ''
+        try {
+          if (freshState) previewSql = generateTableSql(freshState, this.getDriver())
+        } catch { /* non-critical */ }
+
+        return {
+          success: true,
+          data: {
+            tableName,
+            columnCount: columns.length,
+            indexCount: indexResults.length,
+            fkCount: fkResults.length,
+            previewSql,
+          },
+        }
+      }
+
+      case 'batch': {
+        return this._batchExec(params)
+      }
+
       default:
-        return execError(`Unknown action: ${action}`, 'Available actions: preview_sql, save, add_foreign_key, update_foreign_key, remove_foreign_key, add_index, update_index, remove_index')
+        return execError(`Unknown action: ${action}`, 'Available actions: preview_sql, save, add_foreign_key, update_foreign_key, remove_foreign_key, add_index, update_index, remove_index, batch_create_table, batch')
     }
+  }
+
+  // ── Batch: generic sequential execution with variable binding ──
+
+  private async _batchExec(params: any): Promise<ExecResult> {
+    const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
+    if (ops.length === 0) return execError('ops array is required and must be non-empty')
+
+    // Dry-run: validate without executing
+    if (params?.dryRun) {
+      return this._validateBatchOps(ops)
+    }
+
+    const results: unknown[] = []
+
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]
+      if (op.action === 'batch') {
+        return { success: false, error: `op[${i}]: nested batch is not allowed` }
+      }
+
+      let resolvedParams: unknown
+      try {
+        resolvedParams = resolveVarRefs(op.params, results)
+      } catch (e) {
+        return {
+          success: false,
+          error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
+          data: { completedOps: i, results, failedOp: { index: i, action: op.action, rawParams: op.params } },
+        }
+      }
+
+      const result = await this.exec(op.action, resolvedParams)
+      if (!result.success) {
+        return {
+          success: false,
+          error: `op[${i}] ${op.action} failed: ${result.error}`,
+          data: { completedOps: i, results, failedOp: { index: i, action: op.action, resolvedParams } },
+        }
+      }
+      results.push(result.data ?? {})
+    }
+
+    const data: Record<string, unknown> = { results }
+    if (params?.returnState) {
+      data.state = this.read('state')
+    }
+    return { success: true, data }
+  }
+
+  private _validateBatchOps(ops: Array<{ action: string; params?: unknown }>): ExecResult {
+    const actionDefs = this.read('actions') as Array<{ name: string; paramsSchema?: any }>
+    const actionNames = new Set(actionDefs.map(a => a.name))
+    const errors: string[] = []
+
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]
+      if (op.action === 'batch') {
+        errors.push(`op[${i}]: nested batch is not allowed`)
+        continue
+      }
+      if (!actionNames.has(op.action)) {
+        errors.push(`op[${i}]: unknown action "${op.action}"`)
+        continue
+      }
+      const def = actionDefs.find(a => a.name === op.action)
+      if (def?.paramsSchema?.required && op.params && typeof op.params === 'object') {
+        for (const key of def.paramsSchema.required) {
+          const val = (op.params as Record<string, unknown>)[key]
+          if (val === undefined) {
+            errors.push(`op[${i}] ${op.action}: missing required param "${key}"`)
+          }
+        }
+      }
+    }
+
+    const varErrors = validateBatchVarRefs(ops)
+    errors.push(...varErrors)
+
+    if (errors.length > 0) {
+      return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
+    }
+    return { success: true, data: { validated: true, opCount: ops.length } }
   }
 }

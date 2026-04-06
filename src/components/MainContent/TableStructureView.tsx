@@ -362,22 +362,22 @@ export const TableStructureView: React.FC<TableStructureViewProps> = ({
   // Initialize form state on mount, cleanup on unmount
   useEffect(() => {
     if (!tableName) {
-      // New table mode — try to restore persisted form state first
+      // New table mode — init synchronously first so UIObject can register immediately,
+      // then try to restore persisted form state in background.
+      const defaultCols: EditableColumn[] = [{
+        id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
+        defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
+      }];
+      const defaultState = {
+        tableName: '',
+        engine: 'InnoDB', charset: 'utf8mb4', comment: '',
+        columns: defaultCols, originalColumns: [], indexes: [], foreignKeys: [], isNewTable: true,
+      }
+      initForm(tabId, defaultState)
+
+      // Overwrite with persisted state if available
       loadPersistedFormState(tabId).then(persisted => {
-        if (persisted) {
-          initForm(tabId, persisted)
-        } else {
-          // No persisted state — start with a default id column
-          const initCols: EditableColumn[] = [{
-            id: makeId(), name: 'id', dataType: 'INT', length: '', isNullable: false,
-            defaultValue: '', isPrimaryKey: true, extra: 'auto_increment', comment: '', _isNew: true,
-          }];
-          initForm(tabId, {
-            tableName: '',
-            engine: 'InnoDB', charset: 'utf8mb4', comment: '',
-            columns: initCols, originalColumns: [], indexes: [], foreignKeys: [], isNewTable: true,
-          })
-        }
+        if (persisted) initForm(tabId, persisted)
       })
       return;
     }

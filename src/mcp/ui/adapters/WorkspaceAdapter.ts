@@ -42,7 +42,6 @@ export class WorkspaceAdapter implements UIObject {
     switch (action) {
       case 'open': {
         const { type, connection_id, database, table, metric_id, project_id, job_id } = params ?? {}
-        const beforeIds = new Set(store.tabs.map(t => t.id))
 
         switch (type) {
           case 'query_editor':
@@ -64,8 +63,9 @@ export class WorkspaceAdapter implements UIObject {
             return { success: false, error: `Unknown tab type: ${type}` }
         }
 
-        const newTab = useQueryStore.getState().tabs.find(t => !beforeIds.has(t.id))
-        return { success: true, data: { objectId: newTab?.id ?? null } }
+        // Use activeTabId — the store always sets it for both new and deduplicated tabs
+        const objectId = useQueryStore.getState().activeTabId
+        return { success: true, data: { objectId } }
       }
 
       case 'close': {

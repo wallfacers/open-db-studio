@@ -188,7 +188,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_patch",
-                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements. IMPORTANT: Always batch ALL changes into a single ui_patch call with multiple ops. For table_form, set tableName AND add ALL columns in one call. Example: [{\"op\":\"replace\",\"path\":\"/tableName\",\"value\":\"users\"},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"id\",\"dataType\":\"INT\",...}},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"email\",\"dataType\":\"VARCHAR\",...}}] Tip: call ui_read(mode='schema') first to see supported patch paths and addressable keys for the target object.",
+                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Path syntax: use [name=xxx] for addressing array elements by name (e.g. /columns[name=id]/dataType), /columns/- to append. Common table_form paths: /tableName, /engine, /charset, /comment, /columns/-, /columns[name=<s>]/<field>, /indexes/-, /foreignKeys/-. IMPORTANT: Always batch ALL changes into one call. For table_form, prefer ui_exec(action='batch_create_table') for complete table creation in a single step. Tip: call ui_read(mode='schema') to see all supported paths.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -202,7 +202,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_exec",
-                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, format). Tip: call ui_read(mode='actions') first to see all available actions with parameter schemas.",
+                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, batch_create_table, batch). For table_form: use batch_create_table to create a complete table in one call, or batch for multi-step workflows with variable binding ($N.path). Tip: call ui_read(mode='actions') to see all available actions with parameter schemas.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -226,7 +226,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "init_table_form",
-                "description": "Open a table design form for a CONNECTED DATABASE and populate it with columns/indexes. This is for editing real database tables (generates DDL). Do NOT use this for ER diagram design — use init_er_table instead. Requires connection_id and database.",
+                "description": "Open a table design form for a CONNECTED DATABASE and populate it with columns/indexes. This opens a UI tab for interactive editing. For a simpler workflow, open the tab first with ui_exec(object='workspace', action='open', params={type:'table_form', connection_id, database}), then use ui_exec(action='batch_create_table') to populate everything in one call. Do NOT use this for ER diagram design — use init_er_table instead. Requires connection_id and database.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

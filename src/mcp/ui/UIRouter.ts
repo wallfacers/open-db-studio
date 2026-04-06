@@ -24,7 +24,12 @@ export class UIRouter {
       return this.handleList(req.payload?.filter)
     }
 
-    const instance = this.resolveTarget(req.object, req.target)
+    // Try to resolve target; if not found and target is a specific objectId (not 'active'/singleton),
+    // retry with backoff to handle race where React component hasn't mounted yet.
+    let instance = this.resolveTarget(req.object, req.target)
+    if (!instance && req.target && req.target !== 'active' && req.object !== 'workspace') {
+      instance = await this.resolveTargetWithRetry(req.object, req.target, 2000, 100)
+    }
     if (!instance) {
       return { error: `No ${req.object} found for target '${req.target}'` }
     }
@@ -129,6 +134,21 @@ export class UIRouter {
     // Forward to adapter
     const result = await instance.exec(action, params)
     return { data: result, error: result.success ? undefined : result.error }
+  }
+
+  private resolveTargetWithRetry(
+    objectType: string, target: string, timeoutMs: number, intervalMs: number,
+  ): Promise<UIObject | null> {
+    return new Promise(resolve => {
+      const deadline = Date.now() + timeoutMs
+      const poll = () => {
+        const inst = this.resolveTarget(objectType, target)
+        if (inst) return resolve(inst)
+        if (Date.now() >= deadline) return resolve(null)
+        setTimeout(poll, intervalMs)
+      }
+      setTimeout(poll, intervalMs)
+    })
   }
 
   private resolveTarget(objectType: string, target: string): UIObject | null {

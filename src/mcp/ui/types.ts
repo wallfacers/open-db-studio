@@ -45,6 +45,7 @@ export interface PatchResult {
   confirm_id?: string
   preview?: JsonPatchOp[]
   message?: string
+  summary?: { changedPaths: string[]; columnCount: number; indexCount: number; fkCount: number }
 }
 
 export interface ExecResult {

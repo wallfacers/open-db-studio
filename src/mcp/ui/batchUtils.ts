@@ -1,6 +1,5 @@
 /**
  * Shared batch utilities for MCP UI adapters.
- * Extracted from ERCanvasAdapter to be reused by TableFormAdapter and others.
  */
 
 // Matches "$0", "$1.tableId", "$2.columnIds[0]" etc.
@@ -59,6 +58,7 @@ export function resolveVarRefs(value: unknown, results: unknown[]): unknown {
 
 /**
  * Validate $N variable references in batch ops without executing them.
+ * Recursively checks all nested strings (matching resolveVarRefs behavior).
  * Returns an array of error strings (empty if valid).
  */
 export function validateBatchVarRefs(
@@ -67,21 +67,28 @@ export function validateBatchVarRefs(
   const errors: string[] = []
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i]
-    if (op.params && typeof op.params === 'object') {
-      for (const [key, val] of Object.entries(op.params as Record<string, unknown>)) {
-        if (typeof val === 'string') {
-          const m = val.match(/^\$(\d+)/)
-          if (m) {
-            const refIdx = parseInt(m[1], 10)
-            if (refIdx >= i) {
-              errors.push(`op[${i}] ${op.action}: param "${key}" references $${refIdx} which is not a prior op (forward reference)`)
-            }
-            if (refIdx >= ops.length) {
-              errors.push(`op[${i}] ${op.action}: param "${key}" references $${refIdx} but only ${ops.length} ops exist`)
-            }
+    const collectErrors = (path: string, val: unknown) => {
+      if (typeof val === 'string') {
+        const m = val.match(/^\$(\d+)/)
+        if (m) {
+          const refIdx = parseInt(m[1], 10)
+          if (refIdx >= i) {
+            errors.push(`op[${i}] ${op.action}: ${path} references $${refIdx} which is not a prior op (forward reference)`)
+          }
+          if (refIdx >= ops.length) {
+            errors.push(`op[${i}] ${op.action}: ${path} references $${refIdx} but only ${ops.length} ops exist`)
           }
         }
+      } else if (Array.isArray(val)) {
+        val.forEach((v, j) => collectErrors(`${path}[${j}]`, v))
+      } else if (val !== null && typeof val === 'object') {
+        for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+          collectErrors(`${path}.${k}`, v)
+        }
       }
+    }
+    if (op.params != null) {
+      collectErrors('params', op.params)
     }
   }
   return errors

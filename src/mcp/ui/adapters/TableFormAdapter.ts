@@ -898,7 +898,6 @@ export class TableFormUIObject implements UIObject {
           return execError('tableName and columns (non-empty array) are required')
         }
 
-        // Step 1: Build patch ops for table metadata + all columns
         const ops: JsonPatchOp[] = [
           { op: 'replace', path: '/tableName', value: tableName },
         ]
@@ -913,7 +912,6 @@ export class TableFormUIObject implements UIObject {
           return execError(`Failed to apply columns: ${patchResult.message}`)
         }
 
-        // Step 2: Add indexes via exec
         const indexResults: string[] = []
         if (Array.isArray(indexes)) {
           for (const idx of indexes) {
@@ -923,7 +921,6 @@ export class TableFormUIObject implements UIObject {
           }
         }
 
-        // Step 3: Add foreign keys via exec
         const fkResults: string[] = []
         if (Array.isArray(foreignKeys)) {
           for (const fk of foreignKeys) {
@@ -933,7 +930,6 @@ export class TableFormUIObject implements UIObject {
           }
         }
 
-        // Step 4: Generate preview SQL
         const freshState = useTableFormStore.getState().getForm(this.objectId)
         let previewSql = ''
         try {
@@ -956,8 +952,10 @@ export class TableFormUIObject implements UIObject {
         return this._batchExec(params)
       }
 
-      default:
-        return execError(`Unknown action: ${action}`, 'Available actions: preview_sql, save, add_foreign_key, update_foreign_key, remove_foreign_key, add_index, update_index, remove_index, batch_create_table, batch')
+      default: {
+        const names = (this.read('actions') as Array<{ name: string }>).map(a => a.name).join(', ')
+        return execError(`Unknown action: ${action}`, `Available actions: ${names}`)
+      }
     }
   }
 
@@ -966,6 +964,7 @@ export class TableFormUIObject implements UIObject {
   private async _batchExec(params: any): Promise<ExecResult> {
     const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
     if (ops.length === 0) return execError('ops array is required and must be non-empty')
+    if (ops.length > 50) return execError('ops array too large (max 50)')
 
     // Dry-run: validate without executing
     if (params?.dryRun) {

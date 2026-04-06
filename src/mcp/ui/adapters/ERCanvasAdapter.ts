@@ -4,6 +4,7 @@ import { parsePath } from '../pathResolver'
 import { patchError, execError } from '../errors'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
 import { useHighlightStore } from '../../../store/highlightStore'
+import { resolveVarRefs, validateBatchVarRefs } from '../batchUtils'
 
 // ── JSON Schema describing the er_canvas state shape ───────────────────────
 
@@ -588,63 +589,6 @@ function validateIndexColumns(
     return `Index references non-existent column(s): ${missing.join(', ')}. Available columns: ${[...existingNames].join(', ') || '(none)'}`
   }
   return null
-}
-
-// ── Variable reference resolver for batch operations ────────────────────
-// Syntax:
-//   "$0.tableId"          → result of ops[0].tableId
-//   "$1.columnMap.user_id" → result of ops[1].columnMap.user_id
-//   "$2.columnIds[0]"     → result of ops[2].columnIds[0]
-//   "$0"                  → entire result of ops[0]
-
-const VAR_REF_RE = /^\$(\d+)(\..*)?$/
-
-function resolveVarRefs(value: unknown, results: unknown[]): unknown {
-  if (typeof value === 'string') {
-    const m = value.match(VAR_REF_RE)
-    if (!m) return value
-    const idx = Number(m[1])
-    if (idx >= results.length) {
-      throw new Error(`Variable $${idx} references op[${idx}] which hasn't executed yet (only ${results.length} results available)`)
-    }
-    let resolved: unknown = results[idx]
-    if (m[2]) {
-      // Walk dot-path, supporting array index like "columnIds[0]"
-      const segments = m[2].slice(1).split('.') // remove leading dot
-      const walkedPath: string[] = [`$${idx}`]
-      for (const seg of segments) {
-        if (resolved == null) {
-          throw new Error(`Variable ${walkedPath.join('.')}.${seg} failed: ${walkedPath.join('.')} is ${resolved === null ? 'null' : 'undefined'}`)
-        }
-        walkedPath.push(seg)
-        const arrMatch = seg.match(/^(\w+)\[(\d+)\]$/)
-        if (arrMatch) {
-          resolved = (resolved as Record<string, unknown>)[arrMatch[1]]
-          if (resolved == null) {
-            throw new Error(`Variable ${walkedPath.join('.')} failed: property '${arrMatch[1]}' is ${resolved === null ? 'null' : 'undefined'}`)
-          }
-          resolved = (resolved as unknown[])?.[Number(arrMatch[2])]
-        } else {
-          resolved = (resolved as Record<string, unknown>)[seg]
-        }
-      }
-      if (resolved === undefined) {
-        throw new Error(`Variable ${m[0]} resolved to undefined (full path: ${walkedPath.join('.')})`)
-      }
-    }
-    return resolved
-  }
-  if (Array.isArray(value)) {
-    return value.map(v => resolveVarRefs(v, results))
-  }
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value)) {
-      out[k] = resolveVarRefs(v, results)
-    }
-    return out
-  }
-  return value
 }
 
 function resolveField(entity: 'table' | 'column', field: string): string {
@@ -1279,6 +1223,8 @@ export class ERCanvasAdapter implements UIObject {
 
   private async _batchExec(params: any): Promise<ExecResult> {
     const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
+    if (ops.length === 0) return execError('ops array is required and must be non-empty')
+    if (ops.length > 50) return execError('ops array too large (max 50)')
 
     // Dry-run: validate without executing
     if (params?.dryRun) {
@@ -1354,25 +1300,9 @@ export class ERCanvasAdapter implements UIObject {
           }
         }
       }
-
-      // Check $N variable references don't point beyond the ops array
-      if (op.params && typeof op.params === 'object') {
-        for (const [key, val] of Object.entries(op.params as Record<string, unknown>)) {
-          if (typeof val === 'string') {
-            const m = val.match(/^\$(\d+)/)
-            if (m) {
-              const refIdx = parseInt(m[1], 10)
-              if (refIdx >= i) {
-                errors.push(`op[${i}] ${op.action}: param "${key}" references $${refIdx} which is not a prior op (forward reference)`)
-              }
-              if (refIdx >= ops.length) {
-                errors.push(`op[${i}] ${op.action}: param "${key}" references $${refIdx} but only ${ops.length} ops exist`)
-              }
-            }
-          }
-        }
-      }
     }
+
+    errors.push(...validateBatchVarRefs(ops))
 
     if (errors.length > 0) {
       return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }

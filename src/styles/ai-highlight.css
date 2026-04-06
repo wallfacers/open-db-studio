@@ -36,3 +36,15 @@
   margin-left: 3px;
   border-radius: 1px;
 }
+
+/* ── ER Canvas: SVG edge pulse animation ───────────────────────── */
+
+@keyframes ai-edge-pulse {
+  0%   { stroke: var(--edge-fk); filter: none; }
+  15%  { stroke: rgba(99, 102, 241, 0.9); filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.5)); }
+  30%  { stroke: rgba(99, 102, 241, 0.4); filter: drop-shadow(0 0 4px rgba(99, 102, 241, 0.15)); }
+  45%  { stroke: rgba(99, 102, 241, 0.85); filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.4)); }
+  60%  { stroke: rgba(99, 102, 241, 0.35); filter: drop-shadow(0 0 3px rgba(99, 102, 241, 0.1)); }
+  75%  { stroke: rgba(99, 102, 241, 0.7); filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.3)); }
+  100% { stroke: rgba(99, 102, 241, 0.4); filter: drop-shadow(0 0 4px rgba(99, 102, 241, 0.2)); }
+}

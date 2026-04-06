@@ -3,6 +3,7 @@ import type { UIObject, JsonPatchOp, PatchResult, ExecResult, ActionDef, PatchCa
 import { parsePath } from '../pathResolver'
 import { patchError, execError } from '../errors'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
+import { useHighlightStore } from '../../../store/highlightStore'
 
 // ── JSON Schema describing the er_canvas state shape ───────────────────────
 
@@ -652,6 +653,14 @@ export class ERCanvasAdapter implements UIObject {
     return ER_PATCH_CAPABILITIES
   }
 
+  // ── highlight helper ──────────────────────────────────────────────────
+
+  private _highlight(paths: string[]) {
+    if (paths.length > 0) {
+      useHighlightStore.getState().addHighlights(this.objectId, paths)
+    }
+  }
+
   // ── read() ────────────────────────────────────────────────────────────
 
   read(mode: 'state' | 'schema' | 'actions') {
@@ -729,6 +738,7 @@ export class ERCanvasAdapter implements UIObject {
 
   async patch(ops: JsonPatchOp[], _reason?: string): Promise<PatchResult> {
     const store = useErDesignerStore.getState()
+    const hlPaths: string[] = []
 
     for (const op of ops) {
       try {
@@ -757,6 +767,7 @@ export class ERCanvasAdapter implements UIObject {
               }
               const resolvedField = resolveField('table', field)
               await store.updateTable(table.id, { [resolvedField]: op.value })
+              hlPaths.push(`table:${table.id}:${resolvedField}`)
             } else if (entity === 'columns') {
               const colId = Number(filters.id)
               if (!colId) {
@@ -767,6 +778,11 @@ export class ERCanvasAdapter implements UIObject {
               }
               const resolvedField = resolveField('column', field)
               await store.updateColumn(colId, { [resolvedField]: op.value })
+              // Find which table owns this column for highlight path
+              const ownerTableId = Object.entries(store.columns).find(
+                ([, cols]) => cols.some(c => c.id === colId)
+              )?.[0]
+              if (ownerTableId) hlPaths.push(`column:${ownerTableId}:${colId}`)
             } else {
               return patchError(
                 `Cannot parse replace path "${op.path}"`,
@@ -797,11 +813,13 @@ export class ERCanvasAdapter implements UIObject {
               )
             }
             if (collSegment.field === 'columns') {
-              await store.addColumn(table.id, op.value)
+              const created = await store.addColumn(table.id, op.value)
+              hlPaths.push(`column:${table.id}:${created.id}`)
             } else if (collSegment.field === 'indexes') {
               const indexDef = { ...op.value }
               normalizeIndexColumns(indexDef)
-              await store.addIndex(table.id, indexDef)
+              const created = await store.addIndex(table.id, indexDef)
+              hlPaths.push(`index:${table.id}:${created.id}`)
             } else {
               return patchError(
                 `Cannot parse add path "${op.path}"`,
@@ -835,6 +853,8 @@ export class ERCanvasAdapter implements UIObject {
                 )
               }
               await store.deleteColumn(entityId, tableId)
+              // Highlight parent table to indicate structural change
+              hlPaths.push(`table:${tableId}`)
             } else if (entity === 'indexes') {
               if (!tableId) {
                 return patchError(
@@ -843,8 +863,10 @@ export class ERCanvasAdapter implements UIObject {
                 )
               }
               await store.deleteIndex(entityId, tableId)
+              hlPaths.push(`table:${tableId}`)
             } else if (entity === 'relations') {
               await store.deleteRelation(entityId)
+              // relation removed — no visual target to highlight
             } else {
               return patchError(
                 `Cannot parse remove path "${op.path}"`,
@@ -866,6 +888,7 @@ export class ERCanvasAdapter implements UIObject {
       }
     }
 
+    this._highlight(hlPaths)
     return { status: 'applied' }
   }
 
@@ -892,11 +915,16 @@ export class ERCanvasAdapter implements UIObject {
         return this.withReload(async () => {
           const position = params?.position ?? { x: 100, y: 100 }
           const table = await store.addTable(this._projectId, params.name, position)
+          this._highlight([`table:${table.id}`])
           return { tableId: table.id }
         })
 
       case 'update_table':
-        return this.withReload(() => store.updateTable(params.tableId, params.updates))
+        return this.withReload(async () => {
+          await store.updateTable(params.tableId, params.updates)
+          const fields = Object.keys(params.updates ?? {})
+          this._highlight(fields.map(f => `table:${params.tableId}:${f}`))
+        })
 
       case 'delete_table':
         return this.withReload(() => store.deleteTable(params.tableId))
@@ -908,25 +936,40 @@ export class ERCanvasAdapter implements UIObject {
         }
         return this.withReload(async () => {
           const created = await store.addColumn(params.tableId, params.column)
+          this._highlight([`column:${params.tableId}:${created.id}`])
           return { columnId: created.id }
         })
       }
 
       case 'update_column':
-        return this.withReload(() => store.updateColumn(params.columnId, params.updates))
+        return this.withReload(async () => {
+          await store.updateColumn(params.columnId, params.updates)
+          // Find table that owns this column
+          const ownerTableId = Object.entries(store.columns).find(
+            ([, cols]) => cols.some(c => c.id === params.columnId)
+          )?.[0]
+          if (ownerTableId) this._highlight([`column:${ownerTableId}:${params.columnId}`])
+        })
 
       case 'delete_column':
-        return this.withReload(() => store.deleteColumn(params.columnId, params.tableId))
+        return this.withReload(async () => {
+          await store.deleteColumn(params.columnId, params.tableId)
+          this._highlight([`table:${params.tableId}`])
+        })
 
       // ── Relation CRUD ───────────────────────────────────────────────
       case 'add_relation':
         return this.withReload(async () => {
           const created = await store.addRelation(this._projectId, params)
+          this._highlight([`relation:${created.id}`])
           return { relationId: created.id }
         })
 
       case 'update_relation':
-        return this.withReload(() => store.updateRelation(params.relationId, params.updates))
+        return this.withReload(async () => {
+          await store.updateRelation(params.relationId, params.updates)
+          this._highlight([`relation:${params.relationId}`])
+        })
 
       case 'delete_relation':
         return this.withReload(() => store.deleteRelation(params.relationId))
@@ -939,15 +982,22 @@ export class ERCanvasAdapter implements UIObject {
           const indexDef = { ...params.index }
           normalizeIndexColumns(indexDef)
           const created = await store.addIndex(params.tableId, indexDef)
+          this._highlight([`index:${params.tableId}:${created.id}`])
           return { indexId: created.id }
         })
       }
 
       case 'update_index':
-        return this.withReload(() => store.updateIndex(params.indexId, params.updates))
+        return this.withReload(async () => {
+          await store.updateIndex(params.indexId, params.updates)
+          this._highlight([`index:${params.tableId}:${params.indexId}`])
+        })
 
       case 'delete_index':
-        return this.withReload(() => store.deleteIndex(params.indexId, params.tableId))
+        return this.withReload(async () => {
+          await store.deleteIndex(params.indexId, params.tableId)
+          this._highlight([`table:${params.tableId}`])
+        })
 
       // ── Batch replace ─────────────────────────────────────────────────
       case 'replace_columns':
@@ -965,6 +1015,7 @@ export class ERCanvasAdapter implements UIObject {
             const created = await store.addColumn(rcTableId, colDef)
             colIds.push(created.id)
           }
+          this._highlight(colIds.map(cid => `column:${rcTableId}:${cid}`))
           return { success: true, data: { columnIds: colIds } }
         } catch (e) {
           await this._resyncProject()
@@ -994,6 +1045,7 @@ export class ERCanvasAdapter implements UIObject {
             const created = await store.addIndex(riTableId, indexDef)
             idxIds.push(created.id)
           }
+          this._highlight(idxIds.map(iid => `index:${riTableId}:${iid}`))
           return { success: true, data: { indexIds: idxIds } }
         } catch (e) {
           await this._resyncProject()
@@ -1113,6 +1165,11 @@ export class ERCanvasAdapter implements UIObject {
         indexIds.push(created.id)
       }
 
+      this._highlight([
+        `table:${table.id}`,
+        ...columnIds.map(cid => `column:${table.id}:${cid}`),
+        ...indexIds.map(iid => `index:${table.id}:${iid}`),
+      ])
       return {
         success: true,
         data: { tableId: table.id, columnIds, columnMap: columnNameToId, indexIds },

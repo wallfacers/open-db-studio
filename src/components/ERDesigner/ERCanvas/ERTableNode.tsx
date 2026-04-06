@@ -8,10 +8,12 @@ import { getTypeOptions, formatTypeDisplay, findTypeDef } from '../shared/dataTy
 import type { DialectName } from '../shared/dataTypes';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { resolveConstraintMethod } from '../shared/resolveConstraint';
+import { useFieldHighlight } from '../../../hooks/useFieldHighlight';
 
 interface ERTableNodeData {
   table: import('../../../types').ErTable;
   columns: import('../../../types').ErColumn[];
+  highlightScopeId?: string;
   onUpdateTable: (updates: Partial<import('../../../types').ErTable>) => void;
   onAddColumn: () => void;
   onUpdateColumn: (colId: number, updates: Partial<import('../../../types').ErColumn>) => void;
@@ -21,8 +23,13 @@ interface ERTableNodeData {
 
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
-  const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
+  const { table, columns, highlightScopeId, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
   const { boundDialect, relations, projects, activeProjectId } = useErDesignerStore();
+
+  // AI change highlight — whole table (e.g. new table added)
+  const { className: tableHL } = useFieldHighlight(highlightScopeId ?? '', `table:${table.id}`)
+  // AI change highlight — table name field
+  const { className: nameHL } = useFieldHighlight(highlightScopeId ?? '', `table:${table.id}:name`)
 
   // 计算该表所有关系的多数派约束方式
   const project = projects.find(p => p.id === activeProjectId);
@@ -73,6 +80,9 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
     const [isEditingName, setIsEditingName] = useState(false);
     const [editName, setEditName] = useState(col.name);
 
+    // AI change highlight for this column row
+    const { className: colHL } = useFieldHighlight(highlightScopeId ?? '', `column:${table.id}:${col.id}`);
+
     const sourceConnections = useNodeConnections({ handleType: 'source', handleId: `${col.id}-source` });
     const targetConnections = useNodeConnections({ handleType: 'target', handleId: `${col.id}-target` });
 
@@ -107,7 +117,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
     return (
       <div
-        className="flex items-center justify-between px-4 border-b border-border-strong last:border-b-0 relative group hover:bg-background-base transition-colors h-[32px] py-1"
+        className={`flex items-center justify-between px-4 border-b border-border-strong last:border-b-0 relative group hover:bg-background-base transition-colors h-[32px] py-1 ${colHL}`}
       >
         {/* Target Handle (Left) */}
         <Handle
@@ -228,7 +238,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
   return (
     <div
-      className="group/table bg-background-panel rounded-lg border shadow-xl overflow-visible w-[280px] font-sans transition-all"
+      className={`group/table bg-background-panel rounded-lg border shadow-xl overflow-visible w-[280px] font-sans transition-all ${tableHL}`}
       style={{
         borderColor: table.color || 'var(--border-strong)',
         boxShadow: table.color ? `0 4px 12px ${table.color}20` : undefined,
@@ -236,8 +246,8 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
       onContextMenu={dispatchContextMenu}
     >
       {/* Header */}
-      <div 
-        className="px-3 py-1.5 border-b rounded-t-[7px] flex justify-between items-center transition-colors"
+      <div
+        className={`px-3 py-1.5 border-b rounded-t-[7px] flex justify-between items-center transition-colors ${nameHL}`}
         style={{
           backgroundColor: table.color ? `${table.color}15` : 'var(--background-hover)',
           borderColor: table.color || 'var(--border-strong)',

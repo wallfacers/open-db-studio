@@ -38,11 +38,12 @@ import type { ErTable, ErColumn, ErRelation } from '../../../types'
 import { erTableNodeId, erEdgeNodeId, parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId'
 import { useQueryStore } from '../../../store/queryStore'
 
-const buildEdgeData = (rel: ErRelation) => ({
+const buildEdgeData = (rel: ErRelation, highlightScopeId?: string) => ({
   relation_type: rel.relation_type,
   source_type: rel.source,
   constraint_method: rel.constraint_method,
   comment_format: rel.comment_format,
+  highlightScopeId,
 })
 
 const nodeTypes = {
@@ -56,6 +57,7 @@ const edgeTypes = {
 interface NodeData {
   table: ErTable
   columns: ErColumn[]
+  highlightScopeId: string | undefined
   onUpdateTable: (updates: Partial<ErTable>) => void
   onAddColumn: () => void
   onUpdateColumn: (colId: number, updates: Partial<ErColumn>) => void
@@ -119,6 +121,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const buildNodeData = useCallback((table: ErTable, cols: ErColumn[]): NodeData => ({
     table,
     columns: cols,
+    highlightScopeId: tabId,
     onUpdateTable: (updates: Partial<ErTable>) => updateTable(table.id, updates),
     onAddColumn: () => addColumn(table.id, {
       name: `column_${(cols.length || 0) + 1}`,
@@ -147,7 +150,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         e.source !== erTableNodeId(table.id) && e.target !== erTableNodeId(table.id)
       ))
     },
-  }), [updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
+  }), [tabId, updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
 
   const onMoveEnd = useCallback((_: unknown, viewport: Viewport) => {
     storeSetViewport(projectId, viewport)
@@ -173,7 +176,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           target: erTableNodeId(rel.target_table_id),
           targetHandle: `${rel.target_column_id}-target`,
           type: 'erEdge',
-          data: buildEdgeData(rel),
+          data: buildEdgeData(rel, tabId),
         }))
       setNodes(newNodes)
       setEdges(newEdges)
@@ -234,7 +237,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           target: erTableNodeId(rel.target_table_id),
           targetHandle: `${rel.target_column_id}-target`,
           type: 'erEdge',
-          data: buildEdgeData(rel),
+          data: buildEdgeData(rel, tabId),
         }))
       return [...filtered, ...newEdges]
     })
@@ -358,7 +361,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     setEdges((eds) => addEdge({
       ...connection,
       type: 'erEdge',
-      data: { relation_type: 'one_to_many', source_type: 'designer', constraint_method: null, comment_format: null }
+      data: { relation_type: 'one_to_many', source_type: 'designer', constraint_method: null, comment_format: null, highlightScopeId: tabId }
     }, eds))
     const sourceColumnId = parseInt(connection.sourceHandle!.replace('-source', ''))
     const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))

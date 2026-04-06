@@ -8,6 +8,7 @@ import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { parseErEdgeNodeId } from '../../../utils/nodeId';
 import { CONSTRAINT_BADGE, CONSTRAINT_METHOD_OPTIONS, COMMENT_FORMAT_OPTIONS } from '../shared/constraintConstants';
 import { resolveConstraintMethod, resolveCommentFormat } from '../shared/resolveConstraint';
+import { useFieldHighlight } from '../../../hooks/useFieldHighlight';
 
 // ─── Crossing detection types ───────────────────────────────────────
 
@@ -20,6 +21,10 @@ interface CrossingPoint extends Point {
 
 const JUMP_RADIUS = 6;
 const BORDER_RADIUS = 8;
+
+// ─── Self-referencing (loopback) edge constants ───────────────────
+const LOOP_GAP = 40;      // horizontal offset outside the node
+const LOOP_PADDING = 25;  // vertical clearance above/below the node
 
 // ─── SVG path → straight segments (skip Q/C curves) ────────────────
 
@@ -173,6 +178,46 @@ function resolveLabelPos(segs: Segment[], placed: Point[]): Point | null {
   return getPointOnSegments(segs, 0.5); // fallback: midpoint
 }
 
+// ─── Self-referencing loopback path builder ─────────────────────────
+
+/**
+ * Build a smooth cubic-bezier loopback path for self-referencing edges.
+ *
+ * The path exits rightward from the source handle, curves above (or below)
+ * the node, then re-enters from the left into the target handle:
+ *
+ *          loopY ─── ─── ─── ───
+ *         ╱                      ╲
+ *        ╱                        ╲
+ *   source (right)            target (left)
+ *
+ * Returns [svgPath, labelX, labelY].
+ */
+function buildSelfRefPath(
+  sourceX: number, sourceY: number,
+  targetX: number, targetY: number,
+  nodeTopY: number,
+  nodeBottomY: number,
+): [string, number, number] {
+  const midX = (sourceX + targetX) / 2
+  // Decide direction: loop above if handles are in the lower half, else loop below
+  const handleMidY = (sourceY + targetY) / 2
+  const nodeMidY = (nodeTopY + nodeBottomY) / 2
+  const goAbove = handleMidY >= nodeMidY
+
+  const loopY = goAbove
+    ? nodeTopY - LOOP_PADDING
+    : nodeBottomY + LOOP_PADDING
+
+  const path = [
+    `M ${sourceX},${sourceY}`,
+    `C ${sourceX + LOOP_GAP},${sourceY} ${sourceX + LOOP_GAP},${loopY} ${midX},${loopY}`,
+    `C ${targetX - LOOP_GAP},${loopY} ${targetX - LOOP_GAP},${targetY} ${targetX},${targetY}`,
+  ].join(' ')
+
+  return [path, midX, loopY]
+}
+
 // ─── Edge constants ─────────────────────────────────────────────────
 
 const RELATION_TYPES = [
@@ -195,33 +240,48 @@ const SELECTED_COLOR = 'var(--accent)';
 // ─── Component ──────────────────────────────────────────────────────
 
 export default function EREdge({
-  id, sourceX, sourceY, targetX, targetY,
+  id, source, target,
+  sourceX, sourceY, targetX, targetY,
   sourcePosition, targetPosition,
   data, style, selected,
 }: EdgeProps) {
-  // ── Smoothstep path ────────────────────────────────────────────
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX, sourceY,
-    sourcePosition: sourcePosition || Position.Right,
-    targetX, targetY,
-    targetPosition: targetPosition || Position.Left,
-    borderRadius: BORDER_RADIUS,
-  });
-
   // ── Store data for crossing & label overlap detection ────────
   const storeEdges = useStore(s => s.edges);
   const nodeLookup = useStore(s => s.nodeLookup);
 
-  // ── Line-jump crossing detection ──────────────────────────────
+  // ── Self-referencing detection ────────────────────────────────
+  const isSelfRef = source === target;
+
+  // ── Path computation ──────────────────────────────────────────
+  const [edgePath, labelX, labelY] = useMemo(() => {
+    if (isSelfRef) {
+      const node = nodeLookup.get(source);
+      const posY = node?.internals?.positionAbsolute?.y ?? sourceY;
+      // Estimate node height from measured/handle data; fallback to distance between handles + padding
+      const measured = node?.measured;
+      const nodeH = measured?.height ?? 160;
+      return buildSelfRefPath(sourceX, sourceY, targetX, targetY, posY, posY + nodeH);
+    }
+    return getSmoothStepPath({
+      sourceX, sourceY,
+      sourcePosition: sourcePosition || Position.Right,
+      targetX, targetY,
+      targetPosition: targetPosition || Position.Left,
+      borderRadius: BORDER_RADIUS,
+    });
+  }, [isSelfRef, source, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, nodeLookup]);
+
+  // ── Line-jump crossing detection (skip for self-ref curved paths) ──
   const crossings = useMemo(
-    () => computeCrossings(edgePath, id, storeEdges, nodeLookup),
-    [edgePath, id, storeEdges, nodeLookup],
+    () => isSelfRef ? [] : computeCrossings(edgePath, id, storeEdges, nodeLookup),
+    [isSelfRef, edgePath, id, storeEdges, nodeLookup],
   );
 
   // ── Label on-path anti-overlap ──────────────────────────────
-  // Deterministic: replay earlier edges' placement, then pick a
-  // non-colliding position for this edge along its own path.
+  // Self-ref uses the loop apex; normal edges do deterministic replay.
   const labelPos = useMemo(() => {
+    if (isSelfRef) return { x: labelX, y: labelY };
+
     const myIdx = storeEdges.findIndex(e => e.id === id);
     const mySegs = pathToSegments(edgePath);
 
@@ -242,7 +302,7 @@ export default function EREdge({
     }
 
     return resolveLabelPos(mySegs, placed) ?? { x: labelX, y: labelY };
-  }, [edgePath, labelX, labelY, id, storeEdges, nodeLookup]);
+  }, [isSelfRef, edgePath, labelX, labelY, id, storeEdges, nodeLookup]);
 
   // ── Store data ─────────────────────────────────────────────────
   const relations = useErDesignerStore(s => s.relations);
@@ -257,6 +317,10 @@ export default function EREdge({
   const displayLabel = RELATION_LABEL_MAP[relationType] || relationType;
 
   const rid = parseErEdgeNodeId(id);
+
+  // ── AI change highlight ──────────────────────────────────────────
+  const hlScopeId = (data?.highlightScopeId as string) ?? '';
+  const { phase: hlPhase } = useFieldHighlight(hlScopeId, rid != null ? `relation:${rid}` : '');
   const storeRelation = rid != null ? relations.find(r => r.id === rid) : undefined;
   const sourceTable = storeRelation
     ? tables.find(t => t.id === storeRelation.source_table_id)
@@ -320,16 +384,27 @@ export default function EREdge({
     deleteRelation(rid);
   };
 
+  const AI_HL_COLOR = 'rgba(99, 102, 241, 0.8)';
+  const AI_HL_RESIDUAL_COLOR = 'rgba(99, 102, 241, 0.4)';
+
   const baseColor = effectiveConstraintMethod === 'comment_ref'
     ? 'var(--edge-reference)'
     : 'var(--edge-fk)';
-  const strokeColor = selected ? SELECTED_COLOR : baseColor;
+  const strokeColor = hlPhase === 'pulse'
+    ? AI_HL_COLOR
+    : hlPhase === 'residual'
+      ? AI_HL_RESIDUAL_COLOR
+      : selected ? SELECTED_COLOR : baseColor;
 
   const edgeStyle: React.CSSProperties = {
     stroke: strokeColor,
-    strokeWidth: selected ? 2.5 : 2,
+    strokeWidth: hlPhase === 'pulse' ? 3 : selected ? 2.5 : 2,
     strokeDasharray: effectiveConstraintMethod === 'comment_ref' ? '6 3' : undefined,
-    ...(selected ? { filter: `drop-shadow(0 0 6px ${SELECTED_COLOR})` } : {}),
+    ...(hlPhase === 'pulse'
+      ? { filter: `drop-shadow(0 0 8px rgba(99, 102, 241, 0.5))`, animation: 'ai-edge-pulse 2.4s ease-in-out forwards' }
+      : hlPhase === 'residual'
+        ? { filter: `drop-shadow(0 0 4px rgba(99, 102, 241, 0.2))` }
+        : selected ? { filter: `drop-shadow(0 0 6px ${SELECTED_COLOR})` } : {}),
   };
 
   // ── Render ─────────────────────────────────────────────────────

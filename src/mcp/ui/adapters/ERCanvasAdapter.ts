@@ -144,14 +144,13 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
   // CRUD — columns
   {
     name: 'add_column',
-    description: 'Add a column to an existing table',
+    description: 'Add a column to an existing table. Column can be an object or shorthand string like "email VARCHAR(255) NOT NULL UNIQUE".',
     paramsSchema: {
       type: 'object',
       properties: {
         tableId: { type: 'number' },
         column: {
-          type: 'object',
-          description: 'Column definition (name, data_type, nullable, is_primary_key, etc.)',
+          description: 'Column definition: object {name, data_type, ...} OR shorthand string "name TYPE [PK] [AI] [NOT NULL] [UNIQUE] [UNSIGNED] [DEFAULT \'val\'] [COMMENT \'text\']"',
           properties: {
             name: { type: 'string' },
             data_type: { type: 'string' },
@@ -388,7 +387,7 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
     description:
       'Create a complete table with all columns and indexes in one call. ' +
       'Much faster than calling add_table + add_column × N + add_index × N separately. ' +
-      'Returns { tableId, columnIds, indexIds }.',
+      'Returns { tableId, columnIds, columnMap, indexIds }. Set returnState=true to also get the full project state.',
     paramsSchema: {
       type: 'object',
       properties: {
@@ -400,7 +399,7 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
         },
         columns: {
           type: 'array',
-          description: 'Column definitions (ordered)',
+          description: 'Column definitions (ordered). Each item can be an object OR a shorthand string like "id BIGINT PK AI" or "email VARCHAR(255) NOT NULL UNIQUE".',
           items: {
             type: 'object',
             properties: {
@@ -433,6 +432,7 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
             required: ['name', 'columns'],
           },
         },
+        returnState: { type: 'boolean', default: false, description: 'If true, include full project state in the response' },
       },
       required: ['name', 'columns'],
     },
@@ -463,6 +463,8 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
             required: ['action'],
           },
         },
+        returnState: { type: 'boolean', default: false, description: 'If true, include full project state in the response after all ops complete' },
+        dryRun: { type: 'boolean', default: false, description: 'If true, validate all ops without executing (checks action names, required params, variable refs)' },
       },
       required: ['ops'],
     },
@@ -494,6 +496,71 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
 const FIELD_ALIASES: Record<string, Record<string, string>> = {
   table: { 'position/x': 'position_x', 'position/y': 'position_y' },
   column: {},
+}
+
+/**
+ * Parse column shorthand string into a column definition object.
+ * Format: "<name> <TYPE>[(length[,scale])] [PK] [AI] [NOT NULL] [UNIQUE] [UNSIGNED] [DEFAULT <val>] [COMMENT '<text>']"
+ * Examples:
+ *   "id BIGINT PK AI"
+ *   "email VARCHAR(255) NOT NULL UNIQUE"
+ *   "price DECIMAL(10,2) UNSIGNED DEFAULT '0.00'"
+ *   "status ENUM NOT NULL DEFAULT 'active' COMMENT 'User status'"
+ */
+function parseColumnShorthand(input: string): Record<string, unknown> {
+  const tokens = input.trim().split(/\s+/)
+  if (tokens.length < 2) {
+    throw new Error(`Column shorthand must have at least "<name> <type>": "${input}"`)
+  }
+
+  const name = tokens[0]
+  let dataTypeRaw = tokens[1]
+  let length: number | null = null
+  let scale: number | null = null
+
+  // Extract (length[,scale]) from type
+  const parenMatch = dataTypeRaw.match(/^(\w+)\((\d+)(?:,(\d+))?\)$/)
+  if (parenMatch) {
+    dataTypeRaw = parenMatch[1]
+    length = parseInt(parenMatch[2], 10)
+    if (parenMatch[3]) scale = parseInt(parenMatch[3], 10)
+  }
+
+  const col: Record<string, unknown> = {
+    name,
+    data_type: dataTypeRaw.toUpperCase(),
+  }
+  if (length !== null) col.length = length
+  if (scale !== null) col.scale = scale
+
+  // Parse remaining flags (case-insensitive)
+  const rest = tokens.slice(2).join(' ')
+  const upper = rest.toUpperCase()
+
+  if (upper.includes('PK')) col.is_primary_key = true
+  if (upper.includes('AI')) col.is_auto_increment = true
+  if (upper.includes('NOT NULL')) col.nullable = false
+  if (upper.includes('UNIQUE')) col.is_unique = true
+  if (upper.includes('UNSIGNED')) col.unsigned = true
+
+  // Extract DEFAULT value
+  const defaultMatch = rest.match(/DEFAULT\s+'([^']*)'/i) ?? rest.match(/DEFAULT\s+(\S+)/i)
+  if (defaultMatch) col.default_value = defaultMatch[1]
+
+  // Extract COMMENT
+  const commentMatch = rest.match(/COMMENT\s+'([^']*)'/i)
+  if (commentMatch) col.comment = commentMatch[1]
+
+  return col
+}
+
+/** Normalize column definitions: accept both string shorthand and object format */
+function normalizeColumns(columns: unknown[]): Record<string, unknown>[] {
+  return columns.map((col, i) => {
+    if (typeof col === 'string') return parseColumnShorthand(col)
+    if (typeof col === 'object' && col !== null) return col as Record<string, unknown>
+    throw new Error(`columns[${i}]: expected string shorthand or object, got ${typeof col}`)
+  })
 }
 
 /** Normalize index columns: AI passes string[], store expects JSON string */
@@ -663,7 +730,7 @@ export class ERCanvasAdapter implements UIObject {
 
   // ── read() ────────────────────────────────────────────────────────────
 
-  read(mode: 'state' | 'schema' | 'actions') {
+  read(mode: 'state' | 'schema' | 'actions' | 'full') {
     switch (mode) {
       case 'state':
         return this._readState()
@@ -671,6 +738,12 @@ export class ERCanvasAdapter implements UIObject {
         return { ...ER_CANVAS_STATE_SCHEMA, patchCapabilities: ER_PATCH_CAPABILITIES }
       case 'actions':
         return ER_CANVAS_ACTIONS
+      case 'full':
+        return {
+          state: this._readState(),
+          actions: ER_CANVAS_ACTIONS,
+          schema: { ...ER_CANVAS_STATE_SCHEMA, patchCapabilities: ER_PATCH_CAPABILITIES },
+        }
     }
   }
 
@@ -934,6 +1007,12 @@ export class ERCanvasAdapter implements UIObject {
         if (!store.tables.find((t) => t.id === params.tableId)) {
           return { success: false, error: `Table ${params.tableId} does not exist` }
         }
+        // Support string shorthand for column definition
+        if (typeof params.column === 'string') {
+          try { params.column = parseColumnShorthand(params.column) } catch (e) {
+            return { success: false, error: `Column parse error: ${e instanceof Error ? e.message : String(e)}` }
+          }
+        }
         return this.withReload(async () => {
           const created = await store.addColumn(params.tableId, params.column)
           this._highlight([`column:${params.tableId}:${created.id}`])
@@ -1003,6 +1082,12 @@ export class ERCanvasAdapter implements UIObject {
       case 'replace_columns':
         if (!store.tables.find((t) => t.id === params.tableId)) {
           return { success: false, error: `Table ${params.tableId} does not exist` }
+        }
+        // Support string shorthand for column definitions
+        try {
+          if (params.columns) params.columns = normalizeColumns(params.columns)
+        } catch (e) {
+          return { success: false, error: `Column parse error: ${e instanceof Error ? e.message : String(e)}` }
         }
         try {
           const rcTableId = params.tableId
@@ -1108,8 +1193,10 @@ export class ERCanvasAdapter implements UIObject {
       case 'batch':
         return this._batchExec(params)
 
-      default:
-        return execError(`Unknown action: ${action}`, 'Call ui_read(mode="actions") to see all available actions')
+      default: {
+        const available = ER_CANVAS_ACTIONS.map(a => a.name).join(', ')
+        return execError(`Unknown action: ${action}. Available: [${available}]`)
+      }
     }
   }
 
@@ -1119,6 +1206,13 @@ export class ERCanvasAdapter implements UIObject {
     store: ReturnType<typeof useErDesignerStore.getState>,
     params: any,
   ): Promise<ExecResult> {
+    // Normalize columns: support string shorthand (e.g. "id BIGINT PK AI")
+    try {
+      if (params.columns) params.columns = normalizeColumns(params.columns)
+    } catch (e) {
+      return { success: false, error: `Column parse error: ${e instanceof Error ? e.message : String(e)}` }
+    }
+
     // Pre-validate: index columns must reference columns defined in this batch
     const colNameSet = new Set((params.columns ?? []).map((c: any) => c.name))
     for (const idx of params.indexes ?? []) {
@@ -1170,10 +1264,11 @@ export class ERCanvasAdapter implements UIObject {
         ...columnIds.map(cid => `column:${table.id}:${cid}`),
         ...indexIds.map(iid => `index:${table.id}:${iid}`),
       ])
-      return {
-        success: true,
-        data: { tableId: table.id, columnIds, columnMap: columnNameToId, indexIds },
+      const data: Record<string, unknown> = { tableId: table.id, columnIds, columnMap: columnNameToId, indexIds }
+      if (params?.returnState) {
+        data.state = this._readState()
       }
+      return { success: true, data }
     } catch (e) {
       await this._resyncProject()
       return { success: false, error: String(e) }
@@ -1184,6 +1279,12 @@ export class ERCanvasAdapter implements UIObject {
 
   private async _batchExec(params: any): Promise<ExecResult> {
     const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
+
+    // Dry-run: validate without executing
+    if (params?.dryRun) {
+      return this._validateBatchOps(ops)
+    }
+
     const results: unknown[] = []
 
     for (let i = 0; i < ops.length; i++) {
@@ -1201,7 +1302,7 @@ export class ERCanvasAdapter implements UIObject {
         return {
           success: false,
           error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
-          data: { completedOps: i, results },
+          data: { completedOps: i, results, failedOp: { index: i, action: op.action, rawParams: op.params } },
         }
       }
 
@@ -1212,13 +1313,71 @@ export class ERCanvasAdapter implements UIObject {
         return {
           success: false,
           error: `op[${i}] ${op.action} failed: ${result.error}`,
-          data: { completedOps: i, results },
+          data: { completedOps: i, results, failedOp: { index: i, action: op.action, resolvedParams } },
         }
       }
       results.push(result.data ?? {})
     }
 
-    return { success: true, data: { results } }
+    const data: Record<string, unknown> = { results }
+    if (params?.returnState) {
+      data.state = this._readState()
+    }
+    return { success: true, data }
+  }
+
+  /** Static validation for batch ops without executing them */
+  private _validateBatchOps(ops: Array<{ action: string; params?: unknown }>): ExecResult {
+    const actionNames = new Set(ER_CANVAS_ACTIONS.map(a => a.name))
+    const errors: string[] = []
+
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]
+
+      // Check action exists
+      if (op.action === 'batch') {
+        errors.push(`op[${i}]: nested batch is not allowed`)
+        continue
+      }
+      if (!actionNames.has(op.action)) {
+        errors.push(`op[${i}]: unknown action "${op.action}"`)
+        continue
+      }
+
+      // Check required params (where possible without resolved variables)
+      const actionDef = ER_CANVAS_ACTIONS.find(a => a.name === op.action)
+      if (actionDef?.paramsSchema?.required && op.params && typeof op.params === 'object') {
+        for (const key of actionDef.paramsSchema.required) {
+          const val = (op.params as Record<string, unknown>)[key]
+          if (val === undefined) {
+            errors.push(`op[${i}] ${op.action}: missing required param "${key}"`)
+          }
+        }
+      }
+
+      // Check $N variable references don't point beyond the ops array
+      if (op.params && typeof op.params === 'object') {
+        for (const [key, val] of Object.entries(op.params as Record<string, unknown>)) {
+          if (typeof val === 'string') {
+            const m = val.match(/^\$(\d+)/)
+            if (m) {
+              const refIdx = parseInt(m[1], 10)
+              if (refIdx >= i) {
+                errors.push(`op[${i}] ${op.action}: param "${key}" references $${refIdx} which is not a prior op (forward reference)`)
+              }
+              if (refIdx >= ops.length) {
+                errors.push(`op[${i}] ${op.action}: param "${key}" references $${refIdx} but only ${ops.length} ops exist`)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
+    }
+    return { success: true, data: { validated: true, opCount: ops.length } }
   }
 
   /** 从后端重新加载项目数据，修复前后端状态不一致 */

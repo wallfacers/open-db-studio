@@ -35,7 +35,7 @@ export interface UIObject {
   /** Declare supported patch paths. If present, UIRouter validates before forwarding. */
   patchCapabilities?: PatchCapability[]
 
-  read(mode: 'state' | 'schema' | 'actions'): any
+  read(mode: 'state' | 'schema' | 'actions' | 'full'): any
   patch(ops: JsonPatchOp[], reason?: string): PatchResult | Promise<PatchResult>
   exec(action: string, params?: any): ExecResult | Promise<ExecResult>
 }

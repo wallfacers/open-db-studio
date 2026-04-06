@@ -175,13 +175,13 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_read",
-                "description": "Read the current state, schema, or available actions of a UI object.",
+                "description": "Read the current state, schema, or available actions of a UI object. Use mode='full' to get all three in one call (reduces round trips).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, seatunnel_job, db_tree, history, er_canvas" },
                         "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
-                        "mode": { "type": "string", "enum": ["state", "schema", "actions"], "default": "state" }
+                        "mode": { "type": "string", "enum": ["state", "schema", "actions", "full"], "default": "state", "description": "Use 'full' to get state + actions + schema in one call" }
                     },
                     "required": ["object"]
                 }
@@ -289,7 +289,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "init_er_table",
-                "description": "Create ONE complete table with columns and indexes in the active ER diagram. For single-table creation this is the simplest choice. For multi-table + relations, use er_batch instead (supports variable binding across operations). This is for ER DESIGN projects (visual schema design), NOT for connected databases — use init_table_form for that.",
+                "description": "[DEPRECATED: prefer er_batch with a single batch_create_table op] Create ONE complete table with columns and indexes in the active ER diagram. For multi-table + relations, use er_batch instead (supports variable binding across operations). This is for ER DESIGN projects (visual schema design), NOT for connected databases — use init_table_form for that.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -303,7 +303,7 @@ fn tool_definitions() -> Value {
                         },
                         "columns": {
                             "type": "array",
-                            "description": "Column definitions",
+                            "description": "Column definitions. Each item can be an object OR a shorthand string like \"id BIGINT PK AI\" or \"email VARCHAR(255) NOT NULL UNIQUE\". Shorthand format: \"<name> <TYPE>[(len[,scale])] [PK] [AI] [NOT NULL] [UNIQUE] [UNSIGNED] [DEFAULT '<val>'] [COMMENT '<text>']\"",
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -341,7 +341,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "er_batch",
-                "description": "Execute a sequence of ER canvas actions in one call with variable binding. Each op is {action, params}. Results from earlier ops can be referenced via \"$N.path\" syntax (e.g. \"$0.tableId\", \"$1.columnMap.user_id\", \"$2.columnIds[0]\"). Stops on first failure. Available actions: batch_create_table, add_table, update_table, delete_table, add_column, update_column, delete_column, add_relation, update_relation, delete_relation, add_index, update_index, delete_index, replace_columns, replace_indexes. Common patterns: create tables + relations (batch_create_table x N then add_relation), modify existing table (update_column/delete_column/add_column), rebuild columns (replace_columns).",
+                "description": "PRIMARY tool for all ER diagram modifications. Execute a sequence of ER canvas actions in one call with variable binding. Each op is {action, params}. Results from earlier ops can be referenced via \"$N.path\" syntax (e.g. \"$0.tableId\", \"$1.columnMap.user_id\", \"$2.columnIds[0]\"). $N resolves to the DATA portion of op[N]'s result (not the full response wrapper). Return structures per action: batch_create_table → {tableId, columnIds, columnMap, indexIds}, add_table → {tableId}, add_column → {columnId}, add_relation → {relationId}, add_index → {indexId}, update_*/delete_* → {}. Stops on first failure. Available actions: batch_create_table, add_table, update_table, delete_table, add_column, update_column, delete_column, add_relation, update_relation, delete_relation, add_index, update_index, delete_index, replace_columns, replace_indexes, reorder_columns. Common patterns: create tables + relations (batch_create_table x N then add_relation), modify existing table (update_column/delete_column/add_column), rebuild columns (replace_columns). Set returnState=true to include full project state in the response.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -357,7 +357,9 @@ fn tool_definitions() -> Value {
                                 },
                                 "required": ["action"]
                             }
-                        }
+                        },
+                        "returnState": { "type": "boolean", "default": false, "description": "If true, include full project state in the response after all ops complete" },
+                        "dryRun": { "type": "boolean", "default": false, "description": "If true, validate all ops without executing (checks action names, required params, variable refs)" }
                     },
                     "required": ["ops"]
                 }
@@ -751,6 +753,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 "position": args.get("position"),
                 "columns": args.get("columns").cloned().unwrap_or(json!([])),
                 "indexes": args.get("indexes").cloned().unwrap_or(json!([])),
+                "returnState": args.get("returnState").cloned().unwrap_or(json!(false)),
             });
             let payload = json!({
                 "tool": "ui_exec",
@@ -780,7 +783,9 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 "payload": {
                     "action": "batch",
                     "params": {
-                        "ops": args.get("ops").cloned().unwrap_or(json!([]))
+                        "ops": args.get("ops").cloned().unwrap_or(json!([])),
+                        "returnState": args.get("returnState").cloned().unwrap_or(json!(false)),
+                        "dryRun": args.get("dryRun").cloned().unwrap_or(json!(false))
                     }
                 }
             });

@@ -157,6 +157,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
         ref={menuRef}
         className="fixed bg-background-base border border-border-default rounded-md shadow-lg p-2 z-[200] min-w-[180px]"
         style={{ left: x, top: y }}
+        onClick={e => e.stopPropagation()}
       >
         <input
           ref={renameRef}
@@ -194,6 +195,7 @@ export const ProjectContextMenu: React.FC<ProjectContextMenuProps> = ({ x, y, pr
       ref={menuRef}
       className="fixed bg-background-base border border-border-default rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
       style={{ left: x, top: y }}
+      onClick={e => e.stopPropagation()}
     >
       {menuItems.map((item, idx) => {
         if (item.type === 'divider') {

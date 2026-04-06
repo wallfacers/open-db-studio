@@ -259,6 +259,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
     set((s) => ({
       projects: s.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)),
     }));
+    if (updates.name) {
+      const { useQueryStore } = await import('./queryStore');
+      useQueryStore.getState().updateERDesignTabTitle(id, updates.name);
+    }
   },
 
   deleteProject: async (id) => {

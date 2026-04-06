@@ -58,6 +58,7 @@ interface QueryState {
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
   openERDesignTab: (projectId: number, projectName: string) => void;
+  updateERDesignTabTitle: (projectId: number, title: string) => void;
   closeERDesignTab: (projectId: number) => void;
 
   closeTab: (tabId: string) => void;
@@ -293,6 +294,14 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         : s.activeTabId;
       return { tabs: newTabs, activeTabId: newActiveId };
     });
+  },
+
+  updateERDesignTabTitle: (projectId, title) => {
+    set(s => ({
+      tabs: s.tabs.map(t =>
+        t.type === 'er_design' && t.erProjectId === projectId ? { ...t, title } : t
+      ),
+    }));
   },
 
   closeERDesignTab: (projectId) => {

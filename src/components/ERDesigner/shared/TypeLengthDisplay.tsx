@@ -8,9 +8,10 @@ interface TypeLengthDisplayProps {
   dialect: DialectName | null;
   mode: 'display' | 'edit';
   onChange: (updates: Partial<ErColumn>) => void;
+  onEditEnumValues?: () => void;
 }
 
-export default function TypeLengthDisplay({ column, dialect, mode, onChange }: TypeLengthDisplayProps) {
+export default function TypeLengthDisplay({ column, dialect, mode, onChange, onEditEnumValues }: TypeLengthDisplayProps) {
   const typeOptions = useMemo(() => {
     return getTypeOptions(dialect).map(t => ({ value: t.value, label: t.label }));
   }, [dialect]);
@@ -79,6 +80,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange }: T
           type="button"
           className="text-[11px] text-accent hover:text-[#00e6be] cursor-pointer whitespace-nowrap transition-colors duration-200"
           title="编辑值列表"
+          onClick={onEditEnumValues}
         >
           编辑值列表...
         </button>

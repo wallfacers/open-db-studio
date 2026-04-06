@@ -146,7 +146,13 @@ function CompactRow({
 
       {/* Type + length */}
       <div className="flex-1 min-w-0 flex items-center gap-1">
-        <TypeLengthDisplay column={column} dialect={dialect} mode="edit" onChange={(u) => onUpdate(column.id, u)} />
+        <TypeLengthDisplay
+          column={column}
+          dialect={dialect}
+          mode="edit"
+          onChange={(u) => onUpdate(column.id, u)}
+          onEditEnumValues={() => onOpenDrawer?.(tableId, column.id)}
+        />
         <CompatibilityWarning typeName={column.data_type} dialect={dialect} />
       </div>
 

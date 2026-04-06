@@ -48,6 +48,9 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
                 mode="compact"
                 onUpdate={updateColumn}
                 onDelete={deleteColumn}
+                onOpenDrawer={() => {
+                  if (!expandedIds.has(col.id)) toggleExpand(col.id);
+                }}
                 visibleColumns={{ defaultValue: false, comment: false, unique: false }}
               />
             </div>

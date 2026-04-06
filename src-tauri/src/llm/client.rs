@@ -727,9 +727,18 @@ impl LlmClient {
             },
         }).collect();
 
+        // 将 system 消息提取并强制置顶，防止历史截断时丢失系统提示词
+        let mut system_msgs: Vec<AgentMessage> = Vec::new();
+        let mut other_msgs: Vec<AgentMessage> = Vec::new();
+        for msg in messages {
+            if msg.role == "system" { system_msgs.push(msg); }
+            else { other_msgs.push(msg); }
+        }
+        let ordered_messages: Vec<AgentMessage> = system_msgs.into_iter().chain(other_msgs).collect();
+
         let req = StreamReq {
             model: self.model.clone(),
-            messages: &messages,
+            messages: &ordered_messages,
             tools: openai_tools,
             stream: true,
         };

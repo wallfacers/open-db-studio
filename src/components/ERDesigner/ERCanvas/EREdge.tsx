@@ -181,15 +181,15 @@ function resolveLabelPos(segs: Segment[], placed: Point[]): Point | null {
 // ─── Self-referencing loopback path builder ─────────────────────────
 
 /**
- * Build a smooth cubic-bezier loopback path for self-referencing edges.
+ * Build an orthogonal (right-angle) loopback path for self-referencing edges.
  *
- * The path exits rightward from the source handle, curves above (or below)
- * the node, then re-enters from the left into the target handle:
+ * The path exits rightward from the source handle, turns vertically,
+ * runs horizontally above (or below) the node, then turns back down
+ * into the target handle — all with straight segments:
  *
- *          loopY ─── ─── ─── ───
- *         ╱                      ╲
- *        ╱                        ╲
- *   source (right)            target (left)
+ *        ┌─── ─── ─── ─── ───┐
+ *        │                    │
+ *   source (right)       target (left)
  *
  * Returns [svgPath, labelX, labelY].
  */
@@ -209,10 +209,17 @@ function buildSelfRefPath(
     ? nodeTopY - LOOP_PADDING
     : nodeBottomY + LOOP_PADDING
 
+  // Orthogonal path: right → vertical → horizontal → vertical → left
+  const rightX = sourceX + LOOP_GAP
+  const leftX = targetX - LOOP_GAP
+
   const path = [
     `M ${sourceX},${sourceY}`,
-    `C ${sourceX + LOOP_GAP},${sourceY} ${sourceX + LOOP_GAP},${loopY} ${midX},${loopY}`,
-    `C ${targetX - LOOP_GAP},${loopY} ${targetX - LOOP_GAP},${targetY} ${targetX},${targetY}`,
+    `L ${rightX},${sourceY}`,
+    `L ${rightX},${loopY}`,
+    `L ${leftX},${loopY}`,
+    `L ${leftX},${targetY}`,
+    `L ${targetX},${targetY}`,
   ].join(' ')
 
   return [path, midX, loopY]

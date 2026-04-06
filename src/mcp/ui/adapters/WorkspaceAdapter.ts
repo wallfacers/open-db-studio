@@ -14,9 +14,10 @@ export class WorkspaceAdapter implements UIObject {
           paramsSchema: {
             type: 'object',
             properties: {
-              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'er_canvas', 'seatunnel_job'] },
+              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'seatunnel_job'] },
               connection_id: { type: 'number' },
               database: { type: 'string' },
+              schema: { type: 'string' },
               table: { type: 'string' },
               metric_id: { type: 'number' },
               project_id: { type: 'number' },
@@ -41,7 +42,7 @@ export class WorkspaceAdapter implements UIObject {
 
     switch (action) {
       case 'open': {
-        const { type, connection_id, database, table, metric_id, project_id, job_id } = params ?? {}
+        const { type, connection_id, database, schema, table, metric_id, project_id, job_id } = params ?? {}
 
         switch (type) {
           case 'query_editor':
@@ -53,6 +54,19 @@ export class WorkspaceAdapter implements UIObject {
           case 'metric_form':
             if (metric_id) store.openMetricTab(metric_id, `Metric #${metric_id}`)
             break
+          case 'metric_list': {
+            if (!connection_id) return { success: false, error: 'connection_id is required for metric_list' }
+            const scope = { connectionId: connection_id, database: database ?? undefined, schema: schema ?? undefined }
+            const title = database ?? `conn_${connection_id}`
+            store.openMetricListTab(scope, title)
+            break
+          }
+          case 'new_metric': {
+            if (!connection_id) return { success: false, error: 'connection_id is required for new_metric' }
+            const scope = { connectionId: connection_id, database: database ?? undefined, schema: schema ?? undefined }
+            store.openNewMetricTab(scope, database ?? `conn_${connection_id}`)
+            break
+          }
           case 'er_canvas':
             if (project_id) store.openERDesignTab(project_id, `ER #${project_id}`)
             break

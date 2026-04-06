@@ -6,6 +6,7 @@ import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
 import { useHighlightStore } from '../../../store/highlightStore'
+import { resolveVarRefs, validateBatchVarRefs } from '../batchUtils'
 
 const METRIC_FORM_SCHEMA = {
   type: 'object',
@@ -69,6 +70,64 @@ export class MetricFormUIObject implements UIObject {
             description: 'Validate metric fields and return any errors',
             paramsSchema: { type: 'object', properties: {} },
           },
+          {
+            name: 'batch_create',
+            description:
+              'Create multiple metrics at once without opening individual tabs. ' +
+              'Each item is saved directly to the database. ' +
+              'Returns { created: number, results: [{displayName, metricId}] }.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                metrics: {
+                  type: 'array',
+                  description: 'Array of metric definitions to create',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      displayName: { type: 'string', description: 'User-facing display name (required)' },
+                      name: { type: 'string', description: 'English identifier (required)' },
+                      metricType: { type: 'string', enum: ['atomic', 'composite'], default: 'atomic' },
+                      tableName: { type: 'string' },
+                      columnName: { type: 'string' },
+                      aggregation: { type: 'string', enum: ['SUM', 'COUNT', 'AVG', 'MAX', 'MIN', 'COUNT_DISTINCT'] },
+                      filterSql: { type: 'string' },
+                      category: { type: 'string' },
+                      description: { type: 'string' },
+                    },
+                    required: ['displayName', 'name'],
+                  },
+                },
+              },
+              required: ['metrics'],
+            },
+          },
+          {
+            name: 'batch',
+            description:
+              'Execute a sequence of actions in one call with variable binding. ' +
+              'Each op is { action, params }; results are stored and can be referenced by later ops ' +
+              'via "$N.path" syntax. Stops on first failure. ' +
+              'Set dryRun=true to validate without executing.',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                ops: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      action: { type: 'string' },
+                      params: { type: 'object' },
+                    },
+                    required: ['action'],
+                  },
+                },
+                dryRun: { type: 'boolean', default: false },
+              },
+              required: ['ops'],
+            },
+          },
         ]
     }
   }
@@ -109,7 +168,7 @@ export class MetricFormUIObject implements UIObject {
     }
   }
 
-  async exec(action: string, _params?: any): Promise<ExecResult> {
+  async exec(action: string, params?: any): Promise<ExecResult> {
     const state = useMetricFormStore.getState().getForm(this.objectId)
     if (!state) return execError('No form state', `Metric form ${this.objectId} not initialized`)
 
@@ -132,8 +191,107 @@ export class MetricFormUIObject implements UIObject {
         if (!state.name) errors.push('name is required')
         return { success: errors.length === 0, data: { errors } }
       }
+      case 'batch_create': {
+        const metrics: any[] = params?.metrics
+        if (!Array.isArray(metrics) || metrics.length === 0) {
+          return execError('metrics must be a non-empty array')
+        }
+        const results: Array<{ displayName: string; metricId: unknown }> = []
+        for (let i = 0; i < metrics.length; i++) {
+          const m = metrics[i]
+          if (!m.displayName || !m.name) {
+            return {
+              success: false,
+              error: `metrics[${i}]: displayName and name are required`,
+              data: { created: results.length, results },
+            }
+          }
+          const input = {
+            displayName: m.displayName,
+            name: m.name,
+            metricType: m.metricType ?? 'atomic',
+            tableName: m.tableName ?? '',
+            columnName: m.columnName ?? '',
+            aggregation: m.aggregation ?? '',
+            filterSql: m.filterSql ?? '',
+            category: m.category ?? '',
+            description: m.description ?? '',
+            connectionId: this.connectionId,
+          }
+          try {
+            const metricId = await invoke('save_metric', { input })
+            results.push({ displayName: m.displayName, metricId })
+          } catch (e) {
+            return {
+              success: false,
+              error: `metrics[${i}] "${m.displayName}" failed: ${String(e)}`,
+              data: { created: results.length, results },
+            }
+          }
+        }
+        return { success: true, data: { created: results.length, results } }
+      }
+
+      case 'batch':
+        return this._batchExec(params)
+
       default:
-        return execError(`Unknown action: ${action}`, 'Available actions: save, validate')
+        return execError(`Unknown action: ${action}`, 'Available actions: save, validate, batch_create, batch')
     }
+  }
+
+  private async _batchExec(params: any): Promise<ExecResult> {
+    const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
+    if (ops.length === 0) return execError('ops array is required and must be non-empty')
+    if (ops.length > 50) return execError('ops array too large (max 50)')
+
+    if (params?.dryRun) {
+      const actionDefs = this.read('actions') as Array<{ name: string; paramsSchema?: any }>
+      const actionNames = new Set(actionDefs.map(a => a.name))
+      const errors: string[] = []
+      for (let i = 0; i < ops.length; i++) {
+        const op = ops[i]
+        if (op.action === 'batch') {
+          errors.push(`op[${i}]: nested batch is not allowed`)
+          continue
+        }
+        if (!actionNames.has(op.action)) {
+          errors.push(`op[${i}]: unknown action "${op.action}"`)
+        }
+      }
+      errors.push(...validateBatchVarRefs(ops))
+      if (errors.length > 0) {
+        return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
+      }
+      return { success: true, data: { validated: true, opCount: ops.length } }
+    }
+
+    const results: unknown[] = []
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i]
+      if (op.action === 'batch') {
+        return { success: false, error: `op[${i}]: nested batch is not allowed` }
+      }
+      let resolvedParams: unknown
+      try {
+        resolvedParams = resolveVarRefs(op.params, results)
+      } catch (e) {
+        return {
+          success: false,
+          error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
+          data: { completedOps: i, results },
+        }
+      }
+      const result = await this.exec(op.action, resolvedParams)
+      if (!result.success) {
+        return {
+          success: false,
+          error: `op[${i}] ${op.action} failed: ${result.error}`,
+          data: { completedOps: i, results },
+        }
+      }
+      results.push(result.data ?? {})
+    }
+    return { success: true, data: { results } }
   }
 }

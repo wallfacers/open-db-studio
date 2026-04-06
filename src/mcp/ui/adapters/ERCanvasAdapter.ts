@@ -698,12 +698,14 @@ export class ERCanvasAdapter implements UIObject {
   private _readState() {
     const { projects, tables, columns, relations, indexes } = useErDesignerStore.getState()
     const project = projects.find(p => p.id === this._projectId)
+    const projectTables = tables.filter(t => t.project_id === this._projectId)
+    const projectTableIds = new Set(projectTables.map(t => t.id))
 
     return {
       projectId: this._projectId,
       projectName: project?.name ?? '',
       connectionId: project?.connection_id ?? null,
-      tables: tables.map(t => ({
+      tables: projectTables.map(t => ({
         id: t.id,
         name: t.name,
         position: { x: t.position_x, y: t.position_y },
@@ -739,7 +741,7 @@ export class ERCanvasAdapter implements UIObject {
           }
         }),
       })),
-      relations: relations.map(r => ({
+      relations: relations.filter(r => projectTableIds.has(r.source_table_id) && projectTableIds.has(r.target_table_id)).map(r => ({
         id: r.id,
         name: r.name,
         source_table_id: r.source_table_id,

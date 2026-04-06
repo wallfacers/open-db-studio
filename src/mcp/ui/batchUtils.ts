@@ -7,18 +7,27 @@ import { execError } from './errors'
 
 // Matches "$0", "$1.tableId", "$2.columnIds[0]" etc.
 const VAR_REF_RE = /^\$(\d+)(\..*)?$/
+// Alternate form emitted by some LLMs: "$result.ops[0].tableId" → normalised to "$0.tableId"
+const VAR_REF_RESULT_RE = /^\$result\.ops\[(\d+)\](\..*)?$/
+
+/** Normalise the alternate "$result.ops[N].path" form to "$N.path" so a single path can be used. */
+function normalizeVarRef(s: string): string {
+  return s.replace(VAR_REF_RESULT_RE, '$$$1$2')
+}
 
 /**
  * Recursively resolve "$N.path" variable references in a value tree.
  * Each `$N` refers to `results[N]` — the output of a previous batch op.
+ * Also accepts the alternate "$result.ops[N].path" form.
  */
 export function resolveVarRefs(value: unknown, results: unknown[]): unknown {
   if (typeof value === 'string') {
-    const m = value.match(VAR_REF_RE)
+    const normalized = normalizeVarRef(value)
+    const m = normalized.match(VAR_REF_RE)
     if (!m) return value
     const idx = Number(m[1])
     if (idx >= results.length) {
-      throw new Error(`Variable $${idx} references op[${idx}] which hasn't executed yet (only ${results.length} results available)`)
+      throw new Error(`Variable ${normalized} references op[${idx}] which hasn't executed yet (only ${results.length} results available)`)
     }
     let resolved: unknown = results[idx]
     if (m[2]) {
@@ -41,7 +50,7 @@ export function resolveVarRefs(value: unknown, results: unknown[]): unknown {
         }
       }
       if (resolved === undefined) {
-        throw new Error(`Variable ${m[0]} resolved to undefined (full path: ${walkedPath.join('.')})`)
+        throw new Error(`Variable ${normalized} resolved to undefined (full path: ${walkedPath.join('.')})`)
       }
     }
     return resolved
@@ -72,7 +81,9 @@ export function validateBatchVarRefs(
     const op = ops[i]
     const collectErrors = (path: string, val: unknown) => {
       if (typeof val === 'string') {
-        const m = val.match(/^\$(\d+)/)
+        // Accept both "$N..." and "$result.ops[N]..." forms
+        const normalized = normalizeVarRef(val)
+        const m = normalized.match(/^\$(\d+)/)
         if (m) {
           const refIdx = parseInt(m[1], 10)
           if (refIdx >= i) {

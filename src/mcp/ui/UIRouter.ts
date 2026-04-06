@@ -28,7 +28,7 @@ export class UIRouter {
     // retry with backoff to handle race where React component hasn't mounted yet.
     let instance = this.resolveTarget(req.object, req.target)
     if (!instance && req.target && req.target !== 'active' && req.object !== 'workspace') {
-      instance = await this.resolveTargetWithRetry(req.object, req.target, 2000, 100)
+      instance = await this.resolveTargetWithRetry(req.object, req.target, 5000, 100)
     }
     if (!instance) {
       return { error: `No ${req.object} found for target '${req.target}'` }

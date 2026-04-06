@@ -226,7 +226,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "init_table_form",
-                "description": "Open a table design form for a CONNECTED DATABASE and populate it with columns/indexes. This opens a UI tab for interactive editing. For a simpler workflow, open the tab first with ui_exec(object='workspace', action='open', params={type:'table_form', connection_id, database}), then use ui_exec(action='batch_create_table') to populate everything in one call. Do NOT use this for ER diagram design — use init_er_table instead. Requires connection_id and database.",
+                "description": "Open a table design form for a CONNECTED DATABASE and populate it with columns/indexes in one atomic call. This is the recommended way to create a table — do not call workspace.open + ui_exec separately. Do NOT use this for ER diagram design — use init_er_table instead. Requires connection_id and database.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -743,12 +743,21 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 &handle, "mcp://ui-request", "ui_request", patch_payload,
             ).await?;
 
+            if let Some(err) = patch_result.get("error").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                return Err(crate::AppError::Other(format!("init_table_form: patch failed — {}", err)));
+            }
+
+            let patch_status = patch_result
+                .get("data").and_then(|d| d.get("status"))
+                .unwrap_or(&json!("applied"))
+                .clone();
+
             let result = json!({
                 "objectId": object_id,
                 "table_name": args["table_name"],
                 "columns_count": args["columns"].as_array().map(|a| a.len()).unwrap_or(0),
                 "foreign_keys_count": args.get("foreignKeys").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
-                "patch_status": patch_result.get("data").and_then(|d| d.get("status")).unwrap_or(&json!("unknown")),
+                "patch_status": patch_status,
             });
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
         }

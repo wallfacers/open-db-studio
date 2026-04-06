@@ -443,7 +443,11 @@ const ER_CANVAS_ACTIONS: ActionDef[] = [
     description:
       'Execute a sequence of actions in one call with variable binding. ' +
       'Each op is { action, params }; results are stored and can be referenced by later ops ' +
-      'via "$N.path" syntax (e.g. "$0.tableId", "$1.columnMap.user_id", "$2.columnIds[0]"). ' +
+      'via "$N.path" syntax where N is the zero-based index of a prior op ' +
+      '(e.g. "$0.tableId", "$1.columnMap.user_id", "$2.columnIds[0]", "$0.columnIds" for the whole array). ' +
+      'IMPORTANT: to pass an entire array result use "$N.arrayProp" as the param value — ' +
+      'do NOT join IDs into a comma-separated string. ' +
+      'Example — reorder after batch_create_table: { "tableId": "$0.tableId", "columnIds": "$0.columnIds" }. ' +
       'Stops on first failure. Returns { results: [...] } with each op\'s result. ' +
       'Use this for ANY multi-step workflow: create tables + add relations, modify multiple columns, etc.',
     paramsSchema: {

@@ -533,9 +533,13 @@ export class TableFormUIObject implements UIObject {
           const col = patched.columns[Number(addressable)]
           if (col) paths.push(`columns.${col.name}`)
         } else if (addressable === '-') {
-          // /columns/- (append) → last column in patched array
-          const last = patched.columns[patched.columns.length - 1]
-          if (last) paths.push(`columns.${last.name}`)
+          // /columns/- (append) → resolve from op.value.name if available, else fallback to last
+          if (op.op === 'add' && op.value?.name) {
+            paths.push(`columns.${op.value.name}`)
+          } else {
+            const last = patched.columns[patched.columns.length - 1]
+            if (last) paths.push(`columns.${last.name}`)
+          }
         }
       } else if (topKey === 'indexes' && segments.length >= 2) {
         // Index change → merge to index level by name

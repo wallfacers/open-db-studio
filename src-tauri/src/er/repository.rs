@@ -428,10 +428,8 @@ pub fn update_table(id: i64, req: &UpdateTableRequest) -> AppResult<ErTable> {
 
 pub fn delete_table(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_tables WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER table {} not found", id)));
-    }
+    // 幂等删除：可能已被其他操作删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_tables WHERE id = ?1", [id])?;
     Ok(())
 }
 
@@ -548,10 +546,8 @@ pub fn update_column(id: i64, req: &UpdateColumnRequest) -> AppResult<ErColumn> 
 
 pub fn delete_column(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_columns WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER column {} not found", id)));
-    }
+    // 幂等删除：可能已被 ON DELETE CASCADE 级联删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_columns WHERE id = ?1", [id])?;
     Ok(())
 }
 
@@ -761,10 +757,8 @@ pub fn update_index(id: i64, req: &UpdateIndexRequest) -> AppResult<ErIndex> {
 
 pub fn delete_index(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_indexes WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER index {} not found", id)));
-    }
+    // 幂等删除：可能已被 ON DELETE CASCADE 级联删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_indexes WHERE id = ?1", [id])?;
     Ok(())
 }
 

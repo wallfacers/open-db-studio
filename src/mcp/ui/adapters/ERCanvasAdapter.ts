@@ -502,6 +502,26 @@ function normalizeIndexColumns(indexDef: { columns?: string[] | string }): void 
   }
 }
 
+/** Validate that all index column names exist in the table's columns */
+function validateIndexColumns(
+  indexColumns: string[] | string | undefined,
+  tableId: number,
+  store: ReturnType<typeof useErDesignerStore.getState>,
+): string | null {
+  if (!indexColumns) return null
+  const colNames: string[] = typeof indexColumns === 'string'
+    ? JSON.parse(indexColumns)
+    : indexColumns
+  const existingNames = new Set(
+    (store.columns[tableId] ?? []).map((c) => c.name),
+  )
+  const missing = colNames.filter((n) => !existingNames.has(n))
+  if (missing.length > 0) {
+    return `Index references non-existent column(s): ${missing.join(', ')}. Available columns: ${[...existingNames].join(', ') || '(none)'}`
+  }
+  return null
+}
+
 // ── Variable reference resolver for batch operations ────────────────────
 // Syntax:
 //   "$0.tableId"          → result of ops[0].tableId
@@ -882,11 +902,15 @@ export class ERCanvasAdapter implements UIObject {
         return this.withReload(() => store.deleteTable(params.tableId))
 
       // ── Column CRUD ─────────────────────────────────────────────────
-      case 'add_column':
+      case 'add_column': {
+        if (!store.tables.find((t) => t.id === params.tableId)) {
+          return { success: false, error: `Table ${params.tableId} does not exist` }
+        }
         return this.withReload(async () => {
           const created = await store.addColumn(params.tableId, params.column)
           return { columnId: created.id }
         })
+      }
 
       case 'update_column':
         return this.withReload(() => store.updateColumn(params.columnId, params.updates))
@@ -908,13 +932,16 @@ export class ERCanvasAdapter implements UIObject {
         return this.withReload(() => store.deleteRelation(params.relationId))
 
       // ── Index CRUD ──────────────────────────────────────────────────
-      case 'add_index':
+      case 'add_index': {
+        const colErr = validateIndexColumns(params.index?.columns, params.tableId, store)
+        if (colErr) return { success: false, error: colErr }
         return this.withReload(async () => {
           const indexDef = { ...params.index }
           normalizeIndexColumns(indexDef)
           const created = await store.addIndex(params.tableId, indexDef)
           return { indexId: created.id }
         })
+      }
 
       case 'update_index':
         return this.withReload(() => store.updateIndex(params.indexId, params.updates))
@@ -924,42 +951,55 @@ export class ERCanvasAdapter implements UIObject {
 
       // ── Batch replace ─────────────────────────────────────────────────
       case 'replace_columns':
-        return this.withReload(async () => {
-          const tableId = params.tableId
-          const existingCols = store.columns[tableId] ?? []
-          // Delete all existing columns (reverse order to avoid FK issues)
+        if (!store.tables.find((t) => t.id === params.tableId)) {
+          return { success: false, error: `Table ${params.tableId} does not exist` }
+        }
+        try {
+          const rcTableId = params.tableId
+          const existingCols = store.columns[rcTableId] ?? []
           for (let i = existingCols.length - 1; i >= 0; i--) {
-            await store.deleteColumn(existingCols[i].id, tableId)
+            await store.deleteColumn(existingCols[i].id, rcTableId)
           }
-          // Create new columns in order
-          const createdIds: number[] = []
+          const colIds: number[] = []
           for (const colDef of params.columns) {
-            const created = await store.addColumn(tableId, colDef)
-            createdIds.push(created.id)
+            const created = await store.addColumn(rcTableId, colDef)
+            colIds.push(created.id)
           }
-          return { columnIds: createdIds }
-        })
+          return { success: true, data: { columnIds: colIds } }
+        } catch (e) {
+          await this._resyncProject()
+          return execError(String(e))
+        }
 
-      case 'replace_indexes':
-        return this.withReload(async () => {
-          const tableId = params.tableId
-          const existingIndexes = store.indexes[tableId] ?? []
-          // Delete all existing indexes
+      case 'replace_indexes': {
+        // 在删除旧索引前先校验所有新索引的列名
+        const riStore = useErDesignerStore.getState()
+        for (const idxDef of params.indexes ?? []) {
+          const cols = idxDef.columns
+          const riColErr = validateIndexColumns(cols, params.tableId, riStore)
+          if (riColErr) return { success: false, error: riColErr }
+        }
+        try {
+          const riTableId = params.tableId
+          const existingIndexes = store.indexes[riTableId] ?? []
           for (const idx of existingIndexes) {
-            await store.deleteIndex(idx.id, tableId)
+            await store.deleteIndex(idx.id, riTableId)
           }
-          // Create new indexes
-          const createdIds: number[] = []
+          const idxIds: number[] = []
           for (const idxDef of params.indexes) {
             const indexDef = { ...idxDef }
             if (Array.isArray(indexDef.columns)) {
               indexDef.columns = JSON.stringify(indexDef.columns)
             }
-            const created = await store.addIndex(tableId, indexDef)
-            createdIds.push(created.id)
+            const created = await store.addIndex(riTableId, indexDef)
+            idxIds.push(created.id)
           }
-          return { indexIds: createdIds }
-        })
+          return { success: true, data: { indexIds: idxIds } }
+        } catch (e) {
+          await this._resyncProject()
+          return execError(String(e))
+        }
+      }
 
       // ── Text result operations (no canvas reload needed) ────────────
       case 'generate_ddl':
@@ -1027,6 +1067,26 @@ export class ERCanvasAdapter implements UIObject {
     store: ReturnType<typeof useErDesignerStore.getState>,
     params: any,
   ): Promise<ExecResult> {
+    // Pre-validate: index columns must reference columns defined in this batch
+    const colNameSet = new Set((params.columns ?? []).map((c: any) => c.name))
+    for (const idx of params.indexes ?? []) {
+      let idxCols: string[]
+      try {
+        idxCols = Array.isArray(idx.columns)
+          ? idx.columns
+          : JSON.parse(idx.columns ?? '[]')
+      } catch {
+        return { success: false, error: `Index "${idx.name}" has malformed columns: ${idx.columns}` }
+      }
+      const missing = idxCols.filter((n: string) => !colNameSet.has(n))
+      if (missing.length > 0) {
+        return {
+          success: false,
+          error: `Index "${idx.name}" references non-existent column(s): ${missing.join(', ')}. Available: ${[...colNameSet].join(', ') || '(none)'}`,
+        }
+      }
+    }
+
     try {
       const position = params.position ?? { x: 100, y: 100 }
       const table = await store.addTable(this._projectId, params.name, position)
@@ -1058,6 +1118,7 @@ export class ERCanvasAdapter implements UIObject {
         data: { tableId: table.id, columnIds, columnMap: columnNameToId, indexIds },
       }
     } catch (e) {
+      await this._resyncProject()
       return { success: false, error: String(e) }
     }
   }
@@ -1078,6 +1139,8 @@ export class ERCanvasAdapter implements UIObject {
       try {
         resolvedParams = resolveVarRefs(op.params, results)
       } catch (e) {
+        // 部分操作已提交，重新加载后端状态以保持一致
+        await this._resyncProject()
         return {
           success: false,
           error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
@@ -1087,6 +1150,8 @@ export class ERCanvasAdapter implements UIObject {
 
       const result = await this.exec(op.action, resolvedParams)
       if (!result.success) {
+        // 部分操作已提交，重新加载后端状态以保持一致
+        if (i > 0) await this._resyncProject()
         return {
           success: false,
           error: `op[${i}] ${op.action} failed: ${result.error}`,
@@ -1097,5 +1162,14 @@ export class ERCanvasAdapter implements UIObject {
     }
 
     return { success: true, data: { results } }
+  }
+
+  /** 从后端重新加载项目数据，修复前后端状态不一致 */
+  private async _resyncProject(): Promise<void> {
+    try {
+      await useErDesignerStore.getState().loadProject(this._projectId)
+    } catch {
+      // 重同步失败不应阻断错误返回
+    }
   }
 }

@@ -28,6 +28,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   } | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [renameDialog, setRenameDialog] = useState<{ projectId: number; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -36,6 +37,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     projects,
     loadProjects,
     createProject,
+    updateProject,
     activeProjectId,
     tables,
     columns,
@@ -80,6 +82,24 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     await createProject(newProjectName.trim());
     setNewProjectName('');
     setShowCreateDialog(false);
+  };
+
+  const handleRenameProject = async () => {
+    if (!renameDialog) return;
+    const trimmed = renameDialog.name.trim();
+    if (!trimmed) return;
+    const original = projects.find(p => p.id === renameDialog.projectId)?.name;
+    if (trimmed === original) { setRenameDialog(null); return; }
+    try {
+      await updateProject(renameDialog.projectId, { name: trimmed });
+    } catch (e: any) {
+      const msg = typeof e === 'string' ? e : e?.message || '';
+      if (msg.includes('已存在') || msg.includes('already exists')) {
+        alert(t('erDesigner.projectNameExists') || '项目名称已存在');
+        return;
+      }
+    }
+    setRenameDialog(null);
   };
 
   const handleImportProject = async () => {
@@ -317,6 +337,38 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
         </div>
       )}
 
+      {/* Rename Project Dialog */}
+      {renameDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setRenameDialog(null)}>
+          <div className="bg-background-elevated border border-border-strong rounded-lg p-4 w-72" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm text-foreground-default mb-3">{t('common.rename') || '重命名'}</h3>
+            <input
+              type="text"
+              className="w-full px-3 py-2 bg-background-hover border border-border-strong rounded text-xs text-foreground-default placeholder-foreground-subtle focus:outline-none focus:border-accent"
+              placeholder={t('erDesigner.projectName') || '项目名称'}
+              value={renameDialog.name}
+              onChange={e => setRenameDialog(d => d ? { ...d, name: e.target.value } : null)}
+              onKeyDown={e => { if (e.key === 'Enter') handleRenameProject(); else if (e.key === 'Escape') setRenameDialog(null); }}
+              autoFocus
+            />
+            <div className="flex justify-end mt-3 gap-2">
+              <button
+                className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground-default rounded transition-colors duration-200"
+                onClick={() => setRenameDialog(null)}
+              >
+                {t('common.cancel') || '取消'}
+              </button>
+              <button
+                className="px-3 py-1.5 text-xs bg-accent text-background-void rounded hover:bg-accent-hover transition-colors duration-200"
+                onClick={handleRenameProject}
+              >
+                {t('common.confirm') || '确认'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Context Menu */}
       {contextMenu?.type === 'project' && contextMenu.projectId && (
         <ProjectContextMenu
@@ -324,6 +376,10 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
           y={contextMenu.y}
           projectId={contextMenu.projectId}
           onClose={closeContextMenu}
+          onRename={() => {
+            const p = projects.find(p => p.id === contextMenu.projectId);
+            setRenameDialog({ projectId: contextMenu.projectId!, name: p?.name || '' });
+          }}
         />
       )}
       {contextMenu?.type === 'table' && contextMenu.projectId && contextMenu.tableId && (

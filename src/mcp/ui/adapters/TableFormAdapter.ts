@@ -9,7 +9,7 @@ import { useHighlightStore } from '../../../store/highlightStore'
 import { makeId } from '../../../utils/makeId'
 import { parseIndexColumns, stringifyIndexColumns } from '../../../utils/indexColumns'
 import type { IndexColumnEntry } from '../../../utils/indexColumns'
-import { resolveVarRefs, validateBatchVarRefs } from '../batchUtils'
+import { executeBatch } from '../batchUtils'
 
 const CASCADE_OPTS = ['NO ACTION', 'CASCADE', 'SET NULL', 'RESTRICT', 'SET DEFAULT'] as const
 const INDEX_TYPES = ['INDEX', 'UNIQUE', 'FULLTEXT'] as const
@@ -963,7 +963,11 @@ export class TableFormUIObject implements UIObject {
       }
 
       case 'batch': {
-        return this._batchExec(params)
+        return executeBatch(params, (a, p) => this.exec(a, p), {
+          actionDefs: this.read('actions') as Array<{ name: string; paramsSchema?: any }>,
+          returnState: params?.returnState,
+          readState: () => this.read('state'),
+        })
       }
 
       default: {
@@ -973,87 +977,4 @@ export class TableFormUIObject implements UIObject {
     }
   }
 
-  // ── Batch: generic sequential execution with variable binding ──
-
-  private async _batchExec(params: any): Promise<ExecResult> {
-    const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
-    if (ops.length === 0) return execError('ops array is required and must be non-empty')
-    if (ops.length > 50) return execError('ops array too large (max 50)')
-
-    // Dry-run: validate without executing
-    if (params?.dryRun) {
-      return this._validateBatchOps(ops)
-    }
-
-    const results: unknown[] = []
-
-    for (let i = 0; i < ops.length; i++) {
-      const op = ops[i]
-      if (op.action === 'batch') {
-        return { success: false, error: `op[${i}]: nested batch is not allowed` }
-      }
-
-      let resolvedParams: unknown
-      try {
-        resolvedParams = resolveVarRefs(op.params, results)
-      } catch (e) {
-        return {
-          success: false,
-          error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
-          data: { completedOps: i, results, failedOp: { index: i, action: op.action, rawParams: op.params } },
-        }
-      }
-
-      const result = await this.exec(op.action, resolvedParams)
-      if (!result.success) {
-        return {
-          success: false,
-          error: `op[${i}] ${op.action} failed: ${result.error}`,
-          data: { completedOps: i, results, failedOp: { index: i, action: op.action, resolvedParams } },
-        }
-      }
-      results.push(result.data ?? {})
-    }
-
-    const data: Record<string, unknown> = { results }
-    if (params?.returnState) {
-      data.state = this.read('state')
-    }
-    return { success: true, data }
-  }
-
-  private _validateBatchOps(ops: Array<{ action: string; params?: unknown }>): ExecResult {
-    const actionDefs = this.read('actions') as Array<{ name: string; paramsSchema?: any }>
-    const actionNames = new Set(actionDefs.map(a => a.name))
-    const errors: string[] = []
-
-    for (let i = 0; i < ops.length; i++) {
-      const op = ops[i]
-      if (op.action === 'batch') {
-        errors.push(`op[${i}]: nested batch is not allowed`)
-        continue
-      }
-      if (!actionNames.has(op.action)) {
-        errors.push(`op[${i}]: unknown action "${op.action}"`)
-        continue
-      }
-      const def = actionDefs.find(a => a.name === op.action)
-      if (def?.paramsSchema?.required && op.params && typeof op.params === 'object') {
-        for (const key of def.paramsSchema.required) {
-          const val = (op.params as Record<string, unknown>)[key]
-          if (val === undefined) {
-            errors.push(`op[${i}] ${op.action}: missing required param "${key}"`)
-          }
-        }
-      }
-    }
-
-    const varErrors = validateBatchVarRefs(ops)
-    errors.push(...varErrors)
-
-    if (errors.length > 0) {
-      return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
-    }
-    return { success: true, data: { validated: true, opCount: ops.length } }
-  }
 }

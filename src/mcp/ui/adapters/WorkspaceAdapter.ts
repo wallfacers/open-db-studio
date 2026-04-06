@@ -56,14 +56,14 @@ export class WorkspaceAdapter implements UIObject {
             break
           case 'metric_list': {
             if (!connection_id) return { success: false, error: 'connection_id is required for metric_list' }
-            const scope = { connectionId: connection_id, database: database ?? undefined, schema: schema ?? undefined }
+            const scope = { connectionId: connection_id, database, schema }
             const title = database ?? `conn_${connection_id}`
             store.openMetricListTab(scope, title)
             break
           }
           case 'new_metric': {
             if (!connection_id) return { success: false, error: 'connection_id is required for new_metric' }
-            const scope = { connectionId: connection_id, database: database ?? undefined, schema: schema ?? undefined }
+            const scope = { connectionId: connection_id, database, schema }
             store.openNewMetricTab(scope, database ?? `conn_${connection_id}`)
             break
           }

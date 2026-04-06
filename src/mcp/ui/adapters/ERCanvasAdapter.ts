@@ -4,7 +4,7 @@ import { parsePath } from '../pathResolver'
 import { patchError, execError } from '../errors'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
 import { useHighlightStore } from '../../../store/highlightStore'
-import { resolveVarRefs, validateBatchVarRefs } from '../batchUtils'
+import { executeBatch } from '../batchUtils'
 
 // ── JSON Schema describing the er_canvas state shape ───────────────────────
 
@@ -1135,7 +1135,12 @@ export class ERCanvasAdapter implements UIObject {
         return this._batchCreateTable(store, params)
 
       case 'batch':
-        return this._batchExec(params)
+        return executeBatch(params, (a, p) => this.exec(a, p), {
+          actionDefs: ER_CANVAS_ACTIONS,
+          onPartialFailure: () => this._resyncProject(),
+          returnState: params?.returnState,
+          readState: () => this._readState(),
+        })
 
       default: {
         const available = ER_CANVAS_ACTIONS.map(a => a.name).join(', ')
@@ -1217,97 +1222,6 @@ export class ERCanvasAdapter implements UIObject {
       await this._resyncProject()
       return { success: false, error: String(e) }
     }
-  }
-
-  // ── Batch: generic sequential execution with variable binding ──
-
-  private async _batchExec(params: any): Promise<ExecResult> {
-    const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
-    if (ops.length === 0) return execError('ops array is required and must be non-empty')
-    if (ops.length > 50) return execError('ops array too large (max 50)')
-
-    // Dry-run: validate without executing
-    if (params?.dryRun) {
-      return this._validateBatchOps(ops)
-    }
-
-    const results: unknown[] = []
-
-    for (let i = 0; i < ops.length; i++) {
-      const op = ops[i]
-      if (op.action === 'batch') {
-        return { success: false, error: `op[${i}]: nested batch is not allowed` }
-      }
-
-      let resolvedParams: unknown
-      try {
-        resolvedParams = resolveVarRefs(op.params, results)
-      } catch (e) {
-        // 部分操作已提交，重新加载后端状态以保持一致
-        await this._resyncProject()
-        return {
-          success: false,
-          error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
-          data: { completedOps: i, results, failedOp: { index: i, action: op.action, rawParams: op.params } },
-        }
-      }
-
-      const result = await this.exec(op.action, resolvedParams)
-      if (!result.success) {
-        // 部分操作已提交，重新加载后端状态以保持一致
-        if (i > 0) await this._resyncProject()
-        return {
-          success: false,
-          error: `op[${i}] ${op.action} failed: ${result.error}`,
-          data: { completedOps: i, results, failedOp: { index: i, action: op.action, resolvedParams } },
-        }
-      }
-      results.push(result.data ?? {})
-    }
-
-    const data: Record<string, unknown> = { results }
-    if (params?.returnState) {
-      data.state = this._readState()
-    }
-    return { success: true, data }
-  }
-
-  /** Static validation for batch ops without executing them */
-  private _validateBatchOps(ops: Array<{ action: string; params?: unknown }>): ExecResult {
-    const actionNames = new Set(ER_CANVAS_ACTIONS.map(a => a.name))
-    const errors: string[] = []
-
-    for (let i = 0; i < ops.length; i++) {
-      const op = ops[i]
-
-      // Check action exists
-      if (op.action === 'batch') {
-        errors.push(`op[${i}]: nested batch is not allowed`)
-        continue
-      }
-      if (!actionNames.has(op.action)) {
-        errors.push(`op[${i}]: unknown action "${op.action}"`)
-        continue
-      }
-
-      // Check required params (where possible without resolved variables)
-      const actionDef = ER_CANVAS_ACTIONS.find(a => a.name === op.action)
-      if (actionDef?.paramsSchema?.required && op.params && typeof op.params === 'object') {
-        for (const key of actionDef.paramsSchema.required) {
-          const val = (op.params as Record<string, unknown>)[key]
-          if (val === undefined) {
-            errors.push(`op[${i}] ${op.action}: missing required param "${key}"`)
-          }
-        }
-      }
-    }
-
-    errors.push(...validateBatchVarRefs(ops))
-
-    if (errors.length > 0) {
-      return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
-    }
-    return { success: true, data: { validated: true, opCount: ops.length } }
   }
 
   /** 从后端重新加载项目数据，修复前后端状态不一致 */

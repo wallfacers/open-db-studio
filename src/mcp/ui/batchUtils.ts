@@ -2,6 +2,9 @@
  * Shared batch utilities for MCP UI adapters.
  */
 
+import type { ExecResult } from './types'
+import { execError } from './errors'
+
 // Matches "$0", "$1.tableId", "$2.columnIds[0]" etc.
 const VAR_REF_RE = /^\$(\d+)(\..*)?$/
 
@@ -92,4 +95,110 @@ export function validateBatchVarRefs(
     }
   }
   return errors
+}
+
+/**
+ * Validate batch ops without executing (dry-run).
+ * Checks action names, required params, nested batch, and variable refs.
+ */
+export function validateBatchOps(
+  ops: Array<{ action: string; params?: unknown }>,
+  actionDefs: Array<{ name: string; paramsSchema?: any }>,
+): ExecResult {
+  const actionNames = new Set(actionDefs.map(a => a.name))
+  const errors: string[] = []
+
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i]
+    if (op.action === 'batch') {
+      errors.push(`op[${i}]: nested batch is not allowed`)
+      continue
+    }
+    if (!actionNames.has(op.action)) {
+      errors.push(`op[${i}]: unknown action "${op.action}"`)
+      continue
+    }
+    const def = actionDefs.find(a => a.name === op.action)
+    if (def?.paramsSchema?.required && op.params && typeof op.params === 'object') {
+      for (const key of def.paramsSchema.required) {
+        const val = (op.params as Record<string, unknown>)[key]
+        if (val === undefined) {
+          errors.push(`op[${i}] ${op.action}: missing required param "${key}"`)
+        }
+      }
+    }
+  }
+
+  errors.push(...validateBatchVarRefs(ops))
+
+  if (errors.length > 0) {
+    return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
+  }
+  return { success: true, data: { validated: true, opCount: ops.length } }
+}
+
+export interface BatchExecOptions {
+  dryRun?: boolean
+  actionDefs?: Array<{ name: string; paramsSchema?: any }>
+  /** Called when batch partially fails (some ops already committed). */
+  onPartialFailure?: () => Promise<void>
+  /** If true, appends current state to successful result. */
+  returnState?: boolean
+  readState?: () => unknown
+}
+
+/**
+ * Execute a sequence of batch ops with variable binding.
+ * Shared across all adapters to eliminate duplication.
+ */
+export async function executeBatch(
+  params: any,
+  execFn: (action: string, params?: any) => Promise<ExecResult>,
+  options?: BatchExecOptions,
+): Promise<ExecResult> {
+  const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
+  if (ops.length === 0) return execError('ops array is required and must be non-empty')
+  if (ops.length > 50) return execError('ops array too large (max 50)')
+
+  if (params?.dryRun && options?.actionDefs) {
+    return validateBatchOps(ops, options.actionDefs)
+  }
+
+  const results: unknown[] = []
+
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i]
+    if (op.action === 'batch') {
+      return { success: false, error: `op[${i}]: nested batch is not allowed` }
+    }
+
+    let resolvedParams: unknown
+    try {
+      resolvedParams = resolveVarRefs(op.params, results)
+    } catch (e) {
+      if (i > 0) await options?.onPartialFailure?.()
+      return {
+        success: false,
+        error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
+        data: { completedOps: i, results, failedOp: { index: i, action: op.action, rawParams: op.params } },
+      }
+    }
+
+    const result = await execFn(op.action, resolvedParams)
+    if (!result.success) {
+      if (i > 0) await options?.onPartialFailure?.()
+      return {
+        success: false,
+        error: `op[${i}] ${op.action} failed: ${result.error}`,
+        data: { completedOps: i, results, failedOp: { index: i, action: op.action, resolvedParams } },
+      }
+    }
+    results.push(result.data ?? {})
+  }
+
+  const data: Record<string, unknown> = { results }
+  if (options?.returnState && options.readState) {
+    data.state = options.readState()
+  }
+  return { success: true, data }
 }

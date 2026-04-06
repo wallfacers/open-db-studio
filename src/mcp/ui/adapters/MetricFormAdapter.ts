@@ -6,7 +6,7 @@ import { useAppStore } from '../../../store/appStore'
 import { usePatchConfirmStore } from '../../../store/patchConfirmStore'
 import { invoke } from '@tauri-apps/api/core'
 import { useHighlightStore } from '../../../store/highlightStore'
-import { resolveVarRefs, validateBatchVarRefs } from '../batchUtils'
+import { executeBatch } from '../batchUtils'
 
 const METRIC_FORM_SCHEMA = {
   type: 'object',
@@ -233,65 +233,12 @@ export class MetricFormUIObject implements UIObject {
       }
 
       case 'batch':
-        return this._batchExec(params)
+        return executeBatch(params, (a, p) => this.exec(a, p), {
+          actionDefs: this.read('actions') as Array<{ name: string; paramsSchema?: any }>,
+        })
 
       default:
         return execError(`Unknown action: ${action}`, 'Available actions: save, validate, batch_create, batch')
     }
-  }
-
-  private async _batchExec(params: any): Promise<ExecResult> {
-    const ops: Array<{ action: string; params?: unknown }> = params?.ops ?? []
-    if (ops.length === 0) return execError('ops array is required and must be non-empty')
-    if (ops.length > 50) return execError('ops array too large (max 50)')
-
-    if (params?.dryRun) {
-      const actionDefs = this.read('actions') as Array<{ name: string; paramsSchema?: any }>
-      const actionNames = new Set(actionDefs.map(a => a.name))
-      const errors: string[] = []
-      for (let i = 0; i < ops.length; i++) {
-        const op = ops[i]
-        if (op.action === 'batch') {
-          errors.push(`op[${i}]: nested batch is not allowed`)
-          continue
-        }
-        if (!actionNames.has(op.action)) {
-          errors.push(`op[${i}]: unknown action "${op.action}"`)
-        }
-      }
-      errors.push(...validateBatchVarRefs(ops))
-      if (errors.length > 0) {
-        return { success: false, error: `Dry-run validation failed:\n${errors.join('\n')}` }
-      }
-      return { success: true, data: { validated: true, opCount: ops.length } }
-    }
-
-    const results: unknown[] = []
-    for (let i = 0; i < ops.length; i++) {
-      const op = ops[i]
-      if (op.action === 'batch') {
-        return { success: false, error: `op[${i}]: nested batch is not allowed` }
-      }
-      let resolvedParams: unknown
-      try {
-        resolvedParams = resolveVarRefs(op.params, results)
-      } catch (e) {
-        return {
-          success: false,
-          error: `op[${i}] ${op.action}: variable resolve failed — ${e instanceof Error ? e.message : String(e)}`,
-          data: { completedOps: i, results },
-        }
-      }
-      const result = await this.exec(op.action, resolvedParams)
-      if (!result.success) {
-        return {
-          success: false,
-          error: `op[${i}] ${op.action} failed: ${result.error}`,
-          data: { completedOps: i, results },
-        }
-      }
-      results.push(result.data ?? {})
-    }
-    return { success: true, data: { results } }
   }
 }

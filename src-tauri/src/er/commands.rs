@@ -508,22 +508,56 @@ pub async fn er_generate_sync_ddl(
 
     let mut statements: Vec<String> = Vec::new();
 
-    // ── 1. Added tables → full CREATE TABLE DDL ──────────────────────────
+    // ── 1. Added tables → full CREATE TABLE DDL (with topological sort) ─────
+    // Tables referenced by FKs must be created first
     if let Some(added_tables) = changes.get("added_tables").and_then(|v| v.as_array()) {
-        for table_val in added_tables {
-            if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
-                if let Some(tf) = tables_map.get(&table_name.to_lowercase()) {
-                    let options = crate::er::ddl_generator::GenerateOptions::default();
-                    let ddl = crate::er::ddl_generator::generate_ddl(
-                        std::slice::from_ref(&tf.table),
-                        &columns_map,
-                        &indexes_map,
-                        &full.relations,
-                        &dialect,
-                        &options,
-                        &full.project,
-                    )?;
-                    statements.push(ddl);
+        // Collect table IDs for added tables
+        let added_table_ids: HashSet<i64> = added_tables
+            .iter()
+            .filter_map(|t| {
+                t.get("table_name")
+                    .and_then(|n| n.as_str())
+                    .and_then(|name| tables_map.get(&name.to_lowercase()))
+                    .map(|tf| tf.table.id)
+            })
+            .collect();
+
+        if !added_table_ids.is_empty() {
+            // Build table list for sorting
+            let all_tables: Vec<crate::er::models::ErTable> =
+                full.tables.iter().map(|tf| tf.table.clone()).collect();
+
+            // Sort tables by dependency order
+            let sort_result = sort_tables_by_dependency(
+                &all_tables,
+                &full.relations,
+                Some(&added_table_ids),
+            );
+
+            // Build table_id → table_name lookup
+            let id_to_name: HashMap<i64, String> = full
+                .tables
+                .iter()
+                .map(|tf| (tf.table.id, tf.table.name.to_lowercase()))
+                .collect();
+
+            // Generate DDL in sorted order
+            let options = GenerateOptions::default();
+
+            for table_id in &sort_result.sorted_table_ids {
+                if let Some(table_name) = id_to_name.get(table_id) {
+                    if let Some(tf) = tables_map.get(table_name) {
+                        let ddl = generate_ddl(
+                            std::slice::from_ref(&tf.table),
+                            &columns_map,
+                            &indexes_map,
+                            &full.relations,
+                            &dialect,
+                            &options,
+                            &full.project,
+                        )?;
+                        statements.push(ddl);
+                    }
                 }
             }
         }
@@ -532,10 +566,9 @@ pub async fn er_generate_sync_ddl(
     // ── 2. Modified tables ───────────────────────────────────────────────
     if let Some(modified_tables) = changes.get("modified_tables").and_then(|v| v.as_array()) {
         for table_val in modified_tables {
-            let table_name = table_val
-                .get("table_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
+            let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) else {
+                continue;
+            };
             let tf_opt = tables_map.get(&table_name.to_lowercase());
             let q_table = crate::er::ddl_generator::quote_identifier(table_name, &dialect);
 

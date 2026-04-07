@@ -57,7 +57,8 @@ export default function ERToolbar({
   onOpenSettings,
 }: ERToolbarProps) {
   const { t } = useTranslation();
-  const { show: showToast, showError } = useToastStore();
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
   const {
     addTable,
     exportJson,

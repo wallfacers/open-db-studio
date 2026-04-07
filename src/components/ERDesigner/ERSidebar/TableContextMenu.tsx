@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import { useConfirmStore } from '../../../store/confirmStore';
+import { useToastStore } from '../../../store/toastStore';
 import { createDefaultColumn } from '../shared/defaultColumn';
 import { duplicateTable } from '../shared/duplicateTable';
 
@@ -29,6 +30,8 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   const menuRef = useRef<HTMLDivElement>(null);
   const { tables, columns, deleteTable, addTable, addColumn, openDrawer } = useErDesignerStore();
   const { openERDesignTab } = useQueryStore();
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
 
   const table = tables.find(t => t.id === tableId);
 
@@ -61,13 +64,24 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
 
   const handleAddColumn = async () => {
     const cols = columns[tableId] || [];
-    await addColumn(tableId, createDefaultColumn(cols.length));
+    try {
+      await addColumn(tableId, createDefaultColumn(cols.length));
+    } catch (e) {
+      console.error('Failed to add column:', e);
+      showError(`添加列失败: ${e}`);
+    }
     onClose();
   };
 
   const handleDuplicate = async () => {
     if (!table) return;
-    await duplicateTable(table, columns[tableId] || [], addTable, addColumn);
+    try {
+      await duplicateTable(table, columns[tableId] || [], addTable, addColumn);
+      showToast('表已复制', 'success');
+    } catch (e) {
+      console.error('Failed to duplicate table:', e);
+      showError(`复制表失败: ${e}`);
+    }
     onClose();
   };
 

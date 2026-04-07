@@ -135,18 +135,12 @@ export default function App() {
     }
   }, [results, activeTabId, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { message: toastMsg, level: toastLevel, markdownContext: toastMarkdown, hide: hideToast, show: storeShow, showError: storeShowError } = useToastStore(useShallow(s => ({
+  const { message: toastMsg, level: toastLevel, markdownContext: toastMarkdown } = useToastStore(useShallow(s => ({
     message: s.message, level: s.level, markdownContext: s.markdownContext,
-    hide: s.hide, show: s.show, showError: s.showError,
   })));
-
-  const showToast = (msg: string, level: ToastLevel = 'default') => {
-    storeShow(msg, level);
-  };
-
-  const showError = (userMessage: string, markdownContext?: string | null) => {
-    storeShowError(userMessage, markdownContext);
-  };
+  const hideToast = useToastStore(s => s.hide);
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
 
   const handleFormat = () => {
     const { activeTabId, sqlContent, setSql, tabs } = useQueryStore.getState();

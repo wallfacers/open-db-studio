@@ -54,7 +54,8 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   } = useErDesignerStore();
 
   const { openERDesignTab } = useQueryStore();
-  const { show: showToast, showError } = useToastStore();
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
 
   useEffect(() => {
     loadProjects();

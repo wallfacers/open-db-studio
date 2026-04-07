@@ -27,7 +27,8 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const { tables, columns, deleteTable, addColumn, addTable, openDrawer } = useErDesignerStore();
-  const { show: showToast, showError } = useToastStore();
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
 
   const table = tables.find(t => t.id === tableId);
 

@@ -21,6 +21,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
 import { useToastStore } from '../../../store/toastStore'
+import { createDefaultColumn } from '../shared/defaultColumn'
 import ERTableNode from './ERTableNode'
 import ERTableContextMenu from './ERTableContextMenu'
 import EREdge from './EREdge'
@@ -114,7 +115,8 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   }, [tabId, projectId, projectName])
   useUIObjectRegistry(erUIObject)
 
-  const { show: showToast, showError } = useToastStore()
+  const showToast = useToastStore(s => s.show)
+  const showError = useToastStore(s => s.showError)
 
   // Select only the actions and state values needed (stable references for actions)
   const loadProject = useErDesignerStore(s => s.loadProject)
@@ -145,16 +147,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     columns: cols,
     highlightScopeId: tabId,
     onUpdateTable: (updates: Partial<ErTable>) => updateTable(table.id, updates),
-    onAddColumn: () => addColumn(table.id, {
-      name: `column_${(cols.length || 0) + 1}`,
-      data_type: 'VARCHAR',
-      nullable: true,
-      default_value: null,
-      is_primary_key: false,
-      is_auto_increment: false,
-      comment: null,
-      sort_order: cols.length || 0,
-    }),
+    onAddColumn: () => addColumn(table.id, createDefaultColumn(cols.length || 0)),
     onUpdateColumn: (colId: number, updates: Partial<ErColumn>) =>
       updateColumn(colId, updates),
     onDeleteColumn: (colId: number) => {

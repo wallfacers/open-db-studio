@@ -12,7 +12,7 @@ interface ColumnsTabProps {
 
 export default function ColumnsTab({ tableId }: ColumnsTabProps) {
   const { columns, addColumn, updateColumn, deleteColumn, drawerFocusColumnId, boundDialect } = useErDesignerStore();
-  const { showError } = useToastStore();
+  const showError = useToastStore(s => s.showError);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {

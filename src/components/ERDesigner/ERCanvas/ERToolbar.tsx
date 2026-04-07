@@ -38,6 +38,7 @@ export interface ERToolbarProps {
   hasConnection?: boolean;
   databaseName?: string | null;
   onOpenSettings?: () => void;
+  onSync?: () => Promise<void>;
 }
 
 export default function ERToolbar({
@@ -55,11 +56,11 @@ export default function ERToolbar({
   hasConnection = false,
   databaseName,
   onOpenSettings,
+  onSync,
 }: ERToolbarProps) {
   const { t } = useTranslation();
   const {
     addTable,
-    syncFromDatabase,
     exportJson,
     previewImport,
     executeImport,
@@ -133,11 +134,13 @@ export default function ERToolbar({
 
   // 同步数据库
   const handleSync = async () => {
+    if (!onSync) return;
     setIsSyncing(true);
     try {
-      await syncFromDatabase(projectId);
+      await onSync();
     } catch (e) {
       console.error('Sync failed:', e);
+      alert(`同步失败: ${e}`);
     } finally {
       setIsSyncing(false);
     }

@@ -503,6 +503,10 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         hasConnection={hasConnection}
         databaseName={activeProject?.database_name}
         onOpenSettings={() => setShowSettings(true)}
+        onSync={async () => {
+          await syncFromDatabase(projectId);
+          reloadCanvas(true);
+        }}
       />
       <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ visibility: isActiveTab ? 'visible' : 'hidden', pointerEvents: isActiveTab ? 'auto' : 'none' }}>
         <ReactFlow
@@ -609,10 +613,16 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
             alert(`Failed to generate sync DDL: ${e}`)
           }
         }}
-        onSyncFromDb={(changes) => {
+        onSyncFromDb={async (changes) => {
           // 只同步用户勾选的表，避免全量覆盖
           const tableNames = [...new Set(changes.map(c => c.table))]
-          syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined).then(() => reloadCanvas(true))
+          try {
+            await syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined);
+            reloadCanvas(true);
+          } catch (e) {
+            console.error('Sync from database failed:', e);
+            alert(`同步失败: ${e}`);
+          }
         }}
       />
       <BindConnectionDialog

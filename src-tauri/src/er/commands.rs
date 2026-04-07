@@ -412,7 +412,7 @@ pub async fn er_sync_from_database(
 
             // Sync indexes: remove existing, re-create from DB
             for er_idx in &er_tf.indexes {
-                let _ = crate::er::repository::delete_index(er_idx.id);
+                crate::er::repository::delete_index(er_idx.id)?;
             }
             for db_idx in &db_table.indexes {
                 let columns_json =

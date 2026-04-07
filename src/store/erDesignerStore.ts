@@ -727,12 +727,8 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   syncFromDatabase: async (projectId, tableNames) => {
-    try {
-      await invoke('er_sync_from_database', { projectId, tableNames: tableNames ?? null });
-      await get().loadProject(projectId);
-    } catch (e) {
-      console.error('Failed to sync from database:', e);
-    }
+    await invoke('er_sync_from_database', { projectId, tableNames: tableNames ?? null });
+    await get().loadProject(projectId);
   },
 
   generateSyncDdl: async (projectId, changes) => {

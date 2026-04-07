@@ -1,6 +1,6 @@
 {
   "productName": "open-db-studio",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "identifier": "com.open-db-studio.app",
   "build": {
     "frontendDist": "../dist",

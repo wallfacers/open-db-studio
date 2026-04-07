@@ -12,6 +12,7 @@ import {
   Link2,
   Settings,
 } from 'lucide-react';
+import { Tooltip } from '../../common/Tooltip';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import ImportConflictDialog from '../ImportConflictDialog';
 import type { ErTable, ConflictResolution, ImportPreview } from '../../../types';
@@ -194,110 +195,120 @@ export default function ERToolbar({
   return (
     <div className="flex items-center gap-2 h-8 bg-background-base border-b border-border-default px-4 flex-shrink-0 overflow-x-auto">
       {/* 表操作组 */}
-      <button
-        onClick={handleAddTable}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.newTable')}
-      >
-        <Plus size={14} />
-        <span>{t('erDesigner.newTable')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.newTable')} className="flex items-center">
+        <button
+          onClick={handleAddTable}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Plus size={14} />
+          <span>{t('erDesigner.newTable')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleAutoLayout}
-        disabled={isAutoLayouting}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title={t('erDesigner.autoLayout')}
-      >
-        <LayoutGrid size={14} />
-        <span>{isAutoLayouting ? t('erDesigner.layouting') : t('erDesigner.autoLayout')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.autoLayout')} className="flex items-center">
+        <button
+          onClick={handleAutoLayout}
+          disabled={isAutoLayouting}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <LayoutGrid size={14} />
+          <span>{isAutoLayouting ? t('erDesigner.layouting') : t('erDesigner.autoLayout')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleImportTables}
-        disabled={!hasConnection}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        title={hasConnection ? t('erDesigner.importTables') : t('erDesigner.noConnectionTip')}
-      >
-        <Database size={14} />
-        <span>{t('erDesigner.importTables')}</span>
-      </button>
+      <Tooltip content={hasConnection ? t('erDesigner.importTables') : t('erDesigner.noConnectionTip')} className="flex items-center">
+        <button
+          onClick={handleImportTables}
+          disabled={!hasConnection}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <Database size={14} />
+          <span>{t('erDesigner.importTables')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={onOpenBind}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.bindConnection')}
-      >
-        <Link2 size={14} />
-        <span>{t('erDesigner.bindConnection')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.bindConnection')} className="flex items-center">
+        <button
+          onClick={onOpenBind}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Link2 size={14} />
+          <span>{t('erDesigner.bindConnection')}</span>
+        </button>
+      </Tooltip>
 
       {/* 分隔符 */}
       <div className="w-px h-4 bg-border-strong mx-2" />
 
       {/* DDL/Diff/Sync 组 */}
-      <button
-        onClick={handleDDL}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.ddlPreview')}
-      >
-        <FileCode size={14} />
-        <span>DDL</span>
-      </button>
+      <Tooltip content={t('erDesigner.ddlPreview')} className="flex items-center">
+        <button
+          onClick={handleDDL}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <FileCode size={14} />
+          <span>DDL</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleDiff}
-        disabled={!hasConnection}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        title={hasConnection ? t('erDesigner.diffCheck') : t('erDesigner.noConnectionTip')}
-      >
-        <GitCompare size={14} />
-        <span>Diff</span>
-      </button>
+      <Tooltip content={hasConnection ? t('erDesigner.diffCheck') : t('erDesigner.noConnectionTip')} className="flex items-center">
+        <button
+          onClick={handleDiff}
+          disabled={!hasConnection}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <GitCompare size={14} />
+          <span>Diff</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleSync}
-        disabled={!hasConnection || isSyncing}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        title={hasConnection ? t('erDesigner.syncDB') : t('erDesigner.noConnectionTip')}
-      >
-        <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-        <span>{isSyncing ? t('erDesigner.syncing') : t('erDesigner.sync')}</span>
-      </button>
+      <Tooltip content={hasConnection ? t('erDesigner.syncDB') : t('erDesigner.noConnectionTip')} className="flex items-center">
+        <button
+          onClick={handleSync}
+          disabled={!hasConnection || isSyncing}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+          <span>{isSyncing ? t('erDesigner.syncing') : t('erDesigner.sync')}</span>
+        </button>
+      </Tooltip>
 
       {/* 分隔符 */}
       <div className="w-px h-4 bg-border-strong mx-2" />
 
       {/* 导入/导出组 */}
-      <button
-        onClick={handleExportJson}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.exportJson')}
-      >
-        <Download size={14} />
-        <span>{t('erDesigner.exportJson')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.exportJson')} className="flex items-center">
+        <button
+          onClick={handleExportJson}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Download size={14} />
+          <span>{t('erDesigner.exportJson')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleImportJson}
-        className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.importJson')}
-      >
-        <Upload size={14} />
-        <span>{t('erDesigner.importJson')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.importJson')} className="flex items-center">
+        <button
+          onClick={handleImportJson}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Upload size={14} />
+          <span>{t('erDesigner.importJson')}</span>
+        </button>
+      </Tooltip>
 
       {onOpenSettings && (
         <>
           <div className="w-px h-4 bg-border-strong mx-2" />
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            title="项目设置"
-            className="p-1.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors"
-          >
-            <Settings size={15} />
-          </button>
+          <Tooltip content={t('erDesigner.projectSettings') || '项目设置'} className="flex items-center">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="p-1.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors"
+            >
+              <Settings size={15} />
+            </button>
+          </Tooltip>
         </>
       )}
 

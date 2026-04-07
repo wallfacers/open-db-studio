@@ -121,6 +121,11 @@ pub fn run() {
                     log::warn!("Failed to write agent prompts: {}", e);
                 }
 
+                // 2b. 将 chat_assistant.txt 覆盖写入 opencode/AGENTS.md
+                if let Err(e) = crate::agent::config::write_agents_md(&opencode_dir) {
+                    log::warn!("Failed to write AGENTS.md: {}", e);
+                }
+
                 // 3. 解析 opencode-cli sidecar 路径并启动 serve 进程
                 // Tauri 2.x sidecar 命名规范：binaries/opencode-cli-{target_triple}[.exe]
                 // target_triple 格式: {arch}-{vendor}-{os}

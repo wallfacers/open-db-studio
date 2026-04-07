@@ -705,6 +705,45 @@ pub fn delete_relations_by_source(project_id: i64, sources: &[&str]) -> AppResul
     Ok(affected)
 }
 
+/// 仅删除指定来源且源表在给定 ID 列表中的关系（用于部分表同步）
+pub fn delete_relations_by_source_and_tables(
+    project_id: i64,
+    sources: &[&str],
+    table_ids: &[i64],
+) -> AppResult<usize> {
+    if sources.is_empty() || table_ids.is_empty() {
+        return Ok(0);
+    }
+    let conn = crate::db::get().lock().unwrap();
+    // ?1 = project_id, ?2..?1+src_len = sources, ?2+src_len.. = table_ids
+    let src_len = sources.len();
+    let source_placeholders: String = (2..=src_len + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let table_placeholders: String = (src_len + 2..=src_len + table_ids.len() + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "DELETE FROM er_relations \
+         WHERE project_id = ?1 AND source IN ({}) AND source_table_id IN ({})",
+        source_placeholders, table_placeholders
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(project_id)];
+    for s in sources {
+        params.push(Box::new(s.to_string()));
+    }
+    for &id in table_ids {
+        params.push(Box::new(id));
+    }
+    let affected = conn.execute(
+        &sql,
+        rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+    )?;
+    Ok(affected)
+}
+
 // ─── Index CRUD ─────────────────────────────────────────────────────────────
 
 pub fn create_index(req: &CreateIndexRequest) -> AppResult<ErIndex> {

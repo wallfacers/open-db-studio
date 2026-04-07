@@ -519,7 +519,25 @@ pub async fn er_sync_from_database(
         names.iter().map(|n| n.to_lowercase()).collect()
     });
 
-    crate::er::repository::delete_relations_by_source(project_id, &["schema", "comment"])?;
+    // 删除需要重建的关系：
+    // - 全量同步（无过滤）：删除整个项目的所有 schema/comment 关系
+    // - 部分同步（有过滤）：仅删除被选中表作为来源的关系，保留其他表的关系不变
+    match &filter_set {
+        None => {
+            crate::er::repository::delete_relations_by_source(project_id, &["schema", "comment"])?;
+        }
+        Some(filter) => {
+            let filtered_table_ids: Vec<i64> = filter
+                .iter()
+                .filter_map(|name| table_name_to_id.get(name).copied())
+                .collect();
+            crate::er::repository::delete_relations_by_source_and_tables(
+                project_id,
+                &["schema", "comment"],
+                &filtered_table_ids,
+            )?;
+        }
+    }
 
     // 记录已建立的 FK 列对，用于后续跳过重复的注释关系
     let mut fk_pairs: HashSet<(i64, i64)> = HashSet::new();

@@ -12,7 +12,6 @@ mod mcp;
 mod metrics;
 mod migration;
 mod pipeline;
-mod seatunnel;
 mod er;
 mod skill_sync;
 mod state;
@@ -326,27 +325,6 @@ pub fn run() {
             commands::agent_unrevert_message,
             commands::agent_summarize_session,
             commands::agent_get_last_user_message_id,
-            seatunnel::commands::list_st_connections,
-            seatunnel::commands::create_st_connection,
-            seatunnel::commands::update_st_connection,
-            seatunnel::commands::delete_st_connection,
-            seatunnel::commands::list_st_categories,
-            seatunnel::commands::create_st_category,
-            seatunnel::commands::rename_st_category,
-            seatunnel::commands::delete_st_category,
-            seatunnel::commands::move_st_category,
-            seatunnel::commands::list_st_jobs,
-            seatunnel::commands::create_st_job,
-            seatunnel::commands::update_st_job,
-            seatunnel::commands::delete_st_job,
-            seatunnel::commands::rename_st_job,
-            seatunnel::commands::move_st_job,
-            seatunnel::commands::submit_st_job,
-            seatunnel::commands::stop_st_job,
-            seatunnel::commands::get_st_job_status,
-            seatunnel::commands::stream_st_job_logs,
-            seatunnel::commands::cancel_st_job_stream,
-            seatunnel::commands::test_st_connection,
             commands::add_user_node,
             commands::delete_graph_node,
             commands::add_user_edge,

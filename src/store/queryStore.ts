@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult, QueryHistory, Tab, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
 import { parseStatements } from '../utils/sqlParser';
-import { metricTabId, newMetricTabId, metricListTabId, queryTabId, tableDataTabId, tableStructureTabId, newTableStructureTabId, stJobTabId, erDesignTabId } from '../utils/nodeId';
+import { metricTabId, newMetricTabId, metricListTabId, queryTabId, tableDataTabId, tableStructureTabId, newTableStructureTabId, erDesignTabId } from '../utils/nodeId';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -54,9 +54,6 @@ interface QueryState {
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
   openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
-  openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
-  closeSeaTunnelJobTab: (jobId: number) => void;
-  updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
   openMigrationJobTab: (jobId: number, title: string) => void;
   closeMigrationJobTab: (jobId: number) => void;
   updateMigrationJobTabTitle: (jobId: number, title: string) => void;
@@ -266,36 +263,6 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         db: dbName, connectionId, schema,
       };
       return { tabs: [...s.tabs, tab], activeTabId: id };
-    });
-  },
-
-  openSeaTunnelJobTab: (jobId, title, connectionId) => {
-    set(s => {
-      const existing = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
-      if (existing) return { activeTabId: existing.id };
-      const id = stJobTabId(jobId, Date.now());
-      const tab: Tab = { id, type: 'seatunnel_job', title, stJobId: jobId, stConnectionId: connectionId };
-      return { tabs: [...s.tabs, tab], activeTabId: id };
-    });
-  },
-
-  updateSeaTunnelJobTabTitle: (jobId, title) => {
-    set(s => {
-      const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
-      if (!tab) return {};
-      return { tabs: s.tabs.map(t => t.id === tab.id ? { ...t, title } : t) };
-    });
-  },
-
-  closeSeaTunnelJobTab: (jobId) => {
-    set(s => {
-      const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
-      if (!tab) return {};
-      const newTabs = s.tabs.filter(t => t.id !== tab.id);
-      const newActiveId = s.activeTabId === tab.id
-        ? (newTabs[newTabs.length - 1]?.id ?? '')
-        : s.activeTabId;
-      return { tabs: newTabs, activeTabId: newActiveId };
     });
   },
 

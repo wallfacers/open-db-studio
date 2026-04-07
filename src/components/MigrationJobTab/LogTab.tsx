@@ -46,7 +46,7 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
       {/* Stats bar */}
       <div className="p-3 border-b border-border-subtle flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] text-foreground-muted uppercase tracking-wide">实时进度</span>
+          <span className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.realtimeProgress')}</span>
           {isRunning && (
             <button
               onClick={onStop}

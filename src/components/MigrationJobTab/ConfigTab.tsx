@@ -61,7 +61,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   const handleAiGenMapping = async () => {
     setAiLoading(true)
     try {
-      alert('AI 生成映射：请在右侧 AI 助手中描述映射需求，AI 将自动填充字段映射表格。')
+      alert(t('migration.aiMappingHint'))
     } finally {
       setAiLoading(false)
     }
@@ -81,7 +81,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       <div className="grid grid-cols-2 gap-4">
         {/* Source */}
         <div className="bg-background-panel border border-border-subtle rounded p-3 flex flex-col gap-2">
-          <div className="text-[11px] text-foreground-muted uppercase tracking-wide">源端</div>
+          <div className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.sourceEnd')}</div>
           <select
             value={config.source.connectionId || ''}
             onChange={e => update({ source: { ...config.source, connectionId: Number(e.target.value) } })}
@@ -115,7 +115,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
 
         {/* Target */}
         <div className="bg-background-panel border border-border-subtle rounded p-3 flex flex-col gap-2">
-          <div className="text-[11px] text-foreground-muted uppercase tracking-wide">目标端</div>
+          <div className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.targetEnd')}</div>
           <select
             value={config.target.connectionId || ''}
             onChange={e => update({ target: { ...config.target, connectionId: Number(e.target.value) } })}
@@ -182,12 +182,12 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
             className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] bg-accent text-foreground rounded hover:bg-accent-hover transition-colors duration-150 disabled:opacity-50"
           >
             <Sparkles size={12} />
-            {aiLoading ? '生成中...' : t('migration.aiGenMapping')}
+            {aiLoading ? t('migration.generating') : t('migration.aiGenMapping')}
           </button>
         </div>
 
         <div className="grid grid-cols-[1fr_1fr_120px_28px] gap-1 mb-1 text-[10px] text-foreground-subtle px-1">
-          <span>源字段 / 表达式</span><span>目标字段</span><span>目标类型</span><span />
+          <span>{t('migration.sourceFieldExpr')}</span><span>{t('migration.targetField')}</span><span>{t('migration.targetType')}</span><span />
         </div>
 
         {config.columnMapping.map((m, i) => (

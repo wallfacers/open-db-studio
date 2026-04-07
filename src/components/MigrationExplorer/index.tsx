@@ -69,7 +69,7 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
           <button
             title={t('migration.newCategory')}
             className="p-1 rounded text-foreground-muted hover:text-foreground hover:bg-background-hover transition-colors duration-150"
-            onClick={() => store.createCategory('New Category')}
+            onClick={() => store.createCategory(t('migration.defaultCategoryName'))}
           >
             <FolderPlus size={14} />
           </button>
@@ -77,8 +77,8 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
             title={t('migration.newJob')}
             className="p-1 rounded text-foreground-muted hover:text-foreground hover:bg-background-hover transition-colors duration-150"
             onClick={async () => {
-              const id = await store.createJob('New Task')
-              handleOpenJob(id, 'New Task')
+              const id = await store.createJob(t('migration.defaultJobName'))
+              handleOpenJob(id, t('migration.defaultJobName'))
             }}
           >
             <FilePlus size={14} />

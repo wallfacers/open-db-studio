@@ -19,9 +19,7 @@ import { TaskCenter } from './components/TaskCenter';
 import { MetricsSidebar } from './components/MetricsExplorer/MetricsSidebar';
 import { flushMetricsPersist } from './store/metricsTreeStore';
 import { GraphExplorer } from './components/GraphExplorer';
-import { SeaTunnelSidebar } from './components/SeaTunnelExplorer';
 import { ERSidebar } from './components/ERDesigner';
-import { flushSeaTunnelPersist, useSeaTunnelStore } from './store/seaTunnelStore';
 import { MigrationExplorer } from './components/MigrationExplorer';
 import { flushMigrationPersist, useMigrationStore } from './store/migrationStore';
 import { initTaskProgressListener, useTaskStore } from './store';
@@ -30,7 +28,6 @@ import { ConfirmDialog } from './components/common/ConfirmDialog';
 import { tabTypeToActivity, tabToTreeNodeId } from './utils/tabActivityMapping';
 import { useTreeStore } from './store/treeStore';
 import { useErDesignerStore } from './store/erDesignerStore';
-import { stJobNodeId } from './utils/nodeId';
 
 export default function App() {
   const { t } = useTranslation();
@@ -71,13 +68,9 @@ export default function App() {
   }, []);
   // app 关闭前立即 flush 防抖 persist，防止展开状态丢失
   useEffect(() => {
-    const handler = () => { flushMetricsPersist(); flushSeaTunnelPersist(); flushMigrationPersist(); };
+    const handler = () => { flushMetricsPersist(); flushMigrationPersist(); };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, []);
-  // 初始化 SeaTunnel store
-  useEffect(() => {
-    useSeaTunnelStore.getState().init();
   }, []);
   // Tab 切换联动 ActivityBar + 侧边栏树选中
   useEffect(() => {
@@ -108,16 +101,7 @@ export default function App() {
       }
     }
 
-    // 2c. SeaTunnel — 选中 job 节点
-    if (tab.type === 'seatunnel_job' && tab.stJobId != null) {
-      const stStore = useSeaTunnelStore.getState();
-      const jobNode = stJobNodeId(tab.stJobId);
-      if (stStore.selectedId !== jobNode) {
-        stStore.selectNode(jobNode);
-      }
-    }
-
-    // 2d. Migration — 选中 job 节点
+    // 2c. Migration — 选中 job 节点
     if (tab.type === 'migration_job' && tab.migrationJobId != null) {
       const migStore = useMigrationStore.getState();
       const jobNodeId = `job_${tab.migrationJobId}`;
@@ -280,11 +264,6 @@ export default function App() {
         onResize={handleSidebarResize}
         hidden={activeActivity !== 'metrics'}
       />
-      <SeaTunnelSidebar
-        sidebarWidth={sidebarWidth}
-        onResize={handleSidebarResize}
-        hidden={activeActivity !== 'seatunnel'}
-      />
       <ERSidebar
         width={sidebarWidth}
         hidden={activeActivity !== 'er_designer'}
@@ -294,7 +273,7 @@ export default function App() {
         onResize={setSidebarWidth}
         hidden={activeActivity !== 'migration'}
       />
-      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && activeActivity !== 'er_designer' && activeActivity !== 'migration' && (
+      {activeActivity !== 'metrics' && activeActivity !== 'er_designer' && activeActivity !== 'migration' && (
         activeActivity !== 'settings' && activeActivity !== 'tasks' &&
         activeActivity !== 'graph' && (
           <Explorer

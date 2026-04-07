@@ -64,7 +64,6 @@ import ERDiagram from '../ERDiagram';
 import ERCanvas from '../ERDesigner/ERCanvas';
 import { MetricTab } from '../MetricsExplorer/MetricTab';
 import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
-import SeaTunnelJobTab from '../SeaTunnelJobTab';
 import { MigrationJobTab } from '../MigrationJobTab';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
@@ -933,8 +932,6 @@ export const MainContent: React.FC<MainContentProps> = ({
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'table' ? (
               <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
-            ) : tab.type === 'seatunnel_job' ? (
-              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'migration_job' ? (
               <ArrowLeftRight size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : (
@@ -1047,17 +1044,6 @@ export const MainContent: React.FC<MainContentProps> = ({
         </div>
       ))}
 
-      {/* seatunnel_job */}
-      {tabs.filter(t => t.type === 'seatunnel_job').map(tab => (
-        <div
-          key={tab.id}
-          className="flex-1 flex flex-col overflow-hidden min-h-0"
-          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
-        >
-          <SeaTunnelJobTab tab={tab} key={tab.id} showToast={showToast} />
-        </div>
-      ))}
-
       {/* migration_job */}
       {tabs.filter(t => t.type === 'migration_job').map(tab => (
         <div
@@ -1071,7 +1057,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
       {/* ── Active-only tabs (too heavy to keep all mounted) ── */}
       {activeTabObj ? (
-        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'seatunnel_job' || activeTabObj.type === 'migration_job' ? null
+        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'migration_job' ? null
         : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <MetricListPanel

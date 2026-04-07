@@ -113,19 +113,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           </div>
         </Tooltip>
 
-        <Tooltip content={!isExpanded ? t('activity.migrationCenter') : undefined}>
-          <div
-            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'seatunnel' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
-            onClick={() => {
-              setActiveActivity('seatunnel');
-              setIsSidebarOpen(true);
-            }}
-          >
-            <Workflow size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
-            {isExpanded && <span className="text-[13px] truncate">{t('activity.migrationCenter')}</span>}
-          </div>
-        </Tooltip>
-
         <Tooltip content={!isExpanded ? t('migration.title') : undefined}>
           <div
             className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'migration' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}

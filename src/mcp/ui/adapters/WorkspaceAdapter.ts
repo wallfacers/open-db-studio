@@ -70,9 +70,6 @@ export class WorkspaceAdapter implements UIObject {
           case 'er_canvas':
             if (project_id) store.openERDesignTab(project_id, `ER #${project_id}`)
             break
-          case 'seatunnel_job':
-            if (job_id != null) store.openSeaTunnelJobTab(job_id, `Job #${job_id}`)
-            break
           default:
             return { success: false, error: `Unknown tab type: ${type}` }
         }

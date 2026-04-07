@@ -134,7 +134,6 @@ export type TabType =
   | 'table_structure'   // 从 App.tsx TabData 迁移
   | 'metric'
   | 'metric_list'
-  | 'seatunnel_job'
   | 'migration_job';
 
 export interface MetricScope {
@@ -153,8 +152,6 @@ export interface Tab {
   db?: string;
   schema?: string;
   queryContext?: QueryContext;
-  stJobId?: number;            // seatunnel_job Tab 专用
-  stConnectionId?: number;     // seatunnel_job Tab 专用
   erProjectId?: number;        // er_design Tab 专用
   ghostTextEnabled?: boolean;  // undefined = use global default
   migrationJobId?: number;     // migration_job Tab 专用

@@ -281,40 +281,39 @@ USING fts5(
   content_rowid='rowid'
 );
 
--- ============ V6: SeaTunnel 迁移中心 ============
+-- ============ V6: SeaTunnel 迁移中心（已废弃） ============
+-- DEPRECATED: SeaTunnel integration removed in v0.6.0. Tables kept for reference only.
+-- These tables are no longer created. Data from existing installations is abandoned.
 
--- SeaTunnel 集群连接
-CREATE TABLE IF NOT EXISTS seatunnel_connections (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  url        TEXT NOT NULL,        -- REST API base URL, e.g. http://host:5801
-  auth_token_enc TEXT,             -- AES-256-GCM 加密存储（_enc 后缀对齐现有 password_enc/api_key_enc 命名规范）
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
+-- CREATE TABLE IF NOT EXISTS seatunnel_connections (
+--   id         INTEGER PRIMARY KEY AUTOINCREMENT,
+--   name       TEXT NOT NULL,
+--   url        TEXT NOT NULL,
+--   auth_token_enc TEXT,
+--   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- );
 
--- 用户自定义分类（支持无限嵌套；根目录必须有 connection_id 归属集群）
-CREATE TABLE IF NOT EXISTS seatunnel_categories (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
-  parent_id     INTEGER REFERENCES seatunnel_categories(id) ON DELETE CASCADE,
-  connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE CASCADE,
-  sort_order    INTEGER NOT NULL DEFAULT 0,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
+-- CREATE TABLE IF NOT EXISTS seatunnel_categories (
+--   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+--   name          TEXT NOT NULL,
+--   parent_id     INTEGER REFERENCES seatunnel_categories(id) ON DELETE CASCADE,
+--   connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE CASCADE,
+--   sort_order    INTEGER NOT NULL DEFAULT 0,
+--   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- );
 
--- SeaTunnel Job 定义
-CREATE TABLE IF NOT EXISTS seatunnel_jobs (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
-  category_id   INTEGER REFERENCES seatunnel_categories(id) ON DELETE SET NULL,
-  connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE SET NULL,
-  config_json   TEXT NOT NULL DEFAULT '{}',
-  last_job_id   TEXT,              -- SeaTunnel 返回的 jobId（字符串）
-  last_status   TEXT,              -- RUNNING / FINISHED / FAILED / CANCELLED
-  submitted_at  TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
+-- CREATE TABLE IF NOT EXISTS seatunnel_jobs (
+--   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+--   name          TEXT NOT NULL,
+--   category_id   INTEGER REFERENCES seatunnel_categories(id) ON DELETE SET NULL,
+--   connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE SET NULL,
+--   config_json   TEXT NOT NULL DEFAULT '{}',
+--   last_job_id   TEXT,
+--   last_status   TEXT,
+--   submitted_at  TEXT,
+--   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+--   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- );
 
 -- ============ V7: ER 设计器 ============
 

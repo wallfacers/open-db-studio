@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Handle, Position, useNodeConnections } from '@xyflow/react';
+import { Handle, Position, useNodeConnections, useUpdateNodeInternals } from '@xyflow/react';
 import { Key, Hash, X, TableProperties } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
@@ -25,6 +25,12 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
   const { t } = useTranslation();
   const { table, columns, highlightScopeId, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
   const { boundDialect, relations, projects, activeProjectId } = useErDesignerStore();
+
+  // Re-measure handle positions when columns reorder (node height stays same, ResizeObserver won't fire)
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, columns, updateNodeInternals]);
 
   // AI change highlight — whole table (e.g. new table added)
   const { className: tableHL } = useFieldHighlight(highlightScopeId ?? '', `table:${table.id}`)

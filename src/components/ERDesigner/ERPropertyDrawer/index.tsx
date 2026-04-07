@@ -17,19 +17,19 @@ const TAB_LABELS: Record<TabType, string> = {
 
 const TAB_ORDER: TabType[] = ['columns', 'indexes', 'properties', 'relations'];
 
-export default function ERPropertyDrawer() {
+export default function ERPropertyDrawer({ projectId }: { projectId: number }) {
   const { drawerOpen, drawerTableId, closeDrawer, tables } = useErDesignerStore();
   const [activeTab, setActiveTab] = useState<TabType>('columns');
 
   if (!drawerOpen || drawerTableId == null) return null;
 
-  const table = tables.find(t => t.id === drawerTableId);
+  const table = tables.find(t => t.id === drawerTableId && t.project_id === projectId);
   if (!table) return null;
 
   return (
     <div className="absolute right-0 top-0 w-[420px] max-w-[60vw] bg-background-panel border-l border-border-strong flex flex-col h-full z-10 shadow-lg">
-      {/* Title bar */}
-      <div className="bg-background-hover px-3 py-2 flex items-center justify-between border-b border-border-strong">
+      {/* Title bar — h-8 matches ERToolbar height */}
+      <div className="bg-background-hover px-3 h-8 flex items-center justify-between border-b border-border-strong flex-shrink-0">
         <span className="text-[13px] text-foreground-default font-medium truncate">{table.name}</span>
         <button onClick={closeDrawer} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200">
           <X size={14} />

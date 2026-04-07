@@ -188,21 +188,26 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
       });
     });
 
-    // 删除表 -> 从数据库同步到 ER（实际上是确认删除 ER 中的表）
-    // 新增列/索引 -> 从数据库同步到 ER
+    // 数据库→ER:
+    // 1. removed_tables (DB 有但 ER 无) → 导入到 ER
+    diffResult.removed_tables.forEach((t) => {
+      const key = `removed_table:${t.table_name}`;
+      if (selectedChanges.has(key)) {
+        fromDb.push({ type: 'removed_table', table: t.table_name, changeData: t });
+      }
+    });
+    // 2. modified_tables (有差异的表) → 只要任意子项被勾选，就把整张表加入同步列表
     diffResult.modified_tables.forEach((t) => {
-      t.added_columns.forEach((c) => {
-        const key = `added_column:${t.table_name}:${c.name}`;
-        if (selectedChanges.has(key)) {
-          fromDb.push({ type: 'modified_table', table: t.table_name, column: c.name, changeData: c });
-        }
-      });
-      t.added_indexes.forEach((i) => {
-        const key = `added_index:${t.table_name}:${i.name}`;
-        if (selectedChanges.has(key)) {
-          fromDb.push({ type: 'modified_table', table: t.table_name, index: i.name, changeData: i });
-        }
-      });
+      const tableKeys = [
+        ...t.added_columns.map(c => `added_column:${t.table_name}:${c.name}`),
+        ...t.removed_columns.map(c => `removed_column:${t.table_name}:${c.name}`),
+        ...t.modified_columns.map(c => `modified_column:${t.table_name}:${c.name}`),
+        ...t.added_indexes.map(i => `added_index:${t.table_name}:${i.name}`),
+        ...t.removed_indexes.map(i => `removed_index:${t.table_name}:${i.name}`),
+      ];
+      if (tableKeys.some(k => selectedChanges.has(k))) {
+        fromDb.push({ type: 'modified_table', table: t.table_name, changeData: t });
+      }
     });
 
     return { toDb, fromDb };

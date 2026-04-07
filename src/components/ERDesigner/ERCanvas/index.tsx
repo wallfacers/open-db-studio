@@ -546,10 +546,14 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         connectionInfo={connectionInfo}
         onClose={() => setShowDiff(false)}
         onSyncToDb={(_changes) => {
-          // Phase 3: requires backend er_sync_to_database command
-          console.warn('Sync to database is not yet implemented')
+          // ER→DB DDL 执行尚未完整实现（Rust 侧 CREATE TABLE DDL 生成仍是 placeholder）
+          alert('ER → 数据库同步功能尚未实现，敬请期待。')
         }}
-        onSyncFromDb={(_changes) => { syncFromDatabase(projectId).then(reloadCanvas) }}
+        onSyncFromDb={(changes) => {
+          // 只同步用户勾选的表，避免全量覆盖
+          const tableNames = [...new Set(changes.map(c => c.table))]
+          syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined).then(reloadCanvas)
+        }}
       />
       <BindConnectionDialog
         visible={showBind}
@@ -571,7 +575,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         onClose={() => setShowSettings(false)}
       />
     </div>
-    <ERPropertyDrawer />
+    <ERPropertyDrawer projectId={projectId} />
     </div>
   )
 }

@@ -190,8 +190,12 @@ function applyProjectFull(projectFull: ErProjectFull) {
 
     const otherRelations = s.relations.filter(r => !oldTableIds.has(r.source_table_id) && !oldTableIds.has(r.target_table_id));
 
+    // Update the project entry so fields like connection_id are reflected immediately
+    const projects = s.projects.map(p => p.id === projectId ? projectFull.project : p);
+
     return {
       activeProjectId: projectId,
+      projects,
       tables: [...otherTables, ...incomingTables],
       columns,
       relations: [...otherRelations, ...projectFull.relations],
@@ -669,15 +673,11 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   // ── Connection binding ────────────────────────────────────────────────
   bindConnection: async (projectId, connectionId, db, schema) => {
-    try {
-      await invoke('er_bind_connection', {
-        projectId,
-        req: { connection_id: connectionId, database_name: db, schema_name: schema ?? null },
-      });
-      await get().loadProject(projectId);
-    } catch (e) {
-      console.error('Failed to bind connection:', e);
-    }
+    await invoke('er_bind_connection', {
+      projectId,
+      req: { connection_id: connectionId, database_name: db, schema_name: schema ?? null },
+    });
+    await get().loadProject(projectId);
   },
 
   unbindConnection: async (projectId) => {

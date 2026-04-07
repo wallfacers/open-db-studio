@@ -15,6 +15,7 @@ interface RowContextMenuProps {
   colIdx: number;
   pkColumn: string;
   tableName: string;
+  dbDriver?: string;
   onClose: () => void;
   onSetNull: () => void;
   onCloneRow: () => void;
@@ -23,8 +24,35 @@ interface RowContextMenuProps {
   showToast: (msg: string, level?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+// 根据数据库类型返回标识符引号函数和字符串转义函数
+function getSqlDialect(driver?: string): {
+  quoteIdent: (s: string) => string;
+  escapeStr: (s: string) => string;
+} {
+  const d = (driver ?? '').toLowerCase();
+  // SQL Server：方括号引用，单引号加倍转义
+  if (d === 'sqlserver' || d === 'mssql') {
+    return {
+      quoteIdent: (s) => `[${s.replace(/]/g, ']]')}]`,
+      escapeStr: (s) => `'${s.replace(/'/g, "''")}'`,
+    };
+  }
+  // PostgreSQL、Oracle、GaussDB、DM、KingBase 等：双引号引用，单引号加倍转义
+  if (['postgres', 'postgresql', 'oracle', 'gaussdb', 'greenplum', 'dm', 'kingbase'].includes(d)) {
+    return {
+      quoteIdent: (s) => `"${s.replace(/"/g, '""')}"`,
+      escapeStr: (s) => `'${s.replace(/'/g, "''")}'`,
+    };
+  }
+  // MySQL、TiDB、Doris、ClickHouse、SQLite 等（默认）：反引号引用，反斜杠转义
+  return {
+    quoteIdent: (s) => `\`${s.replace(/`/g, '``')}\``,
+    escapeStr: (s) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`,
+  };
+}
+
 export const RowContextMenu: React.FC<RowContextMenuProps> = ({
-  x, y, target, rowData, columns, colIdx, pkColumn, tableName,
+  x, y, target, rowData, columns, colIdx, pkColumn, tableName, dbDriver,
   onClose, onSetNull, onCloneRow, onDeleteRow, onOpenEditor, showToast,
 }) => {
   const { t } = useTranslation();
@@ -67,25 +95,27 @@ export const RowContextMenu: React.FC<RowContextMenuProps> = ({
     copyToClipboard(rowData.map(v => v === null ? 'NULL' : String(v)).join('\t'));
   };
 
+  const { quoteIdent, escapeStr } = getSqlDialect(dbDriver);
+
   const buildInsertSql = () => {
-    const cols = columns.map(c => `\`${c}\``).join(', ');
-    const vals = rowData.map(v => v === null ? 'NULL' : `'${String(v).replace(/'/g, "\\'")}'`).join(', ');
-    return `INSERT INTO \`${tableName}\` (${cols}) VALUES (${vals});`;
+    const cols = columns.map(c => quoteIdent(c)).join(', ');
+    const vals = rowData.map(v => v === null ? 'NULL' : escapeStr(String(v))).join(', ');
+    return `INSERT INTO ${quoteIdent(tableName)} (${cols}) VALUES (${vals});`;
   };
 
   const buildUpdateSql = () => {
     const pkIdx = columns.indexOf(pkColumn);
     const pkVal = pkIdx >= 0 ? rowData[pkIdx] : null;
     const sets = columns
-      .map((c, i) => `\`${c}\` = ${rowData[i] === null ? 'NULL' : `'${String(rowData[i]).replace(/'/g, "\\'")}'`}`)
+      .map((c, i) => `${quoteIdent(c)} = ${rowData[i] === null ? 'NULL' : escapeStr(String(rowData[i]))}`)
       .join(', ');
-    return `UPDATE \`${tableName}\` SET ${sets} WHERE \`${pkColumn}\` = '${String(pkVal ?? '').replace(/'/g, "\\'")}';`;
+    return `UPDATE ${quoteIdent(tableName)} SET ${sets} WHERE ${quoteIdent(pkColumn)} = ${escapeStr(String(pkVal ?? ''))};`;
   };
 
   const buildDeleteSql = () => {
     const pkIdx = columns.indexOf(pkColumn);
     const pkVal = pkIdx >= 0 ? rowData[pkIdx] : null;
-    return `DELETE FROM \`${tableName}\` WHERE \`${pkColumn}\` = '${String(pkVal ?? '').replace(/'/g, "\\'")}';`;
+    return `DELETE FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(pkColumn)} = ${escapeStr(String(pkVal ?? ''))};`;
   };
 
   const itemClass = 'px-4 py-1.5 hover:bg-background-hover cursor-pointer text-foreground-default flex items-center justify-between transition-colors duration-150';

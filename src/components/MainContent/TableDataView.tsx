@@ -112,8 +112,9 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   tableName, dbName, connectionId: propConnectionId, schema, showToast
 }) => {
   const { t } = useTranslation();
-  const { activeConnectionId: storeConnectionId } = useConnectionStore();
+  const { activeConnectionId: storeConnectionId, connections } = useConnectionStore();
   const activeConnectionId = propConnectionId ?? storeConnectionId;
+  const activeDriver = connections.find(c => c.id === activeConnectionId)?.driver;
   const tablePageSizeLimit = useAppStore((s) => s.tablePageSizeLimit);
   const initTablePageSizeLimit = useAppStore((s) => s.initTablePageSizeLimit);
 
@@ -715,6 +716,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           colIdx={contextMenu.colIdx}
           pkColumn={pkColumn}
           tableName={tableName}
+          dbDriver={activeDriver}
           onClose={() => setContextMenu(null)}
           onSetNull={() => editCell(contextMenu.rowIdx, contextMenu.colIdx, null)}
           onCloneRow={() => cloneRow(data.rows[contextMenu.rowIdx] as RowData)}

@@ -506,10 +506,6 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         hasConnection={hasConnection}
         databaseName={activeProject?.database_name}
         onOpenSettings={() => setShowSettings(true)}
-        onSync={async () => {
-          await syncFromDatabase(projectId);
-          reloadCanvas(true);
-        }}
       />
       <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ visibility: isActiveTab ? 'visible' : 'hidden', pointerEvents: isActiveTab ? 'auto' : 'none' }}>
         <ReactFlow

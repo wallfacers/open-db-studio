@@ -391,6 +391,18 @@ pub fn run() {
             er::commands::er_import_json,
             er::commands::er_preview_import,
             er::commands::er_execute_import,
+            migration::mig_commands::list_migration_categories,
+            migration::mig_commands::create_migration_category,
+            migration::mig_commands::rename_migration_category,
+            migration::mig_commands::delete_migration_category,
+            migration::mig_commands::list_migration_jobs,
+            migration::mig_commands::create_migration_job,
+            migration::mig_commands::update_migration_job_config,
+            migration::mig_commands::rename_migration_job,
+            migration::mig_commands::delete_migration_job,
+            migration::mig_commands::move_migration_job,
+            migration::mig_commands::get_migration_dirty_records,
+            migration::mig_commands::get_migration_run_history,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

@@ -1,11 +1,21 @@
 #![allow(dead_code)]
 
 use crate::AppResult;
-use super::task_mgr::MigrationProgress;
+use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 /// 广播迁移进度的 Tauri Event 名称
 pub const MIGRATION_PROGRESS_EVENT: &str = "migration:progress";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PumpProgress {
+    pub job_id: i64,
+    pub run_id: String,
+    pub current_table: String,
+    pub done_rows: i64,
+    pub total_rows: i64,
+    pub error_count: i64,
+}
 
 fn value_to_sql(v: &serde_json::Value) -> String {
     match v {
@@ -34,7 +44,8 @@ async fn count_rows(ds: &Box<dyn crate::datasource::DataSource>, table: &str) ->
 
 /// 分批读取源表数据并写入目标表，通过 Tauri Event 广播进度
 pub async fn pump_table(
-    task_id: i64,
+    job_id: i64,
+    run_id: &str,
     src_connection_id: i64,
     dst_connection_id: i64,
     src_table: &str,
@@ -42,15 +53,16 @@ pub async fn pump_table(
     batch_size: usize,
     skip_errors: bool,
     app_handle: &tauri::AppHandle,
-) -> AppResult<MigrationProgress> {
+) -> AppResult<PumpProgress> {
     let src_config = crate::db::get_connection_config(src_connection_id)?;
     let dst_config = crate::db::get_connection_config(dst_connection_id)?;
     let src_ds = crate::datasource::create_datasource(&src_config).await?;
     let dst_ds = crate::datasource::create_datasource(&dst_config).await?;
 
     let total_rows = count_rows(&src_ds, src_table).await;
-    let mut progress = MigrationProgress {
-        task_id,
+    let mut progress = PumpProgress {
+        job_id,
+        run_id: run_id.to_string(),
         current_table: src_table.to_string(),
         done_rows: 0,
         total_rows,
@@ -100,7 +112,6 @@ pub async fn pump_table(
         progress.done_rows += fetched;
         offset += fetched;
         let _ = app_handle.emit(MIGRATION_PROGRESS_EVENT, &progress);
-        super::task_mgr::save_progress(task_id, &progress)?;
 
         if fetched < batch { break; }
     }

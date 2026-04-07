@@ -627,7 +627,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         connectionId={activeProject?.connection_id ?? null}
         databaseName={activeProject?.database_name ?? null}
         onClose={() => setShowImport(false)}
-        onImported={() => { setShowImport(false); reloadCanvas() }}
+        onImported={() => { setShowImport(false); reloadCanvas(true) }}
       />
       <ProjectSettingsDialog
         visible={showSettings}

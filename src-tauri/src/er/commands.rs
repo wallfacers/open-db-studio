@@ -521,6 +521,9 @@ pub async fn er_sync_from_database(
 
     crate::er::repository::delete_relations_by_source(project_id, &["schema", "comment"])?;
 
+    // 记录已建立的 FK 列对，用于后续跳过重复的注释关系
+    let mut fk_pairs: HashSet<(i64, i64)> = HashSet::new();
+
     // ── Import native FK relations ──
     for db_table in &db_full_schema.tables {
         let source_table_lower = db_table.name.to_lowercase();
@@ -571,6 +574,7 @@ pub async fn er_sync_from_database(
                 constraint_method: Some("database_fk".to_string()),
                 comment_format: None,
             })?;
+            fk_pairs.insert((source_column_id, target_column_id));
         }
     }
 
@@ -618,6 +622,11 @@ pub async fn er_sync_from_database(
                     Some(id) => *id,
                     None => continue,
                 };
+
+                // 若该列对已有真实 FK，注释关系为冗余，跳过
+                if fk_pairs.contains(&(source_column_id, target_column_id)) {
+                    continue;
+                }
 
                 let relation_type = match r.relation_type.as_str() {
                     "one_to_many" => "one_to_many",

@@ -188,6 +188,14 @@ fn normalize_type(t: &str) -> String {
         }
     }
 
+    // Strip MySQL integer display widths (e.g. int(11) → int, bigint(20) → bigint).
+    // These parenthesized values are display hints only (deprecated in MySQL 8.0.17+)
+    // and do not affect storage, so they should not trigger a type-changed diff.
+    const INT_TYPES: &[&str] = &["tinyint", "smallint", "mediumint", "int", "bigint"];
+    if INT_TYPES.contains(&matched_base.as_str()) {
+        return matched_base;
+    }
+
     format!("{}{}", matched_base, params)
 }
 
@@ -397,13 +405,25 @@ fn compare_indexes(
     er_idxs: &[ErIndex],
     db_idxs: &[DbIndexInfo],
 ) -> (Vec<IndexDiff>, Vec<IndexDiff>) {
+    // PRIMARY is a system-generated index for the primary key constraint.
+    // Primary keys are already compared at the column level (is_primary_key),
+    // so including PRIMARY here would produce false-positive diffs.
+    let er_idxs: Vec<&ErIndex> = er_idxs
+        .iter()
+        .filter(|i| i.name.to_uppercase() != "PRIMARY")
+        .collect();
+    let db_idxs: Vec<&DbIndexInfo> = db_idxs
+        .iter()
+        .filter(|i| i.name.to_uppercase() != "PRIMARY")
+        .collect();
+
     let er_by_name: HashMap<String, &ErIndex> = er_idxs
         .iter()
-        .map(|i| (i.name.to_lowercase(), i))
+        .map(|i| (i.name.to_lowercase(), *i))
         .collect();
     let db_by_name: HashMap<String, &DbIndexInfo> = db_idxs
         .iter()
-        .map(|i| (i.name.to_lowercase(), i))
+        .map(|i| (i.name.to_lowercase(), *i))
         .collect();
 
     let mut added = Vec::new();

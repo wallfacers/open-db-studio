@@ -535,7 +535,10 @@ export const MainContent: React.FC<MainContentProps> = ({
 
         const mentionedTables = extractMentionedTables(sqlBefore + sqlAfter);
         const lineBeforeCursor = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
-        const hint = lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
+        const charBefore = lineBeforeCursor.slice(-1);
+        const charAfter = sqlAfter.slice(0, 1);
+        const isMidWord = /\w/.test(charBefore) && /\w/.test(charAfter);
+        const hint = isMidWord ? 'word' : lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
 
         try {
           setGhostTextLoading(true);

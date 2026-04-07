@@ -1161,7 +1161,8 @@ pub async fn ai_inline_complete(
         // 8. Assemble prompt from template
         let mode_instruction = match hint.as_str() {
             "single_line" => "Complete the current line only. Do not add newlines.",
-            _ => "Complete the full SQL statement from the cursor position. Use newlines for readability.",
+            "word" => "Complete the current word or token only.",
+            _ => "Complete the current block or statement. Use newlines where appropriate for readability.",
         };
 
         let sql_before_trimmed = if sql_before.len() > 200 {
@@ -1207,7 +1208,7 @@ pub async fn ai_inline_complete(
         ).await {
             Ok(Ok(raw)) => {
                 inline_complete::record_success(connection_id).await;
-                let processed = inline_complete::postprocess_completion(&raw, &sql_before);
+                let processed = inline_complete::postprocess_completion(&raw, &sql_before, &sql_after);
                 log::debug!("[ai_inline_complete] raw_len={} processed_len={} processed={:?}",
                     raw.len(), processed.len(), &processed[..processed.len().min(100)]);
                 inline_complete::update_last_request(connection_id, sql_before.clone(), mentioned_tables.clone(), processed.clone()).await;

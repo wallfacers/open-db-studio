@@ -14,6 +14,8 @@ export function tabTypeToActivity(tabType: TabType): string | null {
       return 'er_designer';
     case 'seatunnel_job':
       return 'seatunnel';
+    case 'migration_job':
+      return 'migration';
     default:
       return null;
   }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Database, ListTodo, Activity, Network, Workflow, Settings, ChevronRight, ChevronLeft, Grid3x3 } from 'lucide-react';
+import { User, Database, ListTodo, Activity, Network, Workflow, Settings, ChevronRight, ChevronLeft, Grid3x3, ArrowLeftRight } from 'lucide-react';
 import type { ToastLevel } from '../Toast';
 import { Tooltip } from '../common/Tooltip';
 
@@ -123,6 +123,19 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
           >
             <Workflow size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
             {isExpanded && <span className="text-[13px] truncate">{t('activity.migrationCenter')}</span>}
+          </div>
+        </Tooltip>
+
+        <Tooltip content={!isExpanded ? t('migration.title') : undefined}>
+          <div
+            className={`flex items-center cursor-pointer transition-colors ${isExpanded ? 'w-full px-4 h-12' : 'w-12 h-12 mx-auto justify-center'} ${activeActivity === 'migration' ? 'text-foreground border-l-[3px] border-accent' : 'text-foreground-muted hover:text-foreground hover:bg-border-default border-l-[3px] border-transparent'}`}
+            onClick={() => {
+              setActiveActivity('migration');
+              setIsSidebarOpen(true);
+            }}
+          >
+            <ArrowLeftRight size={24} className={isExpanded ? 'mr-3 flex-shrink-0' : ''} />
+            {isExpanded && <span className="text-[13px] truncate">{t('migration.title')}</span>}
           </div>
         </Tooltip>
 

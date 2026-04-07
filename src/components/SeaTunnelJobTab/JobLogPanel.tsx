@@ -119,21 +119,21 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
 
   return (
     <div
-      className="flex flex-col flex-shrink-0 border-t border-[#253347] bg-[#0d1117]"
+      className="flex flex-col flex-shrink-0 border-t border-border-strong bg-background-base"
       style={{ height: collapsed ? 'auto' : `${panelHeight}px` }}
     >
       {/* Resize handle */}
       {!collapsed && (
         <div
-          className="h-1 cursor-ns-resize hover:bg-[#00c9a7]/50 flex-shrink-0 transition-colors"
+          className="h-1 cursor-ns-resize hover:bg-accent/50 flex-shrink-0 transition-colors"
           onMouseDown={handleResizeMouseDown}
         />
       )}
       {/* Panel header */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#253347] flex-shrink-0">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-strong flex-shrink-0">
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="flex items-center gap-1.5 text-[11px] font-medium text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+          className="flex items-center gap-1.5 text-[11px] font-medium text-foreground-muted hover:text-foreground-default transition-colors"
         >
           <ChevronDown
             size={13}
@@ -141,7 +141,7 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
           />
           {t('seaTunnelJob.jobLogPanel.title')}
           {logs.length > 0 && (
-            <span className="text-[10px] bg-[#1a2639] text-[#7a9bb8] px-1.5 py-0.5 rounded-full">
+            <span className="text-[10px] bg-background-hover text-foreground-muted px-1.5 py-0.5 rounded-full">
               {logs.length}
             </span>
           )}
@@ -151,7 +151,7 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
           <Tooltip content={t('seaTunnelJob.jobLogPanel.clearLog')} className="contents">
             <button
               onClick={handleClear}
-              className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] rounded transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-[10px] text-foreground-muted hover:text-foreground-default hover:bg-background-hover rounded transition-colors"
             >
               <Trash2 size={11} />
               {t('seaTunnelJob.jobLogPanel.clear')}
@@ -165,8 +165,8 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
               }}
               className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${
                 autoScroll
-                  ? 'text-[#00c9a7] bg-[#00c9a7]/10'
-                  : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
+                  ? 'text-accent bg-accent/10'
+                  : 'text-foreground-muted hover:text-foreground-default hover:bg-background-hover'
               }`}
             >
               <ArrowDownToLine size={11} />
@@ -186,14 +186,14 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
           }}
         >
           {logs.length === 0 ? (
-            <p className="text-[11px] text-[#7a9bb8]/60 italic px-1 py-1">
+            <p className="text-[11px] text-foreground-muted/60 italic px-1 py-1">
               {jobId ? t('seaTunnelJob.jobLogPanel.waitingForLogs') : t('seaTunnelJob.jobLogPanel.logsWillAppear')}
             </p>
           ) : (
             <div className="font-mono text-[11px] leading-relaxed space-y-0.5">
               {logs.map((line, idx) => (
                 <div key={idx} className="flex gap-2">
-                  <span className="text-[#2a3f5a] flex-shrink-0 select-none">{line.ts}</span>
+                  <span className="text-border-strong flex-shrink-0 select-none">{line.ts}</span>
                   <span className={getLogColor(line.text)}>{line.text}</span>
                 </div>
               ))}
@@ -207,10 +207,10 @@ const JobLogPanel = forwardRef<JobLogPanelHandle, JobLogPanelProps>(({ jobId, on
 });
 
 function getLogColor(text: string): string {
-  if (text.startsWith('[ERROR]')) return 'text-red-400';
-  if (text.startsWith('[WARN]'))  return 'text-yellow-400';
-  if (text.startsWith('[INFO]'))  return 'text-[#00c9a7]';
-  return 'text-green-400';
+  if (text.startsWith('[ERROR]')) return 'text-error';
+  if (text.startsWith('[WARN]'))  return 'text-warning';
+  if (text.startsWith('[INFO]'))  return 'text-accent';
+  return 'text-success';
 }
 
 export default JobLogPanel;

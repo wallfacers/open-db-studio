@@ -3,6 +3,8 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import type { ErIndex, ErColumn } from '@/types';
 import { DropdownSelect } from '@/components/common/DropdownSelect';
 import { Tooltip } from '@/components/common/Tooltip';
+import { parseIndexColumns, stringifyIndexColumns } from '@/utils/indexColumns';
+import type { IndexColumnEntry } from '@/utils/indexColumns';
 
 interface IndexEditorProps {
   indexes: ErIndex[];
@@ -12,11 +14,6 @@ interface IndexEditorProps {
   onAdd: (tableId: number, index: Partial<ErIndex>) => void;
   onUpdate: (id: number, updates: Partial<ErIndex>) => void;
   onDelete: (id: number, tableId: number) => void;
-}
-
-interface IndexColumnEntry {
-  name: string;
-  order: 'ASC' | 'DESC';
 }
 
 const INDEX_TYPE_OPTIONS = [
@@ -30,23 +27,6 @@ const TYPE_BADGE_COLORS: Record<string, string> = {
   UNIQUE: 'bg-[#2a3319] text-[#a3e635]',
   FULLTEXT: 'bg-[#3a2a19] text-[#f59e0b]',
 };
-
-function parseIndexColumns(json: string): IndexColumnEntry[] {
-  try {
-    const parsed = JSON.parse(json);
-    if (Array.isArray(parsed)) {
-      return parsed.map(item => {
-        if (typeof item === 'string') return { name: item, order: 'ASC' as const };
-        return { name: item.name ?? item, order: item.order ?? 'ASC' };
-      });
-    }
-  } catch { /* ignore */ }
-  return [];
-}
-
-function stringifyIndexColumns(entries: IndexColumnEntry[]): string {
-  return JSON.stringify(entries.map(e => ({ name: e.name, order: e.order })));
-}
 
 function IndexRow({
   index, columns, tableId, onUpdate, onDelete,
@@ -81,24 +61,24 @@ function IndexRow({
   };
 
   return (
-    <div className="border border-[#2a3f5a] rounded overflow-hidden">
+    <div className="border border-border-strong rounded overflow-hidden">
       {/* Collapsed row */}
       <div
-        className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#1a2639] cursor-pointer transition-colors"
+        className="flex items-center gap-2 px-2 py-1.5 hover:bg-background-hover cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        {expanded ? <ChevronUp size={12} className="text-[#7a9bb8] shrink-0" /> : <ChevronDown size={12} className="text-[#7a9bb8] shrink-0" />}
-        <span className="text-[13px] text-[#b5cfe8] truncate flex-1">{index.name}</span>
+        {expanded ? <ChevronUp size={12} className="text-foreground-muted shrink-0" /> : <ChevronDown size={12} className="text-foreground-muted shrink-0" />}
+        <span className="text-[13px] text-foreground truncate flex-1">{index.name}</span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${badgeClass} shrink-0`}>{index.type}</span>
         <Tooltip content={colNames} className="flex-shrink-0 max-w-[120px]">
-          <span className="text-[11px] text-[#7a9bb8] truncate">
+          <span className="text-[11px] text-foreground-muted truncate">
             {colNames || '-'}
           </span>
         </Tooltip>
         <Tooltip content="删除索引">
           <button
             type="button"
-            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-gray-600 hover:text-red-400 transition-colors"
+            className="shrink-0 p-0.5 rounded-sm cursor-pointer outline-none text-foreground-ghost hover:text-error transition-colors"
             onClick={(e) => { e.stopPropagation(); onDelete(index.id, tableId); }}
           >
             <Trash2 size={12} />
@@ -108,12 +88,12 @@ function IndexRow({
 
       {/* Expanded details */}
       {expanded && (
-        <div className="px-3 py-2 border-t border-[#253347] space-y-2 bg-[#0d1117]/50">
+        <div className="px-3 py-2 border-t border-border-strong space-y-2 bg-background-base/50">
           {/* Name */}
           <div>
-            <div className="text-[11px] text-[#7a9bb8] mb-0.5">索引名</div>
+            <div className="text-[11px] text-foreground-muted mb-0.5">索引名</div>
             <input
-              className="w-full bg-[#151d28] border border-[#2a3f5a] rounded text-[#b5cfe8] text-[13px] px-2 py-1 outline-none focus:border-[#00c9a7]"
+              className="w-full bg-background-elevated border border-border-strong rounded text-foreground text-[13px] px-2 py-1 outline-none focus:border-accent"
               value={index.name}
               onChange={(e) => onUpdate(index.id, { name: e.target.value })}
             />
@@ -121,7 +101,7 @@ function IndexRow({
 
           {/* Type */}
           <div>
-            <div className="text-[11px] text-[#7a9bb8] mb-0.5">类型</div>
+            <div className="text-[11px] text-foreground-muted mb-0.5">类型</div>
             <DropdownSelect
               value={index.type}
               options={INDEX_TYPE_OPTIONS}
@@ -131,7 +111,7 @@ function IndexRow({
 
           {/* Column checkboxes with ASC/DESC */}
           <div>
-            <div className="text-[11px] text-[#7a9bb8] mb-1">列</div>
+            <div className="text-[11px] text-foreground-muted mb-1">列</div>
             <div className="space-y-1">
               {columns.map(col => {
                 const entry = indexColumns.find(c => c.name === col.name);
@@ -141,16 +121,16 @@ function IndexRow({
                     <label className="flex items-center gap-1.5 cursor-pointer flex-1 min-w-0">
                       <input
                         type="checkbox"
-                        className="accent-[#00c9a7] w-3.5 h-3.5 cursor-pointer"
+                        className="accent-accent w-3.5 h-3.5 cursor-pointer"
                         checked={isChecked}
                         onChange={() => toggleColumn(col.name)}
                       />
-                      <span className="text-[12px] text-[#b5cfe8] truncate">{col.name}</span>
+                      <span className="text-[12px] text-foreground truncate">{col.name}</span>
                     </label>
                     {isChecked && (
                       <button
                         type="button"
-                        className="text-[10px] text-[#7a9bb8] hover:text-[#00c9a7] cursor-pointer outline-none px-1 py-0.5 rounded hover:bg-[#1e2d42] transition-colors"
+                        className="text-[10px] text-foreground-muted hover:text-accent cursor-pointer outline-none px-1 py-0.5 rounded hover:bg-border-default transition-colors"
                         onClick={() => toggleOrder(col.name)}
                       >
                         {entry!.order}
@@ -196,7 +176,7 @@ export default function IndexEditor({
 
       <button
         type="button"
-        className="w-full flex items-center justify-center gap-1 py-1.5 text-[12px] text-[#00c9a7] hover:bg-[#1a2639] rounded border border-dashed border-[#2a3f5a] hover:border-[#00c9a7] transition-colors cursor-pointer outline-none"
+        className="w-full flex items-center justify-center gap-1 py-1.5 text-[12px] text-accent hover:bg-background-hover rounded border border-dashed border-border-strong hover:border-accent transition-colors cursor-pointer outline-none"
         onClick={handleAddIndex}
       >
         <Plus size={12} />

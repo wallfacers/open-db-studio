@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod agent;
 mod commands;
 mod crypto;
@@ -117,6 +119,11 @@ pub fn run() {
                 // 2. 写入 Agent 提示词文件（opencode/agents/）
                 if let Err(e) = crate::agent::config::write_agent_prompts(&opencode_dir) {
                     log::warn!("Failed to write agent prompts: {}", e);
+                }
+
+                // 2b. 将 chat_assistant.txt 覆盖写入 opencode/AGENTS.md
+                if let Err(e) = crate::agent::config::write_agents_md(&opencode_dir) {
+                    log::warn!("Failed to write AGENTS.md: {}", e);
                 }
 
                 // 3. 解析 opencode-cli sidecar 路径并启动 serve 进程
@@ -382,6 +389,8 @@ pub fn run() {
             er::commands::er_execute_sync_ddl,
             er::commands::er_export_json,
             er::commands::er_import_json,
+            er::commands::er_preview_import,
+            er::commands::er_execute_import,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

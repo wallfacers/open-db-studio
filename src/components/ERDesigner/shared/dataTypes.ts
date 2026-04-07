@@ -165,9 +165,14 @@ export function getTypeOptions(dialect: DialectName | null): { value: string; la
   return result;
 }
 
+/** Strip UNSIGNED qualifier from a type string */
+export function stripUnsigned(type: string): string {
+  return type.replace(/\s+UNSIGNED$/i, '').trim();
+}
+
 /** Find type definition by name */
 export function findTypeDef(typeName: string, dialect: DialectName | null): DataTypeDefinition | undefined {
-  const upper = typeName.toUpperCase();
+  const upper = stripUnsigned(typeName).toUpperCase();
   if (dialect) {
     return DIALECT_TYPES[dialect]?.find(t => t.name === upper);
   }
@@ -181,9 +186,11 @@ export function findTypeDef(typeName: string, dialect: DialectName | null): Data
 /** Format type display text */
 export function formatTypeDisplay(column: Pick<ErColumn, 'data_type' | 'length' | 'scale'>): string {
   const { data_type, length, scale } = column;
-  if (length != null && scale != null) return `${data_type}(${length},${scale})`;
-  if (length != null) return `${data_type}(${length})`;
-  return data_type;
+  const baseType = stripUnsigned(data_type);
+  let result = baseType;
+  if (length != null && scale != null) result = `${baseType}(${length},${scale})`;
+  else if (length != null) result = `${baseType}(${length})`;
+  return result;
 }
 
 /** Check type compatibility with a dialect; returns warning message or null */

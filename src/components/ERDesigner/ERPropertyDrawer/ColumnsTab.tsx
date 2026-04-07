@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Plus, ChevronRight, ChevronDown } from 'lucide-react';
 import { useErDesignerStore } from '@/store/erDesignerStore';
+import { useToastStore } from '@/store/toastStore';
+import { createDefaultColumn } from '../shared/defaultColumn';
 import ColumnPropertyEditor from '../shared/ColumnPropertyEditor';
 import type { DialectName } from '../shared/dataTypes';
 
@@ -10,6 +12,7 @@ interface ColumnsTabProps {
 
 export default function ColumnsTab({ tableId }: ColumnsTabProps) {
   const { columns, addColumn, updateColumn, deleteColumn, drawerFocusColumnId, boundDialect } = useErDesignerStore();
+  const showError = useToastStore(s => s.showError);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -37,7 +40,7 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
       {cols.map(col => (
         <div key={col.id} id={`drawer-col-${col.id}`}>
           <div className="flex items-center">
-            <button onClick={() => toggleExpand(col.id)} className="p-0.5 text-[#4a6480] hover:text-[#7a9bb8]">
+            <button onClick={() => toggleExpand(col.id)} className="p-0.5 text-foreground-subtle hover:text-foreground-muted transition-colors duration-200">
               {expandedIds.has(col.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
             <div className="flex-1 min-w-0">
@@ -48,12 +51,15 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
                 mode="compact"
                 onUpdate={updateColumn}
                 onDelete={deleteColumn}
+                onOpenDrawer={() => {
+                  if (!expandedIds.has(col.id)) toggleExpand(col.id);
+                }}
                 visibleColumns={{ defaultValue: false, comment: false, unique: false }}
               />
             </div>
           </div>
           {expandedIds.has(col.id) && (
-            <div className="ml-4 mb-2 p-2 bg-[#0d1117] rounded border border-[#1e2d42]">
+            <div className="ml-4 mb-2 p-2 bg-background-base rounded border border-border-default">
               <ColumnPropertyEditor
                 column={col}
                 tableId={tableId}
@@ -66,25 +72,15 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
         </div>
       ))}
       <button
-        onClick={() => addColumn(tableId, {
-          name: `column_${cols.length + 1}`,
-          data_type: 'VARCHAR',
-          nullable: true,
-          default_value: null,
-          is_primary_key: false,
-          is_auto_increment: false,
-          comment: null,
-          length: null,
-          scale: null,
-          is_unique: false,
-          unsigned: false,
-          charset: null,
-          collation: null,
-          on_update: null,
-          enum_values: null,
-          sort_order: cols.length,
-        })}
-        className="mt-2 w-full py-1 text-[12px] text-[#4a6480] hover:text-[#00c9a7] hover:bg-[#1a2639] rounded transition-colors flex items-center justify-center gap-1"
+        onClick={async () => {
+          try {
+            await addColumn(tableId, createDefaultColumn(cols.length));
+          } catch (e) {
+            console.error('Failed to add column:', e);
+            showError(`添加列失败: ${e}`);
+          }
+        }}
+        className="mt-2 w-full py-1 text-[12px] text-foreground-subtle hover:text-accent hover:bg-background-hover rounded transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={12} /> 添加列
       </button>

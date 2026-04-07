@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { BaseModal } from '../../common/BaseModal';
 import type { DiffResult, TableDiff, TableModDiff, ColumnModDiff, IndexDiff } from '../../../types';
@@ -10,8 +10,9 @@ export interface DiffReportDialogProps {
   projectId: number;
   connectionInfo: { name: string; database: string } | null;
   onClose: () => void;
-  onSyncToDb: (selectedChanges: SelectedChange[]) => void;
+  onSyncToDb: (diff: DiffResult) => void;
   onSyncFromDb: (selectedChanges: SelectedChange[]) => void;
+  onFullSync: () => Promise<void>;
 }
 
 export type ChangeType = 'added_table' | 'removed_table' | 'modified_table';
@@ -33,17 +34,17 @@ interface ChangeItemProps {
 }
 
 const ChangeItem: React.FC<ChangeItemProps> = ({ checked, onCheck, icon, label, detail }) => (
-  <label className="flex items-start gap-2 cursor-pointer hover:bg-[#1e2d42] px-2 py-1 rounded">
+  <label className="flex items-start gap-2 cursor-pointer hover:bg-border-default px-2 py-1 rounded transition-colors duration-150">
     <input
       type="checkbox"
       checked={checked}
       onChange={(e) => onCheck(e.target.checked)}
-      className="accent-[#00c9a7] w-3 h-3 mt-0.5 flex-shrink-0"
+      className="accent-accent w-3 h-3 mt-0.5 flex-shrink-0"
     />
-    <span className="text-[#7a9bb8] flex-shrink-0">{icon}</span>
+    <span className="text-foreground-muted flex-shrink-0">{icon}</span>
     <div className="flex-1 min-w-0">
-      <div className="text-xs text-[#c8daea] truncate">{label}</div>
-      {detail && <div className="text-xs text-[#5a7a9a] truncate">{detail}</div>}
+      <div className="text-xs text-foreground-default truncate">{label}</div>
+      {detail && <div className="text-xs text-foreground-muted truncate">{detail}</div>}
     </div>
   </label>
 );
@@ -55,11 +56,13 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
   onClose,
   onSyncToDb,
   onSyncFromDb,
+  onFullSync,
 }) => {
   const { t } = useTranslation();
   const diffWithDatabase = useErDesignerStore((s) => s.diffWithDatabase);
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isFullSyncing, setIsFullSyncing] = useState(false);
   const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set());
 
   // 获取差异
@@ -188,21 +191,26 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
       });
     });
 
-    // 删除表 -> 从数据库同步到 ER（实际上是确认删除 ER 中的表）
-    // 新增列/索引 -> 从数据库同步到 ER
+    // 数据库→ER:
+    // 1. removed_tables (DB 有但 ER 无) → 导入到 ER
+    diffResult.removed_tables.forEach((t) => {
+      const key = `removed_table:${t.table_name}`;
+      if (selectedChanges.has(key)) {
+        fromDb.push({ type: 'removed_table', table: t.table_name, changeData: t });
+      }
+    });
+    // 2. modified_tables (有差异的表) → 只要任意子项被勾选，就把整张表加入同步列表
     diffResult.modified_tables.forEach((t) => {
-      t.added_columns.forEach((c) => {
-        const key = `added_column:${t.table_name}:${c.name}`;
-        if (selectedChanges.has(key)) {
-          fromDb.push({ type: 'modified_table', table: t.table_name, column: c.name, changeData: c });
-        }
-      });
-      t.added_indexes.forEach((i) => {
-        const key = `added_index:${t.table_name}:${i.name}`;
-        if (selectedChanges.has(key)) {
-          fromDb.push({ type: 'modified_table', table: t.table_name, index: i.name, changeData: i });
-        }
-      });
+      const tableKeys = [
+        ...t.added_columns.map(c => `added_column:${t.table_name}:${c.name}`),
+        ...t.removed_columns.map(c => `removed_column:${t.table_name}:${c.name}`),
+        ...t.modified_columns.map(c => `modified_column:${t.table_name}:${c.name}`),
+        ...t.added_indexes.map(i => `added_index:${t.table_name}:${i.name}`),
+        ...t.removed_indexes.map(i => `removed_index:${t.table_name}:${i.name}`),
+      ];
+      if (tableKeys.some(k => selectedChanges.has(k))) {
+        fromDb.push({ type: 'modified_table', table: t.table_name, changeData: t });
+      }
     });
 
     return { toDb, fromDb };
@@ -211,13 +219,57 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
   const { toDb, fromDb } = getSelectedChangesByType;
 
   const handleSyncToDb = () => {
-    onSyncToDb(toDb);
+    if (!diffResult) return;
+    const payload: DiffResult = {
+      added_tables: diffResult.added_tables.filter((t) =>
+        selectedChanges.has(`added_table:${t.table_name}`)
+      ),
+      removed_tables: [],
+      modified_tables: diffResult.modified_tables
+        .map((t) => ({
+          ...t,
+          added_columns: t.added_columns.filter((c) =>
+            selectedChanges.has(`added_column:${t.table_name}:${c.name}`)
+          ),
+          removed_columns: t.removed_columns.filter((c) =>
+            selectedChanges.has(`removed_column:${t.table_name}:${c.name}`)
+          ),
+          modified_columns: t.modified_columns.filter((c) =>
+            selectedChanges.has(`modified_column:${t.table_name}:${c.name}`)
+          ),
+          added_indexes: t.added_indexes.filter((i) =>
+            selectedChanges.has(`added_index:${t.table_name}:${i.name}`)
+          ),
+          removed_indexes: t.removed_indexes.filter((i) =>
+            selectedChanges.has(`removed_index:${t.table_name}:${i.name}`)
+          ),
+        }))
+        .filter(
+          (t) =>
+            t.added_columns.length > 0 ||
+            t.removed_columns.length > 0 ||
+            t.modified_columns.length > 0 ||
+            t.added_indexes.length > 0 ||
+            t.removed_indexes.length > 0
+        ),
+    };
+    onSyncToDb(payload);
     onClose();
   };
 
   const handleSyncFromDb = () => {
     onSyncFromDb(fromDb);
     onClose();
+  };
+
+  const handleFullSync = async () => {
+    setIsFullSyncing(true);
+    try {
+      await onFullSync();
+      onClose();
+    } finally {
+      setIsFullSyncing(false);
+    }
   };
 
   if (!visible) return null;
@@ -227,13 +279,16 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
       title={t('erDesigner.diffTitle')}
       onClose={onClose}
       width={600}
+      footerHint={
+        <button
+          onClick={handleSyncFromDb}
+          disabled={loading || fromDb.length === 0}
+          className="px-3 py-1.5 text-xs rounded border border-border-strong text-foreground-muted hover:text-foreground-default disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {t('erDesigner.syncFromDb')}
+        </button>
+      }
       footerButtons={[
-        {
-          label: t('erDesigner.syncFromDb'),
-          onClick: handleSyncFromDb,
-          variant: 'secondary',
-          disabled: loading || fromDb.length === 0,
-        },
         {
           label: t('erDesigner.syncToDb'),
           onClick: handleSyncToDb,
@@ -245,21 +300,21 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
       <div className="flex flex-col gap-4">
         {/* 连接信息 */}
         {connectionInfo && (
-          <div className="text-xs text-[#7a9bb8]">
+          <div className="text-xs text-foreground-muted">
             {`${t('erDesigner.erVsDb')} ${connectionInfo.name} / ${connectionInfo.database}`}
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-8 text-xs text-[#7a9bb8]">{t('erDesigner.loadingDiff')}</div>
+          <div className="text-center py-8 text-xs text-foreground-muted">{t('erDesigner.loadingDiff')}</div>
         ) : !diffResult ? (
-          <div className="text-center py-8 text-xs text-[#7a9bb8]">{t('erDesigner.diffFailed')}</div>
+          <div className="text-center py-8 text-xs text-foreground-muted">{t('erDesigner.diffFailed')}</div>
         ) : (
           <div className="flex flex-col gap-4 max-h-96 overflow-y-auto">
             {/* 新增（仅 ER 图有） */}
             {diffResult.added_tables.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 text-xs text-[#00c9a7] mb-2">
+                <div className="flex items-center gap-2 text-xs text-accent mb-2">
                   <CheckCircle2 size={14} />
                   <span>{t('erDesigner.addedSection')}</span>
                 </div>
@@ -283,14 +338,14 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {/* 变更 */}
             {diffResult.modified_tables.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 text-xs text-[#f0b90b] mb-2">
+                <div className="flex items-center gap-2 text-xs text-warning mb-2">
                   <AlertTriangle size={14} />
                   <span>{t('erDesigner.modifiedSection')}</span>
                 </div>
                 <div className="space-y-1">
                   {diffResult.modified_tables.map((table) => (
-                    <div key={table.table_name} className="pl-2 border-l border-[#2a3f5a]">
-                      <div className="text-xs text-[#c8daea] mb-1">{table.table_name}</div>
+                    <div key={table.table_name} className="pl-2 border-l border-border-strong">
+                      <div className="text-xs text-foreground-default mb-1">{table.table_name}</div>
                       <div className="pl-3 space-y-1">
                         {/* 新增列 */}
                         {table.added_columns.map((col) => {
@@ -377,7 +432,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {/* 删除（仅数据库有） */}
             {diffResult.removed_tables.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 text-xs text-[#ef4444] mb-2">
+                <div className="flex items-center gap-2 text-xs text-error mb-2">
                   <Trash2 size={14} />
                   <span>{t('erDesigner.removedSection')}</span>
                 </div>
@@ -403,7 +458,17 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {diffResult.added_tables.length === 0 &&
               diffResult.removed_tables.length === 0 &&
               diffResult.modified_tables.length === 0 && (
-                <div className="text-center py-4 text-xs text-[#00c9a7]">{t('erDesigner.noDiff')}</div>
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <div className="text-xs text-accent">{t('erDesigner.noDiff')}</div>
+                  <button
+                    onClick={handleFullSync}
+                    disabled={isFullSyncing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-border-strong text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={12} className={isFullSyncing ? 'animate-spin' : ''} />
+                    <span>{t('erDesigner.fullRefreshFromDb')}</span>
+                  </button>
+                </div>
               )}
           </div>
         )}

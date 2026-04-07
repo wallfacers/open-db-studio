@@ -182,7 +182,7 @@ fn pg_array_value(row: &PgRow, i: usize, elem: &str) -> serde_json::Value {
         "int8" | "bigint" => {
             row.try_get::<Option<Vec<i64>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| serde_json::json!(v.iter().map(|n| n.to_string()).collect::<Vec<_>>()))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int4" | "integer" | "int" => {
@@ -279,8 +279,10 @@ impl PostgresDataSource {
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
         use crate::AppError;
-        let host = config.host.as_deref()
+        let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = config.port
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()
@@ -349,7 +351,7 @@ impl DataSource for PostgresDataSource {
         let start = Instant::now();
 
         // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
             let stmts = crate::datasource::utils::split_sql_statements(sql);
             let mut total_affected = 0usize;
@@ -494,7 +496,7 @@ impl DataSource for PostgresDataSource {
             "SELECT tc.constraint_name, kcu.column_name,
                     ccu.table_schema AS referenced_schema,
                     ccu.table_name AS referenced_table, ccu.column_name AS referenced_column,
-                    rc.delete_rule
+                    rc.delete_rule, rc.update_rule
              FROM information_schema.table_constraints tc
              JOIN information_schema.key_column_usage kcu
                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
@@ -520,6 +522,7 @@ impl DataSource for PostgresDataSource {
                 referenced_table: format!("{}.{}", ref_schema, ref_table),
                 referenced_column: r.try_get::<String, _>(4).unwrap_or_default(),
                 on_delete: r.try_get::<Option<String>, _>(5).ok().flatten(),
+                on_update: r.try_get::<Option<String>, _>(6).ok().flatten(),
             }
         }).collect())
     }

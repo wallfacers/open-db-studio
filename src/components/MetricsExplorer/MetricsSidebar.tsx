@@ -28,26 +28,26 @@ export function MetricsSidebar({ sidebarWidth, onResize, hidden }: MetricsSideba
 
   return (
     <div
-      className="flex flex-col bg-[#0d1117] border-r border-[#1e2d42] flex-shrink-0 relative"
+      className="flex flex-col bg-background-base border-r border-border-default flex-shrink-0 relative"
       style={{ width: sidebarWidth, display: hidden ? 'none' : undefined }}
     >
       {/* resize 拖拽条 */}
       <div
-        className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#00c9a7] z-20 transition-colors"
+        className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent z-20 transition-colors"
         onMouseDown={onResize}
       />
 
       {/* 标题栏 */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-[#1e2d42] flex-shrink-0">
+      <div className="h-10 flex items-center justify-between px-3 border-b border-border-default flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Activity size={14} className="text-[#00c9a7]" />
-          <span className="font-medium text-[#c8daea]">{t('metricsExplorer.metricsSidebar.title')}</span>
+          <Activity size={14} className="text-accent" />
+          <span className="font-medium text-foreground-default">{t('metricsExplorer.metricsSidebar.title')}</span>
         </div>
-        <div className="flex items-center space-x-2 text-[#7a9bb8]">
+        <div className="flex items-center space-x-2 text-foreground-muted">
           <Tooltip content={t('metricsExplorer.refresh')}>
             <RefreshCw
               size={16}
-              className="cursor-pointer hover:text-[#c8daea]"
+              className="cursor-pointer hover:text-foreground-default transition-colors duration-200"
               onClick={() => refresh()}
             />
           </Tooltip>
@@ -55,19 +55,19 @@ export function MetricsSidebar({ sidebarWidth, onResize, hidden }: MetricsSideba
       </div>
 
       {/* 搜索框 */}
-      <div className="p-2 border-b border-[#1e2d42]">
-        <div className="flex items-center bg-[#151d28] border border-[#2a3f5a] rounded px-2 py-1 focus-within:border-[#00a98f] transition-colors">
-          <Search size={14} className="text-[#7a9bb8] mr-1 flex-shrink-0" />
+      <div className="p-2 border-b border-border-default">
+        <div className="flex items-center bg-background-elevated border border-border-strong rounded px-2 py-1 focus-within:border-accent-hover transition-colors">
+          <Search size={14} className="text-foreground-muted mr-1 flex-shrink-0" />
           <input
             type="text"
             placeholder={t('metricsExplorer.searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="bg-transparent border-none outline-none text-[#c8daea] w-full text-xs placeholder-[#7a9bb8]"
+            className="bg-transparent border-none outline-none text-foreground-default w-full text-xs placeholder-foreground-muted"
           />
           {searchQuery && (
             <button
-              className="text-[#7a9bb8] ml-1 hover:text-[#c8daea] flex-shrink-0"
+              className="text-foreground-muted ml-1 hover:text-foreground-default flex-shrink-0 transition-colors duration-200"
               onClick={() => setSearchQuery('')}
             >
               <X size={14} />

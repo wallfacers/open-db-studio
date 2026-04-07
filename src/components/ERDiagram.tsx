@@ -101,7 +101,7 @@ export default function ERDiagram() {
               targetHandle: `${fk.column}-target`,
               type: 'smoothstep',
               animated: false,
-              style: { stroke: '#3794ff', strokeWidth: 1.5 },
+              style: { stroke: 'var(--edge-fk)', strokeWidth: 1.5 },
               label: fk.constraint_name,
             });
           });
@@ -160,7 +160,7 @@ export default function ERDiagram() {
       if (!element) return;
       
       toPng(element, {
-        backgroundColor: '#080d12',
+        backgroundColor: 'var(--background-void)',
         filter: (node) => {
           if (
             node?.classList?.contains('react-flow__minimap') ||
@@ -181,7 +181,7 @@ export default function ERDiagram() {
   }, []);
 
   return (
-    <div className="w-full h-full bg-[#080d12]" ref={reactFlowWrapper}>
+    <div className="w-full h-full bg-background-void" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -194,13 +194,13 @@ export default function ERDiagram() {
         fitViewOptions={{ maxZoom: 0.8, padding: 0.2 }}
         deleteKeyCode={['Backspace', 'Delete']}
         selectionKeyCode={['Shift', 'Meta', 'Control']}
-        defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: '#8bafc9', strokeWidth: 2 }, interactionWidth: 20 }}
-        className="bg-[#080d12]"
+        defaultEdgeOptions={{ type: 'bezier', animated: false, style: { stroke: 'var(--key-foreign)', strokeWidth: 2 }, interactionWidth: 20 }}
+        className="bg-background-void"
       >
-        <Background color="#1e2d42" gap={20} size={1} />
+        <Background color="var(--border-default)" gap={20} size={1} />
         <Controls 
           showZoom={false} 
-          className="!bg-[#111922] border border-[#2a3f5a] shadow-lg rounded-md overflow-hidden [&_button]:!bg-[#111922] [&_button]:!border-b [&_button]:!border-[#2a3f5a] [&_button:last-child]:!border-b-0 [&_button]:!fill-[#c8daea] hover:[&_button]:!bg-[#1e2d42] hover:[&_button]:!fill-white hover:[&_button_svg]:text-white [&_button_svg]:text-[#c8daea]"
+          className="!bg-background-panel border border-border-strong shadow-lg rounded-md overflow-hidden [&_button]:!bg-background-panel [&_button]:!border-b [&_button]:!border-border-strong [&_button:last-child]:!border-b-0 [&_button]:!fill-foreground-default hover:[&_button]:!bg-border-default hover:[&_button]:!fill-foreground hover:[&_button_svg]:text-foreground [&_button_svg]:text-foreground-default"
         >
           <ControlButton onClick={onAddTable} title={t('erDiagram.addTable')}>
             <Plus size={16} strokeWidth={2.5} />

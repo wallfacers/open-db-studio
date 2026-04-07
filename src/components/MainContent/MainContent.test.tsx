@@ -50,9 +50,19 @@ vi.mock('../../store', async () => {
     }),
   };
 });
-vi.mock('../../store/appStore', () => ({
-  useAppStore: () => ({ setAssistantOpen: vi.fn() }),
-}));
+vi.mock('../../store/appStore', () => {
+  const state = {
+    setAssistantOpen: vi.fn(),
+    autoMode: false,
+    ghostTextDefault: false,
+    isAssistantOpen: true,
+    lastOperationContext: null,
+    setLastOperationContext: vi.fn(),
+  };
+  return {
+    useAppStore: Object.assign(() => state, { getState: () => state }),
+  };
+});
 vi.mock('../shared/MarkdownContent', () => ({
   MarkdownContent: ({ content }: { content: string }) => React.createElement('div', null, content),
 }));

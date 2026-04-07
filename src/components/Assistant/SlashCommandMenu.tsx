@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { CornerDownLeft, CornerUpRight, Zap, Plus, Trash2 } from 'lucide-react';
+import { CornerDownLeft, CornerUpRight, Zap, Plus, Trash2, History } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SlashCommand, ChatCommandState, CommandContext } from './slashCommands';
 
@@ -100,6 +100,16 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
         ctx.showToast(t('assistant.slashCommands.clear.done'), 'info');
       },
     },
+    {
+      name: 'history',
+      label: '/history',
+      description: t('assistant.slashCommands.history.description', { defaultValue: '引用查询历史' }),
+      icon: History,
+      isAvailable: () => true,
+      execute: async (ctx) => {
+        ctx.openHistoryPicker?.();
+      },
+    },
   ], [t]);
 
   // 过滤命令
@@ -160,7 +170,7 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="absolute bottom-full left-0 w-full z-50 mb-1 bg-[#111922] border border-[#2a3f5a] rounded-lg shadow-lg overflow-hidden"
+      className="absolute bottom-full left-0 w-full z-50 mb-1 bg-background-panel border border-border-strong rounded-lg shadow-lg overflow-hidden"
     >
       {filtered.map((cmd, idx) => {
         const available = cmd.isAvailable(commandState);
@@ -172,15 +182,15 @@ export const SlashCommandMenu: React.FC<SlashCommandMenuProps> = ({
           <div
             key={cmd.name}
             className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
-              isActive ? 'bg-[#1e2d42]' : 'hover:bg-[#151d28]'
+              isActive ? 'bg-border-default' : 'hover:bg-background-elevated'
             } ${!available ? 'opacity-40 cursor-not-allowed' : ''}`}
             onMouseEnter={() => onIndexChange(idx)}
             onClick={() => executeCommand(cmd)}
             title={reason}
           >
-            <Icon size={14} className="flex-shrink-0 text-[#00c9a7]" />
-            <span className="text-[13px] font-medium text-[#c8daea] w-20 flex-shrink-0">{cmd.label}</span>
-            <span className="text-[12px] text-[#7a9bb8] truncate">{cmd.description}</span>
+            <Icon size={14} className="flex-shrink-0 text-accent" />
+            <span className="text-[13px] font-medium text-foreground-default w-20 flex-shrink-0">{cmd.label}</span>
+            <span className="text-[12px] text-foreground-muted truncate">{cmd.description}</span>
             {!available && reason && (
               <span className="ml-auto text-[11px] text-[#5b8ab0] flex-shrink-0 hidden group-hover:block">
                 {reason}

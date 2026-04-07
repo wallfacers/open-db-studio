@@ -1,5 +1,20 @@
 use crate::AppResult;
 
+/// 将 chat_assistant.txt 的内容覆盖写入 opencode/AGENTS.md，
+/// 使 opencode agent 与直接 LLM 调用共享同一套系统提示词。
+pub fn write_agents_md(opencode_dir: &std::path::Path) -> AppResult<()> {
+    std::fs::create_dir_all(opencode_dir)
+        .map_err(|e| crate::AppError::Other(format!("Failed to create opencode dir: {}", e)))?;
+
+    let content = include_str!("../../../prompts/chat_assistant.txt");
+    let path = opencode_dir.join("AGENTS.md");
+    std::fs::write(&path, content)
+        .map_err(|e| crate::AppError::Other(format!("Failed to write AGENTS.md: {}", e)))?;
+
+    log::info!("Wrote AGENTS.md to {:?}", path);
+    Ok(())
+}
+
 /// Upsert the `mcp` key inside `opencode.json`.
 ///
 /// The MCP port is determined at runtime, so this function is called after

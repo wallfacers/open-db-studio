@@ -40,8 +40,10 @@ impl GaussDbDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
-        let host = config.host.as_deref()
+        let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = config.port.unwrap_or(8000);
         let username = config.username.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
@@ -218,7 +220,7 @@ impl DataSource for GaussDbDataSource {
         let start = Instant::now();
 
         // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
             let stmts = crate::datasource::utils::split_sql_statements(sql);
             let mut total_affected = 0usize;
@@ -389,6 +391,7 @@ impl DataSource for GaussDbDataSource {
             referenced_table: r.get::<_, Option<String>>(2).unwrap_or_default(),
             referenced_column: r.get::<_, Option<String>>(3).unwrap_or_default(),
             on_delete: r.get::<_, Option<String>>(4),
+            on_update: None,
         }).collect())
     }
 

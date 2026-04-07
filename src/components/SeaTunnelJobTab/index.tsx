@@ -64,21 +64,21 @@ const DEFAULT_BUILDER_STATE: BuilderState = {
 
 function statusColor(status: RunStatus): string {
   switch (status) {
-    case 'RUNNING':   return 'text-[#00c9a7]';
-    case 'FINISHED':  return 'text-green-400';
-    case 'FAILED':    return 'text-red-400';
-    case 'CANCELLED': return 'text-yellow-400';
-    default:          return 'text-[#7a9bb8]';
+    case 'RUNNING':   return 'text-accent';
+    case 'FINISHED':  return 'text-success';
+    case 'FAILED':    return 'text-error';
+    case 'CANCELLED': return 'text-warning';
+    default:          return 'text-foreground-muted';
   }
 }
 
 function statusDot(status: RunStatus): string {
   switch (status) {
-    case 'RUNNING':   return 'bg-[#00c9a7] animate-pulse';
-    case 'FINISHED':  return 'bg-green-400';
-    case 'FAILED':    return 'bg-red-400';
-    case 'CANCELLED': return 'bg-yellow-400';
-    default:          return 'bg-[#7a9bb8]';
+    case 'RUNNING':   return 'bg-accent animate-pulse';
+    case 'FINISHED':  return 'bg-success';
+    case 'FAILED':    return 'bg-error';
+    case 'CANCELLED': return 'bg-warning';
+    default:          return 'bg-foreground-muted';
   }
 }
 
@@ -386,22 +386,22 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] overflow-hidden">
+    <div className="flex flex-col h-full bg-background-base overflow-hidden">
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[#111922] border-b border-[#253347] flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 bg-background-panel border-b border-border-strong flex-shrink-0">
         {/* Job name */}
         <input
           type="text"
           value={jobName}
           onChange={(e) => handleJobNameChange(e.target.value)}
           placeholder={t('seaTunnelJob.toolbar.jobNamePlaceholder')}
-          className="bg-[#0d1117] border border-[#253347] rounded px-2.5 py-1 text-xs text-[#c8daea] placeholder-[#7a9bb8]/50 focus:outline-none focus:border-[#00c9a7]/60 transition-colors w-52"
+          className="bg-background-base border border-border-strong rounded px-2.5 py-1 text-xs text-foreground-default placeholder-foreground-muted/50 focus:outline-none focus:border-accent/60 transition-colors w-52"
         />
 
         {/* Connection - read only */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0d1117] border border-[#253347] rounded text-xs text-[#7a9bb8] select-none">
-          <span className="text-[#7a9bb8]">{t('seaTunnelJob.toolbar.clusterConnection').replace('-- ', '').replace(' --', '')}:</span>
-          <span className="text-[#c8daea]">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-background-base border border-border-strong rounded text-xs text-foreground-muted select-none">
+          <span className="text-foreground-muted">{t('seaTunnelJob.toolbar.clusterConnection').replace('-- ', '').replace(' --', '')}:</span>
+          <span className="text-foreground-default">
             {connections.find(c => c.id === selectedConnectionId)?.name ?? '—'}
           </span>
         </div>
@@ -420,7 +420,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         {isRunning ? (
           <button
             onClick={handleStop}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs text-white bg-red-600/80 hover:bg-red-600 rounded transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs text-foreground bg-error/80 hover:bg-error rounded transition-colors"
           >
             <Square size={12} />
             {t('seaTunnelJob.toolbar.stop')}
@@ -429,7 +429,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
           <button
             onClick={handleSubmit}
             disabled={submitting || !selectedConnectionId}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs text-white bg-[#009e84] hover:bg-[#00c9a7] disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs text-foreground bg-accent hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
           >
             {submitting ? (
               <RefreshCw size={12} className="animate-spin" />
@@ -444,7 +444,7 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-1.5 px-3 py-1 text-xs text-[#c8daea] border border-[#253347] hover:border-[#00c9a7]/60 hover:text-[#00c9a7] disabled:opacity-50 rounded transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1 text-xs text-foreground-default border border-border-strong hover:border-accent/60 hover:text-accent disabled:opacity-50 rounded transition-colors"
         >
           {saving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
           {t('seaTunnelJob.toolbar.save')}
@@ -452,13 +452,13 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
       </div>
 
       {/* ── Mode switch ── */}
-      <div className="flex items-center gap-1 px-3 py-1.5 bg-[#111922] border-b border-[#253347] flex-shrink-0">
+      <div className="flex items-center gap-1 px-3 py-1.5 bg-background-panel border-b border-border-strong flex-shrink-0">
         <button
           onClick={() => switchMode('visual')}
           className={`px-3 py-1 text-xs rounded transition-colors ${
             mode === 'visual'
-              ? 'bg-[#1a2639] text-[#00c9a7] border border-[#00c9a7]/40'
-              : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
+              ? 'bg-background-hover text-accent border border-accent/40'
+              : 'text-foreground-muted hover:text-foreground-default hover:bg-background-hover'
           }`}
         >
           {t('seaTunnelJob.mode.visual')}
@@ -467,8 +467,8 @@ const SeaTunnelJobTab: React.FC<SeaTunnelJobTabProps> = ({ tab, showToast }) => 
           onClick={() => switchMode('script')}
           className={`px-3 py-1 text-xs rounded transition-colors ${
             mode === 'script'
-              ? 'bg-[#1a2639] text-[#00c9a7] border border-[#00c9a7]/40'
-              : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639]'
+              ? 'bg-background-hover text-accent border border-accent/40'
+              : 'text-foreground-muted hover:text-foreground-default hover:bg-background-hover'
           }`}
         >
           {t('seaTunnelJob.mode.script')}

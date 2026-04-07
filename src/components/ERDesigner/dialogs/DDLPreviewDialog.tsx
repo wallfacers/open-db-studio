@@ -10,6 +10,7 @@ export interface DDLPreviewDialogProps {
   hasConnection: boolean;
   onClose: () => void;
   onExecute: (ddl: string) => void;
+  preloadedDdl?: string;
 }
 
 type SqlDialect = 'mysql' | 'postgresql' | 'oracle' | 'sqlserver' | 'sqlite';
@@ -28,6 +29,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
   hasConnection,
   onClose,
   onExecute,
+  preloadedDdl,
 }) => {
   const { t } = useTranslation();
   const generateDDL = useErDesignerStore((s) => s.generateDDL);
@@ -36,31 +38,38 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
   const [includeIndexes, setIncludeIndexes] = useState(true);
   const [includeComments, setIncludeComments] = useState(true);
   const [includeForeignKeys, setIncludeForeignKeys] = useState(false);
+  const [includeCommentRefs, setIncludeCommentRefs] = useState(true);
   const [ddl, setDdl] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // 切换方言或选项时重新生成 DDL
   useEffect(() => {
-    if (visible && projectId) {
-      setLoading(true);
-      generateDDL(projectId, dialect, {
-        includeIndexes,
-        includeComments,
-        includeForeignKeys,
-      })
-        .then((result) => {
-          setDdl(result);
-        })
-        .catch((err) => {
-          console.error('Failed to generate DDL:', err);
-          setDdl('-- ' + t('erDesigner.generateDdlFailed') + '\n' + String(err));
-        })
-        .finally(() => {
-          setLoading(false);
-        });
+    if (!visible || !projectId) return;
+
+    if (preloadedDdl !== undefined) {
+      setDdl(preloadedDdl);
+      return;
     }
-  }, [visible, projectId, dialect, includeIndexes, includeComments, includeForeignKeys, generateDDL]);
+
+    setLoading(true);
+    generateDDL(projectId, dialect, {
+      includeIndexes,
+      includeComments,
+      includeForeignKeys,
+      includeCommentRefs,
+    })
+      .then((result) => {
+        setDdl(result);
+      })
+      .catch((err) => {
+        console.error('Failed to generate DDL:', err);
+        setDdl('-- ' + t('erDesigner.generateDdlFailed') + '\n' + String(err));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [visible, projectId, dialect, includeIndexes, includeComments, includeForeignKeys, includeCommentRefs, generateDDL, preloadedDdl]);
 
   const handleCopy = async () => {
     try {
@@ -81,7 +90,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
 
   return (
     <BaseModal
-      title={t('erDesigner.generateDdl')}
+      title={preloadedDdl !== undefined ? t('erDesigner.syncDdlPreview') : t('erDesigner.generateDdl')}
       onClose={onClose}
       width={640}
       footerButtons={[
@@ -99,53 +108,64 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
       ]}
     >
       <div className="flex flex-col gap-4">
-        {/* 方言选择 */}
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-[#c8daea]">{t('erDesigner.dialect')}:</span>
-          <DropdownSelect
-            value={dialect}
-            options={DIALECT_OPTIONS}
-            onChange={(val) => setDialect(val as SqlDialect)}
-            className="w-32"
-          />
-        </div>
-
-        {/* 选项开关 */}
-        <div className="flex items-center gap-6">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeIndexes}
-              onChange={(e) => setIncludeIndexes(e.target.checked)}
-              className="accent-[#00c9a7] w-4 h-4"
-            />
-            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeIndexes')}</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeComments}
-              onChange={(e) => setIncludeComments(e.target.checked)}
-              className="accent-[#00c9a7] w-4 h-4"
-            />
-            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeComments')}</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeForeignKeys}
-              onChange={(e) => setIncludeForeignKeys(e.target.checked)}
-              className="accent-[#00c9a7] w-4 h-4"
-            />
-            <span className="text-xs text-[#c8daea]">{t('erDesigner.includeForeignKeys')}</span>
-          </label>
-        </div>
+        {/* 方言选择和选项（仅在正常生成模式下显示） */}
+        {preloadedDdl === undefined && (
+          <>
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-foreground-default">{t('erDesigner.dialect')}:</span>
+              <DropdownSelect
+                value={dialect}
+                options={DIALECT_OPTIONS}
+                onChange={(val) => setDialect(val as SqlDialect)}
+                className="w-32"
+              />
+            </div>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeIndexes}
+                  onChange={(e) => setIncludeIndexes(e.target.checked)}
+                  className="accent-accent w-4 h-4"
+                />
+                <span className="text-xs text-foreground-default">{t('erDesigner.includeIndexes')}</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeComments}
+                  onChange={(e) => setIncludeComments(e.target.checked)}
+                  className="accent-accent w-4 h-4"
+                />
+                <span className="text-xs text-foreground-default">{t('erDesigner.includeComments')}</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeForeignKeys}
+                  onChange={(e) => setIncludeForeignKeys(e.target.checked)}
+                  className="accent-accent w-4 h-4"
+                />
+                <span className="text-xs text-foreground-default">{t('erDesigner.includeForeignKeys')}</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeCommentRefs}
+                  onChange={e => setIncludeCommentRefs(e.target.checked)}
+                  className="accent-accent w-4 h-4"
+                />
+                <span className="text-[12px] text-foreground-default">在列注释中生成引用标记 💬</span>
+              </label>
+            </div>
+          </>
+        )}
 
         {/* DDL 代码区域 */}
         <div className="relative">
           <pre
-            className={`bg-[#0d1117] text-[#a5d6ff] font-mono text-xs p-4 rounded
-                       border border-[#1e2d42] overflow-auto max-h-80
+            className={`bg-background-base text-info-foreground font-mono text-xs p-4 rounded
+                       border border-border-default overflow-auto max-h-80
                        ${loading ? 'opacity-50' : ''}`}
           >
             {loading ? t('erDesigner.generating') : ddl || t('erDesigner.noDdl')}
@@ -154,7 +174,7 @@ export const DDLPreviewDialog: React.FC<DDLPreviewDialogProps> = ({
 
         {/* 执行提示 */}
         {!hasConnection && (
-          <div className="text-xs text-[#7a9bb8]">
+          <div className="text-xs text-foreground-muted">
             {t('erDesigner.executeNeedsConnection')}
           </div>
         )}

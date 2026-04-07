@@ -329,6 +329,8 @@ CREATE TABLE IF NOT EXISTS er_projects (
     viewport_x      REAL DEFAULT 0,
     viewport_y      REAL DEFAULT 0,
     viewport_zoom   REAL DEFAULT 1,
+    default_constraint_method TEXT NOT NULL DEFAULT 'database_fk',
+    default_comment_format    TEXT NOT NULL DEFAULT '@ref',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
@@ -342,6 +344,8 @@ CREATE TABLE IF NOT EXISTS er_tables (
     position_x      REAL DEFAULT 0,
     position_y      REAL DEFAULT 0,
     color           TEXT NULL,
+    constraint_method  TEXT NULL,
+    comment_format     TEXT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
@@ -384,6 +388,8 @@ CREATE TABLE IF NOT EXISTS er_relations (
     on_update       TEXT DEFAULT 'NO ACTION',
     source          TEXT DEFAULT 'designer',
     comment_marker  TEXT NULL,
+    constraint_method  TEXT NULL,
+    comment_format     TEXT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );

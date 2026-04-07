@@ -4,40 +4,50 @@ import { useErDesignerStore } from '@/store/erDesignerStore';
 import ColumnsTab from './ColumnsTab';
 import IndexesTab from './IndexesTab';
 import TablePropertiesTab from './TablePropertiesTab';
+import RelationsTab from './RelationsTab';
 
-type TabType = 'columns' | 'indexes' | 'properties';
+type TabType = 'columns' | 'indexes' | 'properties' | 'relations';
 
-export default function ERPropertyDrawer() {
+const TAB_LABELS: Record<TabType, string> = {
+  columns: '列',
+  indexes: '索引',
+  properties: '表属性',
+  relations: '关系',
+};
+
+const TAB_ORDER: TabType[] = ['columns', 'indexes', 'properties', 'relations'];
+
+export default function ERPropertyDrawer({ projectId }: { projectId: number }) {
   const { drawerOpen, drawerTableId, closeDrawer, tables } = useErDesignerStore();
   const [activeTab, setActiveTab] = useState<TabType>('columns');
 
   if (!drawerOpen || drawerTableId == null) return null;
 
-  const table = tables.find(t => t.id === drawerTableId);
+  const table = tables.find(t => t.id === drawerTableId && t.project_id === projectId);
   if (!table) return null;
 
   return (
-    <div className="w-[420px] shrink-0 bg-[#111922] border-l border-[#253347] flex flex-col h-full">
-      {/* Title bar */}
-      <div className="bg-[#1a2639] px-3 py-2 flex items-center justify-between border-b border-[#253347]">
-        <span className="text-[13px] text-[#c8daea] font-medium truncate">{table.name}</span>
-        <button onClick={closeDrawer} className="text-[#7a9bb8] hover:text-[#c8daea]">
+    <div className="absolute right-0 top-0 w-[420px] max-w-[60vw] bg-background-panel border-l border-border-strong flex flex-col h-full z-10 shadow-lg">
+      {/* Title bar — h-8 matches ERToolbar height */}
+      <div className="bg-background-hover px-3 h-8 flex items-center justify-between border-b border-border-strong flex-shrink-0">
+        <span className="text-[13px] text-foreground-default font-medium truncate">{table.name}</span>
+        <button onClick={closeDrawer} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200">
           <X size={14} />
         </button>
       </div>
       {/* Tab bar */}
-      <div className="flex border-b border-[#253347]">
-        {(['columns', 'indexes', 'properties'] as TabType[]).map(tab => (
+      <div className="flex border-b border-border-strong">
+        {TAB_ORDER.map(tab => (
           <button
             key={tab}
             className={`px-4 py-2 text-[12px] transition-colors ${
               activeTab === tab
-                ? 'text-[#00c9a7] border-b-2 border-[#00c9a7]'
-                : 'text-[#4a6480] hover:text-[#7a9bb8]'
+                ? 'text-accent border-b-2 border-accent'
+                : 'text-foreground-subtle hover:text-foreground-muted'
             }`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'columns' ? '列' : tab === 'indexes' ? '索引' : '表属性'}
+            {TAB_LABELS[tab]}
           </button>
         ))}
       </div>
@@ -46,6 +56,7 @@ export default function ERPropertyDrawer() {
         {activeTab === 'columns' && <ColumnsTab tableId={drawerTableId} />}
         {activeTab === 'indexes' && <IndexesTab tableId={drawerTableId} tableName={table.name} />}
         {activeTab === 'properties' && <TablePropertiesTab tableId={drawerTableId} />}
+        {activeTab === 'relations' && <RelationsTab tableId={drawerTableId} />}
       </div>
     </div>
   );

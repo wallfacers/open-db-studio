@@ -19,9 +19,9 @@ interface NodeDetailProps {
 
 function SourceBadge({ source }: { source: string }) {
   const badges: Record<string, { label: string; color: string }> = {
-    comment: { label: '注释推断', color: '#f59e0b' },
-    user:    { label: '✏️ 用户自定义', color: '#a855f7' },
-    schema:  { label: '数据库外键', color: '#3794ff' },
+    comment: { label: '注释推断', color: 'var(--node-metric)' },
+    user:    { label: '✏️ 用户自定义', color: 'var(--node-alias)' },
+    schema:  { label: '数据库外键', color: 'var(--node-table)' },
   };
   const badge = badges[source] ?? badges.schema;
   return (
@@ -87,15 +87,15 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
 
   const rows: { label: string; value: string; color?: string }[] = [
     { label: t('graphExplorer.nodeDetail.linkDirection'), value: `${meta.source_table ?? ''} → ${meta.target_table ?? ''}` },
-    { label: t('graphExplorer.nodeDetail.linkCardinality'), value: meta.cardinality ?? '-', color: '#f59e0b' },
-    { label: t('graphExplorer.nodeDetail.linkVia'), value: meta.via ?? '-', color: '#3794ff' },
+    { label: t('graphExplorer.nodeDetail.linkCardinality'), value: meta.cardinality ?? '-', color: 'var(--edge-reference)' },
+    { label: t('graphExplorer.nodeDetail.linkVia'), value: meta.via ?? '-', color: 'var(--edge-fk)' },
     { label: t('graphExplorer.nodeDetail.linkOnDelete'), value: meta.on_delete ?? '-' },
     { label: t('graphExplorer.nodeDetail.linkWeight'), value: meta.weight?.toFixed(2) ?? '-' },
   ];
 
   return (
     <div className="px-4 py-3 flex-1 overflow-y-auto">
-      <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">
+      <p className="text-foreground-muted text-[11px] uppercase tracking-wide mb-2">
         {t('graphExplorer.nodeDetail.linkProps')}
       </p>
 
@@ -103,8 +103,8 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
       <div className="mb-3">
         <span className={`text-[9px] px-2 py-0.5 rounded border ${
           meta.is_inferred !== false
-            ? 'bg-[#0d2a3d] text-[#3794ff] border-[#3794ff]/30'
-            : 'bg-[#1e2d42] text-[#7a9bb8] border-[#253347]'
+            ? 'bg-node-table-bg text-node-table border-node-table/30'
+            : 'bg-border-default text-foreground-muted border-border-strong'
         }`}>
           {meta.is_inferred !== false
             ? t('graphExplorer.nodeDetail.inferredBadge')
@@ -115,23 +115,23 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
       {/* 属性行 */}
       <div className="space-y-1.5 mb-4">
         {rows.map(r => (
-          <div key={r.label} className="flex items-center justify-between py-1 px-2 rounded hover:bg-[#0d1117]">
-            <span className="text-[#7a9bb8] text-[10px]">{r.label}</span>
-            <span className="text-[10px] font-mono text-[#c8daea]" style={r.color ? { color: r.color } : undefined}>{r.value}</span>
+          <div key={r.label} className="flex items-center justify-between py-1 px-2 rounded hover:bg-background-base transition-colors duration-150">
+            <span className="text-foreground-muted text-[10px]">{r.label}</span>
+            <span className="text-[10px] font-mono text-foreground-default" style={r.color ? { color: r.color } : undefined}>{r.value}</span>
           </div>
         ))}
       </div>
 
       {/* Description 编辑 */}
-      <div className="border-t border-[#1e2d42] pt-3">
+      <div className="border-t border-border-default pt-3">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">
+          <span className="text-foreground-muted text-[11px] uppercase tracking-wide">
             {t('graphExplorer.nodeDetail.linkDescription')}
           </span>
           {!editing && (
             <button
               onClick={() => setEditing(true)}
-              className="text-[10px] text-[#7a9bb8] hover:text-[#c8daea] px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
+              className="text-[10px] text-foreground-muted hover:text-foreground-default px-1.5 py-0.5 rounded hover:bg-border-default transition-colors duration-200"
             >
               {t('graphExplorer.nodeDetail.editBtn')}
             </button>
@@ -142,7 +142,7 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="w-full text-xs bg-[#0d1117] border border-[#2a3f5a] rounded p-2 text-[#c8daea] placeholder-[#3d5470] focus:outline-none focus:border-[#00c9a7]/50 resize-none"
+              className="w-full text-xs bg-background-base border border-border-strong rounded p-2 text-foreground-default placeholder-foreground-ghost focus:outline-none focus:border-accent/50 resize-none"
               rows={3}
               placeholder={t('graphExplorer.nodeDetail.descriptionPlaceholder')}
             />
@@ -150,21 +150,21 @@ function LinkDetail({ node, onMetaUpdated }: { node: GraphNode; onMetaUpdated: (
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 text-[10px] py-1 bg-[#00c9a7] text-[#0d1117] rounded font-medium hover:bg-[#00c9a7]/80 disabled:opacity-50"
+                className="flex-1 text-[10px] py-1 bg-accent text-background-base rounded font-medium hover:bg-accent/80 disabled:opacity-50 transition-colors duration-200"
               >
                 {saving ? t('graphExplorer.nodeDetail.saving') : t('graphExplorer.nodeDetail.save')}
               </button>
               <button
                 onClick={() => setEditing(false)}
-                className="flex-1 text-[10px] py-1 bg-[#1e2d42] text-[#7a9bb8] rounded hover:bg-[#253347]"
+                className="flex-1 text-[10px] py-1 bg-border-default text-foreground-muted rounded hover:bg-border-strong transition-colors duration-200"
               >
                 {t('graphExplorer.nodeDetail.cancel')}
               </button>
             </div>
           </div>
         ) : (
-          <p className="text-[#c8daea] text-xs italic">
-            {description || <span className="text-[#3d5470]">{t('graphExplorer.nodeDetail.noDescription')}</span>}
+          <p className="text-foreground-default text-xs italic">
+            {description || <span className="text-foreground-ghost">{t('graphExplorer.nodeDetail.noDescription')}</span>}
           </p>
         )}
       </div>
@@ -209,28 +209,28 @@ function parseMetadata(raw: string): ParsedField[] {
 
 function nodeTypeIcon(nodeType: string) {
   switch (nodeType) {
-    case 'table': return <Table2 size={14} className="text-[#3794ff]" />;
-    case 'metric': return <BarChart2 size={14} className="text-[#f59e0b]" />;
-    case 'alias': return <Hash size={14} className="text-[#a855f7]" />;
-    default: return <Tag size={14} className="text-[#7a9bb8]" />;
+    case 'table': return <Table2 size={14} className="text-node-table" />;
+    case 'metric': return <BarChart2 size={14} className="text-node-metric" />;
+    case 'alias': return <Hash size={14} className="text-node-alias" />;
+    default: return <Tag size={14} className="text-foreground-muted" />;
   }
 }
 
 function nodeTypeBadgeClass(nodeType: string): string {
   switch (nodeType) {
-    case 'table': return 'bg-[#0d2a3d] text-[#3794ff] border border-[#3794ff]/30';
-    case 'metric': return 'bg-[#2d1e0d] text-[#f59e0b] border border-[#f59e0b]/30';
-    case 'alias': return 'bg-[#1e0d2d] text-[#a855f7] border border-[#a855f7]/30';
-    default: return 'bg-[#1e2d42] text-[#7a9bb8] border border-[#253347]';
+    case 'table': return 'bg-node-table-bg text-node-table border border-node-table/30';
+    case 'metric': return 'bg-node-metric-bg text-node-metric border border-node-metric/30';
+    case 'alias': return 'bg-node-alias-bg text-node-alias border border-node-alias/30';
+    default: return 'bg-border-default text-foreground-muted border border-border-strong';
   }
 }
 
 function edgeTypeColor(edgeType: string): string {
   switch (edgeType) {
-    case 'fk': return 'text-[#3794ff]';
-    case 'alias_of': return 'text-[#a855f7]';
-    case 'references': return 'text-[#f59e0b]';
-    default: return 'text-[#7a9bb8]';
+    case 'fk': return 'text-edge-fk';
+    case 'alias_of': return 'text-edge-alias';
+    case 'references': return 'text-edge-reference';
+    default: return 'text-foreground-muted';
   }
 }
 
@@ -260,20 +260,20 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
 
   return (
     <>
-      <div className="w-72 flex-shrink-0 h-full flex flex-col bg-[#111922] border-l border-[#1e2d42] overflow-hidden">
+      <div className="w-72 flex-shrink-0 h-full flex flex-col bg-background-panel border-l border-border-default overflow-hidden">
         {/* Header */}
-        <div className="flex items-start justify-between px-4 py-3 border-b border-[#1e2d42] flex-shrink-0">
+        <div className="flex items-start justify-between px-4 py-3 border-b border-border-default flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {nodeTypeIcon(node.node_type)}
             <div className="min-w-0">
               <Tooltip content={node.node_type === 'link' ? (node.display_name || node.name) : node.name} className="w-full">
-                <p className="text-[#c8daea] text-sm font-semibold truncate">
+                <p className="text-foreground-default text-sm font-semibold truncate">
                   {node.node_type === 'link' ? (node.display_name || node.name) : node.name}
                 </p>
               </Tooltip>
               {node.node_type !== 'link' && node.display_name && node.display_name !== node.name && (
                 <Tooltip content={node.display_name} className="w-full">
-                  <p className="text-[#7a9bb8] text-xs truncate mt-0.5">
+                  <p className="text-foreground-muted text-xs truncate mt-0.5">
                     {node.display_name}
                   </p>
                 </Tooltip>
@@ -282,14 +282,14 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors p-1 rounded hover:bg-[#1e2d42] flex-shrink-0 ml-2"
+            className="text-foreground-muted hover:text-foreground-default transition-colors p-1 rounded hover:bg-border-default flex-shrink-0 ml-2"
           >
             <X size={15} />
           </button>
         </div>
 
         {/* Type badge + source badge */}
-        <div className="px-4 py-2 border-b border-[#1e2d42] flex-shrink-0">
+        <div className="px-4 py-2 border-b border-border-default flex-shrink-0">
           <div className="flex items-center mb-1.5">
             <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-medium ${nodeTypeBadgeClass(node.node_type)}`}>
               {nodeTypeIcon(node.node_type)}
@@ -323,9 +323,9 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
               style={{
                 marginTop: 8,
                 padding: '4px 12px',
-                border: '1px solid #ef4444',
+                border: '1px solid var(--error)',
                 borderRadius: 4,
-                color: '#ef4444',
+                color: 'var(--error)',
                 background: 'transparent',
                 cursor: 'pointer',
                 fontSize: 12,
@@ -344,19 +344,19 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           <div className="flex-1 overflow-y-auto">
             {/* Fields section */}
             {fields.length > 0 && (
-              <div className="px-4 py-3 border-b border-[#1e2d42]">
-                <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
+              <div className="px-4 py-3 border-b border-border-default">
+                <p className="text-foreground-muted text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.fields')}</p>
                 <div className="space-y-1">
                   {fields.map((field, idx) => (
                     <div
                       key={`${field.name}-${idx}`}
-                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-[#0d1117] transition-colors"
+                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-background-base transition-colors"
                     >
-                      <span className="text-[#c8daea] text-xs font-mono truncate flex-1">
+                      <span className="text-foreground-default text-xs font-mono truncate flex-1">
                         {field.name}
                       </span>
                       {field.type && (
-                        <span className="text-[#7a9bb8] text-[10px] font-mono ml-2 flex-shrink-0">
+                        <span className="text-foreground-muted text-[10px] font-mono ml-2 flex-shrink-0">
                           {field.type}
                         </span>
                       )}
@@ -367,27 +367,27 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
             )}
 
             {/* Aliases section */}
-            <div className="px-4 py-3 border-b border-[#1e2d42]">
+            <div className="px-4 py-3 border-b border-border-default">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
+                <p className="text-foreground-muted text-[11px] uppercase tracking-wide">{t('graphExplorer.nodeDetail.semanticAliases')}</p>
                 <button
                   onClick={() => setShowAliasEditor(true)}
-                  className="flex items-center gap-0.5 text-[10px] text-[#7a9bb8] hover:text-[#c8daea] transition-colors px-1.5 py-0.5 rounded hover:bg-[#1e2d42]"
+                  className="flex items-center gap-0.5 text-[10px] text-foreground-muted hover:text-foreground-default transition-colors px-1.5 py-0.5 rounded hover:bg-border-default"
                 >
                   <Plus size={11} />
                   {t('graphExplorer.aliasEditor.add')}
                 </button>
               </div>
               {aliases.length === 0 ? (
-                <p className="text-[#7a9bb8] text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
+                <p className="text-foreground-muted text-xs italic">{t('graphExplorer.aliasEditor.noAliases')}</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {aliases.map((alias) => (
                     <span
                       key={alias}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#0d1117] border border-[#1e2d42] rounded text-[#c8daea] text-xs"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-background-base border border-border-default rounded text-foreground-default text-xs"
                     >
-                      <Hash size={10} className="text-[#7a9bb8]" />
+                      <Hash size={10} className="text-foreground-muted" />
                       {alias}
                     </span>
                   ))}
@@ -398,7 +398,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
             {/* Related edges */}
             {relatedEdges.length > 0 && (
               <div className="px-4 py-3">
-                <p className="text-[#7a9bb8] text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
+                <p className="text-foreground-muted text-[11px] uppercase tracking-wide mb-2">{t('graphExplorer.nodeDetail.relatedEdges')}</p>
                 <div className="space-y-1">
                   {relatedEdges.map((edge) => {
                     const isOutgoing = edge.from_node === node.id;
@@ -407,7 +407,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                     return (
                       <div
                         key={edge.id}
-                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-[#0d1117] transition-colors flex-wrap"
+                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-background-base transition-colors flex-wrap"
                       >
                         <ArrowRight
                           size={11}
@@ -418,7 +418,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                           {edge.edge_type}
                         </span>
                         <Tooltip content={peerName} className="truncate flex-1">
-                          <span className="text-[#c8daea] text-[10px] font-mono truncate">
+                          <span className="text-foreground-default text-[10px] font-mono truncate">
                             {peerName}
                           </span>
                         </Tooltip>

@@ -2,7 +2,7 @@ pub(crate) mod tools;
 
 use axum::{routing::{get, post}, Router, Json, extract::State};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use futures_util::stream;
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::TcpListener;
@@ -175,20 +175,20 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_read",
-                "description": "Read the current state, schema, or available actions of a UI object.",
+                "description": "Read the current state, schema, or available actions of a UI object. Use mode='full' to get all three in one call (reduces round trips).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, seatunnel_job, db_tree, history, er_canvas" },
                         "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
-                        "mode": { "type": "string", "enum": ["state", "schema", "actions"], "default": "state" }
+                        "mode": { "type": "string", "enum": ["state", "schema", "actions", "full"], "default": "state", "description": "Use 'full' to get state + actions + schema in one call" }
                     },
                     "required": ["object"]
                 }
             }),
             json!({
                 "name": "ui_patch",
-                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Use [name=xxx] addressing for array elements. IMPORTANT: Always batch ALL changes into a single ui_patch call with multiple ops. For table_form, set tableName AND add ALL columns in one call. Example: [{\"op\":\"replace\",\"path\":\"/tableName\",\"value\":\"users\"},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"id\",\"dataType\":\"INT\",...}},{\"op\":\"add\",\"path\":\"/columns/-\",\"value\":{\"name\":\"email\",\"dataType\":\"VARCHAR\",...}}]",
+                "description": "Apply JSON Patch (RFC 6902) operations to a UI object's state. Path syntax: use [name=xxx] for addressing array elements by name (e.g. /columns[name=id]/dataType), /columns/- to append. Common table_form paths: /tableName, /engine, /charset, /comment, /columns/-, /columns[name=<s>]/<field>, /indexes/-, /foreignKeys/-. IMPORTANT: Always batch ALL changes into one call. For table_form, prefer ui_exec(action='batch_create_table') for complete table creation in a single step. Tip: call ui_read(mode='schema') to see all supported paths.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -202,7 +202,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_exec",
-                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, format).",
+                "description": "Execute an action on a UI object (e.g. run_sql, save, preview_sql, batch_create_table, batch). For table_form: use batch_create_table to create a complete table in one call, or batch for multi-step workflows with variable binding ($N.path). Tip: call ui_read(mode='actions') to see all available actions with parameter schemas.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -226,7 +226,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "init_table_form",
-                "description": "Initialize a new table design form with a complete table definition in one call. This is much faster than using ui_patch multiple times. Opens a new table_form tab and populates it with the given table name, columns, and indexes. Returns the new tab objectId.",
+                "description": "Open a table design form for a CONNECTED DATABASE and populate it with columns/indexes in one atomic call. This is the recommended way to create a table — do not call workspace.open + ui_exec separately. Do NOT use this for ER diagram design — use init_er_table instead. Requires connection_id and database.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -266,9 +266,102 @@ fn tool_definitions() -> Value {
                         },
                         "comment": { "type": "string", "description": "Table comment" },
                         "engine": { "type": "string", "default": "InnoDB" },
-                        "charset": { "type": "string", "default": "utf8mb4" }
+                        "charset": { "type": "string", "default": "utf8mb4" },
+                        "foreignKeys": {
+                            "type": "array",
+                            "description": "Foreign key definitions (optional). Can also be added later via ui_exec add_foreign_key.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "constraintName": { "type": "string", "description": "Constraint name (auto-generated as fk_{tableName}_{column} if omitted)" },
+                                    "column": { "type": "string", "description": "Column in this table" },
+                                    "referencedTable": { "type": "string", "description": "Referenced table name" },
+                                    "referencedColumn": { "type": "string", "description": "Referenced column name" },
+                                    "onDelete": { "type": "string", "enum": ["NO ACTION", "CASCADE", "SET NULL", "RESTRICT", "SET DEFAULT"], "default": "NO ACTION" },
+                                    "onUpdate": { "type": "string", "enum": ["NO ACTION", "CASCADE", "SET NULL", "RESTRICT", "SET DEFAULT"], "default": "NO ACTION" }
+                                },
+                                "required": ["column", "referencedTable", "referencedColumn"]
+                            }
+                        }
                     },
                     "required": ["connection_id", "database", "table_name", "columns"]
+                }
+            }),
+            json!({
+                "name": "init_er_table",
+                "description": "[DEPRECATED: prefer er_batch with a single batch_create_table op] Create ONE complete table with columns and indexes in the active ER diagram. For multi-table + relations, use er_batch instead (supports variable binding across operations). This is for ER DESIGN projects (visual schema design), NOT for connected databases — use init_table_form for that.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "description": "ER canvas objectId. Use 'active' to target the currently open ER canvas." },
+                        "table_name": { "type": "string", "description": "Table name" },
+                        "comment": { "type": "string", "description": "Table comment" },
+                        "position": {
+                            "type": "object",
+                            "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+                            "description": "Canvas position (defaults to {x:100, y:100})"
+                        },
+                        "columns": {
+                            "type": "array",
+                            "description": "Column definitions. Each item can be an object OR a shorthand string like \"id BIGINT PK AI\" or \"email VARCHAR(255) NOT NULL UNIQUE\". Shorthand format: \"<name> <TYPE>[(len[,scale])] [PK] [AI] [NOT NULL] [UNIQUE] [UNSIGNED] [DEFAULT '<val>'] [COMMENT '<text>']\"",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "data_type": { "type": "string", "description": "e.g. VARCHAR, BIGINT, DECIMAL, DATETIME, TEXT, ENUM" },
+                                    "length": { "type": "integer" },
+                                    "scale": { "type": "integer" },
+                                    "nullable": { "type": "boolean", "default": true },
+                                    "is_primary_key": { "type": "boolean", "default": false },
+                                    "is_auto_increment": { "type": "boolean", "default": false },
+                                    "is_unique": { "type": "boolean", "default": false },
+                                    "unsigned": { "type": "boolean", "default": false },
+                                    "default_value": { "type": "string" },
+                                    "comment": { "type": "string" }
+                                },
+                                "required": ["name", "data_type"]
+                            }
+                        },
+                        "indexes": {
+                            "type": "array",
+                            "description": "Index definitions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "columns": { "type": "array", "items": { "type": "string" }, "description": "Column names for the index" },
+                                    "type": { "type": "string", "enum": ["INDEX", "UNIQUE", "FULLTEXT"], "default": "INDEX" }
+                                },
+                                "required": ["name", "columns"]
+                            }
+                        }
+                    },
+                    "required": ["table_name", "columns"]
+                }
+            }),
+            json!({
+                "name": "er_batch",
+                "description": "PRIMARY tool for all ER diagram modifications. Execute a sequence of ER canvas actions in one call with variable binding. Each op is {action, params}. Results from earlier ops can be referenced via \"$N.path\" syntax (e.g. \"$0.tableId\", \"$1.columnMap.user_id\", \"$2.columnIds[0]\"). $N resolves to the DATA portion of op[N]'s result (not the full response wrapper). Return structures per action: batch_create_table → {tableId, columnIds, columnMap, indexIds}, add_table → {tableId}, add_column → {columnId}, add_relation → {relationId}, add_index → {indexId}, update_*/delete_* → {}. Stops on first failure. Available actions: batch_create_table, add_table, update_table, delete_table, add_column, update_column, delete_column, add_relation, update_relation, delete_relation, add_index, update_index, delete_index, replace_columns, replace_indexes, reorder_columns. Common patterns: create tables + relations (batch_create_table x N then add_relation), modify existing table (update_column/delete_column/add_column), rebuild columns (replace_columns). Set returnState=true to include full project state in the response.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "description": "ER canvas objectId. Use 'active' for the currently open canvas." },
+                        "ops": {
+                            "type": "array",
+                            "description": "Ordered list of operations. Each reuses any existing er_canvas action.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "action": { "type": "string", "description": "Action name: add_table, add_column, batch_create_table, add_relation, update_column, delete_column, etc." },
+                                    "params": { "type": "object", "description": "Action params. String values like \"$0.tableId\" resolve to previous op results." }
+                                },
+                                "required": ["action"]
+                            }
+                        },
+                        "returnState": { "type": "boolean", "default": false, "description": "If true, include full project state in the response after all ops complete" },
+                        "dryRun": { "type": "boolean", "default": false, "description": "If true, validate all ops without executing (checks action names, required params, variable refs)" }
+                    },
+                    "required": ["ops"]
                 }
             }),
             json!({
@@ -596,7 +689,7 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 &handle, "mcp://ui-request", "ui_request", open_payload,
             ).await?;
 
-            let object_id = open_result["data"]["objectId"].as_str().unwrap_or("").to_string();
+            let object_id = open_result["data"]["data"]["objectId"].as_str().unwrap_or("").to_string();
             if object_id.is_empty() {
                 return Err(crate::AppError::Other("Failed to open table_form tab".into()));
             }
@@ -615,12 +708,25 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
             }
             if let Some(columns) = args["columns"].as_array() {
                 for col in columns {
+                    let mut col = col.clone();
+                    // Normalize isAutoIncrement -> extra: "auto_increment"
+                    if col.get("isAutoIncrement").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        if col.get("extra").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                            col["extra"] = json!("auto_increment");
+                        }
+                        col.as_object_mut().map(|m| m.remove("isAutoIncrement"));
+                    }
                     ops.push(json!({"op": "add", "path": "/columns/-", "value": col}));
                 }
             }
             if let Some(indexes) = args["indexes"].as_array() {
                 for idx in indexes {
                     ops.push(json!({"op": "add", "path": "/indexes/-", "value": idx}));
+                }
+            }
+            if let Some(fks) = args.get("foreignKeys").and_then(|v| v.as_array()) {
+                for fk in fks {
+                    ops.push(json!({"op": "add", "path": "/foreignKeys/-", "value": fk}));
                 }
             }
 
@@ -637,13 +743,77 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
                 &handle, "mcp://ui-request", "ui_request", patch_payload,
             ).await?;
 
+            if let Some(err) = patch_result.get("error").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                return Err(crate::AppError::Other(format!("init_table_form: patch failed — {}", err)));
+            }
+
+            let patch_status = patch_result
+                .get("data").and_then(|d| d.get("status"))
+                .unwrap_or(&json!("applied"))
+                .clone();
+
             let result = json!({
                 "objectId": object_id,
                 "table_name": args["table_name"],
                 "columns_count": args["columns"].as_array().map(|a| a.len()).unwrap_or(0),
-                "patch_status": patch_result.get("data").and_then(|d| d.get("status")).unwrap_or(&json!("unknown")),
+                "foreign_keys_count": args.get("foreignKeys").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+                "patch_status": patch_status,
             });
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
+        }
+        "init_er_table" => {
+            // Convenience wrapper: single ui_exec call to batch_create_table on er_canvas
+            let target = args.get("target").and_then(|v| v.as_str()).unwrap_or("active");
+            let exec_params = json!({
+                "name": args["table_name"],
+                "comment": args.get("comment"),
+                "position": args.get("position"),
+                "columns": args.get("columns").cloned().unwrap_or(json!([])),
+                "indexes": args.get("indexes").cloned().unwrap_or(json!([])),
+                "returnState": args.get("returnState").cloned().unwrap_or(json!(false)),
+            });
+            let payload = json!({
+                "tool": "ui_exec",
+                "object": "er_canvas",
+                "target": target,
+                "payload": {
+                    "action": "batch_create_table",
+                    "params": exec_params
+                }
+            });
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", payload,
+            ).await?;
+
+            if let Some(err) = result.get("error").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                return Err(crate::AppError::Other(format!("init_er_table failed: {}", err)));
+            }
+            Ok(serde_json::to_string_pretty(&result.get("data").unwrap_or(&json!({}))).unwrap_or_default())
+        }
+        "er_batch" => {
+            // Forward ops array to er_canvas batch action (variable binding resolved on frontend)
+            let target = args.get("target").and_then(|v| v.as_str()).unwrap_or("active");
+            let payload = json!({
+                "tool": "ui_exec",
+                "object": "er_canvas",
+                "target": target,
+                "payload": {
+                    "action": "batch",
+                    "params": {
+                        "ops": args.get("ops").cloned().unwrap_or(json!([])),
+                        "returnState": args.get("returnState").cloned().unwrap_or(json!(false)),
+                        "dryRun": args.get("dryRun").cloned().unwrap_or(json!(false))
+                    }
+                }
+            });
+            let result = crate::mcp::tools::tab_control::query_frontend(
+                &handle, "mcp://ui-request", "ui_request", payload,
+            ).await?;
+
+            if let Some(err) = result.get("error").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                return Err(crate::AppError::Other(format!("er_batch failed: {}", err)));
+            }
+            Ok(serde_json::to_string_pretty(&result.get("data").unwrap_or(&json!({}))).unwrap_or_default())
         }
         "ui_read" | "ui_patch" | "ui_exec" | "ui_list" => {
             let payload = json!({
@@ -688,14 +858,29 @@ async fn call_tool(handle: Arc<tauri::AppHandle>, name: &str, args: Value, _sess
     }
 }
 
-/// GET /mcp — SSE endpoint for Streamable HTTP transport.
+/// GET /mcp — SSE endpoint compatible with both legacy SSE transport and
+/// Streamable HTTP transport.
 ///
-/// The MCP Streamable HTTP spec (2025-03-26) allows clients to open a GET SSE
-/// connection to receive server-initiated events. This server never pushes events,
-/// but we must respond to GET immediately (with a keep-alive SSE stream) so that
-/// opencode-cli does not wait for a timeout before falling back to POST-only mode.
-async fn handle_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    Sse::new(stream::pending()).keep_alive(KeepAlive::default())
+/// Legacy MCP SSE transport requires the server to emit an `endpoint` event
+/// containing the POST URL for JSON-RPC messages. Without this event, clients
+/// like opencode-cli will hang waiting for the endpoint announcement.
+async fn handle_mcp_sse(
+    req: axum::extract::Request,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    // Build the POST URL from the incoming request's Host header (or default)
+    let host = req.headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    let post_url = format!("http://{}/mcp", host);
+
+    // Emit the `endpoint` event first (required by legacy SSE transport),
+    // then keep the stream alive for any future server-initiated events.
+    let initial = stream::once(async move {
+        Ok(Event::default().event("endpoint").data(post_url))
+    });
+    let tail = stream::pending();
+    Sse::new(initial.chain(tail)).keep_alive(KeepAlive::default())
 }
 
 async fn handle_mcp(
@@ -734,8 +919,18 @@ async fn handle_mcp(
     }
 }
 
-async fn handle_optimize_mcp_sse() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    Sse::new(stream::pending()).keep_alive(KeepAlive::default())
+async fn handle_optimize_mcp_sse(
+    req: axum::extract::Request,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let host = req.headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1");
+    let post_url = format!("http://{}/mcp/optimize", host);
+    let initial = stream::once(async move {
+        Ok(Event::default().event("endpoint").data(post_url))
+    });
+    Sse::new(initial.chain(stream::pending())).keep_alive(KeepAlive::default())
 }
 
 async fn handle_optimize_mcp(

@@ -1,13 +1,25 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Maximize2, X } from 'lucide-react';
+import { Copy, Check, Maximize2, X, Play, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { invoke } from '@tauri-apps/api/core';
 import { ChartBlock } from './ChartBlock';
 import { Tooltip } from '../common/Tooltip';
+import { LRUCache } from '../../utils/lruCache';
+import { useChatConnection } from '../Assistant/ChatConnectionContext';
+import { InlineResultCard } from '../Assistant/InlineResultCard';
+import { SqlDiffView } from '../Assistant/SqlDiffView';
+import type { QueryResult } from '../../types';
+
+// SQL Diff 暂存：用于检测 sql:original/sql:optimized 配对（使用 LRU 避免内存泄漏）
+const sqlDiffStore = new LRUCache<string, { original?: string; optimized?: string }>(10);
+
+// ── Markdown 渲染 LRU 缓存（非流式消息复用渲染结果）──────────────────────────
+const markdownCache = new LRUCache<string, React.ReactNode>(100);
 
 // ── 代码放大弹框 ─────────────────────────────────────────────────────────────
 const CodeExpandModal: React.FC<{
@@ -47,17 +59,17 @@ const CodeExpandModal: React.FC<{
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* 弹框头部 */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#1e2d42] flex-shrink-0">
-          <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 bg-background-code border-b border-border-default flex-shrink-0">
+          <span className="text-xs text-foreground-muted font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
             >
               {copied ? (
-                <><Check size={13} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.markdownContent.copied')}</span></>
+                <><Check size={13} className="text-accent" /><span className="text-accent">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
                 <><Copy size={13} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
@@ -65,7 +77,7 @@ const CodeExpandModal: React.FC<{
             <Tooltip content={t('commonComponents.markdownContent.close')} className="contents">
               <button
                 onClick={onClose}
-                className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+                className="text-foreground-muted hover:text-foreground-default transition-colors"
               >
                 <X size={16} />
               </button>
@@ -79,7 +91,7 @@ const CodeExpandModal: React.FC<{
             language={language || 'plaintext'}
             useInlineStyles={true}
             PreTag="div"
-            customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', minHeight: '100%', overflowX: 'auto' }}
+            customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: 'var(--background-base)', padding: '12px', minHeight: '100%', overflowX: 'auto' }}
             codeTagProps={{ style: { background: 'transparent' } }}
           >
             {code}
@@ -91,12 +103,19 @@ const CodeExpandModal: React.FC<{
   );
 });
 
-// ── 代码块 ───────────────────────────────────────────────────────────────────
+// ── 代码块（SQL 支持一键执行 + 内联结果）───────────────────────────────────────
 const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // SQL 一键执行：从 ChatConnectionContext 获取连接信息
+  const chatConn = useChatConnection();
+  const isSql = /^sql$/i.test(language);
+  const canExecute = isSql && chatConn.connectionId != null;
 
   React.useEffect(() => {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
@@ -115,26 +134,63 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
 
   const handleClose = useCallback(() => setExpanded(false), []);
 
+  const handleExecute = useCallback(async () => {
+    if (!chatConn.connectionId || executing) return;
+    setExecuting(true);
+    try {
+      const result = await invoke<QueryResult>('execute_query', {
+        connectionId: chatConn.connectionId,
+        sql: code,
+        database: chatConn.database ?? null,
+        schema: chatConn.schema ?? null,
+      });
+      setQueryResult(result);
+    } catch (e) {
+      setQueryResult({
+        columns: [],
+        rows: [],
+        row_count: 0,
+        duration_ms: 0,
+        kind: 'error',
+        error_message: String(e),
+      });
+    } finally {
+      setExecuting(false);
+    }
+  }, [chatConn, code, executing]);
+
   return (
     <>
-      <div className="my-2 rounded overflow-hidden border border-[#1e2d42]">
-        <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-[#1e2d42]">
-          <span className="text-xs text-[#7a9bb8] font-mono">{language || 'plaintext'}</span>
+      <div className="my-2 rounded overflow-hidden border border-border-default">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-background-code border-b border-border-default">
+          <span className="text-xs text-foreground-muted font-mono">{language || 'plaintext'}</span>
           <div className="flex items-center gap-3">
+            {/* SQL 执行按钮 */}
+            {canExecute && (
+              <Tooltip content={t('assistant.executeSql', { defaultValue: '执行 SQL' })} className="contents">
+                <button
+                  onClick={handleExecute}
+                  disabled={executing}
+                  className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover disabled:opacity-50 transition-colors"
+                >
+                  {executing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                </button>
+              </Tooltip>
+            )}
             <Tooltip content={t('commonComponents.markdownContent.expandView')} className="contents">
               <button
                 onClick={() => setExpanded(true)}
-                className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+                className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
               >
                 <Maximize2 size={12} />
               </button>
             </Tooltip>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#c8daea] transition-colors"
+              className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground-default transition-colors"
             >
               {copied ? (
-                <><Check size={12} className="text-[#00c9a7]" /><span className="text-[#00c9a7]">{t('commonComponents.markdownContent.copied')}</span></>
+                <><Check size={12} className="text-accent" /><span className="text-accent">{t('commonComponents.markdownContent.copied')}</span></>
               ) : (
                 <><Copy size={12} /><span>{t('commonComponents.markdownContent.copy')}</span></>
               )}
@@ -146,12 +202,14 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
           language={language || 'plaintext'}
           useInlineStyles={true}
           PreTag="div"
-          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: '#0d1117', padding: '12px', overflowX: 'auto' }}
+          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: 'var(--background-base)', padding: '12px', overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}
           codeTagProps={{ style: { background: 'transparent' } }}
         >
           {code}
         </SyntaxHighlighter>
       </div>
+      {/* 内联执行结果 */}
+      {queryResult && <InlineResultCard result={queryResult} sql={code} />}
       {expanded && (
         <CodeExpandModal
           language={language}
@@ -167,8 +225,32 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
 function makeMdComponents(isStreaming: boolean) {
   return {
   code({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { className?: string }) {
-    const match = /language-(\w+)/.exec(className ?? '');
-    const language = match ? match[1] : '';
+    const match = /language-([\w:]+)/.exec(className ?? '');
+    const rawLang = match ? match[1] : '';
+    // 检测 sql:original / sql:optimized 标记
+    if (rawLang === 'sql:original' || rawLang === 'sql:optimized') {
+      const code = String(children).replace(/\n$/, '');
+      const key = 'current'; // 同一消息内的配对
+      const entry = sqlDiffStore.get(key) ?? {};
+      if (rawLang === 'sql:original') {
+        entry.original = code;
+        sqlDiffStore.set(key, entry);
+        // 等待 optimized 到来，暂时不渲染
+        return null;
+      } else {
+        entry.optimized = code;
+        sqlDiffStore.set(key, entry);
+        if (entry.original && entry.optimized) {
+          const orig = entry.original;
+          const opt = entry.optimized;
+          sqlDiffStore.delete(key);
+          return <SqlDiffView originalSql={orig} optimizedSql={opt} />;
+        }
+        // 没有 original 配对，当普通 SQL 渲染
+        return <CodeBlock language="sql" code={code} />;
+      }
+    }
+    const language = rawLang.split(':')[0]; // 取冒号前的部分
     if (match) {
       if (language === 'chart') {
         return <ChartBlock code={String(children).replace(/\n$/, '')} isStreaming={isStreaming} />;
@@ -176,7 +258,7 @@ function makeMdComponents(isStreaming: boolean) {
       return <CodeBlock language={language} code={String(children).replace(/\n$/, '')} />;
     }
     return (
-      <code className="bg-[#111922] text-[#569cd6] px-1 py-0.5 rounded text-xs font-mono" {...props}>
+      <code className="bg-background-panel text-node-table px-1 py-0.5 rounded text-xs font-mono" {...props}>
         {children}
       </code>
     );
@@ -191,22 +273,22 @@ function makeMdComponents(isStreaming: boolean) {
     return <ol className="list-decimal space-y-1 mb-2 pl-5">{children}</ol>;
   },
   li({ children }: React.ComponentPropsWithoutRef<'li'>) {
-    return <li className="text-[#c8daea] [&>p]:inline">{children}</li>;
+    return <li className="text-foreground-default [&>p]:inline">{children}</li>;
   },
   h1({ children }: React.ComponentPropsWithoutRef<'h1'>) {
-    return <h1 className="text-base font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h1>;
+    return <h1 className="text-base font-semibold text-foreground mb-2 mt-3 first:mt-0">{children}</h1>;
   },
   h2({ children }: React.ComponentPropsWithoutRef<'h2'>) {
-    return <h2 className="text-sm font-semibold text-[#e8f4fd] mb-2 mt-3 first:mt-0">{children}</h2>;
+    return <h2 className="text-sm font-semibold text-foreground mb-2 mt-3 first:mt-0">{children}</h2>;
   },
   h3({ children }: React.ComponentPropsWithoutRef<'h3'>) {
-    return <h3 className="text-sm font-medium text-[#e8f4fd] mb-1 mt-2 first:mt-0">{children}</h3>;
+    return <h3 className="text-sm font-medium text-foreground mb-1 mt-2 first:mt-0">{children}</h3>;
   },
   strong({ children }: React.ComponentPropsWithoutRef<'strong'>) {
-    return <strong className="font-semibold text-[#e8f4fd]">{children}</strong>;
+    return <strong className="font-semibold text-foreground">{children}</strong>;
   },
   blockquote({ children }: React.ComponentPropsWithoutRef<'blockquote'>) {
-    return <blockquote className="border-l-2 border-[#2a3f5a] pl-3 text-[#7a9bb8] italic my-2">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-border-strong pl-3 text-foreground-muted italic my-2">{children}</blockquote>;
   },
   table({ children }: React.ComponentPropsWithoutRef<'table'>) {
     return (
@@ -216,10 +298,10 @@ function makeMdComponents(isStreaming: boolean) {
     );
   },
   th({ children }: React.ComponentPropsWithoutRef<'th'>) {
-    return <th className="border border-[#1e2d42] bg-[#111922] px-2 py-1 text-left font-medium text-[#c8daea]">{children}</th>;
+    return <th className="border border-border-default bg-background-panel px-2 py-1 text-left font-medium text-foreground-default">{children}</th>;
   },
   td({ children }: React.ComponentPropsWithoutRef<'td'>) {
-    return <td className="border border-[#1e2d42] px-2 py-1 text-[#c8daea]">{children}</td>;
+    return <td className="border border-border-default px-2 py-1 text-foreground-default">{children}</td>;
   },
   };
 }
@@ -239,10 +321,24 @@ function ensureListBlankLine(content: string): string {
 
 export const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = memo(({ content, isStreaming = false }) => {
   const components = isStreaming ? streamingMdComponents : staticMdComponents;
-  const processed = ensureListBlankLine(ensureCodeFenceOnNewLine(content));
-  return (
+  const processed = useMemo(() => ensureListBlankLine(ensureCodeFenceOnNewLine(content)), [content]);
+
+  // 非流式消息：走 LRU 缓存避免重复渲染
+  if (!isStreaming) {
+    const cached = markdownCache.get(processed);
+    if (cached) return <>{cached}</>;
+  }
+
+  const rendered = (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {processed}
     </ReactMarkdown>
   );
+
+  // 非流式渲染完成后缓存
+  if (!isStreaming) {
+    markdownCache.set(processed, rendered);
+  }
+
+  return rendered;
 });

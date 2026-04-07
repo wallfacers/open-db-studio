@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
@@ -14,16 +15,20 @@ import {
   type Edge,
   type EdgeChange,
   type ReactFlowInstance,
+  type Viewport,
   ReactFlowProvider,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
+import { useToastStore } from '../../../store/toastStore'
+import { createDefaultColumn } from '../shared/defaultColumn'
 import ERTableNode from './ERTableNode'
 import ERTableContextMenu from './ERTableContextMenu'
 import EREdge from './EREdge'
 import ERToolbar from './ERToolbar'
 import ERPropertyDrawer from '../ERPropertyDrawer'
 import { DDLPreviewDialog } from '../dialogs/DDLPreviewDialog'
+import { ProjectSettingsDialog } from '../dialogs/ProjectSettingsDialog'
 import { DiffReportDialog } from '../dialogs/DiffReportDialog'
 import { BindConnectionDialog } from '../dialogs/BindConnectionDialog'
 import { ImportTableDialog } from '../dialogs/ImportTableDialog'
@@ -31,8 +36,34 @@ import { useERKeyboard } from '../hooks/useERKeyboard'
 import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
 import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import { layoutNodesWithDagre } from '../utils/dagreLayout'
-import type { ErTable, ErColumn } from '../../../types'
+import type { ErTable, ErColumn, ErRelation, SyncExecutionResult } from '../../../types'
 import { erTableNodeId, erEdgeNodeId, parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId'
+import { useQueryStore } from '../../../store/queryStore'
+
+const buildEdgeData = (rel: ErRelation, highlightScopeId?: string) => ({
+  relation_type: rel.relation_type,
+  source_type: rel.source,
+  constraint_method: rel.constraint_method,
+  comment_format: rel.comment_format,
+  highlightScopeId,
+})
+
+// 当同一列对既有真实 FK 关系又有注释关系时，过滤掉注释关系
+function deduplicateRelations(relations: ErRelation[]): ErRelation[] {
+  const fkPairs = new Set<string>()
+  for (const r of relations) {
+    if (r.source === 'schema') {
+      fkPairs.add(`${r.source_column_id}:${r.target_column_id}`)
+    }
+  }
+  if (fkPairs.size === 0) return relations
+  return relations.filter(r => {
+    if (r.source === 'comment') {
+      return !fkPairs.has(`${r.source_column_id}:${r.target_column_id}`)
+    }
+    return true
+  })
+}
 
 const nodeTypes = {
   erTable: ERTableNode,
@@ -45,6 +76,7 @@ const edgeTypes = {
 interface NodeData {
   table: ErTable
   columns: ErColumn[]
+  highlightScopeId: string | undefined
   onUpdateTable: (updates: Partial<ErTable>) => void
   onAddColumn: () => void
   onUpdateColumn: (colId: number, updates: Partial<ErColumn>) => void
@@ -63,11 +95,17 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const rfInstance = useRef<ReactFlowInstance<Node<NodeData>, Edge> | null>(null)
 
+  const savedViewport = useErDesignerStore(s => s.viewports[projectId] ?? null)
+  const storeSetViewport = useErDesignerStore(s => s.setViewport)
+
   const [showDDL, setShowDDL] = useState(false)
   const [showDiff, setShowDiff] = useState(false)
+  const [syncStatements, setSyncStatements] = useState<string[] | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tableId: number } | null>(null)
+  const isActiveTab = useQueryStore(s => s.activeTabId === tabId)
 
   // Register UIObject for MCP ui_list discovery
   const projectName = useErDesignerStore(s => s.projects.find(p => p.id === projectId)?.name)
@@ -76,6 +114,9 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     return new ERCanvasAdapter(tabId, projectName ?? `ER Project #${projectId}`, projectId)
   }, [tabId, projectId, projectName])
   useUIObjectRegistry(erUIObject)
+
+  const showToast = useToastStore(s => s.show)
+  const showError = useToastStore(s => s.showError)
 
   // Select only the actions and state values needed (stable references for actions)
   const loadProject = useErDesignerStore(s => s.loadProject)
@@ -86,11 +127,15 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const deleteTable = useErDesignerStore(s => s.deleteTable)
   const addRelation = useErDesignerStore(s => s.addRelation)
   const syncFromDatabase = useErDesignerStore(s => s.syncFromDatabase)
+  const generateSyncDdl = useErDesignerStore(s => s.generateSyncDdl)
 
   // State values for rendering
   const projects = useErDesignerStore(s => s.projects)
-  const tables = useErDesignerStore(s => s.tables)
-  const relations = useErDesignerStore(s => s.relations)
+  const projectTables = useErDesignerStore(useShallow(s => s.tables.filter(t => t.project_id === projectId)))
+  const projectRelations = useErDesignerStore(useShallow(s => {
+    const tableIds = new Set(s.tables.filter(t => t.project_id === projectId).map(t => t.id))
+    return s.relations.filter(r => tableIds.has(r.source_table_id) && tableIds.has(r.target_table_id))
+  }))
   const columns = useErDesignerStore(s => s.columns)
 
   const activeProject = projects.find(p => p.id === projectId) ?? null
@@ -100,17 +145,9 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const buildNodeData = useCallback((table: ErTable, cols: ErColumn[]): NodeData => ({
     table,
     columns: cols,
+    highlightScopeId: tabId,
     onUpdateTable: (updates: Partial<ErTable>) => updateTable(table.id, updates),
-    onAddColumn: () => addColumn(table.id, {
-      name: `column_${(cols.length || 0) + 1}`,
-      data_type: 'VARCHAR',
-      nullable: true,
-      default_value: null,
-      is_primary_key: false,
-      is_auto_increment: false,
-      comment: null,
-      sort_order: cols.length || 0,
-    }),
+    onAddColumn: () => addColumn(table.id, createDefaultColumn(cols.length || 0)),
     onUpdateColumn: (colId: number, updates: Partial<ErColumn>) =>
       updateColumn(colId, updates),
     onDeleteColumn: (colId: number) => {
@@ -128,26 +165,43 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         e.source !== erTableNodeId(table.id) && e.target !== erTableNodeId(table.id)
       ))
     },
-  }), [updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
+  }), [tabId, updateTable, addColumn, updateColumn, deleteColumn, deleteTable, setNodes, setEdges])
 
-  const reloadCanvas = useCallback(() => {
+  const onMoveEnd = useCallback((_: unknown, viewport: Viewport) => {
+    storeSetViewport(projectId, viewport)
+  }, [projectId, storeSetViewport])
+
+  const reloadCanvas = useCallback((applyAutoLayout = false) => {
     loadProject(projectId).then(() => {
       const state = useErDesignerStore.getState()
-      const newNodes: Node<NodeData>[] = state.tables.map((table) => ({
+      const reloadTables = state.tables.filter(t => t.project_id === projectId)
+      const tableIdSet = new Set(reloadTables.map(t => t.id))
+      let newNodes: Node<NodeData>[] = reloadTables.map((table) => ({
         id: erTableNodeId(table.id),
         type: 'erTable',
         position: { x: table.position_x, y: table.position_y },
         data: buildNodeData(table, state.columns[table.id] || []),
       }))
-      const newEdges = state.relations.map((rel) => ({
+      const newEdges = deduplicateRelations(
+        state.relations.filter(r => tableIdSet.has(r.source_table_id) && tableIdSet.has(r.target_table_id))
+      ).map((rel) => ({
         id: erEdgeNodeId(rel.id),
         source: erTableNodeId(rel.source_table_id),
         sourceHandle: `${rel.source_column_id}-source`,
         target: erTableNodeId(rel.target_table_id),
         targetHandle: `${rel.target_column_id}-target`,
         type: 'erEdge',
-        data: { relation_type: rel.relation_type, source_type: rel.source },
+        data: buildEdgeData(rel, tabId),
       }))
+      if (applyAutoLayout && newNodes.length > 0) {
+        const layouted = layoutNodesWithDagre(newNodes, newEdges) as Node<NodeData>[]
+        const positions = layouted.map(node => {
+          const tableId = parseErTableNodeId(node.id)
+          return tableId ? { id: tableId, x: node.position.x, y: node.position.y } : null
+        }).filter((p): p is NonNullable<typeof p> => p !== null)
+        useErDesignerStore.getState().updateTablePositions(positions)
+        newNodes = layouted
+      }
       setNodes(newNodes)
       setEdges(newEdges)
     })
@@ -159,35 +213,25 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
 
   // Sync store changes to ReactFlow nodes/edges (for sidebar operations)
   useEffect(() => {
-    // Only sync when we have loaded data (activeProjectId matches)
-    const state = useErDesignerStore.getState()
-    if (state.activeProjectId !== projectId) return
+    const tableIdSet = new Set(projectTables.map(t => t.id))
 
-    // Update nodes based on current tables (sync table name, columns, etc.)
     setNodes(nds => {
-      const currentTableIds = new Set(tables.map(t => t.id))
-      // Update existing nodes and remove deleted ones
+      const currentTableIds = new Set(projectTables.map(t => t.id))
       const updated = nds
         .filter(n => currentTableIds.has(parseErTableNodeId(n.id)!))
         .map(n => {
           const tableId = parseErTableNodeId(n.id)!
-          const table = tables.find(t => t.id === tableId)
+          const table = projectTables.find(t => t.id === tableId)
           if (!table) return n
           const cols = columns[tableId] || []
-          // Update node data with latest table and columns
           return {
             ...n,
             position: { x: table.position_x, y: table.position_y },
-            data: {
-              ...n.data,
-              table,
-              columns: cols,
-            },
+            data: { ...n.data, table, columns: cols },
           }
         })
-      // Add new nodes for tables not yet on canvas
       const existingIds = new Set(updated.map(n => n.id))
-      const newNodes = tables
+      const newNodes = projectTables
         .filter(t => !existingIds.has(erTableNodeId(t.id)))
         .map(table => ({
           id: erTableNodeId(table.id),
@@ -198,19 +242,18 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       return [...updated, ...newNodes]
     })
 
-    // Update edges based on current relations
     setEdges(eds => {
-      const currentRelIds = new Set(relations.map(r => r.id))
-      const currentTableIds = new Set(tables.map(t => t.id))
-      // Remove edges for deleted relations or deleted tables
-      const filtered = eds.filter(e =>
-        currentRelIds.has(parseInt(e.id)) &&
-        currentTableIds.has(parseErTableNodeId(e.source)!) &&
-        currentTableIds.has(parseErTableNodeId(e.target)!)
-      )
-      // Add edges for new relations
+      const dedupedRelations = deduplicateRelations(projectRelations)
+      const currentRelIds = new Set(dedupedRelations.map(r => r.id))
+      const filtered = eds.filter(e => {
+        const relId = parseErEdgeNodeId(e.id)
+        return relId != null &&
+          currentRelIds.has(relId) &&
+          tableIdSet.has(parseErTableNodeId(e.source)!) &&
+          tableIdSet.has(parseErTableNodeId(e.target)!)
+      })
       const existingIds = new Set(filtered.map(e => e.id))
-      const newEdges = relations
+      const newEdges = dedupedRelations
         .filter(r => !existingIds.has(erEdgeNodeId(r.id)))
         .map(rel => ({
           id: erEdgeNodeId(rel.id),
@@ -219,11 +262,11 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           target: erTableNodeId(rel.target_table_id),
           targetHandle: `${rel.target_column_id}-target`,
           type: 'erEdge',
-          data: { relation_type: rel.relation_type, source_type: rel.source },
+          data: buildEdgeData(rel, tabId),
         }))
       return [...filtered, ...newEdges]
     })
-  }, [projectId, tables, relations, columns, buildNodeData, setNodes, setEdges])
+  }, [projectTables, projectRelations, columns, buildNodeData, setNodes, setEdges])
 
   // Refs for nodes/edges so MCP event listeners don't re-subscribe on every render
   const nodesRef = useRef(nodes)
@@ -343,13 +386,13 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     setEdges((eds) => addEdge({
       ...connection,
       type: 'erEdge',
-      data: { relation_type: 'one_to_many', source_type: 'designer' }
+      data: { relation_type: 'one_to_many', source_type: 'designer', constraint_method: null, comment_format: null, highlightScopeId: tabId }
     }, eds))
     const sourceColumnId = parseInt(connection.sourceHandle!.replace('-source', ''))
     const targetColumnId = parseInt(connection.targetHandle!.replace('-target', ''))
     const sourceTableId = parseErTableNodeId(connection.source!)!
     const targetTableId = parseErTableNodeId(connection.target!)!
-    addRelation({
+    addRelation(projectId, {
       source_table_id: sourceTableId,
       source_column_id: sourceColumnId,
       target_table_id: targetTableId,
@@ -357,7 +400,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       relation_type: 'one_to_many',
       source: 'designer'
     })
-  }, [setEdges, addRelation])
+  }, [setEdges, addRelation, projectId])
 
   const handleTableAdded = useCallback((table: ErTable) => {
     setNodes(nds => [...nds, {
@@ -385,14 +428,19 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     }
   }, [nodes, edges, setNodes])
 
+  const selectedNodes = useMemo(() => nodes.filter(n => n.selected), [nodes])
+  const selectedEdges = useMemo(() => edges.filter(e => e.selected), [edges])
+
   // Custom keyboard shortcuts
   useERKeyboard({
+    projectId,
     nodes,
     edges,
-    selectedNodes: [],
-    selectedEdges: [],
+    selectedNodes,
+    selectedEdges,
     onAutoLayout: handleAutoLayout,
     onExportDDL: () => setShowDDL(true),
+    enabled: isActiveTab,
   })
 
   // Listen for sidebar context menu requesting bind dialog
@@ -434,8 +482,8 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     : null
 
   return (
-    <div className="flex-1 flex min-h-0">
-    <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117]">
+    <div className="flex-1 flex min-h-0 relative">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-background-base">
       <ERToolbar
         projectId={projectId}
         onOpenDDL={() => setShowDDL(true)}
@@ -446,15 +494,21 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         setNodes={setNodes as (nodes: Node[]) => void}
         nodes={nodes}
         edges={edges}
-        tables={tables}
+        tables={projectTables}
         onAutoLayout={handleAutoLayout}
         hasConnection={hasConnection}
+        databaseName={activeProject?.database_name}
+        onOpenSettings={() => setShowSettings(true)}
       />
-      <div className="flex-1 overflow-hidden relative graph-canvas-container">
+      <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ visibility: isActiveTab ? 'visible' : 'hidden', pointerEvents: isActiveTab ? 'auto' : 'none' }}>
         <ReactFlow
           className="graph-canvas-container"
           nodes={nodes}
           edges={edges}
+          panActivationKeyCode={isActiveTab ? 'Space' : null}
+          selectionKeyCode={isActiveTab ? 'Shift' : null}
+          multiSelectionKeyCode={isActiveTab ? 'Meta' : null}
+          zoomActivationKeyCode={isActiveTab ? 'Meta' : null}
           onNodesChange={onNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
@@ -463,16 +517,23 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           onNodesDelete={onNodesDelete}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
-          onInit={(i) => { rfInstance.current = i }}
+          onInit={(i) => {
+            rfInstance.current = i
+            if (savedViewport) {
+              i.setViewport(savedViewport)
+            }
+          }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           deleteKeyCode={['Backspace', 'Delete']}
-          fitView
-          fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+          // fitView and onInit.setViewport are mutually exclusive: when savedViewport exists, fitView is suppressed and onInit restores the exact position
+          fitView={savedViewport === null}
+          fitViewOptions={savedViewport === null ? { maxZoom: 1, padding: 0.2 } : undefined}
+          onMoveEnd={onMoveEnd}
           minZoom={0.1}
           maxZoom={2}
         >
-          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="#1e2d42" bgColor="#0d1117" gap={20} size={1} />
+          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="var(--border-default)" bgColor="var(--background-base)" gap={20} size={1} />
           <Controls />
         </ReactFlow>
       </div>
@@ -490,18 +551,45 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         visible={showDDL}
         projectId={projectId}
         hasConnection={hasConnection}
-        onClose={() => setShowDDL(false)}
+        preloadedDdl={syncStatements ? syncStatements.join('\n\n') : undefined}
+        onClose={() => { setShowDDL(false); setSyncStatements(null) }}
         onExecute={async (ddl) => {
-          if (!activeProject?.connection_id) return
-          try {
-            await invoke('execute_query', {
-              connectionId: activeProject.connection_id,
-              sql: ddl,
-              database: activeProject.database_name ?? null,
-              schema: activeProject.schema_name ?? null,
-            })
-          } catch (e) {
-            console.error('Failed to execute DDL:', e)
+          if (syncStatements) {
+            // Sync mode: execute via er_execute_sync_ddl for per-statement results
+            try {
+              const results = await invoke<SyncExecutionResult[]>('er_execute_sync_ddl', {
+                projectId,
+                ddlStatements: syncStatements,
+              })
+              const failed = results.filter(r => !r.success)
+              if (failed.length > 0) {
+                const errors = failed.map(r => `• ${r.statement}\n  ${r.error ?? 'Unknown error'}`).join('\n')
+                console.error('Sync DDL partial failure:', errors)
+                showError(`${failed.length} 条语句执行失败，请查看控制台详情`)
+              } else {
+                showToast('执行成功', 'success')
+              }
+            } catch (e) {
+              console.error('Failed to execute sync DDL:', e)
+              showError(`DDL 执行失败: ${e}`)
+            } finally {
+              setSyncStatements(null)
+            }
+          } else {
+            // Normal generate-DDL mode: execute as single query
+            if (!activeProject?.connection_id) return
+            try {
+              await invoke('execute_query', {
+                connectionId: activeProject.connection_id,
+                sql: ddl,
+                database: activeProject.database_name ?? null,
+                schema: activeProject.schema_name ?? null,
+              })
+              showToast('执行成功', 'success')
+            } catch (e) {
+              console.error('Failed to execute DDL:', e)
+              showError(`DDL 执行失败: ${e}`)
+            }
           }
         }}
       />
@@ -510,11 +598,39 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         projectId={projectId}
         connectionInfo={connectionInfo}
         onClose={() => setShowDiff(false)}
-        onSyncToDb={(_changes) => {
-          // Phase 3: requires backend er_sync_to_database command
-          console.warn('Sync to database is not yet implemented')
+        onSyncToDb={async (filteredDiff) => {
+          try {
+            const statements = await generateSyncDdl(projectId, filteredDiff)
+            setSyncStatements(statements)
+            setShowDiff(false)
+            setShowDDL(true)
+          } catch (e) {
+            console.error('Failed to generate sync DDL:', e)
+            showError(`生成同步 DDL 失败: ${e}`)
+          }
         }}
-        onSyncFromDb={(_changes) => { syncFromDatabase(projectId).then(reloadCanvas) }}
+        onSyncFromDb={async (changes) => {
+          // 只同步用户勾选的表，避免全量覆盖
+          const tableNames = [...new Set(changes.map(c => c.table))]
+          try {
+            await syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined);
+            reloadCanvas(true);
+            showToast('从数据库同步成功', 'success');
+          } catch (e) {
+            console.error('Sync from database failed:', e);
+            showError(`同步失败: ${e}`);
+          }
+        }}
+        onFullSync={async () => {
+          try {
+            await syncFromDatabase(projectId, undefined);
+            reloadCanvas(true);
+            showToast('全量从数据库刷新成功', 'success');
+          } catch (e) {
+            console.error('Full sync from database failed:', e);
+            showError(`全量刷新失败: ${e}`);
+          }
+        }}
       />
       <BindConnectionDialog
         visible={showBind}
@@ -528,10 +644,15 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         connectionId={activeProject?.connection_id ?? null}
         databaseName={activeProject?.database_name ?? null}
         onClose={() => setShowImport(false)}
-        onImported={() => { setShowImport(false); reloadCanvas() }}
+        onImported={() => { setShowImport(false); reloadCanvas(true) }}
+      />
+      <ProjectSettingsDialog
+        visible={showSettings}
+        projectId={projectId}
+        onClose={() => setShowSettings(false)}
       />
     </div>
-    <ERPropertyDrawer />
+    <ERPropertyDrawer projectId={projectId} />
     </div>
   )
 }

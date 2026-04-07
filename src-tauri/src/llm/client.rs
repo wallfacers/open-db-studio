@@ -161,10 +161,21 @@ impl LlmClient {
             ApiType::Anthropic => "https://api.anthropic.com",
             ApiType::Openai => "https://api.openai.com/v1",
         };
+        let raw_base = base_url.filter(|b| !b.is_empty()).unwrap_or_else(|| default_base.to_string());
+        // 规范化 base_url：去掉末尾斜杠，Anthropic 类型去掉末尾 /v1 防止拼出 /v1/v1/messages
+        let base_url = {
+            let trimmed = raw_base.trim_end_matches('/');
+            match resolved_type {
+                ApiType::Anthropic if trimmed.ends_with("/v1") => {
+                    trimmed[..trimmed.len() - 3].to_string()
+                }
+                _ => raw_base,
+            }
+        };
         Self {
             client: SHARED_CLIENT.clone(),
             api_key,
-            base_url: base_url.filter(|b| !b.is_empty()).unwrap_or_else(|| default_base.to_string()),
+            base_url,
             model: model.unwrap_or_else(|| "gpt-4o-mini".to_string()),
             api_type: resolved_type,
         }
@@ -716,9 +727,18 @@ impl LlmClient {
             },
         }).collect();
 
+        // 将 system 消息提取并强制置顶，防止历史截断时丢失系统提示词
+        let mut system_msgs: Vec<AgentMessage> = Vec::new();
+        let mut other_msgs: Vec<AgentMessage> = Vec::new();
+        for msg in messages {
+            if msg.role == "system" { system_msgs.push(msg); }
+            else { other_msgs.push(msg); }
+        }
+        let ordered_messages: Vec<AgentMessage> = system_msgs.into_iter().chain(other_msgs).collect();
+
         let req = StreamReq {
             model: self.model.clone(),
-            messages: &messages,
+            messages: &ordered_messages,
             tools: openai_tools,
             stream: true,
         };

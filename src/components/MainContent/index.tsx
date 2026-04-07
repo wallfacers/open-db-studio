@@ -21,32 +21,33 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
       { token: 'delimiter',  foreground: '7a9bb8' },
     ],
     colors: {
-      'editor.background':                 '#111922',
-      'editorGutter.background':           '#0d1117',
-      'editorLineNumber.foreground':       '#2a3f5a',
-      'editorLineNumber.activeForeground': '#00c9a7',
-      'editor.lineHighlightBackground':    '#0e1e2e',
+      // Monaco theme colors — hardcoded for editor theming (not using CSS variables)
+      'editor.background':                 '#1E293B',  // --background-panel
+      'editorGutter.background':           '#0F172A',  // --background-deep
+      'editorLineNumber.foreground':       '#475569',  // --foreground-ghost
+      'editorLineNumber.activeForeground': '#10B981',  // --accent
+      'editor.lineHighlightBackground':    '#25236340', // --background-active (with alpha)
       'editor.lineHighlightBorder':        '#00000000',
-      'editor.selectionBackground':        '#003d2f80',
-      'editor.inactiveSelectionBackground':'#003d2f40',
-      'editorCursor.foreground':           '#00c9a7',
-      'editorIndentGuide.background1':     '#1e2d42',
-      'editorIndentGuide.activeBackground1':'#2a3f5a',
-      'editorWidget.background':           '#151d28',
-      'editorWidget.border':               '#1e2d42',
-      'editorSuggestWidget.background':    '#151d28',
-      'editorSuggestWidget.border':        '#1e2d42',
-      'editorSuggestWidget.selectedBackground': '#003d2f',
-      'list.hoverBackground':              '#1a2639',
-      'list.activeSelectionBackground':    '#003d2f',
-      'scrollbarSlider.background':        '#1e2d4260',
-      'scrollbarSlider.hoverBackground':   '#2a3f5a80',
-      'menu.background':                   '#151d28',
-      'menu.foreground':                   '#c8daea',
-      'menu.selectionBackground':          '#1a2639',
-      'menu.selectionForeground':          '#ffffff',
-      'menu.separatorBackground':          '#2a3f5a',
-      'menu.border':                       '#2a3f5a',
+      'editor.selectionBackground':        '#064E3B80', // --accent-subtle (with alpha)
+      'editor.inactiveSelectionBackground':'#064E3B40', // --accent-subtle (with alpha)
+      'editorCursor.foreground':           '#10B981',  // --accent
+      'editorIndentGuide.background1':     '#334155',  // --border-strong
+      'editorIndentGuide.activeBackground1':'#475569', // --border-strong active
+      'editorWidget.background':           '#27354F',  // --background-elevated
+      'editorWidget.border':               '#334155',  // --border-strong
+      'editorSuggestWidget.background':    '#27354F',  // --background-elevated
+      'editorSuggestWidget.border':        '#334155',  // --border-strong
+      'editorSuggestWidget.selectedBackground': '#064E3B', // --accent-subtle
+      'list.hoverBackground':              '#334155',  // --background-hover
+      'list.activeSelectionBackground':    '#064E3B',  // --accent-subtle
+      'scrollbarSlider.background':        '#33415560', // --border-strong (with alpha)
+      'scrollbarSlider.hoverBackground':   '#47556980', // --foreground-ghost (with alpha)
+      'menu.background':                   '#27354F',  // --background-elevated
+      'menu.foreground':                   '#E2E8F0',  // --foreground-default
+      'menu.selectionBackground':          '#334155',  // --background-hover
+      'menu.selectionForeground':          '#ffffff',  // --foreground
+      'menu.separatorBackground':          '#475569',  // --border-strong
+      'menu.border':                       '#475569',  // --border-strong
     },
   });
 };
@@ -79,6 +80,13 @@ import { QueryEditorAdapter } from '../../mcp/ui/adapters/QueryEditorAdapter';
 import { useMonacoHighlight } from '../../hooks/useMonacoHighlight';
 import { useFieldHighlight } from '../../hooks/useFieldHighlight';
 import { useHighlightStore } from '../../store/highlightStore';
+
+/** Lightweight component that registers a QueryEditorAdapter for a single query tab. */
+function QueryTabRegistrar({ tabId, connectionId, title }: { tabId: string; connectionId?: number; title: string }) {
+  const uiObject = useMemo(() => new QueryEditorAdapter(tabId, connectionId, title), [tabId, connectionId, title]);
+  useUIObjectRegistry(uiObject);
+  return null; // no DOM
+}
 
 const SQL_KEYWORDS = new Set([
   'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'ON',
@@ -191,14 +199,14 @@ const ResultCellContextMenu = React.forwardRef<HTMLDivElement, ResultCellContext
       if (nx !== x || ny !== y) setPos({ x: nx, y: ny });
     }, [x, y]);
 
-    const item = 'px-4 py-1.5 hover:bg-[#1a2639] cursor-pointer text-[#c8daea] flex items-center justify-between text-xs';
-    const divider = 'border-t border-[#1e2d42] my-1';
+    const item = 'px-4 py-1.5 hover:bg-background-hover cursor-pointer text-foreground-default flex items-center justify-between text-xs transition-colors duration-150';
+    const divider = 'border-t border-border-default my-1';
 
     return (
       <div
         ref={ref}
         style={{ position: 'fixed', top: pos.y, left: pos.x, zIndex: 9999 }}
-        className="bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[160px] py-1"
+        className="bg-background-base border border-border-default rounded shadow-xl text-xs min-w-[160px] py-1"
         onContextMenu={e => e.preventDefault()}
       >
         {colIdx >= 0 && (
@@ -223,9 +231,9 @@ const ResultCellContextMenu = React.forwardRef<HTMLDivElement, ResultCellContext
           }}
         >
           <span>{t('tableDataView.copyAsSql')}</span>
-          <ChevronDown size={12} className={`text-[#7a9bb8] transition-transform ${sqlOpen ? '' : '-rotate-90'}`} />
+          <ChevronDown size={12} className={`text-foreground-muted transition-transform ${sqlOpen ? '' : '-rotate-90'}`} />
           {sqlOpen && (
-            <div className={`absolute ${sqlToLeft ? 'right-full' : 'left-full'} ${sqlToTop ? 'bottom-0' : 'top-0'} bg-[#0d1117] border border-[#1e2d42] rounded shadow-xl text-xs min-w-[140px] py-1`}>
+            <div className={`absolute ${sqlToLeft ? 'right-full' : 'left-full'} ${sqlToTop ? 'bottom-0' : 'top-0'} bg-background-base border border-border-default rounded shadow-xl text-xs min-w-[140px] py-1`}>
               <div className={item} onClick={onCopyInsert}>{t('tableDataView.copyAsInsertSql')}</div>
               <div className={item} onClick={onCopyUpdate}>{t('tableDataView.copyAsUpdateSql')}</div>
               <div className={item} onClick={onCopyDelete}>{t('tableDataView.copyAsDeleteSql')}</div>
@@ -252,8 +260,8 @@ const ExplanationTypingIndicator: React.FC = () => {
   }, []);
   return (
     <div className="flex items-center gap-2 p-4">
-      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-[#00c9a7] flex-shrink-0" />
-      <span className="text-xs text-[#5b8ab0] animate-pulse">{messages[msgIdx]}</span>
+      <span className="ai-dot w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+      <span className="text-xs text-foreground-muted animate-pulse">{messages[msgIdx]}</span>
     </div>
   );
 };
@@ -634,12 +642,10 @@ export const MainContent: React.FC<MainContentProps> = ({
   const currentSql = sqlContent[activeTab] ?? '';
   const currentResults = results[activeTab] ?? [];
 
-  // Register UIObject for active query tab
-  const queryUIObject = useMemo(() => {
-    if (!activeTabObj || activeTabObj.type !== 'query') return null
-    return new QueryEditorAdapter(activeTabObj.id, activeTabObj.connectionId, activeTabObj.title)
-  }, [activeTabObj?.id, activeTabObj?.type, activeTabObj?.connectionId, activeTabObj?.title])
-  useUIObjectRegistry(queryUIObject)
+  // Register UIObjects for ALL open query tabs (not just active).
+  // Query editors are too heavy to keep all mounted, but their UIObject adapters
+  // are lightweight — registering them all ensures ui_list can discover every open tab.
+  const queryTabs = useMemo(() => tabs.filter(t => t.type === 'query'), [tabs]);
 
   const connHighlight = useFieldHighlight(activeTab, 'connectionId');
   const dbHighlight = useFieldHighlight(activeTab, 'database');
@@ -901,32 +907,32 @@ export const MainContent: React.FC<MainContentProps> = ({
   }, [tabs, connections]);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#111922]">
+    <div className="flex-1 flex flex-col min-w-0 bg-background-panel">
       {/* Tabs */}
-      <div className="flex-shrink-0 h-10 flex items-start bg-[#0d1117] border-b border-[#1e2d42] overflow-x-auto no-scrollbar">
+      <div className="flex-shrink-0 h-10 flex items-start bg-background-base border-b border-border-default overflow-x-auto no-scrollbar">
         {tabs.map(tab => (
           <div
             key={tab.id}
-            className={`flex items-center px-4 h-[38px] border-r border-[#1e2d42] cursor-pointer min-w-[120px] max-w-[200px] group ${activeTab === tab.id ? 'bg-[#111922] text-[#00c9a7] border-t-2 border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-2 border-t-transparent hover:bg-[#151d28]'}`}
+            className={`flex items-center px-4 h-[38px] border-r border-border-default cursor-pointer min-w-[120px] max-w-[200px] group transition-colors duration-200 ${activeTab === tab.id ? 'bg-background-panel text-accent border-t-2 border-t-accent' : 'bg-background-hover text-foreground-muted border-t-2 border-t-transparent hover:bg-background-elevated'}`}
             onClick={() => setActiveTab(tab.id)}
             onContextMenu={(e) => handleTabContextMenu(e, tab.id)}
           >
             {tab.type === 'query' ? (
-              <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <FileCode2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'er_design' ? (
-              <Grid3x3 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Grid3x3 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'table_structure' ? (
-              <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Settings size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'metric' ? (
-              <BarChart2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <BarChart2 size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'metric_list' ? (
-              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'table' ? (
-              <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'seatunnel_job' ? (
-              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : (
-              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-[#00c9a7]' : 'text-[#7a9bb8]'}`} />
+              <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             )}
             <Tooltip
               content={tabDisplayTitles.get(tab.id) ?? tab.title}
@@ -938,7 +944,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             </Tooltip>
             <Tooltip content={t('mainContent.closeTab')}>
               <div
-                className="ml-2 p-0.5 rounded-sm hover:bg-[#2a3f5a] opacity-100"
+                className="ml-2 p-0.5 rounded-sm hover:bg-border-strong opacity-100 transition-colors duration-200"
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               >
                 <X size={12} />
@@ -948,7 +954,16 @@ export const MainContent: React.FC<MainContentProps> = ({
         ))}
       </div>
 
-      {/* table 类型 tab 始终保持 mounted，通过 display 控制显隐，避免切换时 unmount 导致闪烁 */}
+      <div className="flex-1 relative flex flex-col min-h-0">
+      {/* ── Persistent tab panels: always mounted, display-controlled ── */}
+      {/* This ensures UIObject registration survives tab switches, so ui_list can discover all open tabs. */}
+
+      {/* query tab UIObject adapters (lightweight, no DOM) */}
+      {queryTabs.map(tab => (
+        <QueryTabRegistrar key={tab.id} tabId={tab.id} connectionId={tab.connectionId} title={tab.title} />
+      ))}
+
+      {/* table */}
       {tabs.filter(t => t.type === 'table').map(tab => (
         <div
           key={tab.id}
@@ -965,69 +980,96 @@ export const MainContent: React.FC<MainContentProps> = ({
         </div>
       ))}
 
+      {/* er_design */}
+      {tabs.filter(t => t.type === 'er_design').map(tab => (
+        <div
+          key={tab.id}
+          className={`flex-col overflow-hidden min-h-0 ${activeTab === tab.id ? 'flex-1 flex' : 'absolute inset-0 opacity-0 pointer-events-none z-[-1]'}`}
+          style={activeTab === tab.id ? {} : { visibility: 'hidden' }}
+        >
+          <ERCanvas projectId={tab.erProjectId!} tabId={tab.id} />
+        </div>
+      ))}
+
+      {/* table_structure */}
+      {tabs.filter(t => t.type === 'table_structure').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <TableStructureView
+            tabId={tab.id}
+            connectionId={tab.connectionId!}
+            tableName={tab.id.includes('_new_') ? undefined : tab.title}
+            database={tab.db}
+            schema={tab.schema}
+            onSuccess={() => {
+              const isNew = tab.id.includes('_new_');
+              const connId = tab.connectionId!;
+              const db = tab.db;
+              const sch = tab.schema;
+              let catNid = connNid(connId);
+              if (db && !db.startsWith('conn_')) catNid = dbNodeId(catNid, db);
+              if (sch) catNid = schemaNodeId(catNid, sch);
+              catNid = catNodeId(catNid, 'tables');
+              useTreeStore.getState().refreshNode(catNid);
+              if (isNew) {
+                useQueryStore.getState().closeTab(tab.id);
+              }
+            }}
+            showToast={showToast}
+          />
+        </div>
+      ))}
+
+      {/* metric */}
+      {tabs.filter(t => t.type === 'metric').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <MetricTab
+            metricId={tab.metricId}
+            newMetricScope={!tab.metricId ? tab.metricScope : undefined}
+            tabId={tab.id}
+            connectionId={tab.connectionId ?? tab.metricScope?.connectionId}
+            onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(tab.id, id, title)}
+            onDelete={() => useQueryStore.getState().closeTab(tab.id)}
+          />
+        </div>
+      ))}
+
+      {/* seatunnel_job */}
+      {tabs.filter(t => t.type === 'seatunnel_job').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          <SeaTunnelJobTab tab={tab} key={tab.id} showToast={showToast} />
+        </div>
+      ))}
+
+      {/* ── Active-only tabs (too heavy to keep all mounted) ── */}
       {activeTabObj ? (
-        activeTabObj.type === 'er_design' ? (
-          <ERCanvas projectId={activeTabObj.erProjectId!} tabId={activeTabObj.id} />
-        ) : activeTabObj.type === 'table' ? null
-        : activeTabObj.type === 'table_structure' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <TableStructureView
-              tabId={activeTabObj.id}
-              connectionId={activeTabObj.connectionId!}
-              tableName={activeTabObj.id.includes('_new_') ? undefined : activeTabObj.title}
-              database={activeTabObj.db}
-              schema={activeTabObj.schema}
-              onSuccess={() => {
-                const isNew = activeTabObj.id.includes('_new_');
-
-                // Refresh the tables category node in the tree
-                const connId = activeTabObj.connectionId!;
-                const db = activeTabObj.db;
-                const sch = activeTabObj.schema;
-                let catNid = connNid(connId);
-                if (db && !db.startsWith('conn_')) catNid = dbNodeId(catNid, db);
-                if (sch) catNid = schemaNodeId(catNid, sch);
-                catNid = catNodeId(catNid, 'tables');
-                useTreeStore.getState().refreshNode(catNid);
-
-                // Close the tab for new table creation
-                if (isNew) {
-                  useQueryStore.getState().closeTab(activeTabObj.id);
-                }
-              }}
-              showToast={showToast}
-            />
-          </div>
-        ) : activeTabObj.type === 'metric' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <MetricTab
-              metricId={activeTabObj.metricId}
-              newMetricScope={!activeTabObj.metricId ? activeTabObj.metricScope : undefined}
-              tabId={activeTabObj.id}
-              connectionId={activeTabObj.connectionId ?? activeTabObj.metricScope?.connectionId}
-              onSaved={(id, title) => useQueryStore.getState().updateMetricTabId(activeTab, id, title)}
-              onDelete={() => useQueryStore.getState().closeTab(activeTab)}
-            />
-          </div>
-        ) : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
+        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'seatunnel_job' ? null
+        : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <MetricListPanel
               scope={activeTabObj.metricScope}
               onOpenMetric={(id, title) => useQueryStore.getState().openMetricTab(id, title)}
             />
           </div>
-        ) : activeTabObj.type === 'seatunnel_job' ? (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <SeaTunnelJobTab tab={activeTabObj} key={activeTabObj.id} showToast={showToast} />
-          </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             {/* Toolbar */}
-            <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-[#1e2d42] bg-[#080d12]">
+            <div className="flex-shrink-0 h-10 flex items-center justify-between px-4 border-b border-border-default bg-background-void">
               <div className="flex items-center space-x-2">
                 <Tooltip content={isExecuting ? t('mainContent.executing') : t('mainContent.execute')}>
                   <button
-                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-red-400 hover:text-red-300 hover:bg-[#1e2d42]' : 'text-[#00c9a7] hover:text-[#00a98f] hover:bg-[#1e2d42]'}`}
+                    className={`p-1.5 rounded transition-colors ${isExecuting ? 'text-error hover:text-error-foreground hover:bg-border-default' : 'text-accent hover:text-accent-hover hover:bg-border-default'}`}
                     onClick={handleExecute}
                     disabled={isExecuting}
                   >
@@ -1037,7 +1079,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {isExplaining ? (
                   <Tooltip content={t('mainContent.stopExplaining')}>
                     <button
-                      className="p-1.5 rounded transition-colors text-[#3794ff] hover:text-red-400 hover:bg-[#1e2d42] group"
+                      className="p-1.5 rounded transition-colors text-info hover:text-error hover:bg-border-default group"
                       onClick={() => { cancelExplainSql(activeTab); setExplanationStreaming(activeTab, false); }}
                     >
                       <span className="block group-hover:hidden">
@@ -1055,7 +1097,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 ) : (
                   <Tooltip content={!currentSql.trim() ? '' : t('mainContent.explainSql')}>
                     <button
-                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-[#7a9bb8] cursor-not-allowed opacity-30' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      className={`p-1.5 rounded transition-colors ${!currentSql.trim() ? 'text-foreground-muted cursor-not-allowed opacity-30' : 'text-foreground-muted hover:text-foreground-default hover:bg-border-default'}`}
                       onClick={() => handleExplain()}
                       disabled={!currentSql.trim() || !activeTabObj?.queryContext?.connectionId}
                     >
@@ -1063,12 +1105,12 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </button>
                   </Tooltip>
                 )}
-                <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
+                <div className="w-[1px] h-4 bg-border-strong mx-1"></div>
                 {/* NL→SQL 按钮 */}
                 <div className="relative">
                   <Tooltip content="自然语言生成 SQL（图谱增强）">
                     <button
-                      className={`p-1.5 rounded transition-colors ${nlPanelOpen ? 'bg-[#1e2d42] text-[#00c9a7]' : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42]'}`}
+                      className={`p-1.5 rounded transition-colors ${nlPanelOpen ? 'bg-border-default text-accent' : 'text-foreground-muted hover:text-foreground-default hover:bg-border-default'}`}
                       onClick={() => {
                         setNlPanelOpen(v => !v);
                         setTimeout(() => nlInputRef.current?.focus(), 50);
@@ -1079,11 +1121,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </button>
                   </Tooltip>
                   {nlPanelOpen && (
-                    <div className="absolute top-full left-0 mt-1 z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-xl w-72 p-2 flex flex-col gap-2">
-                      <div className="text-[10px] text-[#7a9bb8] px-1">{t('mainContent.nlPanelHint')}</div>
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-background-elevated border border-border-strong rounded shadow-xl w-72 p-2 flex flex-col gap-2">
+                      <div className="text-[10px] text-foreground-muted px-1">{t('mainContent.nlPanelHint')}</div>
                       <input
                         ref={nlInputRef}
-                        className="bg-[#0d1117] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#00c9a7] placeholder:text-[#3a5070]"
+                        className="bg-background-base border border-border-strong rounded px-2 py-1.5 text-xs text-foreground-default outline-none focus:border-accent placeholder:text-foreground-ghost"
                         placeholder={t('mainContent.nlInputPlaceholder')}
                         value={nlInput}
                         onChange={e => setNlInput(e.target.value)}
@@ -1091,7 +1133,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         disabled={nlLoading}
                       />
                       <button
-                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-[#1e2d42] text-[#3a5070] cursor-not-allowed' : 'bg-[#00c9a7] text-white hover:bg-[#00a98f]'}`}
+                        className={`self-end px-3 py-1 text-xs rounded transition-colors ${nlLoading || !nlInput.trim() ? 'bg-border-default text-foreground-ghost cursor-not-allowed' : 'bg-accent text-foreground hover:bg-accent-hover'}`}
                         onClick={handleGenerateSqlV2}
                         disabled={nlLoading || !nlInput.trim()}
                       >
@@ -1105,10 +1147,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                     onClick={() => useQueryStore.getState().toggleGhostText(activeTab)}
                     className={`p-1 rounded transition-colors ${
                       ghostTextLoading
-                        ? 'text-[#00c9a7]'
+                        ? 'text-accent'
                         : isGhostTextEnabled
-                          ? 'text-[#00c9a7] hover:bg-[#003d2f]'
-                          : 'text-[#4a6a85] hover:bg-[#1a2639]'
+                          ? 'text-accent hover:bg-accent-subtle'
+                          : 'text-foreground-subtle hover:bg-background-hover'
                     }`}
                   >
                     <Sparkles
@@ -1118,9 +1160,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                     />
                   </button>
                 </Tooltip>
-                <div className="w-[1px] h-4 bg-[#2a3f5a] mx-1"></div>
+                <div className="w-[1px] h-4 bg-border-strong mx-1"></div>
                 <Tooltip content={t('mainContent.formatSql')}>
-                  <button className="p-1.5 text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1e2d42] rounded transition-colors" onClick={handleFormat}>
+                  <button className="p-1.5 text-foreground-muted hover:text-foreground-default hover:bg-border-default rounded transition-colors" onClick={handleFormat}>
                     <FileEdit size={16} />
                   </button>
                 </Tooltip>
@@ -1153,7 +1195,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 </div>
                 {!isSqlite && (
                   <>
-                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <span className="text-foreground-muted text-xs">›</span>
                     <div className={dbHighlight.className}>
                       <DropdownSelect
                         value={activeTabObj?.queryContext?.database ?? ''}
@@ -1177,7 +1219,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 )}
                 {needsSchema && availableSchemas.length > 0 && (
                   <>
-                    <span className="text-[#7a9bb8] text-xs">›</span>
+                    <span className="text-foreground-muted text-xs">›</span>
                     <div className={schemaHighlight.className}>
                       <DropdownSelect
                         value={queryCtx?.schema ?? ''}
@@ -1194,20 +1236,20 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* 图谱上下文折叠块（由 ai_generate_sql_v2 填充） */}
             {graphCtx && (
-              <div className="flex-shrink-0 border-b border-[#1e2d42] bg-[#111922]">
+              <div className="flex-shrink-0 border-b border-border-default bg-background-panel">
                 <button
-                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#0e1e2e] transition-colors"
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors"
                   onClick={() => setGraphCtxExpanded(v => !v)}
                 >
                   {graphCtxExpanded
                     ? <ChevronDown size={12} className="flex-shrink-0" />
                     : <ChevronRight size={12} className="flex-shrink-0" />}
-                  <span className="text-[#4a8ab0]">▸ {t('mainContent.graphContextRef')}</span>
-                  <span className="text-[#3a5070] ml-1">{t('mainContent.clickToExpand')}</span>
+                  <span className="text-foreground-muted">▸ {t('mainContent.graphContextRef')}</span>
+                  <span className="text-foreground-ghost ml-1">{t('mainContent.clickToExpand')}</span>
                 </button>
                 {graphCtxExpanded && (
                   <div className="px-3 pb-2">
-                    <pre className="text-[11px] text-[#7a9bb8] bg-[#0d1117] rounded p-2 whitespace-pre-wrap font-mono leading-5 border border-[#1e2d42]">
+                    <pre className="text-[11px] text-foreground-muted bg-background-base rounded p-2 whitespace-pre-wrap font-mono leading-5 border border-border-default">
                       {graphCtx}
                     </pre>
                   </div>
@@ -1216,7 +1258,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             )}
 
             {/* Editor Content */}
-            <div className="flex-1 relative bg-[#111922] min-h-0">
+            <div className="flex-1 relative bg-background-panel min-h-0">
               <MonacoEditor
                 height="100%"
                 language="sql"
@@ -1252,18 +1294,18 @@ export const MainContent: React.FC<MainContentProps> = ({
 
             {/* Results Resizer */}
             <div
-              className="h-1 cursor-row-resize z-10 hover:bg-[#00c9a7] transition-colors"
+              className="h-1 cursor-row-resize z-10 hover:bg-accent transition-colors"
               onMouseDown={handleResultsResize}
             />
 
             {/* Results Area */}
-            <div className="flex flex-col bg-[#080d12] flex-shrink-0" style={{ height: resultsHeight }}>
+            <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: resultsHeight }}>
               {/* Result tabs — one per result set, numbered from 1 */}
-              <div className="flex items-center bg-[#0d1117] border-b border-[#1e2d42] overflow-x-auto">
+              <div className="flex items-center bg-background-base border-b border-border-default overflow-x-auto">
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === idx ? `bg-[#080d12] ${result.kind === 'error' ? 'text-red-400 border-t-red-400' : 'text-[#00c9a7] border-t-[#00c9a7]'}` : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-border-default flex-shrink-0 transition-colors duration-200 ${selectedResultPane === idx ? `bg-background-void ${result.kind === 'error' ? 'text-error border-t-error' : 'text-accent border-t-accent'}` : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
                     onClick={() => setSelectedResultPane(idx)}
                     onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                   >
@@ -1276,7 +1318,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     </span>
                     <Tooltip content={t('mainContent.closeResult')}>
                       <span
-                        className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                        className="hover:bg-border-default rounded p-0.5 leading-none transition-colors duration-200"
                         onClick={(e) => {
                           e.stopPropagation();
                           removeResult(activeTab, idx);
@@ -1290,7 +1332,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {/* SQL 解释 Tab — 仅在有内容或正在解释时显示 */}
                 {(explanationStreaming[activeTab] || explanationContent[activeTab]) && (
                   <div
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-[#1e2d42] flex-shrink-0 ${selectedResultPane === 'explanation' ? 'bg-[#080d12] text-[#00c9a7] border-t-[#00c9a7]' : 'bg-[#1a2639] text-[#7a9bb8] border-t-transparent hover:bg-[#151d28]'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-border-default flex-shrink-0 transition-colors duration-200 ${selectedResultPane === 'explanation' ? 'bg-background-void text-accent border-t-accent' : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
                     onClick={() => setSelectedResultPane('explanation')}
                     onContextMenu={(e) => { e.preventDefault(); setExplanationContextMenu({ x: e.clientX, y: e.clientY }); }}
                   >
@@ -1305,7 +1347,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                     {!(explanationStreaming[activeTab] && explanationContent[activeTab]) && (
                       <Tooltip content={t('mainContent.closeResult')}>
                         <span
-                          className="hover:bg-[#1e2d42] rounded p-0.5 leading-none"
+                          className="hover:bg-border-default rounded p-0.5 leading-none transition-colors duration-200"
                           onClick={(e) => {
                             e.stopPropagation();
                             cancelExplainSql(activeTab);
@@ -1323,13 +1365,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {selectedResultPane === 'explanation' ? (
                   <div className="p-4 h-full overflow-auto">
                     {explanationContent[activeTab] ? (
-                      <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                      <div className="prose prose-invert prose-sm max-w-none text-foreground-default">
                         <MarkdownContent content={explanationContent[activeTab]} />
                       </div>
                     ) : explanationStreaming[activeTab] ? (
                       <ExplanationTypingIndicator />
                     ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-[#7a9bb8] text-sm gap-2 pt-12">
+                      <div className="flex flex-col items-center justify-center h-full text-foreground-muted text-sm gap-2 pt-12">
                         <Lightbulb size={32} className="opacity-20" />
                         <span>{t('mainContent.clickToExplain')}</span>
                       </div>
@@ -1338,9 +1380,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                 ) : (
                   <>
                     {isExecuting ? (
-                      <div className="p-4 text-gray-400 text-sm">{t('mainContent.executing')}</div>
+                      <div className="p-4 text-foreground-muted text-sm">{t('mainContent.executing')}</div>
                     ) : currentResults.length === 0 ? (
-                      <div className="p-4 text-[#7a9bb8] text-sm">{t('mainContent.resultsWillShowHere')}</div>
+                      <div className="p-4 text-foreground-muted text-sm">{t('mainContent.resultsWillShowHere')}</div>
                     ) : (() => {
                       const activeResult = typeof selectedResultPane === 'number'
                         ? currentResults[selectedResultPane]
@@ -1359,7 +1401,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                         return (
                           <div className="p-4 h-full overflow-auto">
                             <div className="mb-3">
-                              <div className="flex items-center gap-2 text-red-400 text-sm font-medium mb-2">
+                              <div className="flex items-center gap-2 text-error text-sm font-medium mb-2">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                                   <path d="M12 9v4" /><path d="M12 17h.01" />
@@ -1367,15 +1409,15 @@ export const MainContent: React.FC<MainContentProps> = ({
                                 {t('mainContent.sqlExecutionError')}
                               </div>
                               {activeResult.sql && (
-                                <pre className="bg-[#0d1117] border border-[#1e2d42] rounded p-2 text-xs text-[#7a9bb8] font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
+                                <pre className="bg-background-base border border-border-default rounded p-2 text-xs text-foreground-muted font-mono mb-2 whitespace-pre-wrap break-all">{activeResult.sql}</pre>
                               )}
                               <div className="flex items-center justify-between text-xs">
                                 <div>
-                                  <span className="text-[#7a9bb8]">{t('mainContent.errorMessage')}：</span>
-                                  <span className="text-red-400 font-mono">{activeResult.error_message}</span>
+                                  <span className="text-foreground-muted">{t('mainContent.errorMessage')}：</span>
+                                  <span className="text-error font-mono">{activeResult.error_message}</span>
                                 </div>
                                 <button
-                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#243a55] transition-colors flex-shrink-0 ml-3"
+                                  className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-background-hover text-foreground-muted hover:text-foreground-default hover:bg-background-active transition-colors flex-shrink-0 ml-3"
                                   onClick={() => {
                                     const text = `请帮我分析以下 SQL 执行错误：\n\nSQL:\n\`\`\`sql\n${activeResult.sql ?? ''}\n\`\`\`\n\n错误信息:\n\`\`\`\n${activeResult.error_message ?? ''}\n\`\`\``;
                                     askAiWithContext(text);
@@ -1387,10 +1429,10 @@ export const MainContent: React.FC<MainContentProps> = ({
                               </div>
                             </div>
 
-                            <div className="border-t border-[#1e2d42] pt-3">
+                            <div className="border-t border-border-default pt-3">
                               {!diagContent && !diagStreaming ? (
                                 <button
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-[#1a2639] text-[#00c9a7] hover:bg-[#1e2d42] transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-background-hover text-accent hover:bg-border-default transition-colors"
                                   onClick={() => diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey)}
                                 >
                                   <Sparkles size={13} />
@@ -1398,7 +1440,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                 </button>
                               ) : (
                                 <div>
-                                  <div className="flex items-center gap-1.5 text-xs text-[#00c9a7] mb-2">
+                                  <div className="flex items-center gap-1.5 text-xs text-accent mb-2">
                                     <Sparkles size={13} />
                                     <span>{t('mainContent.aiDiagnoseBtn')}</span>
                                     {diagStreaming && (
@@ -1408,7 +1450,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                     )}
                                     {!diagStreaming && (
                                       <button
-                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-[#1a2639] text-[#7a9bb8] hover:text-[#00c9a7] hover:bg-[#243a55] transition-colors"
+                                        className="ml-2 px-2 py-0.5 text-xs rounded bg-background-hover text-foreground-muted hover:text-accent hover:bg-background-active transition-colors"
                                         onClick={() => {
                                           clearDiagnosis(diagKey);
                                           diagnoseSqlError(activeResult.sql ?? '', activeResult.error_message ?? '', connId, db, diagKey);
@@ -1419,7 +1461,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                                       </button>
                                     )}
                                   </div>
-                                  <div className="prose prose-invert prose-sm max-w-none text-[#c8daea]">
+                                  <div className="prose prose-invert prose-sm max-w-none text-foreground-default">
                                     <MarkdownContent content={diagContent} />
                                   </div>
                                 </div>
@@ -1431,7 +1473,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
                       // ── 以下是原有的 select / dml-report 渲染 ──
                       if (activeResult.kind === 'select' && activeResult.columns.length === 0) {
-                        return <div className="flex items-center justify-center h-full text-[#7a9bb8] text-sm">{t('mainContent.querySuccessNoData')}</div>;
+                        return <div className="flex items-center justify-center h-full text-foreground-muted text-sm">{t('mainContent.querySuccessNoData')}</div>;
                       }
 
                       const allRows = activeResult.rows;
@@ -1445,13 +1487,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                         );
                         return (
                           <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
-                            <thead className="sticky top-0 bg-[#0d1117] z-10">
+                            <thead className="sticky top-0 bg-background-base z-10">
                               <tr>
-                                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                                <th className="w-10 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal text-center">{t('tableDataView.serialNo')}</th>
                                 {activeResult.columns.map((col, ci) => {
                                   const w = rColWidths[ci] ?? 150;
                                   return (
-                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal overflow-hidden">
                                       <div className="truncate">{col}</div>
                                     </th>
                                   );
@@ -1460,9 +1502,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                             </thead>
                             <tbody>
                               {allRows.map((row, ri) => (
-                                <tr key={ri} className="hover:bg-[#1a2639]">
+                                <tr key={ri} className="hover:bg-background-hover transition-colors duration-150">
                                   <td
-                                    className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs select-none cursor-default"
+                                    className="px-2 py-1.5 border-r border-b border-border-default text-foreground-muted text-center text-xs select-none cursor-default"
                                     onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
                                   >{ri + 1}</td>
                                   {row.map((cell, ci) => {
@@ -1473,21 +1515,21 @@ export const MainContent: React.FC<MainContentProps> = ({
                                       <td
                                         key={ci}
                                         style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
-                                        className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
+                                        className="px-3 py-1.5 border-r border-b border-border-default relative group text-left overflow-hidden"
                                         onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                       >
                                         <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                           <div className="truncate">
                                             {cell === null
-                                              ? <span className="text-[#7a9bb8]">NULL</span>
+                                              ? <span className="text-foreground-muted">NULL</span>
                                               : typeof cell === 'string' && cell.startsWith('✓')
-                                                ? <span className="text-green-400">{cell}</span>
-                                                : <span className="text-[#c8daea]">{cellStr}</span>}
+                                                ? <span className="text-success">{cell}</span>
+                                                : <span className="text-foreground-default">{cellStr}</span>}
                                           </div>
                                         </Tooltip>
                                         {cellStr !== null && (
                                           <button
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-background-active rounded text-foreground-muted hover:text-border-focus transition-opacity"
                                             onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
                                           >
                                             <Maximize2 size={10} />
@@ -1535,11 +1577,11 @@ export const MainContent: React.FC<MainContentProps> = ({
                       return (
                         <>
                           {isTruncated && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/30 border-b border-yellow-700/50 text-yellow-300 text-xs flex-shrink-0">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-warning-subtle border-b border-warning/50 text-warning text-xs flex-shrink-0">
                               <span>{t('mainContent.rowsTruncatedWarning', { total: allRows.length, max: RESULT_MAX_ROWS })}</span>
                               <button
                                 onClick={exportCsv}
-                                className="ml-auto px-2 py-0.5 rounded border border-yellow-600 hover:bg-yellow-800/50 transition-colors flex-shrink-0"
+                                className="ml-auto px-2 py-0.5 rounded border border-warning hover:bg-warning-subtle transition-colors flex-shrink-0"
                               >
                                 {t('mainContent.exportFull')}
                               </button>
@@ -1547,13 +1589,13 @@ export const MainContent: React.FC<MainContentProps> = ({
                           )}
 
                           <table className="text-left border-collapse whitespace-nowrap text-xs" style={{ width: 'max-content', minWidth: '100%' }}>
-                            <thead className="sticky top-0 bg-[#0d1117] z-10">
+                            <thead className="sticky top-0 bg-background-base z-10">
                               <tr>
-                                <th className="w-10 px-2 py-1.5 border-b border-r border-[#1e2d42] text-[#7a9bb8] font-normal text-center">{t('tableDataView.serialNo')}</th>
+                                <th className="w-10 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal text-center">{t('tableDataView.serialNo')}</th>
                                 {activeResult.columns.map((col, ci) => {
                                   const w = rColWidths[ci] ?? 150;
                                   return (
-                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-[#1e2d42] text-[#c8daea] font-normal overflow-hidden">
+                                    <th key={col} style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }} className="px-3 py-1.5 border-b border-r border-border-default text-foreground-default font-normal overflow-hidden">
                                       <div className="truncate">{col}</div>
                                     </th>
                                   );
@@ -1564,9 +1606,9 @@ export const MainContent: React.FC<MainContentProps> = ({
                               {pageRows.map((row, pageRi) => {
                                 const ri = resultPage * RESULT_PAGE_SIZE + pageRi;
                                 return (
-                                  <tr key={ri} className="hover:bg-[#1a2639]">
+                                  <tr key={ri} className="hover:bg-background-hover transition-colors duration-150">
                                     <td
-                                      className="px-2 py-1.5 border-r border-b border-[#1e2d42] text-[#7a9bb8] text-center text-xs select-none cursor-default"
+                                      className="px-2 py-1.5 border-r border-b border-border-default text-foreground-muted text-center text-xs select-none cursor-default"
                                       onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: -1 }); }}
                                     >{ri + 1}</td>
                                     {row.map((cell, ci) => {
@@ -1577,21 +1619,21 @@ export const MainContent: React.FC<MainContentProps> = ({
                                         <td
                                           key={ci}
                                           style={{ minWidth: `${w}px`, maxWidth: `${w}px`, width: `${w}px` }}
-                                          className="px-3 py-1.5 border-r border-b border-[#1e2d42] relative group text-left overflow-hidden"
+                                          className="px-3 py-1.5 border-r border-b border-border-default relative group text-left overflow-hidden"
                                           onContextMenu={e => { e.preventDefault(); setResultCellMenu({ x: e.clientX, y: e.clientY, rowIdx: ri, colIdx: ci }); }}
                                         >
                                           <Tooltip content={cellStr ?? undefined} className="min-w-0">
                                             <div className="truncate">
                                               {cell === null
-                                                ? <span className="text-[#7a9bb8]">NULL</span>
+                                                ? <span className="text-foreground-muted">NULL</span>
                                                 : typeof cell === 'string' && cell.startsWith('✓')
-                                                  ? <span className="text-green-400">{cell}</span>
-                                                  : <span className="text-[#c8daea]">{cellStr}</span>}
+                                                  ? <span className="text-success">{cell}</span>
+                                                  : <span className="text-foreground-default">{cellStr}</span>}
                                             </div>
                                           </Tooltip>
                                           {cellStr !== null && (
                                             <button
-                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#243a55] rounded text-[#7a9bb8] hover:text-[#3a7bd5] transition-opacity"
+                                              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-background-active rounded text-foreground-muted hover:text-border-focus transition-opacity"
                                               onClick={() => setResultCellViewer({ value: cellStr, columnName: colName })}
                                             >
                                               <Maximize2 size={10} />
@@ -1609,12 +1651,12 @@ export const MainContent: React.FC<MainContentProps> = ({
                           {displayRows.length > RESULT_PAGE_SIZE && (
                             <div
                               data-testid="result-pagination"
-                              className="flex-shrink-0 h-8 flex items-center justify-center gap-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs"
+                              className="flex-shrink-0 h-8 flex items-center justify-center gap-3 border-t border-border-default bg-background-void text-foreground-muted text-xs"
                             >
                               <button
                                 disabled={resultPage <= 0}
                                 onClick={() => setResultPage(p => p - 1)}
-                                className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+                                className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200"
                               >
                                 <ChevronLeft size={14}/>
                               </button>
@@ -1622,7 +1664,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                               <button
                                 disabled={resultPage >= totalDisplayPages - 1}
                                 onClick={() => setResultPage(p => p + 1)}
-                                className="p-1 hover:bg-[#1a2639] rounded disabled:opacity-30"
+                                className="p-1 hover:bg-background-hover rounded disabled:opacity-30 transition-colors duration-200"
                               >
                                 <ChevronRight size={14}/>
                               </button>
@@ -1637,7 +1679,7 @@ export const MainContent: React.FC<MainContentProps> = ({
 
               {/* Status Bar */}
               {!isExecuting && typeof selectedResultPane === 'number' && currentResults[selectedResultPane]?.kind === 'select' && currentResults[selectedResultPane]?.columns.length > 0 && (
-                <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-[#1e2d42] bg-[#080d12] text-[#7a9bb8] text-xs">
+                <div className="flex-shrink-0 h-7 flex items-center px-3 border-t border-border-default bg-background-void text-foreground-muted text-xs">
                   <span>{currentResults[selectedResultPane]?.row_count} {t('mainContent.rows')} · {currentResults[selectedResultPane]?.duration_ms}ms</span>
                 </div>
               )}
@@ -1646,7 +1688,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           </div>
         )
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center text-[#7a9bb8] bg-[#111922]">
+        <div className="flex-1 flex flex-col items-center justify-center text-foreground-muted bg-background-panel">
           <DatabaseZap size={64} className="mb-4 opacity-20" />
           <p className="text-lg">{t('mainContent.noActiveEditor')}</p>
           <p className="text-sm mt-2 opacity-60">{t('mainContent.selectItemToView')}</p>
@@ -1657,11 +1699,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-background-elevated border border-border-strong rounded shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground transition-colors duration-150"
             onClick={(e) => {
               e.stopPropagation();
               closeTab(contextMenu.tabId);
@@ -1670,9 +1712,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.close')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === 0}
             onClick={() => {
               closeTabsLeft(contextMenu.tabId);
@@ -1682,7 +1724,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={tabs.findIndex(t => t.id === contextMenu.tabId) === tabs.length - 1}
             onClick={() => {
               closeTabsRight(contextMenu.tabId);
@@ -1692,7 +1734,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={tabs.length <= 1}
             onClick={() => {
               closeOtherTabs(contextMenu.tabId);
@@ -1701,9 +1743,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeOther')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground transition-colors duration-150"
             onClick={() => {
               closeAllTabs();
               setContextMenu(null);
@@ -1718,11 +1760,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {resultContextMenu && (
         <div
           ref={resultContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-background-elevated border border-border-strong rounded shadow-lg py-1 min-w-[160px]"
           style={{ left: resultContextMenu.x, top: resultContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground transition-colors duration-150"
             onClick={() => {
               removeResult(activeTab, resultContextMenu.idx);
               const willBeEmpty = currentResults.length === 1;
@@ -1737,9 +1779,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.close')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={resultContextMenu.idx === 0}
             onClick={() => {
               removeResultsLeft(activeTab, resultContextMenu.idx);
@@ -1750,7 +1792,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={
               resultContextMenu.idx === currentResults.length - 1 &&
               !(explanationContent[activeTab] && !explanationStreaming[activeTab])
@@ -1771,7 +1813,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={currentResults.length <= 1}
             onClick={() => {
               removeOtherResults(activeTab, resultContextMenu.idx);
@@ -1781,9 +1823,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeOther')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground transition-colors duration-150"
             onClick={() => {
               clearResults(activeTab);
               const hasExplanation = !!(explanationContent[activeTab] || explanationStreaming[activeTab]);
@@ -1800,11 +1842,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       {explanationContextMenu && (
         <div
           ref={explanationContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-background-elevated border border-border-strong rounded shadow-lg py-1 min-w-[160px]"
           style={{ left: explanationContextMenu.x, top: explanationContextMenu.y }}
         >
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={!!(explanationStreaming[activeTab] && explanationContent[activeTab])}
             onClick={() => {
               cancelExplainSql(activeTab);
@@ -1815,9 +1857,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.close')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={currentResults.length === 0}
             onClick={() => {
               clearResults(activeTab);
@@ -1828,13 +1870,13 @@ export const MainContent: React.FC<MainContentProps> = ({
             {t('mainContent.closeLeft')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled
           >
             {t('mainContent.closeRight')}
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             disabled={currentResults.length === 0}
             onClick={() => {
               clearResults(activeTab);
@@ -1844,9 +1886,9 @@ export const MainContent: React.FC<MainContentProps> = ({
           >
             {t('mainContent.closeOther')}
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground transition-colors duration-150"
             onClick={() => {
               cancelExplainSql(activeTab);
               clearResults(activeTab);
@@ -1864,13 +1906,13 @@ export const MainContent: React.FC<MainContentProps> = ({
       {editorContextMenu && (
         <div
           ref={editorContextMenuRef}
-          className="fixed z-50 bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg py-1 min-w-[200px]"
+          className="fixed z-50 bg-background-elevated border border-border-strong rounded shadow-lg py-1 min-w-[200px]"
           style={{ left: editorContextMenu.x, top: editorContextMenu.y }}
           onMouseDown={(e) => e.preventDefault()}
         >
           {/* 分组1：剪贴板 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={() => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
@@ -1887,12 +1929,12 @@ export const MainContent: React.FC<MainContentProps> = ({
               }
             }}
           >
-            <Scissors size={13} color="#7a9bb8" />
+            <Scissors size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.cut')}</span>
-            <span className="text-[#3a5070]">Ctrl+X</span>
+            <span className="text-foreground-ghost">Ctrl+X</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={async () => {
               const ed = editorRef.current;
               const menu = editorContextMenu!;
@@ -1906,12 +1948,12 @@ export const MainContent: React.FC<MainContentProps> = ({
               ed?.focus();
             }}
           >
-            <Copy size={13} color="#7a9bb8" />
+            <Copy size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.copy')}</span>
-            <span className="text-[#3a5070]">Ctrl+C</span>
+            <span className="text-foreground-ghost">Ctrl+C</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={async () => {
               const ed = editorRef.current;
               setEditorContextMenu(null);
@@ -1931,15 +1973,15 @@ export const MainContent: React.FC<MainContentProps> = ({
               } catch { /* 剪贴板读取失败时静默忽略 */ }
             }}
           >
-            <Clipboard size={13} color="#7a9bb8" />
+            <Clipboard size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.paste')}</span>
-            <span className="text-[#3a5070]">Ctrl+V</span>
+            <span className="text-foreground-ghost">Ctrl+V</span>
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
 
           {/* 分组2：执行 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={() => {
               const ed = editorRef.current;
               if (ed) { const pos = ed.getPosition(); if (pos) ed.setPosition(pos); }
@@ -1947,59 +1989,59 @@ export const MainContent: React.FC<MainContentProps> = ({
               setEditorContextMenu(null);
             }}
           >
-            <Play size={13} color="#00c9a7" />
+            <Play size={13} color="var(--accent)" />
             <span className="flex-1">{t('editorContextMenu.executeAll')}</span>
-            <span className="text-[#3a5070]">F5</span>
+            <span className="text-foreground-ghost">F5</span>
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: editorContextMenu.selectedSql.trim() ? '#c8daea' : '#3a5070' }}
+            style={{ color: editorContextMenu.selectedSql.trim() ? 'var(--foreground-default)' : 'var(--foreground-ghost)' }}
             disabled={!editorContextMenu.selectedSql.trim()}
             onClick={() => { handleExecute(); setEditorContextMenu(null); }}
           >
-            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? '#00c9a7' : '#3a5070'} />
+            <CirclePlay size={13} color={editorContextMenu.selectedSql.trim() ? 'var(--accent)' : 'var(--foreground-ghost)'} />
             <span className="flex-1">{t('editorContextMenu.executeSelected')}</span>
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
 
           {/* 分组3：编辑辅助 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.selectAll', null); setEditorContextMenu(null); }}
           >
-            <TextSelect size={13} color="#7a9bb8" />
+            <TextSelect size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.selectAll')}</span>
-            <span className="text-[#3a5070]">Ctrl+A</span>
+            <span className="text-foreground-ghost">Ctrl+A</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.commentLine', null); setEditorContextMenu(null); }}
           >
-            <MessageSquare size={13} color="#7a9bb8" />
+            <MessageSquare size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.toggleComment')}</span>
-            <span className="text-[#3a5070]">Ctrl+/</span>
+            <span className="text-foreground-ghost">Ctrl+/</span>
           </button>
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={() => { editorRef.current?.trigger('menu', 'editor.action.startFindReplaceAction', null); setEditorContextMenu(null); }}
           >
-            <Search size={13} color="#7a9bb8" />
+            <Search size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.findReplace')}</span>
-            <span className="text-[#3a5070]">Ctrl+H</span>
+            <span className="text-foreground-ghost">Ctrl+H</span>
           </button>
-          <div className="h-px bg-[#2a3f5a] my-1" />
+          <div className="h-px bg-border-strong my-1" />
 
           {/* 分组4：SQL / AI */}
           <button
-            className="w-full text-left px-3 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground-default hover:bg-background-hover hover:text-foreground flex items-center gap-2 transition-colors duration-150"
             onClick={() => { handleFormat(); setEditorContextMenu(null); }}
           >
-            <FileEdit size={13} color="#7a9bb8" />
+            <FileEdit size={13} color="var(--foreground-muted)" />
             <span className="flex-1">{t('editorContextMenu.format')}</span>
           </button>
           <button
             className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 disabled:cursor-not-allowed"
-            style={{ color: activeTabObj?.queryContext?.connectionId ? '#c8daea' : '#3a5070' }}
+            style={{ color: activeTabObj?.queryContext?.connectionId ? 'var(--foreground-default)' : 'var(--foreground-ghost)' }}
             disabled={!activeTabObj?.queryContext?.connectionId}
             onClick={() => {
               const menu = editorContextMenu!;
@@ -2010,7 +2052,7 @@ export const MainContent: React.FC<MainContentProps> = ({
               handleExplain(sql);
             }}
           >
-            <Lightbulb size={13} color={activeTabObj?.queryContext?.connectionId ? '#5eb2f7' : '#3a5070'} />
+            <Lightbulb size={13} color={activeTabObj?.queryContext?.connectionId ? 'var(--info)' : 'var(--foreground-ghost)'} />
             <span className="flex-1">{t('editorContextMenu.explainSql')}</span>
           </button>
         </div>
@@ -2054,6 +2096,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           onClose={() => setResultCellViewer(null)}
         />
       )}
+      </div>
     </div>
   );
 };

@@ -25,7 +25,11 @@ impl OracleDataSource {
         }
         #[cfg(feature = "oracle-driver")]
         {
-            let host = config.host.as_deref().unwrap_or("localhost");
+            // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+            let host = match config.host.as_deref().unwrap_or("localhost") {
+                h if h.eq_ignore_ascii_case("localhost") => "127.0.0.1",
+                h => h,
+            };
             let port = config.port.unwrap_or(1521);
             let database = config.database.as_deref().unwrap_or("");
             Ok(Self {
@@ -79,7 +83,7 @@ impl DataSource for OracleDataSource {
 
                 // Non-SELECT statements: split into individual statements and execute each,
                 // then commit once. oracle-crate does not support multi-statement strings.
-                let trimmed = sql.trim_start().to_uppercase();
+                let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
                 if !trimmed.starts_with("SELECT") && !trimmed.starts_with("WITH") {
                     let stmts = crate::datasource::utils::split_sql_statements(&sql);
                     let mut total_affected = 0usize;

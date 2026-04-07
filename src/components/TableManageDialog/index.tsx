@@ -7,7 +7,8 @@ import { useConnectionStore } from '../../store/connectionStore';
 import { generateTableSql } from '../../mcp/ui/adapters/TableFormAdapter';
 import type { ToastLevel } from '../Toast';
 import { DropdownSelect } from '../common/DropdownSelect';
-import type { EditableColumn } from '../../store/tableFormStore';
+import type { EditableColumn, TableFormForeignKey, TableFormIndex } from '../../store/tableFormStore';
+import { makeId } from '../../utils/makeId';
 
 interface AiColumnDef {
   name: string;
@@ -27,6 +28,20 @@ interface TableSchemaResult {
 
 const COMMON_TYPES = ['INT', 'BIGINT', 'VARCHAR', 'TEXT', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DECIMAL', 'DATE', 'DATETIME', 'TIMESTAMP', 'JSON'];
 
+const FK_ACTION_OPTIONS = [
+  { value: 'NO ACTION', label: 'NO ACTION' },
+  { value: 'CASCADE', label: 'CASCADE' },
+  { value: 'SET NULL', label: 'SET NULL' },
+  { value: 'RESTRICT', label: 'RESTRICT' },
+  { value: 'SET DEFAULT', label: 'SET DEFAULT' },
+];
+
+const INDEX_TYPE_OPTIONS = [
+  { value: 'INDEX', label: 'INDEX' },
+  { value: 'UNIQUE', label: 'UNIQUE' },
+  { value: 'FULLTEXT', label: 'FULLTEXT' },
+];
+
 const getTypeOptions = (dataType: string) => {
   const opts = COMMON_TYPES.map(tp => ({ value: tp, label: tp }));
   if (dataType && !COMMON_TYPES.includes(dataType)) {
@@ -34,8 +49,6 @@ const getTypeOptions = (dataType: string) => {
   }
   return opts;
 };
-
-function makeId() { return Math.random().toString(36).slice(2); }
 
 function mapAiColumn(col: AiColumnDef, driver: string): EditableColumn {
   const isPostgres = driver === 'postgres' || driver === 'postgresql';
@@ -69,6 +82,12 @@ export const TableManageDialog: React.FC<Props> = ({
   connectionId, tableName, database, schema, onClose, onSuccess, showToast
 }) => {
   const { t } = useTranslation();
+  type ActiveTab = 'columns' | 'foreignKeys' | 'indexes'
+  const [activeTab, setActiveTab] = useState<ActiveTab>('columns')
+  const [foreignKeys, setForeignKeys] = useState<TableFormForeignKey[]>([])
+  const [originalForeignKeys, setOriginalForeignKeys] = useState<TableFormForeignKey[]>([])
+  const [indexes, setIndexes] = useState<TableFormIndex[]>([])
+  const [originalIndexes, setOriginalIndexes] = useState<TableFormIndex[]>([])
   const [columns, setColumns] = useState<EditableColumn[]>([]);
   const [originalColumns, setOriginalColumns] = useState<EditableColumn[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,6 +140,17 @@ export const TableManageDialog: React.FC<Props> = ({
         name: string; data_type: string; is_nullable: boolean;
         column_default: string | null; is_primary_key: boolean; extra: string | null;
       }>;
+      foreign_keys: Array<{
+        constraint_name: string;
+        column: string;
+        referenced_table: string;
+        referenced_column: string;
+      }>;
+      indexes: Array<{
+        index_name: string;
+        is_unique: boolean;
+        columns: string[];
+      }>;
     }>('get_table_detail', {
       connectionId, database: database ?? null, schema: schema ?? null, table: tableName
     }).then(detail => {
@@ -137,6 +167,29 @@ export const TableManageDialog: React.FC<Props> = ({
       }));
       setColumns(cols);
       setOriginalColumns(cols.map(c => ({ ...c })));
+
+      const fks: TableFormForeignKey[] = (detail.foreign_keys ?? []).map(fk => ({
+        id: makeId(),
+        constraintName: fk.constraint_name,
+        column: fk.column,
+        referencedTable: fk.referenced_table,
+        referencedColumn: fk.referenced_column,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+        _originalName: fk.constraint_name,
+      }))
+      setForeignKeys(fks)
+      setOriginalForeignKeys(fks.map(f => ({ ...f })))
+
+      const idxs: TableFormIndex[] = (detail.indexes ?? []).map(idx => ({
+        id: makeId(),
+        name: idx.index_name,
+        type: idx.is_unique ? 'UNIQUE' : 'INDEX',
+        columns: JSON.stringify(idx.columns.map(c => ({ name: c, order: 'ASC' }))),
+        _originalName: idx.index_name,
+      }))
+      setIndexes(idxs)
+      setOriginalIndexes(idxs.map(i => ({ ...i })))
     }).catch(e => {
       showToast(`${t('tableManage.loadFailed')}: ${String(e)}`, 'error');
     }).finally(() => setIsLoadingData(false));
@@ -147,10 +200,19 @@ export const TableManageDialog: React.FC<Props> = ({
   }, []);
 
   const addColumn = useCallback(() => {
-    setColumns(prev => [...prev, {
-      id: makeId(), name: 'new_column', dataType: 'VARCHAR', length: '255',
-      isNullable: true, defaultValue: '', isPrimaryKey: false, extra: '', _isNew: true,
-    }]);
+    setColumns(prev => {
+      const base = 'new_column';
+      const existingNames = new Set(prev.map(c => c.name));
+      let name = base;
+      let i = 1;
+      while (existingNames.has(name)) {
+        name = `${base}_${i++}`;
+      }
+      return [...prev, {
+        id: makeId(), name, dataType: 'VARCHAR', length: '255',
+        isNullable: true, defaultValue: '', isPrimaryKey: false, extra: '', _isNew: true,
+      }];
+    });
   }, []);
 
   const moveColumn = useCallback((id: string, dir: 'up' | 'down') => {
@@ -223,13 +285,20 @@ export const TableManageDialog: React.FC<Props> = ({
     tableName: effectiveTableName,
     engine: 'InnoDB', charset: 'utf8mb4', comment: '',
     columns, originalColumns: tableName ? originalColumns : undefined,
-    indexes: [], isNewTable: !tableName,
+    indexes, originalIndexes: tableName ? originalIndexes : undefined,
+    foreignKeys, originalForeignKeys: tableName ? originalForeignKeys : undefined,
+    isNewTable: !tableName,
   }, driver);
 
   const handleExecute = async () => {
     if (previewSql.startsWith('-- ')) return;
     if (visibleColumns.some(c => !c.name.trim())) {
       showToast(t('tableManage.columnNameRequired'), 'error');
+      return;
+    }
+    const visibleFks = foreignKeys.filter(fk => !fk._isDeleted)
+    if (visibleFks.some(fk => !fk.constraintName || !fk.column || !fk.referencedTable || !fk.referencedColumn)) {
+      showToast('外键配置不完整，请填写约束名、列名、引用表和引用列', 'error');
       return;
     }
     setIsLoading(true);
@@ -250,51 +319,96 @@ export const TableManageDialog: React.FC<Props> = ({
 
   const visibleColumns = columns.filter(c => !c._isDeleted);
 
+  const visibleForeignKeys = foreignKeys.filter(fk => !fk._isDeleted)
+
+  const addForeignKey = () => {
+    setForeignKeys(prev => [...prev, {
+      id: makeId(),
+      constraintName: '',
+      column: '',
+      referencedTable: '',
+      referencedColumn: '',
+      onDelete: 'NO ACTION',
+      onUpdate: 'NO ACTION',
+      _isNew: true,
+    }])
+  }
+
+  const updateForeignKey = (id: string, patch: Partial<TableFormForeignKey>) => {
+    setForeignKeys(prev => prev.map(fk => fk.id === id ? { ...fk, ...patch } : fk))
+  }
+
+  const handleFkColumnChange = (id: string, col: string) => {
+    setForeignKeys(prev => prev.map(fk => {
+      if (fk.id !== id) return fk
+      const autoName = !fk.constraintName && col
+        ? `fk_${effectiveTableName}_${col}`
+        : fk.constraintName
+      return { ...fk, column: col, constraintName: autoName }
+    }))
+  }
+
+  const visibleIndexes = indexes.filter(idx => !idx._isDeleted)
+
+  const addIndex = () => {
+    setIndexes(prev => [...prev, {
+      id: makeId(),
+      name: '',
+      type: 'INDEX',
+      columns: JSON.stringify([{ name: '', order: 'ASC' }]),
+      _isNew: true,
+    }])
+  }
+
+  const updateIndex = (id: string, patch: Partial<TableFormIndex>) => {
+    setIndexes(prev => prev.map(idx => idx.id === id ? { ...idx, ...patch } : idx))
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[800px] max-h-[85vh] flex flex-col relative">
-        <div className="flex items-center justify-between p-4 border-b border-[#1e2d42]">
-          <span className="text-[#c8daea] text-sm font-medium">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[960px] max-h-[85vh] flex flex-col relative">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
+          <span className="text-foreground-default text-sm font-medium">
             {tableName ? t('tableManage.editTable', { table: tableName }) : t('tableManage.createTable')}
           </span>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea]"><X size={16} /></button>
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors duration-200"><X size={16} /></button>
         </div>
 
         <div className="overflow-auto flex-1 p-4">
           {/* AI 建表面板（仅新建表时显示）*/}
           {!tableName && (
-            <div className="mb-3 border border-[#1e2d42] rounded overflow-hidden">
+            <div className="mb-3 border border-border-default rounded overflow-hidden">
               <button
-                className="w-full flex items-center justify-between px-3 py-2 bg-[#0d1520] text-xs text-[#7a9bb8] hover:text-[#c8daea]"
+                className="w-full flex items-center justify-between px-3 py-2 bg-background-base text-xs text-foreground-muted hover:text-foreground-default transition-colors duration-200"
                 onClick={() => setAiPanelOpen(v => !v)}
               >
                 <span className="flex items-center gap-1.5">
-                  <Sparkles size={13} className="text-[#009e84]" />
+                  <Sparkles size={13} className="text-accent" />
                   AI 建表
                 </span>
                 {aiPanelOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
 
               {aiPanelOpen && (
-                <div className="p-3 bg-[#111922] space-y-2">
+                <div className="p-3 bg-background-panel space-y-2">
                   <textarea
-                    className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-1.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] resize-none h-[60px] disabled:opacity-50"
+                    className="w-full bg-background-base border border-border-strong rounded px-2 py-1.5 text-xs text-foreground-default outline-none focus:border-border-focus resize-none h-[60px] disabled:opacity-50"
                     placeholder='描述你想要的表，例如："用户表，包含昵称、头像、手机号、注册时间"'
                     value={aiDescription}
                     onChange={e => setAiDescription(e.target.value)}
                     disabled={aiState === 'loading'}
                   />
                   {aiError && (
-                    <p className="text-xs text-red-400">{aiError}</p>
+                    <p className="text-xs text-error">{aiError}</p>
                   )}
                   <div className="flex justify-end">
                     <button
                       onClick={handleAiGenerate}
                       disabled={aiState === 'loading' || !aiDescription.trim()}
-                      className="px-3 py-1 bg-[#009e84] text-white rounded text-xs hover:bg-[#007a67] disabled:opacity-50 flex items-center gap-1"
+                      className="px-3 py-1 bg-accent text-foreground rounded text-xs hover:bg-accent-hover disabled:opacity-50 flex items-center gap-1 transition-colors duration-200"
                     >
                       {aiState === 'loading' ? (
-                        <><span className="animate-spin inline-block w-3 h-3 border border-white border-t-transparent rounded-full" /> 正在生成...</>
+                        <><span className="animate-spin inline-block w-3 h-3 border border-foreground border-t-transparent rounded-full" /> 正在生成...</>
                       ) : '生成字段 →'}
                     </button>
                   </div>
@@ -306,9 +420,9 @@ export const TableManageDialog: React.FC<Props> = ({
           {/* 新建表时显示表名输入 */}
           {!tableName && (
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-[#7a9bb8] whitespace-nowrap">{t('tableManage.tableName')}</span>
+              <span className="text-xs text-foreground-muted whitespace-nowrap">{t('tableManage.tableName')}</span>
               <input
-                className="flex-1 bg-[#0d1520] border border-[#2a3f5a] rounded px-2 py-1 text-xs text-[#c8daea] outline-none focus:border-[#009e84]"
+                className="flex-1 bg-background-base border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
                 value={localTableName}
                 onChange={e => setLocalTableName(e.target.value)}
                 placeholder="e.g. users"
@@ -316,28 +430,51 @@ export const TableManageDialog: React.FC<Props> = ({
             </div>
           )}
 
+          {/* Tab 导航 */}
+          <div className="flex border-b border-border-default mb-3">
+            {(['columns', 'foreignKeys', 'indexes'] as ActiveTab[]).map(tab => {
+              const labels: Record<ActiveTab, string> = { columns: '字段', foreignKeys: '外键', indexes: '索引' }
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-2 text-xs transition-colors duration-200 border-b-2 -mb-px ${
+                    activeTab === tab
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-foreground-muted hover:text-foreground-default'
+                  }`}
+                >
+                  {labels[tab]}
+                </button>
+              )
+            })}
+          </div>
+
+          {activeTab === 'columns' && (
+            <>
           {isLoadingData ? (
-            <div className="text-center text-xs text-[#7a9bb8] py-8">{t('tableDataView.loading')}</div>
+            <div className="text-center text-xs text-foreground-muted py-8">{t('tableDataView.loading')}</div>
           ) : (
-            <table className="w-full text-xs text-[#c8daea] border-collapse">
+            <table className="w-full text-xs text-foreground-default border-collapse">
               <thead>
-                <tr className="border-b border-[#1e2d42]">
-                  <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[120px]">{t('tableManage.columnName')}</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[110px]">{t('tableManage.dataType')}</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[60px]">{t('tableManage.length')}</th>
-                  <th className="text-center py-1.5 px-2 font-medium text-[#7a9bb8] w-[50px]">{t('tableManage.nullable')}</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-[#7a9bb8] w-[100px]">{t('tableManage.defaultValue')}</th>
-                  <th className="text-center py-1.5 px-2 font-medium text-[#7a9bb8] w-[40px]">{t('tableManage.primaryKey')}</th>
-                  <th className="text-center py-1.5 px-2 font-medium text-[#7a9bb8] w-[80px]">Extra</th>
+                <tr className="border-b border-border-default">
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[120px]">{t('tableManage.columnName')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[110px]">{t('tableManage.dataType')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[60px]">{t('tableManage.length')}</th>
+                  <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[50px]">{t('tableManage.nullable')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">{t('tableManage.defaultValue')}</th>
+                  <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[40px]">{t('tableManage.primaryKey')}</th>
+                  <th className="text-center py-1.5 px-2 font-medium text-foreground-muted w-[80px]">Extra</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[130px]">Comment</th>
                   <th className="w-[70px]"></th>
                 </tr>
               </thead>
               <tbody>
                 {visibleColumns.map((col, idx) => (
-                  <tr key={col.id} className="border-b border-[#1a2639] hover:bg-[#1a2639]/40">
+                  <tr key={col.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.name}
                         onChange={e => updateColumn(col.id, { name: e.target.value })}
                         disabled={isAiBusy}
@@ -355,7 +492,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.length ?? ''}
                         onChange={e => updateColumn(col.id, { length: e.target.value })}
                         placeholder="—"
@@ -367,13 +504,13 @@ export const TableManageDialog: React.FC<Props> = ({
                         type="checkbox"
                         checked={col.isNullable}
                         onChange={e => updateColumn(col.id, { isNullable: e.target.checked })}
-                        className="accent-[#009e84]"
+                        className="accent-accent"
                         disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.defaultValue ?? ''}
                         onChange={e => updateColumn(col.id, { defaultValue: e.target.value })}
                         placeholder="—"
@@ -385,15 +522,24 @@ export const TableManageDialog: React.FC<Props> = ({
                         type="checkbox"
                         checked={col.isPrimaryKey}
                         onChange={e => updateColumn(col.id, { isPrimaryKey: e.target.checked })}
-                        className="accent-[#3794ff]"
+                        className="accent-info"
                         disabled={isAiBusy}
                       />
                     </td>
                     <td className="py-1 px-2">
                       <input
-                        className="w-full bg-[#0d1520] border border-[#2a3f5a] rounded px-1.5 py-0.5 text-xs text-[#c8daea] outline-none focus:border-[#009e84] disabled:opacity-50"
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
                         value={col.extra}
                         onChange={e => updateColumn(col.id, { extra: e.target.value })}
+                        placeholder="—"
+                        disabled={isAiBusy}
+                      />
+                    </td>
+                    <td className="py-1 px-2">
+                      <input
+                        className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus disabled:opacity-50"
+                        value={col.comment ?? ''}
+                        onChange={e => updateColumn(col.id, { comment: e.target.value })}
                         placeholder="—"
                         disabled={isAiBusy}
                       />
@@ -403,20 +549,25 @@ export const TableManageDialog: React.FC<Props> = ({
                         <button
                           onClick={() => moveColumn(col.id, 'up')}
                           disabled={idx === 0 || isAiBusy}
-                          className="text-[#7a9bb8] hover:text-[#c8daea] disabled:opacity-30 p-0.5"
+                          className="text-foreground-muted hover:text-foreground-default disabled:opacity-30 p-0.5 transition-colors duration-200"
                         ><ChevronUp size={12} /></button>
                         <button
                           onClick={() => moveColumn(col.id, 'down')}
                           disabled={idx === visibleColumns.length - 1 || isAiBusy}
-                          className="text-[#7a9bb8] hover:text-[#c8daea] disabled:opacity-30 p-0.5"
+                          className="text-foreground-muted hover:text-foreground-default disabled:opacity-30 p-0.5 transition-colors duration-200"
                         ><ChevronDown size={12} /></button>
                         <button
                           disabled={isAiBusy}
-                          onClick={() => !isAiBusy && (col._isNew
-                            ? setColumns(prev => prev.filter(c => c.id !== col.id))
-                            : updateColumn(col.id, { _isDeleted: true })
-                          )}
-                          className="text-red-500/70 hover:text-red-400 p-0.5 disabled:opacity-30"
+                          onClick={() => {
+                            if (isAiBusy) return;
+                            if (col._isNew) {
+                              setColumns(prev => prev.filter(c => c.id !== col.id));
+                            } else {
+                              updateColumn(col.id, { _isDeleted: true });
+                            }
+                            setForeignKeys(prev => prev.filter(fk => fk.column !== col.name));
+                          }}
+                          className="text-error/70 hover:text-error p-0.5 disabled:opacity-30 transition-colors duration-200"
                         ><Trash2 size={12} /></button>
                       </div>
                     </td>
@@ -428,34 +579,205 @@ export const TableManageDialog: React.FC<Props> = ({
           <button
             onClick={addColumn}
             disabled={isAiBusy}
-            className="mt-2 flex items-center gap-1 text-xs text-[#7a9bb8] hover:text-[#009e84] px-2 py-1 disabled:opacity-40"
+            className="mt-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 disabled:opacity-40 transition-colors duration-200"
           >
             <Plus size={13} />
             {t('tableManage.addColumn')}
           </button>
+            </>
+          )}
+
+          {activeTab === 'foreignKeys' && (
+            <div className="space-y-1">
+              {visibleForeignKeys.length === 0 && (
+                <div className="text-xs text-foreground-muted py-4 text-center">暂无外键约束</div>
+              )}
+              {visibleForeignKeys.length > 0 && (
+                <table className="w-full text-xs text-foreground-default border-collapse">
+                  <thead>
+                    <tr className="border-b border-border-default">
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[180px]">约束名</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[120px]">当前列</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[120px]">引用表</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">引用列</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">ON DELETE</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">ON UPDATE</th>
+                      <th className="w-[30px]"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleForeignKeys.map(fk => {
+                      const colOptions = visibleColumns.map(c => ({ value: c.name, label: c.name }))
+                      return (
+                        <tr key={fk.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
+                              value={fk.constraintName}
+                              onChange={e => updateForeignKey(fk.id, { constraintName: e.target.value })}
+                              placeholder="fk_table_col"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={fk.column}
+                              options={colOptions}
+                              placeholder="选择列"
+                              onChange={col => handleFkColumnChange(fk.id, col)}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
+                              value={fk.referencedTable}
+                              onChange={e => updateForeignKey(fk.id, { referencedTable: e.target.value })}
+                              placeholder="users"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
+                              value={fk.referencedColumn}
+                              onChange={e => updateForeignKey(fk.id, { referencedColumn: e.target.value })}
+                              placeholder="id"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={fk.onDelete}
+                              options={FK_ACTION_OPTIONS}
+                              onChange={v => updateForeignKey(fk.id, { onDelete: v })}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={fk.onUpdate}
+                              options={FK_ACTION_OPTIONS}
+                              onChange={v => updateForeignKey(fk.id, { onUpdate: v })}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center">
+                            <button
+                              onClick={() => fk._isNew
+                                ? setForeignKeys(prev => prev.filter(f => f.id !== fk.id))
+                                : updateForeignKey(fk.id, { _isDeleted: true })
+                              }
+                              className="text-error/70 hover:text-error p-0.5 transition-colors duration-200"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <button
+                onClick={addForeignKey}
+                className="mt-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
+              >
+                <Plus size={13} />
+                添加外键
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'indexes' && (
+            <div className="space-y-1">
+              {visibleIndexes.length === 0 && (
+                <div className="text-xs text-foreground-muted py-4 text-center">暂无索引</div>
+              )}
+              {visibleIndexes.length > 0 && (
+                <table className="w-full text-xs text-foreground-default border-collapse">
+                  <thead>
+                    <tr className="border-b border-border-default">
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[200px]">索引名</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted w-[100px]">类型</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-foreground-muted">列（JSON）</th>
+                      <th className="w-[30px]"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleIndexes.map(idx => {
+                      return (
+                        <tr key={idx.id} className="border-b border-background-hover hover:bg-background-hover/40 transition-colors duration-150">
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs text-foreground-default outline-none focus:border-border-focus"
+                              value={idx.name}
+                              onChange={e => updateIndex(idx.id, { name: e.target.value })}
+                              placeholder="idx_table_col"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <DropdownSelect
+                              value={idx.type}
+                              options={INDEX_TYPE_OPTIONS}
+                              onChange={v => updateIndex(idx.id, { type: v as TableFormIndex['type'] })}
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="py-1 px-2">
+                            <input
+                              className="w-full bg-background-base border border-border-strong rounded px-1.5 py-0.5 text-xs font-mono text-foreground-default outline-none focus:border-border-focus"
+                              value={idx.columns}
+                              onChange={e => updateIndex(idx.id, { columns: e.target.value })}
+                              placeholder='[{"name":"col","order":"ASC"}]'
+                            />
+                          </td>
+                          <td className="py-1 px-2 text-center">
+                            <button
+                              onClick={() => idx._isNew
+                                ? setIndexes(prev => prev.filter(i => i.id !== idx.id))
+                                : updateIndex(idx.id, { _isDeleted: true })
+                              }
+                              className="text-error/70 hover:text-error p-0.5 transition-colors duration-200"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <button
+                onClick={addIndex}
+                className="mt-2 flex items-center gap-1 text-xs text-foreground-muted hover:text-accent px-2 py-1 transition-colors duration-200"
+              >
+                <Plus size={13} />
+                添加索引
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="px-4 pb-2">
-          <div className="text-xs text-[#7a9bb8] mb-1">
+          <div className="text-xs text-foreground-muted mb-1">
             {tableName ? t('tableManage.alterPreview') : t('tableManage.createPreview')}
           </div>
           <textarea
             readOnly
-            className="w-full bg-[#0d1520] border border-[#1e2d42] rounded p-2 font-mono text-xs text-[#c8daea] outline-none resize-none h-[80px]"
+            className="w-full bg-background-base border border-border-default rounded p-2 font-mono text-xs text-foreground-default outline-none resize-none h-[80px]"
             value={previewSql}
             spellCheck={false}
           />
         </div>
 
-        <div className="flex justify-end gap-2 p-4 border-t border-[#1e2d42]">
+        <div className="flex justify-end gap-2 p-4 border-t border-border-default">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 bg-[#1a2639] text-[#7a9bb8] hover:text-[#c8daea] rounded text-xs"
+            className="px-3 py-1.5 bg-background-hover text-foreground-muted hover:text-foreground-default rounded text-xs transition-colors duration-200"
           >{t('common.cancel')}</button>
           <button
             onClick={handleExecute}
             disabled={isLoading || previewSql.startsWith('-- ') || isLoadingData || isAiBusy}
-            className="px-3 py-1.5 bg-[#3794ff] text-[#c8daea] hover:bg-[#2b7cdb] rounded text-xs disabled:opacity-50"
+            className="px-3 py-1.5 bg-primary text-foreground-default hover:bg-primary-hover rounded text-xs disabled:opacity-50 transition-colors duration-200"
           >
             {isLoading
               ? t('common.executing')
@@ -466,9 +788,9 @@ export const TableManageDialog: React.FC<Props> = ({
         {/* AI 字段应用确认弹窗 */}
         {aiState === 'confirming' && pendingAiCols && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10 rounded-lg">
-            <div className="bg-[#111922] border border-[#253347] rounded-lg p-5 w-[320px] space-y-3">
-              <p className="text-sm text-[#c8daea] font-medium">应用 AI 生成的字段</p>
-              <p className="text-xs text-[#7a9bb8]">
+            <div className="bg-background-panel border border-border-strong rounded-lg p-5 w-[320px] space-y-3">
+              <p className="text-sm text-foreground-default font-medium">应用 AI 生成的字段</p>
+              <p className="text-xs text-foreground-muted">
                 AI 已生成 {pendingAiCols.count} 个字段，当前表格已有 {pendingAiCols.existingCount} 个字段。
               </p>
               <div className="flex gap-2 pt-1">
@@ -478,7 +800,7 @@ export const TableManageDialog: React.FC<Props> = ({
                     fillColumns(pendingAiCols.cols, 'replace');
                     setPendingAiCols(null);
                   }}
-                  className="flex-1 px-2 py-1.5 bg-[#3794ff] text-white rounded text-xs hover:bg-[#2b7cdb]"
+                  className="flex-1 px-2 py-1.5 bg-primary text-foreground rounded text-xs hover:bg-primary-hover transition-colors duration-200"
                 >替换现有字段</button>
                 <button
                   onClick={() => {
@@ -486,14 +808,14 @@ export const TableManageDialog: React.FC<Props> = ({
                     fillColumns(pendingAiCols.cols, 'append');
                     setPendingAiCols(null);
                   }}
-                  className="flex-1 px-2 py-1.5 bg-[#1a2639] text-[#c8daea] rounded text-xs hover:bg-[#253347]"
+                  className="flex-1 px-2 py-1.5 bg-background-hover text-foreground-default rounded text-xs hover:bg-border-strong transition-colors duration-200"
                 >追加到末尾</button>
                 <button
                   onClick={() => {
                     setAiState('idle');
                     setPendingAiCols(null);
                   }}
-                  className="px-2 py-1.5 text-[#7a9bb8] rounded text-xs hover:text-[#c8daea]"
+                  className="px-2 py-1.5 text-foreground-muted rounded text-xs hover:text-foreground-default transition-colors duration-200"
                 >取消</button>
               </div>
             </div>

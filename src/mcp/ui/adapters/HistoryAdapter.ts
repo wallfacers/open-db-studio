@@ -1,4 +1,5 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import { patchError, execError } from '../errors'
 import { invoke } from '@tauri-apps/api/core'
 
 export class HistoryAdapter implements UIObject {
@@ -32,14 +33,27 @@ export class HistoryAdapter implements UIObject {
         }
       case 'actions':
         return [
-          { name: 'list', description: 'List change history entries', paramsSchema: { limit: 'number' } },
-          { name: 'undo', description: 'Undo last change' },
+          {
+            name: 'list',
+            description: 'List change history entries',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                limit: { type: 'number', description: 'Maximum entries to return (default: 50)' },
+              },
+            },
+          },
+          {
+            name: 'undo',
+            description: 'Undo last change',
+            paramsSchema: { type: 'object', properties: {} },
+          },
         ]
     }
   }
 
   patch(_ops: JsonPatchOp[]): PatchResult {
-    return { status: 'error', message: 'history does not support patch' }
+    return patchError('history does not support patch')
   }
 
   async exec(action: string, params?: any): Promise<ExecResult> {
@@ -62,7 +76,7 @@ export class HistoryAdapter implements UIObject {
         }
       }
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: list, undo')
     }
   }
 }

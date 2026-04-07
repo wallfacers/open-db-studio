@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Option {
   value: string;
@@ -17,6 +18,8 @@ interface DropdownSelectProps {
   maxHeight?: number;         // 下拉列表最大高度px，默认 240
   plain?: boolean;            // 纯文字触发器，无边框/背景/箭头
   displayValue?: string;      // 自定义显示文本，覆盖默认的 label 查找
+  searchable?: boolean;       // 顶部显示搜索框
+  maxItems?: number;          // 无搜索时最多显示条数，默认不限
 }
 
 interface DropdownPos {
@@ -40,14 +43,19 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
   maxHeight = 240,
   plain = false,
   displayValue,
+  searchable = false,
+  maxItems,
 }) => {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<DropdownPos | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const { t } = useTranslation();
   const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const dropdownId = useRef(++dropdownIdCounter);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => { setOpen(false); setSearchText(''); }, []);
 
   // 监听其他下拉菜单打开事件，关闭当前下拉
   useEffect(() => {
@@ -113,6 +121,21 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (open && searchable) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [open, searchable]);
+
+  const filteredOptions = useMemo(() => {
+    if (!open) return options;
+    if (searchable && searchText) {
+      const lower = searchText.toLowerCase();
+      return options.filter(o => o.label.toLowerCase().includes(lower));
+    }
+    return maxItems ? options.slice(0, maxItems) : options;
+  }, [open, searchable, searchText, options, maxItems]);
+
   const selected = options.find(o => o.value === value);
   const displayLabel = displayValue ?? selected?.label ?? placeholder;
   const isPlaceholder = !selected && !displayValue;
@@ -122,24 +145,24 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       {/* 触发器 */}
       {plain ? (
         <span
-          className={`inline-block px-2.5 py-1.5 -mx-2.5 -my-1.5 rounded-sm text-[12px] cursor-pointer select-none hover:text-[#00c9a7] hover:bg-[#1e2d42]/50 transition-colors
-                      ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#b5cfe8]'}`}
+          className={`inline-block px-2.5 py-1.5 -mx-2.5 -my-1.5 rounded-sm text-[12px] cursor-pointer select-none hover:text-accent hover:bg-border-default/50 transition-colors
+                      ${isPlaceholder ? 'text-foreground-muted' : 'text-foreground'}`}
           onClick={handleToggle}
         >
           {displayLabel}
         </span>
       ) : (
         <div
-          className="flex items-center gap-1 bg-[#151d28] border border-[#2a3f5a] rounded
-                     px-2 py-1 cursor-pointer hover:border-[#3a5a7a] transition-colors select-none"
+          className="flex items-center gap-1 bg-background-elevated border border-border-strong rounded
+                     px-2 py-1 cursor-pointer hover:border-border-focus transition-colors select-none"
           onClick={handleToggle}
         >
-          <span className={`text-xs truncate flex-1 ${isPlaceholder ? 'text-[#7a9bb8]' : 'text-[#c8daea]'}`}>
+          <span className={`text-xs truncate flex-1 ${isPlaceholder ? 'text-foreground-muted' : 'text-foreground-default'}`}>
             {displayLabel}
           </span>
           <ChevronDown
             size={11}
-            className={`flex-shrink-0 text-[#7a9bb8] transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`flex-shrink-0 text-foreground-muted transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </div>
       )}
@@ -148,7 +171,7 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
       {open && pos && createPortal(
         <div
           ref={dropdownRef}
-          className="fixed z-[200] bg-[#151d28] border border-[#2a3f5a] rounded shadow-lg overflow-y-auto"
+          className="fixed z-[200] bg-background-elevated border border-border-strong rounded shadow-lg overflow-y-auto"
           style={{
             ...(direction === 'up'
               ? { bottom: pos.bottom + 4 }
@@ -158,25 +181,45 @@ export const DropdownSelect: React.FC<DropdownSelectProps> = ({
             maxHeight,
           }}
         >
-          {placeholder && (
+          {searchable && (
+            <div className="p-1.5 border-b border-border-default sticky top-0 bg-background-elevated">
+              <input
+                ref={searchInputRef}
+                className="w-full bg-background-base border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
+                placeholder={t('commonComponents.dropdown.searchPlaceholder')}
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                onClick={e => e.stopPropagation()}
+              />
+            </div>
+          )}
+          {!searchText && placeholder && (
             <div
-              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-[#1e2d42]
-                          ${!value ? 'text-[#009e84]' : 'text-[#7a9bb8]'}`}
+              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-border-default transition-colors duration-150
+                          ${!value ? 'text-accent' : 'text-foreground-muted'}`}
               onClick={() => { onChange(''); close(); }}
             >
               {placeholder}
             </div>
           )}
-          {options.map(opt => (
+          {filteredOptions.length === 0 && (
+            <div className="px-3 py-1.5 text-xs text-foreground-muted">{t('commonComponents.dropdown.noResults')}</div>
+          )}
+          {filteredOptions.map(opt => (
             <div
               key={opt.value}
-              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#1e2d42]
-                          ${value === opt.value ? 'text-[#009e84]' : 'text-[#b5cfe8]'}`}
+              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-border-default transition-colors duration-150
+                          ${value === opt.value ? 'text-accent' : 'text-foreground'}`}
               onClick={() => { onChange(opt.value); close(); }}
             >
               {opt.label}
             </div>
           ))}
+          {!searchText && maxItems && options.length > maxItems && (
+            <div className="px-3 py-1.5 text-[11px] text-foreground-ghost border-t border-border-default">
+              {t('commonComponents.dropdown.moreItems', { count: options.length })}
+            </div>
+          )}
         </div>,
         document.body,
       )}

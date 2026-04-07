@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Handle, Position, useNodeConnections } from '@xyflow/react';
+import { Handle, Position, useNodeConnections, useUpdateNodeInternals } from '@xyflow/react';
 import { Key, Hash, X, TableProperties } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
 import { Tooltip } from '../../common/Tooltip';
-import { getTypeOptions, formatTypeDisplay, findTypeDef } from '../shared/dataTypes';
+import { getTypeOptions, formatTypeDisplay, findTypeDef, stripUnsigned } from '../shared/dataTypes';
 import type { DialectName } from '../shared/dataTypes';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { resolveConstraintMethod } from '../shared/resolveConstraint';
+import { useFieldHighlight } from '../../../hooks/useFieldHighlight';
 
 interface ERTableNodeData {
   table: import('../../../types').ErTable;
   columns: import('../../../types').ErColumn[];
+  highlightScopeId?: string;
   onUpdateTable: (updates: Partial<import('../../../types').ErTable>) => void;
   onAddColumn: () => void;
   onUpdateColumn: (colId: number, updates: Partial<import('../../../types').ErColumn>) => void;
@@ -20,8 +23,34 @@ interface ERTableNodeData {
 
 export default function ERTableNode({ id, data }: { id: string; data: ERTableNodeData }) {
   const { t } = useTranslation();
-  const { table, columns, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
-  const { boundDialect } = useErDesignerStore();
+  const { table, columns, highlightScopeId, onUpdateTable, onAddColumn, onUpdateColumn, onDeleteColumn, onDeleteTable } = data;
+  const { boundDialect, relations, projects, activeProjectId } = useErDesignerStore();
+
+  // Re-measure handle positions when columns reorder (node height stays same, ResizeObserver won't fire)
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, columns, updateNodeInternals]);
+
+  // AI change highlight — whole table (e.g. new table added)
+  const { className: tableHL } = useFieldHighlight(highlightScopeId ?? '', `table:${table.id}`)
+  // AI change highlight — table name field
+  const { className: nameHL } = useFieldHighlight(highlightScopeId ?? '', `table:${table.id}:name`)
+
+  // 计算该表所有关系的多数派约束方式
+  const project = projects.find(p => p.id === activeProjectId);
+  const tableRelations = relations.filter(
+    r => r.source_table_id === table.id || r.target_table_id === table.id
+  );
+  const majorityConstraintMethod = useMemo(() => {
+    if (tableRelations.length === 0) return null;
+    const counts: Record<string, number> = {};
+    for (const rel of tableRelations) {
+      const method = resolveConstraintMethod(rel, table, project);
+      counts[method] = (counts[method] ?? 0) + 1;
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  }, [tableRelations, table.constraint_method, project?.default_constraint_method]);
   const typeOptions = useMemo(() => getTypeOptions(boundDialect as DialectName | null), [boundDialect]);
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -57,6 +86,9 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
     const [isEditingName, setIsEditingName] = useState(false);
     const [editName, setEditName] = useState(col.name);
 
+    // AI change highlight for this column row
+    const { className: colHL } = useFieldHighlight(highlightScopeId ?? '', `column:${table.id}:${col.id}`);
+
     const sourceConnections = useNodeConnections({ handleType: 'source', handleId: `${col.id}-source` });
     const targetConnections = useNodeConnections({ handleType: 'target', handleId: `${col.id}-target` });
 
@@ -91,7 +123,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
     return (
       <div
-        className="flex items-center justify-between px-4 border-b border-[#253347] last:border-b-0 relative group hover:bg-[#0d1117] transition-colors h-[32px] py-1"
+        className={`flex items-center justify-between px-4 border-b border-border-strong last:border-b-0 relative group hover:bg-background-base transition-colors h-[32px] py-1 ${colHL}`}
       >
         {/* Target Handle (Left) */}
         <Handle
@@ -103,7 +135,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           `}
           style={{ width: '10px', height: '10px', left: '-5px', top: '50%', transform: 'translateY(-50%)' }}
         >
-          <div className="w-full h-full bg-[#4ade80] rounded-full transition-transform duration-150 group-hover:scale-[2] hover:scale-[2] hover:shadow-[0_0_8px_rgba(74,222,128,0.6)]" />
+          <div className="w-full h-full bg-success rounded-full transition-transform duration-150 group-hover:scale-[2] hover:scale-[2] hover:shadow-[0_0_8px_color-mix(in_srgb,var(--success)_60%,transparent)]" />
         </Handle>
 
         {/* PK Icon / Column Name */}
@@ -111,7 +143,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           <Tooltip content={col.is_primary_key ? t('erDesigner.primaryKey') : t('erDesigner.clickToSetPK')}>
             <button
               type="button"
-              className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-[#f59e0b]' : 'text-gray-500 hover:text-gray-300'}`}
+              className={`nodrag cursor-pointer shrink-0 p-1 -ml-1 rounded-sm hover:bg-background-hover transition-colors flex items-center justify-center outline-none ${col.is_primary_key ? 'text-key-primary' : 'text-foreground-subtle hover:text-foreground-default'}`}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -126,7 +158,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             <Tooltip content={col.is_auto_increment ? t('erDesigner.autoIncrement') : t('erDesigner.clickToSetAI')}>
               <button
                 type="button"
-                className={`nodrag cursor-pointer shrink-0 p-1 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none ${col.is_auto_increment ? 'text-[#00c9a7]' : 'text-gray-500 hover:text-gray-300'}`}
+                className={`nodrag cursor-pointer shrink-0 p-1 rounded-sm hover:bg-background-hover transition-colors flex items-center justify-center outline-none ${col.is_auto_increment ? 'text-accent' : 'text-foreground-subtle hover:text-foreground-default'}`}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -142,7 +174,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {isEditingName ? (
             <input
               ref={nameInputRef}
-              className="nodrag bg-[#151d28] text-[#b5cfe8] text-[13px] px-1.5 py-0 leading-[20px] rounded outline-none border border-[#00c9a7] flex-1 min-w-0"
+              className="nodrag bg-background-elevated text-foreground text-[13px] px-1.5 py-0 leading-[20px] rounded outline-none border border-accent flex-1 min-w-0"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -150,7 +182,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
             />
           ) : (
             <span
-              className="text-[#b5cfe8] text-[13px] cursor-text hover:bg-[#253347] px-1.5 py-0 leading-[20px] rounded truncate flex-1 min-w-0 inline-block border border-transparent hover:border-[#3a5a7a] transition-colors"
+              className="text-foreground text-[13px] cursor-text hover:bg-border-strong px-1.5 py-0 leading-[20px] rounded truncate flex-1 min-w-0 inline-block border border-transparent hover:border-foreground-subtle transition-colors"
               onDoubleClick={() => setIsEditingName(true)}
             >
               {col.name}
@@ -163,7 +195,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {/* Type Dropdown */}
           <div className="z-0 w-[95px] flex justify-end">
             <DropdownSelect
-              value={col.data_type}
+              value={stripUnsigned(col.data_type)}
               options={typeOptions}
               displayValue={formatTypeDisplay(col)}
               onChange={(value) => {
@@ -182,7 +214,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {/* Delete Column Button */}
           <button
             type="button"
-            className="nodrag cursor-pointer text-gray-500 hover:text-red-400 shrink-0 z-10 p-1.5 -my-1.5 -mr-1.5 rounded-sm hover:bg-[#1a2639] transition-colors flex items-center justify-center outline-none"
+            className="nodrag cursor-pointer text-foreground-subtle hover:text-error shrink-0 z-10 p-1.5 -my-1.5 -mr-1.5 rounded-sm hover:bg-background-hover transition-colors flex items-center justify-center outline-none"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -204,7 +236,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           `}
           style={{ width: '10px', height: '10px', right: '-5px', top: '50%', transform: 'translateY(-50%)' }}
         >
-          <div className="w-full h-full bg-[#f43f5e] rounded-full transition-transform duration-150 group-hover:scale-[2] hover:scale-[2] hover:shadow-[0_0_8px_rgba(244,63,94,0.6)]" />
+          <div className="w-full h-full bg-error rounded-full transition-transform duration-150 group-hover:scale-[2] hover:scale-[2] hover:shadow-[0_0_8px_color-mix(in_srgb,var(--error)_60%,transparent)]" />
         </Handle>
       </div>
     );
@@ -212,28 +244,28 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
 
   return (
     <div
-      className="group/table bg-[#111922] rounded-lg border shadow-xl overflow-visible w-[280px] font-sans transition-all"
+      className={`group/table bg-background-panel rounded-lg border shadow-xl overflow-visible w-[280px] font-sans transition-all ${tableHL}`}
       style={{
-        borderColor: table.color || '#253347',
+        borderColor: table.color || 'var(--border-strong)',
         boxShadow: table.color ? `0 4px 12px ${table.color}20` : undefined,
       }}
       onContextMenu={dispatchContextMenu}
     >
       {/* Header */}
-      <div 
-        className="px-3 py-1.5 border-b rounded-t-[7px] flex justify-between items-center transition-colors"
+      <div
+        className={`px-3 py-1.5 border-b rounded-t-[7px] flex justify-between items-center transition-colors ${nameHL}`}
         style={{
-          backgroundColor: table.color ? `${table.color}15` : '#1a2639',
-          borderColor: table.color || '#253347',
+          backgroundColor: table.color ? `${table.color}15` : 'var(--background-hover)',
+          borderColor: table.color || 'var(--border-strong)',
         }}
       >
         {isEditingName ? (
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <TableProperties size={14} className="shrink-0" style={{ color: table.color || '#00c9a7' }} />
+            <TableProperties size={14} className="shrink-0" style={{ color: table.color || 'var(--accent)' }} />
             <input
               ref={nameInputRef}
-              className="bg-[#253347] text-gray-200 text-[13px] font-medium px-1.5 py-0.5 rounded outline-none border flex-1 min-w-0"
-              style={{ borderColor: table.color || '#00c9a7' }}
+              className="bg-border-strong text-foreground-default text-[13px] font-medium px-1.5 py-0.5 rounded outline-none border flex-1 min-w-0"
+              style={{ borderColor: table.color || 'var(--accent)' }}
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onBlur={handleNameSave}
@@ -243,12 +275,27 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         ) : (
           <Tooltip content={t('erDesigner.dblClickToEditName')} className="flex-1 min-w-0">
             <h3
-              className="text-gray-200 text-[13px] font-medium truncate cursor-text hover:bg-[#253347] px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex items-center gap-1.5"
+              className="text-foreground-default text-[13px] font-medium truncate cursor-text hover:bg-border-strong px-1.5 py-0.5 -ml-1.5 rounded transition-colors flex items-center gap-1.5"
               onDoubleClick={() => setIsEditingName(true)}
             >
-              <TableProperties size={14} className="shrink-0" style={{ color: table.color || '#00c9a7' }} />
+              <TableProperties size={14} className="shrink-0" style={{ color: table.color || 'var(--accent)' }} />
               <span className="truncate">{table.name}</span>
             </h3>
+          </Tooltip>
+        )}
+        {majorityConstraintMethod && (
+          <Tooltip
+            content={majorityConstraintMethod === 'database_fk' ? '约束方式：数据库外键' : '约束方式：注释引用'}
+            className="shrink-0 ml-1"
+          >
+            <span
+              className="w-2 h-2 rounded-full inline-block"
+              style={{
+                backgroundColor: majorityConstraintMethod === 'database_fk'
+                  ? 'var(--accent)'
+                  : 'var(--warning)',
+              }}
+            />
           </Tooltip>
         )}
       </div>
@@ -263,7 +310,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
       {/* Add Column Button */}
       <button
         type="button"
-        className="nodrag w-full px-3 py-2 border-t border-[#253347] text-center cursor-pointer hover:bg-[#1a2639] transition-colors outline-none block"
+        className="nodrag w-full px-3 py-2 border-t border-border-strong text-center cursor-pointer hover:bg-background-hover transition-colors outline-none block"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -271,7 +318,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <span className="text-[11px] font-medium text-[#00c9a7]">+ {t('erDesigner.addColumnBtn')}</span>
+        <span className="text-[11px] font-medium text-accent">+ {t('erDesigner.addColumnBtn')}</span>
       </button>
     </div>
   );

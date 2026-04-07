@@ -8,11 +8,16 @@ import {
   Upload,
   FileCode,
   GitCompare,
-  RefreshCw,
   Link2,
+  Unlink,
+  Settings,
 } from 'lucide-react';
+import { Tooltip } from '../../common/Tooltip';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
-import type { ErTable } from '../../../types';
+import { useToastStore } from '../../../store/toastStore';
+import { useConfirmStore } from '../../../store/confirmStore';
+import ImportConflictDialog from '../ImportConflictDialog';
+import type { ErTable, ConflictResolution, ImportPreview } from '../../../types';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import type { Node, Edge } from '@xyflow/react';
@@ -31,6 +36,8 @@ export interface ERToolbarProps {
   onOpenBind?: () => void;
   onAutoLayout?: () => void;
   hasConnection?: boolean;
+  databaseName?: string | null;
+  onOpenSettings?: () => void;
 }
 
 export default function ERToolbar({
@@ -46,20 +53,29 @@ export default function ERToolbar({
   onOpenBind,
   onAutoLayout,
   hasConnection = false,
+  databaseName,
+  onOpenSettings,
 }: ERToolbarProps) {
   const { t } = useTranslation();
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
   const {
     addTable,
-    syncFromDatabase,
     exportJson,
-    importJson,
+    previewImport,
+    executeImport,
     projects,
+    unbindConnection,
   } = useErDesignerStore();
 
   const projectName = projects.find(p => p.id === projectId)?.name;
 
   const [isAutoLayouting, setIsAutoLayouting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [importState, setImportState] = useState<{
+    json: string;
+    preview: ImportPreview;
+    targetProjectId?: number;
+  } | null>(null);
 
   // 新建表
   const handleAddTable = async () => {
@@ -71,10 +87,11 @@ export default function ERToolbar({
         name = `new_table_${++i}`;
       }
       const pos = { x: Math.random() * 300 + 100, y: Math.random() * 300 + 100 };
-      const table = await addTable(name, pos);
+      const table = await addTable(projectId, name, pos);
       onTableAdded?.(table);
     } catch (e) {
       console.error('Failed to add table:', e);
+      showError(`创建表失败: ${e}`);
     }
   };
 
@@ -115,18 +132,6 @@ export default function ERToolbar({
     onOpenDiff();
   };
 
-  // 同步数据库
-  const handleSync = async () => {
-    setIsSyncing(true);
-    try {
-      await syncFromDatabase(projectId);
-    } catch (e) {
-      console.error('Sync failed:', e);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   // 导出 JSON
   const handleExportJson = async () => {
     try {
@@ -138,128 +143,194 @@ export default function ERToolbar({
       });
       if (!path) return;
       await invoke('write_text_file', { path, content: json });
+      showToast('导出成功', 'success');
     } catch (e) {
       console.error('Export JSON failed:', e);
+      showError(`导出失败: ${e}`);
     }
   };
 
-  // 导入 JSON
+  // 导入 JSON 到当前项目
   const handleImportJson = async () => {
     try {
       const openPath = await open({
         multiple: false,
-        filters: [
-          {
-            name: 'JSON',
-            extensions: ['json'],
-          },
-        ],
+        filters: [{ name: 'JSON', extensions: ['json'] }],
       });
+      if (!openPath || typeof openPath !== 'string') return;
 
-      if (openPath && typeof openPath === 'string') {
-        const json = await invoke<string>('read_text_file', { path: openPath });
-        await importJson(json);
+      const json = await invoke<string>('read_text_file', { path: openPath });
+
+      const preview = await previewImport(json, projectId);
+
+      if (preview.conflict_tables.length > 0) {
+        setImportState({ json, preview, targetProjectId: projectId });
+      } else {
+        await executeImport(json, projectId, []);
+        showToast('导入成功', 'success');
       }
     } catch (e) {
       console.error('Import JSON failed:', e);
+      showError(`导入失败: ${e}`);
     }
   };
 
+  const handleImportConfirm = async (resolutions: ConflictResolution[]) => {
+    if (!importState) return;
+    try {
+      await executeImport(importState.json, importState.targetProjectId, resolutions);
+      showToast('导入成功', 'success');
+    } catch (e) {
+      console.error('Import execute failed:', e);
+      showError(`导入失败: ${e}`);
+    } finally {
+      setImportState(null);
+    }
+  };
+
+  const handleImportCancel = () => {
+    setImportState(null);
+  };
+
   return (
-    <div className="flex items-center gap-2 h-10 bg-[#0d1117] border-b border-[#1e2d42] px-4 flex-shrink-0">
+    <div className="flex items-center gap-2 h-8 bg-background-base border-b border-border-default px-4 flex-shrink-0 overflow-x-auto">
       {/* 表操作组 */}
-      <button
-        onClick={handleAddTable}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.newTable')}
-      >
-        <Plus size={14} />
-        <span>{t('erDesigner.newTable')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.newTable')} className="flex items-center">
+        <button
+          onClick={handleAddTable}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Plus size={14} />
+          <span>{t('erDesigner.newTable')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleAutoLayout}
-        disabled={isAutoLayouting}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title={t('erDesigner.autoLayout')}
-      >
-        <LayoutGrid size={14} />
-        <span>{isAutoLayouting ? t('erDesigner.layouting') : t('erDesigner.autoLayout')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.autoLayout')} className="flex items-center">
+        <button
+          onClick={handleAutoLayout}
+          disabled={isAutoLayouting}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <LayoutGrid size={14} />
+          <span>{isAutoLayouting ? t('erDesigner.layouting') : t('erDesigner.autoLayout')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleImportTables}
-        disabled={!hasConnection}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        title={hasConnection ? t('erDesigner.importTables') : t('erDesigner.noConnectionTip')}
-      >
-        <Database size={14} />
-        <span>{t('erDesigner.importTables')}</span>
-      </button>
+      <Tooltip content={hasConnection ? t('erDesigner.importTables') : t('erDesigner.noConnectionTip')} className="flex items-center">
+        <button
+          onClick={handleImportTables}
+          disabled={!hasConnection}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <Database size={14} />
+          <span>{t('erDesigner.importTables')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={onOpenBind}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.bindConnection')}
-      >
-        <Link2 size={14} />
-        <span>{t('erDesigner.bindConnection')}</span>
-      </button>
-
-      {/* 分隔符 */}
-      <div className="w-px h-4 bg-[#253347] mx-2" />
-
-      {/* DDL/Diff/Sync 组 */}
-      <button
-        onClick={handleDDL}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.ddlPreview')}
-      >
-        <FileCode size={14} />
-        <span>DDL</span>
-      </button>
-
-      <button
-        onClick={handleDiff}
-        disabled={!hasConnection}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        title={hasConnection ? t('erDesigner.diffCheck') : t('erDesigner.noConnectionTip')}
-      >
-        <GitCompare size={14} />
-        <span>Diff</span>
-      </button>
-
-      <button
-        onClick={handleSync}
-        disabled={!hasConnection || isSyncing}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        title={hasConnection ? t('erDesigner.syncDB') : t('erDesigner.noConnectionTip')}
-      >
-        <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-        <span>{isSyncing ? t('erDesigner.syncing') : t('erDesigner.sync')}</span>
-      </button>
+      {hasConnection && databaseName ? (
+        <Tooltip content={t('erDesigner.unbindConnection')} className="flex items-center">
+          <button
+            onClick={async () => {
+              const ok = await useConfirmStore.getState().confirm({
+                title: t('erDesigner.unbindConnection'),
+                message: t('erDesigner.confirmUnbind'),
+                variant: 'danger',
+              });
+              if (ok) {
+                await unbindConnection(projectId);
+              }
+            }}
+            className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-danger-hover-bg rounded flex items-center gap-1.5 transition-colors group"
+          >
+            <Database size={14} />
+            <span className="max-w-[120px] truncate">{databaseName}</span>
+            <Unlink size={12} className="text-foreground-muted group-hover:text-error transition-colors" />
+          </button>
+        </Tooltip>
+      ) : (
+        <Tooltip content={t('erDesigner.bindConnection')} className="flex items-center">
+          <button
+            onClick={onOpenBind}
+            className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+          >
+            <Link2 size={14} />
+            <span>{t('erDesigner.bindConnection')}</span>
+          </button>
+        </Tooltip>
+      )}
 
       {/* 分隔符 */}
-      <div className="w-px h-4 bg-[#253347] mx-2" />
+      <div className="w-px h-4 bg-border-strong mx-2" />
+
+      {/* DDL/Diff 组 */}
+      <Tooltip content={t('erDesigner.ddlPreview')} className="flex items-center">
+        <button
+          onClick={handleDDL}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <FileCode size={14} />
+          <span>DDL</span>
+        </button>
+      </Tooltip>
+
+      <Tooltip content={hasConnection ? t('erDesigner.diffCheck') : t('erDesigner.noConnectionTip')} className="flex items-center">
+        <button
+          onClick={handleDiff}
+          disabled={!hasConnection}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <GitCompare size={14} />
+          <span>Diff</span>
+        </button>
+      </Tooltip>
+
+      {/* 分隔符 */}
+      <div className="w-px h-4 bg-border-strong mx-2" />
 
       {/* 导入/导出组 */}
-      <button
-        onClick={handleExportJson}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.exportJson')}
-      >
-        <Upload size={14} />
-        <span>{t('erDesigner.exportJson')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.exportJson')} className="flex items-center">
+        <button
+          onClick={handleExportJson}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Download size={14} />
+          <span>{t('erDesigner.exportJson')}</span>
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleImportJson}
-        className="px-2.5 py-1.5 text-xs text-[#c8daea] hover:bg-[#1a2639] rounded flex items-center gap-1.5 transition-colors"
-        title={t('erDesigner.importJson')}
-      >
-        <Download size={14} />
-        <span>{t('erDesigner.importJson')}</span>
-      </button>
+      <Tooltip content={t('erDesigner.importJson')} className="flex items-center">
+        <button
+          onClick={handleImportJson}
+          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+        >
+          <Upload size={14} />
+          <span>{t('erDesigner.importJson')}</span>
+        </button>
+      </Tooltip>
+
+      {onOpenSettings && (
+        <>
+          <div className="w-px h-4 bg-border-strong mx-2" />
+          <Tooltip content={t('erDesigner.projectSettings') || '项目设置'} className="flex items-center">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="p-1.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors"
+            >
+              <Settings size={15} />
+            </button>
+          </Tooltip>
+        </>
+      )}
+
+      {importState && (
+        <ImportConflictDialog
+          open={true}
+          conflictTables={importState.preview.conflict_tables}
+          onConfirm={handleImportConfirm}
+          onCancel={handleImportCancel}
+        />
+      )}
     </div>
   );
 }

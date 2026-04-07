@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { TextShimmer } from '../shared/TextShimmer';
+import { TextReveal } from '../shared/TextReveal';
 
 interface ThinkingBlockProps {
   content: string;
@@ -50,29 +52,41 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isStreami
   // 无内容时不显示
   if (!content) return null;
 
+  // 构建标题文本：流式 vs 完成
+  const headingText = isStreaming
+    ? `${t('assistant.thinking.thinking')}${elapsedSeconds > 0 ? `（${elapsedSeconds}s）` : '...'}`
+    : `${t('assistant.thinking.thought')}${doneDuration !== null && doneDuration > 0 ? `（${doneDuration}s）` : ''}`;
+
   return (
     <div className="mb-3">
-      {/* 标题行：仿 DeepSeek 最小化样式 */}
+      {/* 标题行：TextShimmer 闪烁 + TextReveal 切换动画 */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs text-[#5a7a96] hover:text-[#c8daea] transition-colors mb-1.5 select-none"
+        className="flex items-center gap-1.5 text-xs text-foreground-muted hover:text-foreground-default transition-colors mb-1.5 select-none"
       >
         <Sparkles
           size={11}
-          className={isStreaming ? 'text-[#00c9a7] animate-pulse' : 'text-[#00c9a7] opacity-70'}
+          className={isStreaming ? 'text-accent animate-pulse' : 'text-accent opacity-70'}
         />
-        <span>
-          {isStreaming
-            ? `${t('assistant.thinking.thinking')}${elapsedSeconds > 0 ? `（${elapsedSeconds}s）` : '...'}`
-            : `${t('assistant.thinking.thought')}${doneDuration !== null && doneDuration > 0 ? `（${doneDuration}s）` : ''}`
-          }
-        </span>
+        {isStreaming ? (
+          <TextShimmer
+            text={headingText}
+            active={isStreaming}
+            className="text-shimmer-thinking"
+          />
+        ) : (
+          <TextReveal
+            text={headingText}
+            duration={350}
+            travel={4}
+          />
+        )}
         {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
       </button>
 
       {/* 内容区：左侧竖线引用风格 */}
       {expanded && (
-        <div ref={scrollRef} className="pl-3 border-l-2 border-[#2a3f5a] text-[11px] text-[#4a6480] leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
+        <div ref={scrollRef} className="pl-3 border-l-2 border-border-strong text-[11px] text-foreground-subtle leading-relaxed whitespace-pre-wrap max-h-52 overflow-y-auto">
           {content}
         </div>
       )}

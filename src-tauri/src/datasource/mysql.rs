@@ -50,8 +50,10 @@ impl MySqlDataSource {
     }
 
     pub async fn new_with_dialect(config: &ConnectionConfig, dialect: Dialect) -> AppResult<Self> {
-        let host = config.host.as_deref()
+        let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟 ~21 秒
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = config.port
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()
@@ -116,7 +118,7 @@ impl DataSource for MySqlDataSource {
         // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
         // sqlx does not enable CLIENT_MULTI_STATEMENTS by default, so sending multiple statements
         // as a single string causes a syntax error on the second statement.
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("DESCRIBE") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
             let stmts = crate::datasource::utils::split_sql_statements(sql);
             let mut total_affected = 0usize;
@@ -274,7 +276,7 @@ impl DataSource for MySqlDataSource {
         let rows = sqlx::query(
             "SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
                     kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
-                    rc.DELETE_RULE
+                    rc.DELETE_RULE, rc.UPDATE_RULE
              FROM information_schema.KEY_COLUMN_USAGE kcu
              LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
                  ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
@@ -293,6 +295,10 @@ impl DataSource for MySqlDataSource {
             referenced_column: get_str(r, 3),
             on_delete: {
                 let v = get_str(r, 4);
+                if v.is_empty() { None } else { Some(v) }
+            },
+            on_update: {
+                let v = get_str(r, 5);
                 if v.is_empty() { None } else { Some(v) }
             },
         }).collect())

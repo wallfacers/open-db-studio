@@ -14,13 +14,15 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<ErProject> {
         viewport_x: row.get(6)?,
         viewport_y: row.get(7)?,
         viewport_zoom: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        default_constraint_method: row.get(9)?,
+        default_comment_format: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }
 
 const PROJECT_COLS: &str =
-    "id, name, description, connection_id, database_name, schema_name, viewport_x, viewport_y, viewport_zoom, created_at, updated_at";
+    "id, name, description, connection_id, database_name, schema_name, viewport_x, viewport_y, viewport_zoom, default_constraint_method, default_comment_format, created_at, updated_at";
 
 fn row_to_table(row: &rusqlite::Row) -> rusqlite::Result<ErTable> {
     Ok(ErTable {
@@ -31,13 +33,15 @@ fn row_to_table(row: &rusqlite::Row) -> rusqlite::Result<ErTable> {
         position_x: row.get(4)?,
         position_y: row.get(5)?,
         color: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        constraint_method: row.get(7)?,
+        comment_format: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
 const TABLE_COLS: &str =
-    "id, project_id, name, comment, position_x, position_y, color, created_at, updated_at";
+    "id, project_id, name, comment, position_x, position_y, color, constraint_method, comment_format, created_at, updated_at";
 
 fn row_to_column(row: &rusqlite::Row) -> rusqlite::Result<ErColumn> {
     Ok(ErColumn {
@@ -81,13 +85,15 @@ fn row_to_relation(row: &rusqlite::Row) -> rusqlite::Result<ErRelation> {
         on_update: row.get(9)?,
         source: row.get(10)?,
         comment_marker: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        constraint_method: row.get(12)?,
+        comment_format: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 
 const RELATION_COLS: &str =
-    "id, project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, created_at, updated_at";
+    "id, project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, constraint_method, comment_format, created_at, updated_at";
 
 fn row_to_index(row: &rusqlite::Row) -> rusqlite::Result<ErIndex> {
     Ok(ErIndex {
@@ -104,9 +110,64 @@ const INDEX_COLS: &str = "id, table_id, name, type, columns, created_at";
 
 // ─── Project CRUD ───────────────────────────────────────────────────────────
 
+/// Check if a project name already exists, optionally excluding a specific project ID.
+pub fn project_name_exists(name: &str, exclude_id: Option<i64>) -> AppResult<bool> {
+    let conn = crate::db::get().lock().unwrap();
+    let count: i64 = match exclude_id {
+        Some(eid) => conn.query_row(
+            "SELECT COUNT(*) FROM er_projects WHERE name = ?1 AND id != ?2",
+            rusqlite::params![name, eid],
+            |r| r.get(0),
+        )?,
+        None => conn.query_row(
+            "SELECT COUNT(*) FROM er_projects WHERE name = ?1",
+            rusqlite::params![name],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(count > 0)
+}
+
+/// Generate a unique project name by appending _副本, _副本2, _副本3, etc.
+pub fn generate_unique_project_name(base_name: &str) -> AppResult<String> {
+    if !project_name_exists(base_name, None)? {
+        return Ok(base_name.to_string());
+    }
+    let candidate = format!("{}_副本", base_name);
+    if !project_name_exists(&candidate, None)? {
+        return Ok(candidate);
+    }
+    let mut i = 2;
+    loop {
+        let candidate = format!("{}_副本{}", base_name, i);
+        if !project_name_exists(&candidate, None)? {
+            return Ok(candidate);
+        }
+        i += 1;
+        if i > 100 {
+            return Err(crate::AppError::Other(
+                "Too many duplicate project names".to_string(),
+            ));
+        }
+    }
+}
+
 pub fn create_project(req: &CreateProjectRequest) -> AppResult<ErProject> {
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
+
+    // Check name uniqueness
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM er_projects WHERE name = ?1",
+        rusqlite::params![req.name],
+        |r| r.get(0),
+    )?;
+    if count > 0 {
+        return Err(crate::AppError::Other(format!(
+            "项目名称 '{}' 已存在",
+            req.name
+        )));
+    }
 
     conn.execute(
         "INSERT INTO er_projects (name, description, created_at, updated_at)
@@ -127,6 +188,21 @@ pub fn update_project(id: i64, req: &UpdateProjectRequest) -> AppResult<ErProjec
     let conn = crate::db::get().lock().unwrap();
     let now = chrono::Utc::now().to_rfc3339();
 
+    // If renaming, check name uniqueness (exclude self)
+    if let Some(ref new_name) = req.name {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM er_projects WHERE name = ?1 AND id != ?2",
+            rusqlite::params![new_name, id],
+            |r| r.get(0),
+        )?;
+        if count > 0 {
+            return Err(crate::AppError::Other(format!(
+                "项目名称 '{}' 已存在",
+                new_name
+            )));
+        }
+    }
+
     let mut sets = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     let mut idx = 1u32;
@@ -146,15 +222,11 @@ pub fn update_project(id: i64, req: &UpdateProjectRequest) -> AppResult<ErProjec
     maybe_set!(req.viewport_x, "viewport_x");
     maybe_set!(req.viewport_y, "viewport_y");
     maybe_set!(req.viewport_zoom, "viewport_zoom");
+    maybe_set!(req.default_constraint_method, "default_constraint_method");
+    maybe_set!(req.default_comment_format, "default_comment_format");
 
-    if sets.is_empty() {
-        // Nothing to update, just refresh updated_at
-        sets.push(format!("updated_at = ?{}", idx));
-        params.push(Box::new(now.clone()));
-    } else {
-        sets.push(format!("updated_at = ?{}", idx));
-        params.push(Box::new(now.clone()));
-    }
+    sets.push(format!("updated_at = ?{}", idx));
+    params.push(Box::new(now.clone()));
     idx += 1;
 
     let sql = format!(
@@ -306,6 +378,32 @@ pub fn update_table(id: i64, req: &UpdateTableRequest) -> AppResult<ErTable> {
     maybe_set!(req.position_x, "position_x");
     maybe_set!(req.position_y, "position_y");
     maybe_set!(req.color, "color");
+    match &req.constraint_method {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
+    match &req.comment_format {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
 
     sets.push(format!("updated_at = ?{}", idx));
     params.push(Box::new(now.clone()));
@@ -330,10 +428,8 @@ pub fn update_table(id: i64, req: &UpdateTableRequest) -> AppResult<ErTable> {
 
 pub fn delete_table(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_tables WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER table {} not found", id)));
-    }
+    // 幂等删除：可能已被其他操作删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_tables WHERE id = ?1", [id])?;
     Ok(())
 }
 
@@ -450,10 +546,8 @@ pub fn update_column(id: i64, req: &UpdateColumnRequest) -> AppResult<ErColumn> 
 
 pub fn delete_column(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_columns WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER column {} not found", id)));
-    }
+    // 幂等删除：可能已被 ON DELETE CASCADE 级联删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_columns WHERE id = ?1", [id])?;
     Ok(())
 }
 
@@ -477,8 +571,8 @@ pub fn create_relation(req: &CreateRelationRequest) -> AppResult<ErRelation> {
     let now = chrono::Utc::now().to_rfc3339();
 
     conn.execute(
-        "INSERT INTO er_relations (project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT INTO er_relations (project_id, name, source_table_id, source_column_id, target_table_id, target_column_id, relation_type, on_delete, on_update, source, comment_marker, constraint_method, comment_format, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         rusqlite::params![
             req.project_id,
             req.name,
@@ -491,6 +585,8 @@ pub fn create_relation(req: &CreateRelationRequest) -> AppResult<ErRelation> {
             req.on_update.as_deref().unwrap_or("NO ACTION"),
             req.source.as_deref().unwrap_or("designer"),
             req.comment_marker,
+            req.constraint_method,
+            req.comment_format,
             &now,
             &now,
         ],
@@ -529,6 +625,32 @@ pub fn update_relation(id: i64, req: &UpdateRelationRequest) -> AppResult<ErRela
     maybe_set!(req.on_update, "on_update");
     maybe_set!(req.source, "source");
     maybe_set!(req.comment_marker, "comment_marker");
+    match &req.constraint_method {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("constraint_method = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
+    match &req.comment_format {
+        Some(v) if v.is_empty() => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(rusqlite::types::Null));
+            idx += 1;
+        }
+        Some(v) => {
+            sets.push(format!("comment_format = ?{}", idx));
+            params.push(Box::new(v.clone()));
+            idx += 1;
+        }
+        None => {}
+    }
 
     sets.push(format!("updated_at = ?{}", idx));
     params.push(Box::new(now.clone()));
@@ -553,11 +675,73 @@ pub fn update_relation(id: i64, req: &UpdateRelationRequest) -> AppResult<ErRela
 
 pub fn delete_relation(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_relations WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER relation {} not found", id)));
-    }
+    // 幂等删除：可能已被 ON DELETE CASCADE 级联删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_relations WHERE id = ?1", [id])?;
     Ok(())
+}
+
+/// 按 source 类型批量删除关系，用于重新同步时清除旧的自动导入关系。
+pub fn delete_relations_by_source(project_id: i64, sources: &[&str]) -> AppResult<usize> {
+    if sources.is_empty() {
+        return Ok(0);
+    }
+    let conn = crate::db::get().lock().unwrap();
+    let placeholders: String = (2..=sources.len() + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "DELETE FROM er_relations WHERE project_id = ?1 AND source IN ({})",
+        placeholders
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(project_id)];
+    for s in sources {
+        params.push(Box::new(s.to_string()));
+    }
+    let affected = conn.execute(
+        &sql,
+        rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+    )?;
+    Ok(affected)
+}
+
+/// 仅删除指定来源且源表在给定 ID 列表中的关系（用于部分表同步）
+pub fn delete_relations_by_source_and_tables(
+    project_id: i64,
+    sources: &[&str],
+    table_ids: &[i64],
+) -> AppResult<usize> {
+    if sources.is_empty() || table_ids.is_empty() {
+        return Ok(0);
+    }
+    let conn = crate::db::get().lock().unwrap();
+    // ?1 = project_id, ?2..?1+src_len = sources, ?2+src_len.. = table_ids
+    let src_len = sources.len();
+    let source_placeholders: String = (2..=src_len + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let table_placeholders: String = (src_len + 2..=src_len + table_ids.len() + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "DELETE FROM er_relations \
+         WHERE project_id = ?1 AND source IN ({}) AND source_table_id IN ({})",
+        source_placeholders, table_placeholders
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(project_id)];
+    for s in sources {
+        params.push(Box::new(s.to_string()));
+    }
+    for &id in table_ids {
+        params.push(Box::new(id));
+    }
+    let affected = conn.execute(
+        &sql,
+        rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+    )?;
+    Ok(affected)
 }
 
 // ─── Index CRUD ─────────────────────────────────────────────────────────────
@@ -637,10 +821,8 @@ pub fn update_index(id: i64, req: &UpdateIndexRequest) -> AppResult<ErIndex> {
 
 pub fn delete_index(id: i64) -> AppResult<()> {
     let conn = crate::db::get().lock().unwrap();
-    let affected = conn.execute("DELETE FROM er_indexes WHERE id = ?1", [id])?;
-    if affected == 0 {
-        return Err(crate::AppError::Other(format!("ER index {} not found", id)));
-    }
+    // 幂等删除：可能已被 ON DELETE CASCADE 级联删除，affected==0 不视为错误
+    conn.execute("DELETE FROM er_indexes WHERE id = ?1", [id])?;
     Ok(())
 }
 

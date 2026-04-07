@@ -1,15 +1,18 @@
 import { useEffect, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { Node, Edge } from '@xyflow/react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId';
 
 interface UseERKeyboardOptions {
+  projectId: number;
   nodes: Node[];
   edges: Edge[];
   selectedNodes: Node[];
   selectedEdges: Edge[];
   onAutoLayout: () => void;
   onExportDDL: () => void;
+  enabled?: boolean;
 }
 
 /**
@@ -25,22 +28,21 @@ interface UseERKeyboardOptions {
  * - Ctrl+E: 导出 DDL
  */
 export function useERKeyboard({
+  projectId,
   nodes,
   edges,
   selectedNodes,
   selectedEdges,
   onAutoLayout,
   onExportDDL,
+  enabled = true,
 }: UseERKeyboardOptions) {
-  const {
-    deleteTable,
-    deleteRelation,
-    undo,
-    redo,
-    addTable,
-    tables,
-    activeProjectId,
-  } = useErDesignerStore();
+  const deleteTable = useErDesignerStore(s => s.deleteTable);
+  const deleteRelation = useErDesignerStore(s => s.deleteRelation);
+  const undo = useErDesignerStore(s => s.undo);
+  const redo = useErDesignerStore(s => s.redo);
+  const addTable = useErDesignerStore(s => s.addTable);
+  const tables = useErDesignerStore(useShallow(s => s.tables.filter(t => t.project_id === projectId)));
 
   // 删除选中的节点或边
   const handleDelete = useCallback(() => {
@@ -63,7 +65,7 @@ export function useERKeyboard({
 
   // 复制选中的表
   const handleDuplicate = useCallback(() => {
-    if (selectedNodes.length === 0 || !activeProjectId) return;
+    if (selectedNodes.length === 0) return;
 
     selectedNodes.forEach((node) => {
       const tableId = parseErTableNodeId(node.id);
@@ -72,12 +74,12 @@ export function useERKeyboard({
       if (!originalTable) return;
 
       // 创建新表，位置偏移
-      addTable(`${originalTable.name}_copy`, {
+      addTable(projectId, `${originalTable.name}_copy`, {
         x: originalTable.position_x + 50,
         y: originalTable.position_y + 50,
       });
     });
-  }, [selectedNodes, tables, activeProjectId, addTable]);
+  }, [selectedNodes, tables, projectId, addTable]);
 
   // 全选（目前仅支持全选所有节点）
   const handleSelectAll = useCallback(() => {
@@ -88,6 +90,7 @@ export function useERKeyboard({
 
   // 键盘事件处理
   useEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName);
       if (isInput) return;
@@ -158,6 +161,7 @@ export function useERKeyboard({
     onExportDDL,
     selectedNodes,
     selectedEdges,
+    enabled,
   ]);
 
   return {

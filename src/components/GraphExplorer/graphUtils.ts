@@ -18,18 +18,18 @@ export function getEdgeStyleBySource(source: string): { stroke?: string; strokeD
     case 'comment':
       return { stroke: '#f59e0b', strokeDasharray: '5,3' };
     case 'user':
-      return { stroke: '#a855f7', strokeDasharray: '2,2' };
+      return { stroke: 'var(--edge-alias)', strokeDasharray: '2,2' };
     case 'schema':
     default:
-      return { stroke: '#3794ff' };
+      return { stroke: 'var(--edge-fk)' };
   }
 }
 
 // 根据 source 返回来源徽章信息
 export function getSourceBadge(source: string): { label: string; color: string } {
   switch (source) {
-    case 'comment': return { label: '注释推断', color: '#f59e0b' };
-    case 'user':    return { label: '用户自定义', color: '#a855f7' };
-    default:        return { label: '数据库外键', color: '#3794ff' };
+    case 'comment': return { label: '注释推断', color: 'var(--edge-reference)' };
+    case 'user':    return { label: '用户自定义', color: 'var(--edge-alias)' };
+    default:        return { label: '数据库外键', color: 'var(--edge-fk)' };
   }
 }

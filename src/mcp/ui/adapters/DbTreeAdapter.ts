@@ -1,4 +1,5 @@
 import type { UIObject, JsonPatchOp, PatchResult, ExecResult } from '../types'
+import { patchError, execError } from '../errors'
 import { useTreeStore } from '../../../store/treeStore'
 import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId, objectNodeId } from '../../../utils/nodeId'
 
@@ -42,21 +43,66 @@ export class DbTreeAdapter implements UIObject {
         }
       case 'actions':
         return [
-          { name: 'search', description: 'Search tree nodes by keyword', paramsSchema: { keyword: 'string', type: 'string', connection_id: 'number' } },
-          { name: 'refresh', description: 'Refresh tree data' },
-          { name: 'expand', description: 'Expand a tree node by its ID (loads children if needed)', paramsSchema: { nodeId: 'string' } },
-          { name: 'select', description: 'Select/highlight a tree node by its ID', paramsSchema: { nodeId: 'string' } },
+          {
+            name: 'search',
+            description: 'Search tree nodes by keyword and optional type/connection filter',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                keyword: { type: 'string', description: 'Search keyword' },
+                type: { type: 'string', description: 'Node type filter: table, view, procedure' },
+                connection_id: { type: 'number', description: 'Limit search to a specific connection' },
+              },
+              required: ['keyword'],
+            },
+          },
+          {
+            name: 'refresh',
+            description: 'Refresh tree data (reload all connections)',
+            paramsSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'expand',
+            description: 'Expand a tree node by its ID (loads children if needed)',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                nodeId: { type: 'string', description: 'Tree node ID to expand' },
+              },
+              required: ['nodeId'],
+            },
+          },
+          {
+            name: 'select',
+            description: 'Select/highlight a tree node by its ID',
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                nodeId: { type: 'string', description: 'Tree node ID to select' },
+              },
+              required: ['nodeId'],
+            },
+          },
           {
             name: 'locate_table',
             description: 'Expand the tree path to a specific table and select it. Loads all ancestor nodes automatically.',
-            paramsSchema: { connection_id: 'number', database: 'string', table: 'string', schema: 'string (optional, for postgres/oracle)' },
+            paramsSchema: {
+              type: 'object',
+              properties: {
+                connection_id: { type: 'number', description: 'Database connection ID' },
+                database: { type: 'string', description: 'Database name' },
+                table: { type: 'string', description: 'Table name' },
+                schema: { type: 'string', description: 'Schema name (optional, for postgres/oracle)' },
+              },
+              required: ['connection_id', 'table'],
+            },
           },
         ]
     }
   }
 
   patch(_ops: JsonPatchOp[]): PatchResult {
-    return { status: 'error', message: 'db_tree does not support patch' }
+    return patchError('db_tree does not support patch')
   }
 
   async exec(action: string, params?: any): Promise<ExecResult> {
@@ -161,7 +207,7 @@ export class DbTreeAdapter implements UIObject {
         return { success: true, data: { nodeId: tableNodeId } }
       }
       default:
-        return { success: false, error: `Unknown action: ${action}` }
+        return execError(`Unknown action: ${action}`, 'Available actions: search, refresh, expand, select, locate_table')
     }
   }
 }

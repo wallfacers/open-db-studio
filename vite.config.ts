@@ -14,7 +14,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 1420,
+    port: parseInt(process.env.VITE_PORT || '1420', 10),
     strictPort: true,
     watch: {
       ignored: ['**/src-tauri/**'],
@@ -23,5 +23,6 @@ export default defineConfig({
   base: process.env.TAURI_ENV_DEBUG ? '/' : './',
   test: {
     environment: 'jsdom',
+    exclude: ['**/node_modules/**', '**/.claude/worktrees/**'],
   },
 });

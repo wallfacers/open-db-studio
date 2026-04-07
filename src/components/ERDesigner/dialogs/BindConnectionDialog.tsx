@@ -156,7 +156,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
       <div className="flex flex-col gap-4">
         {/* 连接选择 */}
         <div>
-          <label className="block text-xs text-[#7a9bb8] mb-1">{t('erDesigner.connectionLabel')}</label>
+          <label className="block text-xs text-foreground-muted mb-1">{t('erDesigner.connectionLabel')}</label>
           <DropdownSelect
             value={selectedConnectionId?.toString() || ''}
             options={connections.map(c => ({ value: c.id.toString(), label: c.name }))}
@@ -168,9 +168,9 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
 
         {/* 数据库选择 */}
         <div>
-          <label className="block text-xs text-[#7a9bb8] mb-1">{t('erDesigner.databaseLabel')}</label>
+          <label className="block text-xs text-foreground-muted mb-1">{t('erDesigner.databaseLabel')}</label>
           {loadingDatabases ? (
-            <div className="text-xs text-[#7a9bb8]">{t('common.loading')}</div>
+            <div className="text-xs text-foreground-muted">{t('common.loading')}</div>
           ) : (
             <DropdownSelect
               value={selectedDatabase}
@@ -185,9 +185,9 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
         {/* Schema 选择（仅 PostgreSQL） */}
         {showSchema && (
           <div>
-            <label className="block text-xs text-[#7a9bb8] mb-1">{t('erDesigner.schemaLabel')}</label>
+            <label className="block text-xs text-foreground-muted mb-1">{t('erDesigner.schemaLabel')}</label>
             {loadingSchemas ? (
-              <div className="text-xs text-[#7a9bb8]">{t('common.loading')}</div>
+              <div className="text-xs text-foreground-muted">{t('common.loading')}</div>
             ) : (
               <DropdownSelect
                 value={selectedSchema}
@@ -202,7 +202,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
 
         {/* 提示信息 */}
         {conn && !showSchema && (
-          <div className="text-xs text-[#7a9bb8]">
+          <div className="text-xs text-foreground-muted">
             {t('erDesigner.dbType', { type: conn.driver })}
           </div>
         )}

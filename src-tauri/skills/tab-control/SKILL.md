@@ -80,15 +80,23 @@ ui_exec(object, target, action, params?)
 |------|-------------|
 | `ui_exec("workspace", "", "open", {type: "query_editor", connection_id: 1})` | open new query tab |
 | `ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database: "app"})` | open new table form |
+| `ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database: "app", table: "users"})` | open existing table structure |
 | `ui_exec("workspace", "", "close", {target: "tab-001"})` | close tab |
 | `ui_exec("workspace", "", "focus", {target: "tab-001"})` | switch to tab |
 | `ui_exec("query_editor", "active", "run_sql")` | execute current SQL |
 | `ui_exec("query_editor", "active", "format")` | format SQL |
-| `ui_exec("query_editor", "active", "undo")` | undo last change |
+| `ui_exec("query_editor", "active", "undo")` | undo last text edit in editor |
+| `ui_exec("query_editor", "active", "focus")` | focus (activate) the editor tab |
+| `ui_exec("query_editor", "active", "set_context", {connectionId: 1, database: "app"})` | set editor's connection/database context |
 | `ui_exec("table_form", "active", "preview_sql")` | preview CREATE/ALTER SQL |
 | `ui_exec("table_form", "active", "save")` | generate SQL to query tab |
 | `ui_exec("db_tree", "active", "refresh")` | refresh db tree |
-| `ui_exec("db_tree", "active", "search", {keyword: "users"})` | search tree nodes |
+| `ui_exec("db_tree", "active", "search", {keyword: "users", type: "table"})` | search already-loaded tree nodes |
+| `ui_exec("db_tree", "active", "expand", {nodeId: "conn_1/db_app/cat_tables"})` | expand a specific tree node (loads children) |
+| `ui_exec("db_tree", "active", "select", {nodeId: "conn_1/db_app/cat_tables/table_users"})` | highlight a specific tree node |
+| `ui_exec("db_tree", "active", "locate_table", {connection_id: 1, database: "app", table: "users"})` | expand full path to a table and select it |
+| `ui_exec("history", "", "list")` | list change history entries |
+| `ui_exec("history", "", "undo")` | undo last structural change (table form, etc.) |
 
 ## ui_list — List Open Objects
 

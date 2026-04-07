@@ -54,27 +54,27 @@ export const ExportDialog: React.FC<Props> = ({ connectionId, database, tableNam
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-96 p-5">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-96 p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">{t('export.title', { table: tableName })}</h3>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16}/></button>
+          <h3 className="text-foreground font-semibold">{t('export.title', { table: tableName })}</h3>
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors"><X size={16}/></button>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-gray-400 mb-1 block">{t('export.format')}</label>
+            <label className="text-xs text-foreground-muted mb-1 block">{t('export.format')}</label>
             <div className="flex gap-2">
               {(['csv', 'json', 'sql'] as const).map(f => (
                 <button key={f} onClick={() => setFormat(f)}
-                  className={`px-3 py-1.5 text-sm rounded ${format === f ? 'bg-[#009e84] text-white' : 'bg-[#1a2639] hover:bg-[#253347] text-white'}`}>
+                  className={`px-3 py-1.5 text-sm rounded transition-colors duration-200 ${format === f ? 'bg-accent text-foreground' : 'bg-background-hover hover:bg-border-strong text-foreground'}`}>
                   {f.toUpperCase()}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-400 mb-1 block">WHERE ({t('export.optional')})</label>
+            <label className="text-xs text-foreground-muted mb-1 block">WHERE ({t('export.optional')})</label>
             <input
-              className="w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]"
+              className="w-full bg-background-hover border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
               placeholder="id > 100"
               value={whereClause}
               onChange={e => setWhereClause(e.target.value)}
@@ -82,9 +82,9 @@ export const ExportDialog: React.FC<Props> = ({ connectionId, database, tableNam
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">{t('common.cancel')}</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm bg-background-hover hover:bg-border-strong text-foreground rounded transition-colors duration-200">{t('common.cancel')}</button>
           <button onClick={handleExport} disabled={isExporting}
-            className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
+            className="px-3 py-1.5 text-sm bg-accent hover:bg-accent-hover text-foreground rounded disabled:opacity-50 transition-colors duration-200">
             {isExporting ? t('export.exporting') : t('export.export')}
           </button>
         </div>

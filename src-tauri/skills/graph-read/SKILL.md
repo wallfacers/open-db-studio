@@ -73,6 +73,13 @@ Differs from `search_metrics` (metric-read skill): this searches **graph nodes**
 graph_search_metrics(keyword: string, connection_id: integer)
 ```
 
+### graph_debug_links
+**Diagnostic tool.** Inspect all Link Nodes and their metadata (source_table, target_table, via, cardinality, etc.) for a connection. Use this when `graph_find_join_paths` returns empty paths to understand what Link Nodes actually exist.
+```
+graph_debug_links(connection_id: integer, table_name?: string)
+```
+- `table_name`: optional filter — only return Link Nodes involving this table
+
 ## Usage Strategy
 
 ```
@@ -104,3 +111,4 @@ User question arrives
 3. **sql_hint is authoritative** — when `join_paths[].sql_hint` is present, use it directly in generated SQL rather than guessing the JOIN condition
 4. **Do not confuse graph tools with db-read tools** — graph tools query the knowledge graph (user-curated relationships + inferred links); db-read tools query the live database catalog
 5. **Link Node awareness** — the graph uses a Palantir-style two-hop structure (table → link → table); Link Nodes carry `cardinality`, `via`, `description` — never treat a Link Node id as a real table name
+6. **Empty join paths** — if `graph_find_join_paths` returns no paths, call `graph_debug_links(connection_id, table_name)` to inspect what Link Nodes exist for the tables in question

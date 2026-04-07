@@ -5,6 +5,9 @@ import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useQueryStore } from '../../../store/queryStore';
 import { useConfirmStore } from '../../../store/confirmStore';
+import { useToastStore } from '../../../store/toastStore';
+import { createDefaultColumn } from '../shared/defaultColumn';
+import { duplicateTable } from '../shared/duplicateTable';
 
 interface TableContextMenuProps {
   x: number;
@@ -25,8 +28,10 @@ interface MenuItem {
 export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projectId, tableId, onClose }) => {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const { tables, columns, deleteTable, loadProject, addTable, addColumn, openDrawer } = useErDesignerStore();
+  const { tables, columns, deleteTable, addTable, addColumn, openDrawer } = useErDesignerStore();
   const { openERDesignTab } = useQueryStore();
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
 
   const table = tables.find(t => t.id === tableId);
 
@@ -59,54 +64,23 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
 
   const handleAddColumn = async () => {
     const cols = columns[tableId] || [];
-    await addColumn(tableId, {
-      name: `column_${cols.length + 1}`,
-      data_type: 'VARCHAR',
-      nullable: true,
-      default_value: null,
-      is_primary_key: false,
-      is_auto_increment: false,
-      comment: null,
-      length: null,
-      scale: null,
-      is_unique: false,
-      unsigned: false,
-      charset: null,
-      collation: null,
-      on_update: null,
-      enum_values: null,
-      sort_order: cols.length,
-    });
+    try {
+      await addColumn(tableId, createDefaultColumn(cols.length));
+    } catch (e) {
+      console.error('Failed to add column:', e);
+      showError(`添加列失败: ${e}`);
+    }
     onClose();
   };
 
   const handleDuplicate = async () => {
     if (!table) return;
-    const srcCols = columns[tableId] || [];
-    const newTable = await addTable(`${table.name}_copy`, {
-      x: table.position_x + 50,
-      y: table.position_y + 50,
-    });
-    for (let i = 0; i < srcCols.length; i++) {
-      const col = srcCols[i];
-      await addColumn(newTable.id, {
-        name: col.name,
-        data_type: col.data_type,
-        nullable: col.nullable,
-        default_value: col.default_value,
-        is_primary_key: col.is_primary_key,
-        is_auto_increment: col.is_auto_increment,
-        comment: col.comment,
-        length: col.length,
-        scale: col.scale,
-        is_unique: col.is_unique,
-        unsigned: col.unsigned,
-        charset: col.charset,
-        collation: col.collation,
-        on_update: col.on_update,
-        enum_values: col.enum_values,
-        sort_order: i,
-      });
+    try {
+      await duplicateTable(table, columns[tableId] || [], addTable, addColumn);
+      showToast('表已复制', 'success');
+    } catch (e) {
+      console.error('Failed to duplicate table:', e);
+      showError(`复制表失败: ${e}`);
     }
     onClose();
   };
@@ -127,20 +101,21 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({ x, y, projec
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed bg-[#0d1117] border border-[#1e2d42] rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
+      className="fixed bg-background-base border border-border-default rounded-md shadow-lg py-1 z-[200] min-w-[140px]"
       style={{ left: x, top: y }}
+      onClick={e => e.stopPropagation()}
     >
       {menuItems.map((item, idx) => {
         if (item.type === 'divider') {
-          return <div key={idx} className="h-px bg-[#1e2d42] my-1" />;
+          return <div key={idx} className="h-px bg-border-default my-1" />;
         }
         return (
           <div
             key={idx}
-            className={`flex items-center px-3 py-1.5 cursor-pointer text-xs ${
+            className={`flex items-center px-3 py-1.5 cursor-pointer text-xs transition-colors duration-150 ${
               item.danger
-                ? 'text-red-400 hover:bg-[#3d1f1f]'
-                : 'text-[#c8daea] hover:bg-[#1a2639]'
+                ? 'text-error hover:bg-danger-hover-bg'
+                : 'text-foreground-default hover:bg-background-hover'
             }`}
             onClick={item.onClick}
           >

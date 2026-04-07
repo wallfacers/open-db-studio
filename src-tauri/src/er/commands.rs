@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use rand::seq::SliceRandom;
 
 use serde::{Deserialize, Serialize};
 
@@ -6,6 +7,8 @@ use crate::AppResult;
 use crate::error::AppError;
 use super::models::*;
 use super::diff_engine::{DatabaseSchema, DbTableInfo, DbColumnInfo, DbIndexInfo, DiffResult};
+use super::table_sorter::sort_tables_by_dependency;
+use super::ddl_generator::{generate_ddl, GenerateOptions};
 
 // ---------------------------------------------------------------------------
 // Sync execution result
@@ -151,6 +154,7 @@ pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<
         include_indexes: options.include_indexes.unwrap_or(true),
         include_comments: options.include_comments.unwrap_or(true),
         include_foreign_keys: options.include_foreign_keys.unwrap_or(false),
+        include_comment_refs: options.include_comment_refs.unwrap_or(true),
     };
 
     super::ddl_generator::generate_ddl(
@@ -160,20 +164,49 @@ pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<
         &full.relations,
         &options.dialect,
         &gen_options,
+        &full.project,
     )
+}
+
+// ─── Relationship Import Helpers ────────────────────────────────────────────
+
+/// Strip schema prefix from a potentially schema-qualified table name.
+/// "public.orders" → "orders", "orders" → "orders"
+fn strip_schema_prefix(name: &str) -> &str {
+    name.rsplit_once('.').map(|(_, table)| table).unwrap_or(name)
+}
+
+/// Detect which comment marker format was used for a given ref target.
+fn detect_comment_format(comment: &str, target_table: &str, target_column: &str) -> String {
+    let at_fk_pattern = format!("@fk(table={},col={}", target_table, target_column);
+    if comment.contains(&at_fk_pattern) {
+        return "@fk".to_string();
+    }
+    let bracket_pattern = format!("[ref:{}.{}]", target_table, target_column);
+    if comment.contains(&bracket_pattern) {
+        return "[ref]".to_string();
+    }
+    let dollar_pattern = format!("$$ref({}.{})$$", target_table, target_column);
+    if comment.contains(&dollar_pattern) {
+        return "$$ref$$".to_string();
+    }
+    "@ref".to_string()
 }
 
 // ─── Type Parsing ──────────────────────────────────────────────────────────
 
-/// Parse a database type string into (base_type, length, scale).
-/// E.g. "VARCHAR(255)" -> ("VARCHAR", Some(255), None)
-///      "DECIMAL(10,2)" -> ("DECIMAL", Some(10), Some(2))
-///      "INT4" -> ("INTEGER", None, None)
-fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>) {
+/// Parse a database type string into (base_type, length, scale, unsigned).
+/// E.g. "VARCHAR(255)"       -> ("VARCHAR", Some(255), None, false)
+///      "DECIMAL(10,2)"      -> ("DECIMAL", Some(10), Some(2), false)
+///      "BIGINT UNSIGNED"    -> ("BIGINT", None, None, true)
+///      "INT(11) UNSIGNED"   -> ("INTEGER", Some(11), None, true)
+fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>, bool) {
     let normalized = raw.trim().to_uppercase();
-    if let Some(paren_start) = normalized.find('(') {
-        let base = normalized[..paren_start].trim().to_string();
-        let inner = &normalized[paren_start + 1..normalized.len().saturating_sub(1)];
+    let (cleaned, has_unsigned) = super::strip_unsigned(&normalized);
+
+    if let Some(paren_start) = cleaned.find('(') {
+        let base = cleaned[..paren_start].trim().to_string();
+        let inner = &cleaned[paren_start + 1..cleaned.len().saturating_sub(1)];
         let parts: Vec<&str> = inner.split(',').collect();
         let length = parts.first().and_then(|s| s.trim().parse::<i64>().ok());
         let scale = parts.get(1).and_then(|s| s.trim().parse::<i64>().ok());
@@ -184,17 +217,17 @@ fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>) {
             "INT8" => "BIGINT".to_string(),
             _ => base,
         };
-        (base, length, scale)
+        (base, length, scale, has_unsigned)
     } else {
-        let base = match normalized.as_str() {
+        let base = match cleaned.as_str() {
             "CHARACTER VARYING" => "VARCHAR".to_string(),
             "CHARACTER" => "CHAR".to_string(),
             "INT4" | "INT" => "INTEGER".to_string(),
             "INT8" => "BIGINT".to_string(),
             "DOUBLE PRECISION" => "DOUBLE".to_string(),
-            _ => normalized,
+            _ => cleaned,
         };
-        (base, None, None)
+        (base, None, None, has_unsigned)
     }
 }
 
@@ -328,7 +361,7 @@ pub async fn er_sync_from_database(
                 let col_lower = db_col.name.to_lowercase();
                 if let Some(er_col) = existing_cols.get(&col_lower) {
                     // Update existing column
-                    let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
+                    let (parsed_type, parsed_len, parsed_scale, parsed_unsigned) = parse_db_type(&db_col.data_type);
                     let req = UpdateColumnRequest {
                         name: Some(db_col.name.clone()),
                         data_type: Some(parsed_type),
@@ -340,7 +373,7 @@ pub async fn er_sync_from_database(
                         length: parsed_len,
                         scale: parsed_scale,
                         is_unique: None,
-                        unsigned: None,
+                        unsigned: Some(parsed_unsigned),
                         charset: None,
                         collation: None,
                         on_update: None,
@@ -350,7 +383,7 @@ pub async fn er_sync_from_database(
                     crate::er::repository::update_column(er_col.id, &req)?;
                 } else {
                     // Create new column
-                    let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
+                    let (parsed_type, parsed_len, parsed_scale, parsed_unsigned) = parse_db_type(&db_col.data_type);
                     let req = CreateColumnRequest {
                         table_id: er_tf.table.id,
                         name: db_col.name.clone(),
@@ -369,7 +402,7 @@ pub async fn er_sync_from_database(
                         length: parsed_len,
                         scale: parsed_scale,
                         is_unique: None,
-                        unsigned: None,
+                        unsigned: Some(parsed_unsigned),
                         charset: None,
                         collation: None,
                         on_update: None,
@@ -382,7 +415,7 @@ pub async fn er_sync_from_database(
 
             // Sync indexes: remove existing, re-create from DB
             for er_idx in &er_tf.indexes {
-                let _ = crate::er::repository::delete_index(er_idx.id);
+                crate::er::repository::delete_index(er_idx.id)?;
             }
             for db_idx in &db_table.indexes {
                 let columns_json =
@@ -401,19 +434,24 @@ pub async fn er_sync_from_database(
             }
         } else {
             // Table does not exist in ER -- create it
+            const TABLE_COLORS: &[&str] = &[
+                "var(--accent)", "var(--info)", "var(--warning)",
+                "var(--error)", "var(--node-alias)", "var(--success)",
+            ];
+            let color = TABLE_COLORS.choose(&mut rand::thread_rng()).copied();
             let table_req = CreateTableRequest {
                 project_id,
                 name: db_table.name.clone(),
                 comment: None,
                 position_x: None,
                 position_y: None,
-                color: None,
+                color: color.map(|s| s.to_string()),
             };
             let new_table = crate::er::repository::create_table(&table_req)?;
 
             // Create columns
             for (i, db_col) in db_table.columns.iter().enumerate() {
-                let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
+                let (parsed_type, parsed_len, parsed_scale, parsed_unsigned) = parse_db_type(&db_col.data_type);
                 let col_req = CreateColumnRequest {
                     table_id: new_table.id,
                     name: db_col.name.clone(),
@@ -432,7 +470,7 @@ pub async fn er_sync_from_database(
                     length: parsed_len,
                     scale: parsed_scale,
                     is_unique: None,
-                    unsigned: None,
+                    unsigned: Some(parsed_unsigned),
                     charset: None,
                     collation: None,
                     on_update: None,
@@ -461,7 +499,190 @@ pub async fn er_sync_from_database(
         }
     }
 
-    // TODO: Parse FK relationships and comment marker relations
+    let fresh = crate::er::repository::get_project_full(project_id)?;
+
+    let table_name_to_id: HashMap<String, i64> = fresh
+        .tables
+        .iter()
+        .map(|tf| (tf.table.name.to_lowercase(), tf.table.id))
+        .collect();
+
+    let column_lookup: HashMap<(i64, String), i64> = fresh
+        .tables
+        .iter()
+        .flat_map(|tf| {
+            tf.columns
+                .iter()
+                .map(move |c| ((tf.table.id, c.name.to_lowercase()), c.id))
+        })
+        .collect();
+
+    // Pre-compute normalized filter set to avoid repeated lowercase conversions
+    let filter_set: Option<HashSet<String>> = table_names.as_ref().map(|names| {
+        names.iter().map(|n| n.to_lowercase()).collect()
+    });
+
+    // 删除需要重建的关系：
+    // - 全量同步（无过滤）：删除整个项目的所有 schema/comment 关系
+    // - 部分同步（有过滤）：仅删除被选中表作为来源的关系，保留其他表的关系不变
+    match &filter_set {
+        None => {
+            crate::er::repository::delete_relations_by_source(project_id, &["schema", "comment"])?;
+        }
+        Some(filter) => {
+            let filtered_table_ids: Vec<i64> = filter
+                .iter()
+                .filter_map(|name| table_name_to_id.get(name).copied())
+                .collect();
+            crate::er::repository::delete_relations_by_source_and_tables(
+                project_id,
+                &["schema", "comment"],
+                &filtered_table_ids,
+            )?;
+        }
+    }
+
+    // 记录已建立的 FK 列对，用于后续跳过重复的注释关系
+    let mut fk_pairs: HashSet<(i64, i64)> = HashSet::new();
+
+    // ── Import native FK relations ──
+    for db_table in &db_full_schema.tables {
+        let source_table_lower = db_table.name.to_lowercase();
+        if let Some(ref filter) = filter_set {
+            if !filter.contains(&source_table_lower) {
+                continue;
+            }
+        }
+
+        let source_table_id = match table_name_to_id.get(&source_table_lower) {
+            Some(id) => *id,
+            None => continue,
+        };
+
+        for fk in &db_table.foreign_keys {
+            let ref_table_bare = strip_schema_prefix(&fk.referenced_table).to_lowercase();
+
+            let target_table_id = match table_name_to_id.get(&ref_table_bare) {
+                Some(id) => *id,
+                None => continue,
+            };
+
+            let source_column_id =
+                match column_lookup.get(&(source_table_id, fk.column.to_lowercase())) {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+            let target_column_id = match column_lookup
+                .get(&(target_table_id, fk.referenced_column.to_lowercase()))
+            {
+                Some(id) => *id,
+                None => continue,
+            };
+
+            crate::er::repository::create_relation(&CreateRelationRequest {
+                project_id,
+                name: Some(fk.constraint_name.clone()),
+                source_table_id,
+                source_column_id,
+                target_table_id,
+                target_column_id,
+                relation_type: Some("many_to_one".to_string()),
+                on_delete: fk.on_delete.clone(),
+                on_update: fk.on_update.clone(),
+                source: Some("schema".to_string()),
+                comment_marker: None,
+                constraint_method: Some("database_fk".to_string()),
+                comment_format: None,
+            })?;
+            fk_pairs.insert((source_column_id, target_column_id));
+        }
+    }
+
+    // ── Import comment-based virtual relations ──
+    for db_table in &db_full_schema.tables {
+        let source_table_lower = db_table.name.to_lowercase();
+        if let Some(ref filter) = filter_set {
+            if !filter.contains(&source_table_lower) {
+                continue;
+            }
+        }
+
+        let source_table_id = match table_name_to_id.get(&source_table_lower) {
+            Some(id) => *id,
+            None => continue,
+        };
+
+        for db_col in &db_table.columns {
+            let comment = match &db_col.comment {
+                Some(c) if !c.is_empty() => c.as_str(),
+                _ => continue,
+            };
+
+            let refs = crate::graph::comment_parser::parse_comment_refs(comment);
+            if refs.is_empty() {
+                continue;
+            }
+
+            let source_column_id =
+                match column_lookup.get(&(source_table_id, db_col.name.to_lowercase())) {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+            for r in &refs {
+                let target_table_lower = r.target_table.to_lowercase();
+                let target_table_id = match table_name_to_id.get(&target_table_lower) {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+                let target_column_id = match column_lookup
+                    .get(&(target_table_id, r.target_column.to_lowercase()))
+                {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+                // 若该列对已有真实 FK，注释关系为冗余，跳过
+                if fk_pairs.contains(&(source_column_id, target_column_id)) {
+                    continue;
+                }
+
+                let relation_type = match r.relation_type.as_str() {
+                    "one_to_many" => "one_to_many",
+                    "many_to_one" => "many_to_one",
+                    "one_to_one" => "one_to_one",
+                    "many_to_many" => "many_to_many",
+                    _ => "many_to_one",
+                };
+
+                let format = detect_comment_format(comment, &r.target_table, &r.target_column);
+                let marker = crate::er::constraint::build_comment_marker(
+                    &r.target_table,
+                    &r.target_column,
+                    relation_type,
+                    &format,
+                );
+
+                crate::er::repository::create_relation(&CreateRelationRequest {
+                    project_id,
+                    name: None,
+                    source_table_id,
+                    source_column_id,
+                    target_table_id,
+                    target_column_id,
+                    relation_type: Some(relation_type.to_string()),
+                    on_delete: None,
+                    on_update: None,
+                    source: Some("comment".to_string()),
+                    comment_marker: Some(marker),
+                    constraint_method: Some("comment_ref".to_string()),
+                    comment_format: Some(format),
+                })?;
+            }
+        }
+    }
 
     Ok(())
 }
@@ -471,57 +692,212 @@ pub async fn er_generate_sync_ddl(
     project_id: i64,
     changes: serde_json::Value,
 ) -> AppResult<Vec<String>> {
-    // Basic structure: generate ALTER/CREATE/DROP DDL based on selected diff changes.
-    // The `changes` JSON contains the selected items from the DiffReport dialog.
-    // This will be refined later with full diff-to-DDL conversion.
-    let _full = crate::er::repository::get_project_full(project_id)?;
+    let full = crate::er::repository::get_project_full(project_id)?;
+
+    // Determine SQL dialect from the project's bound connection.
+    // Fall back to "mysql" if no connection is bound or driver is unknown.
+    let dialect = if let Some(conn_id) = full.project.connection_id {
+        crate::db::get_connection_by_id(conn_id)?
+            .map(|c| c.driver.to_lowercase())
+            .unwrap_or_else(|| "mysql".to_string())
+    } else {
+        "mysql".to_string()
+    };
+
+    // Build lookup maps: lowercase table_name → ErTableFull
+    let tables_map: HashMap<String, &crate::er::models::ErTableFull> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.name.to_lowercase(), tf))
+        .collect();
+
+    let columns_map: HashMap<i64, Vec<crate::er::models::ErColumn>> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.id, tf.columns.clone()))
+        .collect();
+
+    let indexes_map: HashMap<i64, Vec<crate::er::models::ErIndex>> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.id, tf.indexes.clone()))
+        .collect();
 
     let mut statements: Vec<String> = Vec::new();
 
-    // Parse changes JSON to extract operations
+    // ── 1. Added tables → CREATE TABLE DDL (topologically sorted) ────────
     if let Some(added_tables) = changes.get("added_tables").and_then(|v| v.as_array()) {
-        for table_val in added_tables {
-            if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
-                // TODO: Generate full CREATE TABLE DDL from ER model
-                statements.push(format!("-- CREATE TABLE {} (details to be generated)", table_name));
+        let added_table_ids: HashSet<i64> = added_tables
+            .iter()
+            .filter_map(|t| {
+                t.get("table_name")
+                    .and_then(|n| n.as_str())
+                    .and_then(|name| tables_map.get(&name.to_lowercase()))
+                    .map(|tf| tf.table.id)
+            })
+            .collect();
+
+        if !added_table_ids.is_empty() {
+            let all_tables: Vec<crate::er::models::ErTable> =
+                full.tables.iter().map(|tf| tf.table.clone()).collect();
+
+            let sort_result = sort_tables_by_dependency(
+                &all_tables,
+                &full.relations,
+                Some(&added_table_ids),
+            );
+
+            let id_to_name: HashMap<i64, String> = full
+                .tables
+                .iter()
+                .map(|tf| (tf.table.id, tf.table.name.to_lowercase()))
+                .collect();
+
+            let options = GenerateOptions::default();
+
+            for table_id in &sort_result.sorted_table_ids {
+                if let Some(table_name) = id_to_name.get(table_id) {
+                    if let Some(tf) = tables_map.get(table_name) {
+                        let ddl = generate_ddl(
+                            std::slice::from_ref(&tf.table),
+                            &columns_map,
+                            &indexes_map,
+                            &full.relations,
+                            &dialect,
+                            &options,
+                            &full.project,
+                        )?;
+                        statements.push(ddl);
+                    }
+                }
             }
         }
     }
 
-    if let Some(removed_tables) = changes.get("removed_tables").and_then(|v| v.as_array()) {
-        for table_val in removed_tables {
-            if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
-                statements.push(format!("DROP TABLE IF EXISTS {};", table_name));
-            }
-        }
-    }
-
+    // ── 2. Modified tables ───────────────────────────────────────────────
     if let Some(modified_tables) = changes.get("modified_tables").and_then(|v| v.as_array()) {
         for table_val in modified_tables {
-            let table_name = table_val
-                .get("table_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
+            let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let tf_opt = tables_map.get(&table_name.to_lowercase());
+            let q_table = crate::er::ddl_generator::quote_identifier(table_name, &dialect);
 
-            if let Some(added_cols) = table_val.get("added_columns").and_then(|v| v.as_array()) {
-                for col in added_cols {
-                    let col_name = col.get("name").and_then(|v| v.as_str()).unwrap_or("col");
-                    let col_type = col.get("data_type").and_then(|v| v.as_str()).unwrap_or("TEXT");
+            // 2a. Added columns
+            if let Some(added_cols) =
+                table_val.get("added_columns").and_then(|v| v.as_array())
+            {
+                for col_val in added_cols {
+                    let col_name =
+                        col_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(tf) = tf_opt {
+                        if let Some(er_col) = tf
+                            .columns
+                            .iter()
+                            .find(|c| c.name.to_lowercase() == col_name.to_lowercase())
+                        {
+                            let col_def = crate::er::ddl_generator::format_column_for_alter(
+                                er_col, &dialect,
+                            )?;
+                            statements.push(format!(
+                                "ALTER TABLE {} ADD COLUMN {};",
+                                q_table, col_def
+                            ));
+                        }
+                    }
+                }
+            }
+
+            // 2b. Removed columns
+            if let Some(removed_cols) =
+                table_val.get("removed_columns").and_then(|v| v.as_array())
+            {
+                for col_val in removed_cols {
+                    let col_name =
+                        col_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let q_col =
+                        crate::er::ddl_generator::quote_identifier(col_name, &dialect);
                     statements.push(format!(
-                        "ALTER TABLE {} ADD COLUMN {} {};",
-                        table_name, col_name, col_type
+                        "ALTER TABLE {} DROP COLUMN {};",
+                        q_table, q_col
                     ));
                 }
             }
 
-            if let Some(removed_cols) = table_val.get("removed_columns").and_then(|v| v.as_array())
+            // 2c. Modified columns (type or nullability change)
+            if let Some(modified_cols) =
+                table_val.get("modified_columns").and_then(|v| v.as_array())
             {
-                for col in removed_cols {
-                    let col_name = col.get("name").and_then(|v| v.as_str()).unwrap_or("col");
+                for col_val in modified_cols {
+                    let col_name =
+                        col_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(tf) = tf_opt {
+                        if let Some(er_col) = tf
+                            .columns
+                            .iter()
+                            .find(|c| c.name.to_lowercase() == col_name.to_lowercase())
+                        {
+                            let stmts =
+                                crate::er::ddl_generator::generate_modify_column_ddl(
+                                    er_col, table_name, &dialect,
+                                )?;
+                            statements.extend(stmts);
+                        }
+                    }
+                }
+            }
+
+            // 2d. Added indexes
+            if let Some(added_idxs) =
+                table_val.get("added_indexes").and_then(|v| v.as_array())
+            {
+                for idx_val in added_idxs {
+                    let idx_name =
+                        idx_val.get("name").and_then(|v| v.as_str()).unwrap_or("idx");
+                    let idx_type = idx_val
+                        .get("index_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("INDEX");
+                    let cols: Vec<String> = idx_val
+                        .get("columns")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|c| c.as_str())
+                                .map(|s| {
+                                    crate::er::ddl_generator::quote_identifier(s, &dialect)
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let unique_kw =
+                        if idx_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+                    let q_idx =
+                        crate::er::ddl_generator::quote_identifier(idx_name, &dialect);
                     statements.push(format!(
-                        "ALTER TABLE {} DROP COLUMN {};",
-                        table_name, col_name
+                        "CREATE {}INDEX {} ON {} ({});",
+                        unique_kw,
+                        q_idx,
+                        q_table,
+                        cols.join(", ")
                     ));
+                }
+            }
+
+            // 2e. Removed indexes
+            if let Some(removed_idxs) =
+                table_val.get("removed_indexes").and_then(|v| v.as_array())
+            {
+                for idx_val in removed_idxs {
+                    let idx_name =
+                        idx_val.get("name").and_then(|v| v.as_str()).unwrap_or("idx");
+                    let q_idx =
+                        crate::er::ddl_generator::quote_identifier(idx_name, &dialect);
+                    let stmt = match dialect.to_lowercase().as_str() {
+                        "mysql" => format!("DROP INDEX {} ON {};", q_idx, q_table),
+                        _ => format!("DROP INDEX IF EXISTS {};", q_idx),
+                    };
+                    statements.push(stmt);
                 }
             }
         }
@@ -591,9 +967,10 @@ pub async fn er_export_json(project_id: i64) -> AppResult<String> {
 pub async fn er_import_json(json: String) -> AppResult<ErProject> {
     let data = super::export::parse_import(&json)?;
 
-    // Create the project
+    // Create the project with a unique name (auto-rename if duplicate)
+    let unique_name = crate::er::repository::generate_unique_project_name(&data.project.name)?;
     let project = crate::er::repository::create_project(&CreateProjectRequest {
-        name: data.project.name.clone(),
+        name: unique_name,
         description: data.project.description.clone(),
     })?;
 
@@ -603,56 +980,10 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
     let mut column_key_to_id: HashMap<(String, String), i64> = HashMap::new();
 
     for export_table in &data.project.tables {
-        let table = crate::er::repository::create_table(&CreateTableRequest {
-            project_id: project.id,
-            name: export_table.name.clone(),
-            comment: export_table.comment.clone(),
-            position_x: Some(export_table.position.x),
-            position_y: Some(export_table.position.y),
-            color: None,
-        })?;
-
+        let table = create_import_table(project.id, &export_table.name, export_table)?;
         table_name_to_id.insert(export_table.name.clone(), table.id);
-
-        // Create columns
-        for (i, export_col) in export_table.columns.iter().enumerate() {
-            let col = crate::er::repository::create_column(&CreateColumnRequest {
-                table_id: table.id,
-                name: export_col.name.clone(),
-                data_type: export_col.data_type.clone(),
-                nullable: Some(export_col.nullable),
-                default_value: export_col.default_value.clone(),
-                is_primary_key: Some(export_col.is_primary_key),
-                is_auto_increment: Some(export_col.is_auto_increment),
-                comment: export_col.comment.clone(),
-                length: None,
-                scale: None,
-                is_unique: None,
-                unsigned: None,
-                charset: None,
-                collation: None,
-                on_update: None,
-                enum_values: None,
-                sort_order: Some(i as i64),
-            })?;
-
-            column_key_to_id.insert(
-                (export_table.name.clone(), export_col.name.clone()),
-                col.id,
-            );
-        }
-
-        // Create indexes
-        for export_idx in &export_table.indexes {
-            let columns_json = serde_json::to_string(&export_idx.columns)
-                .unwrap_or_else(|_| "[]".to_string());
-            crate::er::repository::create_index(&CreateIndexRequest {
-                table_id: table.id,
-                name: export_idx.name.clone(),
-                index_type: Some(export_idx.index_type.clone()),
-                columns: columns_json,
-            })?;
-        }
+        create_import_columns(table.id, &export_table.name, export_table, &mut column_key_to_id)?;
+        create_import_indexes(table.id, export_table)?;
     }
 
     // Create relations
@@ -712,8 +1043,308 @@ pub async fn er_import_json(json: String) -> AppResult<ErProject> {
             on_update: None,
             source: export_rel.source_type.clone(),
             comment_marker: export_rel.comment_marker.clone(),
+            constraint_method: None,
+            comment_format: None,
         })?;
     }
 
     Ok(project)
+}
+
+#[tauri::command]
+pub async fn er_preview_import(
+    json: String,
+    project_id: Option<i64>,
+) -> AppResult<ImportPreview> {
+    let data = super::export::parse_import(&json)?;
+
+    match project_id {
+        None => {
+            // New project mode: generate unique name
+            let unique_name =
+                crate::er::repository::generate_unique_project_name(&data.project.name)?;
+            let table_names: Vec<String> =
+                data.project.tables.iter().map(|t| t.name.clone()).collect();
+            Ok(ImportPreview {
+                project_name: unique_name,
+                table_count: table_names.len(),
+                new_tables: table_names,
+                conflict_tables: vec![],
+            })
+        }
+        Some(pid) => {
+            // Import into existing project: detect conflicts
+            let full = crate::er::repository::get_project_full(pid)?;
+            let existing_names: std::collections::HashSet<String> = full
+                .tables
+                .iter()
+                .map(|tf| tf.table.name.clone())
+                .collect();
+
+            let mut new_tables = vec![];
+            let mut conflict_tables = vec![];
+            for et in &data.project.tables {
+                if existing_names.contains(&et.name) {
+                    conflict_tables.push(et.name.clone());
+                } else {
+                    new_tables.push(et.name.clone());
+                }
+            }
+
+            Ok(ImportPreview {
+                project_name: full.project.name.clone(),
+                table_count: data.project.tables.len(),
+                new_tables,
+                conflict_tables,
+            })
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn er_execute_import(
+    json: String,
+    project_id: Option<i64>,
+    conflicts: Vec<ConflictResolution>,
+) -> AppResult<ErProject> {
+    let data = super::export::parse_import(&json)?;
+
+    // Build conflict action map: table_name -> action
+    let conflict_map: std::collections::HashMap<String, &ConflictAction> = conflicts
+        .iter()
+        .map(|c| (c.table_name.clone(), &c.action))
+        .collect();
+
+    // Determine target project and load existing data in one query
+    let (project, existing_full) = match project_id {
+        None => {
+            let unique_name =
+                crate::er::repository::generate_unique_project_name(&data.project.name)?;
+            let proj = crate::er::repository::create_project(&CreateProjectRequest {
+                name: unique_name,
+                description: data.project.description.clone(),
+            })?;
+            (proj, None)
+        }
+        Some(pid) => {
+            let full = crate::er::repository::get_project_full(pid)?;
+            let proj = full.project.clone();
+            (proj, Some(full))
+        }
+    };
+
+    // If importing into existing project, build existing table name -> id map
+    let existing_tables: std::collections::HashMap<String, i64> = if let Some(ref full) = existing_full {
+        full.tables
+            .iter()
+            .map(|tf| (tf.table.name.clone(), tf.table.id))
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Track table name -> new id, and (table_name, col_name) -> col_id for relations
+    let mut table_name_to_id: HashMap<String, i64> = HashMap::new();
+    let mut column_key_to_id: HashMap<(String, String), i64> = HashMap::new();
+
+    // Pre-populate with existing tables (for relations that reference non-imported tables)
+    if let Some(ref full) = existing_full {
+        for tf in &full.tables {
+            table_name_to_id.insert(tf.table.name.clone(), tf.table.id);
+            for col in &tf.columns {
+                column_key_to_id.insert(
+                    (tf.table.name.clone(), col.name.clone()),
+                    col.id,
+                );
+            }
+        }
+    }
+
+    for export_table in &data.project.tables {
+        let is_conflict = existing_tables.contains_key(&export_table.name);
+
+        if is_conflict {
+            let action = conflict_map
+                .get(&export_table.name)
+                .copied()
+                .unwrap_or(&ConflictAction::Skip);
+
+            match action {
+                ConflictAction::Skip => {
+                    // Keep existing table, no changes
+                    continue;
+                }
+                ConflictAction::Overwrite => {
+                    // Delete existing table, then create new one
+                    let old_id = existing_tables[&export_table.name];
+                    crate::er::repository::delete_table(old_id)?;
+                    // Remove from tracking maps
+                    table_name_to_id.remove(&export_table.name);
+                    // Fall through to create
+                }
+                ConflictAction::Rename => {
+                    // Generate a renamed table name with _1, _2, etc.
+                    let mut all_names: std::collections::HashSet<String> = existing_tables
+                        .keys()
+                        .cloned()
+                        .collect();
+                    // Also include names of tables we've already imported in this batch
+                    for name in table_name_to_id.keys() {
+                        all_names.insert(name.clone());
+                    }
+                    let base = &export_table.name;
+                    let mut suffix = 1;
+                    let renamed = loop {
+                        let candidate = format!("{}_{}", base, suffix);
+                        if !all_names.contains(&candidate) {
+                            break candidate;
+                        }
+                        suffix += 1;
+                    };
+
+                    let table = create_import_table(
+                        project.id,
+                        &renamed,
+                        export_table,
+                    )?;
+                    table_name_to_id.insert(renamed.clone(), table.id);
+                    create_import_columns(
+                        table.id,
+                        &renamed,
+                        export_table,
+                        &mut column_key_to_id,
+                    )?;
+                    create_import_indexes(table.id, export_table)?;
+                    continue;
+                }
+            }
+        }
+
+        // Create table (new or after overwrite-delete)
+        let table = create_import_table(
+            project.id,
+            &export_table.name,
+            export_table,
+        )?;
+        table_name_to_id.insert(export_table.name.clone(), table.id);
+        create_import_columns(
+            table.id,
+            &export_table.name,
+            export_table,
+            &mut column_key_to_id,
+        )?;
+        create_import_indexes(table.id, export_table)?;
+    }
+
+    // Create relations
+    for export_rel in &data.project.relations {
+        let src_table_id = match table_name_to_id.get(&export_rel.source.table) {
+            Some(id) => *id,
+            None => continue, // Source table was skipped
+        };
+        let src_col_id = match column_key_to_id.get(&(
+            export_rel.source.table.clone(),
+            export_rel.source.column.clone(),
+        )) {
+            Some(id) => *id,
+            None => continue,
+        };
+        let tgt_table_id = match table_name_to_id.get(&export_rel.target.table) {
+            Some(id) => *id,
+            None => continue,
+        };
+        let tgt_col_id = match column_key_to_id.get(&(
+            export_rel.target.table.clone(),
+            export_rel.target.column.clone(),
+        )) {
+            Some(id) => *id,
+            None => continue,
+        };
+
+        crate::er::repository::create_relation(&CreateRelationRequest {
+            project_id: project.id,
+            name: export_rel.name.clone(),
+            source_table_id: src_table_id,
+            source_column_id: src_col_id,
+            target_table_id: tgt_table_id,
+            target_column_id: tgt_col_id,
+            relation_type: Some(export_rel.relation_type.clone()),
+            on_delete: Some(export_rel.on_delete.clone()),
+            on_update: None,
+            source: export_rel.source_type.clone(),
+            comment_marker: export_rel.comment_marker.clone(),
+            constraint_method: None,
+            comment_format: None,
+        })?;
+    }
+
+    Ok(project)
+}
+
+// ─── Import helpers ─────────────────────────────────────────────────────────
+
+fn create_import_table(
+    project_id: i64,
+    name: &str,
+    export_table: &super::export::ExportTable,
+) -> AppResult<ErTable> {
+    crate::er::repository::create_table(&CreateTableRequest {
+        project_id,
+        name: name.to_string(),
+        comment: export_table.comment.clone(),
+        position_x: Some(export_table.position.x),
+        position_y: Some(export_table.position.y),
+        color: export_table.color.clone(),
+    })
+}
+
+fn create_import_columns(
+    table_id: i64,
+    table_name: &str,
+    export_table: &super::export::ExportTable,
+    column_key_to_id: &mut HashMap<(String, String), i64>,
+) -> AppResult<()> {
+    for (i, export_col) in export_table.columns.iter().enumerate() {
+        let col = crate::er::repository::create_column(&CreateColumnRequest {
+            table_id,
+            name: export_col.name.clone(),
+            data_type: export_col.data_type.clone(),
+            nullable: Some(export_col.nullable),
+            default_value: export_col.default_value.clone(),
+            is_primary_key: Some(export_col.is_primary_key),
+            is_auto_increment: Some(export_col.is_auto_increment),
+            comment: export_col.comment.clone(),
+            length: None,
+            scale: None,
+            is_unique: None,
+            unsigned: None,
+            charset: None,
+            collation: None,
+            on_update: None,
+            enum_values: None,
+            sort_order: Some(i as i64),
+        })?;
+        column_key_to_id.insert(
+            (table_name.to_string(), export_col.name.clone()),
+            col.id,
+        );
+    }
+    Ok(())
+}
+
+fn create_import_indexes(
+    table_id: i64,
+    export_table: &super::export::ExportTable,
+) -> AppResult<()> {
+    for export_idx in &export_table.indexes {
+        let columns_json =
+            serde_json::to_string(&export_idx.columns).unwrap_or_else(|_| "[]".to_string());
+        crate::er::repository::create_index(&CreateIndexRequest {
+            table_id,
+            name: export_idx.name.clone(),
+            index_type: Some(export_idx.index_type.clone()),
+            columns: columns_json,
+        })?;
+    }
+    Ok(())
 }

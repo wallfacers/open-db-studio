@@ -37,7 +37,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 describe('QueryEditorAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockTabs = [{ id: 'tab_1', type: 'query', title: 'Q1', connectionId: 1, db: 'testdb' }]
+    mockTabs = [{ id: 'tab_1', type: 'query', title: 'Q1', connectionId: 1, db: 'testdb', queryContext: { connectionId: 1, database: 'testdb', schema: null } }]
     mockSqlContent = { tab_1: 'SELECT 1' }
   })
 

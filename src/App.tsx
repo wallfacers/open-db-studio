@@ -7,6 +7,8 @@ import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
 import { AssistantToggleTab } from './components/Assistant/AssistantToggleTab';
 import { Toast, type ToastLevel } from './components/Toast';
+import { useShallow } from 'zustand/react/shallow';
+import { useToastStore } from './store/toastStore';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
@@ -53,6 +55,10 @@ export default function App() {
     activeTab?.queryContext?.database ??
     activeTab?.metricScope?.database ??
     activeTab?.db ??
+    null;
+  const activeSchema =
+    activeTab?.queryContext?.schema ??
+    activeTab?.schema ??
     null;
   const { visible: taskCenterVisible, setVisible: setTaskCenterVisible } = useTaskStore();
   // 全局挂载 MCP 双向桥接（UI action / query request）
@@ -129,15 +135,12 @@ export default function App() {
     }
   }, [results, activeTabId, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [toast, setToast] = useState<{ message: string; level: ToastLevel; markdownContext?: string | null } | null>(null);
-
-  const showToast = (msg: string, level: ToastLevel = 'default') => {
-    setToast({ message: msg, level });
-  };
-
-  const showError = (userMessage: string, markdownContext?: string | null) => {
-    setToast({ message: userMessage, level: 'error', markdownContext });
-  };
+  const { message: toastMsg, level: toastLevel, markdownContext: toastMarkdown } = useToastStore(useShallow(s => ({
+    message: s.message, level: s.level, markdownContext: s.markdownContext,
+  })));
+  const hideToast = useToastStore(s => s.hide);
+  const showToast = useToastStore(s => s.show);
+  const showError = useToastStore(s => s.showError);
 
   const handleFormat = () => {
     const { activeTabId, sqlContent, setSql, tabs } = useQueryStore.getState();
@@ -250,7 +253,7 @@ export default function App() {
   const isMac = navigator.userAgent.includes('Mac');
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#080d12] text-[#b5cfe8] overflow-hidden font-sans text-[13px]">
+    <div className="h-screen w-screen flex flex-col bg-background-void text-foreground overflow-hidden font-sans text-[13px]">
       {!isMac && <TitleBar />}
       <div className="flex flex-1 overflow-hidden">
       <ActivityBar
@@ -324,19 +327,21 @@ export default function App() {
           handleAssistantResize={handleAssistantResize}
           showToast={showToast}
           activeConnectionId={activeConnectionId}
+          activeDatabase={activeDatabase}
+          activeSchema={activeSchema}
           onOpenSettings={() => setActiveActivity('settings')}
         />
       </div>
 
       <Toast
-        message={toast?.message ?? null}
-        level={toast?.level}
-        markdownContext={toast?.markdownContext}
-        onAskAi={toast?.markdownContext ? () => {
-          askAiWithContext(toast!.markdownContext!);
-          setToast(null);
+        message={toastMsg}
+        level={toastLevel}
+        markdownContext={toastMarkdown}
+        onAskAi={toastMarkdown ? () => {
+          askAiWithContext(toastMarkdown!);
+          hideToast();
         } : undefined}
-        onClose={() => setToast(null)}
+        onClose={hideToast}
       />
       <ConfirmDialog />
       </div>

@@ -51,6 +51,37 @@ ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database
 ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database: "app"})  # new table
 ```
 
+### init_table_form — open and populate in one call
+Open a table designer for a connected database and batch-initialize all columns/indexes in a single IPC round-trip. Use this instead of the multi-step open + patch workflow when creating new tables.
+
+**Do NOT use for ER diagram design** — use `init_er_table` for that.
+
+```
+init_table_form(
+  connection_id: integer,   # required
+  database: string,         # required
+  table_name: string,       # required
+  columns: [                # required
+    {
+      name: string,         # required
+      dataType: string,     # required
+      length?: string,      # e.g. "10,2" for DECIMAL
+      isNullable?: boolean, # default true
+      isPrimaryKey?: boolean,
+      defaultValue?: string,
+      extra?: string,       # e.g. "AUTO_INCREMENT"
+      comment?: string
+    }
+  ],
+  indexes?: [{ name: string, columns: string[], unique?: boolean }],
+  comment?: string,
+  engine?: string,   # default "InnoDB"
+  charset?: string   # default "utf8mb4"
+)
+```
+
+Returns `{ objectId }` — the new tab's ID for subsequent `ui_patch` / `ui_exec` calls.
+
 ## Multi-round Editing Workflow
 
 1. Open table form: `ui_exec("workspace", "", "open", {type: "table_form", ...})`

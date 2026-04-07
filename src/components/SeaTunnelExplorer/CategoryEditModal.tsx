@@ -53,45 +53,45 @@ export function CategoryEditModal({
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-[#111922] border border-[#253347] rounded-lg shadow-2xl w-80"
+        className="bg-background-panel border border-border-strong rounded-lg shadow-2xl w-80"
         onKeyDown={handleKeyDown}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#253347]">
-          <span className="text-sm font-medium text-[#c8daea]">{t('seaTunnel.categoryModal.newTitle')}</span>
-          <button className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors" onClick={onClose}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-strong">
+          <span className="text-sm font-medium text-foreground-default">{t('seaTunnel.categoryModal.newTitle')}</span>
+          <button className="text-foreground-muted hover:text-foreground-default transition-colors" onClick={onClose}>
             <X size={16} />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {parentNode && (
-            <div className="text-xs text-[#7a9bb8]">
-              {t('seaTunnel.categoryModal.parentCategory')}：<span className="text-[#c8daea]">{parentNode.label}</span>
+            <div className="text-xs text-foreground-muted">
+              {t('seaTunnel.categoryModal.parentCategory')}：<span className="text-foreground-default">{parentNode.label}</span>
             </div>
           )}
           <div>
-            <label className="block text-xs text-[#7a9bb8] mb-1">{t('seaTunnel.categoryModal.categoryName')}</label>
+            <label className="block text-xs text-foreground-muted mb-1">{t('seaTunnel.categoryModal.categoryName')}</label>
             <input
               ref={inputRef}
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder={t('seaTunnel.categoryModal.namePlaceholder')}
-              className="w-full bg-[#0d1117] border border-[#253347] rounded px-3 py-1.5 text-sm text-[#c8daea] placeholder-[#7a9bb8] outline-none focus:border-[#00c9a7] transition-colors"
+              className="w-full bg-background-base border border-border-strong rounded px-3 py-1.5 text-sm text-foreground-default placeholder-foreground-muted outline-none focus:border-accent transition-colors"
             />
           </div>
-          {error && <div className="text-xs text-red-400">{error}</div>}
+          {error && <div className="text-xs text-error">{error}</div>}
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-[#7a9bb8] hover:text-[#c8daea] border border-[#253347] rounded transition-colors"
+              className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground-default border border-border-strong rounded transition-colors"
             >
               {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-3 py-1.5 text-xs text-[#0d1117] bg-[#00c9a7] hover:bg-[#00a98f] rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs text-background-base bg-accent hover:bg-accent-hover rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? t('common.saving') : t('common.create')}
             </button>

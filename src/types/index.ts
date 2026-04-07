@@ -212,11 +212,40 @@ export interface FullSchemaInfo {
   procedures: ProcedureMeta[];
 }
 
+// ── 消息 Part 类型（Part-based 消息结构）────────────────────────────────────
+
+export interface TextPart {
+  type: 'text';
+  content: string;
+}
+
+export interface ReasoningPart {
+  type: 'reasoning';
+  content: string;
+}
+
+export interface ToolUsePart {
+  type: 'tool-use';
+  name: string;
+  arguments: string;
+  callId: string;
+}
+
+export interface ToolResultPart {
+  type: 'tool-result';
+  callId: string;
+  output: string;
+  isError?: boolean;
+}
+
+export type MessagePart = TextPart | ReasoningPart | ToolUsePart | ToolResultPart;
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  thinkingContent?: string;   // 思考模型的推理过程
+  thinkingContent?: string;   // 思考模型的推理过程（向后兼容）
   isStreaming?: boolean;      // 是否正在流式输出
+  parts?: MessagePart[];      // Part-based 结构（新消息使用，老消息通过 normalizeMessage 适配）
 }
 
 export interface ChatSession {
@@ -396,7 +425,7 @@ export interface PermissionRequest {
 /** OpenCode question.asked — AI agent 请求用户回答选择题/自定义输入 */
 export interface QuestionOption {
   label: string
-  description: string
+  description?: string
 }
 
 export interface QuestionInfo {
@@ -444,6 +473,8 @@ export interface ErProject {
   viewport_x: number;
   viewport_y: number;
   viewport_zoom: number;
+  default_constraint_method: string;   // 'database_fk' | 'comment_ref'
+  default_comment_format: string;      // '@ref' | '@fk' | '[ref]' | '$$ref$$'
   created_at: string;
   updated_at: string;
 }
@@ -456,6 +487,8 @@ export interface ErTable {
   position_x: number;
   position_y: number;
   color: string | null;
+  constraint_method: string | null;    // null = 继承项目级
+  comment_format: string | null;       // null = 继承项目级
   created_at: string;
   updated_at: string;
 }
@@ -497,6 +530,8 @@ export interface ErRelation {
   on_update: string;
   source: string;  // 'schema' | 'comment' | 'designer'
   comment_marker: string | null;
+  constraint_method: string | null;    // null = 继承表级
+  comment_format: string | null;       // null = 继承
   created_at: string;
   updated_at: string;
 }
@@ -568,4 +603,20 @@ export interface SyncExecutionResult {
   statement: string;
   success: boolean;
   error: string | null;
+}
+
+// ─── ER Import types ───────────────────────────────────────────────────────
+
+export interface ImportPreview {
+  project_name: string;
+  table_count: number;
+  new_tables: string[];
+  conflict_tables: string[];
+}
+
+export type ConflictAction = 'skip' | 'overwrite' | 'rename';
+
+export interface ConflictResolution {
+  table_name: string;
+  action: ConflictAction;
 }

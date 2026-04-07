@@ -58,6 +58,8 @@ interface QueryState {
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
   openERDesignTab: (projectId: number, projectName: string) => void;
+  updateERDesignTabTitle: (projectId: number, title: string) => void;
+  closeERDesignTab: (projectId: number) => void;
 
   closeTab: (tabId: string) => void;
   closeMetricTabById: (metricId: number) => void;
@@ -294,6 +296,26 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
+  updateERDesignTabTitle: (projectId, title) => {
+    set(s => ({
+      tabs: s.tabs.map(t =>
+        t.type === 'er_design' && t.erProjectId === projectId ? { ...t, title } : t
+      ),
+    }));
+  },
+
+  closeERDesignTab: (projectId) => {
+    set(s => {
+      const tab = s.tabs.find(t => t.type === 'er_design' && t.erProjectId === projectId);
+      if (!tab) return {};
+      const newTabs = s.tabs.filter(t => t.id !== tab.id);
+      const newActiveId = s.activeTabId === tab.id
+        ? (newTabs[newTabs.length - 1]?.id ?? '')
+        : s.activeTabId;
+      return { tabs: newTabs, activeTabId: newActiveId };
+    });
+  },
+
   openERDesignTab: (projectId, projectName) => {
     set(s => {
       const existing = s.tabs.find(t => t.type === 'er_design' && t.erProjectId === projectId);
@@ -421,31 +443,28 @@ export const useQueryStore = create<QueryState>((set, get) => ({
 
     const flushDmlBatch = () => {
       if (dmlBatch.length === 0) return;
-      if (dmlBatch.length === 1) {
-        // 单条 DML 不聚合，保持原位
-        orderedResults[dmlBatch[0].idx] = dmlBatch[0].result;
-      } else {
-        const totalDuration = dmlBatch.reduce((sum, r) => sum + r.result.duration_ms, 0);
-        const dmlReport: QueryResult = {
-          columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
-          rows: dmlBatch.map((item, i) => [
-            String(i + 1),
-            getSqlType(item.stmt),
-            item.stmt.replace(/\s+/g, ' ').trim(),
-            String(item.result.row_count),
-            String(item.result.duration_ms),
-            '✓ 成功',
-          ]),
-          row_count: dmlBatch.reduce((sum, r) => sum + r.result.row_count, 0),
-          duration_ms: totalDuration,
-          kind: 'dml-report',
-          sql: `-- DML batch (${dmlBatch.length} statements)`,
-        };
-        // 放在 batch 首位 index，后续位置标记为 null 待清理
-        orderedResults[dmlBatch[0].idx] = dmlReport;
-        for (let i = 1; i < dmlBatch.length; i++) {
-          orderedResults[dmlBatch[i].idx] = null as unknown as QueryResult;
-        }
+      const totalDuration = dmlBatch.reduce((sum, r) => sum + r.result.duration_ms, 0);
+      const dmlReport: QueryResult = {
+        columns: ['#', '操作', 'SQL摘要', '影响行数', '耗时(ms)', '状态'],
+        rows: dmlBatch.map((item, i) => [
+          String(i + 1),
+          getSqlType(item.stmt),
+          item.stmt.replace(/\s+/g, ' ').trim(),
+          String(item.result.row_count),
+          String(item.result.duration_ms),
+          '✓ 成功',
+        ]),
+        row_count: dmlBatch.reduce((sum, r) => sum + r.result.row_count, 0),
+        duration_ms: totalDuration,
+        kind: 'dml-report',
+        sql: dmlBatch.length === 1
+          ? dmlBatch[0].stmt
+          : `-- DML batch (${dmlBatch.length} statements)`,
+      };
+      // 放在 batch 首位 index，后续位置标记为 null 待清理
+      orderedResults[dmlBatch[0].idx] = dmlReport;
+      for (let i = 1; i < dmlBatch.length; i++) {
+        orderedResults[dmlBatch[i].idx] = null as unknown as QueryResult;
       }
       dmlBatch.length = 0;
     };

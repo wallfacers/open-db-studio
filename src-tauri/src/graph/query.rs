@@ -255,12 +255,16 @@ mod tests {
                 id            TEXT PRIMARY KEY,
                 node_type     TEXT NOT NULL,
                 connection_id INTEGER,
+                database      TEXT,
+                schema_name   TEXT,
                 name          TEXT NOT NULL,
                 display_name  TEXT,
                 metadata      TEXT,
                 aliases       TEXT,
                 is_deleted    INTEGER NOT NULL DEFAULT 0,
-                source        TEXT DEFAULT 'schema'
+                source        TEXT DEFAULT 'schema',
+                position_x    REAL,
+                position_y    REAL
             );
 
             CREATE VIRTUAL TABLE graph_nodes_fts
@@ -292,8 +296,8 @@ mod tests {
     ) {
         conn.execute(
             "INSERT INTO graph_nodes
-             (id, node_type, connection_id, name, display_name, metadata, aliases, is_deleted, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, 'schema')",
+             (id, node_type, connection_id, database, schema_name, name, display_name, metadata, aliases, is_deleted, source)
+             VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, NULL, ?6, ?7, 'schema')",
             params![id, node_type, connection_id, name, display_name, aliases, is_deleted],
         )
         .expect("insert graph_nodes");
@@ -488,8 +492,8 @@ mod tests {
         // 带 metadata JSON 字符串的节点
         conn.execute(
             "INSERT INTO graph_nodes
-             (id, node_type, connection_id, name, display_name, metadata, aliases, is_deleted, source)
-             VALUES ('m1', 'table', 1, 'meta_table', NULL, '{\"comment\":\"test\"}', NULL, 0, 'schema')",
+             (id, node_type, connection_id, database, schema_name, name, display_name, metadata, aliases, is_deleted, source)
+             VALUES ('m1', 'table', 1, NULL, NULL, 'meta_table', NULL, '{\"comment\":\"test\"}', NULL, 0, 'schema')",
             [],
         )
         .unwrap();
@@ -497,16 +501,15 @@ mod tests {
         // metadata 为 NULL 的节点
         conn.execute(
             "INSERT INTO graph_nodes
-             (id, node_type, connection_id, name, display_name, metadata, aliases, is_deleted, source)
-             VALUES ('m2', 'table', 1, 'no_meta_table', NULL, NULL, NULL, 0, 'schema')",
+             (id, node_type, connection_id, database, schema_name, name, display_name, metadata, aliases, is_deleted, source)
+             VALUES ('m2', 'table', 1, NULL, NULL, 'no_meta_table', NULL, NULL, NULL, 0, 'schema')",
             [],
         )
         .unwrap();
 
         let node_with_meta = conn
             .query_row(
-                "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
-                 FROM graph_nodes WHERE id='m1'",
+                &format!("SELECT {} FROM graph_nodes WHERE id='m1'", super::GN_COLS),
                 [],
                 super::row_to_node,
             )
@@ -514,8 +517,7 @@ mod tests {
 
         let node_without_meta = conn
             .query_row(
-                "SELECT id,node_type,connection_id,name,display_name,metadata,aliases,is_deleted,source
-                 FROM graph_nodes WHERE id='m2'",
+                &format!("SELECT {} FROM graph_nodes WHERE id='m2'", super::GN_COLS),
                 [],
                 super::row_to_node,
             )

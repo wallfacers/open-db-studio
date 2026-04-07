@@ -1,5 +1,125 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Tailwind v4 @theme — CSS 变量 → 语义类名映射
+   使用: text-error / bg-primary / border-border-focus 等
+   禁止: text-[var(--error)] / bg-[var(--primary)] 等 var() 包装器
+   ============================================================ */
+@theme {
+  /* --- 核心语义色 --- */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-subtle: var(--primary-subtle);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-hover: var(--secondary-hover);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
+  /* --- 背景层级 --- */
+  --color-background: var(--background);
+  --color-background-void: var(--background-void);
+  --color-background-base: var(--background-base);
+  --color-background-panel: var(--background-panel);
+  --color-background-card: var(--background-card);
+  --color-background-elevated: var(--background-elevated);
+  --color-background-hover: var(--background-hover);
+  --color-background-active: var(--background-active);
+  --color-background-deep: var(--background-deep);
+  --color-background-code: var(--background-code);
+
+  /* --- 前景/文字层级 --- */
+  --color-foreground: var(--foreground);
+  --color-foreground-default: var(--foreground-default);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-ghost: var(--foreground-ghost);
+
+  /* --- 边框层级 --- */
+  --color-border: var(--border);
+  --color-border-default: var(--border-default);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-focus: var(--border-focus);
+
+  /* --- 语义状态色 --- */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-subtle: var(--error-subtle);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+
+  /* --- 功能色 --- */
+  --color-ring: var(--ring);
+  --color-ring-accent: var(--ring-accent);
+  --color-overlay: var(--overlay);
+  --color-scrim: var(--scrim);
+
+  /* --- Diff/Patch 色 --- */
+  --color-diff-add: var(--diff-add);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-remove: var(--diff-remove);
+  --color-diff-remove-bg: var(--diff-remove-bg);
+  --color-diff-modify: var(--diff-modify);
+  --color-diff-modify-bg: var(--diff-modify-bg);
+
+  /* --- 数据库对象指示色 --- */
+  --color-key-primary: var(--key-primary);
+  --color-key-foreign: var(--key-foreign);
+
+  /* --- 知识图谱节点/边 --- */
+  --color-node-table: var(--node-table);
+  --color-node-table-bg: var(--node-table-bg);
+  --color-node-metric: var(--node-metric);
+  --color-node-metric-bg: var(--node-metric-bg);
+  --color-node-alias: var(--node-alias);
+  --color-node-alias-bg: var(--node-alias-bg);
+
+  --color-edge-fk: var(--edge-fk);
+  --color-edge-reference: var(--edge-reference);
+  --color-edge-alias: var(--edge-alias);
+  --color-edge-default: var(--edge-default);
+
+  /* --- 窗口控件/危险操作 --- */
+  --color-window-close-hover: var(--window-close-hover);
+  --color-danger-hover-bg: var(--danger-hover-bg);
+
+  /* --- 数据可视化色板 --- */
+  --color-data-blue: var(--data-blue);
+  --color-data-green: var(--data-green);
+  --color-data-amber: var(--data-amber);
+  --color-data-red: var(--data-red);
+  --color-data-purple: var(--data-purple);
+  --color-data-cyan: var(--data-cyan);
+  --color-data-pink: var(--data-pink);
+  --color-data-indigo: var(--data-indigo);
+
+  /* --- ECharts 图表色板 --- */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+}
+
 /* 隐藏浏览器原生密码查看按钮（Edge/IE） */
 .no-password-reveal::-ms-reveal,
 .no-password-reveal::-ms-clear {
@@ -8,11 +128,13 @@
 
 /* ============================================================
    ABYSS THEME — open-db-studio 暗黑主题色彩系统
-   设计语言：深海军蓝底色 + 电光青主题色
+   设计语言：深海军蓝底色 + 靛蓝品牌色 (Indigo Brand)
    ============================================================ */
 
 :root {
-  /* --- 字体系统 --- */
+  /* ========================================================
+     字体系统
+     ======================================================== */
   --font-sans:
     -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell,
@@ -20,38 +142,172 @@
     "Noto Sans CJK SC", "Source Han Sans SC",
     sans-serif;
 
-  /* --- 背景层级 (深度从深到浅) --- */
-  --bg-void:     #080d12;  /* 最深背景，app根节点 */
-  --bg-base:     #0d1117;  /* 面板/侧边栏 */
-  --bg-panel:    #111922;  /* 主内容区 */
-  --bg-elevated: #151d28;  /* 卡片/悬浮面板 */
-  --bg-hover:    #1a2639;  /* hover状态背景 */
-  --bg-active:   #003d2f;  /* 选中/激活背景 */
+  /* ========================================================
+     核心语义色彩 (Semantic Colors)
+     完整规范: docs/design-system/color-system-proposal.md
+     ======================================================== */
 
-  /* --- 边框 --- */
-  --border-subtle:  #161e2e;  /* 极细分隔线 */
-  --border-default: #1e2d42;  /* 默认边框 */
-  --border-strong:  #2a3f5a;  /* 强调边框 */
-  --border-focus:   #00a98f;  /* 焦点边框 */
+  /* --- Primary: 品牌色 / 主要交互色 (Indigo) --- */
+  --primary:            #6366F1;  /* indigo-500 */
+  --primary-foreground:  #FFFFFF;
+  --primary-hover:      #4F46E5;  /* indigo-600 */
+  --primary-active:     #4338CA;  /* indigo-700 */
+  --primary-subtle:     #312E81;  /* indigo-900 */
 
-  /* --- 文字 --- */
-  --text-ghost:   #2a3e56;  /* 禁用/极暗 */
-  --text-muted:   #4a6480;  /* 占位符 */
-  --text-subtle:  #7a9bb8;  /* 次要信息 */
-  --text-default: #c8daea;  /* 正文 */
-  --text-bright:  #e8f4ff;  /* 标题/高亮文字 */
+  /* --- Secondary: 次要交互色 --- */
+  --secondary:            #334155;
+  --secondary-foreground:  #F8FAFC;
+  --secondary-hover:      #475569;
 
-  /* --- 主题色 Abyss Cyan --- */
-  --accent-deep:    #003d2f;  /* 激活背景 */
-  --accent-muted:   #00a98f;  /* 次要强调 */
-  --accent:         #00c9a7;  /* 主题色 */
-  --accent-bright:  #29edd0;  /* hover强调 */
+  /* --- Accent: 强调/执行色 --- */
+  --accent:            #10B981;
+  --accent-foreground: #020617;
+  --accent-hover:      #059669;
+  --accent-subtle:     #064E3B;
 
-  /* --- 语义颜色 --- */
-  --color-success: #4ade80;
-  --color-warning: #f59e0b;
-  --color-error:   #f43f5e;
-  --color-info:    #5eb2f7;
+  /* ========================================================
+     背景层级 (Background Scale)
+     ======================================================== */
+  --background:          #0F172A;
+  --background-void:     #020617;
+  --background-base:     #0F172A;
+  --background-panel:    #1E293B;
+  --background-card:     #1E293B;
+  --background-elevated: #27354F;
+  --background-hover:    #334155;
+  --background-active:   #252363;  /* dark indigo tint */
+  --background-deep:     #0A1018;
+  --background-code:     #161B22;
+
+  /* ========================================================
+     前景/文字层级 (Foreground Scale)
+     ======================================================== */
+  --foreground:         #F8FAFC;
+  --foreground-default: #E2E8F0;
+  --foreground-muted:   #94A3B8;
+  --foreground-subtle:  #64748B;
+  --foreground-ghost:   #475569;
+
+  /* ========================================================
+     边框层级 (Border Scale)
+     ======================================================== */
+  --border:        #334155;
+  --border-default:#334155;
+  --border-subtle:  #1E293B;
+  --border-strong:  #475569;
+  --border-focus:   #818CF8;  /* indigo-400 — 深色背景高可见性 */
+
+  /* ========================================================
+     语义状态色 (Semantic Status Colors)
+     ======================================================== */
+  --success:            #22C55E;
+  --success-foreground: #DCFCE7;
+  --success-subtle:     #14532D;
+
+  --warning:            #F59E0B;
+  --warning-foreground: #FEF3C7;
+  --warning-subtle:     #78350F;
+
+  --error:              #EF4444;
+  --error-foreground:   #FEE2E2;
+  --error-subtle:       #7F1D1D;
+
+  --info:               #3B82F6;
+  --info-foreground:    #DBEAFE;
+  --info-subtle:        #1E3A8A;
+
+  /* ========================================================
+     功能色 (Functional Colors)
+     ======================================================== */
+  --ring:        #818CF8;  /* indigo-400 — 与 border-focus 一致 */
+  --ring-accent: #10B981;
+  --overlay:     rgba(2, 6, 23, 0.8);
+  --scrim:       rgba(2, 6, 23, 0.6);
+
+  /* ========================================================
+     Diff/Patch 色
+     ======================================================== */
+  --diff-add:        #4ADE80;
+  --diff-add-bg:     #0E2A1A;
+  --diff-remove:     #F87171;
+  --diff-remove-bg:  #2A0E0E;
+  --diff-modify:     #60A5FA;
+  --diff-modify-bg:  #0E1A2A;
+
+  /* ========================================================
+     数据库对象指示色
+     ======================================================== */
+  --key-primary:  #F59E0B;
+  --key-foreign:  #8BAFC9;
+
+  /* ========================================================
+     知识图谱节点色
+     ======================================================== */
+  --node-table:      #3794FF;
+  --node-table-bg:   #0D2A3D;
+  --node-metric:     #F59E0B;
+  --node-metric-bg:  #2D1E0D;
+  --node-alias:      #A855F7;
+  --node-alias-bg:   #1E0D2D;
+
+  --edge-fk:         #3794FF;
+  --edge-reference:  #F59E0B;
+  --edge-alias:      #A855F7;
+  --edge-default:    #4A6380;
+
+  /* ========================================================
+     窗口控件/危险操作色
+     ======================================================== */
+  --window-close-hover: #C0392B;
+  --danger-hover-bg:    #3D1F1F;
+
+  /* ========================================================
+     数据可视化色板
+     ======================================================== */
+  --data-blue:   #3B82F6;
+  --data-green:  #22C55E;
+  --data-amber:  #F59E0B;
+  --data-red:    #EF4444;
+  --data-purple: #A855F7;
+  --data-cyan:   #06B6D4;
+  --data-pink:   #EC4899;
+  --data-indigo: #818CF8;
+
+  /* ========================================================
+     ECharts 图表色板
+     ======================================================== */
+  --chart-1: #4A9ECA;
+  --chart-2: #7B8FF0;
+  --chart-3: #E07B54;
+  --chart-4: #F0C94A;
+  --chart-5: #A78BFA;
+  --chart-6: #34D399;
+  --chart-7: #F87171;
+
+  /* ========================================================
+     旧版兼容别名（已废弃，仅供渐进迁移）
+     ======================================================== */
+  --bg-void:     var(--background-void);
+  --bg-base:     var(--background-base);
+  --bg-panel:    var(--background-panel);
+  --bg-elevated: var(--background-elevated);
+  --bg-hover:    var(--background-hover);
+  --bg-active:   var(--accent-subtle);
+
+  --text-ghost:   var(--foreground-ghost);
+  --text-muted:   var(--foreground-subtle);
+  --text-subtle:  var(--foreground-muted);
+  --text-default: var(--foreground-default);
+  --text-bright:  var(--foreground);
+
+  --accent-deep:   var(--accent-subtle);
+  --accent-muted:  var(--accent-hover);
+  --accent-bright: var(--accent);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error:   var(--error);
+  --color-info:    var(--info);
 }
 
 /* ============================================================
@@ -61,13 +317,13 @@
 .token.string     { color: #e8a87c; }   /* 字符串 — 暖珊瑚 */
 .token.number     { color: #9de0b2; }   /* 数字 — 薄荷绿 */
 .token.function   { color: #e8d87a; }   /* 函数 — 琥珀金 */
-.token.operator   { color: #c8daea; }   /* 运算符 — 主文本 */
-.token.punctuation{ color: #c8daea; }   /* 标点 */
+.token.operator   { color: var(--foreground-default); }   /* 运算符 — 主文本 */
+.token.punctuation{ color: var(--foreground-default); }   /* 标点 */
 .token.comment    { color: #4caf76; font-style: italic; }  /* 注释 — 翠绿 */
 .token.boolean    { color: #5eb2f7; }   /* 布尔 — 冰蓝 */
 .token.property   { color: #88d8ff; }   /* 属性 — 天蓝 */
-.token.class-name { color: #00c9a7; }   /* 类名 — 主题色 */
-.token.builtin    { color: #00c9a7; }   /* 内建 — 主题色 */
+.token.class-name { color: var(--accent); }   /* 类名 — 主题色 */
+.token.builtin    { color: var(--accent); }   /* 内建 — 主题色 */
 
 /* ============================================================
    滚动条样式 — Abyss Style
@@ -82,7 +338,7 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #1e2d42;
+  background-color: var(--border-default);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
@@ -90,13 +346,13 @@
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #2a3f5a;
+  background-color: var(--border-strong);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1e2d42 transparent;
+  scrollbar-color: var(--border-default) transparent;
 }
 
 /* ============================================================
@@ -109,17 +365,17 @@
 /* React Flow Controls — dark theme override */
 .react-flow__controls {
   background: rgba(17, 25, 34, 0.9) !important;
-  border: 1px solid #1e2d42 !important;
+  border: 1px solid var(--border-default) !important;
   border-radius: 6px !important;
   backdrop-filter: blur(8px);
 }
 .react-flow__controls-button {
   background: transparent !important;
-  border-color: #1e2d42 !important;
-  fill: #c8daea !important;
+  border-color: var(--border-default) !important;
+  fill: var(--foreground-default) !important;
 }
 .react-flow__controls-button:hover {
-  background: #1a2639 !important;
+  background: var(--background-hover) !important;
 }
 
 /* ============================================================
@@ -130,7 +386,7 @@
 }
 
 body {
-  background-color: #080d12;
+  background-color: var(--background-void);
 }
 
 /* 细微的扫描线纹理，仅在深色区域生效 */
@@ -140,14 +396,18 @@ body {
       0deg,
       transparent,
       transparent 2px,
-      rgba(0, 201, 167, 0.012) 2px,
-      rgba(0, 201, 167, 0.012) 4px
+      rgba(99, 102, 241, 0.012) 2px,
+      rgba(99, 102, 241, 0.012) 4px
     );
 }
 
-/* 主题色发光效果 */
+/* 品牌色发光效果 */
+.primary-glow {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25), 0 0 4px rgba(99, 102, 241, 0.15);
+}
+/* 强调色发光效果 */
 .accent-glow {
-  box-shadow: 0 0 12px rgba(0, 201, 167, 0.25), 0 0 4px rgba(0, 201, 167, 0.15);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25), 0 0 4px rgba(16, 185, 129, 0.15);
 }
 
 /* 激活边框左侧指示线动画 */
@@ -179,6 +439,127 @@ body {
   transform-origin: bottom;
 }
 
+/* ============================================================
+   TextShimmer — 文字流光闪烁动画
+   ============================================================ */
+@keyframes text-shimmer-slide {
+  0%   { background-position: 200% 50%; }
+  100% { background-position: -200% 50%; }
+}
+
+[data-component="text-shimmer"] {
+  display: inline-flex;
+  position: relative;
+}
+
+[data-slot="text-shimmer-char"] {
+  position: relative;
+  display: inline;
+}
+
+[data-slot="text-shimmer-char-base"] {
+  color: var(--foreground-subtle);
+  transition: opacity var(--text-shimmer-swap, 220ms) ease;
+}
+
+[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-base"] {
+  opacity: 0.5;
+}
+
+[data-slot="text-shimmer-char-shimmer"] {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--foreground-subtle) 0%,
+    var(--accent) 25%,
+    var(--foreground-default) 50%,
+    var(--accent) 75%,
+    var(--foreground-subtle) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  transition: opacity var(--text-shimmer-swap, 220ms) ease;
+}
+
+[data-slot="text-shimmer-char-shimmer"][data-run="true"] {
+  opacity: 1;
+  animation: text-shimmer-slide 2.5s linear infinite;
+}
+
+/* ============================================================
+   TextReveal — 文字切换 mask 动画
+   ============================================================ */
+[data-component="text-reveal"] {
+  display: inline-flex;
+  position: relative;
+  overflow: hidden;
+  vertical-align: baseline;
+}
+
+[data-component="text-reveal"]:not([data-ready="true"]) {
+  visibility: hidden;
+}
+
+[data-slot="text-reveal-track"] {
+  display: inline-flex;
+  position: relative;
+  transition: width var(--text-reveal-duration, 450ms) var(--text-reveal-spring-soft, cubic-bezier(0.34, 1, 0.64, 1));
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+[data-slot="text-reveal-entering"] {
+  display: inline;
+  white-space: nowrap;
+  transition: transform var(--text-reveal-duration, 450ms) var(--text-reveal-spring, cubic-bezier(0.34, 1.08, 0.64, 1)),
+              opacity var(--text-reveal-duration, 450ms) ease;
+}
+
+[data-component="text-reveal"][data-swapping="true"] [data-slot="text-reveal-entering"] {
+  transform: translateY(var(--text-reveal-travel, 0));
+  opacity: 0;
+  mask-image: linear-gradient(
+    to right,
+    black calc(100% - var(--text-reveal-edge, 17%)),
+    transparent 100%
+  );
+}
+
+[data-slot="text-reveal-leaving"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline;
+  white-space: nowrap;
+  transition: transform var(--text-reveal-duration, 450ms) var(--text-reveal-spring, cubic-bezier(0.34, 1.08, 0.64, 1)),
+              opacity var(--text-reveal-duration, 450ms) ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-component="text-reveal"][data-swapping="true"] [data-slot="text-reveal-leaving"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+[data-component="text-reveal"]:not([data-swapping="true"]) [data-slot="text-reveal-leaving"] {
+  transform: translateY(calc(-1 * var(--text-reveal-travel, 0)));
+}
+
+[data-component="text-reveal"][data-truncate="true"] [data-slot="text-reveal-track"] {
+  width: 100% !important;
+}
+
+[data-component="text-reveal"][data-truncate="true"] [data-slot="text-reveal-entering"],
+[data-component="text-reveal"][data-truncate="true"] [data-slot="text-reveal-leaving"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Tooltip 淡入动画（光标下方，从上方轻微滑入） */
 @keyframes tooltip-fade-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
@@ -206,11 +587,11 @@ input[type="number"]::-webkit-outer-spin-button {
    Graph Explorer — React Flow CSS 变量覆盖 (Abyss Theme)
    ============================================================ */
 .react-flow {
-  --xy-background-color: #0d1117;
+  --xy-background-color: var(--background-base);
   --xy-edge-stroke: #1e3a5a;
-  --xy-edge-stroke-selected: #3794ff;
+  --xy-edge-stroke-selected: var(--primary);
   --xy-node-border-radius: 6px;
-  --xy-minimap-background-color: #111922;
+  --xy-minimap-background-color: var(--background-panel);
 }
 
 /* Graph canvas container fills parent */

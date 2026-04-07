@@ -17,17 +17,17 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className="flex-1 flex min-w-0 bg-[#111922]">
+    <div className="flex-1 flex min-w-0 bg-background-panel">
       {/* 左侧导航 */}
-      <div className="w-48 flex-shrink-0 bg-[#0d1117] border-r border-[#1e2d42] pt-4">
-        <div className="px-4 pb-3 text-xs text-[#7a9bb8] font-medium uppercase tracking-wider">{t('settings.title')}</div>
+      <div className="w-48 flex-shrink-0 bg-background-base border-r border-border-default pt-4">
+        <div className="px-4 pb-3 text-xs text-foreground-muted font-medium uppercase tracking-wider">{t('settings.title')}</div>
         {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
             className={`w-full flex items-center px-4 py-2 text-sm text-left transition-colors ${
               activeSection === id
-                ? 'bg-[#003d2f] text-white border-l-2 border-[#00c9a7]'
-                : 'text-[#7a9bb8] hover:text-[#c8daea] hover:bg-[#1a2639] border-l-2 border-transparent'
+                ? 'bg-accent-subtle text-foreground border-l-2 border-accent'
+                : 'text-foreground-muted hover:text-foreground-default hover:bg-background-hover border-l-2 border-transparent'
             }`}
             onClick={() => setActiveSection(id)}
           >
@@ -64,20 +64,20 @@ function AiSection() {
     <div className="w-full flex flex-col items-center">
       <LlmSettingsPanel />
       <div className="w-full max-w-2xl px-8 pb-8 space-y-4">
-        <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">
+        <h3 className="text-foreground font-semibold text-sm border-b border-border-default pb-2">
           {t('settings.aiInlineCompletion')}
         </h3>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.ghostText')}</p>
-            <p className="text-xs text-[#7a9bb8]">
+            <p className="text-xs font-medium text-foreground-default mb-1">{t('settings.ghostText')}</p>
+            <p className="text-xs text-foreground-muted">
               {t('settings.ghostTextDesc')}
             </p>
           </div>
           <button
             onClick={() => setGhostTextDefault(!ghostTextDefault)}
             className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ml-4 ${
-              ghostTextDefault ? 'bg-[#00c9a7]' : 'bg-[#2a3f5a]'
+              ghostTextDefault ? 'bg-accent' : 'bg-border-strong'
             }`}
           >
             <span
@@ -111,11 +111,11 @@ function AppearanceSection({ t }: { t: any }) {
 
   return (
     <div className="w-full max-w-lg p-8 space-y-6">
-      <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('settings.appearance')}</h3>
+      <h3 className="text-foreground font-semibold text-sm border-b border-border-default pb-2">{t('settings.appearance')}</h3>
       <div className="space-y-6">
         <div>
-          <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.language')}</p>
-          <p className="text-xs text-[#7a9bb8] mb-3">{t('settings.languageDesc')}</p>
+          <p className="text-xs font-medium text-foreground-default mb-1">{t('settings.language')}</p>
+          <p className="text-xs text-foreground-muted mb-3">{t('settings.languageDesc')}</p>
           <div className="flex gap-2">
             {[
               { value: 'zh', label: t('settings.languageZh') },
@@ -126,8 +126,8 @@ function AppearanceSection({ t }: { t: any }) {
                 onClick={() => handleLanguageChange(value)}
                 className={`px-4 py-1.5 text-xs rounded transition-colors ${
                   currentLang === value
-                    ? 'bg-[#003d2f] text-white border border-[#00c9a7]'
-                    : 'text-[#7a9bb8] border border-[#2a3f5a] hover:text-[#c8daea] hover:border-[#2a3f5a]'
+                    ? 'bg-accent-subtle text-foreground border border-accent'
+                    : 'text-foreground-muted border border-border-strong hover:text-foreground-default hover:border-border-strong'
                 }`}
               >
                 {label}
@@ -136,8 +136,8 @@ function AppearanceSection({ t }: { t: any }) {
           </div>
         </div>
         <div>
-          <p className="text-xs font-medium text-[#c8daea] mb-1">{t('settings.tablePageSizeLimit')}</p>
-          <p className="text-xs text-[#7a9bb8] mb-3">{t('settings.tablePageSizeLimitDesc')}</p>
+          <p className="text-xs font-medium text-foreground-default mb-1">{t('settings.tablePageSizeLimit')}</p>
+          <p className="text-xs text-foreground-muted mb-3">{t('settings.tablePageSizeLimitDesc')}</p>
           <div className="flex flex-wrap gap-2">
             {PAGE_LIMIT_OPTIONS.map((size) => (
               <button
@@ -145,8 +145,8 @@ function AppearanceSection({ t }: { t: any }) {
                 onClick={() => setTablePageSizeLimit(size)}
                 className={`px-4 py-1.5 text-xs rounded transition-colors ${
                   tablePageSizeLimit === size
-                    ? 'bg-[#003d2f] text-white border border-[#00c9a7]'
-                    : 'text-[#7a9bb8] border border-[#2a3f5a] hover:text-[#c8daea] hover:border-[#2a3f5a]'
+                    ? 'bg-accent-subtle text-foreground border border-accent'
+                    : 'text-foreground-muted border border-border-strong hover:text-foreground-default hover:border-border-strong'
                 }`}
               >
                 {size}
@@ -161,8 +161,8 @@ function AppearanceSection({ t }: { t: any }) {
 
 function PlaceholderSection({ title, description }: { title: string; description: string }) {
   return (
-    <div className="w-full max-w-lg p-8 text-center text-[#7a9bb8]">
-      <p className="text-sm font-medium text-[#c8daea] mb-2">{title}</p>
+    <div className="w-full max-w-lg p-8 text-center text-foreground-muted">
+      <p className="text-sm font-medium text-foreground-default mb-2">{title}</p>
       <p className="text-xs">{description}</p>
     </div>
   );
@@ -171,29 +171,29 @@ function PlaceholderSection({ title, description }: { title: string; description
 function AboutSection({ t }: { t: any }) {
   return (
     <div className="w-full max-w-lg p-8 space-y-4">
-      <h3 className="text-white font-semibold text-sm border-b border-[#1e2d42] pb-2">{t('settings.about')}</h3>
+      <h3 className="text-foreground font-semibold text-sm border-b border-border-default pb-2">{t('settings.about')}</h3>
 
       {/* App logo & name */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-bold text-sm">
+        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-foreground font-bold text-sm">
           DB
         </div>
         <div>
-          <p className="text-white font-semibold text-sm">open-db-studio</p>
-          <p className="text-[#7a9bb8] text-xs">{t('settings.aboutDesc')}</p>
+          <p className="text-foreground font-semibold text-sm">open-db-studio</p>
+          <p className="text-foreground-muted text-xs">{t('settings.aboutDesc')}</p>
         </div>
       </div>
 
       {/* Info rows */}
-      <div className="space-y-2 text-xs text-[#7a9bb8]">
-        <p><span className="text-[#c8daea]">{t('settings.aboutVersion')}</span>v{__APP_VERSION__}</p>
-        <p><span className="text-[#c8daea]">{t('settings.techStack')}</span>Tauri 2.x · React 18 · TypeScript · Rust</p>
-        <p><span className="text-[#c8daea]">{t('settings.supportedDb')}</span>MySQL · PostgreSQL · SQLite</p>
+      <div className="space-y-2 text-xs text-foreground-muted">
+        <p><span className="text-foreground-default">{t('settings.aboutVersion')}</span>v{__APP_VERSION__}</p>
+        <p><span className="text-foreground-default">{t('settings.techStack')}</span>Tauri 2.x · React 18 · TypeScript · Rust</p>
+        <p><span className="text-foreground-default">{t('settings.supportedDb')}</span>MySQL · PostgreSQL · SQLite</p>
       </div>
 
       {/* Footer */}
-      <div className="pt-2 border-t border-[#1e2d42]">
-        <p className="text-[10px] text-[#4a6a84]">{t('settings.aboutFooter')}</p>
+      <div className="pt-2 border-t border-border-default">
+        <p className="text-[10px] text-foreground-subtle">{t('settings.aboutFooter')}</p>
       </div>
     </div>
   );

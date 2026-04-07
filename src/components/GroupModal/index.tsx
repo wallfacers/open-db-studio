@@ -41,15 +41,15 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
     }
   };
 
-  const inputClass = 'w-full bg-[#1a2639] border border-[#253347] rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#009e84]';
-  const labelClass = 'block text-xs text-gray-400 mb-1';
+  const inputClass = 'w-full bg-background-hover border border-border-strong rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-border-focus';
+  const labelClass = 'block text-xs text-foreground-muted mb-1';
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#111922] border border-[#253347] rounded-lg w-[480px] p-6">
+      <div className="bg-background-panel border border-border-strong rounded-lg w-[480px] p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</h2>
-          <button onClick={onClose} className="text-[#7a9bb8] hover:text-[#c8daea] transition-colors"><X size={16} /></button>
+          <h2 className="text-foreground font-semibold">{isEdit ? t('groupModal.editTitle') : t('groupModal.createTitle')}</h2>
+          <button onClick={onClose} className="text-foreground-muted hover:text-foreground-default transition-colors"><X size={16} /></button>
         </div>
 
         <div className="space-y-3">
@@ -67,15 +67,15 @@ export const GroupModal: React.FC<GroupModalProps> = ({ group, onClose, onSucces
           </div>
         </div>
 
-        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        {error && <p className="text-xs text-error mt-2">{error}</p>}
 
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose}
-            className="px-3 py-1.5 text-sm bg-[#1a2639] hover:bg-[#253347] text-white rounded">
+            className="px-3 py-1.5 text-sm bg-background-hover hover:bg-border-strong text-foreground rounded transition-colors duration-200">
             {t('common.cancel')}
           </button>
           <button onClick={handleSave} disabled={saving}
-            className="px-3 py-1.5 text-sm bg-[#009e84] hover:bg-[#007a62] text-white rounded disabled:opacity-50">
+            className="px-3 py-1.5 text-sm bg-accent hover:bg-accent-hover text-foreground rounded disabled:opacity-50 transition-colors duration-200">
             {saving ? t('groupModal.saving') : t('common.save')}
           </button>
         </div>

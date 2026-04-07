@@ -3,10 +3,9 @@ import type { SqlStatementInfo } from '../types';
 /**
  * 解析 SQL 字符串为多条语句，带起止偏移量。
  * 处理单引号和双引号内的分号（不作为分隔符）。
+ * 正确跳过行注释（--）和块注释（/* *\/）内的分号。
  * 支持 SQL 标准双引号转义（'' 或 ""）及反斜杠转义（\'）。
- *
- * 已知限制：
- * - 行注释（--）和块注释（/* *\/）内的分号仍会分割（与现有 queryStore 一致）
+ * 过滤掉纯注释语句（不发送到后端执行）。
  */
 export function parseStatements(sql: string): SqlStatementInfo[] {
   const results: SqlStatementInfo[] = [];
@@ -17,6 +16,20 @@ export function parseStatements(sql: string): SqlStatementInfo[] {
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
     const prev = sql[i - 1] ?? '';
+
+    // 行注释 --：跳过到行尾（不在字符串内时）
+    if (ch === '-' && sql[i + 1] === '-' && !inSingleQuote && !inDoubleQuote) {
+      const newline = sql.indexOf('\n', i);
+      i = newline === -1 ? sql.length - 1 : newline;
+      continue;
+    }
+
+    // 块注释 /* */：跳过到 */（不在字符串内时）
+    if (ch === '/' && sql[i + 1] === '*' && !inSingleQuote && !inDoubleQuote) {
+      const end = sql.indexOf('*/', i + 2);
+      i = end === -1 ? sql.length - 1 : end + 1;
+      continue;
+    }
 
     if (ch === "'" && !inDoubleQuote) {
       // Check for SQL standard doubled-quote escape: '' inside a string
@@ -51,6 +64,25 @@ function countNewlines(sql: string, from: number, to: number): number {
   return count;
 }
 
+/** 去掉所有注释后是否还有实际 SQL 内容 */
+function hasActualSql(text: string): boolean {
+  let s = text;
+  // 循环去掉开头的行注释和块注释
+  while (true) {
+    s = s.trimStart();
+    if (s.startsWith('--')) {
+      const nl = s.indexOf('\n');
+      s = nl === -1 ? '' : s.slice(nl + 1);
+    } else if (s.startsWith('/*')) {
+      const end = s.indexOf('*/');
+      s = end === -1 ? '' : s.slice(end + 2);
+    } else {
+      break;
+    }
+  }
+  return s.trim().length > 0;
+}
+
 function pushStatement(
   sql: string,
   rawStart: number,
@@ -60,7 +92,7 @@ function pushStatement(
   const slice = sql.slice(rawStart, rawEnd);
   const trimmedStart = rawStart + (slice.length - slice.trimStart().length);
   const text = slice.trim();
-  if (text.length > 0) {
+  if (text.length > 0 && hasActualSql(text)) {
     const startLine = countNewlines(sql, 0, trimmedStart);
     const endLine = countNewlines(sql, 0, trimmedStart + text.length);
     results.push({ text, startOffset: trimmedStart, endOffset: trimmedStart + text.length, startLine, endLine });

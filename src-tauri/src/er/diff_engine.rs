@@ -98,21 +98,42 @@ pub struct IndexDiff {
 // Type normalization
 // ---------------------------------------------------------------------------
 
+/// Build the full type string from an ErColumn, combining data_type + length + scale + unsigned.
+/// e.g. data_type="VARCHAR", length=50 → "VARCHAR(50)"
+///      data_type="DECIMAL", length=10, scale=2 → "DECIMAL(10,2)"
+///      data_type="BIGINT", unsigned=true → "BIGINT UNSIGNED"
+fn er_col_full_type(col: &crate::er::models::ErColumn) -> String {
+    let base = col.data_type.trim();
+    // Append length/scale if present
+    let with_len = match (col.length, col.scale) {
+        (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+        (Some(l), None)    => format!("{}({})", base, l),
+        _                  => base.to_string(),
+    };
+    // Append UNSIGNED if set
+    if col.unsigned {
+        format!("{} UNSIGNED", with_len)
+    } else {
+        with_len
+    }
+}
+
 /// Normalize a SQL type string for comparison.
 ///
 /// - Lowercases everything
 /// - Strips leading/trailing whitespace
+/// - Deduplicates the `unsigned` qualifier (e.g. `BIGINT UNSIGNED UNSIGNED` → `bigint unsigned`)
 /// - Replaces known aliases (`int4` → `int`, `character varying` → `varchar`, etc.)
 /// - Normalises whitespace inside parenthesised parameters: `VARCHAR( 255 )` → `varchar(255)`
+/// - Strips MySQL integer display widths (e.g. `BIGINT(20) UNSIGNED` → `bigint unsigned`)
 fn normalize_type(t: &str) -> String {
     let mut s = t.trim().to_lowercase();
 
     // Normalize whitespace inside parentheses: remove spaces after '(' and before ')'
     // and collapse multiple spaces around commas.
     if let Some(paren_start) = s.find('(') {
-        let prefix = &s[..paren_start];
-        let rest = &s[paren_start..];
-        // Remove spaces inside parens
+        let prefix = s[..paren_start].to_string();
+        let rest = s[paren_start..].to_string();
         let cleaned: String = rest
             .chars()
             .fold((String::new(), false), |(mut acc, prev_space), ch| {
@@ -128,6 +149,12 @@ fn normalize_type(t: &str) -> String {
             })
             .0;
         s = format!("{}{}", prefix, cleaned);
+    }
+
+    // Extract and deduplicate the "unsigned" qualifier.
+    let (stripped, has_unsigned) = super::strip_unsigned(&s);
+    if has_unsigned {
+        s = stripped;
     }
 
     // Alias map – apply longest-match-first by checking multi-word aliases before single-word.
@@ -153,14 +180,12 @@ fn normalize_type(t: &str) -> String {
     ];
 
     // Extract base type (before any parenthesis) for alias matching, preserve params.
-    let (base, params) = if let Some(idx) = s.find('(') {
-        (&s[..idx], &s[idx..])
-    } else {
-        (s.as_str(), "")
-    };
+    let paren_pos = s.find('(');
+    let base = paren_pos.map_or(s.clone(), |idx| s[..idx].to_string());
+    let params = paren_pos.map_or(String::new(), |idx| s[idx..].to_string());
 
-    let base_trimmed = base.trim();
-    let mut matched_base = base_trimmed.to_string();
+    let base_trimmed = base.trim().to_string();
+    let mut matched_base = base_trimmed.clone();
     for &(alias, canonical) in aliases {
         if base_trimmed == alias {
             matched_base = canonical.to_string();
@@ -168,7 +193,23 @@ fn normalize_type(t: &str) -> String {
         }
     }
 
-    format!("{}{}", matched_base, params)
+    // Strip MySQL integer display widths (e.g. int(11) → int, bigint(20) → bigint).
+    // These parenthesized values are display hints only (deprecated in MySQL 8.0.17+)
+    // and do not affect storage, so they should not trigger a type-changed diff.
+    const INT_TYPES: &[&str] = &["tinyint", "smallint", "mediumint", "int", "bigint"];
+    if INT_TYPES.contains(&matched_base.as_str()) {
+        return if has_unsigned {
+            format!("{} unsigned", matched_base)
+        } else {
+            matched_base
+        };
+    }
+
+    if has_unsigned {
+        format!("{}{} unsigned", matched_base, params)
+    } else {
+        format!("{}{}", matched_base, params)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +391,8 @@ fn compare_columns(
     for er_col in er_cols {
         let key = er_col.name.to_lowercase();
         if let Some(db_col) = db_by_name.get(&key) {
-            let er_norm = normalize_type(&er_col.data_type);
+            let er_full = er_col_full_type(er_col);
+            let er_norm = normalize_type(&er_full);
             let db_norm = normalize_type(&db_col.data_type);
             let type_changed = er_norm != db_norm;
             let nullable_changed = er_col.nullable != db_col.nullable;
@@ -358,7 +400,7 @@ fn compare_columns(
             if type_changed || nullable_changed {
                 modified.push(ColumnModDiff {
                     name: er_col.name.clone(),
-                    er_type: er_col.data_type.clone(),
+                    er_type: er_full,
                     db_type: db_col.data_type.clone(),
                     er_nullable: er_col.nullable,
                     db_nullable: db_col.nullable,
@@ -376,13 +418,25 @@ fn compare_indexes(
     er_idxs: &[ErIndex],
     db_idxs: &[DbIndexInfo],
 ) -> (Vec<IndexDiff>, Vec<IndexDiff>) {
+    // PRIMARY is a system-generated index for the primary key constraint.
+    // Primary keys are already compared at the column level (is_primary_key),
+    // so including PRIMARY here would produce false-positive diffs.
+    let er_idxs: Vec<&ErIndex> = er_idxs
+        .iter()
+        .filter(|i| i.name.to_uppercase() != "PRIMARY")
+        .collect();
+    let db_idxs: Vec<&DbIndexInfo> = db_idxs
+        .iter()
+        .filter(|i| i.name.to_uppercase() != "PRIMARY")
+        .collect();
+
     let er_by_name: HashMap<String, &ErIndex> = er_idxs
         .iter()
-        .map(|i| (i.name.to_lowercase(), i))
+        .map(|i| (i.name.to_lowercase(), *i))
         .collect();
     let db_by_name: HashMap<String, &DbIndexInfo> = db_idxs
         .iter()
-        .map(|i| (i.name.to_lowercase(), i))
+        .map(|i| (i.name.to_lowercase(), *i))
         .collect();
 
     let mut added = Vec::new();
@@ -467,6 +521,22 @@ mod tests {
     fn test_normalize_type_whitespace_in_params() {
         assert_eq!(normalize_type("VARCHAR( 255 )"), "varchar(255)");
         assert_eq!(normalize_type("DECIMAL( 10 , 2 )"), "decimal(10,2)");
+    }
+
+    #[test]
+    fn test_normalize_type_unsigned() {
+        // Basic unsigned
+        assert_eq!(normalize_type("BIGINT UNSIGNED"), "bigint unsigned");
+        assert_eq!(normalize_type("bigint unsigned"), "bigint unsigned");
+        // Deduplicate double-unsigned (caused by data_type already containing UNSIGNED + unsigned=true)
+        assert_eq!(normalize_type("BIGINT UNSIGNED UNSIGNED"), "bigint unsigned");
+        // With display width (MySQL legacy)
+        assert_eq!(normalize_type("BIGINT(20) UNSIGNED"), "bigint unsigned");
+        assert_eq!(normalize_type("INT(11) UNSIGNED"), "int unsigned");
+        // Non-integer unsigned (e.g. DECIMAL)
+        assert_eq!(normalize_type("DECIMAL(10,2) UNSIGNED"), "decimal(10,2) unsigned");
+        // Without unsigned stays as-is
+        assert_eq!(normalize_type("BIGINT"), "bigint");
     }
 
     #[test]
@@ -562,6 +632,8 @@ mod tests {
             position_x: 0.0,
             position_y: 0.0,
             color: None,
+            constraint_method: None,
+            comment_format: None,
             created_at: String::new(),
             updated_at: String::new(),
         }

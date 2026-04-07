@@ -30,8 +30,12 @@ export interface UIObject {
   objectId: string
   title: string
   connectionId?: number
+  database?: string
 
-  read(mode: 'state' | 'schema' | 'actions'): any
+  /** Declare supported patch paths. If present, UIRouter validates before forwarding. */
+  patchCapabilities?: PatchCapability[]
+
+  read(mode: 'state' | 'schema' | 'actions' | 'full'): any
   patch(ops: JsonPatchOp[], reason?: string): PatchResult | Promise<PatchResult>
   exec(action: string, params?: any): ExecResult | Promise<ExecResult>
 }
@@ -41,6 +45,7 @@ export interface PatchResult {
   confirm_id?: string
   preview?: JsonPatchOp[]
   message?: string
+  summary?: { changedPaths: string[]; columnCount: number; indexCount: number; fkCount: number }
 }
 
 export interface ExecResult {
@@ -51,10 +56,29 @@ export interface ExecResult {
 
 // ── Action Self-Description ────────────────────────────────
 
+// ── JSON Schema (subset for ActionDef) ────────────────────
+export interface JsonSchema {
+  type: 'object'
+  properties: Record<string, any>
+  required?: string[]
+}
+
+// ── Patch Capability Declaration ──────────────────────────
+export interface PatchCapability {
+  /** Path pattern, e.g. "/tables/[id=<n>]/<field>" */
+  pathPattern: string
+  /** Supported ops for this path */
+  ops: ('replace' | 'add' | 'remove')[]
+  /** Human-readable description */
+  description: string
+  /** Keys usable in [key=value] addressing, e.g. ['id', 'name'] */
+  addressableBy?: string[]
+}
+
 export interface ActionDef {
   name: string
   description: string
-  paramsSchema?: Record<string, any>
+  paramsSchema: JsonSchema
 }
 
 // ── UIObject Info (for ui_list) ────────────────────────────

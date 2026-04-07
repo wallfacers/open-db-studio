@@ -72,62 +72,62 @@ export function PathTab({
   return (
     <div className="flex flex-col h-full">
       {/* Endpoint slots */}
-      <div className="p-3 border-b border-[#1e2d42] space-y-2">
+      <div className="p-3 border-b border-border-default space-y-2">
         <div className="flex items-center gap-2">
           <span
             className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: '#0a2010', color: '#4ade80', border: '1px solid #4ade8044' }}
+            style={{ background: 'var(--accent-subtle)', color: 'var(--success)', border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)' }}
           >
             FROM
           </span>
           {pathFrom ? (
             <div className="flex-1 flex items-center gap-1 min-w-0">
-              <span className="text-[#c8daea] text-xs truncate flex-1">{pathFrom.name}</span>
-              <button onClick={onClearFrom} className="flex-shrink-0 text-[#7a9bb8] hover:text-white">
+              <span className="text-foreground-default text-xs truncate flex-1">{pathFrom.name}</span>
+              <button onClick={onClearFrom} className="flex-shrink-0 text-foreground-muted hover:text-foreground transition-colors duration-200">
                 <X size={11} />
               </button>
             </div>
           ) : (
-            <span className="text-[#3d5470] text-xs">在搜索结果中点击 [S] 设置</span>
+            <span className="text-foreground-ghost text-xs">在搜索结果中点击 [S] 设置</span>
           )}
         </div>
 
         <div className="flex items-center gap-2">
           <span
             className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: '#0a1525', color: '#5eb2f7', border: '1px solid #5eb2f744' }}
+            style={{ background: 'var(--primary-subtle)', color: 'var(--info)', border: '1px solid color-mix(in srgb, var(--info) 25%, transparent)' }}
           >
             TO
           </span>
           {pathTo ? (
             <div className="flex-1 flex items-center gap-1 min-w-0">
-              <span className="text-[#c8daea] text-xs truncate flex-1">{pathTo.name}</span>
-              <button onClick={onClearTo} className="flex-shrink-0 text-[#7a9bb8] hover:text-white">
+              <span className="text-foreground-default text-xs truncate flex-1">{pathTo.name}</span>
+              <button onClick={onClearTo} className="flex-shrink-0 text-foreground-muted hover:text-foreground transition-colors duration-200">
                 <X size={11} />
               </button>
             </div>
           ) : (
-            <span className="text-[#3d5470] text-xs">在搜索结果中点击 [T] 设置</span>
+            <span className="text-foreground-ghost text-xs">在搜索结果中点击 [T] 设置</span>
           )}
         </div>
 
         <div className="flex items-center gap-2 pt-1">
-          <label className="text-[#7a9bb8] text-xs flex-shrink-0">最大跳数</label>
-          <div className="flex items-stretch border border-[#1e2d42] rounded overflow-hidden focus-within:border-[#00a98f] transition-colors" style={{ width: '56px' }}>
+          <label className="text-foreground-muted text-xs flex-shrink-0">最大跳数</label>
+          <div className="flex items-stretch border border-border-default rounded overflow-hidden focus-within:border-accent-hover transition-colors" style={{ width: '56px' }}>
             <input
               type="number"
               min={1}
               value={maxHops}
               onChange={e => setMaxHops(Math.max(1, Number(e.target.value) || 1))}
-              className="flex-1 min-w-0 bg-[#111922] px-2 py-1 text-xs text-[#c8daea] focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="flex-1 min-w-0 bg-background-panel px-2 py-1 text-xs text-foreground-default focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
-            <div className="flex flex-col border-l border-[#1e2d42] bg-[#111922]">
+            <div className="flex flex-col border-l border-border-default bg-background-panel">
               <button type="button" onClick={() => setMaxHops(v => v + 1)}
-                className="flex-1 flex items-center justify-center px-1 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors border-b border-[#1e2d42]">
+                className="flex-1 flex items-center justify-center px-1 text-accent hover:text-accent hover:bg-background-elevated transition-colors border-b border-border-default">
                 <svg width="7" height="4" viewBox="0 0 8 5" fill="currentColor"><path d="M4 0L8 5H0Z"/></svg>
               </button>
               <button type="button" onClick={() => setMaxHops(v => Math.max(1, v - 1))}
-                className="flex-1 flex items-center justify-center px-1 text-[#00c9a7] hover:text-[#29edd0] hover:bg-[#151d28] transition-colors">
+                className="flex-1 flex items-center justify-center px-1 text-accent hover:text-accent hover:bg-background-elevated transition-colors">
                 <svg width="7" height="4" viewBox="0 0 8 5" fill="currentColor"><path d="M4 5L0 0H8Z"/></svg>
               </button>
             </div>
@@ -137,7 +137,7 @@ export function PathTab({
             disabled={!canQuery || loading}
             title={undefined}
             className="flex-1 flex items-center justify-center gap-1 py-1 text-xs rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: '#0a1f18', color: '#00c9a7', borderColor: '#00a98f55' }}
+            style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent-hover) 33%, transparent)' }}
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <GitFork size={12} />}
             {loading ? '查找中...' : '查找路径'}
@@ -148,7 +148,7 @@ export function PathTab({
 
       <div className="flex-1 overflow-y-auto">
         {error && (
-          <div className="m-3 p-2 rounded text-xs text-[#f43f5e] bg-[#2d1216] border border-[#f43f5e]/30">
+          <div className="m-3 p-2 rounded text-xs text-error bg-error-subtle border border-error/30">
             {error}
             <button
               onClick={handleFindPath}
@@ -160,13 +160,13 @@ export function PathTab({
         )}
 
         {subgraph && shownPaths.length === 0 && (
-          <p className="text-[#7a9bb8] text-xs text-center mt-8 px-4">
+          <p className="text-foreground-muted text-xs text-center mt-8 px-4">
             在 {maxHops} 跳范围内未找到路径，可尝试增大跳数
           </p>
         )}
 
         {truncated && (
-          <p className="text-[#7a9bb8] text-[10px] text-center py-2 border-b border-[#1e2d42]">
+          <p className="text-foreground-muted text-[10px] text-center py-2 border-b border-border-default">
             仅显示前 {MAX_PATHS_SHOWN} 条路径
           </p>
         )}
@@ -175,20 +175,20 @@ export function PathTab({
           <div
             key={idx}
             onClick={() => handleSelectPath(idx)}
-            className={`px-3 py-2 cursor-pointer border-b border-[#1e2d42]/50 text-xs transition-colors ${
+            className={`px-3 py-2 cursor-pointer border-b border-border-default/50 text-xs transition-colors ${
               selectedPathIndex === idx
-                ? 'bg-[#003d2f] border-l-2 border-l-[#00c9a7]'
-                : 'hover:bg-[#1a2639]'
+                ? 'bg-accent-subtle border-l-2 border-l-accent'
+                : 'hover:bg-background-hover'
             }`}
           >
-            <p className="text-[#3d5470] text-[9px] mb-1">路径 {idx + 1} · {path.length} 节点</p>
-            <p className="text-[#c8daea] leading-relaxed">
+            <p className="text-foreground-ghost text-[9px] mb-1">路径 {idx + 1} · {path.length} 节点</p>
+            <p className="text-foreground-default leading-relaxed">
               {path.map((id, i) => (
                 <span key={id}>
-                  <span className={i === 0 ? 'text-[#4ade80]' : i === path.length - 1 ? 'text-[#5eb2f7]' : 'text-[#c8daea]'}>
+                  <span className={i === 0 ? 'text-success' : i === path.length - 1 ? 'text-info' : 'text-foreground-default'}>
                     {nodeDisplayMap[id] ?? id}
                   </span>
-                  {i < path.length - 1 && <span className="text-[#3d5470] mx-1">→</span>}
+                  {i < path.length - 1 && <span className="text-foreground-ghost mx-1">→</span>}
                 </span>
               ))}
             </p>
@@ -196,12 +196,12 @@ export function PathTab({
         ))}
 
         {subgraph && shownPaths.length > 0 && (
-          <div className="p-3 border-t border-[#1e2d42]">
+          <div className="p-3 border-t border-border-default">
             {subgraphMode ? (
               <button
                 onClick={onExitSubgraph}
                 className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs rounded border transition-colors"
-                style={{ background: '#1a2639', color: '#c8daea', borderColor: '#1e2d42' }}
+                style={{ background: 'var(--background-hover)', color: 'var(--foreground-default)', borderColor: 'var(--border-default)' }}
               >
                 <RotateCcw size={12} />
                 恢复全图
@@ -210,7 +210,7 @@ export function PathTab({
               <button
                 onClick={handleEnterSubgraph}
                 className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs rounded border transition-colors"
-                style={{ background: '#003d2f', color: '#00c9a7', borderColor: '#00a98f55' }}
+                style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', borderColor: 'var(--accent-hover)55' }}
               >
                 <GitFork size={12} />
                 提取子图

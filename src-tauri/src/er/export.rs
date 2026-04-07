@@ -25,6 +25,8 @@ pub struct ExportProject {
 pub struct ExportTable {
     pub name: String,
     pub comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub position: ExportPosition,
     pub columns: Vec<ExportColumn>,
     pub indexes: Vec<ExportIndex>,
@@ -121,6 +123,7 @@ pub fn export_project(
             ExportTable {
                 name: t.name.clone(),
                 comment: t.comment.clone(),
+                color: t.color.clone(),
                 position: ExportPosition {
                     x: t.position_x,
                     y: t.position_y,
@@ -245,6 +248,8 @@ mod tests {
             viewport_x: 0.0,
             viewport_y: 0.0,
             viewport_zoom: 1.0,
+            default_constraint_method: "database_fk".to_string(),
+            default_comment_format: "@ref".to_string(),
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
         };
@@ -256,7 +261,9 @@ mod tests {
             comment: None,
             position_x: 100.0,
             position_y: 200.0,
-            color: None,
+            color: Some("#ff0000".to_string()),
+            constraint_method: None,
+            comment_format: None,
             created_at: String::new(),
             updated_at: String::new(),
         }];
@@ -301,6 +308,7 @@ mod tests {
         assert_eq!(imported.project.tables[0].columns.len(), 1);
         assert_eq!(imported.project.tables[0].columns[0].name, "id");
         assert!(imported.project.tables[0].columns[0].is_primary_key);
+        assert_eq!(imported.project.tables[0].color, Some("#ff0000".to_string()));
     }
 
     #[test]
@@ -315,6 +323,8 @@ mod tests {
             viewport_x: 0.0,
             viewport_y: 0.0,
             viewport_zoom: 1.0,
+            default_constraint_method: "database_fk".to_string(),
+            default_comment_format: "@ref".to_string(),
             created_at: String::new(),
             updated_at: String::new(),
         };
@@ -328,6 +338,8 @@ mod tests {
                 position_x: 0.0,
                 position_y: 0.0,
                 color: None,
+                constraint_method: None,
+                comment_format: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             },
@@ -339,6 +351,8 @@ mod tests {
                 position_x: 0.0,
                 position_y: 0.0,
                 color: None,
+                constraint_method: None,
+                comment_format: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             },
@@ -412,6 +426,8 @@ mod tests {
             on_update: "NO ACTION".to_string(),
             source: "manual".to_string(),
             comment_marker: None,
+            constraint_method: None,
+            comment_format: None,
             created_at: String::new(),
             updated_at: String::new(),
         }];

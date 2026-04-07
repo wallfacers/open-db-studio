@@ -114,9 +114,13 @@ pub async fn execute_query(
 }
 
 #[tauri::command]
-pub async fn get_tables(connection_id: i64) -> AppResult<Vec<TableMeta>> {
+pub async fn get_tables(connection_id: i64, database: Option<String>) -> AppResult<Vec<TableMeta>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = if let Some(ref db) = database {
+        crate::datasource::create_datasource_with_db(&config, db).await?
+    } else {
+        crate::datasource::create_datasource(&config).await?
+    };
     ds.get_tables().await
 }
 
@@ -3071,11 +3075,22 @@ pub struct AgentSessionRecord {
 }
 
 /// OpenCode 消息解析结果（用于前端展示）
-#[derive(Debug, Serialize)]
+#[derive(Debug, serde::Serialize)]
+/// 单个 Part 的 JSON 表示（与前端 MessagePart 对齐）
+#[serde(tag = "type")]
+pub enum MessagePart {
+    #[serde(rename = "text")]
+    Text { content: String },
+    #[serde(rename = "reasoning")]
+    Reasoning { content: String },
+}
+
+#[derive(Debug, serde::Serialize)]
 pub struct ParsedChatMessage {
     pub role: String,
     pub content: String,
     pub thinking_content: Option<String>,
+    pub parts: Option<Vec<MessagePart>>,
 }
 
 /// 从 OpenCode GET /session/:id/message 响应解析 ChatMessage 列表。
@@ -3127,44 +3142,56 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
     let mut result = Vec::new();
     for msg in arr {
         let role = msg["info"]["role"].as_str().unwrap_or("assistant");
-        if role == "system" {
+        // 只保留 user 和 assistant（前端同样过滤，但须在合并前过滤
+        // 以保证相邻 assistant 不被 tool/system 等中间消息打断合并链）
+        if role != "user" && role != "assistant" {
             continue;
         }
 
         let mut content = String::new();
         let mut thinking = String::new();
+        let mut parts: Vec<MessagePart> = Vec::new();
 
-        if let Some(parts) = msg["parts"].as_array() {
-            for part in parts {
-                match part["type"].as_str().unwrap_or("") {
-                    "text" => {
-                        if let Some(t) = part["text"].as_str() {
+        if let Some(msg_parts) = msg["parts"].as_array() {
+            for part in msg_parts {
+                if let Some(t) = part["text"].as_str() {
+                    if t.is_empty() { continue; }
+                    match part["type"].as_str().unwrap_or("") {
+                        "text" => {
                             content.push_str(t);
+                            if let Some(MessagePart::Text { content: last }) = parts.last_mut() {
+                                last.push_str(t);
+                            } else {
+                                parts.push(MessagePart::Text { content: t.to_string() });
+                            }
                         }
-                    }
-                    "reasoning" => {
-                        if let Some(t) = part["text"].as_str() {
+                        "reasoning" => {
                             thinking.push_str(t);
+                            if let Some(MessagePart::Reasoning { content: last }) = parts.last_mut() {
+                                last.push_str(t);
+                            } else {
+                                parts.push(MessagePart::Reasoning { content: t.to_string() });
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
 
         // 跳过 tool-use only 消息（没有文本内容的 assistant 消息）
-        if content.is_empty() && role != "user" {
+        if content.is_empty() && thinking.is_empty() && role != "user" {
             continue;
         }
 
         if role == "user" {
-            // 剥离注入的上下文前缀，只保留用户实际输入
             let (_, user_input) = split_user_context(&content);
             if !user_input.is_empty() {
                 result.push(ParsedChatMessage {
                     role: "user".to_string(),
                     content: user_input.to_string(),
                     thinking_content: None,
+                    parts: None,
                 });
             }
         } else {
@@ -3172,6 +3199,7 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
                 role: role.to_string(),
                 content,
                 thinking_content: if thinking.is_empty() { None } else { Some(thinking) },
+                parts: if parts.is_empty() { None } else { Some(parts) },
             });
         }
     }
@@ -3197,6 +3225,10 @@ fn parse_opencode_messages(raw: &serde_json::Value) -> Vec<ParsedChatMessage> {
                             }
                             None => last.thinking_content = Some(t),
                         }
+                    }
+                    if let Some(msg_parts) = msg.parts {
+                        let last_parts = last.parts.get_or_insert_with(Vec::new);
+                        last_parts.extend(msg_parts);
                     }
                     continue;
                 }

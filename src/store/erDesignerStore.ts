@@ -8,6 +8,8 @@ import type {
   ErRelation,
   ErIndex,
   DiffResult,
+  ImportPreview,
+  ConflictResolution,
 } from '../types';
 import { checkTypeCompatibility, type DialectName } from '@/components/ERDesigner/shared/dataTypes';
 
@@ -65,7 +67,7 @@ interface ErDesignerState {
   restoreExpandedState: () => Promise<void>;
 
   // Table operations
-  addTable: (name: string, position: { x: number; y: number }) => Promise<ErTable>;
+  addTable: (projectId: number, name: string, position: { x: number; y: number }) => Promise<ErTable>;
   updateTable: (id: number, updates: Partial<ErTable>) => Promise<void>;
   updateTablePositions: (positions: { id: number; x: number; y: number }[]) => Promise<void>;
   deleteTable: (id: number) => Promise<void>;
@@ -77,7 +79,7 @@ interface ErDesignerState {
   reorderColumns: (tableId: number, columnIds: number[]) => Promise<void>;
 
   // Relation operations
-  addRelation: (rel: Partial<ErRelation>) => Promise<ErRelation>;
+  addRelation: (projectId: number, rel: Partial<ErRelation>) => Promise<ErRelation>;
   updateRelation: (id: number, updates: Partial<ErRelation>) => Promise<void>;
   deleteRelation: (id: number) => Promise<void>;
 
@@ -94,14 +96,17 @@ interface ErDesignerState {
   generateDDL: (
     projectId: number,
     dialect: string,
-    options?: { includeIndexes?: boolean; includeComments?: boolean; includeForeignKeys?: boolean }
+    options?: { includeIndexes?: boolean; includeComments?: boolean; includeForeignKeys?: boolean; includeCommentRefs?: boolean }
   ) => Promise<string>;
   diffWithDatabase: (projectId: number) => Promise<DiffResult>;
   syncFromDatabase: (projectId: number, tableNames?: string[]) => Promise<void>;
+  generateSyncDdl: (projectId: number, changes: DiffResult) => Promise<string[]>;
 
   // Import/Export
   exportJson: (projectId: number) => Promise<string>;
   importJson: (json: string) => Promise<ErProject>;
+  previewImport: (json: string, projectId?: number) => Promise<ImportPreview>;
+  executeImport: (json: string, projectId?: number, conflicts?: ConflictResolution[]) => Promise<ErProject>;
 
   // Undo/Redo
   undoStack: OperationRecord[];
@@ -123,31 +128,82 @@ interface ErDesignerState {
   checkDialectCompatibility: () => void;
   checkColumnCompatibility: (columnId: number) => void;
   clearDialectWarnings: () => void;
+
+  // Canvas viewport persistence (in-memory, per projectId)
+  viewports: Record<number, { x: number; y: number; zoom: number }>;
+  setViewport: (projectId: number, viewport: { x: number; y: number; zoom: number }) => void;
 }
 
-/** Helper: apply ErProjectFull to state */
+/** Convert nullable constraint fields to empty strings for Rust backend. */
+function prepareErUpdatePayload(updates: Record<string, unknown>): Record<string, unknown> {
+  const req = { ...updates };
+  if (updates.constraint_method !== undefined) {
+    req.constraint_method = (updates.constraint_method as string | null) ?? '';
+  }
+  if (updates.comment_format !== undefined) {
+    req.comment_format = (updates.comment_format as string | null) ?? '';
+  }
+  return req;
+}
+
+/** Helper: apply ErProjectFull to state, merging with existing multi-project data */
 function applyProjectFull(projectFull: ErProjectFull) {
-  const columns: Record<number, ErColumn[]> = {};
-  const indexes: Record<number, ErIndex[]> = {};
-  const tables: ErTable[] = [];
+  const incomingColumns: Record<number, ErColumn[]> = {};
+  const incomingIndexes: Record<number, ErIndex[]> = {};
+  const incomingTables: ErTable[] = [];
+  const incomingTableIds = new Set<number>();
 
   for (const tf of projectFull.tables) {
-    tables.push(tf.table);
-    columns[tf.table.id] = tf.columns.map((col: any) => ({
+    incomingTables.push(tf.table);
+    incomingTableIds.add(tf.table.id);
+    incomingColumns[tf.table.id] = tf.columns.map((col: any) => ({
       ...col,
       enum_values: col.enum_values ? JSON.parse(col.enum_values) : null,
     }));
-    indexes[tf.table.id] = tf.indexes;
+    incomingIndexes[tf.table.id] = tf.indexes;
   }
 
-  return {
-    activeProjectId: projectFull.project.id,
-    tables,
-    columns,
-    relations: projectFull.relations,
-    indexes,
-    undoStack: [] as OperationRecord[],
-    redoStack: [] as OperationRecord[],
+  const projectId = projectFull.project.id;
+
+  return (s: ErDesignerState) => {
+    // Single pass: collect oldTableIds and otherTables
+    const otherTables: ErTable[] = [];
+    const oldTableIds = new Set<number>();
+    for (const t of s.tables) {
+      if (t.project_id === projectId) oldTableIds.add(t.id);
+      else otherTables.push(t);
+    }
+
+    const columns = { ...s.columns };
+    const indexes = { ...s.indexes };
+    for (const tid of oldTableIds) {
+      if (!incomingTableIds.has(tid)) {
+        delete columns[tid];
+        delete indexes[tid];
+      }
+    }
+    for (const [tid, cols] of Object.entries(incomingColumns)) {
+      columns[Number(tid)] = cols;
+    }
+    for (const [tid, idx] of Object.entries(incomingIndexes)) {
+      indexes[Number(tid)] = idx;
+    }
+
+    const otherRelations = s.relations.filter(r => !oldTableIds.has(r.source_table_id) && !oldTableIds.has(r.target_table_id));
+
+    // Update the project entry so fields like connection_id are reflected immediately
+    const projects = s.projects.map(p => p.id === projectId ? projectFull.project : p);
+
+    return {
+      activeProjectId: projectId,
+      projects,
+      tables: [...otherTables, ...incomingTables],
+      columns,
+      relations: [...otherRelations, ...projectFull.relations],
+      indexes,
+      undoStack: [] as OperationRecord[],
+      redoStack: [] as OperationRecord[],
+    };
   };
 }
 
@@ -178,6 +234,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   expandedTables: new Set<number>(),
   undoStack: [],
   redoStack: [],
+  viewports: {},
 
   // ── Project list ───────────────────────────────────────────────────────
   loadProjects: async () => {
@@ -203,19 +260,21 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   updateProject: async (id, updates) => {
-    try {
-      await invoke('er_update_project', { id, req: updates });
-      set((s) => ({
-        projects: s.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-      }));
-    } catch (e) {
-      console.error('Failed to update ER project:', e);
+    await invoke('er_update_project', { id, req: updates });
+    set((s) => ({
+      projects: s.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+    }));
+    if (updates.name) {
+      const { useQueryStore } = await import('./queryStore');
+      useQueryStore.getState().updateERDesignTabTitle(id, updates.name);
     }
   },
 
   deleteProject: async (id) => {
     try {
       await invoke('er_delete_project', { id });
+      const { closeERDesignTab } = await import('./queryStore').then(m => m.useQueryStore.getState());
+      closeERDesignTab(id);
       set((s) => {
         const expandedProjects = new Set(s.expandedProjects);
         expandedProjects.delete(id);
@@ -224,10 +283,12 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
         const expandedTables = new Set(s.expandedTables);
         for (const tid of tableIdsToRemove) expandedTables.delete(tid);
         persistExpandedState(expandedProjects, expandedTables);
+        const { [id]: _removedViewport, ...remainingViewports } = s.viewports;
         return {
           projects: s.projects.filter((p) => p.id !== id),
           expandedProjects,
           expandedTables,
+          viewports: remainingViewports,
           ...(s.activeProjectId === id
             ? { activeProjectId: null, tables: [], columns: {}, relations: [], indexes: {} }
             : {}),
@@ -301,11 +362,11 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   // ── Table operations ──────────────────────────────────────────────────
-  addTable: async (name, position) => {
-    const { activeProjectId, pushOperation } = get();
+  addTable: async (projectId, name, position) => {
+    const { pushOperation } = get();
     try {
       const table = await invoke<ErTable>('er_create_table', {
-        req: { project_id: activeProjectId, name, position_x: position.x, position_y: position.y },
+        req: { project_id: projectId, name, position_x: position.x, position_y: position.y },
       });
       set((s) => ({
         tables: [...s.tables, table],
@@ -327,12 +388,14 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateTable: async (id, updates) => {
     try {
-      await invoke('er_update_table', { id, req: updates });
+      const req = prepareErUpdatePayload(updates as Record<string, unknown>);
+      await invoke('er_update_table', { id, req });
       set((s) => ({
         tables: s.tables.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       }));
     } catch (e) {
       console.error('Failed to update ER table:', e);
+      throw e;
     }
   },
 
@@ -383,6 +446,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       });
     } catch (e) {
       console.error('Failed to delete ER table:', e);
+      throw e;
     }
   },
 
@@ -417,6 +481,9 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateColumn: async (id, updates) => {
     try {
+      if (!updates || typeof updates !== 'object') {
+        throw new Error(`updateColumn: 'updates' must be a non-null object, got ${updates === null ? 'null' : typeof updates}`);
+      }
       // When removing primary key, also clear auto_increment
       if (updates.is_primary_key === false) {
         updates = { ...updates, is_auto_increment: false };
@@ -468,6 +535,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       get().checkColumnCompatibility(id);
     } catch (e) {
       console.error('Failed to update ER column:', e);
+      throw e;
     }
   },
 
@@ -479,6 +547,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           ...s.columns,
           [tableId]: (s.columns[tableId] ?? []).filter((c) => c.id !== id),
         },
+        // SQLite ON DELETE CASCADE 会级联删除引用该 column 的 relation，前端同步清理
+        relations: s.relations.filter(
+          (r) => r.source_column_id !== id && r.target_column_id !== id
+        ),
       }));
       set((s) => {
         const next = { ...s.dialectWarnings };
@@ -487,6 +559,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       });
     } catch (e) {
       console.error('Failed to delete ER column:', e);
+      throw e;
     }
   },
 
@@ -510,11 +583,10 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   // ── Relation operations ───────────────────────────────────────────────
-  addRelation: async (rel) => {
-    const { activeProjectId } = get();
+  addRelation: async (projectId, rel) => {
     try {
       const created = await invoke<ErRelation>('er_create_relation', {
-        req: { project_id: activeProjectId, ...rel },
+        req: { project_id: projectId, ...rel },
       });
       set((s) => ({ relations: [...s.relations, created] }));
       return created;
@@ -526,12 +598,14 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
 
   updateRelation: async (id, updates) => {
     try {
-      await invoke('er_update_relation', { id, req: updates });
+      const req = prepareErUpdatePayload(updates as Record<string, unknown>);
+      await invoke('er_update_relation', { id, req });
       set((s) => ({
         relations: s.relations.map((r) => (r.id === id ? { ...r, ...updates } : r)),
       }));
     } catch (e) {
       console.error('Failed to update ER relation:', e);
+      throw e;
     }
   },
 
@@ -541,6 +615,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       set((s) => ({ relations: s.relations.filter((r) => r.id !== id) }));
     } catch (e) {
       console.error('Failed to delete ER relation:', e);
+      throw e;
     }
   },
 
@@ -578,6 +653,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       });
     } catch (e) {
       console.error('Failed to update ER index:', e);
+      throw e;
     }
   },
 
@@ -592,20 +668,17 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       }));
     } catch (e) {
       console.error('Failed to delete ER index:', e);
+      throw e;
     }
   },
 
   // ── Connection binding ────────────────────────────────────────────────
   bindConnection: async (projectId, connectionId, db, schema) => {
-    try {
-      await invoke('er_bind_connection', {
-        projectId,
-        req: { connection_id: connectionId, database_name: db, schema_name: schema ?? null },
-      });
-      await get().loadProject(projectId);
-    } catch (e) {
-      console.error('Failed to bind connection:', e);
-    }
+    await invoke('er_bind_connection', {
+      projectId,
+      req: { connection_id: connectionId, database_name: db, schema_name: schema ?? null },
+    });
+    await get().loadProject(projectId);
   },
 
   unbindConnection: async (projectId) => {
@@ -633,6 +706,7 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
           include_indexes: options?.includeIndexes ?? true,
           include_comments: options?.includeComments ?? true,
           include_foreign_keys: options?.includeForeignKeys ?? true,
+          include_comment_refs: options?.includeCommentRefs ?? true,
         },
       });
       return ddl;
@@ -653,11 +727,16 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   syncFromDatabase: async (projectId, tableNames) => {
+    await invoke('er_sync_from_database', { projectId, tableNames: tableNames ?? null });
+    await get().loadProject(projectId);
+  },
+
+  generateSyncDdl: async (projectId, changes) => {
     try {
-      await invoke('er_sync_from_database', { projectId, tableNames: tableNames ?? null });
-      await get().loadProject(projectId);
+      return await invoke<string[]>('er_generate_sync_ddl', { projectId, changes });
     } catch (e) {
-      console.error('Failed to sync from database:', e);
+      console.error('Failed to generate sync DDL:', e);
+      throw e;
     }
   },
 
@@ -676,9 +755,39 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
     try {
       const project = await invoke<ErProject>('er_import_json', { json });
       await get().loadProjects();
+      await get().loadProject(project.id);
       return project;
     } catch (e) {
       console.error('Failed to import ER project:', e);
+      throw e;
+    }
+  },
+
+  previewImport: async (json, projectId) => {
+    try {
+      const preview = await invoke<ImportPreview>('er_preview_import', {
+        json,
+        projectId: projectId ?? null,
+      });
+      return preview;
+    } catch (e) {
+      console.error('Failed to preview import:', e);
+      throw e;
+    }
+  },
+
+  executeImport: async (json, projectId, conflicts) => {
+    try {
+      const project = await invoke<ErProject>('er_execute_import', {
+        json,
+        projectId: projectId ?? null,
+        conflicts: conflicts ?? [],
+      });
+      await get().loadProjects();
+      await get().loadProject(project.id);
+      return project;
+    } catch (e) {
+      console.error('Failed to execute import:', e);
       throw e;
     }
   },
@@ -770,4 +879,9 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
   },
 
   clearDialectWarnings: () => set({ dialectWarnings: {} }),
+
+  // ── Viewport persistence ─────────────────────────────────────────────
+  setViewport: (projectId, viewport) => set((s) => ({
+    viewports: { ...s.viewports, [projectId]: viewport },
+  })),
 }));

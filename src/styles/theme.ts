@@ -1,35 +1,83 @@
 /**
  * 项目统一 UI 样式常量
  * 禁止在组件中硬编码重复的颜色/间距字符串，统一从此处引用。
+ * 完整色彩规范见 docs/design-system/color-system-proposal.md
  */
 
 // ──────────────── 调色板 ────────────────
 export const colors = {
   // 背景层级
-  bgPrimary:   '#080d12',   // 最深背景（编辑器区）
-  bgSecondary: '#0d1117',   // 次级背景（表头、footer）
-  bgPanel:     '#111922',   // 面板/弹框背景
-  bgHover:     '#1a2639',   // 通用悬停背景
-  bgSelected:  '#1e2d42',   // 选中背景
-  bgInput:     '#1a2639',   // 输入框背景
+  bgPrimary:   'var(--background-void)',     // 最深背景（编辑器区）
+  bgSecondary: 'var(--background-base)',     // 次级背景（表头、footer）
+  bgPanel:     'var(--background-panel)',    // 面板/弹框背景
+  bgElevated:  'var(--background-elevated)', // 浮层/卡片
+  bgHover:     'var(--background-hover)',    // 通用悬停背景
+  bgActive:    'var(--background-active)',   // 选中/激活背景
+  bgSelected:  'var(--background-active)',   // 选中背景
+  bgInput:     'var(--background-hover)',    // 输入框背景
+  bgDeep:      'var(--background-deep)',     // 极深背景（工具栏/breadcrumb）
+  bgCode:      'var(--background-code)',     // 代码块/Markdown 头部背景
 
   // 边框
-  borderMuted:  '#1e2d42',  // 淡边框（表格行）
-  borderDefault:'#253347',  // 标准边框（输入框、卡片）
-  borderLight:  '#2a3f5a',  // 浅边框（下拉框、菜单）
+  borderSubtle: 'var(--border-subtle)',   // 极细分隔线
+  borderMuted:  'var(--border-default)',  // 淡边框（表格行）
+  borderDefault:'var(--border-strong)',   // 标准边框（输入框、卡片）
+  borderLight:  'var(--border-strong)',   // 浅边框（下拉框、菜单）
+  borderFocus:  'var(--border-focus)',    // 焦点边框
 
   // 文字
-  textPrimary:   '#c8daea', // 主要文字
-  textSecondary: '#b5cfe8', // 次要文字（树节点）
-  textMuted:     '#7a9bb8', // 辅助文字（placeholder、图标）
-  textSelected:  '#e8f4ff', // 选中状态文字
-  textDisabled:  '#4a6480', // 禁用文字
-  textDanger:    '#f87171', // 危险操作文字（红）
+  textBright:    'var(--foreground)',         // 最亮文字（标题、hover）
+  textPrimary:   'var(--foreground-default)', // 主要文字（正文）
+  textSecondary: 'var(--foreground)',         // 次要文字（树节点）
+  textMuted:     'var(--foreground-muted)',   // 辅助文字（描述、时间戳）
+  textSubtle:    'var(--foreground-subtle)',  // 占位符
+  textSelected:  'var(--foreground)',         // 选中状态文字
+  textDisabled:  'var(--foreground-ghost)',   // 禁用文字
+  textDanger:    'var(--error)',              // 危险操作文字
 
   // 强调色
-  accent:      '#00c9a7',   // 主强调（绿）
-  accentDark:  '#009e84',   // 深绿（选中状态）
-  accentHover: '#00a98f',   // 悬停绿
+  accent:       'var(--accent)',        // 主强调（绿）
+  accentHover:  'var(--accent-hover)',  // 悬停绿
+  accentSubtle: 'var(--accent-subtle)', // 淡绿背景
+
+  // 主色
+  primary:       'var(--primary)',        // 主要按钮/链接
+  primaryHover:  'var(--primary-hover)',  // 主色 hover
+  primarySubtle: 'var(--primary-subtle)', // 主色淡背景
+
+  // 语义状态色
+  success:       'var(--success)',
+  successSubtle: 'var(--success-subtle)',
+  warning:       'var(--warning)',
+  warningSubtle: 'var(--warning-subtle)',
+  error:         'var(--error)',
+  errorSubtle:   'var(--error-subtle)',
+  info:          'var(--info)',
+  infoSubtle:    'var(--info-subtle)',
+
+  // Diff 色
+  diffAdd:      'var(--diff-add)',
+  diffAddBg:    'var(--diff-add-bg)',
+  diffRemove:   'var(--diff-remove)',
+  diffRemoveBg: 'var(--diff-remove-bg)',
+  diffModify:   'var(--diff-modify)',
+  diffModifyBg: 'var(--diff-modify-bg)',
+
+  // 数据库对象指示
+  keyPrimary: 'var(--key-primary)',  // 主键图标
+  keyForeign: 'var(--key-foreign)',  // 外键图标
+
+  // 图节点
+  nodeTable:    'var(--node-table)',
+  nodeTableBg:  'var(--node-table-bg)',
+  nodeMetric:   'var(--node-metric)',
+  nodeMetricBg: 'var(--node-metric-bg)',
+  nodeAlias:    'var(--node-alias)',
+  nodeAliasBg:  'var(--node-alias-bg)',
+
+  // 窗口控件
+  windowCloseHover: 'var(--window-close-hover)',
+  dangerHoverBg:    'var(--danger-hover-bg)',
 } as const;
 
 // ──────────────── 通用类名片段 ────────────────
@@ -64,12 +112,12 @@ export const cls = {
   menuItem: [
     'w-full text-left px-3 py-1.5 text-xs',
     'flex items-center gap-2',
-    `text-[${colors.textPrimary}] hover:bg-[${colors.bgHover}] hover:text-white`,
+    `text-[${colors.textPrimary}] hover:bg-[${colors.bgHover}] hover:text-[${colors.textBright}]`,
   ].join(' '),
   menuItemDanger: [
     'w-full text-left px-3 py-1.5 text-xs',
     'flex items-center gap-2',
-    `text-[${colors.textDanger}] hover:bg-[${colors.bgHover}] hover:text-red-300`,
+    `text-[${colors.textDanger}] hover:bg-[${colors.bgHover}] hover:text-[var(--error-foreground)]`,
   ].join(' '),
   menuItemDisabled: [
     'w-full text-left px-3 py-1.5 text-xs',
@@ -87,7 +135,7 @@ export const cls = {
   // 输入框
   input: [
     `bg-[${colors.bgInput}] border border-[${colors.borderDefault}]`,
-    'rounded px-3 py-1.5 text-sm text-white outline-none',
+    `rounded px-3 py-1.5 text-sm text-[${colors.textBright}] outline-none`,
     `focus:border-[${colors.accent}] transition-colors`,
   ].join(' '),
 

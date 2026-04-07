@@ -17,8 +17,10 @@ pub struct SqlServerDataSource {
 
 impl SqlServerDataSource {
     pub async fn new(cfg: &ConnectionConfig) -> AppResult<Self> {
-        let host = cfg.host.as_deref()
+        let raw_host = cfg.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
+        // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
+        let host = if raw_host.eq_ignore_ascii_case("localhost") { "127.0.0.1" } else { raw_host };
         let port = cfg.port
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let mut config = Config::new();
@@ -135,7 +137,7 @@ impl DataSource for SqlServerDataSource {
         let start = std::time::Instant::now();
 
         // Non-SELECT statements: use execute() to get affected row count
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("EXEC") && !trimmed.starts_with("WITH") {
             let result = client.execute(sql, &[])
                 .await
@@ -296,6 +298,7 @@ impl DataSource for SqlServerDataSource {
             referenced_table: row_str(r, 2),
             referenced_column: row_str(r, 3),
             on_delete: Some(row_str(r, 4)),
+            on_update: None,
         }).collect())
     }
 

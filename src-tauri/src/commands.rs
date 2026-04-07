@@ -2699,49 +2699,47 @@ pub async fn clear_graph_node_positions(
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn create_migration_task(
-    name: String,
-    src_connection_id: i64,
-    dst_connection_id: i64,
-    config: crate::migration::MigrationConfig,
-) -> AppResult<crate::migration::MigrationTask> {
-    crate::migration::create_task(&name, src_connection_id, dst_connection_id, &config)
+    _name: String,
+    _config: crate::migration::MigrationJobConfig,
+) -> AppResult<crate::migration::MigrationJob> {
+    Err(crate::AppError::Other("create_migration_task: not yet implemented (Task 3)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
-pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationTask>> {
-    crate::migration::list_tasks()
+pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationJob>> {
+    Err(crate::AppError::Other("list_migration_tasks: not yet implemented (Task 3)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn run_migration_precheck(
-    task_id: i64,
+    job_id: i64,
+    config: crate::migration::MigrationJobConfig,
 ) -> AppResult<crate::migration::precheck::PreCheckResult> {
-    crate::migration::precheck::run_precheck(task_id).await
+    crate::migration::precheck::run_precheck_for_job(job_id, &config).await
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn get_precheck_report(
-    task_id: i64,
+    job_id: i64,
 ) -> AppResult<crate::migration::precheck::PreCheckResult> {
-    crate::migration::precheck::get_precheck_result(task_id)
+    crate::migration::precheck::get_precheck_result(job_id)
 }
 
 #[allow(dead_code)]
 #[tauri::command]
-pub async fn pause_migration(task_id: i64) -> AppResult<()> {
-    crate::migration::pause_migration(task_id)
+pub async fn pause_migration(_job_id: i64) -> AppResult<()> {
+    Err(crate::AppError::Other("pause_migration: not yet implemented (Task 4)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn get_migration_progress(
-    task_id: i64,
-) -> AppResult<Option<crate::migration::task_mgr::MigrationProgress>> {
-    let task = crate::migration::get_task(task_id)?;
-    Ok(task.progress)
+    _job_id: i64,
+) -> AppResult<Option<String>> {
+    Ok(None)
 }
 
 // ============ AI 指标草稿 + Text-to-SQL v2 ============
@@ -2858,16 +2856,16 @@ pub async fn ai_generate_sql_v2(
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn start_migration(
-    task_id: i64,
-    app_handle: tauri::AppHandle,
+    _job_id: i64,
+    _app_handle: tauri::AppHandle,
 ) -> AppResult<()> {
-    crate::migration::start_migration(task_id, app_handle).await
+    Err(crate::AppError::Other("start_migration: not yet implemented (Task 4)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
-pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
-    crate::migration::get_task(task_id)
+pub fn get_migration_task(job_id: i64) -> AppResult<crate::migration::MigrationJob> {
+    Err(crate::AppError::Other(format!("get_migration_task({job_id}): not yet implemented (Task 3)")))
 }
 
 // ============ ACP Elicitation — 权限确认回传（旧版，已废弃，桩函数保留兼容性）============

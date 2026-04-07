@@ -22,6 +22,8 @@ import { GraphExplorer } from './components/GraphExplorer';
 import { SeaTunnelSidebar } from './components/SeaTunnelExplorer';
 import { ERSidebar } from './components/ERDesigner';
 import { flushSeaTunnelPersist, useSeaTunnelStore } from './store/seaTunnelStore';
+import { MigrationExplorer } from './components/MigrationExplorer';
+import { flushMigrationPersist, useMigrationStore } from './store/migrationStore';
 import { initTaskProgressListener, useTaskStore } from './store';
 import { askAiWithContext } from './utils/askAi';
 import { ConfirmDialog } from './components/common/ConfirmDialog';
@@ -69,7 +71,7 @@ export default function App() {
   }, []);
   // app 关闭前立即 flush 防抖 persist，防止展开状态丢失
   useEffect(() => {
-    const handler = () => { flushMetricsPersist(); flushSeaTunnelPersist(); };
+    const handler = () => { flushMetricsPersist(); flushSeaTunnelPersist(); flushMigrationPersist(); };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
@@ -112,6 +114,15 @@ export default function App() {
       const jobNode = stJobNodeId(tab.stJobId);
       if (stStore.selectedId !== jobNode) {
         stStore.selectNode(jobNode);
+      }
+    }
+
+    // 2d. Migration — 选中 job 节点
+    if (tab.type === 'migration_job' && tab.migrationJobId != null) {
+      const migStore = useMigrationStore.getState();
+      const jobNodeId = `job_${tab.migrationJobId}`;
+      if (migStore.selectedId !== jobNodeId) {
+        migStore.selectNode(jobNodeId);
       }
     }
   }, [activeTabId]);
@@ -278,7 +289,12 @@ export default function App() {
         width={sidebarWidth}
         hidden={activeActivity !== 'er_designer'}
       />
-      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && activeActivity !== 'er_designer' && (
+      <MigrationExplorer
+        sidebarWidth={sidebarWidth}
+        onResize={setSidebarWidth}
+        hidden={activeActivity !== 'migration'}
+      />
+      {activeActivity !== 'metrics' && activeActivity !== 'seatunnel' && activeActivity !== 'er_designer' && activeActivity !== 'migration' && (
         activeActivity !== 'settings' && activeActivity !== 'tasks' &&
         activeActivity !== 'graph' && (
           <Explorer

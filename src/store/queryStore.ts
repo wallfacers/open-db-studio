@@ -57,6 +57,9 @@ interface QueryState {
   openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
   closeSeaTunnelJobTab: (jobId: number) => void;
   updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
+  openMigrationJobTab: (jobId: number, title: string) => void;
+  closeMigrationJobTab: (jobId: number) => void;
+  updateMigrationJobTabTitle: (jobId: number, title: string) => void;
   openERDesignTab: (projectId: number, projectName: string) => void;
   updateERDesignTabTitle: (projectId: number, title: string) => void;
   closeERDesignTab: (projectId: number) => void;
@@ -294,6 +297,36 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         : s.activeTabId;
       return { tabs: newTabs, activeTabId: newActiveId };
     });
+  },
+
+  openMigrationJobTab: (jobId, title) => {
+    set(s => {
+      const existing = s.tabs.find(t => t.type === 'migration_job' && t.migrationJobId === jobId);
+      if (existing) return { activeTabId: existing.id };
+      const id = `migration_job_${jobId}_${Date.now()}`;
+      const tab: Tab = { id, type: 'migration_job', title, migrationJobId: jobId };
+      return { tabs: [...s.tabs, tab], activeTabId: id };
+    });
+  },
+
+  closeMigrationJobTab: (jobId) => {
+    set(s => {
+      const tab = s.tabs.find(t => t.type === 'migration_job' && t.migrationJobId === jobId);
+      if (!tab) return {};
+      const newTabs = s.tabs.filter(t => t.id !== tab.id);
+      const newActiveId = s.activeTabId === tab.id
+        ? (newTabs[newTabs.length - 1]?.id ?? '')
+        : s.activeTabId;
+      return { tabs: newTabs, activeTabId: newActiveId };
+    });
+  },
+
+  updateMigrationJobTabTitle: (jobId, title) => {
+    set(s => ({
+      tabs: s.tabs.map(t =>
+        t.type === 'migration_job' && t.migrationJobId === jobId ? { ...t, title } : t
+      ),
+    }));
   },
 
   updateERDesignTabTitle: (projectId, title) => {

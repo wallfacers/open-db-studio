@@ -54,7 +54,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3, Sparkles,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3, Sparkles, ArrowLeftRight,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -65,6 +65,7 @@ import ERCanvas from '../ERDesigner/ERCanvas';
 import { MetricTab } from '../MetricsExplorer/MetricTab';
 import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
 import SeaTunnelJobTab from '../SeaTunnelJobTab';
+import { MigrationJobTab } from '../MigrationJobTab';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
 import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId } from '../../utils/nodeId';
@@ -934,6 +935,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'seatunnel_job' ? (
               <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
+            ) : tab.type === 'migration_job' ? (
+              <ArrowLeftRight size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             )}
@@ -1055,9 +1058,20 @@ export const MainContent: React.FC<MainContentProps> = ({
         </div>
       ))}
 
+      {/* migration_job */}
+      {tabs.filter(t => t.type === 'migration_job').map(tab => (
+        <div
+          key={tab.id}
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+          style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
+        >
+          {tab.migrationJobId != null && <MigrationJobTab jobId={tab.migrationJobId} />}
+        </div>
+      ))}
+
       {/* ── Active-only tabs (too heavy to keep all mounted) ── */}
       {activeTabObj ? (
-        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'seatunnel_job' ? null
+        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'seatunnel_job' || activeTabObj.type === 'migration_job' ? null
         : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <MetricListPanel

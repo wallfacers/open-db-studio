@@ -1,226 +1,142 @@
-#![allow(dead_code)]
-
-use crate::AppResult;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum MigrationStatus {
-    Pending,
-    Running,
-    Paused,
-    Done,
-    Failed,
+// ── Job Config (stored as config_json) ──────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MigrationJobConfig {
+    pub source: SourceConfig,
+    pub column_mapping: Vec<ColumnMapping>,
+    pub target: TargetConfig,
+    pub pipeline: PipelineConfig,
 }
 
-impl std::fmt::Display for MigrationStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Pending => write!(f, "pending"),
-            Self::Running => write!(f, "running"),
-            Self::Paused => write!(f, "paused"),
-            Self::Done => write!(f, "done"),
-            Self::Failed => write!(f, "failed"),
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SourceConfig {
+    pub connection_id: i64,
+    pub query_mode: QueryMode,
+    pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryMode { #[default] Auto, Custom }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ColumnMapping {
+    pub source_expr: String,
+    pub target_col: String,
+    pub target_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TargetConfig {
+    pub connection_id: i64,
+    pub table: String,
+    pub conflict_strategy: ConflictStrategy,
+    pub create_table_if_not_exists: bool,
+    pub upsert_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ConflictStrategy { #[default] Insert, Upsert, Replace, Skip }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineConfig {
+    pub read_batch_size: usize,
+    pub write_batch_size: usize,
+    pub channel_capacity: usize,
+    pub parallelism: usize,
+    pub speed_limit_rps: Option<u64>,
+    pub error_limit: usize,
+    pub shard_count: Option<usize>,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            read_batch_size: 10_000,
+            write_batch_size: 1_000,
+            channel_capacity: 16,
+            parallelism: 1,
+            speed_limit_rps: None,
+            error_limit: 0,
+            shard_count: None,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MigrationTableConfig {
-    pub src_table: String,
-    pub dst_table: String,
-    pub type_overrides: Option<std::collections::HashMap<String, String>>,
-}
+// ── DB Row types (returned to frontend) ─────────────────────
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MigrationConfig {
-    pub tables: Vec<MigrationTableConfig>,
-    pub batch_size: usize,
-    pub skip_errors: bool,
-}
-
-impl Default for MigrationConfig {
-    fn default() -> Self {
-        Self { tables: vec![], batch_size: 500, skip_errors: true }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MigrationProgress {
-    pub task_id: i64,
-    pub current_table: String,
-    pub done_rows: i64,
-    pub total_rows: i64,
-    pub error_count: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MigrationTask {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationCategory {
     pub id: i64,
     pub name: String,
-    pub src_connection_id: i64,
-    pub dst_connection_id: i64,
-    pub config: MigrationConfig,
-    pub status: MigrationStatus,
-    pub progress: Option<MigrationProgress>,
+    pub parent_id: Option<i64>,
+    pub sort_order: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationJob {
+    pub id: i64,
+    pub name: String,
+    pub category_id: Option<i64>,
+    pub config_json: String,
+    pub last_status: Option<String>,
+    pub last_run_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-pub fn create_task(
-    name: &str,
-    src_connection_id: i64,
-    dst_connection_id: i64,
-    config: &MigrationConfig,
-) -> AppResult<MigrationTask> {
-    let conn = crate::db::get().lock().unwrap();
-    let config_json = serde_json::to_string(config)
-        .map_err(|e| crate::AppError::Other(e.to_string()))?;
-    conn.execute(
-        "INSERT INTO migration_tasks (name, src_connection_id, dst_connection_id, config, status)
-         VALUES (?1, ?2, ?3, ?4, 'pending')",
-        rusqlite::params![name, src_connection_id, dst_connection_id, config_json],
-    )?;
-    let id = conn.last_insert_rowid();
-    drop(conn);
-    get_task(id)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationRunHistory {
+    pub id: i64,
+    pub job_id: i64,
+    pub run_id: String,
+    pub status: String,
+    pub rows_read: i64,
+    pub rows_written: i64,
+    pub rows_failed: i64,
+    pub bytes_transferred: i64,
+    pub duration_ms: Option<i64>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
 }
 
-pub fn get_task(id: i64) -> AppResult<MigrationTask> {
-    let conn = crate::db::get().lock().unwrap();
-    conn.query_row(
-        "SELECT id,name,src_connection_id,dst_connection_id,config,status,progress,created_at,updated_at
-         FROM migration_tasks WHERE id=?1",
-        [id],
-        |row| {
-            let config_str: String = row.get(4)?;
-            let status_str: String = row.get(5)?;
-            let progress_str: Option<String> = row.get(6)?;
-            Ok(MigrationTask {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                src_connection_id: row.get(2)?,
-                dst_connection_id: row.get(3)?,
-                config: serde_json::from_str(&config_str).unwrap_or_default(),
-                status: match status_str.as_str() {
-                    "running" => MigrationStatus::Running,
-                    "paused" => MigrationStatus::Paused,
-                    "done" => MigrationStatus::Done,
-                    "failed" => MigrationStatus::Failed,
-                    _ => MigrationStatus::Pending,
-                },
-                progress: progress_str.and_then(|s| serde_json::from_str(&s).ok()),
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-            })
-        }
-    ).map_err(Into::into)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationDirtyRecord {
+    pub id: i64,
+    pub job_id: i64,
+    pub run_id: String,
+    pub row_index: Option<i64>,
+    pub field_name: Option<String>,
+    pub raw_value: Option<String>,
+    pub error_msg: Option<String>,
+    pub created_at: String,
 }
 
-pub fn list_tasks() -> AppResult<Vec<MigrationTask>> {
-    let ids: Vec<i64> = {
-        let conn = crate::db::get().lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id FROM migration_tasks ORDER BY created_at DESC LIMIT 100"
-        )?;
-        let result = stmt.query_map([], |r| r.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        result
-    };
-    ids.iter().map(|&id| get_task(id)).collect()
+// ── Stats event (broadcast every second) ────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationStatsEvent {
+    pub job_id: i64,
+    pub run_id: String,
+    pub rows_read: u64,
+    pub rows_written: u64,
+    pub rows_failed: u64,
+    pub bytes_transferred: u64,
+    pub read_speed_rps: f64,
+    pub write_speed_rps: f64,
+    pub eta_seconds: Option<f64>,
+    pub progress_pct: Option<f64>,
 }
 
-pub fn set_status(id: i64, status: &MigrationStatus) -> AppResult<()> {
-    let conn = crate::db::get().lock().unwrap();
-    conn.execute(
-        "UPDATE migration_tasks SET status=?2, updated_at=datetime('now') WHERE id=?1",
-        rusqlite::params![id, status.to_string()],
-    )?;
-    Ok(())
-}
-
-pub fn save_progress(id: i64, progress: &MigrationProgress) -> AppResult<()> {
-    let conn = crate::db::get().lock().unwrap();
-    let json = serde_json::to_string(progress)
-        .map_err(|e| crate::AppError::Other(e.to_string()))?;
-    conn.execute(
-        "UPDATE migration_tasks SET progress=?2, updated_at=datetime('now') WHERE id=?1",
-        rusqlite::params![id, json],
-    )?;
-    Ok(())
-}
-
-pub async fn start_migration(
-    task_id: i64,
-    app_handle: tauri::AppHandle,
-) -> AppResult<()> {
-    let task = get_task(task_id)?;
-    set_status(task_id, &MigrationStatus::Running)?;
-
-    let mut any_error = false;
-    for table_cfg in &task.config.tables {
-        // 检查是否已暂停
-        if get_task(task_id)?.status == MigrationStatus::Paused {
-            return Ok(());
-        }
-
-        match super::data_pump::pump_table(
-            task_id,
-            task.src_connection_id,
-            task.dst_connection_id,
-            &table_cfg.src_table,
-            &table_cfg.dst_table,
-            task.config.batch_size,
-            task.config.skip_errors,
-            &app_handle,
-        ).await {
-            Ok(p) => log::info!("[migration] table {} done: {}/{}", table_cfg.src_table, p.done_rows, p.total_rows),
-            Err(e) => {
-                log::error!("[migration] table {} failed: {}", table_cfg.src_table, e);
-                if !task.config.skip_errors {
-                    set_status(task_id, &MigrationStatus::Failed)?;
-                    return Err(e);
-                }
-                any_error = true;
-            }
-        }
-    }
-
-    set_status(task_id, if any_error { &MigrationStatus::Failed } else { &MigrationStatus::Done })?;
-    Ok(())
-}
-
-pub fn pause_migration(task_id: i64) -> AppResult<()> {
-    set_status(task_id, &MigrationStatus::Paused)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_status_display() {
-        assert_eq!(MigrationStatus::Running.to_string(), "running");
-        assert_eq!(MigrationStatus::Done.to_string(), "done");
-        assert_eq!(MigrationStatus::Paused.to_string(), "paused");
-        assert_eq!(MigrationStatus::Failed.to_string(), "failed");
-        assert_eq!(MigrationStatus::Pending.to_string(), "pending");
-    }
-
-    #[test]
-    fn test_config_serialization() {
-        let cfg = MigrationConfig {
-            tables: vec![MigrationTableConfig {
-                src_table: "orders".into(),
-                dst_table: "orders".into(),
-                type_overrides: None,
-            }],
-            batch_size: 100,
-            skip_errors: true,
-        };
-        let json = serde_json::to_string(&cfg).unwrap();
-        let restored: MigrationConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.batch_size, 100);
-        assert_eq!(restored.tables[0].src_table, "orders");
-    }
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationLogEvent {
+    pub job_id: i64,
+    pub run_id: String,
+    pub level: String,   // SYSTEM / PRECHECK / DDL / INFO / PROGRESS / WARN / ERROR / STATS
+    pub message: String,
+    pub timestamp: String,
 }

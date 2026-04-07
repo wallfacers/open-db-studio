@@ -406,3 +406,57 @@ CREATE TABLE IF NOT EXISTS er_indexes (
 
 -- 唯一约束：同一项目内表名不重复
 CREATE UNIQUE INDEX IF NOT EXISTS idx_er_tables_project_name ON er_tables(project_id, name);
+
+-- ============================================================
+-- Migration Center (native Rust ETL, replaces SeaTunnel)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS migration_categories (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  parent_id  INTEGER REFERENCES migration_categories(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_jobs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  category_id INTEGER REFERENCES migration_categories(id) ON DELETE SET NULL,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  last_status TEXT CHECK(last_status IN ('RUNNING','FINISHED','FAILED','STOPPED')),
+  last_run_at TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_dirty_records (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id     INTEGER NOT NULL REFERENCES migration_jobs(id) ON DELETE CASCADE,
+  run_id     TEXT NOT NULL,
+  row_index  INTEGER,
+  field_name TEXT,
+  raw_value  TEXT,
+  error_msg  TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_run_history (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id            INTEGER NOT NULL REFERENCES migration_jobs(id) ON DELETE CASCADE,
+  run_id            TEXT NOT NULL UNIQUE,
+  status            TEXT NOT NULL CHECK(status IN ('RUNNING','FINISHED','FAILED','STOPPED')),
+  rows_read         INTEGER NOT NULL DEFAULT 0,
+  rows_written      INTEGER NOT NULL DEFAULT 0,
+  rows_failed       INTEGER NOT NULL DEFAULT 0,
+  bytes_transferred INTEGER NOT NULL DEFAULT 0,
+  duration_ms       INTEGER,
+  started_at        TEXT NOT NULL,
+  finished_at       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_migration_dirty_records_job_run
+  ON migration_dirty_records(job_id, run_id);
+
+CREATE INDEX IF NOT EXISTS idx_migration_run_history_job
+  ON migration_run_history(job_id);

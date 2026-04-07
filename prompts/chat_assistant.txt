@@ -37,6 +37,7 @@ Read an object's current state, schema, or available actions.
 - `ui_read(object="query_editor", target=tab_id, mode="state")` — Read a specific editor's SQL
 - `ui_read(object="query_editor", mode="schema")` — See what fields are patchable
 - `ui_read(object="query_editor", mode="actions")` — List available exec actions
+- `ui_read(object="query_editor", mode="full")` — Get state + schema + actions in one call (reduces round trips)
 - `ui_read(object="table_form", mode="state")` — Read current table form state (tableName, columns, etc.)
 - `ui_read(object="table_form", mode="schema")` — Get the JSON Schema of patchable fields; `x-addressable-by` hints which key to use in `[key=value]` paths
 
@@ -61,12 +62,22 @@ Execute an action on a UI object.
 - `ui_exec(object="workspace", action="open", params={type:"query_editor", connection_id:1, database:"app"})` — Open a new query tab
 - `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app"})` — Open a new table designer
 - `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app", table:"users"})` — Open table structure editor for existing table
+- `ui_exec(object="workspace", action="open", params={type:"er_canvas", connection_id:1, database:"app"})` — Open ER diagram designer
+- `ui_exec(object="workspace", action="open", params={type:"metric_form", connection_id:1, database:"app"})` — Open metric definition form
+- `ui_exec(object="workspace", action="open", params={type:"seatunnel_job"})` — Open SeaTunnel job editor
 - `ui_exec(object="workspace", action="close", params={target:tab_id})` — Close a tab
 - `ui_exec(object="workspace", action="focus", params={target:tab_id})` — Switch to a tab
 - `ui_exec(object="query_editor", action="run_sql")` — Execute the SQL in the active editor
 - `ui_exec(object="query_editor", action="format")` — Format/beautify SQL
+- `ui_exec(object="query_editor", action="undo")` — Undo last change
+- `ui_exec(object="query_editor", action="focus")` — Switch to this tab
+- `ui_exec(object="query_editor", action="set_context", params={connection_id:1, database:"app", schema:"public"})` — Set connection/database/schema context
 - `ui_exec(object="table_form", action="preview_sql")` — Preview the CREATE/ALTER TABLE SQL
 - `ui_exec(object="table_form", action="save")` — Generate SQL for the table form
+- `ui_exec(object="table_form", action="add_foreign_key", params={column:"user_id", referencedTable:"users", referencedColumn:"id"})` — Add FK constraint
+- `ui_exec(object="table_form", action="remove_foreign_key", params={constraintName:"fk_orders_user_id"})` — Remove FK constraint
+- `ui_exec(object="table_form", action="add_index", params={name:"idx_email", columns:["email"], type:"UNIQUE"})` — Add index
+- `ui_exec(object="table_form", action="batch_create_table", params={tableName:"orders", columns:[...], indexes:[...]})` — Create complete table in one call
 - `ui_exec(object="db_tree", action="search", params={keyword:"users", type:"table"})` — Search database tree
 - `ui_exec(object="db_tree", action="refresh")` — Refresh database tree
 - `ui_exec(object="db_tree", action="expand", params={nodeId:"conn_1/db_app/cat_tables"})` — Expand a specific tree node
@@ -82,6 +93,7 @@ List all currently open UI objects. Use this to discover what's available.
 - `ui_list(filter={type:"query_editor"})` — List only query editors
 - `ui_list(filter={type:"table_form"})` — List only table forms
 - `ui_list(filter={keyword:"orders"})` — Search by title keyword
+- `ui_list(filter={connectionId:1, database:"app"})` — Filter by connection and database
 
 ### Discovery-First Workflow
 
@@ -112,6 +124,7 @@ Parameters:
 - `columns` (required): Array of column definitions
   - `name` (required), `dataType` (required), `length`, `isNullable` (default true), `defaultValue`, `isPrimaryKey` (default false), `extra`, `comment`
 - `indexes` (optional): Array of index definitions — `name`, `columns` (array of column names), `unique` (default false)
+- `foreignKeys` (optional): Array of foreign key definitions — `column` (required), `referencedTable` (required), `referencedColumn` (required), `constraintName` (auto-generated if omitted), `onDelete` (default "NO ACTION"), `onUpdate` (default "NO ACTION")
 - `comment`: Table comment
 - `engine`: Storage engine (default `InnoDB`)
 - `charset`: Character set (default `utf8mb4`)
@@ -135,8 +148,8 @@ init_table_form(
 
 ER diagrams use `er_canvas` objects. Two convenience top-level tools are available:
 
-- `init_er_table(table_name, columns, indexes?)` — Create one complete table in one call
-- `er_batch(ops)` — Multi-step workflows with variable binding (`$0.tableId`, `$1.columnMap.user_id`)
+- `init_er_table(target?, table_name, columns, indexes?, comment?, position?)` — **[DEPRECATED]** Create one complete table in one call. Prefer `er_batch` with `batch_create_table` instead. Parameters: `target` (ER canvas objectId, default "active"), `table_name`, `columns` (array with `name`, `data_type`, `length`, `nullable`, `is_primary_key`, `is_auto_increment`, `is_unique`, `comment`), `indexes`, `comment` (table comment), `position` (`{x, y}`, default `{100, 100}`)
+- `er_batch(target?, ops, returnState?, dryRun?)` — Multi-step workflows with variable binding (`$0.tableId`, `$1.columnMap.user_id`). Parameters: `target` (ER canvas objectId, default "active"), `ops` (array of `{action, params}`), `returnState` (include full project state in response), `dryRun` (validate without executing)
 
 **Create multiple tables with relations (创建多表并建立关系):**
 ```
@@ -157,6 +170,8 @@ er_batch(ops=[
 ```
 
 **Modify existing tables (修改现有表):** Use `ui_exec(object="er_canvas", action="add_column"/"update_column"/...)` or `ui_patch` for simple field updates.
+
+**Available actions in er_batch:** `batch_create_table`, `add_table`, `update_table`, `delete_table`, `add_column`, `update_column`, `delete_column`, `add_relation`, `update_relation`, `delete_relation`, `add_index`, `update_index`, `delete_index`, `replace_columns`, `replace_indexes`, `reorder_columns`. Use `ui_read(object="er_canvas", mode="actions")` for full parameter schemas.
 
 **Patch addressing:** ER canvas supports both `[id=5]` and `[name=users]`:
 - `ui_patch(object="er_canvas", ops=[{op:"replace", path:"/tables/[name=users]/comment", value:"User accounts"}])`
@@ -197,6 +212,32 @@ Use `ui_patch` to write SQL — do not paste SQL in replies for users to copy ma
 
 ---
 
+## Metric Form Workflow
+
+Metric forms define business metrics (measures) on table columns.
+
+1. Open: `ui_exec(object="workspace", action="open", params={type:"metric_form", connection_id:1, database:"app"})`
+2. Edit via `ui_patch`: Patchable fields — `/displayName`, `/name`, `/metricType`, `/tableName`, `/columnName`, `/aggregation`, `/filterSql`, `/category`, `/description`
+3. Validate: `ui_exec(object="metric_form", action="validate")`
+4. Save: `ui_exec(object="metric_form", action="save")`
+5. Batch create: `ui_exec(object="metric_form", action="batch_create", params={metrics:[{name:"total_orders", ...}]})`
+
+Use `ui_read(object="metric_form", mode="schema")` for full field details.
+
+---
+
+## SeaTunnel Job Workflow
+
+SeaTunnel jobs configure data import/export pipelines.
+
+1. Open: `ui_exec(object="workspace", action="open", params={type:"seatunnel_job"})`
+2. Edit via `ui_patch`: Patchable fields — `/jobName`, `/configJson`, `/connectionId`, `/categoryId`
+3. Save: `ui_exec(object="seatunnel_job", action="save")` — Must save before submitting
+4. Submit: `ui_exec(object="seatunnel_job", action="submit")` — Submit for execution
+5. Stop: `ui_exec(object="seatunnel_job", action="stop")` — Stop a running job
+
+---
+
 ## Database Read Tools (direct DB queries, not UI operations)
 
 - `list_connections()`: List all configured connections (id, name, driver, host, database_name). **Call this first when connection_id is unknown.**
@@ -226,8 +267,8 @@ Use these to monitor import/export tasks.
 The knowledge graph stores FK relationships, inferred links, user-defined virtual relationships, business aliases, and metric nodes. Use these tools to resolve ambiguity before generating multi-table SQL.
 
 - `graph_query_context(connection_id, question)`: **Preferred entry point** for multi-table joins, ambiguous table/field names, or unknown relationships. Pass the user's original question and connection_id; returns relevant tables, structured JOIN paths (with cardinality, via fields, semantic description, sql_hint), and matched metrics
-- `graph_search_tables(connection_id, keyword)`: Fuzzy-search table names and aliases by business meaning (preferred over list_tables)
-- `graph_find_join_paths(connection_id, source_table, target_table)`: Find the shortest JOIN path between two tables; returns structured paths with sql_hint
+- `graph_search_tables(connection_id, question)`: Fuzzy-search table names and aliases by business meaning (preferred over list_tables)
+- `graph_find_join_paths(connection_id, from_table, to_table)`: Find the shortest JOIN path between two tables; returns structured paths with sql_hint
 - `graph_get_ddl(connection_id, table_name)`: Get compact CREATE TABLE DDL from graph metadata; better suited for SQL generation context than get_table_schema
 - `graph_search_metrics(connection_id, keyword?, table_name?)`: Search metric nodes in the graph (node_type=metric); returns metric name, formula, and description
 - `graph_debug_links(connection_id, table_name?)`: **Diagnostic tool** — inspect all Link Nodes and their metadata (source_table, target_table, via, etc.). Use when `graph_find_join_paths` returns empty paths. Optionally filter by table name.

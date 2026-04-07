@@ -445,7 +445,7 @@ CREATE TABLE IF NOT EXISTS migration_run_history (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id            INTEGER NOT NULL REFERENCES migration_jobs(id) ON DELETE CASCADE,
   run_id            TEXT NOT NULL UNIQUE,
-  status            TEXT NOT NULL,
+  status            TEXT NOT NULL CHECK(status IN ('RUNNING','FINISHED','FAILED','STOPPED')),
   rows_read         INTEGER NOT NULL DEFAULT 0,
   rows_written      INTEGER NOT NULL DEFAULT 0,
   rows_failed       INTEGER NOT NULL DEFAULT 0,
@@ -454,3 +454,9 @@ CREATE TABLE IF NOT EXISTS migration_run_history (
   started_at        TEXT NOT NULL,
   finished_at       TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_migration_dirty_records_job_run
+  ON migration_dirty_records(job_id, run_id);
+
+CREATE INDEX IF NOT EXISTS idx_migration_run_history_job
+  ON migration_run_history(job_id);

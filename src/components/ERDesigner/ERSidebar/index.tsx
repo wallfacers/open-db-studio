@@ -28,6 +28,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   } | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [createProjectError, setCreateProjectError] = useState('');
   const [renameDialog, setRenameDialog] = useState<{ projectId: number; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -79,9 +80,15 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
-    await createProject(newProjectName.trim());
-    setNewProjectName('');
-    setShowCreateDialog(false);
+    try {
+      await createProject(newProjectName.trim());
+      setNewProjectName('');
+      setCreateProjectError('');
+      setShowCreateDialog(false);
+    } catch (e: any) {
+      const msg = typeof e === 'string' ? e : e?.message || '';
+      setCreateProjectError(msg || '创建失败');
+    }
   };
 
   const handleRenameProject = async () => {
@@ -307,22 +314,25 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
 
       {/* Create Project Dialog */}
       {showCreateDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCreateDialog(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShowCreateDialog(false); setCreateProjectError(''); }}>
           <div className="bg-background-elevated border border-border-strong rounded-lg p-4 w-72" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm text-foreground-default mb-3">{t('erDesigner.newProject') || '新建 ER 项目'}</h3>
             <input
               type="text"
-              className="w-full px-3 py-2 bg-background-hover border border-border-strong rounded text-xs text-foreground-default placeholder-foreground-subtle focus:outline-none focus:border-accent"
+              className={`w-full px-3 py-2 bg-background-hover border rounded text-xs text-foreground-default placeholder-foreground-subtle focus:outline-none transition-colors duration-200 ${createProjectError ? 'border-error focus:border-error' : 'border-border-strong focus:border-accent'}`}
               placeholder={t('erDesigner.projectName') || '项目名称'}
               value={newProjectName}
-              onChange={e => setNewProjectName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); else if (e.key === 'Escape') setShowCreateDialog(false); }}
+              onChange={e => { setNewProjectName(e.target.value); setCreateProjectError(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateProject(); else if (e.key === 'Escape') { setShowCreateDialog(false); setCreateProjectError(''); } }}
               autoFocus
             />
+            {createProjectError && (
+              <p className="mt-1.5 text-[11px] text-error">{createProjectError}</p>
+            )}
             <div className="flex justify-end mt-3 gap-2">
               <button
                 className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground-default rounded transition-colors duration-200"
-                onClick={() => setShowCreateDialog(false)}
+                onClick={() => { setShowCreateDialog(false); setCreateProjectError(''); }}
               >
                 {t('common.cancel') || '取消'}
               </button>

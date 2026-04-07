@@ -7,6 +7,7 @@ import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
 import { AssistantToggleTab } from './components/Assistant/AssistantToggleTab';
 import { Toast, type ToastLevel } from './components/Toast';
+import { useShallow } from 'zustand/react/shallow';
 import { useToastStore } from './store/toastStore';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
@@ -134,14 +135,17 @@ export default function App() {
     }
   }, [results, activeTabId, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { message: toastMsg, level: toastLevel, markdownContext: toastMarkdown, hide: hideToast } = useToastStore();
+  const { message: toastMsg, level: toastLevel, markdownContext: toastMarkdown, hide: hideToast, show: storeShow, showError: storeShowError } = useToastStore(useShallow(s => ({
+    message: s.message, level: s.level, markdownContext: s.markdownContext,
+    hide: s.hide, show: s.show, showError: s.showError,
+  })));
 
   const showToast = (msg: string, level: ToastLevel = 'default') => {
-    useToastStore.getState().show(msg, level);
+    storeShow(msg, level);
   };
 
   const showError = (userMessage: string, markdownContext?: string | null) => {
-    useToastStore.getState().showError(userMessage, markdownContext);
+    storeShowError(userMessage, markdownContext);
   };
 
   const handleFormat = () => {

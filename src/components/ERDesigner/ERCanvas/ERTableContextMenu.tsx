@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useConfirmStore } from '../../../store/confirmStore';
 import { useToastStore } from '../../../store/toastStore';
+import { createDefaultColumn } from '../shared/defaultColumn';
 import { duplicateTable } from '../shared/duplicateTable';
 
 interface ERTableContextMenuProps {
@@ -48,24 +49,7 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
   const handleAddColumn = async () => {
     const cols = columns[tableId] || [];
     try {
-      await addColumn(tableId, {
-        name: `column_${cols.length + 1}`,
-        data_type: 'VARCHAR',
-        nullable: true,
-        default_value: null,
-        is_primary_key: false,
-        is_auto_increment: false,
-        comment: null,
-        length: null,
-        scale: null,
-        is_unique: false,
-        unsigned: false,
-        charset: null,
-        collation: null,
-        on_update: null,
-        enum_values: null,
-        sort_order: cols.length,
-      });
+      await addColumn(tableId, createDefaultColumn(cols.length));
     } catch (e) {
       console.error('Failed to add column:', e);
       showError(`添加列失败: ${e}`);

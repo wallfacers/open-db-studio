@@ -16,5 +16,5 @@ export const useToastStore = create<ToastState>((set) => ({
   markdownContext: null,
   show: (msg, level = 'default') => set({ message: msg, level, markdownContext: null }),
   showError: (msg, markdownContext = null) => set({ message: msg, level: 'error', markdownContext }),
-  hide: () => set({ message: null }),
+  hide: () => set((s) => s.message === null ? s : { message: null }),
 }));

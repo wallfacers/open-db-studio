@@ -1043,8 +1043,15 @@ pub fn generate_modify_column_ddl(
         "sqlserver" | "mssql" => {
             vec![format!("ALTER TABLE {} ALTER COLUMN {};", q_table, col_def)]
         }
+        "sqlite" => {
+            // SQLite does not support MODIFY COLUMN; table recreation is required.
+            vec![format!(
+                "-- SQLite does not support MODIFY COLUMN (table recreation required): ALTER TABLE {} MODIFY {};",
+                q_table, col_def
+            )]
+        }
         _ => {
-            // MySQL, Oracle, SQLite
+            // MySQL, Oracle
             vec![format!("ALTER TABLE {} MODIFY COLUMN {};", q_table, col_def)]
         }
     })

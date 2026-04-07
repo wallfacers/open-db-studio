@@ -34,7 +34,7 @@ import { useERKeyboard } from '../hooks/useERKeyboard'
 import { useUIObjectRegistry } from '../../../mcp/ui/useUIObjectRegistry'
 import { ERCanvasAdapter } from '../../../mcp/ui/adapters/ERCanvasAdapter'
 import { layoutNodesWithDagre } from '../utils/dagreLayout'
-import type { ErTable, ErColumn, ErRelation } from '../../../types'
+import type { ErTable, ErColumn, ErRelation, SyncExecutionResult } from '../../../types'
 import { erTableNodeId, erEdgeNodeId, parseErTableNodeId, parseErEdgeNodeId } from '../../../utils/nodeId'
 import { useQueryStore } from '../../../store/queryStore'
 
@@ -534,12 +534,19 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           if (syncStatements) {
             // Sync mode: execute via er_execute_sync_ddl for per-statement results
             try {
-              await invoke('er_execute_sync_ddl', {
+              const results = await invoke<SyncExecutionResult[]>('er_execute_sync_ddl', {
                 projectId,
                 ddlStatements: syncStatements,
               })
+              const failed = results.filter(r => !r.success)
+              if (failed.length > 0) {
+                const errors = failed.map(r => `• ${r.statement}\n  ${r.error ?? 'Unknown error'}`).join('\n')
+                console.error('Sync DDL partial failure:', errors)
+                alert(`${failed.length} statement(s) failed:\n\n${errors}`)
+              }
             } catch (e) {
               console.error('Failed to execute sync DDL:', e)
+              alert(`Failed to execute sync DDL: ${e}`)
             } finally {
               setSyncStatements(null)
             }
@@ -572,6 +579,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
             setShowDDL(true)
           } catch (e) {
             console.error('Failed to generate sync DDL:', e)
+            alert(`Failed to generate sync DDL: ${e}`)
           }
         }}
         onSyncFromDb={(changes) => {

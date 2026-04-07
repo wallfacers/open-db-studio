@@ -114,9 +114,13 @@ pub async fn execute_query(
 }
 
 #[tauri::command]
-pub async fn get_tables(connection_id: i64) -> AppResult<Vec<TableMeta>> {
+pub async fn get_tables(connection_id: i64, database: Option<String>) -> AppResult<Vec<TableMeta>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource(&config).await?;
+    let ds = if let Some(ref db) = database {
+        crate::datasource::create_datasource_with_db(&config, db).await?
+    } else {
+        crate::datasource::create_datasource(&config).await?
+    };
     ds.get_tables().await
 }
 

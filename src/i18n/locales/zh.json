@@ -1165,6 +1165,7 @@
     "loadTablesFailed": "加载表列表失败",
     "selectAtLeastOne": "请至少选择一个表",
     "importFailed": "导入表失败",
+    "importBtn": "导入",
     "autoLayout": "自动布局",
     "layouting": "布局中...",
     "importTables": "从数据库同步",

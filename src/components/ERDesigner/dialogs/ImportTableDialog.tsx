@@ -49,7 +49,7 @@ export const ImportTableDialog: React.FC<ImportTableDialogProps> = ({
       setLoadingTables(true);
       setError('');
       try {
-        const result = await invoke<TableMeta[]>('get_tables', { connectionId });
+        const result = await invoke<TableMeta[]>('get_tables', { connectionId, database: databaseName });
         setTables(result.map(t => ({ ...t, columnCount: undefined })));
       } catch (e) {
         setError(`${t('erDesigner.loadTablesFailed')}: ${String(e)}`);

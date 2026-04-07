@@ -1164,6 +1164,7 @@
     "loadTablesFailed": "Failed to load tables",
     "selectAtLeastOne": "Please select at least one table",
     "importFailed": "Failed to import tables",
+    "importBtn": "Import",
     "autoLayout": "Auto Layout",
     "layouting": "Laying out...",
     "importTables": "Sync from DB",

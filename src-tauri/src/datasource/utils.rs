@@ -15,26 +15,45 @@ pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> St
 fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
     match style {
         StringEscapeStyle::Standard => {
-            // MySQL / MariaDB / TiDB / Doris / ClickHouse：\ 是转义字符，需转义
-            let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
+            let escaped = single_pass_escape(s, |c, out| match c {
+                '\\' => out.push_str("\\\\"),
+                '\'' => out.push_str("\\'"),
+                _ => out.push(c),
+            });
             format!("'{}'", escaped)
         }
         StringEscapeStyle::PostgresLiteral => {
-            // PostgreSQL / GaussDB：通常只转义 '，但含 \ 时需 E'' 前缀
             if s.contains('\\') {
-                let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
+                let escaped = single_pass_escape(s, |c, out| match c {
+                    '\\' => out.push_str("\\\\"),
+                    '\'' => out.push_str("\\'"),
+                    _ => out.push(c),
+                });
                 format!("E'{}'", escaped)
             } else {
-                let escaped = s.replace('\'', "''");
+                let escaped = single_pass_escape(s, |c, out| match c {
+                    '\'' => out.push_str("''"),
+                    _ => out.push(c),
+                });
                 format!("'{}'", escaped)
             }
         }
         StringEscapeStyle::TSql | StringEscapeStyle::SQLiteLiteral => {
-            // SQL Server / Oracle / DB2 / SQLite：\ 无特殊含义，仅转义 '
-            let escaped = s.replace('\'', "''");
+            let escaped = single_pass_escape(s, |c, out| match c {
+                '\'' => out.push_str("''"),
+                _ => out.push(c),
+            });
             format!("'{}'", escaped)
         }
     }
+}
+
+fn single_pass_escape(s: &str, mut escape_char: impl FnMut(char, &mut String)) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        escape_char(c, &mut out);
+    }
+    out
 }
 
 /// 将字节数格式化为人类可读的文件大小字符串。

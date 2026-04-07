@@ -119,12 +119,21 @@ struct Batch {
     column_names: Vec<String>,
 }
 
+fn json_value_len(v: &serde_json::Value) -> u64 {
+    match v {
+        serde_json::Value::Null => 4, // "NULL"
+        serde_json::Value::Bool(_) => 1,
+        serde_json::Value::Number(n) => n.to_string().len() as u64,
+        serde_json::Value::String(s) => s.len() as u64,
+        other => other.to_string().len() as u64,
+    }
+}
+
 // ── Public entry-point ────────────────────────────────────────────────────────
 
 /// Launch the ETL pipeline for `job_id`.
 /// Returns the `run_id` immediately — the pipeline runs in a background task.
 pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
-    // Load job config from SQLite（spawn_blocking 避免在 async 上下文中同步阻塞 tokio 线程）
     let config_json: String = tokio::task::spawn_blocking(move || -> AppResult<String> {
         let db = crate::db::get().lock().unwrap();
         db.query_row(
@@ -380,17 +389,15 @@ async fn execute_pipeline(
                 break;
             }
 
-            // 分页查询：每次只取 read_batch_size 行，不再全量加载到内存
             let page = src_ds.execute_paginated(&query, read_batch_size, offset).await?;
 
             if page.rows.is_empty() {
-                break; // 数据读取完毕
+                break;
             }
 
             let fetched = page.rows.len();
             page_num += 1;
 
-            // 首页确定列名
             if columns_opt.is_none() {
                 columns_opt = Some(page.columns.clone());
                 emit_log(
@@ -401,7 +408,6 @@ async fn execute_pipeline(
                     &format!("Reader: columns={}", page.columns.join(", ")),
                 );
             }
-            let columns = columns_opt.clone().unwrap();
 
             emit_log(
                 &app_reader,
@@ -411,21 +417,22 @@ async fn execute_pipeline(
                 &format!("Reader page {}: {} rows (offset={})", page_num, fetched, offset),
             );
 
-            // 统计字节与行数
             for row in &page.rows {
-                let row_bytes: u64 = row.iter().map(|v| v.to_string().len() as u64).sum();
+                let row_bytes: u64 = row.iter().map(json_value_len).sum();
                 stats_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
             }
             stats_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
 
-            // 整页作为一个 Batch 发送，无需在 reader 侧二次分批
-            let batch = Batch { rows: page.rows, column_names: columns };
+            let batch = Batch {
+                rows: page.rows,
+                column_names: columns_opt.as_ref().unwrap().clone(),
+            };
             if tx.send(batch).await.is_err() {
-                break; // Writer 已关闭（取消或错误）
+                break;
             }
 
             if fetched < read_batch_size {
-                break; // 末页（不足 read_batch_size 行）
+                break;
             }
             offset += fetched;
         }
@@ -450,6 +457,11 @@ async fn execute_pipeline(
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
+        let mapped_cols: Option<Vec<String>> = if !column_mapping.is_empty() {
+            Some(column_mapping.iter().map(|m| m.target_col.clone()).collect())
+        } else {
+            None
+        };
 
         while let Some(batch) = rx.recv().await {
             if cancel_writer.load(Ordering::Relaxed) {
@@ -463,21 +475,13 @@ async fn execute_pipeline(
                 break;
             }
 
-            // Determine effective column names (use mapping if provided)
-            let effective_cols: Vec<String> = if !column_mapping.is_empty() {
-                column_mapping
-                    .iter()
-                    .map(|m| m.target_col.clone())
-                    .collect()
-            } else {
-                batch.column_names.clone()
-            };
+            if buf_columns.is_empty() {
+                buf_columns = mapped_cols.clone()
+                    .unwrap_or_else(|| batch.column_names.clone());
+            }
 
             for row in batch.rows {
                 write_buf.push(row);
-                if buf_columns.is_empty() {
-                    buf_columns = effective_cols.clone();
-                }
 
                 if write_buf.len() >= write_batch_size {
                     let rows_to_write =
@@ -610,7 +614,6 @@ async fn write_batch(
         return Ok(0);
     }
 
-    // 驱动感知冲突策略：不同驱动语法不同
     let (keyword, suffix) = match (conflict_strategy, driver) {
         (ConflictStrategy::Skip, "sqlite") => ("INSERT OR IGNORE INTO", ""),
         (ConflictStrategy::Replace, "sqlite") => ("INSERT OR REPLACE INTO", ""),
@@ -620,14 +623,14 @@ async fn write_batch(
         _ => ("INSERT INTO", ""),
     };
 
-    // 列名引号：MySQL 用反引号，其他用双引号
     let quote_col: fn(&str) -> String = match driver {
         "mysql" | "doris" | "tidb" | "clickhouse" => |c| format!("`{}`", c.replace('`', "``")),
+        "sqlserver" => |c| format!("[{}]", c.replace(']', "]]")),
         _ => |c| format!("\"{}\"", c.replace('"', "\"\"")),
     };
     let col_list = columns.iter().map(|c| quote_col(c)).collect::<Vec<_>>().join(", ");
+    let quoted_table = quote_col(table);
 
-    // 值转义：使用驱动对应的 StringEscapeStyle
     let escape_style = ds.string_escape_style();
     let row_placeholders: Vec<String> = rows
         .iter()
@@ -643,7 +646,7 @@ async fn write_batch(
     let sql = format!(
         "{} {} ({}) VALUES {}{}",
         keyword,
-        table,
+        quoted_table,
         col_list,
         row_placeholders.join(", "),
         suffix,

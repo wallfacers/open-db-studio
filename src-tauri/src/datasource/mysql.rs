@@ -538,9 +538,6 @@ impl DataSource for MySqlDataSource {
         })
     }
 
-    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
-        crate::datasource::StringEscapeStyle::Standard
-    }
 }
 
 impl MySqlDataSource {

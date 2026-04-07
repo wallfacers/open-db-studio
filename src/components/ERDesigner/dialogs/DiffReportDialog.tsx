@@ -12,7 +12,7 @@ export interface DiffReportDialogProps {
   onClose: () => void;
   onSyncToDb: (diff: DiffResult) => void;
   onSyncFromDb: (selectedChanges: SelectedChange[]) => void;
-  onFullSync: () => void;
+  onFullSync: () => Promise<void>;
 }
 
 export type ChangeType = 'added_table' | 'removed_table' | 'modified_table';

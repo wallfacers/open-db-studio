@@ -5,7 +5,4 @@ pub mod pipeline;
 pub mod precheck;
 pub mod task_mgr;
 
-pub use task_mgr::{
-    MigrationJob, MigrationCategory, MigrationJobConfig, MigrationRunHistory,
-    MigrationDirtyRecord, MigrationStatsEvent, MigrationLogEvent,
-};
+pub use task_mgr::{MigrationJob, MigrationJobConfig};

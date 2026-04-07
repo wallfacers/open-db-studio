@@ -611,7 +611,7 @@ async fn write_batch(
         .map(|row| {
             let vals: Vec<String> = row
                 .iter()
-                .map(|v| sql_value_literal(v))
+                .map(|v| super::data_pump::value_to_sql(v))
                 .collect();
             format!("({})", vals.join(", "))
         })
@@ -629,21 +629,3 @@ async fn write_batch(
     Ok(rows.len())
 }
 
-/// Convert a `serde_json::Value` to a SQL literal string.
-/// WARNING: This is intentionally simple for the stub implementation.
-/// Production code should use parameterized queries.
-fn sql_value_literal(v: &serde_json::Value) -> String {
-    match v {
-        serde_json::Value::Null => "NULL".to_string(),
-        serde_json::Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::String(s) => {
-            // Minimal SQL escape: replace ' with ''
-            format!("'{}'", s.replace('\'', "''"))
-        }
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            let json_str = v.to_string().replace('\'', "''");
-            format!("'{}'", json_str)
-        }
-    }
-}

@@ -30,6 +30,11 @@ export function metricsMetricNodeId(id: number): string { return `metric_${id}`;
 export function stCatNodeId(id: number): string { return `cat_${id}`; }
 export function stJobNodeId(id: number): string { return `job_${id}`; }
 
+// ---- 迁移中心树 — 扁平 ID ----
+
+export function migCatNodeId(id: number): string { return `cat_${id}`; }
+export function migJobNodeId(id: number): string { return `job_${id}`; }
+
 // ---- ER 设计器 — 连字符 ID ----
 
 export function erTableNodeId(id: number): string { return `table-${id}`; }

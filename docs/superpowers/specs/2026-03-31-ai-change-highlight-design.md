@@ -3,7 +3,7 @@
 
 ## 概述
 
-当 AI（通过 MCP ui_patch）修改了 SeaTunnel Job 或其他编辑器的内容时，在 UI 上对变更区域施加脉冲动画，让用户一眼看到什么地方被改了。脉冲结束后保留淡色残留标记，直到用户手动编辑该字段时才消失。
+当 AI（通过 MCP ui_patch）修改了表单字段或编辑器内容时，在 UI 上对变更区域施加脉冲动画，让用户一眼看到什么地方被改了。脉冲结束后保留淡色残留标记，直到用户手动编辑该字段时才消失。
 
 本系统设计为**通用组件**，不绑定特定业务，任何表单字段或 Monaco 编辑器均可接入。
 
@@ -27,7 +27,7 @@
 数据流：
 
 ```
-AI Agent → ui_patch → SeaTunnelJobAdapter.patchDirect()
+AI Agent → ui_patch → Adapter.patchDirect()
   → applyPatch(current, ops)
   → diffJsonPaths(oldConfigJson, newConfigJson) → changedPaths
   → highlightStore.addHighlights(scopeId, changedPaths)
@@ -162,27 +162,7 @@ function diffJsonPaths(oldObj: any, newObj: any, prefix?: string): string[]
 
 ### 7. 触发入口
 
-`SeaTunnelJobAdapter.patchDirect()` 修改：
-
-```
-patchDirect(ops) {
-  const current = getForm(this.objectId)
-  const oldConfigJson = current.configJson
-  const patched = applyPatch(current, ops)
-  setForm(this.objectId, patched)
-
-  // 提取变更路径并触发高亮
-  const changedPaths = extractChangedPaths(ops, oldConfigJson, patched.configJson)
-  highlightStore.addHighlights(this.objectId, changedPaths)
-
-  // 同步到 seaTunnelStore...
-}
-```
-
-路径提取逻辑：
-- `op.path === '/jobName'` → 直接映射 `['jobName']`
-- `op.path === '/configJson'` → `diffJsonPaths(JSON.parse(old), JSON.parse(new))`
-- parse 失败 → `['*']` fallback
+`Adapter.patchDirect()` 在 applyPatch 后调用 `highlightStore.addHighlights(scopeId, changedPaths)`，触发 UI 脉冲动画。各 Adapter 根据自身数据结构实现路径提取逻辑。
 
 ## 文件变更清单
 

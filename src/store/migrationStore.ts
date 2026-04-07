@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { migCatNodeId, migJobNodeId } from '../utils/nodeId'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -127,20 +128,22 @@ function buildNodes(
 ): Map<string, MigTreeNode> {
   const nodes = new Map<string, MigTreeNode>()
   for (const cat of categories) {
-    nodes.set(`cat_${cat.id}`, {
+    const catId = migCatNodeId(cat.id)
+    nodes.set(catId, {
       nodeType: 'category',
-      id: `cat_${cat.id}`,
+      id: catId,
       label: cat.name,
-      parentId: cat.parentId ? `cat_${cat.parentId}` : null,
+      parentId: cat.parentId ? migCatNodeId(cat.parentId) : null,
       sortOrder: cat.sortOrder,
     })
   }
   for (const job of jobs) {
-    nodes.set(`job_${job.id}`, {
+    const jobId = migJobNodeId(job.id)
+    nodes.set(jobId, {
       nodeType: 'job',
-      id: `job_${job.id}`,
+      id: jobId,
       label: job.name,
-      parentId: job.categoryId ? `cat_${job.categoryId}` : null,
+      parentId: job.categoryId ? migCatNodeId(job.categoryId) : null,
       jobId: job.id,
       status: job.lastStatus,
     })
@@ -189,8 +192,9 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     await invoke('rename_migration_category', { id, name })
     set(s => {
       const nodes = new Map(s.nodes)
-      const node = nodes.get(`cat_${id}`)
-      if (node) nodes.set(`cat_${id}`, { ...node, label: name })
+      const nodeId = migCatNodeId(id)
+      const node = nodes.get(nodeId)
+      if (node) nodes.set(nodeId, { ...node, label: name })
       return { nodes }
     })
   },
@@ -212,8 +216,9 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     await invoke('rename_migration_job', { id, name })
     set(s => {
       const nodes = new Map(s.nodes)
-      const node = nodes.get(`job_${id}`)
-      if (node) nodes.set(`job_${id}`, { ...node, label: name })
+      const nodeId = migJobNodeId(id)
+      const node = nodes.get(nodeId)
+      if (node) nodes.set(nodeId, { ...node, label: name })
       return { nodes }
     })
   },
@@ -222,7 +227,7 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     await invoke('delete_migration_job', { id })
     set(s => {
       const nodes = new Map(s.nodes)
-      nodes.delete(`job_${id}`)
+      nodes.delete(migJobNodeId(id))
       return { nodes }
     })
   },
@@ -231,11 +236,12 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     await invoke('move_migration_job', { id, categoryId })
     set(s => {
       const nodes = new Map(s.nodes)
-      const node = nodes.get(`job_${id}`)
+      const nodeId = migJobNodeId(id)
+      const node = nodes.get(nodeId)
       if (node && node.nodeType === 'job') {
-        nodes.set(`job_${id}`, {
+        nodes.set(nodeId, {
           ...node,
-          parentId: categoryId ? `cat_${categoryId}` : null,
+          parentId: categoryId ? migCatNodeId(categoryId) : null,
         })
       }
       return { nodes }
@@ -244,44 +250,51 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
 
   updateJobStatus: (jobId, status) => set(s => {
     const nodes = new Map(s.nodes)
-    const node = nodes.get(`job_${jobId}`)
+    const nodeId = migJobNodeId(jobId)
+    const node = nodes.get(nodeId)
     if (node && node.nodeType === 'job') {
-      nodes.set(`job_${jobId}`, { ...node, status })
+      nodes.set(nodeId, { ...node, status })
     }
     return { nodes }
   }),
 
   startListening: () => {
+    let cleaned = false
     const unlisteners: Array<() => void> = []
 
-    listen<MigrationLogEvent>('migration_log', ({ payload }) => {
+    const register = <T>(event: string, handler: (payload: T) => void) => {
+      listen<T>(event, ({ payload }) => handler(payload)).then(u => {
+        if (cleaned) { u() } else { unlisteners.push(u) }
+      })
+    }
+
+    register<MigrationLogEvent>('migration_log', (payload) => {
       set(s => {
         const runs = new Map(s.activeRuns)
         const run = runs.get(payload.jobId) ?? { runId: payload.runId, stats: null, logs: [] }
         runs.set(payload.jobId, { ...run, logs: [...run.logs, payload].slice(-500) })
         return { activeRuns: runs }
       })
-    }).then(u => unlisteners.push(u))
+    })
 
-    listen<MigrationStatsEvent>('migration_stats', ({ payload }) => {
+    register<MigrationStatsEvent>('migration_stats', (payload) => {
       set(s => {
         const runs = new Map(s.activeRuns)
         const run = runs.get(payload.jobId) ?? { runId: payload.runId, stats: null, logs: [] }
         runs.set(payload.jobId, { ...run, stats: payload })
         return { activeRuns: runs }
       })
-    }).then(u => unlisteners.push(u))
+    })
 
-    listen<{ jobId: number; runId: string; status: string }>('migration_finished', ({ payload }) => {
+    register<{ jobId: number; runId: string; status: string }>('migration_finished', (payload) => {
       get().updateJobStatus(payload.jobId, payload.status)
       set(s => {
         const runs = new Map(s.activeRuns)
-        const run = runs.get(payload.jobId)
-        if (run) runs.set(payload.jobId, { ...run })
+        runs.delete(payload.jobId)
         return { activeRuns: runs }
       })
-    }).then(u => unlisteners.push(u))
+    })
 
-    return () => unlisteners.forEach(u => u())
+    return () => { cleaned = true; unlisteners.forEach(u => u()) }
   },
 }))

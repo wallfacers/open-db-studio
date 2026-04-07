@@ -100,13 +100,13 @@
 #### E. Tailwind 颜色类违规
 
 **`text-red-*` / `bg-red-*`**（~40 处）→ 应使用 `var(--error)` / `var(--error-subtle)`
-涉及文件: Assistant/index.tsx, DatabaseManager, ImportExport, MetricsExplorer, ERDesigner, SeaTunnel, shared/ChartBlock, Settings/LlmSettings, MainContent/TableDataView, TruncateConfirmDialog
+涉及文件: Assistant/index.tsx, DatabaseManager, ImportExport, MetricsExplorer, ERDesigner, shared/ChartBlock, Settings/LlmSettings, MainContent/TableDataView, TruncateConfirmDialog
 
 **`text-green-*` / `bg-green-*`**（~5 处）→ 应使用 `var(--success)` / `var(--success-subtle)`
-涉及文件: Assistant/index.tsx, SeaTunnelJobTab, MainContent/TableStructureView
+涉及文件: Assistant/index.tsx, MainContent/TableStructureView
 
 **`text-yellow-*` / `bg-yellow-*`**（~8 处）→ 应使用 `var(--warning)` / `var(--warning-subtle)`
-涉及文件: MainContent/index.tsx, MainContent/EditableCell.tsx, MainContent/TableDataView.tsx, SeaTunnelJobTab
+涉及文件: MainContent/index.tsx, MainContent/EditableCell.tsx, MainContent/TableDataView.tsx
 
 **`text-gray-*`**（~45 处）→ 应使用 `var(--foreground-*)` 系列
 涉及文件: ConnectionModal, DatabaseManager, ExportDialog, ERDesigner, ImportExport, GroupModal, TableNode, MainContent
@@ -590,7 +590,6 @@ background: var(--background-panel); color: var(--foreground);
 | P3 | Toast | ~12 | index.tsx |
 | P3 | Settings | ~5 | LlmSettings, SettingsPage |
 | P3 | common | ~5 | BaseModal, ConfirmDialog, DropdownSelect |
-| P3 | SeaTunnel | ~15 | SeaTunnelJobTree, SeaTunnelConnectionModal, VisualBuilder |
 | P3 | 其他 | ~15 | TitleBar, TableNode, ObjectPanel, IndexManager |
 
 ### Phase 3: 增强功能（可选）

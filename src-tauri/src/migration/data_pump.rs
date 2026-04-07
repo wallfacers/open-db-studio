@@ -17,7 +17,7 @@ pub struct PumpProgress {
     pub error_count: i64,
 }
 
-fn value_to_sql(v: &serde_json::Value) -> String {
+pub fn value_to_sql(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::Null => "NULL".to_string(),
         serde_json::Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
@@ -43,6 +43,10 @@ async fn count_rows(ds: &Box<dyn crate::datasource::DataSource>, table: &str) ->
 }
 
 /// 分批读取源表数据并写入目标表，通过 Tauri Event 广播进度
+///
+/// **Deprecated**: 已被 `pipeline.rs` 的 `execute_pipeline` 替代。
+/// 本函数仅保留 `value_to_sql` 供 pipeline 复用，`pump_table` 本身不再使用。
+#[deprecated(note = "Use pipeline::run_pipeline instead")]
 pub async fn pump_table(
     job_id: i64,
     run_id: &str,

@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useMemo } from 'react'
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen,
   ArrowLeftRight, Loader2, CheckCircle2, XCircle,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useMigrationStore, MigTreeNode } from '../../store/migrationStore'
+import { migCatNodeId, migJobNodeId } from '../../utils/nodeId'
 import { Tooltip } from '../common/Tooltip'
 
 interface Props {
@@ -13,46 +14,49 @@ interface Props {
   onOpenJob: (jobId: number, jobName: string) => void
 }
 
+type VisibleNode = MigTreeNode & { depth: number }
+
 function computeVisible(
   nodes: Map<string, MigTreeNode>,
   expandedIds: Set<string>,
   searchQuery: string,
-): MigTreeNode[] {
-  const result: MigTreeNode[] = []
+): VisibleNode[] {
+  const result: VisibleNode[] = []
   const q = searchQuery.toLowerCase()
 
-  function visit(parentId: string | null) {
-    const children = Array.from(nodes.values())
-      .filter(n => n.parentId === parentId)
-      .sort((a, b) => {
-        if (a.nodeType === 'category' && b.nodeType === 'job') return -1
-        if (a.nodeType === 'job' && b.nodeType === 'category') return 1
-        const so = (a.nodeType === 'category' ? a.sortOrder : 0) - (b.nodeType === 'category' ? b.sortOrder : 0)
-        return so || a.label.localeCompare(b.label)
-      })
+  // Pre-build parent -> children index
+  const byParent = new Map<string | null, MigTreeNode[]>()
+  for (const node of nodes.values()) {
+    const list = byParent.get(node.parentId) ?? []
+    list.push(node)
+    byParent.set(node.parentId, list)
+  }
+  // Sort each group once
+  for (const list of byParent.values()) {
+    list.sort((a, b) => {
+      if (a.nodeType === 'category' && b.nodeType === 'job') return -1
+      if (a.nodeType === 'job' && b.nodeType === 'category') return 1
+      const so = (a.nodeType === 'category' ? a.sortOrder : 0) - (b.nodeType === 'category' ? b.sortOrder : 0)
+      return so || a.label.localeCompare(b.label)
+    })
+  }
+
+  function visit(parentId: string | null, depth: number) {
+    const children = byParent.get(parentId)
+    if (!children) return
     for (const node of children) {
       if (q && !node.label.toLowerCase().includes(q)) {
-        if (node.nodeType === 'category') visit(node.id)
+        if (node.nodeType === 'category') visit(node.id, depth + 1)
         continue
       }
-      result.push(node)
+      result.push({ ...node, depth })
       if (node.nodeType === 'category' && (expandedIds.has(node.id) || !!q)) {
-        visit(node.id)
+        visit(node.id, depth + 1)
       }
     }
   }
-  visit(null)
+  visit(null, 0)
   return result
-}
-
-function getDepth(id: string, nodes: Map<string, MigTreeNode>): number {
-  let depth = 0
-  let cur = nodes.get(id)
-  while (cur?.parentId) {
-    depth++
-    cur = nodes.get(cur.parentId)
-  }
-  return depth
 }
 
 export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
@@ -63,7 +67,10 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
   const [editValue, setEditValue] = useState('')
   const editRef = useRef<HTMLInputElement>(null)
 
-  const visible = computeVisible(store.nodes, store.expandedIds, searchQuery)
+  const visible = useMemo(
+    () => computeVisible(store.nodes, store.expandedIds, searchQuery),
+    [store.nodes, store.expandedIds, searchQuery],
+  )
 
   const handleContextMenu = useCallback((e: React.MouseEvent, node: MigTreeNode) => {
     e.preventDefault()
@@ -96,7 +103,6 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
   return (
     <div className="flex-1 overflow-y-auto select-none" onClick={() => setCtxMenu(null)}>
       {visible.map(node => {
-        const depth = getDepth(node.id, store.nodes)
         const isSelected = store.selectedId === node.id
         const isExpanded = store.expandedIds.has(node.id)
         const isEditing = editingId === node.id
@@ -107,7 +113,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
             className={`flex items-center py-1 px-2 cursor-pointer outline-none
               hover:bg-background-hover transition-colors duration-150
               ${isSelected ? 'bg-background-active' : ''}`}
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            style={{ paddingLeft: `${node.depth * 16 + 8}px` }}
             onClick={() => {
               store.selectNode(node.id)
               if (node.nodeType === 'category') store.toggleExpand(node.id)
@@ -170,11 +176,11 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
         >
           {ctxMenu.node.nodeType === 'category' && (<>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-              onClick={() => { store.createCategory('New Category', Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
+              onClick={() => { store.createCategory(t('migration.defaultCategoryName'), Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
               <FolderPlus size={13} />{t('migration.newCategory')}
             </button>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-              onClick={() => { store.createJob('New Task', Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
+              onClick={() => { store.createJob(t('migration.defaultJobName'), Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
               <FilePlus size={13} />{t('migration.newJob')}
             </button>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"

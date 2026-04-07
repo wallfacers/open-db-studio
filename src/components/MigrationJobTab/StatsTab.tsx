@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Download, CheckCircle2, XCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { MigrationRunHistory, MigrationDirtyRecord } from '../../store/migrationStore'
 
 interface Props { jobId: number }
 
 export function StatsTab({ jobId }: Props) {
+  const { t } = useTranslation()
   const [history, setHistory] = useState<MigrationRunHistory[]>([])
   const [dirty, setDirty] = useState<MigrationDirtyRecord[]>([])
   const [selectedRun, setSelectedRun] = useState<MigrationRunHistory | null>(null)
@@ -20,7 +22,7 @@ export function StatsTab({ jobId }: Props) {
     if (!selectedRun) return
     invoke<MigrationDirtyRecord[]>('get_migration_dirty_records', { jobId, runId: selectedRun.runId })
       .then(setDirty).catch(() => {})
-  }, [selectedRun])
+  }, [selectedRun?.runId, jobId])
 
   const fmtBytes = (b: number) => b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1024).toFixed(0)} KB`
   const fmtDur = (ms: number | null) => ms == null ? '-' : ms > 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`
@@ -40,7 +42,7 @@ export function StatsTab({ jobId }: Props) {
 
   if (!run) return (
     <div className="flex items-center justify-center h-full text-foreground-muted text-[13px]">
-      暂无运行记录
+      {t('migration.noRunHistory')}
     </div>
   )
 
@@ -51,7 +53,7 @@ export function StatsTab({ jobId }: Props) {
       {/* Run selector */}
       {history.length > 1 && (
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-foreground-muted">历史记录：</span>
+          <span className="text-[11px] text-foreground-muted">{t('migration.historyLabel')}</span>
           <select
             value={run.runId}
             onChange={e => setSelectedRun(history.find(h => h.runId === e.target.value) ?? null)}
@@ -69,18 +71,18 @@ export function StatsTab({ jobId }: Props) {
             ? <CheckCircle2 size={16} className="text-success" />
             : <XCircle size={16} className="text-error" />}
           <span className="text-[13px] font-medium text-foreground-default">
-            {isSuccess ? '成功' : run.status}
+            {isSuccess ? t('migration.success') : run.status}
           </span>
-          <span className="text-[11px] text-foreground-muted ml-2">耗时 {fmtDur(run.durationMs)}</span>
+          <span className="text-[11px] text-foreground-muted ml-2">{t('migration.duration')} {fmtDur(run.durationMs)}</span>
           <span className="text-[11px] text-foreground-subtle ml-auto">{run.startedAt}</span>
         </div>
 
         <div className="grid grid-cols-4 gap-2">
           {([
-            ['读取行数', run.rowsRead.toLocaleString(), ''],
-            ['写入行数', run.rowsWritten.toLocaleString(), ''],
-            ['失败行数', run.rowsFailed.toString(), run.rowsFailed > 0 ? 'text-error' : ''],
-            ['传输大小', fmtBytes(run.bytesTransferred), ''],
+            [t('migration.rowsReadLabel'), run.rowsRead.toLocaleString(), ''],
+            [t('migration.rowsWrittenLabel'), run.rowsWritten.toLocaleString(), ''],
+            [t('migration.rowsFailedLabel'), run.rowsFailed.toString(), run.rowsFailed > 0 ? 'text-error' : ''],
+            [t('migration.bytesTransferred'), fmtBytes(run.bytesTransferred), ''],
           ] as [string, string, string][]).map(([label, val, cls]) => (
             <div key={label} className="bg-background-elevated border border-border-subtle rounded p-2 text-center">
               <div className="text-[10px] text-foreground-subtle mb-1">{label}</div>
@@ -94,9 +96,9 @@ export function StatsTab({ jobId }: Props) {
       {dirty.length > 0 && (
         <div className="bg-background-panel border border-border-subtle rounded p-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] font-medium text-foreground-default">脏数据记录 ({dirty.length})</span>
+            <span className="text-[12px] font-medium text-foreground-default">{t('migration.dirtyRecords')} ({dirty.length})</span>
             <button onClick={handleExportCsv} className="flex items-center gap-1 text-[11px] text-foreground-muted hover:text-foreground transition-colors duration-150">
-              <Download size={12} />导出 CSV
+              <Download size={12} />{t('migration.exportCsv')}
             </button>
           </div>
           <div className="space-y-1 max-h-48 overflow-y-auto">

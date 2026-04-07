@@ -136,8 +136,7 @@
 
 ### 基础设施
 - [x] 全局连接池缓存（消除树导航重复握手开销）
-- [x] SeaTunnel 前端集成（连接配置 + Job 状态展示面板，基础 UI 就绪）
-- [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / SeaTunnel）
+- [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / Migration Center）
 
 ### 未实现（唯一未完成项，设计文档保留）
 - [x] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）— `ai_inline_complete` 命令 + Monaco InlineCompletionsProvider 已实现
@@ -168,11 +167,6 @@
 - [ ] SQL 片段共享库
 - [ ] 指标库导出/导入（JSON）
 - [ ] 连接配置脱敏导出
-
-### SeaTunnel 外部引擎接入
-- [x] SeaTunnel 连接配置
-- [x] 迁移 job 生成 + REST API 提交
-- [x] 任务状态同步展示
 
 ---
 
@@ -278,9 +272,14 @@
 
 ## 技术债
 
-| 项目 | 描述 | 优先级 | 备注 |
-|------|------|--------|------|
-| ERCanvasAdapter AI 变更高亮 | ER 画布基于 Canvas/SVG 渲染，需要独立的高亮方案（元素描边动画等），与 DOM 表单/Monaco 编辑器的通用高亮体系不同 | 低 | 当前无确认机制且支持 undo，用户感知变更的途径已存在；待其他 Adapter 高亮全部落地后再评估 ROI |
+| 项目 | 描述 | 优先级 | 修复方案 | 备注 |
+|------|------|--------|---------|------|
+| ERCanvasAdapter AI 变更高亮 | ER 画布基于 Canvas/SVG 渲染，需要独立的高亮方案（元素描边动画等），与 DOM 表单/Monaco 编辑器的通用高亮体系不同 | 低 | — | 当前无确认机制且支持 undo，用户感知变更的途径已存在；待其他 Adapter 高亮全部落地后再评估 ROI |
+| Reader 全量加载到内存 | `pipeline.rs` reader 调用 `src_ds.execute(&query)` 将全部结果集一次载入内存，大表（>100万行）迁移会 OOM | 高 | DataSource trait 新增 `execute_paginated(query, limit, offset)` 游标方法；reader 改为分页循环读取；需 MySQL/PG/SQLite 驱动各自实现 | 当前 batch_size 只控制通道发送粒度，不控制读取粒度。修复需改动 datasource trait，影响面较大 |
+| SQL 值拼接未参数化 | `data_pump::value_to_sql` 通过字符串拼接构造 VALUES，转义仅处理单引号，存在 SQL 注入风险且对特殊类型（二进制、日期）支持不完整 | 高 | DataSource trait 新增 `execute_parameterized(sql, params)` 方法；`write_batch` 改为参数化写入；各驱动用各自参数化 API（MySQL → `mysql::Params`，PG → `tokio-postgres::types::ToSql`） | 当前转义在极端情况下不健壮（如包含反斜杠+单引号组合）。需要 datasource 层配合 |
+| 侧边栏/树组件/Store 整体复制 | MigrationExplorer 的 MigrationTaskTree + migrationStore 与 SeaTunnel 模块的 TaskTree + taskStore 结构高度相似（分类树 + 任务节点 + 右键菜单 + 展开持久化） | 高 | 提取通用工厂：`createTreeStore(options)` Zustand 工厂函数、`GenericTree<NodeType>` 组件、`SidebarPanel` 布局组件。两个模块各自传入节点类型配置即可复用 | 重构涉及 4+ 文件，需确保两模块行为一致。可在下次新增同类树模块时一并提取 |
+| Rust 未使用 Repository 分层 | `mig_commands.rs` 每个命令函数内直接写 SQL + `db.lock().unwrap()`，未遵循 ER 模块的 commands + repository 分层模式 | 中 | 新建 `migration/repository.rs`，将 CRUD SQL 封装为独立函数；commands 层只做参数校验 + 调用 repo + 返回结果 | 参考 `src-tauri/src/er/repository.rs` 模式 |
+| async 命令内同步阻塞 tokio 线程 | `mig_commands.rs` 所有命令在 async fn 内调用 `db.lock().unwrap()` 同步阻塞 SQLite 操作，会占用 tokio 工作线程 | 中 | 用 `tokio::task::spawn_blocking` 包裹 SQLite 操作，或在 repository 重构时一并解决 | 当前应用规模下影响不大（SQLite 操作快且并发低），但不符合最佳实践。可与 Repository 分层一同修复 |
 
 ---
 

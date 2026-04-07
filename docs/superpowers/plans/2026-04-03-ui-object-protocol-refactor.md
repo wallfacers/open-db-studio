@@ -39,7 +39,6 @@
 | `src/mcp/ui/adapters/QueryEditorAdapter.ts` | Add `patchCapabilities`, complete paramsSchema, use error helpers |
 | `src/mcp/ui/adapters/TableFormAdapter.ts` | Add `patchCapabilities`, complete paramsSchema |
 | `src/mcp/ui/adapters/MetricFormAdapter.ts` | Add `patchCapabilities`, complete paramsSchema, use error helpers |
-| `src/mcp/ui/adapters/SeaTunnelJobAdapter.ts` | Add `patchCapabilities`, complete paramsSchema, use error helpers |
 
 ---
 
@@ -1458,7 +1457,7 @@ Expected: All tests PASS
 
 Run: `npx tsc --noEmit 2>&1 | head -50`
 
-Expected: Only type errors from Phase 2 adapters (QueryEditor, TableForm, MetricForm, SeaTunnel — their `paramsSchema` don't match `JsonSchema` yet). Note these are expected and will be fixed in Phase 2.
+Expected: Only type errors from Phase 2 adapters (QueryEditor, TableForm, MetricForm — their `paramsSchema` don't match `JsonSchema` yet). Note these are expected and will be fixed in Phase 2.
 
 - [ ] **Step 3: Run cargo check**
 
@@ -1747,95 +1746,7 @@ git commit -m "refactor(metric-form): add patchCapabilities, complete paramsSche
 
 ---
 
-### Task 13: SeaTunnelJobAdapter
-
-**Files:**
-- Modify: `src/mcp/ui/adapters/SeaTunnelJobAdapter.ts`
-
-- [ ] **Step 1: Add patchCapabilities and complete paramsSchema**
-
-Add imports:
-
-```typescript
-import type { UIObject, JsonPatchOp, PatchResult, ExecResult, PatchCapability } from '../types'
-import { execError } from '../errors'
-```
-
-Add getter to `SeaTunnelJobUIObject`:
-
-```typescript
-  get patchCapabilities(): PatchCapability[] {
-    return [
-      { pathPattern: '/jobName', ops: ['replace'], description: 'Change job name' },
-      { pathPattern: '/configJson', ops: ['replace'], description: 'Replace entire job config JSON' },
-      { pathPattern: '/connectionId', ops: ['replace'], description: 'Change connection' },
-      { pathPattern: '/categoryId', ops: ['replace'], description: 'Change category' },
-    ]
-  }
-```
-
-Update `read('schema')`:
-
-```typescript
-      case 'schema':
-        return { ...SEATUNNEL_JOB_SCHEMA, patchCapabilities: this.patchCapabilities }
-```
-
-Replace `case 'actions'`:
-
-```typescript
-      case 'actions':
-        return [
-          {
-            name: 'save',
-            description: 'Save job configuration to database',
-            paramsSchema: { type: 'object', properties: {} },
-          },
-          {
-            name: 'submit',
-            description: 'Submit job for execution (must be saved first)',
-            paramsSchema: { type: 'object', properties: {} },
-          },
-          {
-            name: 'stop',
-            description: 'Stop a running job',
-            paramsSchema: { type: 'object', properties: {} },
-          },
-        ]
-```
-
-Update error messages in `exec()`:
-
-```typescript
-    if (!state) return execError('No form state', `SeaTunnel job form ${this.objectId} not initialized`)
-
-    // In submit case:
-    if (!state.jobId) return execError('Job not saved yet', 'Call save action first')
-
-    // In stop case:
-    if (!state.jobId) return execError('No job to stop', 'Job must be saved and submitted first')
-
-    // In default case:
-    default:
-      return execError(`Unknown action: ${action}`, 'Available actions: save, submit, stop')
-```
-
-- [ ] **Step 2: Run type check**
-
-Run: `npx tsc --noEmit 2>&1 | grep SeaTunnelJobAdapter`
-
-Expected: No type errors
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/mcp/ui/adapters/SeaTunnelJobAdapter.ts
-git commit -m "refactor(seatunnel): add patchCapabilities, complete paramsSchema, standardize errors"
-```
-
----
-
-### Task 14: Phase 2 Final Verification
+### Task 13: Phase 2 Final Verification
 
 - [ ] **Step 1: Run full TypeScript type check**
 

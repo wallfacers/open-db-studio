@@ -77,6 +77,18 @@ pub struct MigrationCategory {
     pub created_at: String,
 }
 
+impl MigrationCategory {
+    pub fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            parent_id: row.get(2)?,
+            sort_order: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationJob {
     pub id: i64,
@@ -87,6 +99,21 @@ pub struct MigrationJob {
     pub last_run_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+impl MigrationJob {
+    pub fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            category_id: row.get(2)?,
+            config_json: row.get(3)?,
+            last_status: row.get(4)?,
+            last_run_at: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +131,24 @@ pub struct MigrationRunHistory {
     pub finished_at: Option<String>,
 }
 
+impl MigrationRunHistory {
+    pub fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            run_id: row.get(2)?,
+            status: row.get(3)?,
+            rows_read: row.get(4)?,
+            rows_written: row.get(5)?,
+            rows_failed: row.get(6)?,
+            bytes_transferred: row.get(7)?,
+            duration_ms: row.get(8)?,
+            started_at: row.get(9)?,
+            finished_at: row.get(10)?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationDirtyRecord {
     pub id: i64,
@@ -114,6 +159,21 @@ pub struct MigrationDirtyRecord {
     pub raw_value: Option<String>,
     pub error_msg: Option<String>,
     pub created_at: String,
+}
+
+impl MigrationDirtyRecord {
+    pub fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            run_id: row.get(2)?,
+            row_index: row.get(3)?,
+            field_name: row.get(4)?,
+            raw_value: row.get(5)?,
+            error_msg: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    }
 }
 
 // ── Stats event (broadcast every second) ────────────────────

@@ -568,11 +568,11 @@ Expected: No errors (no Rust changes in this feature).
 Run: `npm run tauri:dev`
 
 Test scenario:
-1. Open a SeaTunnel job tab
-2. Trigger an AI modification (via MCP chat: e.g. "把并行度改为 5")
-3. **Visual mode**: Verify the parallelism field shows a 3-pulse animation, then fades to a residual marker (faint background + left border)
-4. Manually edit the parallelism field → verify residual marker clears
-5. Switch to **Script mode** → trigger another AI modification
+1. Open a query editor tab
+2. Trigger an AI modification (via MCP chat)
+3. Verify the changed field shows a 3-pulse animation, then fades to a residual marker (faint background + left border)
+4. Manually edit the field → verify residual marker clears
+5. Switch to Monaco editor → trigger another AI modification
 6. Verify changed lines in Monaco show pulse animation then residual decoration
 7. Edit a highlighted line → verify decoration clears for that line
 8. Close the tab and reopen → verify no stale highlights

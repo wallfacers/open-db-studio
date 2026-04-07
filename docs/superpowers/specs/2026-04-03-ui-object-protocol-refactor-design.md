@@ -239,7 +239,6 @@ All 4 adapters follow a uniform 3-step pattern:
 | **QueryEditorAdapter** | `/content`, `/connectionId`, `/database` (replace) | `set_context` missing schema |
 | **TableFormAdapter** | `/tableName`, `/columns[name=<s>]/<field>`, `/columns/-`, `/indexes[name=<s>]/<field>`, `/indexes/-` | `preview_sql`, `save` missing schema |
 | **MetricFormAdapter** | `/displayName`, `/name`, `/metricType`, `/tableName`, etc. (replace) | `save`, `validate` missing schema |
-| **SeaTunnelJobAdapter** | `/jobName`, `/configJson` (replace) | `save`, `submit`, `stop` missing schema |
 
 **WorkspaceAdapter**: Already production-quality. No changes needed.
 
@@ -421,5 +420,4 @@ ui_exec:  + "Tip: call ui_read(mode='actions') first to see all available action
 1. QueryEditorAdapter (patchCapabilities + paramsSchema + errors)
 2. TableFormAdapter (patchCapabilities + paramsSchema + errors)
 3. MetricFormAdapter (patchCapabilities + paramsSchema + errors)
-4. SeaTunnelJobAdapter (patchCapabilities + paramsSchema + errors)
-5. Tests for Phase 2 adapters
+4. Tests for Phase 2 adapters

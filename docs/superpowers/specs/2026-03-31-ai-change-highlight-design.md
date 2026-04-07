@@ -173,10 +173,6 @@ function diffJsonPaths(oldObj: any, newObj: any, prefix?: string): string[]
 | `src/styles/ai-highlight.css` | 新建 | 通用脉冲 + 残留动画 |
 | `src/hooks/useFieldHighlight.ts` | 新建 | 通用表单字段高亮 hook |
 | `src/hooks/useMonacoHighlight.ts` | 新建 | 通用 Monaco 编辑器高亮 hook |
-| `src/mcp/ui/adapters/SeaTunnelJobAdapter.ts` | 修改 | patchDirect 中触发高亮 |
-| `src/components/SeaTunnelJobTab/VisualBuilder.tsx` | 修改 | 使用 useFieldHighlight |
-| `src/components/SeaTunnelJobTab/JsonEditor.tsx` | 修改 | 使用 useMonacoHighlight |
-| `src/components/SeaTunnelJobTab/index.tsx` | 修改 | tab 关闭清理、传递 tabId/scopeId |
 | `src/main.tsx` | 修改 | import ai-highlight.css |
 
 ## 复用指南

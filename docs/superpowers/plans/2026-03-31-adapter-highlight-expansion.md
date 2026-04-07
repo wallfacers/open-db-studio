@@ -363,7 +363,7 @@ git commit -m "feat(highlight): add AI change highlight path extraction to Metri
 **Files:**
 - Modify: `src/components/MetricsExplorer/MetricTab.tsx:1-13,196-211,387-533`
 
-**Context:** MetricTab renders 11 form fields. We wrap each field's container with a `HighlightedField` component (same pattern used in SeaTunnel VisualBuilder). Each onChange handler calls `onUserEdit()`.
+**Context:** MetricTab renders 11 form fields. We wrap each field's container with a `HighlightedField` component. Each onChange handler calls `onUserEdit()`.
 
 - [ ] **Step 1: Add imports**
 

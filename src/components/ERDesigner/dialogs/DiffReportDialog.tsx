@@ -279,13 +279,16 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
       title={t('erDesigner.diffTitle')}
       onClose={onClose}
       width={600}
+      footerHint={
+        <button
+          onClick={handleSyncFromDb}
+          disabled={loading || fromDb.length === 0}
+          className="px-3 py-1.5 text-xs rounded border border-border-strong text-foreground-muted hover:text-foreground-default disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {t('erDesigner.syncFromDb')}
+        </button>
+      }
       footerButtons={[
-        {
-          label: t('erDesigner.syncFromDb'),
-          onClick: handleSyncFromDb,
-          variant: 'secondary',
-          disabled: loading || fromDb.length === 0,
-        },
         {
           label: t('erDesigner.syncToDb'),
           onClick: handleSyncToDb,

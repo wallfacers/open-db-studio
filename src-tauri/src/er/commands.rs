@@ -195,15 +195,24 @@ fn detect_comment_format(comment: &str, target_table: &str, target_column: &str)
 
 // ─── Type Parsing ──────────────────────────────────────────────────────────
 
-/// Parse a database type string into (base_type, length, scale).
-/// E.g. "VARCHAR(255)" -> ("VARCHAR", Some(255), None)
-///      "DECIMAL(10,2)" -> ("DECIMAL", Some(10), Some(2))
-///      "INT4" -> ("INTEGER", None, None)
-fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>) {
+/// Parse a database type string into (base_type, length, scale, unsigned).
+/// E.g. "VARCHAR(255)"       -> ("VARCHAR", Some(255), None, false)
+///      "DECIMAL(10,2)"      -> ("DECIMAL", Some(10), Some(2), false)
+///      "BIGINT UNSIGNED"    -> ("BIGINT", None, None, true)
+///      "INT(11) UNSIGNED"   -> ("INTEGER", Some(11), None, true)
+fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>, bool) {
     let normalized = raw.trim().to_uppercase();
-    if let Some(paren_start) = normalized.find('(') {
-        let base = normalized[..paren_start].trim().to_string();
-        let inner = &normalized[paren_start + 1..normalized.len().saturating_sub(1)];
+    // Extract UNSIGNED flag and strip it from the type string
+    let has_unsigned = normalized.split_whitespace().any(|w| w == "UNSIGNED");
+    let cleaned: String = normalized
+        .split_whitespace()
+        .filter(|w| *w != "UNSIGNED")
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if let Some(paren_start) = cleaned.find('(') {
+        let base = cleaned[..paren_start].trim().to_string();
+        let inner = &cleaned[paren_start + 1..cleaned.len().saturating_sub(1)];
         let parts: Vec<&str> = inner.split(',').collect();
         let length = parts.first().and_then(|s| s.trim().parse::<i64>().ok());
         let scale = parts.get(1).and_then(|s| s.trim().parse::<i64>().ok());
@@ -214,17 +223,17 @@ fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>) {
             "INT8" => "BIGINT".to_string(),
             _ => base,
         };
-        (base, length, scale)
+        (base, length, scale, has_unsigned)
     } else {
-        let base = match normalized.as_str() {
+        let base = match cleaned.as_str() {
             "CHARACTER VARYING" => "VARCHAR".to_string(),
             "CHARACTER" => "CHAR".to_string(),
             "INT4" | "INT" => "INTEGER".to_string(),
             "INT8" => "BIGINT".to_string(),
             "DOUBLE PRECISION" => "DOUBLE".to_string(),
-            _ => normalized,
+            _ => cleaned,
         };
-        (base, None, None)
+        (base, None, None, has_unsigned)
     }
 }
 
@@ -358,7 +367,7 @@ pub async fn er_sync_from_database(
                 let col_lower = db_col.name.to_lowercase();
                 if let Some(er_col) = existing_cols.get(&col_lower) {
                     // Update existing column
-                    let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
+                    let (parsed_type, parsed_len, parsed_scale, parsed_unsigned) = parse_db_type(&db_col.data_type);
                     let req = UpdateColumnRequest {
                         name: Some(db_col.name.clone()),
                         data_type: Some(parsed_type),
@@ -370,7 +379,7 @@ pub async fn er_sync_from_database(
                         length: parsed_len,
                         scale: parsed_scale,
                         is_unique: None,
-                        unsigned: None,
+                        unsigned: Some(parsed_unsigned),
                         charset: None,
                         collation: None,
                         on_update: None,
@@ -380,7 +389,7 @@ pub async fn er_sync_from_database(
                     crate::er::repository::update_column(er_col.id, &req)?;
                 } else {
                     // Create new column
-                    let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
+                    let (parsed_type, parsed_len, parsed_scale, parsed_unsigned) = parse_db_type(&db_col.data_type);
                     let req = CreateColumnRequest {
                         table_id: er_tf.table.id,
                         name: db_col.name.clone(),
@@ -399,7 +408,7 @@ pub async fn er_sync_from_database(
                         length: parsed_len,
                         scale: parsed_scale,
                         is_unique: None,
-                        unsigned: None,
+                        unsigned: Some(parsed_unsigned),
                         charset: None,
                         collation: None,
                         on_update: None,
@@ -448,7 +457,7 @@ pub async fn er_sync_from_database(
 
             // Create columns
             for (i, db_col) in db_table.columns.iter().enumerate() {
-                let (parsed_type, parsed_len, parsed_scale) = parse_db_type(&db_col.data_type);
+                let (parsed_type, parsed_len, parsed_scale, parsed_unsigned) = parse_db_type(&db_col.data_type);
                 let col_req = CreateColumnRequest {
                     table_id: new_table.id,
                     name: db_col.name.clone(),
@@ -467,7 +476,7 @@ pub async fn er_sync_from_database(
                     length: parsed_len,
                     scale: parsed_scale,
                     is_unique: None,
-                    unsigned: None,
+                    unsigned: Some(parsed_unsigned),
                     charset: None,
                     collation: None,
                     on_update: None,

@@ -179,11 +179,13 @@ export function findTypeDef(typeName: string, dialect: DialectName | null): Data
 }
 
 /** Format type display text */
-export function formatTypeDisplay(column: Pick<ErColumn, 'data_type' | 'length' | 'scale'>): string {
-  const { data_type, length, scale } = column;
-  if (length != null && scale != null) return `${data_type}(${length},${scale})`;
-  if (length != null) return `${data_type}(${length})`;
-  return data_type;
+export function formatTypeDisplay(column: Pick<ErColumn, 'data_type' | 'length' | 'scale' | 'unsigned'>): string {
+  const { data_type, length, scale, unsigned } = column;
+  let result = data_type;
+  if (length != null && scale != null) result = `${data_type}(${length},${scale})`;
+  else if (length != null) result = `${data_type}(${length})`;
+  if (unsigned) result += ' UNSIGNED';
+  return result;
 }
 
 /** Check type compatibility with a dialect; returns warning message or null */

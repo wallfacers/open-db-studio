@@ -122,17 +122,18 @@ fn er_col_full_type(col: &crate::er::models::ErColumn) -> String {
 ///
 /// - Lowercases everything
 /// - Strips leading/trailing whitespace
+/// - Deduplicates the `unsigned` qualifier (e.g. `BIGINT UNSIGNED UNSIGNED` → `bigint unsigned`)
 /// - Replaces known aliases (`int4` → `int`, `character varying` → `varchar`, etc.)
 /// - Normalises whitespace inside parenthesised parameters: `VARCHAR( 255 )` → `varchar(255)`
+/// - Strips MySQL integer display widths (e.g. `BIGINT(20) UNSIGNED` → `bigint unsigned`)
 fn normalize_type(t: &str) -> String {
     let mut s = t.trim().to_lowercase();
 
     // Normalize whitespace inside parentheses: remove spaces after '(' and before ')'
     // and collapse multiple spaces around commas.
     if let Some(paren_start) = s.find('(') {
-        let prefix = &s[..paren_start];
-        let rest = &s[paren_start..];
-        // Remove spaces inside parens
+        let prefix = s[..paren_start].to_string();
+        let rest = s[paren_start..].to_string();
         let cleaned: String = rest
             .chars()
             .fold((String::new(), false), |(mut acc, prev_space), ch| {
@@ -148,6 +149,18 @@ fn normalize_type(t: &str) -> String {
             })
             .0;
         s = format!("{}{}", prefix, cleaned);
+    }
+
+    // Extract and deduplicate the "unsigned" qualifier.
+    // Handles cases like "BIGINT UNSIGNED UNSIGNED" (double-appended) and
+    // "BIGINT(20) UNSIGNED" (length + unsigned), normalising all to a single flag.
+    let has_unsigned = s.split_whitespace().any(|w| w == "unsigned");
+    if has_unsigned {
+        s = s
+            .split_whitespace()
+            .filter(|w| *w != "unsigned")
+            .collect::<Vec<_>>()
+            .join(" ");
     }
 
     // Alias map – apply longest-match-first by checking multi-word aliases before single-word.
@@ -173,14 +186,12 @@ fn normalize_type(t: &str) -> String {
     ];
 
     // Extract base type (before any parenthesis) for alias matching, preserve params.
-    let (base, params) = if let Some(idx) = s.find('(') {
-        (&s[..idx], &s[idx..])
-    } else {
-        (s.as_str(), "")
-    };
+    let paren_pos = s.find('(');
+    let base = paren_pos.map_or(s.clone(), |idx| s[..idx].to_string());
+    let params = paren_pos.map_or(String::new(), |idx| s[idx..].to_string());
 
-    let base_trimmed = base.trim();
-    let mut matched_base = base_trimmed.to_string();
+    let base_trimmed = base.trim().to_string();
+    let mut matched_base = base_trimmed.clone();
     for &(alias, canonical) in aliases {
         if base_trimmed == alias {
             matched_base = canonical.to_string();
@@ -193,10 +204,18 @@ fn normalize_type(t: &str) -> String {
     // and do not affect storage, so they should not trigger a type-changed diff.
     const INT_TYPES: &[&str] = &["tinyint", "smallint", "mediumint", "int", "bigint"];
     if INT_TYPES.contains(&matched_base.as_str()) {
-        return matched_base;
+        return if has_unsigned {
+            format!("{} unsigned", matched_base)
+        } else {
+            matched_base
+        };
     }
 
-    format!("{}{}", matched_base, params)
+    if has_unsigned {
+        format!("{}{} unsigned", matched_base, params)
+    } else {
+        format!("{}{}", matched_base, params)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +527,22 @@ mod tests {
     fn test_normalize_type_whitespace_in_params() {
         assert_eq!(normalize_type("VARCHAR( 255 )"), "varchar(255)");
         assert_eq!(normalize_type("DECIMAL( 10 , 2 )"), "decimal(10,2)");
+    }
+
+    #[test]
+    fn test_normalize_type_unsigned() {
+        // Basic unsigned
+        assert_eq!(normalize_type("BIGINT UNSIGNED"), "bigint unsigned");
+        assert_eq!(normalize_type("bigint unsigned"), "bigint unsigned");
+        // Deduplicate double-unsigned (caused by data_type already containing UNSIGNED + unsigned=true)
+        assert_eq!(normalize_type("BIGINT UNSIGNED UNSIGNED"), "bigint unsigned");
+        // With display width (MySQL legacy)
+        assert_eq!(normalize_type("BIGINT(20) UNSIGNED"), "bigint unsigned");
+        assert_eq!(normalize_type("INT(11) UNSIGNED"), "int unsigned");
+        // Non-integer unsigned (e.g. DECIMAL)
+        assert_eq!(normalize_type("DECIMAL(10,2) UNSIGNED"), "decimal(10,2) unsigned");
+        // Without unsigned stays as-is
+        assert_eq!(normalize_type("BIGINT"), "bigint");
     }
 
     #[test]

@@ -10,10 +10,12 @@ import {
   GitCompare,
   RefreshCw,
   Link2,
+  Unlink,
   Settings,
 } from 'lucide-react';
 import { Tooltip } from '../../common/Tooltip';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { useConfirmStore } from '../../../store/confirmStore';
 import ImportConflictDialog from '../ImportConflictDialog';
 import type { ErTable, ConflictResolution, ImportPreview } from '../../../types';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -34,6 +36,7 @@ export interface ERToolbarProps {
   onOpenBind?: () => void;
   onAutoLayout?: () => void;
   hasConnection?: boolean;
+  databaseName?: string | null;
   onOpenSettings?: () => void;
 }
 
@@ -50,6 +53,7 @@ export default function ERToolbar({
   onOpenBind,
   onAutoLayout,
   hasConnection = false,
+  databaseName,
   onOpenSettings,
 }: ERToolbarProps) {
   const { t } = useTranslation();
@@ -60,6 +64,7 @@ export default function ERToolbar({
     previewImport,
     executeImport,
     projects,
+    unbindConnection,
   } = useErDesignerStore();
 
   const projectName = projects.find(p => p.id === projectId)?.name;
@@ -227,15 +232,37 @@ export default function ERToolbar({
         </button>
       </Tooltip>
 
-      <Tooltip content={t('erDesigner.bindConnection')} className="flex items-center">
-        <button
-          onClick={onOpenBind}
-          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
-        >
-          <Link2 size={14} />
-          <span>{t('erDesigner.bindConnection')}</span>
-        </button>
-      </Tooltip>
+      {hasConnection && databaseName ? (
+        <Tooltip content={t('erDesigner.unbindConnection')} className="flex items-center">
+          <button
+            onClick={async () => {
+              const ok = await useConfirmStore.getState().confirm({
+                title: t('erDesigner.unbindConnection'),
+                message: t('erDesigner.confirmUnbind'),
+                variant: 'danger',
+              });
+              if (ok) {
+                await unbindConnection(projectId);
+              }
+            }}
+            className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-danger-hover-bg rounded flex items-center gap-1.5 transition-colors group"
+          >
+            <Database size={14} />
+            <span className="max-w-[120px] truncate">{databaseName}</span>
+            <Unlink size={12} className="text-foreground-muted group-hover:text-error transition-colors" />
+          </button>
+        </Tooltip>
+      ) : (
+        <Tooltip content={t('erDesigner.bindConnection')} className="flex items-center">
+          <button
+            onClick={onOpenBind}
+            className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors"
+          >
+            <Link2 size={14} />
+            <span>{t('erDesigner.bindConnection')}</span>
+          </button>
+        </Tooltip>
+      )}
 
       {/* 分隔符 */}
       <div className="w-px h-4 bg-border-strong mx-2" />

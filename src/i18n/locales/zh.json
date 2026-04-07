@@ -1110,6 +1110,7 @@
     "confirmDeleteTable": "确定删除此表？此操作不可恢复！",
     "bindConnection": "绑定连接",
     "unbindConnection": "解除绑定",
+    "confirmUnbind": "确定解除数据库绑定？",
     "addColumn": "添加列",
     "generateDdl": "生成 DDL",
     "dialect": "方言",

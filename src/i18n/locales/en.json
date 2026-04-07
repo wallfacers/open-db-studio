@@ -1109,6 +1109,7 @@
     "confirmDeleteTable": "Delete this table? This action cannot be undone!",
     "bindConnection": "Bind Connection",
     "unbindConnection": "Unbind",
+    "confirmUnbind": "Are you sure you want to unbind the database connection?",
     "addColumn": "Add Column",
     "generateDdl": "Generate DDL",
     "dialect": "Dialect",

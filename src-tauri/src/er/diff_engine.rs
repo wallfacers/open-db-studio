@@ -98,6 +98,26 @@ pub struct IndexDiff {
 // Type normalization
 // ---------------------------------------------------------------------------
 
+/// Build the full type string from an ErColumn, combining data_type + length + scale + unsigned.
+/// e.g. data_type="VARCHAR", length=50 → "VARCHAR(50)"
+///      data_type="DECIMAL", length=10, scale=2 → "DECIMAL(10,2)"
+///      data_type="BIGINT", unsigned=true → "BIGINT UNSIGNED"
+fn er_col_full_type(col: &crate::er::models::ErColumn) -> String {
+    let base = col.data_type.trim();
+    // Append length/scale if present
+    let with_len = match (col.length, col.scale) {
+        (Some(l), Some(s)) => format!("{}({},{})", base, l, s),
+        (Some(l), None)    => format!("{}({})", base, l),
+        _                  => base.to_string(),
+    };
+    // Append UNSIGNED if set
+    if col.unsigned {
+        format!("{} UNSIGNED", with_len)
+    } else {
+        with_len
+    }
+}
+
 /// Normalize a SQL type string for comparison.
 ///
 /// - Lowercases everything
@@ -350,7 +370,8 @@ fn compare_columns(
     for er_col in er_cols {
         let key = er_col.name.to_lowercase();
         if let Some(db_col) = db_by_name.get(&key) {
-            let er_norm = normalize_type(&er_col.data_type);
+            let er_full = er_col_full_type(er_col);
+            let er_norm = normalize_type(&er_full);
             let db_norm = normalize_type(&db_col.data_type);
             let type_changed = er_norm != db_norm;
             let nullable_changed = er_col.nullable != db_col.nullable;
@@ -358,7 +379,7 @@ fn compare_columns(
             if type_changed || nullable_changed {
                 modified.push(ColumnModDiff {
                     name: er_col.name.clone(),
-                    er_type: er_col.data_type.clone(),
+                    er_type: er_full,
                     db_type: db_col.data_type.clone(),
                     er_nullable: er_col.nullable,
                     db_nullable: db_col.nullable,

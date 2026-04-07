@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { BaseModal } from '../../common/BaseModal';
 import type { DiffResult, TableDiff, TableModDiff, ColumnModDiff, IndexDiff } from '../../../types';
@@ -12,6 +12,7 @@ export interface DiffReportDialogProps {
   onClose: () => void;
   onSyncToDb: (diff: DiffResult) => void;
   onSyncFromDb: (selectedChanges: SelectedChange[]) => void;
+  onFullSync: () => void;
 }
 
 export type ChangeType = 'added_table' | 'removed_table' | 'modified_table';
@@ -55,11 +56,13 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
   onClose,
   onSyncToDb,
   onSyncFromDb,
+  onFullSync,
 }) => {
   const { t } = useTranslation();
   const diffWithDatabase = useErDesignerStore((s) => s.diffWithDatabase);
   const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isFullSyncing, setIsFullSyncing] = useState(false);
   const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set());
 
   // 获取差异
@@ -259,6 +262,16 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
     onClose();
   };
 
+  const handleFullSync = async () => {
+    setIsFullSyncing(true);
+    try {
+      await onFullSync();
+      onClose();
+    } finally {
+      setIsFullSyncing(false);
+    }
+  };
+
   if (!visible) return null;
 
   return (
@@ -442,7 +455,17 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
             {diffResult.added_tables.length === 0 &&
               diffResult.removed_tables.length === 0 &&
               diffResult.modified_tables.length === 0 && (
-                <div className="text-center py-4 text-xs text-accent">{t('erDesigner.noDiff')}</div>
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <div className="text-xs text-accent">{t('erDesigner.noDiff')}</div>
+                  <button
+                    onClick={handleFullSync}
+                    disabled={isFullSyncing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-border-strong text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw size={12} className={isFullSyncing ? 'animate-spin' : ''} />
+                    <span>{isFullSyncing ? '刷新中...' : t('erDesigner.fullRefreshFromDb')}</span>
+                  </button>
+                </div>
               )}
           </div>
         )}

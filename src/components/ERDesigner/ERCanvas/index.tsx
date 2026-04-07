@@ -628,6 +628,16 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
             showError(`同步失败: ${e}`);
           }
         }}
+        onFullSync={async () => {
+          try {
+            await syncFromDatabase(projectId, undefined);
+            reloadCanvas(true);
+            showToast('全量从数据库刷新成功', 'success');
+          } catch (e) {
+            console.error('Full sync from database failed:', e);
+            showError(`全量刷新失败: ${e}`);
+          }
+        }}
       />
       <BindConnectionDialog
         visible={showBind}

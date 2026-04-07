@@ -1132,6 +1132,7 @@
     "removedSection": "Removed (only in DB)",
     "noDiff": "No differences detected",
     "syncToDb": "ER → Database",
+    "syncDdlPreview": "Sync DDL Preview",
     "syncFromDb": "Database → ER",
     "tableLabel": "Table",
     "columnLabel": "Column",

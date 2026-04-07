@@ -167,6 +167,31 @@ pub async fn er_generate_ddl(project_id: i64, options: DdlOptions) -> AppResult<
     )
 }
 
+// ─── Relationship Import Helpers ────────────────────────────────────────────
+
+/// Strip schema prefix from a potentially schema-qualified table name.
+/// "public.orders" → "orders", "orders" → "orders"
+fn strip_schema_prefix(name: &str) -> &str {
+    name.rsplit_once('.').map(|(_, table)| table).unwrap_or(name)
+}
+
+/// Detect which comment marker format was used for a given ref target.
+fn detect_comment_format(comment: &str, target_table: &str, target_column: &str) -> String {
+    let at_fk_pattern = format!("@fk(table={},col={}", target_table, target_column);
+    if comment.contains(&at_fk_pattern) {
+        return "@fk".to_string();
+    }
+    let bracket_pattern = format!("[ref:{}.{}]", target_table, target_column);
+    if comment.contains(&bracket_pattern) {
+        return "[ref]".to_string();
+    }
+    let dollar_pattern = format!("$$ref({}.{})$$", target_table, target_column);
+    if comment.contains(&dollar_pattern) {
+        return "$$ref$$".to_string();
+    }
+    "@ref".to_string()
+}
+
 // ─── Type Parsing ──────────────────────────────────────────────────────────
 
 /// Parse a database type string into (base_type, length, scale).
@@ -465,7 +490,163 @@ pub async fn er_sync_from_database(
         }
     }
 
-    // TODO: Parse FK relationships and comment marker relations
+    // ── Reload project to get fresh table/column IDs ──
+    let fresh = crate::er::repository::get_project_full(project_id)?;
+
+    // ── Build lookup maps: name → ER ID ──
+    let table_name_to_id: HashMap<String, i64> = fresh
+        .tables
+        .iter()
+        .map(|tf| (tf.table.name.to_lowercase(), tf.table.id))
+        .collect();
+
+    let column_lookup: HashMap<(i64, String), i64> = fresh
+        .tables
+        .iter()
+        .flat_map(|tf| {
+            tf.columns
+                .iter()
+                .map(move |c| ((tf.table.id, c.name.to_lowercase()), c.id))
+        })
+        .collect();
+
+    // ── Delete existing auto-imported relations for clean re-sync ──
+    crate::er::repository::delete_relations_by_source(project_id, &["schema", "comment"])?;
+
+    // ── Import native FK relations ──
+    for db_table in &db_full_schema.tables {
+        if let Some(ref filter) = table_names {
+            let lower = db_table.name.to_lowercase();
+            if !filter.iter().any(|n| n.to_lowercase() == lower) {
+                continue;
+            }
+        }
+
+        let source_table_name = db_table.name.to_lowercase();
+        let source_table_id = match table_name_to_id.get(&source_table_name) {
+            Some(id) => *id,
+            None => continue,
+        };
+
+        for fk in &db_table.foreign_keys {
+            let ref_table_bare = strip_schema_prefix(&fk.referenced_table).to_lowercase();
+
+            let target_table_id = match table_name_to_id.get(&ref_table_bare) {
+                Some(id) => *id,
+                None => continue,
+            };
+
+            let source_column_id =
+                match column_lookup.get(&(source_table_id, fk.column.to_lowercase())) {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+            let target_column_id = match column_lookup
+                .get(&(target_table_id, fk.referenced_column.to_lowercase()))
+            {
+                Some(id) => *id,
+                None => continue,
+            };
+
+            crate::er::repository::create_relation(&CreateRelationRequest {
+                project_id,
+                name: Some(fk.constraint_name.clone()),
+                source_table_id,
+                source_column_id,
+                target_table_id,
+                target_column_id,
+                relation_type: Some("many_to_one".to_string()),
+                on_delete: fk.on_delete.clone(),
+                on_update: fk.on_update.clone(),
+                source: Some("schema".to_string()),
+                comment_marker: None,
+                constraint_method: Some("database_fk".to_string()),
+                comment_format: None,
+            })?;
+        }
+    }
+
+    // ── Import comment-based virtual relations ──
+    for db_table in &db_full_schema.tables {
+        if let Some(ref filter) = table_names {
+            let lower = db_table.name.to_lowercase();
+            if !filter.iter().any(|n| n.to_lowercase() == lower) {
+                continue;
+            }
+        }
+
+        let source_table_name = db_table.name.to_lowercase();
+        let source_table_id = match table_name_to_id.get(&source_table_name) {
+            Some(id) => *id,
+            None => continue,
+        };
+
+        for db_col in &db_table.columns {
+            let comment = match &db_col.comment {
+                Some(c) if !c.is_empty() => c.as_str(),
+                _ => continue,
+            };
+
+            let refs = crate::graph::comment_parser::parse_comment_refs(comment);
+            if refs.is_empty() {
+                continue;
+            }
+
+            let source_column_id =
+                match column_lookup.get(&(source_table_id, db_col.name.to_lowercase())) {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+            for r in &refs {
+                let target_table_lower = r.target_table.to_lowercase();
+                let target_table_id = match table_name_to_id.get(&target_table_lower) {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+                let target_column_id = match column_lookup
+                    .get(&(target_table_id, r.target_column.to_lowercase()))
+                {
+                    Some(id) => *id,
+                    None => continue,
+                };
+
+                let relation_type = match r.relation_type.as_str() {
+                    "one_to_many" => "one_to_many",
+                    "many_to_one" => "many_to_one",
+                    "one_to_one" => "one_to_one",
+                    "many_to_many" => "many_to_many",
+                    _ => "many_to_one",
+                };
+
+                let format = detect_comment_format(comment, &r.target_table, &r.target_column);
+                let marker = crate::er::constraint::build_comment_marker(
+                    &r.target_table,
+                    &r.target_column,
+                    relation_type,
+                    &format,
+                );
+
+                crate::er::repository::create_relation(&CreateRelationRequest {
+                    project_id,
+                    name: None,
+                    source_table_id,
+                    source_column_id,
+                    target_table_id,
+                    target_column_id,
+                    relation_type: Some(relation_type.to_string()),
+                    on_delete: None,
+                    on_update: None,
+                    source: Some("comment".to_string()),
+                    comment_marker: Some(marker),
+                    constraint_method: Some("comment_ref".to_string()),
+                    comment_format: Some(format),
+                })?;
+            }
+        }
+    }
 
     Ok(())
 }

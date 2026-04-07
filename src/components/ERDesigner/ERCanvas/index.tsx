@@ -81,6 +81,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
 
   const [showDDL, setShowDDL] = useState(false)
   const [showDiff, setShowDiff] = useState(false)
+  const [syncStatements, setSyncStatements] = useState<string[] | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showBind, setShowBind] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -104,6 +105,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
   const deleteTable = useErDesignerStore(s => s.deleteTable)
   const addRelation = useErDesignerStore(s => s.addRelation)
   const syncFromDatabase = useErDesignerStore(s => s.syncFromDatabase)
+  const generateSyncDdl = useErDesignerStore(s => s.generateSyncDdl)
 
   // State values for rendering
   const projects = useErDesignerStore(s => s.projects)
@@ -526,18 +528,34 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         visible={showDDL}
         projectId={projectId}
         hasConnection={hasConnection}
-        onClose={() => setShowDDL(false)}
+        preloadedDdl={syncStatements ? syncStatements.join('\n\n') : undefined}
+        onClose={() => { setShowDDL(false); setSyncStatements(null) }}
         onExecute={async (ddl) => {
-          if (!activeProject?.connection_id) return
-          try {
-            await invoke('execute_query', {
-              connectionId: activeProject.connection_id,
-              sql: ddl,
-              database: activeProject.database_name ?? null,
-              schema: activeProject.schema_name ?? null,
-            })
-          } catch (e) {
-            console.error('Failed to execute DDL:', e)
+          if (syncStatements) {
+            // Sync mode: execute via er_execute_sync_ddl for per-statement results
+            try {
+              await invoke('er_execute_sync_ddl', {
+                projectId,
+                ddlStatements: syncStatements,
+              })
+            } catch (e) {
+              console.error('Failed to execute sync DDL:', e)
+            } finally {
+              setSyncStatements(null)
+            }
+          } else {
+            // Normal generate-DDL mode: execute as single query
+            if (!activeProject?.connection_id) return
+            try {
+              await invoke('execute_query', {
+                connectionId: activeProject.connection_id,
+                sql: ddl,
+                database: activeProject.database_name ?? null,
+                schema: activeProject.schema_name ?? null,
+              })
+            } catch (e) {
+              console.error('Failed to execute DDL:', e)
+            }
           }
         }}
       />
@@ -546,9 +564,15 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         projectId={projectId}
         connectionInfo={connectionInfo}
         onClose={() => setShowDiff(false)}
-        onSyncToDb={(_changes) => {
-          // ER→DB DDL 执行尚未完整实现（Rust 侧 CREATE TABLE DDL 生成仍是 placeholder）
-          alert('ER → 数据库同步功能尚未实现，敬请期待。')
+        onSyncToDb={async (filteredDiff) => {
+          try {
+            const statements = await generateSyncDdl(projectId, filteredDiff)
+            setSyncStatements(statements)
+            setShowDiff(false)
+            setShowDDL(true)
+          } catch (e) {
+            console.error('Failed to generate sync DDL:', e)
+          }
         }}
         onSyncFromDb={(changes) => {
           // 只同步用户勾选的表，避免全量覆盖

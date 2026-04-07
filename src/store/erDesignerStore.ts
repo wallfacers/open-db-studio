@@ -100,6 +100,7 @@ interface ErDesignerState {
   ) => Promise<string>;
   diffWithDatabase: (projectId: number) => Promise<DiffResult>;
   syncFromDatabase: (projectId: number, tableNames?: string[]) => Promise<void>;
+  generateSyncDdl: (projectId: number, changes: DiffResult) => Promise<string[]>;
 
   // Import/Export
   exportJson: (projectId: number) => Promise<string>;
@@ -731,6 +732,15 @@ export const useErDesignerStore = create<ErDesignerState>((set, get) => ({
       await get().loadProject(projectId);
     } catch (e) {
       console.error('Failed to sync from database:', e);
+    }
+  },
+
+  generateSyncDdl: async (projectId, changes) => {
+    try {
+      return await invoke<string[]>('er_generate_sync_ddl', { projectId, changes });
+    } catch (e) {
+      console.error('Failed to generate sync DDL:', e);
+      throw e;
     }
   },
 

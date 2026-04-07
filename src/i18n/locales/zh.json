@@ -1133,6 +1133,7 @@
     "removedSection": "删除（仅数据库有）",
     "noDiff": "没有检测到差异",
     "syncToDb": "ER → 数据库",
+    "syncDdlPreview": "同步 DDL 预览",
     "syncFromDb": "数据库 → ER",
     "tableLabel": "表",
     "columnLabel": "列",

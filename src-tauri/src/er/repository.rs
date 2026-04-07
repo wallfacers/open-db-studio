@@ -680,6 +680,31 @@ pub fn delete_relation(id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// 按 source 类型批量删除关系，用于重新同步时清除旧的自动导入关系。
+pub fn delete_relations_by_source(project_id: i64, sources: &[&str]) -> AppResult<usize> {
+    if sources.is_empty() {
+        return Ok(0);
+    }
+    let conn = crate::db::get().lock().unwrap();
+    let placeholders: String = (2..=sources.len() + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "DELETE FROM er_relations WHERE project_id = ?1 AND source IN ({})",
+        placeholders
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(project_id)];
+    for s in sources {
+        params.push(Box::new(s.to_string()));
+    }
+    let affected = conn.execute(
+        &sql,
+        rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+    )?;
+    Ok(affected)
+}
+
 // ─── Index CRUD ─────────────────────────────────────────────────────────────
 
 pub fn create_index(req: &CreateIndexRequest) -> AppResult<ErIndex> {

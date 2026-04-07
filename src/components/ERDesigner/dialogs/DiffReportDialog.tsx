@@ -10,7 +10,7 @@ export interface DiffReportDialogProps {
   projectId: number;
   connectionInfo: { name: string; database: string } | null;
   onClose: () => void;
-  onSyncToDb: (selectedChanges: SelectedChange[]) => void;
+  onSyncToDb: (diff: DiffResult) => void;
   onSyncFromDb: (selectedChanges: SelectedChange[]) => void;
 }
 
@@ -216,7 +216,41 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
   const { toDb, fromDb } = getSelectedChangesByType;
 
   const handleSyncToDb = () => {
-    onSyncToDb(toDb);
+    if (!diffResult) return;
+    const payload: DiffResult = {
+      added_tables: diffResult.added_tables.filter((t) =>
+        selectedChanges.has(`added_table:${t.table_name}`)
+      ),
+      removed_tables: [],
+      modified_tables: diffResult.modified_tables
+        .map((t) => ({
+          ...t,
+          added_columns: t.added_columns.filter((c) =>
+            selectedChanges.has(`added_column:${t.table_name}:${c.name}`)
+          ),
+          removed_columns: t.removed_columns.filter((c) =>
+            selectedChanges.has(`removed_column:${t.table_name}:${c.name}`)
+          ),
+          modified_columns: t.modified_columns.filter((c) =>
+            selectedChanges.has(`modified_column:${t.table_name}:${c.name}`)
+          ),
+          added_indexes: t.added_indexes.filter((i) =>
+            selectedChanges.has(`added_index:${t.table_name}:${i.name}`)
+          ),
+          removed_indexes: t.removed_indexes.filter((i) =>
+            selectedChanges.has(`removed_index:${t.table_name}:${i.name}`)
+          ),
+        }))
+        .filter(
+          (t) =>
+            t.added_columns.length > 0 ||
+            t.removed_columns.length > 0 ||
+            t.modified_columns.length > 0 ||
+            t.added_indexes.length > 0 ||
+            t.removed_indexes.length > 0
+        ),
+    };
+    onSyncToDb(payload);
     onClose();
   };
 

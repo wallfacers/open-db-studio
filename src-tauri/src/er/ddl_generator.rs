@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::AppResult;
 use crate::error::AppError;
@@ -7,6 +7,7 @@ use super::constraint::{
     append_marker_to_comment, build_comment_marker,
     resolve_comment_format, resolve_constraint_method,
 };
+use super::table_sorter::{sort_tables_by_dependency, get_delayed_fk_relations};
 
 // ---------------------------------------------------------------------------
 // GenerateOptions
@@ -758,6 +759,65 @@ impl DdlDialect for SqliteDialect {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Helper: generate delayed FK constraints via ALTER TABLE
+// ---------------------------------------------------------------------------
+
+/// Generate ALTER TABLE statements for delayed foreign key constraints.
+/// Used for self-referencing or circular dependency scenarios where FK cannot be inline.
+fn generate_delayed_fks(
+    relations: &[ErRelation],
+    delayed_ids: &HashSet<i64>,
+    tables_by_id: &HashMap<i64, &ErTable>,
+    columns_map: &HashMap<i64, Vec<ErColumn>>,
+    dialect: &dyn DdlDialect,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    for rel in relations.iter().filter(|r| delayed_ids.contains(&r.id)) {
+        let source_table_name = tables_by_id
+            .get(&rel.source_table_id)
+            .map(|t| t.name.clone())
+            .unwrap_or_else(|| format!("table_{}", rel.source_table_id));
+        let source_col_name = columns_map
+            .get(&rel.source_table_id)
+            .and_then(|cols| cols.iter().find(|c| c.id == rel.source_column_id))
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| format!("col_{}", rel.source_column_id));
+        let target_table_name = tables_by_id
+            .get(&rel.target_table_id)
+            .map(|t| t.name.clone())
+            .unwrap_or_else(|| format!("table_{}", rel.target_table_id));
+        let target_col_name = columns_map
+            .get(&rel.target_table_id)
+            .and_then(|cols| cols.iter().find(|c| c.id == rel.target_column_id))
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| format!("col_{}", rel.target_column_id));
+
+        let fk_name = rel.name.as_deref().unwrap_or("fk");
+
+        parts.push(format!(
+            "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE {} ON UPDATE {};",
+            dialect.quote_identifier(&source_table_name),
+            dialect.quote_identifier(fk_name),
+            dialect.quote_identifier(&source_col_name),
+            dialect.quote_identifier(&target_table_name),
+            dialect.quote_identifier(&target_col_name),
+            rel.on_delete,
+            rel.on_update,
+        ));
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "-- Delayed foreign key constraints (for self-referencing or circular dependencies)\n{}",
+            parts.join("\n")
+        )
+    }
+}
+
 // ===========================================================================
 // Main entry point
 // ===========================================================================
@@ -790,9 +850,31 @@ pub fn generate_ddl(
         resolve_constraint_method(rel, src_table, Some(project)) == "database_fk"
     }).cloned().collect();
 
+    // --- Topological sort for table creation order ---
+    // Tables referenced by foreign keys must be created first.
+    let sort_result = sort_tables_by_dependency(tables, relations, None);
+
+    // Get delayed FK relation IDs (self-referencing and circular dependencies)
+    let delayed_fk_ids: HashSet<i64> = if options.include_foreign_keys {
+        get_delayed_fk_relations(
+            relations,
+            &sort_result.cycle_tables,
+            &sort_result.self_referencing_tables,
+        )
+    } else {
+        HashSet::new()
+    };
+
     let mut ddl_parts: Vec<String> = Vec::new();
 
-    for table in tables {
+    // Sort tables by dependency order
+    let sorted_tables: Vec<&ErTable> = sort_result.sorted_table_ids
+        .iter()
+        .filter_map(|id| tables_by_id.get(id))
+        .copied()
+        .collect();
+
+    for table in sorted_tables {
         let empty_cols: Vec<ErColumn> = Vec::new();
         let empty_idxs: Vec<ErIndex> = Vec::new();
         let columns = columns_map.get(&table.id).unwrap_or(&empty_cols);
@@ -828,11 +910,21 @@ pub fn generate_ddl(
             columns.to_vec()
         };
 
+        // Filter out delayed FK constraints for this table
+        let inline_fks: Vec<ErRelation> = if options.include_foreign_keys {
+            db_fk_relations.iter()
+                .filter(|r| r.source_table_id == table.id && !delayed_fk_ids.contains(&r.id))
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         let stmt = dialect_impl.create_table(
             table,
             &processed_columns,
             indexes,
-            &db_fk_relations,
+            &inline_fks,
             tables,
             columns_map,
             options,
@@ -840,7 +932,127 @@ pub fn generate_ddl(
         ddl_parts.push(stmt);
     }
 
+    // --- Add delayed foreign key constraints (ALTER TABLE) ---
+    if options.include_foreign_keys && !delayed_fk_ids.is_empty() {
+        let delayed_fks_ddl = generate_delayed_fks(
+            &db_fk_relations,
+            &delayed_fk_ids,
+            &tables_by_id,
+            columns_map,
+            dialect_impl.as_ref(),
+        );
+        if !delayed_fks_ddl.is_empty() {
+            ddl_parts.push(delayed_fks_ddl);
+        }
+    }
+
     Ok(ddl_parts.join("\n\n"))
+}
+
+// ---------------------------------------------------------------------------
+// Public helpers for sync DDL generation (used by er/commands.rs)
+// ---------------------------------------------------------------------------
+
+fn make_dialect_impl(dialect: &str) -> AppResult<Box<dyn DdlDialect>> {
+    Ok(match dialect.to_lowercase().as_str() {
+        "mysql" => Box::new(MySqlDialect),
+        "postgres" | "postgresql" => Box::new(PostgresDialect),
+        "oracle" => Box::new(OracleDialect),
+        "sqlserver" | "mssql" => Box::new(SqlServerDialect),
+        "sqlite" => Box::new(SqliteDialect),
+        other => {
+            return Err(AppError::Other(format!(
+                "Unsupported DDL dialect: {}",
+                other
+            )))
+        }
+    })
+}
+
+/// Quote a SQL identifier using the appropriate dialect style.
+/// MySQL uses backticks, SQL Server uses brackets, others use double quotes.
+pub fn quote_identifier(name: &str, dialect: &str) -> String {
+    match dialect.to_lowercase().as_str() {
+        "mysql" => format!("`{}`", name.replace('`', "``")),
+        "sqlserver" | "mssql" => format!("[{}]", name.replace(']', "]]")),
+        _ => format!("\"{}\"", name.replace('"', "\"\"")),
+    }
+}
+
+/// Format a column definition for use in ALTER TABLE ADD COLUMN or MODIFY COLUMN.
+/// Returns `quoted_name TYPE [UNSIGNED] [NOT NULL] [AUTO_INCREMENT] [UNIQUE] [DEFAULT ...]`
+pub fn format_column_for_alter(col: &ErColumn, dialect: &str) -> AppResult<String> {
+    let d = make_dialect_impl(dialect)?;
+    let mut def = format!(
+        "{} {}",
+        d.quote_identifier(&col.name),
+        d.map_column_type(col)
+    );
+    if col.unsigned {
+        def.push_str(" UNSIGNED");
+    }
+    if !col.nullable {
+        def.push_str(" NOT NULL");
+    }
+    if col.is_auto_increment {
+        let ai = d.auto_increment_syntax();
+        if !ai.is_empty() {
+            def.push_str(&format!(" {}", ai));
+        }
+    }
+    if col.is_unique {
+        def.push_str(" UNIQUE");
+    }
+    if let Some(ref dv) = col.default_value {
+        if !dv.is_empty() {
+            def.push_str(&format!(" DEFAULT {}", dv));
+        }
+    }
+    Ok(def)
+}
+
+/// Generate dialect-specific ALTER TABLE MODIFY COLUMN statements.
+/// PostgreSQL returns two statements (TYPE change + NOT NULL change);
+/// SQL Server uses ALTER COLUMN syntax;
+/// MySQL/Oracle/SQLite use MODIFY COLUMN syntax.
+pub fn generate_modify_column_ddl(
+    col: &ErColumn,
+    table_name: &str,
+    dialect: &str,
+) -> AppResult<Vec<String>> {
+    let d = make_dialect_impl(dialect)?;
+    let q_table = d.quote_identifier(table_name);
+    let col_def = format_column_for_alter(col, dialect)?;
+
+    Ok(match dialect.to_lowercase().as_str() {
+        "postgres" | "postgresql" => {
+            let q_col = d.quote_identifier(&col.name);
+            let col_type = d.map_column_type(col);
+            let mut stmts = vec![format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {};",
+                q_table, q_col, col_type
+            )];
+            if col.nullable {
+                stmts.push(format!(
+                    "ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;",
+                    q_table, q_col
+                ));
+            } else {
+                stmts.push(format!(
+                    "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;",
+                    q_table, q_col
+                ));
+            }
+            stmts
+        }
+        "sqlserver" | "mssql" => {
+            vec![format!("ALTER TABLE {} ALTER COLUMN {};", q_table, col_def)]
+        }
+        _ => {
+            // MySQL, Oracle, SQLite
+            vec![format!("ALTER TABLE {} MODIFY COLUMN {};", q_table, col_def)]
+        }
+    })
 }
 
 // ===========================================================================

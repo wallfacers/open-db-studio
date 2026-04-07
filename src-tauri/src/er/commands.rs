@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -6,6 +6,8 @@ use crate::AppResult;
 use crate::error::AppError;
 use super::models::*;
 use super::diff_engine::{DatabaseSchema, DbTableInfo, DbColumnInfo, DbIndexInfo, DiffResult};
+use super::table_sorter::sort_tables_by_dependency;
+use super::ddl_generator::{generate_ddl, GenerateOptions};
 
 // ---------------------------------------------------------------------------
 // Sync execution result
@@ -473,57 +475,185 @@ pub async fn er_generate_sync_ddl(
     project_id: i64,
     changes: serde_json::Value,
 ) -> AppResult<Vec<String>> {
-    // Basic structure: generate ALTER/CREATE/DROP DDL based on selected diff changes.
-    // The `changes` JSON contains the selected items from the DiffReport dialog.
-    // This will be refined later with full diff-to-DDL conversion.
-    let _full = crate::er::repository::get_project_full(project_id)?;
+    let full = crate::er::repository::get_project_full(project_id)?;
+
+    // Determine SQL dialect from the project's bound connection.
+    // Fall back to "mysql" if no connection is bound or driver is unknown.
+    let dialect = if let Some(conn_id) = full.project.connection_id {
+        crate::db::get_connection_by_id(conn_id)?
+            .map(|c| c.driver.to_lowercase())
+            .unwrap_or_else(|| "mysql".to_string())
+    } else {
+        "mysql".to_string()
+    };
+
+    // Build lookup maps: lowercase table_name → ErTableFull
+    let tables_map: HashMap<String, &crate::er::models::ErTableFull> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.name.to_lowercase(), tf))
+        .collect();
+
+    let columns_map: HashMap<i64, Vec<crate::er::models::ErColumn>> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.id, tf.columns.clone()))
+        .collect();
+
+    let indexes_map: HashMap<i64, Vec<crate::er::models::ErIndex>> = full
+        .tables
+        .iter()
+        .map(|tf| (tf.table.id, tf.indexes.clone()))
+        .collect();
 
     let mut statements: Vec<String> = Vec::new();
 
-    // Parse changes JSON to extract operations
+    // ── 1. Added tables → full CREATE TABLE DDL ──────────────────────────
     if let Some(added_tables) = changes.get("added_tables").and_then(|v| v.as_array()) {
         for table_val in added_tables {
             if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
-                // TODO: Generate full CREATE TABLE DDL from ER model
-                statements.push(format!("-- CREATE TABLE {} (details to be generated)", table_name));
+                if let Some(tf) = tables_map.get(&table_name.to_lowercase()) {
+                    let options = crate::er::ddl_generator::GenerateOptions::default();
+                    let ddl = crate::er::ddl_generator::generate_ddl(
+                        std::slice::from_ref(&tf.table),
+                        &columns_map,
+                        &indexes_map,
+                        &full.relations,
+                        &dialect,
+                        &options,
+                        &full.project,
+                    )?;
+                    statements.push(ddl);
+                }
             }
         }
     }
 
-    if let Some(removed_tables) = changes.get("removed_tables").and_then(|v| v.as_array()) {
-        for table_val in removed_tables {
-            if let Some(table_name) = table_val.get("table_name").and_then(|v| v.as_str()) {
-                statements.push(format!("DROP TABLE IF EXISTS {};", table_name));
-            }
-        }
-    }
-
+    // ── 2. Modified tables ───────────────────────────────────────────────
     if let Some(modified_tables) = changes.get("modified_tables").and_then(|v| v.as_array()) {
         for table_val in modified_tables {
             let table_name = table_val
                 .get("table_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
+            let tf_opt = tables_map.get(&table_name.to_lowercase());
+            let q_table = crate::er::ddl_generator::quote_identifier(table_name, &dialect);
 
-            if let Some(added_cols) = table_val.get("added_columns").and_then(|v| v.as_array()) {
-                for col in added_cols {
-                    let col_name = col.get("name").and_then(|v| v.as_str()).unwrap_or("col");
-                    let col_type = col.get("data_type").and_then(|v| v.as_str()).unwrap_or("TEXT");
+            // 2a. Added columns
+            if let Some(added_cols) =
+                table_val.get("added_columns").and_then(|v| v.as_array())
+            {
+                for col_val in added_cols {
+                    let col_name =
+                        col_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(tf) = tf_opt {
+                        if let Some(er_col) = tf
+                            .columns
+                            .iter()
+                            .find(|c| c.name.to_lowercase() == col_name.to_lowercase())
+                        {
+                            let col_def = crate::er::ddl_generator::format_column_for_alter(
+                                er_col, &dialect,
+                            )?;
+                            statements.push(format!(
+                                "ALTER TABLE {} ADD COLUMN {};",
+                                q_table, col_def
+                            ));
+                        }
+                    }
+                }
+            }
+
+            // 2b. Removed columns
+            if let Some(removed_cols) =
+                table_val.get("removed_columns").and_then(|v| v.as_array())
+            {
+                for col_val in removed_cols {
+                    let col_name =
+                        col_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let q_col =
+                        crate::er::ddl_generator::quote_identifier(col_name, &dialect);
                     statements.push(format!(
-                        "ALTER TABLE {} ADD COLUMN {} {};",
-                        table_name, col_name, col_type
+                        "ALTER TABLE {} DROP COLUMN {};",
+                        q_table, q_col
                     ));
                 }
             }
 
-            if let Some(removed_cols) = table_val.get("removed_columns").and_then(|v| v.as_array())
+            // 2c. Modified columns (type or nullability change)
+            if let Some(modified_cols) =
+                table_val.get("modified_columns").and_then(|v| v.as_array())
             {
-                for col in removed_cols {
-                    let col_name = col.get("name").and_then(|v| v.as_str()).unwrap_or("col");
+                for col_val in modified_cols {
+                    let col_name =
+                        col_val.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(tf) = tf_opt {
+                        if let Some(er_col) = tf
+                            .columns
+                            .iter()
+                            .find(|c| c.name.to_lowercase() == col_name.to_lowercase())
+                        {
+                            let stmts =
+                                crate::er::ddl_generator::generate_modify_column_ddl(
+                                    er_col, table_name, &dialect,
+                                )?;
+                            statements.extend(stmts);
+                        }
+                    }
+                }
+            }
+
+            // 2d. Added indexes
+            if let Some(added_idxs) =
+                table_val.get("added_indexes").and_then(|v| v.as_array())
+            {
+                for idx_val in added_idxs {
+                    let idx_name =
+                        idx_val.get("name").and_then(|v| v.as_str()).unwrap_or("idx");
+                    let idx_type = idx_val
+                        .get("index_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("INDEX");
+                    let cols: Vec<String> = idx_val
+                        .get("columns")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|c| c.as_str())
+                                .map(|s| {
+                                    crate::er::ddl_generator::quote_identifier(s, &dialect)
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let unique_kw =
+                        if idx_type.to_uppercase() == "UNIQUE" { "UNIQUE " } else { "" };
+                    let q_idx =
+                        crate::er::ddl_generator::quote_identifier(idx_name, &dialect);
                     statements.push(format!(
-                        "ALTER TABLE {} DROP COLUMN {};",
-                        table_name, col_name
+                        "CREATE {}INDEX {} ON {} ({});",
+                        unique_kw,
+                        q_idx,
+                        q_table,
+                        cols.join(", ")
                     ));
+                }
+            }
+
+            // 2e. Removed indexes
+            if let Some(removed_idxs) =
+                table_val.get("removed_indexes").and_then(|v| v.as_array())
+            {
+                for idx_val in removed_idxs {
+                    let idx_name =
+                        idx_val.get("name").and_then(|v| v.as_str()).unwrap_or("idx");
+                    let q_idx =
+                        crate::er::ddl_generator::quote_identifier(idx_name, &dialect);
+                    let stmt = match dialect.to_lowercase().as_str() {
+                        "mysql" => format!("DROP INDEX {} ON {};", q_idx, q_table),
+                        _ => format!("DROP INDEX IF EXISTS {};", q_idx),
+                    };
+                    statements.push(stmt);
                 }
             }
         }

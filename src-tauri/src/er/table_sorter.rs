@@ -16,6 +16,7 @@ pub struct SortResult {
 }
 
 impl SortResult {
+    #[allow(dead_code)]
     pub fn has_cycle(&self) -> bool {
         !self.cycle_tables.is_empty()
     }

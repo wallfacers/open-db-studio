@@ -850,8 +850,6 @@ pub fn generate_ddl(
         resolve_constraint_method(rel, src_table, Some(project)) == "database_fk"
     }).cloned().collect();
 
-    // --- Topological sort for table creation order ---
-    // Tables referenced by foreign keys must be created first.
     let sort_result = sort_tables_by_dependency(tables, relations, None);
 
     let delayed_fk_ids: HashSet<i64> = if options.include_foreign_keys {
@@ -862,7 +860,6 @@ pub fn generate_ddl(
 
     let mut ddl_parts: Vec<String> = Vec::new();
 
-    // Sort tables by dependency order
     let sorted_tables: Vec<&ErTable> = sort_result.sorted_table_ids
         .iter()
         .filter_map(|id| tables_by_id.get(id))

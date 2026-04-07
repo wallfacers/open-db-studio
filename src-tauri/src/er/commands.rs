@@ -490,10 +490,8 @@ pub async fn er_sync_from_database(
         }
     }
 
-    // ── Reload project to get fresh table/column IDs ──
     let fresh = crate::er::repository::get_project_full(project_id)?;
 
-    // ── Build lookup maps: name → ER ID ──
     let table_name_to_id: HashMap<String, i64> = fresh
         .tables
         .iter()
@@ -510,20 +508,23 @@ pub async fn er_sync_from_database(
         })
         .collect();
 
-    // ── Delete existing auto-imported relations for clean re-sync ──
+    // Pre-compute normalized filter set to avoid repeated lowercase conversions
+    let filter_set: Option<HashSet<String>> = table_names.as_ref().map(|names| {
+        names.iter().map(|n| n.to_lowercase()).collect()
+    });
+
     crate::er::repository::delete_relations_by_source(project_id, &["schema", "comment"])?;
 
     // ── Import native FK relations ──
     for db_table in &db_full_schema.tables {
-        if let Some(ref filter) = table_names {
-            let lower = db_table.name.to_lowercase();
-            if !filter.iter().any(|n| n.to_lowercase() == lower) {
+        let source_table_lower = db_table.name.to_lowercase();
+        if let Some(ref filter) = filter_set {
+            if !filter.contains(&source_table_lower) {
                 continue;
             }
         }
 
-        let source_table_name = db_table.name.to_lowercase();
-        let source_table_id = match table_name_to_id.get(&source_table_name) {
+        let source_table_id = match table_name_to_id.get(&source_table_lower) {
             Some(id) => *id,
             None => continue,
         };
@@ -569,15 +570,14 @@ pub async fn er_sync_from_database(
 
     // ── Import comment-based virtual relations ──
     for db_table in &db_full_schema.tables {
-        if let Some(ref filter) = table_names {
-            let lower = db_table.name.to_lowercase();
-            if !filter.iter().any(|n| n.to_lowercase() == lower) {
+        let source_table_lower = db_table.name.to_lowercase();
+        if let Some(ref filter) = filter_set {
+            if !filter.contains(&source_table_lower) {
                 continue;
             }
         }
 
-        let source_table_name = db_table.name.to_lowercase();
-        let source_table_id = match table_name_to_id.get(&source_table_name) {
+        let source_table_id = match table_name_to_id.get(&source_table_lower) {
             Some(id) => *id,
             None => continue,
         };
@@ -689,10 +689,8 @@ pub async fn er_generate_sync_ddl(
 
     let mut statements: Vec<String> = Vec::new();
 
-    // ── 1. Added tables → full CREATE TABLE DDL (with topological sort) ─────
-    // Tables referenced by FKs must be created first
+    // ── 1. Added tables → CREATE TABLE DDL (topologically sorted) ────────
     if let Some(added_tables) = changes.get("added_tables").and_then(|v| v.as_array()) {
-        // Collect table IDs for added tables
         let added_table_ids: HashSet<i64> = added_tables
             .iter()
             .filter_map(|t| {
@@ -704,25 +702,21 @@ pub async fn er_generate_sync_ddl(
             .collect();
 
         if !added_table_ids.is_empty() {
-            // Build table list for sorting
             let all_tables: Vec<crate::er::models::ErTable> =
                 full.tables.iter().map(|tf| tf.table.clone()).collect();
 
-            // Sort tables by dependency order
             let sort_result = sort_tables_by_dependency(
                 &all_tables,
                 &full.relations,
                 Some(&added_table_ids),
             );
 
-            // Build table_id → table_name lookup
             let id_to_name: HashMap<i64, String> = full
                 .tables
                 .iter()
                 .map(|tf| (tf.table.id, tf.table.name.to_lowercase()))
                 .collect();
 
-            // Generate DDL in sorted order
             let options = GenerateOptions::default();
 
             for table_id in &sort_result.sorted_table_ids {

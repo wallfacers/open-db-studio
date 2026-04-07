@@ -463,7 +463,7 @@ export const DiffReportDialog: React.FC<DiffReportDialogProps> = ({
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-border-strong text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <RefreshCw size={12} className={isFullSyncing ? 'animate-spin' : ''} />
-                    <span>{isFullSyncing ? '刷新中...' : t('erDesigner.fullRefreshFromDb')}</span>
+                    <span>{t('erDesigner.fullRefreshFromDb')}</span>
                   </button>
                 </div>
               )}

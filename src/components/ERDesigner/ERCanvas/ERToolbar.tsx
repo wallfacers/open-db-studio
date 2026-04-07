@@ -261,7 +261,7 @@ export default function ERToolbar({
       {/* 分隔符 */}
       <div className="w-px h-4 bg-border-strong mx-2" />
 
-      {/* DDL/Diff/Sync 组 */}
+      {/* DDL/Diff 组 */}
       <Tooltip content={t('erDesigner.ddlPreview')} className="flex items-center">
         <button
           onClick={handleDDL}

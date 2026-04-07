@@ -4,7 +4,7 @@ import { Key, Hash, X, TableProperties } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DropdownSelect } from '../../common/DropdownSelect';
 import { Tooltip } from '../../common/Tooltip';
-import { getTypeOptions, formatTypeDisplay, findTypeDef } from '../shared/dataTypes';
+import { getTypeOptions, formatTypeDisplay, findTypeDef, stripUnsigned } from '../shared/dataTypes';
 import type { DialectName } from '../shared/dataTypes';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { resolveConstraintMethod } from '../shared/resolveConstraint';
@@ -195,7 +195,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {/* Type Dropdown */}
           <div className="z-0 w-[95px] flex justify-end">
             <DropdownSelect
-              value={col.data_type.replace(/\s+UNSIGNED$/i, '').trim()}
+              value={stripUnsigned(col.data_type)}
               options={typeOptions}
               displayValue={formatTypeDisplay(col)}
               onChange={(value) => {

@@ -202,13 +202,7 @@ fn detect_comment_format(comment: &str, target_table: &str, target_column: &str)
 ///      "INT(11) UNSIGNED"   -> ("INTEGER", Some(11), None, true)
 fn parse_db_type(raw: &str) -> (String, Option<i64>, Option<i64>, bool) {
     let normalized = raw.trim().to_uppercase();
-    // Extract UNSIGNED flag and strip it from the type string
-    let has_unsigned = normalized.split_whitespace().any(|w| w == "UNSIGNED");
-    let cleaned: String = normalized
-        .split_whitespace()
-        .filter(|w| *w != "UNSIGNED")
-        .collect::<Vec<_>>()
-        .join(" ");
+    let (cleaned, has_unsigned) = super::strip_unsigned(&normalized);
 
     if let Some(paren_start) = cleaned.find('(') {
         let base = cleaned[..paren_start].trim().to_string();

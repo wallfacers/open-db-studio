@@ -152,15 +152,9 @@ fn normalize_type(t: &str) -> String {
     }
 
     // Extract and deduplicate the "unsigned" qualifier.
-    // Handles cases like "BIGINT UNSIGNED UNSIGNED" (double-appended) and
-    // "BIGINT(20) UNSIGNED" (length + unsigned), normalising all to a single flag.
-    let has_unsigned = s.split_whitespace().any(|w| w == "unsigned");
+    let (stripped, has_unsigned) = super::strip_unsigned(&s);
     if has_unsigned {
-        s = s
-            .split_whitespace()
-            .filter(|w| *w != "unsigned")
-            .collect::<Vec<_>>()
-            .join(" ");
+        s = stripped;
     }
 
     // Alias map – apply longest-match-first by checking multi-word aliases before single-word.

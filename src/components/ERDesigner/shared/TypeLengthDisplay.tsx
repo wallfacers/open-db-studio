@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import type { ErColumn } from '@/types';
 import { DropdownSelect } from '@/components/common/DropdownSelect';
-import { getTypeOptions, findTypeDef, formatTypeDisplay, type DialectName } from './dataTypes';
+import { getTypeOptions, findTypeDef, formatTypeDisplay, stripUnsigned, type DialectName } from './dataTypes';
 
 interface TypeLengthDisplayProps {
   column: ErColumn;
@@ -42,7 +42,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange, onE
   return (
     <div className="flex items-center gap-1 min-w-0">
       <DropdownSelect
-        value={column.data_type.replace(/\s+UNSIGNED$/i, '').trim()}
+        value={stripUnsigned(column.data_type)}
         options={typeOptions}
         onChange={handleTypeChange}
         className="w-[78px]"

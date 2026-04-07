@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use rand::seq::SliceRandom;
 
 use serde::{Deserialize, Serialize};
 
@@ -430,13 +431,18 @@ pub async fn er_sync_from_database(
             }
         } else {
             // Table does not exist in ER -- create it
+            const TABLE_COLORS: &[&str] = &[
+                "var(--accent)", "var(--info)", "var(--warning)",
+                "var(--error)", "var(--node-alias)", "var(--success)",
+            ];
+            let color = TABLE_COLORS.choose(&mut rand::thread_rng()).copied();
             let table_req = CreateTableRequest {
                 project_id,
                 name: db_table.name.clone(),
                 comment: None,
                 position_x: None,
                 position_y: None,
-                color: None,
+                color: color.map(|s| s.to_string()),
             };
             let new_table = crate::er::repository::create_table(&table_req)?;
 

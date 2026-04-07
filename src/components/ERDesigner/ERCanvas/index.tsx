@@ -46,6 +46,23 @@ const buildEdgeData = (rel: ErRelation, highlightScopeId?: string) => ({
   highlightScopeId,
 })
 
+// 当同一列对既有真实 FK 关系又有注释关系时，过滤掉注释关系
+function deduplicateRelations(relations: ErRelation[]): ErRelation[] {
+  const fkPairs = new Set<string>()
+  for (const r of relations) {
+    if (r.source === 'schema') {
+      fkPairs.add(`${r.source_column_id}:${r.target_column_id}`)
+    }
+  }
+  if (fkPairs.size === 0) return relations
+  return relations.filter(r => {
+    if (r.source === 'comment') {
+      return !fkPairs.has(`${r.source_column_id}:${r.target_column_id}`)
+    }
+    return true
+  })
+}
+
 const nodeTypes = {
   erTable: ERTableNode,
 }
@@ -158,28 +175,37 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     storeSetViewport(projectId, viewport)
   }, [projectId, storeSetViewport])
 
-  const reloadCanvas = useCallback(() => {
+  const reloadCanvas = useCallback((applyAutoLayout = false) => {
     loadProject(projectId).then(() => {
       const state = useErDesignerStore.getState()
       const reloadTables = state.tables.filter(t => t.project_id === projectId)
       const tableIdSet = new Set(reloadTables.map(t => t.id))
-      const newNodes: Node<NodeData>[] = reloadTables.map((table) => ({
+      let newNodes: Node<NodeData>[] = reloadTables.map((table) => ({
         id: erTableNodeId(table.id),
         type: 'erTable',
         position: { x: table.position_x, y: table.position_y },
         data: buildNodeData(table, state.columns[table.id] || []),
       }))
-      const newEdges = state.relations
-        .filter(r => tableIdSet.has(r.source_table_id) && tableIdSet.has(r.target_table_id))
-        .map((rel) => ({
-          id: erEdgeNodeId(rel.id),
-          source: erTableNodeId(rel.source_table_id),
-          sourceHandle: `${rel.source_column_id}-source`,
-          target: erTableNodeId(rel.target_table_id),
-          targetHandle: `${rel.target_column_id}-target`,
-          type: 'erEdge',
-          data: buildEdgeData(rel, tabId),
-        }))
+      const newEdges = deduplicateRelations(
+        state.relations.filter(r => tableIdSet.has(r.source_table_id) && tableIdSet.has(r.target_table_id))
+      ).map((rel) => ({
+        id: erEdgeNodeId(rel.id),
+        source: erTableNodeId(rel.source_table_id),
+        sourceHandle: `${rel.source_column_id}-source`,
+        target: erTableNodeId(rel.target_table_id),
+        targetHandle: `${rel.target_column_id}-target`,
+        type: 'erEdge',
+        data: buildEdgeData(rel, tabId),
+      }))
+      if (applyAutoLayout && newNodes.length > 0) {
+        const layouted = layoutNodesWithDagre(newNodes, newEdges) as Node<NodeData>[]
+        const positions = layouted.map(node => {
+          const tableId = parseErTableNodeId(node.id)
+          return tableId ? { id: tableId, x: node.position.x, y: node.position.y } : null
+        }).filter((p): p is NonNullable<typeof p> => p !== null)
+        useErDesignerStore.getState().updateTablePositions(positions)
+        newNodes = layouted
+      }
       setNodes(newNodes)
       setEdges(newEdges)
     })
@@ -221,7 +247,8 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     })
 
     setEdges(eds => {
-      const currentRelIds = new Set(projectRelations.map(r => r.id))
+      const dedupedRelations = deduplicateRelations(projectRelations)
+      const currentRelIds = new Set(dedupedRelations.map(r => r.id))
       const filtered = eds.filter(e => {
         const relId = parseErEdgeNodeId(e.id)
         return relId != null &&
@@ -230,7 +257,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           tableIdSet.has(parseErTableNodeId(e.target)!)
       })
       const existingIds = new Set(filtered.map(e => e.id))
-      const newEdges = projectRelations
+      const newEdges = dedupedRelations
         .filter(r => !existingIds.has(erEdgeNodeId(r.id)))
         .map(rel => ({
           id: erEdgeNodeId(rel.id),
@@ -585,7 +612,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
         onSyncFromDb={(changes) => {
           // 只同步用户勾选的表，避免全量覆盖
           const tableNames = [...new Set(changes.map(c => c.table))]
-          syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined).then(reloadCanvas)
+          syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined).then(() => reloadCanvas(true))
         }}
       />
       <BindConnectionDialog

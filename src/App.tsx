@@ -7,6 +7,7 @@ import { MainContent } from './components/MainContent';
 import { Assistant } from './components/Assistant';
 import { AssistantToggleTab } from './components/Assistant/AssistantToggleTab';
 import { Toast, type ToastLevel } from './components/Toast';
+import { useToastStore } from './store/toastStore';
 import { SettingsPage } from './components/Settings/SettingsPage';
 import { TitleBar } from './components/TitleBar';
 import { useQueryStore } from './store/queryStore';
@@ -133,14 +134,14 @@ export default function App() {
     }
   }, [results, activeTabId, queryError, explanationContent, explanationStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [toast, setToast] = useState<{ message: string; level: ToastLevel; markdownContext?: string | null } | null>(null);
+  const { message: toastMsg, level: toastLevel, markdownContext: toastMarkdown, hide: hideToast } = useToastStore();
 
   const showToast = (msg: string, level: ToastLevel = 'default') => {
-    setToast({ message: msg, level });
+    useToastStore.getState().show(msg, level);
   };
 
   const showError = (userMessage: string, markdownContext?: string | null) => {
-    setToast({ message: userMessage, level: 'error', markdownContext });
+    useToastStore.getState().showError(userMessage, markdownContext);
   };
 
   const handleFormat = () => {
@@ -335,14 +336,14 @@ export default function App() {
       </div>
 
       <Toast
-        message={toast?.message ?? null}
-        level={toast?.level}
-        markdownContext={toast?.markdownContext}
-        onAskAi={toast?.markdownContext ? () => {
-          askAiWithContext(toast!.markdownContext!);
-          setToast(null);
+        message={toastMsg}
+        level={toastLevel}
+        markdownContext={toastMarkdown}
+        onAskAi={toastMarkdown ? () => {
+          askAiWithContext(toastMarkdown!);
+          hideToast();
         } : undefined}
-        onClose={() => setToast(null)}
+        onClose={hideToast}
       />
       <ConfirmDialog />
       </div>

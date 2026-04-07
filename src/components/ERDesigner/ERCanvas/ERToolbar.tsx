@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Tooltip } from '../../common/Tooltip';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
+import { useToastStore } from '../../../store/toastStore';
 import { useConfirmStore } from '../../../store/confirmStore';
 import ImportConflictDialog from '../ImportConflictDialog';
 import type { ErTable, ConflictResolution, ImportPreview } from '../../../types';
@@ -59,6 +60,7 @@ export default function ERToolbar({
   onSync,
 }: ERToolbarProps) {
   const { t } = useTranslation();
+  const { show: showToast, showError } = useToastStore();
   const {
     addTable,
     exportJson,
@@ -92,6 +94,7 @@ export default function ERToolbar({
       onTableAdded?.(table);
     } catch (e) {
       console.error('Failed to add table:', e);
+      showError(`创建表失败: ${e}`);
     }
   };
 
@@ -138,9 +141,10 @@ export default function ERToolbar({
     setIsSyncing(true);
     try {
       await onSync();
+      showToast('同步成功', 'success');
     } catch (e) {
       console.error('Sync failed:', e);
-      alert(`同步失败: ${e}`);
+      showError(`同步失败: ${e}`);
     } finally {
       setIsSyncing(false);
     }
@@ -157,8 +161,10 @@ export default function ERToolbar({
       });
       if (!path) return;
       await invoke('write_text_file', { path, content: json });
+      showToast('导出成功', 'success');
     } catch (e) {
       console.error('Export JSON failed:', e);
+      showError(`导出失败: ${e}`);
     }
   };
 
@@ -179,9 +185,11 @@ export default function ERToolbar({
         setImportState({ json, preview, targetProjectId: projectId });
       } else {
         await executeImport(json, projectId, []);
+        showToast('导入成功', 'success');
       }
     } catch (e) {
       console.error('Import JSON failed:', e);
+      showError(`导入失败: ${e}`);
     }
   };
 
@@ -189,8 +197,10 @@ export default function ERToolbar({
     if (!importState) return;
     try {
       await executeImport(importState.json, importState.targetProjectId, resolutions);
+      showToast('导入成功', 'success');
     } catch (e) {
       console.error('Import execute failed:', e);
+      showError(`导入失败: ${e}`);
     } finally {
       setImportState(null);
     }

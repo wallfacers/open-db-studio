@@ -4,6 +4,7 @@ import { Edit3, Trash2, Plus, Copy, type LucideIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useErDesignerStore } from '../../../store/erDesignerStore';
 import { useConfirmStore } from '../../../store/confirmStore';
+import { useToastStore } from '../../../store/toastStore';
 import { duplicateTable } from '../shared/duplicateTable';
 
 interface ERTableContextMenuProps {
@@ -25,6 +26,7 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const { tables, columns, deleteTable, addColumn, addTable, openDrawer } = useErDesignerStore();
+  const { show: showToast, showError } = useToastStore();
 
   const table = tables.find(t => t.id === tableId);
 
@@ -45,30 +47,41 @@ export default function ERTableContextMenu({ x, y, tableId, onClose }: ERTableCo
 
   const handleAddColumn = async () => {
     const cols = columns[tableId] || [];
-    await addColumn(tableId, {
-      name: `column_${cols.length + 1}`,
-      data_type: 'VARCHAR',
-      nullable: true,
-      default_value: null,
-      is_primary_key: false,
-      is_auto_increment: false,
-      comment: null,
-      length: null,
-      scale: null,
-      is_unique: false,
-      unsigned: false,
-      charset: null,
-      collation: null,
-      on_update: null,
-      enum_values: null,
-      sort_order: cols.length,
-    });
+    try {
+      await addColumn(tableId, {
+        name: `column_${cols.length + 1}`,
+        data_type: 'VARCHAR',
+        nullable: true,
+        default_value: null,
+        is_primary_key: false,
+        is_auto_increment: false,
+        comment: null,
+        length: null,
+        scale: null,
+        is_unique: false,
+        unsigned: false,
+        charset: null,
+        collation: null,
+        on_update: null,
+        enum_values: null,
+        sort_order: cols.length,
+      });
+    } catch (e) {
+      console.error('Failed to add column:', e);
+      showError(`添加列失败: ${e}`);
+    }
     onClose();
   };
 
   const handleDuplicate = async () => {
     if (!table) return;
-    await duplicateTable(table, columns[tableId] || [], addTable, addColumn);
+    try {
+      await duplicateTable(table, columns[tableId] || [], addTable, addColumn);
+      showToast('表已复制', 'success');
+    } catch (e) {
+      console.error('Failed to duplicate table:', e);
+      showError(`复制表失败: ${e}`);
+    }
     onClose();
   };
 

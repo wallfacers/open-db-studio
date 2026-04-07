@@ -20,6 +20,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useErDesignerStore } from '../../../store/erDesignerStore'
+import { useToastStore } from '../../../store/toastStore'
 import ERTableNode from './ERTableNode'
 import ERTableContextMenu from './ERTableContextMenu'
 import EREdge from './EREdge'
@@ -112,6 +113,8 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
     return new ERCanvasAdapter(tabId, projectName ?? `ER Project #${projectId}`, projectId)
   }, [tabId, projectId, projectName])
   useUIObjectRegistry(erUIObject)
+
+  const { show: showToast, showError } = useToastStore()
 
   // Select only the actions and state values needed (stable references for actions)
   const loadProject = useErDesignerStore(s => s.loadProject)
@@ -573,11 +576,13 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
               if (failed.length > 0) {
                 const errors = failed.map(r => `• ${r.statement}\n  ${r.error ?? 'Unknown error'}`).join('\n')
                 console.error('Sync DDL partial failure:', errors)
-                alert(`${failed.length} statement(s) failed:\n\n${errors}`)
+                showError(`${failed.length} 条语句执行失败，请查看控制台详情`)
+              } else {
+                showToast('执行成功', 'success')
               }
             } catch (e) {
               console.error('Failed to execute sync DDL:', e)
-              alert(`Failed to execute sync DDL: ${e}`)
+              showError(`DDL 执行失败: ${e}`)
             } finally {
               setSyncStatements(null)
             }
@@ -591,8 +596,10 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
                 database: activeProject.database_name ?? null,
                 schema: activeProject.schema_name ?? null,
               })
+              showToast('执行成功', 'success')
             } catch (e) {
               console.error('Failed to execute DDL:', e)
+              showError(`DDL 执行失败: ${e}`)
             }
           }
         }}
@@ -610,7 +617,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
             setShowDDL(true)
           } catch (e) {
             console.error('Failed to generate sync DDL:', e)
-            alert(`Failed to generate sync DDL: ${e}`)
+            showError(`生成同步 DDL 失败: ${e}`)
           }
         }}
         onSyncFromDb={async (changes) => {
@@ -619,9 +626,10 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           try {
             await syncFromDatabase(projectId, tableNames.length > 0 ? tableNames : undefined);
             reloadCanvas(true);
+            showToast('从数据库同步成功', 'success');
           } catch (e) {
             console.error('Sync from database failed:', e);
-            alert(`同步失败: ${e}`);
+            showError(`同步失败: ${e}`);
           }
         }}
       />

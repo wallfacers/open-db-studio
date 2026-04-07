@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, ChevronRight, ChevronDown } from 'lucide-react';
 import { useErDesignerStore } from '@/store/erDesignerStore';
+import { useToastStore } from '@/store/toastStore';
 import ColumnPropertyEditor from '../shared/ColumnPropertyEditor';
 import type { DialectName } from '../shared/dataTypes';
 
@@ -10,6 +11,7 @@ interface ColumnsTabProps {
 
 export default function ColumnsTab({ tableId }: ColumnsTabProps) {
   const { columns, addColumn, updateColumn, deleteColumn, drawerFocusColumnId, boundDialect } = useErDesignerStore();
+  const { showError } = useToastStore();
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -69,24 +71,31 @@ export default function ColumnsTab({ tableId }: ColumnsTabProps) {
         </div>
       ))}
       <button
-        onClick={() => addColumn(tableId, {
-          name: `column_${cols.length + 1}`,
-          data_type: 'VARCHAR',
-          nullable: true,
-          default_value: null,
-          is_primary_key: false,
-          is_auto_increment: false,
-          comment: null,
-          length: null,
-          scale: null,
-          is_unique: false,
-          unsigned: false,
-          charset: null,
-          collation: null,
-          on_update: null,
-          enum_values: null,
-          sort_order: cols.length,
-        })}
+        onClick={async () => {
+          try {
+            await addColumn(tableId, {
+              name: `column_${cols.length + 1}`,
+              data_type: 'VARCHAR',
+              nullable: true,
+              default_value: null,
+              is_primary_key: false,
+              is_auto_increment: false,
+              comment: null,
+              length: null,
+              scale: null,
+              is_unique: false,
+              unsigned: false,
+              charset: null,
+              collation: null,
+              on_update: null,
+              enum_values: null,
+              sort_order: cols.length,
+            });
+          } catch (e) {
+            console.error('Failed to add column:', e);
+            showError(`添加列失败: ${e}`);
+          }
+        }}
         className="mt-2 w-full py-1 text-[12px] text-foreground-subtle hover:text-accent hover:bg-background-hover rounded transition-colors flex items-center justify-center gap-1"
       >
         <Plus size={12} /> 添加列

@@ -10,6 +10,7 @@ import { TableContextMenu } from './TableContextMenu';
 import { formatTypeDisplay } from '../shared/dataTypes';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { useToastStore } from '../../../store/toastStore';
 
 interface ERSidebarProps {
   width: number;
@@ -53,6 +54,7 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
   } = useErDesignerStore();
 
   const { openERDesignTab } = useQueryStore();
+  const { show: showToast, showError } = useToastStore();
 
   useEffect(() => {
     loadProjects();
@@ -102,9 +104,11 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
     } catch (e: any) {
       const msg = typeof e === 'string' ? e : e?.message || '';
       if (msg.includes('已存在') || msg.includes('already exists')) {
-        alert(t('erDesigner.projectNameExists') || '项目名称已存在');
+        showError(t('erDesigner.projectNameExists') || '项目名称已存在');
         return;
       }
+      showError(`重命名失败: ${msg || e}`);
+      return;
     }
     setRenameDialog(null);
   };
@@ -118,8 +122,10 @@ export const ERSidebar: React.FC<ERSidebarProps> = ({ width, hidden }: ERSidebar
       if (!openPath || typeof openPath !== 'string') return;
       const json = await invoke<string>('read_text_file', { path: openPath });
       await importJson(json);
+      showToast('项目导入成功', 'success');
     } catch (e) {
       console.error('Import project failed:', e);
+      showError(`项目导入失败: ${e}`);
     }
   };
 

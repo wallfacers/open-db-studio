@@ -18,6 +18,29 @@ pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+/// 去掉 SQL 开头的行注释（--）和块注释（/* */），
+/// 返回第一个实际 SQL 关键字开始的内容（用于判断语句类型）。
+pub fn strip_leading_comments(sql: &str) -> &str {
+    let mut s = sql.trim_start();
+    loop {
+        if s.starts_with("--") {
+            // 跳过到行尾
+            match s.find('\n') {
+                Some(pos) => s = s[pos + 1..].trim_start(),
+                None => return "", // 整条都是注释
+            }
+        } else if s.starts_with("/*") {
+            // 跳过到 */
+            match s.find("*/") {
+                Some(pos) => s = s[pos + 2..].trim_start(),
+                None => return "", // 未闭合的块注释
+            }
+        } else {
+            return s;
+        }
+    }
+}
+
 /// 将可能包含多条语句的 SQL 字符串按分号拆分，正确跳过单引号字符串内的分号。
 /// 返回的每个元素均已 trim，空语句被过滤。
 pub fn split_sql_statements(sql: &str) -> Vec<String> {

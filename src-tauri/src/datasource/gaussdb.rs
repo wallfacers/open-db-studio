@@ -220,7 +220,7 @@ impl DataSource for GaussDbDataSource {
         let start = Instant::now();
 
         // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
             let stmts = crate::datasource::utils::split_sql_statements(sql);
             let mut total_affected = 0usize;

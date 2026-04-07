@@ -182,7 +182,7 @@ fn pg_array_value(row: &PgRow, i: usize, elem: &str) -> serde_json::Value {
         "int8" | "bigint" => {
             row.try_get::<Option<Vec<i64>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| serde_json::json!(v.iter().map(|n| n.to_string()).collect::<Vec<_>>()))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int4" | "integer" | "int" => {
@@ -351,7 +351,7 @@ impl DataSource for PostgresDataSource {
         let start = Instant::now();
 
         // Non-SELECT statements: execute each statement individually to support multi-statement SQL.
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("SHOW") && !trimmed.starts_with("EXPLAIN") && !trimmed.starts_with("WITH") {
             let stmts = crate::datasource::utils::split_sql_statements(sql);
             let mut total_affected = 0usize;

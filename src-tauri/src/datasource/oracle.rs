@@ -83,7 +83,7 @@ impl DataSource for OracleDataSource {
 
                 // Non-SELECT statements: split into individual statements and execute each,
                 // then commit once. oracle-crate does not support multi-statement strings.
-                let trimmed = sql.trim_start().to_uppercase();
+                let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
                 if !trimmed.starts_with("SELECT") && !trimmed.starts_with("WITH") {
                     let stmts = crate::datasource::utils::split_sql_statements(&sql);
                     let mut total_affected = 0usize;

@@ -66,7 +66,7 @@ impl DataSource for SqliteDataSource {
 
             // Non-SELECT statements: use execute_batch() which supports multiple
             // semicolon-separated statements in a single call.
-            let trimmed = sql.trim_start().to_uppercase();
+            let trimmed = crate::datasource::utils::strip_leading_comments(&sql).to_uppercase();
             if !trimmed.starts_with("SELECT") && !trimmed.starts_with("PRAGMA") && !trimmed.starts_with("EXPLAIN") {
                 guard
                     .execute_batch(&sql)

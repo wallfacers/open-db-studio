@@ -137,7 +137,7 @@ impl DataSource for SqlServerDataSource {
         let start = std::time::Instant::now();
 
         // Non-SELECT statements: use execute() to get affected row count
-        let trimmed = sql.trim_start().to_uppercase();
+        let trimmed = crate::datasource::utils::strip_leading_comments(sql).to_uppercase();
         if !trimmed.starts_with("SELECT") && !trimmed.starts_with("EXEC") && !trimmed.starts_with("WITH") {
             let result = client.execute(sql, &[])
                 .await

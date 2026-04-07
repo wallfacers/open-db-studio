@@ -8,7 +8,6 @@ import {
   Upload,
   FileCode,
   GitCompare,
-  RefreshCw,
   Link2,
   Unlink,
   Settings,
@@ -39,7 +38,6 @@ export interface ERToolbarProps {
   hasConnection?: boolean;
   databaseName?: string | null;
   onOpenSettings?: () => void;
-  onSync?: () => Promise<void>;
 }
 
 export default function ERToolbar({
@@ -57,7 +55,6 @@ export default function ERToolbar({
   hasConnection = false,
   databaseName,
   onOpenSettings,
-  onSync,
 }: ERToolbarProps) {
   const { t } = useTranslation();
   const { show: showToast, showError } = useToastStore();
@@ -73,7 +70,6 @@ export default function ERToolbar({
   const projectName = projects.find(p => p.id === projectId)?.name;
 
   const [isAutoLayouting, setIsAutoLayouting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [importState, setImportState] = useState<{
     json: string;
     preview: ImportPreview;
@@ -133,21 +129,6 @@ export default function ERToolbar({
   // Diff
   const handleDiff = () => {
     onOpenDiff();
-  };
-
-  // 同步数据库
-  const handleSync = async () => {
-    if (!onSync) return;
-    setIsSyncing(true);
-    try {
-      await onSync();
-      showToast('同步成功', 'success');
-    } catch (e) {
-      console.error('Sync failed:', e);
-      showError(`同步失败: ${e}`);
-    } finally {
-      setIsSyncing(false);
-    }
   };
 
   // 导出 JSON
@@ -280,7 +261,7 @@ export default function ERToolbar({
       {/* 分隔符 */}
       <div className="w-px h-4 bg-border-strong mx-2" />
 
-      {/* DDL/Diff/Sync 组 */}
+      {/* DDL/Diff 组 */}
       <Tooltip content={t('erDesigner.ddlPreview')} className="flex items-center">
         <button
           onClick={handleDDL}
@@ -299,17 +280,6 @@ export default function ERToolbar({
         >
           <GitCompare size={14} />
           <span>Diff</span>
-        </button>
-      </Tooltip>
-
-      <Tooltip content={hasConnection ? t('erDesigner.syncDB') : t('erDesigner.noConnectionTip')} className="flex items-center">
-        <button
-          onClick={handleSync}
-          disabled={!hasConnection || isSyncing}
-          className="px-2.5 py-1.5 text-xs text-foreground-default hover:bg-background-hover rounded flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-        >
-          <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-          <span>{isSyncing ? t('erDesigner.syncing') : t('erDesigner.sync')}</span>
         </button>
       </Tooltip>
 

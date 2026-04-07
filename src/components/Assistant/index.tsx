@@ -803,7 +803,24 @@ export const Assistant: React.FC<AssistantProps> = ({
       />
       {/* Header */}
       <div className="h-10 flex items-center justify-between px-3 border-b border-border-default bg-background-base flex-shrink-0">
-        <div className="text-[13px] font-medium truncate flex-1 text-foreground-default">{t('assistant.title')}</div>
+        <div className="text-[13px] font-medium truncate flex-1 flex items-center gap-1.5">
+          {isChatting ? (
+            <>
+              <span className="flex items-center gap-[3px]">
+                {[0, 0.2, 0.4].map((delay) => (
+                  <span
+                    key={delay}
+                    className="ai-dot w-1 h-1 rounded-full bg-accent flex-shrink-0"
+                    style={{ animationDelay: `${delay}s` }}
+                  />
+                ))}
+              </span>
+              <span className="text-accent">{t('assistant.title')}</span>
+            </>
+          ) : (
+            <span className="text-foreground-default">{t('assistant.title')}</span>
+          )}
+        </div>
         <div className="flex items-center space-x-4 text-foreground-muted">
           {!showHistory && chatHistory.length > 0 && (
             <Tooltip content={t('assistant.clearHistory')} className="contents">

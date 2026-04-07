@@ -177,6 +177,20 @@ pub async fn get_migration_dirty_records(
 }
 
 #[tauri::command]
+pub async fn run_migration_job(
+    job_id: i64,
+    app: tauri::AppHandle,
+) -> crate::error::AppResult<String> {
+    super::pipeline::run_pipeline(job_id, app).await
+}
+
+#[tauri::command]
+pub async fn stop_migration_job(job_id: i64) -> crate::error::AppResult<()> {
+    super::pipeline::cancel_run(job_id);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_migration_run_history(job_id: i64) -> AppResult<Vec<MigrationRunHistory>> {
     let db = crate::db::get().lock().unwrap();
     let mut stmt = db.prepare(

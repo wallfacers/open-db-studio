@@ -403,6 +403,8 @@ pub fn run() {
             migration::mig_commands::move_migration_job,
             migration::mig_commands::get_migration_dirty_records,
             migration::mig_commands::get_migration_run_history,
+            migration::mig_commands::run_migration_job,
+            migration::mig_commands::stop_migration_job,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

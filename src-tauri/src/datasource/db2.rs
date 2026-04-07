@@ -750,4 +750,8 @@ impl DataSource for Db2DataSource {
             }).await
         }
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::TSql
+    }
 }

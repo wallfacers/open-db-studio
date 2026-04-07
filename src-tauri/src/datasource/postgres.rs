@@ -741,6 +741,10 @@ impl DataSource for PostgresDataSource {
             TableStatInfo { name, row_count: Some(row_count), size }
         }).collect())
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::PostgresLiteral
+    }
 }
 
 // ============================================================

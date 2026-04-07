@@ -455,6 +455,10 @@ impl DataSource for SqliteDataSource {
         .await
         .map_err(|e| AppError::Datasource(e.to_string()))?
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::SQLiteLiteral
+    }
 }
 
 /// 对单张表执行 SELECT COUNT(*)，失败时返回 None

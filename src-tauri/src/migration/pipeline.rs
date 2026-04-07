@@ -124,15 +124,17 @@ struct Batch {
 /// Launch the ETL pipeline for `job_id`.
 /// Returns the `run_id` immediately — the pipeline runs in a background task.
 pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
-    // Load job config from SQLite
-    let config_json: String = {
+    // Load job config from SQLite（spawn_blocking 避免在 async 上下文中同步阻塞 tokio 线程）
+    let config_json: String = tokio::task::spawn_blocking(move || -> AppResult<String> {
         let db = crate::db::get().lock().unwrap();
         db.query_row(
             "SELECT config_json FROM migration_jobs WHERE id=?1",
             params![job_id],
             |r| r.get(0),
-        )?
-    };
+        ).map_err(Into::into)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("spawn_blocking failed: {}", e)))??;
     let config: MigrationJobConfig = serde_json::from_str(&config_json)
         .map_err(|e| AppError::Other(e.to_string()))?;
 
@@ -327,6 +329,7 @@ async fn execute_pipeline(
 
     let read_batch_size = config.pipeline.read_batch_size.max(1);
     let write_batch_size = config.pipeline.write_batch_size.max(1);
+    let dst_driver = dst_cfg.driver.clone();
 
     // ── Stats broadcaster ──────────────────────────────────────────────────
     let stats_clone = stats.clone();
@@ -365,59 +368,68 @@ async fn execute_pipeline(
     let query = source_query.clone();
 
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
-        emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader started");
+        emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader started (paginated)");
 
-        // Execute source query
-        let result = src_ds.execute(&query).await?;
-        let columns = result.columns.clone();
-        let all_rows = result.rows;
+        let mut offset = 0usize;
+        let mut columns_opt: Option<Vec<String>> = None;
+        let mut page_num = 0usize;
 
-        let total = all_rows.len();
-        emit_log(
-            &app_reader,
-            job_id,
-            &run_id_reader,
-            "SYSTEM",
-            &format!("Reader fetched {} rows", total),
-        );
-
-        // Send rows in batches
-        let mut batch_buf: Vec<Row> = Vec::with_capacity(read_batch_size);
-        for row in all_rows {
+        loop {
             if cancel_reader.load(Ordering::Relaxed) {
                 emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader cancelled");
                 break;
             }
-            // Estimate bytes
-            let row_bytes: u64 = row
-                .iter()
-                .map(|v| v.to_string().len() as u64)
-                .sum();
-            stats_reader
-                .bytes_transferred
-                .fetch_add(row_bytes, Ordering::Relaxed);
-            stats_reader.rows_read.fetch_add(1, Ordering::Relaxed);
-            batch_buf.push(row);
 
-            if batch_buf.len() >= read_batch_size {
-                let batch = Batch {
-                    rows: std::mem::replace(&mut batch_buf, Vec::with_capacity(read_batch_size)),
-                    column_names: columns.clone(),
-                };
-                if tx.send(batch).await.is_err() {
-                    // Writer closed — cancelled or error
-                    break;
-                }
+            // 分页查询：每次只取 read_batch_size 行，不再全量加载到内存
+            let page = src_ds.execute_paginated(&query, read_batch_size, offset).await?;
+
+            if page.rows.is_empty() {
+                break; // 数据读取完毕
             }
+
+            let fetched = page.rows.len();
+            page_num += 1;
+
+            // 首页确定列名
+            if columns_opt.is_none() {
+                columns_opt = Some(page.columns.clone());
+                emit_log(
+                    &app_reader,
+                    job_id,
+                    &run_id_reader,
+                    "SYSTEM",
+                    &format!("Reader: columns={}", page.columns.join(", ")),
+                );
+            }
+            let columns = columns_opt.clone().unwrap();
+
+            emit_log(
+                &app_reader,
+                job_id,
+                &run_id_reader,
+                "SYSTEM",
+                &format!("Reader page {}: {} rows (offset={})", page_num, fetched, offset),
+            );
+
+            // 统计字节与行数
+            for row in &page.rows {
+                let row_bytes: u64 = row.iter().map(|v| v.to_string().len() as u64).sum();
+                stats_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+            }
+            stats_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+
+            // 整页作为一个 Batch 发送，无需在 reader 侧二次分批
+            let batch = Batch { rows: page.rows, column_names: columns };
+            if tx.send(batch).await.is_err() {
+                break; // Writer 已关闭（取消或错误）
+            }
+
+            if fetched < read_batch_size {
+                break; // 末页（不足 read_batch_size 行）
+            }
+            offset += fetched;
         }
-        // Flush remainder
-        if !batch_buf.is_empty() {
-            let batch = Batch {
-                rows: batch_buf,
-                column_names: columns,
-            };
-            let _ = tx.send(batch).await;
-        }
+
         emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader finished");
         Ok(())
     });
@@ -430,6 +442,7 @@ async fn execute_pipeline(
     let column_mapping = config.column_mapping.clone();
     let conflict_strategy = config.target.conflict_strategy.clone();
     let error_limit = config.pipeline.error_limit;
+    let dst_driver_writer = dst_driver.clone();
 
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         emit_log(&app_writer, job_id, &run_id_writer, "SYSTEM", "Writer started");
@@ -475,6 +488,7 @@ async fn execute_pipeline(
                         &buf_columns,
                         &rows_to_write,
                         &conflict_strategy,
+                        &dst_driver_writer,
                     )
                     .await
                     {
@@ -520,6 +534,7 @@ async fn execute_pipeline(
                 &buf_columns,
                 &write_buf,
                 &conflict_strategy,
+                &dst_driver_writer,
             )
             .await
             {
@@ -581,6 +596,7 @@ async fn execute_pipeline(
 // ── Batch write helper ────────────────────────────────────────────────────────
 
 /// Build and execute a multi-row INSERT for `table` using the active datasource.
+/// Uses driver-aware escaping and conflict strategy to avoid SQL injection and data corruption.
 /// Returns the number of rows that were inserted.
 async fn write_batch(
     ds: &dyn crate::datasource::DataSource,
@@ -588,41 +604,49 @@ async fn write_batch(
     columns: &[String],
     rows: &[Row],
     conflict_strategy: &ConflictStrategy,
+    driver: &str,
 ) -> AppResult<usize> {
     if rows.is_empty() || columns.is_empty() {
         return Ok(0);
     }
 
-    // Build: INSERT [OR IGNORE|OR REPLACE] INTO table (cols) VALUES (…),(…)
-    let keyword = match conflict_strategy {
-        ConflictStrategy::Skip => "INSERT OR IGNORE INTO",
-        ConflictStrategy::Replace => "INSERT OR REPLACE INTO",
-        _ => "INSERT INTO",
+    // 驱动感知冲突策略：不同驱动语法不同
+    let (keyword, suffix) = match (conflict_strategy, driver) {
+        (ConflictStrategy::Skip, "sqlite") => ("INSERT OR IGNORE INTO", ""),
+        (ConflictStrategy::Replace, "sqlite") => ("INSERT OR REPLACE INTO", ""),
+        (ConflictStrategy::Skip, "mysql" | "doris" | "tidb") => ("INSERT IGNORE INTO", ""),
+        (ConflictStrategy::Replace, "mysql" | "doris" | "tidb") => ("REPLACE INTO", ""),
+        (ConflictStrategy::Skip, "postgres" | "gaussdb") => ("INSERT INTO", " ON CONFLICT DO NOTHING"),
+        _ => ("INSERT INTO", ""),
     };
 
-    let col_list = columns
-        .iter()
-        .map(|c| format!("`{}`", c))
-        .collect::<Vec<_>>()
-        .join(", ");
+    // 列名引号：MySQL 用反引号，其他用双引号
+    let quote_col: fn(&str) -> String = match driver {
+        "mysql" | "doris" | "tidb" | "clickhouse" => |c| format!("`{}`", c.replace('`', "``")),
+        _ => |c| format!("\"{}\"", c.replace('"', "\"\"")),
+    };
+    let col_list = columns.iter().map(|c| quote_col(c)).collect::<Vec<_>>().join(", ");
 
+    // 值转义：使用驱动对应的 StringEscapeStyle
+    let escape_style = ds.string_escape_style();
     let row_placeholders: Vec<String> = rows
         .iter()
         .map(|row| {
             let vals: Vec<String> = row
                 .iter()
-                .map(|v| super::data_pump::value_to_sql(v))
+                .map(|v| crate::datasource::utils::value_to_sql_safe(v, &escape_style))
                 .collect();
             format!("({})", vals.join(", "))
         })
         .collect();
 
     let sql = format!(
-        "{} {} ({}) VALUES {}",
+        "{} {} ({}) VALUES {}{}",
         keyword,
         table,
         col_list,
-        row_placeholders.join(", ")
+        row_placeholders.join(", "),
+        suffix,
     );
 
     ds.execute(&sql).await?;

@@ -462,4 +462,23 @@ impl DataSource for SqlServerDataSource {
             tables,
         })
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::TSql
+    }
+
+    async fn execute_paginated(
+        &self,
+        sql: &str,
+        limit: usize,
+        offset: usize,
+    ) -> crate::error::AppResult<crate::datasource::QueryResult> {
+        // T-SQL 要求 ORDER BY，使用 (SELECT NULL) 避免真正排序
+        let paged = format!(
+            "SELECT * FROM ({}) AS _mig_page_ \
+             ORDER BY (SELECT NULL) OFFSET {} ROWS FETCH NEXT {} ROWS ONLY",
+            sql, offset, limit
+        );
+        self.execute(&paged).await
+    }
 }

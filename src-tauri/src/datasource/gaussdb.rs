@@ -685,6 +685,10 @@ impl DataSource for GaussDbDataSource {
             tables,
         })
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::PostgresLiteral
+    }
 }
 
 use super::utils::format_size;

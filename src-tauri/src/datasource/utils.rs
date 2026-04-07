@@ -1,3 +1,42 @@
+use crate::datasource::StringEscapeStyle;
+
+/// 将 serde_json::Value 安全转换为 SQL 字面量字符串。
+/// 根据目标驱动的 StringEscapeStyle 选择正确的转义规则，避免 SQL 注入和数据损坏。
+pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> String {
+    match v {
+        serde_json::Value::Null => "NULL".to_string(),
+        serde_json::Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => escape_string_literal(s, style),
+        _ => escape_string_literal(&v.to_string(), style),
+    }
+}
+
+fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
+    match style {
+        StringEscapeStyle::Standard => {
+            // MySQL / MariaDB / TiDB / Doris / ClickHouse：\ 是转义字符，需转义
+            let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
+            format!("'{}'", escaped)
+        }
+        StringEscapeStyle::PostgresLiteral => {
+            // PostgreSQL / GaussDB：通常只转义 '，但含 \ 时需 E'' 前缀
+            if s.contains('\\') {
+                let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
+                format!("E'{}'", escaped)
+            } else {
+                let escaped = s.replace('\'', "''");
+                format!("'{}'", escaped)
+            }
+        }
+        StringEscapeStyle::TSql | StringEscapeStyle::SQLiteLiteral => {
+            // SQL Server / Oracle / DB2 / SQLite：\ 无特殊含义，仅转义 '
+            let escaped = s.replace('\'', "''");
+            format!("'{}'", escaped)
+        }
+    }
+}
+
 /// 将字节数格式化为人类可读的文件大小字符串。
 /// 各数据源驱动共享此函数，避免重复实现。
 pub fn format_size(bytes: i64) -> String {
@@ -81,4 +120,72 @@ pub fn split_sql_statements(sql: &str) -> Vec<String> {
     }
 
     statements
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mysql_backslash_escape() {
+        let v = serde_json::Value::String(r"path\to\file".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, r"'path\\to\\file'");
+    }
+
+    #[test]
+    fn test_mysql_quote_and_backslash() {
+        let v = serde_json::Value::String(r"it\'s".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        // \ → \\, ' → \'
+        assert_eq!(result, r"'it\\\'s'");
+    }
+
+    #[test]
+    fn test_pg_no_backslash_uses_standard_quote() {
+        let v = serde_json::Value::String("it's a test".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::PostgresLiteral);
+        assert_eq!(result, "'it''s a test'");
+    }
+
+    #[test]
+    fn test_pg_backslash_uses_e_prefix() {
+        let v = serde_json::Value::String(r"C:\data".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::PostgresLiteral);
+        assert!(result.starts_with("E'"), "Expected E' prefix, got: {}", result);
+        assert!(result.contains("\\\\"), "Expected escaped backslash");
+    }
+
+    #[test]
+    fn test_sqlserver_backslash_not_escaped() {
+        let v = serde_json::Value::String(r"it's a \backslash".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::TSql);
+        // \ 不转义，' 转义为 ''
+        assert_eq!(result, r"'it''s a \backslash'");
+    }
+
+    #[test]
+    fn test_sqlite_single_quote_escape() {
+        let v = serde_json::Value::String("O'Brien".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::SQLiteLiteral);
+        assert_eq!(result, "'O''Brien'");
+    }
+
+    #[test]
+    fn test_null_value() {
+        let result = value_to_sql_safe(&serde_json::Value::Null, &StringEscapeStyle::Standard);
+        assert_eq!(result, "NULL");
+    }
+
+    #[test]
+    fn test_bool_values() {
+        assert_eq!(value_to_sql_safe(&serde_json::Value::Bool(true), &StringEscapeStyle::Standard), "1");
+        assert_eq!(value_to_sql_safe(&serde_json::Value::Bool(false), &StringEscapeStyle::Standard), "0");
+    }
+
+    #[test]
+    fn test_number_value() {
+        let v = serde_json::json!(42);
+        assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::Standard), "42");
+    }
 }

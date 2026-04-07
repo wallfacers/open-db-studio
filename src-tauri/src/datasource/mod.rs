@@ -368,6 +368,21 @@ pub struct DbStats {
     pub db_summary: DbSummary,
 }
 
+// ─── StringEscapeStyle ───────────────────────────────────────────────────────
+
+/// 各驱动的 SQL 字符串字面量转义风格，用于 Migration 模块安全构造 INSERT 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringEscapeStyle {
+    /// MySQL / MariaDB / TiDB / Doris / ClickHouse：转义 `\` 为 `\\`，转义 `'` 为 `\'`
+    Standard,
+    /// PostgreSQL / GaussDB：仅转义 `'` 为 `''`；若含 `\` 则整体使用 `E'...'` 语法
+    PostgresLiteral,
+    /// SQL Server / Oracle / DB2：`\` 无特殊含义，仅转义 `'` 为 `''`
+    TSql,
+    /// SQLite：同 TSql，仅转义 `'` 为 `''`
+    SQLiteLiteral,
+}
+
 // ─── DataSource Trait ────────────────────────────────────────────────────────
 
 /// 数据源统一抽象 trait
@@ -459,6 +474,28 @@ pub trait DataSource: Send + Sync {
         let views = self.get_views().await.unwrap_or_default();
         let procedures = self.get_procedures().await.unwrap_or_default();
         Ok(FullSchemaInfo { tables, views, procedures })
+    }
+
+    /// 返回该驱动的字符串字面量转义风格（用于 Migration 模块安全构造 INSERT 值）。
+    /// 各驱动按需覆盖，默认返回 Standard（MySQL 兼容）。
+    fn string_escape_style(&self) -> StringEscapeStyle {
+        StringEscapeStyle::Standard
+    }
+
+    /// 分页执行查询，返回第 `offset` 行起的 `limit` 行数据。
+    /// 默认实现通过子查询包裹原始 SQL，适用于 MySQL / PostgreSQL / SQLite / ClickHouse。
+    /// SQL Server 需覆盖此方法以使用 OFFSET/FETCH NEXT 语法。
+    async fn execute_paginated(
+        &self,
+        sql: &str,
+        limit: usize,
+        offset: usize,
+    ) -> AppResult<QueryResult> {
+        let paged = format!(
+            "SELECT * FROM ({}) AS _mig_page_ LIMIT {} OFFSET {}",
+            sql, limit, offset
+        );
+        self.execute(&paged).await
     }
 }
 

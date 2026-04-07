@@ -499,5 +499,9 @@ impl DataSource for ClickHouseDataSource {
             tables,
         })
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::Standard
+    }
 }
 

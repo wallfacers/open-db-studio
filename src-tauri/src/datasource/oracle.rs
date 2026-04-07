@@ -178,4 +178,8 @@ impl DataSource for OracleDataSource {
             has_ssl_config: false,
         }
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::TSql
+    }
 }

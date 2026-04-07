@@ -7,7 +7,7 @@ use super::constraint::{
     append_marker_to_comment, build_comment_marker,
     resolve_comment_format, resolve_constraint_method,
 };
-use super::table_sorter::{sort_tables_by_dependency, get_delayed_fk_relations};
+use super::table_sorter::sort_tables_by_dependency;
 
 // ---------------------------------------------------------------------------
 // GenerateOptions
@@ -854,13 +854,8 @@ pub fn generate_ddl(
     // Tables referenced by foreign keys must be created first.
     let sort_result = sort_tables_by_dependency(tables, relations, None);
 
-    // Get delayed FK relation IDs (self-referencing and circular dependencies)
     let delayed_fk_ids: HashSet<i64> = if options.include_foreign_keys {
-        get_delayed_fk_relations(
-            relations,
-            &sort_result.cycle_tables,
-            &sort_result.self_referencing_tables,
-        )
+        sort_result.delayed_relation_ids(relations)
     } else {
         HashSet::new()
     };

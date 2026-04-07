@@ -195,7 +195,7 @@ export default function ERTableNode({ id, data }: { id: string; data: ERTableNod
           {/* Type Dropdown */}
           <div className="z-0 w-[95px] flex justify-end">
             <DropdownSelect
-              value={col.data_type}
+              value={col.data_type.replace(/\s+UNSIGNED$/i, '').trim()}
               options={typeOptions}
               displayValue={formatTypeDisplay(col)}
               onChange={(value) => {

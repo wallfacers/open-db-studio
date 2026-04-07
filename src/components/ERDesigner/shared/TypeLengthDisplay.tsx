@@ -42,7 +42,7 @@ export default function TypeLengthDisplay({ column, dialect, mode, onChange, onE
   return (
     <div className="flex items-center gap-1 min-w-0">
       <DropdownSelect
-        value={column.data_type}
+        value={column.data_type.replace(/\s+UNSIGNED$/i, '').trim()}
         options={typeOptions}
         onChange={handleTypeChange}
         className="w-[78px]"

@@ -202,7 +202,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
           language={language || 'plaintext'}
           useInlineStyles={true}
           PreTag="div"
-          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: 'var(--background-base)', padding: '12px', overflowX: 'auto' }}
+          customStyle={{ margin: 0, borderRadius: 0, fontSize: '12px', background: 'var(--background-base)', padding: '12px', overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}
           codeTagProps={{ style: { background: 'transparent' } }}
         >
           {code}

@@ -183,8 +183,9 @@ impl DataSource for MySqlDataSource {
                             val.map(|v| serde_json::json!(v))
                                 .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<serde_json::Value>, _>(i) {
-                            // JSON 列
-                            val.unwrap_or(serde_json::Value::Null)
+                            // JSON 列：序列化为字符串，避免前端 String(obj) → "[object Object]"
+                            val.map(|v| serde_json::Value::String(v.to_string()))
+                                .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(i) {
                             // VARBINARY / BLOB 列：转为 UTF-8 字符串展示，非 UTF-8 则显示为十六进制
                             val.map(|b| {

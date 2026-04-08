@@ -131,10 +131,11 @@ fn pg_row_value(row: &PgRow, i: usize) -> serde_json::Value {
                 .map(|v| serde_json::Value::String(v.format("%H:%M:%S").to_string()))
                 .unwrap_or(serde_json::Value::Null)
         }
-        // json / jsonb
+        // json / jsonb：序列化为字符串，避免前端 String(obj) → "[object Object]"
         "json" | "jsonb" => {
             row.try_get::<Option<serde_json::Value>, _>(i)
                 .ok().flatten()
+                .map(|v| serde_json::Value::String(v.to_string()))
                 .unwrap_or(serde_json::Value::Null)
         }
         // uuid
@@ -170,62 +171,67 @@ fn pg_row_value(row: &PgRow, i: usize) -> serde_json::Value {
     }
 }
 
-/// 处理数组类型，按元素类型名派发到对应的 Vec<T>。
+/// 处理数组类型，按元素类型名派发到对应的 Vec<T>，结果序列化为 JSON 字符串。
+/// 数组值序列化为字符串（如 "[1,2,3]"），避免前端 String(arr) → "1,2,3" 逗号拼接。
 fn pg_array_value(row: &PgRow, i: usize, elem: &str) -> serde_json::Value {
+    fn to_json_str(v: serde_json::Value) -> serde_json::Value {
+        serde_json::Value::String(v.to_string())
+    }
+
     match elem {
         "text" | "varchar" | "bpchar" | "char" | "name" | "citext" => {
             row.try_get::<Option<Vec<String>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int8" | "bigint" => {
             row.try_get::<Option<Vec<i64>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v.iter().map(|n| n.to_string()).collect::<Vec<_>>()))
+                .map(|v| to_json_str(serde_json::json!(v.iter().map(|n| n.to_string()).collect::<Vec<_>>())))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int4" | "integer" | "int" => {
             row.try_get::<Option<Vec<i32>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int2" | "smallint" => {
             row.try_get::<Option<Vec<i16>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "float8" | "double precision" => {
             row.try_get::<Option<Vec<f64>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "float4" | "real" => {
             row.try_get::<Option<Vec<f32>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "bool" | "boolean" => {
             row.try_get::<Option<Vec<bool>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "uuid" => {
             row.try_get::<Option<Vec<uuid::Uuid>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v.iter().map(|u| u.to_string()).collect::<Vec<_>>()))
+                .map(|v| to_json_str(serde_json::json!(v.iter().map(|u| u.to_string()).collect::<Vec<_>>())))
                 .unwrap_or(serde_json::Value::Null)
         }
         // numeric 数组、其他：回退字符串数组
         _ => {
             row.try_get::<Option<Vec<String>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
     }

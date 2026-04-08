@@ -95,7 +95,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
   // 当 scope 切换到非单表时加载数据库列表
   useEffect(() => {
     if (step1.scope === 'current_table') return;
-    invoke<string[]>('list_databases', { connectionId })
+    invoke<string[]>('list_databases_for_metrics', { connectionId })
       .then(setDatabases)
       .catch(console.error);
   }, [step1.scope, connectionId]);
@@ -106,7 +106,7 @@ export const ExportWizard: React.FC<ExportWizardProps> = ({
       setSchemas([]);
       return;
     }
-    invoke<string[]>('list_schemas', { connectionId, database: step1.database })
+    invoke<string[]>('list_schemas_for_metrics', { connectionId, database: step1.database })
       .then(setSchemas)
       .catch(() => setSchemas([]));
   }, [step1.database, step1.scope, connectionId]);

@@ -94,7 +94,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       return
     }
     setDbsLoading(true)
-    invoke<string[]>('list_databases', { connectionId: config.source.connectionId })
+    invoke<string[]>('list_databases_for_metrics', { connectionId: config.source.connectionId })
       .then(setSourceDatabases)
       .catch(() => setSourceDatabases([]))
       .finally(() => setDbsLoading(false))

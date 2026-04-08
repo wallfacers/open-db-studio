@@ -51,7 +51,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
       setLoadingDatabases(true);
       setError('');
       try {
-        const dbs = await invoke<string[]>('list_databases', { connectionId: selectedConnectionId });
+        const dbs = await invoke<string[]>('list_databases_for_metrics', { connectionId: selectedConnectionId });
         setDatabaseOptions(dbs.map(db => ({ value: db, label: db })));
       } catch (e) {
         setError(`${t('erDesigner.loadDbListFailed')}: ${String(e)}`);
@@ -75,7 +75,7 @@ export const BindConnectionDialog: React.FC<BindConnectionDialogProps> = ({
       setLoadingSchemas(true);
       setError('');
       try {
-        const schemas = await invoke<string[]>('list_schemas', {
+        const schemas = await invoke<string[]>('list_schemas_for_metrics', {
           connectionId: selectedConnectionId,
           database: selectedDatabase,
         });

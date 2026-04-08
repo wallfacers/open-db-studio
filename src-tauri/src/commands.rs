@@ -106,7 +106,21 @@ pub async fn get_tables(connection_id: i64, database: Option<String>) -> AppResu
     } else {
         crate::datasource::create_datasource(&config).await?
     };
-    ds.get_tables().await
+    let tables = ds.get_tables().await?;
+    
+    // 过滤系统库/Schema 中的表
+    use crate::graph::SYSTEM_SCHEMAS;
+    Ok(tables.into_iter()
+        .filter(|t| {
+            if let Some(ref s) = t.schema {
+                if SYSTEM_SCHEMAS.contains(&s.as_str()) { return false; }
+            }
+            if let Some(ref db) = database {
+                if SYSTEM_SCHEMAS.contains(&db.as_str()) { return false; }
+            }
+            true
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -1375,7 +1389,19 @@ pub async fn list_tables_with_stats(
 ) -> AppResult<Vec<crate::datasource::TableStatInfo>> {
     let config = crate::db::get_connection_config(connection_id)?;
     let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
-    ds.list_tables_with_stats(&database, schema.as_deref()).await
+    let stats = ds.list_tables_with_stats(&database, schema.as_deref()).await?;
+    
+    // 过滤系统库/Schema
+    use crate::graph::SYSTEM_SCHEMAS;
+    Ok(stats.into_iter()
+        .filter(|_s| {
+            if SYSTEM_SCHEMAS.contains(&database.as_str()) { return false; }
+            if let Some(ref sch) = schema {
+                if SYSTEM_SCHEMAS.contains(&sch.as_str()) { return false; }
+            }
+            true
+        })
+        .collect())
 }
 
 #[tauri::command]

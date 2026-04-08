@@ -18,7 +18,7 @@ export interface MigrationJob {
   name: string
   categoryId: number | null
   configJson: string
-  lastStatus: 'RUNNING' | 'FINISHED' | 'FAILED' | 'STOPPED' | null
+  lastStatus: 'RUNNING' | 'FINISHED' | 'FAILED' | 'STOPPED' | 'PARTIAL_FAILED' | null
   lastRunAt: string | null
   createdAt: string
   updatedAt: string
@@ -60,6 +60,8 @@ export interface MigrationStatsEvent {
   writeSpeedRps: number
   etaSeconds: number | null
   progressPct: number | null
+  currentMapping: string | null
+  mappingProgress: { total: number; completed: number; current: number } | null
 }
 
 export interface MigrationLogEvent {

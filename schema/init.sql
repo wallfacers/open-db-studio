@@ -423,7 +423,7 @@ CREATE TABLE IF NOT EXISTS migration_jobs (
   name        TEXT NOT NULL,
   category_id INTEGER REFERENCES migration_categories(id) ON DELETE SET NULL,
   config_json TEXT NOT NULL DEFAULT '{}',
-  last_status TEXT CHECK(last_status IN ('RUNNING','FINISHED','FAILED','STOPPED')),
+  last_status TEXT CHECK(last_status IN ('RUNNING','FINISHED','FAILED','STOPPED','PARTIAL_FAILED')),
   last_run_at TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -444,7 +444,7 @@ CREATE TABLE IF NOT EXISTS migration_run_history (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id            INTEGER NOT NULL REFERENCES migration_jobs(id) ON DELETE CASCADE,
   run_id            TEXT NOT NULL UNIQUE,
-  status            TEXT NOT NULL CHECK(status IN ('RUNNING','FINISHED','FAILED','STOPPED')),
+  status            TEXT NOT NULL CHECK(status IN ('RUNNING','FINISHED','FAILED','STOPPED','PARTIAL_FAILED')),
   rows_read         INTEGER NOT NULL DEFAULT 0,
   rows_written      INTEGER NOT NULL DEFAULT 0,
   rows_failed       INTEGER NOT NULL DEFAULT 0,

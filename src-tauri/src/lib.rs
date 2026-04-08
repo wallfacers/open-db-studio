@@ -58,6 +58,7 @@ pub fn run() {
             log::info!("Using app data dir: {:?}", app_data_dir);
             crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
+            migration::repository::migrate_legacy_configs().ok();
 
             // MCP server 只绑 TCP 端口，速度极快，需要端口号写入 AppState
             let mcp_port = tauri::async_runtime::block_on(

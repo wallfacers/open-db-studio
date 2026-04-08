@@ -145,3 +145,32 @@ pub fn get_run_history(job_id: i64) -> AppResult<Vec<MigrationRunHistory>> {
     let rows = stmt.query_map(params![job_id], MigrationRunHistory::from_row)?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
+
+/// Migrate all jobs from old config format (top-level target) to new format (tableMappings).
+/// Called once at startup. Idempotent — already-migrated configs are unchanged.
+pub fn migrate_legacy_configs() -> AppResult<()> {
+    let db = crate::db::get().lock().unwrap();
+    let mut stmt = db.prepare(
+        "SELECT id, config_json FROM migration_jobs",
+    )?;
+    let jobs: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for (id, config_json) in jobs {
+        // Try to parse. The custom deserializer handles migration automatically.
+        if let Ok(config) = serde_json::from_str::<MigrationJobConfig>(&config_json) {
+            // Re-serialize in new format
+            let new_json = serde_json::to_string(&config)
+                .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
+            if new_json != config_json {
+                db.execute(
+                    "UPDATE migration_jobs SET config_json=?1 WHERE id=?2",
+                    params![new_json, id],
+                )?;
+            }
+        }
+    }
+    Ok(())
+}

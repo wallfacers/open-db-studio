@@ -35,7 +35,7 @@ function defaultConfig(): JobConfig {
 export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck }: Props) {
   const { t } = useTranslation()
   const [config, setConfig] = useState<JobConfig>(() => {
-    try { return JSON.parse(configJson) } catch { return defaultConfig() }
+    try { return { ...defaultConfig(), ...JSON.parse(configJson) } } catch { return defaultConfig() }
   })
   const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
   const [aiLoading, setAiLoading] = useState(false)

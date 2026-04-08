@@ -34,12 +34,48 @@ function defaultConfig(): JobConfig {
 
 export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck }: Props) {
   const { t } = useTranslation()
-  const [config, setConfig] = useState<JobConfig>(() => {
-    try { return { ...defaultConfig(), ...JSON.parse(configJson) } } catch { return defaultConfig() }
-  })
   const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
   const [aiLoading, setAiLoading] = useState(false)
   const [dirty, setDirty] = useState(false)
+
+  const [config, setConfig] = useState<JobConfig>(() => {
+    const def = defaultConfig()
+    try { 
+      const parsed = JSON.parse(configJson)
+      if (parsed && typeof parsed === 'object') {
+        return {
+          ...def,
+          ...parsed,
+          source: { ...def.source, ...(parsed.source || {}) },
+          target: { ...def.target, ...(parsed.target || {}) },
+          pipeline: { ...def.pipeline, ...(parsed.pipeline || {}) },
+          columnMapping: parsed.columnMapping || [],
+        }
+      }
+      return def
+    } catch { 
+      return def 
+    }
+  })
+
+  useEffect(() => {
+    if (!dirty && configJson) {
+      try {
+        const parsed = JSON.parse(configJson)
+        if (parsed && typeof parsed === 'object') {
+          const def = defaultConfig()
+          setConfig({
+            ...def,
+            ...parsed,
+            source: { ...def.source, ...(parsed.source || {}) },
+            target: { ...def.target, ...(parsed.target || {}) },
+            pipeline: { ...def.pipeline, ...(parsed.pipeline || {}) },
+            columnMapping: parsed.columnMapping || [],
+          })
+        }
+      } catch {}
+    }
+  }, [configJson, dirty])
 
   useEffect(() => {
     invoke<Array<{ id: number; name: string }>>('list_connections').then(setConnections).catch(() => {})

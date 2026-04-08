@@ -275,11 +275,16 @@
 | 项目 | 描述 | 优先级 | 修复方案 | 备注 |
 |------|------|--------|---------|------|
 | ERCanvasAdapter AI 变更高亮 | ER 画布基于 Canvas/SVG 渲染，需要独立的高亮方案（元素描边动画等），与 DOM 表单/Monaco 编辑器的通用高亮体系不同 | 低 | — | 当前无确认机制且支持 undo，用户感知变更的途径已存在；待其他 Adapter 高亮全部落地后再评估 ROI |
-| Reader 全量加载到内存 | `pipeline.rs` reader 调用 `src_ds.execute(&query)` 将全部结果集一次载入内存，大表（>100万行）迁移会 OOM | 高 | DataSource trait 新增 `execute_paginated(query, limit, offset)` 游标方法；reader 改为分页循环读取；需 MySQL/PG/SQLite 驱动各自实现 | 当前 batch_size 只控制通道发送粒度，不控制读取粒度。修复需改动 datasource trait，影响面较大 |
-| SQL 值拼接未参数化 | `data_pump::value_to_sql` 通过字符串拼接构造 VALUES，转义仅处理单引号，存在 SQL 注入风险且对特殊类型（二进制、日期）支持不完整 | 高 | DataSource trait 新增 `execute_parameterized(sql, params)` 方法；`write_batch` 改为参数化写入；各驱动用各自参数化 API（MySQL → `mysql::Params`，PG → `tokio-postgres::types::ToSql`） | 当前转义在极端情况下不健壮（如包含反斜杠+单引号组合）。需要 datasource 层配合 |
 | 侧边栏/树组件/Store 整体复制 | MigrationExplorer 的 MigrationTaskTree + migrationStore 与其他树型侧边栏（MetricsExplorer 等）结构高度相似（分类树 + 任务节点 + 右键菜单 + 展开持久化） | 低 | 提取通用工厂：`createTreeStore(options)` Zustand 工厂函数、`GenericTree<NodeType>` 组件、`SidebarPanel` 布局组件。可在新增同类树模块时一并提取 | — |
-| Rust 未使用 Repository 分层 | `mig_commands.rs` 每个命令函数内直接写 SQL + `db.lock().unwrap()`，未遵循 ER 模块的 commands + repository 分层模式 | 中 | 新建 `migration/repository.rs`，将 CRUD SQL 封装为独立函数；commands 层只做参数校验 + 调用 repo + 返回结果 | 参考 `src-tauri/src/er/repository.rs` 模式 |
-| async 命令内同步阻塞 tokio 线程 | `mig_commands.rs` 所有命令在 async fn 内调用 `db.lock().unwrap()` 同步阻塞 SQLite 操作，会占用 tokio 工作线程 | 中 | 用 `tokio::task::spawn_blocking` 包裹 SQLite 操作，或在 repository 重构时一并解决 | 当前应用规模下影响不大（SQLite 操作快且并发低），但不符合最佳实践。可与 Repository 分层一同修复 |
+
+### 已解决的技术债 ✅
+
+| 项目 | 解决方案 | 解决日期 |
+|------|---------|---------|
+| Reader 全量加载到内存 | DataSource trait 新增 `execute_paginated(query, limit, offset)`；pipeline.rs 已改为分页循环读取 | 2026-04-08 |
+| SQL 值拼接未参数化 | 删除 `data_pump.rs`，改用 `datasource/utils.rs::value_to_sql_safe`（支持多方言转义风格） | 2026-04-08 |
+| Rust 未使用 Repository 分层 | 新建 `migration/repository.rs`，CRUD SQL 已封装为独立函数 | V2 阶段 |
+| async 命令内同步阻塞 tokio 线程 | `mig_commands.rs` 所有命令已用 `tokio::task::spawn_blocking` 包裹 SQLite 操作 | V2 阶段 |
 
 ---
 

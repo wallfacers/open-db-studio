@@ -119,7 +119,7 @@
 | Text-to-SQL v2 管道 | `pipeline/` | entity_extract → context_builder → sql_validator |
 | migration/ DDL 转换 | `migration/ddl_convert.rs` | 跨方言类型映射表（MySQL/PG/Oracle/MSSQL） |
 | migration/ 预检 | `migration/precheck.rs` | type_compat/null_constraint/pk_conflict 三类检查 |
-| migration/ 数据泵 | `migration/data_pump.rs` | 分批读写 + Tauri Event `migration:progress` 广播 |
+| migration/ 数据泵 | `migration/pipeline.rs` | Tokio Reader-Writer 管道 + Tauri Event 进度广播 |
 | migration/ 任务管理 | `migration/task_mgr.rs` | 状态机 pending/running/paused/done/failed |
 | GraphExplorer 前端 | `src/components/GraphExplorer/index.tsx` | 图谱主面板 |
 | MetricsPanel 前端 | `src/components/MetricsPanel/index.tsx` | 指标列表 + draft/approved/rejected 分组 |

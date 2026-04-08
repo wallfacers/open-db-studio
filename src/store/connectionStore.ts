@@ -24,8 +24,6 @@ export async function loadOpenedConnectionIds(): Promise<number[]> {
   }
 }
 
-const graphTimers = new Map<number, ReturnType<typeof setInterval>>();
-
 export interface ConnectionMeta {
   dbVersion: string;
   driver: string;
@@ -55,12 +53,9 @@ interface ConnectionState {
   // 管理已打开的连接
   openConnection: (id: number) => void;
   closeConnection: (id: number) => void;
-  startGraphRefreshTimer: (connectionId: number) => void;
-  stopGraphRefreshTimer: (connectionId: number) => void;
-  stopAllGraphRefreshTimers: () => void;
 }
 
-export const useConnectionStore = create<ConnectionState>((set, get) => ({
+export const useConnectionStore = create<ConnectionState>((set) => ({
   connections: [],
   activeConnectionId: null,
   activeConnectionIds: new Set<number>(),
@@ -87,8 +82,6 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
   deleteConnection: async (id) => {
     await invoke('delete_connection', { id });
-    // 停止该连接的图刷新定时器
-    get().stopGraphRefreshTimer(id);
     set((s) => {
       // 清理已打开连接集合并持久化
       const newActiveIds = new Set(s.activeConnectionIds);
@@ -166,20 +159,4 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
   setMeta: (connectionId, meta) =>
     set((s) => ({ metaCache: { ...s.metaCache, [connectionId]: meta } })),
-
-  startGraphRefreshTimer: (connectionId) => {
-    if (graphTimers.has(connectionId)) return;
-    const timer = setInterval(() => {
-      invoke('refresh_schema_graph', { connectionId, database: null }).catch(() => {});
-    }, 5 * 60 * 1000);
-    graphTimers.set(connectionId, timer);
-  },
-  stopGraphRefreshTimer: (connectionId) => {
-    const timer = graphTimers.get(connectionId);
-    if (timer) { clearInterval(timer); graphTimers.delete(connectionId); }
-  },
-  stopAllGraphRefreshTimers: () => {
-    graphTimers.forEach((timer) => clearInterval(timer));
-    graphTimers.clear();
-  },
 }));

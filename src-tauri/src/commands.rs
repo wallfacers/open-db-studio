@@ -95,21 +95,6 @@ pub async fn execute_query(
         }
     }
 
-    // Auto-trigger schema graph refresh on DDL changes
-    if result.is_ok() {
-        let sql_upper = sql.trim().to_uppercase();
-        if sql_upper.starts_with("CREATE")
-            || sql_upper.starts_with("ALTER")
-            || sql_upper.starts_with("DROP")
-        {
-            let conn_id = connection_id;
-            let db = database.clone();
-            tokio::spawn(async move {
-                let _ = crate::graph::refresh_schema_graph(conn_id, db).await;
-            });
-        }
-    }
-
     result
 }
 
@@ -2588,40 +2573,43 @@ pub async fn get_graph_edges(
         return Ok(vec![]);
     }
     let conn = crate::db::get().lock().unwrap();
-    // 构建 IN 占位符（?1 .. ?N），from_node 和 to_node 各自独立绑定相同 ID 集合
-    let n = node_ids.len();
-    let ph1: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
-    let ph2: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata, e.source
-         FROM graph_edges e
-         WHERE e.from_node IN ({ph1}) OR e.to_node IN ({ph2})",
-        ph1 = ph1,
-        ph2 = ph2
-    );
-    // 参数绑定：node_ids 出现两次（from_node IN + to_node IN）
-    let params: Vec<Box<dyn rusqlite::ToSql>> = node_ids
-        .iter()
-        .chain(node_ids.iter())
-        .map(|id| Box::new(id.clone()) as Box<dyn rusqlite::ToSql>)
-        .collect();
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-        let meta_str: Option<String> = row.get(5)?;
-        Ok(crate::graph::GraphEdge {
-            id: row.get(0)?,
-            from_node: row.get(1)?,
-            to_node: row.get(2)?,
-            edge_type: row.get(3)?,
-            weight: row.get(4)?,
-            metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
-            source: row.get(6)?,
-        })
-    })?;
-    let mut edges: Vec<crate::graph::GraphEdge> = rows.collect::<Result<Vec<_>, _>>()?;
-    edges.sort_by(|a, b| a.id.cmp(&b.id));
-    edges.dedup_by_key(|e| e.id.clone());
-    Ok(edges)
+    // SQLite 绑定参数上限为 32766，每个 chunk 用 500 个节点 ID（from+to 共 1000 参数）
+    const CHUNK_SIZE: usize = 500;
+    let mut all_edges: Vec<crate::graph::GraphEdge> = Vec::new();
+    for chunk in node_ids.chunks(CHUNK_SIZE) {
+        let n = chunk.len();
+        let ph1: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let ph2: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata, e.source
+             FROM graph_edges e
+             WHERE e.from_node IN ({ph1}) OR e.to_node IN ({ph2})",
+            ph1 = ph1,
+            ph2 = ph2
+        );
+        let params: Vec<Box<dyn rusqlite::ToSql>> = chunk
+            .iter()
+            .chain(chunk.iter())
+            .map(|id| Box::new(id.clone()) as Box<dyn rusqlite::ToSql>)
+            .collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            let meta_str: Option<String> = row.get(5)?;
+            Ok(crate::graph::GraphEdge {
+                id: row.get(0)?,
+                from_node: row.get(1)?,
+                to_node: row.get(2)?,
+                edge_type: row.get(3)?,
+                weight: row.get(4)?,
+                metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
+                source: row.get(6)?,
+            })
+        })?;
+        all_edges.extend(rows.collect::<Result<Vec<_>, _>>()?);
+    }
+    all_edges.sort_by(|a, b| a.id.cmp(&b.id));
+    all_edges.dedup_by_key(|e| e.id.clone());
+    Ok(all_edges)
 }
 
 /// 更新节点别名，并将 source 改为 'user'，同步更新 FTS5 索引

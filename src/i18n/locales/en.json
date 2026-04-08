@@ -1162,6 +1162,14 @@
     "addMappingRow": "Add Mapping Row",
     "aiRecommendAll": "AI Recommend All",
     "multiTargetWarning": "Multiple sources → {{table}} (N:1 merge)",
-    "conditionRouteInfo": "{{table}} has {{count}} routes with different filters"
+    "conditionRouteInfo": "{{table}} has {{count}} routes with different filters",
+    "defaults": "Defaults",
+    "targetDatabase": "Select database",
+    "syncMode": "Sync Mode",
+    "fullSync": "Full Sync",
+    "incrementalSync": "Incremental Sync",
+    "incrementalField": "Incremental Field",
+    "fieldType": "Field Type",
+    "lastCheckpoint": "Last Checkpoint"
   }
 }

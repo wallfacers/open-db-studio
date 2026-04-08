@@ -1163,6 +1163,14 @@
     "addMappingRow": "添加映射行",
     "aiRecommendAll": "AI推荐全部",
     "multiTargetWarning": "多个源→{{table}}（N:1合并）",
-    "conditionRouteInfo": "{{table}}有{{count}}条路由，使用不同的过滤条件"
+    "conditionRouteInfo": "{{table}}有{{count}}条路由，使用不同的过滤条件",
+    "defaults": "默认值",
+    "targetDatabase": "选择数据库",
+    "syncMode": "同步模式",
+    "fullSync": "全量同步",
+    "incrementalSync": "增量同步",
+    "incrementalField": "增量字段",
+    "fieldType": "字段类型",
+    "lastCheckpoint": "最后检查点"
   }
 }

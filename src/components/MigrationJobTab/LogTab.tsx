@@ -63,6 +63,13 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
             <div className="h-full bg-accent transition-all duration-500 rounded" style={{ width: `${pct}%` }} />
           </div>
 
+          {/* Mapping progress indicator */}
+          {stats.currentMapping && stats.mappingProgress && (
+            <div className="text-[11px] text-foreground-muted mb-1">
+              [{stats.mappingProgress.current}/{stats.mappingProgress.total}] {t('migration.migrating')} {stats.currentMapping} ...
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-2 text-[11px]">
             <div>
               <span className="text-foreground-subtle">{t('migration.rowsRead')}  </span>

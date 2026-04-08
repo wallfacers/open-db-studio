@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useMigrationStore } from '../../store/migrationStore'
 import { MigrationTaskTree } from './MigrationTaskTree'
 import { useQueryStore } from '../../store/queryStore'
+import { PromptModal } from '../common/PromptModal'
 
 interface Props {
   sidebarWidth: number
@@ -17,6 +18,12 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
   const openMigrationJobTab = useQueryStore(s => s.openMigrationJobTab)
   const [searchQuery, setSearchQuery] = useState('')
   const resizeRef = useRef<{ startX: number; startW: number } | null>(null)
+  
+  const [promptConfig, setPromptConfig] = useState<{
+    isOpen: boolean;
+    type: 'category' | 'job';
+    parentId?: number;
+  }>({ isOpen: false, type: 'category' });
 
   useEffect(() => {
     store.init()
@@ -44,6 +51,26 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
     window.addEventListener('mouseup', onUp)
   }
 
+  const validateName = (name: string, isCategory: boolean) => {
+    const exists = Array.from(store.nodes.values()).some(n => 
+      n.nodeType === (isCategory ? 'category' : 'job') && n.label.toLowerCase() === name.toLowerCase()
+    );
+    if (exists) {
+      return t('migration.nameExists', { defaultValue: 'Name already exists' });
+    }
+    return null;
+  };
+
+  const handleCreateSubmit = async (name: string) => {
+    if (promptConfig.type === 'category') {
+      await store.createCategory(name, promptConfig.parentId);
+    } else {
+      const id = await store.createJob(name, promptConfig.parentId);
+      handleOpenJob(id, name);
+    }
+    setPromptConfig({ ...promptConfig, isOpen: false });
+  };
+
   if (hidden) return null
 
   return (
@@ -69,17 +96,14 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
           <button
             title={t('migration.newCategory')}
             className="p-1 rounded text-foreground-muted hover:text-foreground hover:bg-background-hover transition-colors duration-150"
-            onClick={() => store.createCategory(t('migration.defaultCategoryName'))}
+            onClick={() => setPromptConfig({ isOpen: true, type: 'category' })}
           >
             <FolderPlus size={14} />
           </button>
           <button
             title={t('migration.newJob')}
             className="p-1 rounded text-foreground-muted hover:text-foreground hover:bg-background-hover transition-colors duration-150"
-            onClick={async () => {
-              const id = await store.createJob(t('migration.defaultJobName'))
-              handleOpenJob(id, t('migration.defaultJobName'))
-            }}
+            onClick={() => setPromptConfig({ isOpen: true, type: 'job' })}
           >
             <FilePlus size={14} />
           </button>
@@ -100,7 +124,22 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
       </div>
 
       {/* Tree */}
-      <MigrationTaskTree searchQuery={searchQuery} onOpenJob={handleOpenJob} />
+      <MigrationTaskTree 
+        searchQuery={searchQuery} 
+        onOpenJob={handleOpenJob} 
+        onCreateItem={(type, parentId) => setPromptConfig({ isOpen: true, type, parentId })}
+      />
+      
+      {promptConfig.isOpen && (
+        <PromptModal
+          title={promptConfig.type === 'category' ? t('migration.newCategory') : t('migration.newJob')}
+          label={t('common.name', { defaultValue: 'Name' })}
+          initialValue={promptConfig.type === 'category' ? t('migration.defaultCategoryName') : t('migration.defaultJobName')}
+          onClose={() => setPromptConfig({ ...promptConfig, isOpen: false })}
+          onConfirm={handleCreateSubmit}
+          validate={(val) => validateName(val, promptConfig.type === 'category')}
+        />
+      )}
     </div>
   )
 }

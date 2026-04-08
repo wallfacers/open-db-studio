@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, Plus, Trash2, Play, ShieldCheck, Save } from 'lucide-react'
+import { DropdownSelect } from '../common/DropdownSelect'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface PipelineConfig {
@@ -109,7 +110,6 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   }
 
   const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
-  const selectCls = inputCls + " cursor-pointer"
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full">
@@ -118,14 +118,13 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
         {/* Source */}
         <div className="bg-background-panel border border-border-subtle rounded p-3 flex flex-col gap-2">
           <div className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.sourceEnd')}</div>
-          <select
-            value={config.source.connectionId || ''}
-            onChange={e => update({ source: { ...config.source, connectionId: Number(e.target.value) } })}
-            className={selectCls + " w-full"}
-          >
-            <option value="">{t('migration.sourceConn')}</option>
-            {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <DropdownSelect
+            value={config.source.connectionId ? String(config.source.connectionId) : ''}
+            onChange={val => update({ source: { ...config.source, connectionId: val ? Number(val) : 0 } })}
+            options={connections.map(c => ({ value: String(c.id), label: c.name }))}
+            placeholder={t('migration.sourceConn')}
+            className="w-full"
+          />
 
           <div className="flex gap-2 text-[12px]">
             <label className="flex items-center gap-1 cursor-pointer text-foreground-muted">
@@ -152,14 +151,13 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
         {/* Target */}
         <div className="bg-background-panel border border-border-subtle rounded p-3 flex flex-col gap-2">
           <div className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.targetEnd')}</div>
-          <select
-            value={config.target.connectionId || ''}
-            onChange={e => update({ target: { ...config.target, connectionId: Number(e.target.value) } })}
-            className={selectCls + " w-full"}
-          >
-            <option value="">{t('migration.targetConn')}</option>
-            {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <DropdownSelect
+            value={config.target.connectionId ? String(config.target.connectionId) : ''}
+            onChange={val => update({ target: { ...config.target, connectionId: val ? Number(val) : 0 } })}
+            options={connections.map(c => ({ value: String(c.id), label: c.name }))}
+            placeholder={t('migration.targetConn')}
+            className="w-full"
+          />
 
           <input
             value={config.target.table}
@@ -168,13 +166,12 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
             className={inputCls + " w-full"}
           />
 
-          <select
+          <DropdownSelect
             value={config.target.conflictStrategy}
-            onChange={e => update({ target: { ...config.target, conflictStrategy: e.target.value } })}
-            className={selectCls + " w-full"}
-          >
-            {['INSERT', 'UPSERT', 'REPLACE', 'SKIP'].map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+            onChange={val => update({ target: { ...config.target, conflictStrategy: val } })}
+            options={['INSERT', 'UPSERT', 'REPLACE', 'SKIP'].map(s => ({ value: s, label: s }))}
+            className="w-full"
+          />
 
           <label className="flex items-center gap-2 text-[12px] text-foreground-muted cursor-pointer">
             <input

@@ -12,6 +12,7 @@ import { Tooltip } from '../common/Tooltip'
 interface Props {
   searchQuery: string
   onOpenJob: (jobId: number, jobName: string) => void
+  onCreateItem?: (type: 'category' | 'job', parentId?: number) => void
 }
 
 type VisibleNode = MigTreeNode & { depth: number }
@@ -59,7 +60,7 @@ function computeVisible(
   return result
 }
 
-export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
+export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Props) {
   const { t } = useTranslation()
   const store = useMigrationStore()
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: MigTreeNode } | null>(null)
@@ -88,8 +89,22 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
     if (!editingId || !editValue.trim()) { setEditingId(null); return }
     const node = store.nodes.get(editingId)
     if (!node) { setEditingId(null); return }
-    if (node.nodeType === 'category') await store.renameCategory(Number(editingId.replace('cat_', '')), editValue.trim())
-    else if (node.nodeType === 'job') await store.renameJob(node.jobId, editValue.trim())
+    
+    // Check duplicates
+    const newName = editValue.trim();
+    if (newName !== node.label) {
+      const exists = Array.from(store.nodes.values()).some(n => 
+        n.nodeType === node.nodeType && n.label.toLowerCase() === newName.toLowerCase()
+      );
+      if (exists) {
+        // Just cancel edit if exists, or we could show a toast. For now, cancel.
+        setEditingId(null);
+        return;
+      }
+      
+      if (node.nodeType === 'category') await store.renameCategory(Number(editingId.replace('cat_', '')), newName)
+      else if (node.nodeType === 'job') await store.renameJob(node.jobId, newName)
+    }
     setEditingId(null)
   }
 
@@ -112,7 +127,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
             key={node.id}
             className={`flex items-center py-1 px-2 cursor-pointer outline-none
               hover:bg-background-hover transition-colors duration-150
-              ${isSelected ? 'bg-background-active' : ''}`}
+              ${isSelected ? 'bg-border-default' : ''}`}
             style={{ paddingLeft: `${node.depth * 16 + 8}px` }}
             onClick={() => {
               store.selectNode(node.id)
@@ -176,11 +191,11 @@ export function MigrationTaskTree({ searchQuery, onOpenJob }: Props) {
         >
           {ctxMenu.node.nodeType === 'category' && (<>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-              onClick={() => { store.createCategory(t('migration.defaultCategoryName'), Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
+              onClick={() => { onCreateItem?.('category', Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
               <FolderPlus size={13} />{t('migration.newCategory')}
             </button>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-              onClick={() => { store.createJob(t('migration.defaultJobName'), Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
+              onClick={() => { onCreateItem?.('job', Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
               <FilePlus size={13} />{t('migration.newJob')}
             </button>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"

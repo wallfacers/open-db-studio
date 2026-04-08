@@ -5,7 +5,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   ReactFlow,
   Background,
-  BackgroundVariant,
   Controls,
   useNodesState,
   useEdgesState,
@@ -533,7 +532,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           minZoom={0.1}
           maxZoom={2}
         >
-          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="var(--border-default)" bgColor="var(--background-base)" gap={20} size={1} />
+          <Background id="er-canvas-bg" color="var(--border-default)" gap={20} size={1} />
           <Controls />
         </ReactFlow>
       </div>

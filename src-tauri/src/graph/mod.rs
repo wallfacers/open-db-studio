@@ -628,20 +628,35 @@ fn build_comment_links(
     conn.execute_batch("BEGIN")?;
 
     let result = (|| -> crate::AppResult<usize> {
-    // 1. 清除旧 source='comment' 的边
-    conn.execute(
-        "DELETE FROM graph_edges
-         WHERE source = 'comment'
-           AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1)
-                OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1))",
-        [connection_id],
-    )?;
-    // 清除旧 source='comment' 的 link 节点
-    conn.execute(
-        "DELETE FROM graph_nodes
-         WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link'",
-        [connection_id],
-    )?;
+    // 1. 清除旧 source='comment' 的边和 link 节点
+    //    按 database 范围限定，避免多库遍历时后续库的清除操作误删前面库已建好的注释关系
+    if let Some(db) = database {
+        conn.execute(
+            "DELETE FROM graph_edges
+             WHERE source = 'comment'
+               AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1 AND database = ?2)
+                    OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1 AND database = ?2))",
+            rusqlite::params![connection_id, db],
+        )?;
+        conn.execute(
+            "DELETE FROM graph_nodes
+             WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link' AND database = ?2",
+            rusqlite::params![connection_id, db],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM graph_edges
+             WHERE source = 'comment'
+               AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1)
+                    OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1))",
+            [connection_id],
+        )?;
+        conn.execute(
+            "DELETE FROM graph_nodes
+             WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link'",
+            [connection_id],
+        )?;
+    }
 
     let mut count = 0;
 

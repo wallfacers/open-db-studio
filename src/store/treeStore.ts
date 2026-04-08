@@ -317,9 +317,6 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       // 在创建 metrics_folder 节点后立即获取指标计数（未展开时也显示徽章）
       const metricsFolderNodes = children.filter(c => c.nodeType === 'metrics_folder');
       if (metricsFolderNodes.length > 0) {
-        const newCounts = new Map(get().metricCounts);
-        const newNodes = new Map(get().nodes);
-
         if (node.nodeType === 'connection') {
           // connection 分支：使用 count_metrics_batch 批量获取
           const driver = node.meta.driver ?? 'mysql';
@@ -330,13 +327,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               connectionId: node.meta.connectionId,
               database: null,
             });
-            for (const folder of metricsFolderNodes) {
-              const db = folder.meta.database;
-              const cnt = db ? (counts[db] ?? 0) : 0;
-              newCounts.set(folder.id, cnt);
-              const f = newNodes.get(folder.id);
-              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
-            }
+            set(s => {
+              const newCounts = new Map(s.metricCounts);
+              const newNodes = new Map(s.nodes);
+              for (const folder of metricsFolderNodes) {
+                const db = folder.meta.database;
+                const cnt = db ? (counts[db] ?? 0) : 0;
+                newCounts.set(folder.id, cnt);
+                const f = newNodes.get(folder.id);
+                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+              }
+              return { metricCounts: newCounts, nodes: newNodes };
+            });
           } else {
             // 单数据库（SQLite）或 schema 型驱动在 connection 层无 metrics_folder
             for (const folder of metricsFolderNodes) {
@@ -346,9 +348,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
                   database: folder.meta.database ?? null,
                   schema: null,
                 });
-                newCounts.set(folder.id, cnt);
-                const f = newNodes.get(folder.id);
-                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+                set(s => {
+                  const newCounts = new Map(s.metricCounts);
+                  const newNodes = new Map(s.nodes);
+                  newCounts.set(folder.id, cnt);
+                  const f = newNodes.get(folder.id);
+                  if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+                  return { metricCounts: newCounts, nodes: newNodes };
+                });
               } catch { /* ignore */ }
             }
           }
@@ -361,14 +368,17 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
                 database: folder.meta.database ?? null,
                 schema: null,
               });
-              newCounts.set(folder.id, cnt);
-              const f = newNodes.get(folder.id);
-              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+              set(s => {
+                const newCounts = new Map(s.metricCounts);
+                const newNodes = new Map(s.nodes);
+                newCounts.set(folder.id, cnt);
+                const f = newNodes.get(folder.id);
+                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+                return { metricCounts: newCounts, nodes: newNodes };
+              });
             } catch { /* ignore */ }
           }
         }
-
-        set({ metricCounts: newCounts, nodes: newNodes });
       }
 
       // metrics_folder 节点加载后更新 metricCounts 和 hasChildren
@@ -445,13 +455,6 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   selectNode: (nodeId: string) => set({ selectedId: nodeId }),
 
   refreshNode: async (nodeId: string) => {
-    const wasExpanded = get().expandedIds.has(nodeId);
-    // Collapse first so the UI never shows "expanded with no children"
-    set(s => {
-      const expandedIds = new Set(s.expandedIds);
-      expandedIds.delete(nodeId);
-      return { expandedIds };
-    });
     get()._removeSubtree(nodeId);
     set(s => {
       const newNodes = new Map(s.nodes);
@@ -459,17 +462,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       if (node) newNodes.set(nodeId, { ...node, loaded: false });
       return { nodes: newNodes };
     });
-    if (wasExpanded) {
-      await get().loadChildren(nodeId);
-      // Re-expand only if loading succeeded
-      if (get().nodes.get(nodeId)?.loaded === true) {
-        set(s => {
-          const expandedIds = new Set(s.expandedIds);
-          expandedIds.add(nodeId);
-          return { expandedIds };
-        });
-      }
-    }
+    await get().loadChildren(nodeId);
   },
 
   search: (query: string): TreeNode[] => {

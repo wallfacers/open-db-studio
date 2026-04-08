@@ -36,72 +36,69 @@ fn save_check_items(job_id: i64, items: &[CheckItem]) -> AppResult<()> {
     Ok(())
 }
 
-/// Run pre-check using a job config (new API).
-/// `src_table` is derived from the job config's source query.
+/// Run pre-check using a job config, iterating over all table mappings.
 pub async fn run_precheck_for_job(
     job_id: i64,
     config: &super::task_mgr::MigrationJobConfig,
 ) -> AppResult<PreCheckResult> {
     let src_connection_id = config.source.connection_id;
-    let dst_connection_id = config.table_mappings.first().map(|m| m.target.connection_id).unwrap_or(0);
     let src_config = crate::db::get_connection_config(src_connection_id)?;
-    let dst_config = crate::db::get_connection_config(dst_connection_id)?;
     let src_ds = crate::datasource::create_datasource(&src_config).await?;
 
     let mut all_items = Vec::new();
 
-    // Derive table name from target config
-    let _first_table = config.table_mappings.first().map(|m| m.target.table.as_str()).unwrap_or("");
-    let table_name = &config.table_mappings.first().map(|m| m.target.table.clone()).unwrap_or_default();
-    if !table_name.is_empty() {
-        let src_cols = src_ds.get_columns(table_name, None).await
-            .unwrap_or_default();
+    for mapping in &config.table_mappings {
+        let dst_config = crate::db::get_connection_config(mapping.target.connection_id)?;
+        let table_name = &mapping.source_table;
+        if table_name.is_empty() || table_name == "custom_query" {
+            continue;
+        }
 
+        let src_cols = src_ds.get_columns(table_name, None).await.unwrap_or_default();
         if src_cols.is_empty() {
             all_items.push(CheckItem {
                 check_type: "other".into(),
                 table_name: table_name.clone(),
                 column_name: None,
                 severity: "error".into(),
-                message: format!("源表 {} 不存在或无字段", table_name),
+                message: format!("Source table {} not found or has no columns", table_name),
             });
-        } else {
-            // 1. 类型兼容性检查
-            let type_issues = super::ddl_convert::check_type_compatibility(
-                &src_config.driver, &dst_config.driver,
-                table_name, &src_cols,
-            );
-            all_items.extend(type_issues);
+            continue;
+        }
 
-            // 2. NOT NULL 约束检查
-            for col in &src_cols {
-                if !col.is_nullable && col.column_default.is_none() && !col.is_primary_key {
-                    all_items.push(CheckItem {
-                        check_type: "null_constraint".into(),
-                        table_name: table_name.clone(),
-                        column_name: Some(col.name.clone()),
-                        severity: "info".into(),
-                        message: format!("字段 {} 为 NOT NULL 且无默认值，请确保源数据无空值", col.name),
-                    });
-                }
-            }
+        // 1. Type compatibility check
+        let type_issues = super::ddl_convert::check_type_compatibility(
+            &src_config.driver, &dst_config.driver, table_name, &src_cols,
+        );
+        all_items.extend(type_issues);
 
-            // 3. 主键检查
-            let has_pk = src_cols.iter().any(|c| c.is_primary_key);
-            if !has_pk {
+        // 2. NOT NULL constraint check
+        for col in &src_cols {
+            if !col.is_nullable && col.column_default.is_none() && !col.is_primary_key {
                 all_items.push(CheckItem {
-                    check_type: "pk_conflict".into(),
+                    check_type: "null_constraint".into(),
                     table_name: table_name.clone(),
-                    column_name: None,
-                    severity: "warning".into(),
-                    message: "源表无主键，迁移时可能产生重复数据".into(),
+                    column_name: Some(col.name.clone()),
+                    severity: "info".into(),
+                    message: format!("Column {} is NOT NULL without default", col.name),
                 });
             }
+        }
+
+        // 3. Primary key check
+        let has_pk = src_cols.iter().any(|c| c.is_primary_key);
+        if !has_pk {
+            all_items.push(CheckItem {
+                check_type: "pk_conflict".into(),
+                table_name: table_name.clone(),
+                column_name: None,
+                severity: "warning".into(),
+                message: "Source table has no primary key, duplicates may occur".into(),
+            });
         }
     }
 
     save_check_items(job_id, &all_items)?;
-
     let has_errors = all_items.iter().any(|i| i.severity == "error");
     let has_warnings = all_items.iter().any(|i| i.severity == "warning");
     Ok(PreCheckResult { job_id, items: all_items, has_errors, has_warnings })

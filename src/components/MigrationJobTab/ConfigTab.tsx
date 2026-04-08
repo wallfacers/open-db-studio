@@ -11,7 +11,7 @@ interface PipelineConfig {
   speedLimitRps: number | null; errorLimit: number
 }
 interface JobConfig {
-  source: { connectionId: number; queryMode: 'auto' | 'custom'; query: string; tables: string[] }
+  source: { connectionId: number; database: string; queryMode: 'auto' | 'custom'; query: string; tables: string[] }
   columnMapping: ColumnMapping[]
   target: { connectionId: number; table: string; conflictStrategy: string; createTableIfNotExists: boolean; upsertKeys: string[] }
   pipeline: PipelineConfig
@@ -27,7 +27,7 @@ interface Props {
 
 function defaultConfig(): JobConfig {
   return {
-    source: { connectionId: 0, queryMode: 'auto', query: '', tables: [] },
+    source: { connectionId: 0, database: '', queryMode: 'auto', query: '', tables: [] },
     columnMapping: [],
     target: { connectionId: 0, table: '', conflictStrategy: 'INSERT', createTableIfNotExists: false, upsertKeys: [] },
     pipeline: { readBatchSize: 10000, writeBatchSize: 1000, parallelism: 1, speedLimitRps: null, errorLimit: 0 },
@@ -37,7 +37,9 @@ function defaultConfig(): JobConfig {
 export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck }: Props) {
   const { t } = useTranslation()
   const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
+  const [sourceDatabases, setSourceDatabases] = useState<string[]>([])
   const [sourceTables, setSourceTables] = useState<Array<{ name: string }>>([])
+  const [dbsLoading, setDbsLoading] = useState(false)
   const [tablesLoading, setTablesLoading] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -87,15 +89,28 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
 
   useEffect(() => {
     if (!config.source.connectionId) {
+      setSourceDatabases([])
+      setSourceTables([])
+      return
+    }
+    setDbsLoading(true)
+    invoke<string[]>('list_databases', { connectionId: config.source.connectionId })
+      .then(setSourceDatabases)
+      .catch(() => setSourceDatabases([]))
+      .finally(() => setDbsLoading(false))
+  }, [config.source.connectionId])
+
+  useEffect(() => {
+    if (!config.source.connectionId || !config.source.database) {
       setSourceTables([])
       return
     }
     setTablesLoading(true)
-    invoke<Array<{ name: string }>>('get_tables', { connectionId: config.source.connectionId, database: null })
+    invoke<Array<{ name: string }>>('get_tables', { connectionId: config.source.connectionId, database: config.source.database })
       .then(setSourceTables)
       .catch(() => setSourceTables([]))
       .finally(() => setTablesLoading(false))
-  }, [config.source.connectionId])
+  }, [config.source.connectionId, config.source.database])
 
   const update = (patch: Partial<JobConfig>) => {
     setConfig(prev => ({ ...prev, ...patch }))
@@ -135,9 +150,17 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
           <div className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.sourceEnd')}</div>
           <DropdownSelect
             value={config.source.connectionId ? String(config.source.connectionId) : ''}
-            onChange={val => update({ source: { ...config.source, connectionId: val ? Number(val) : 0 } })}
+            onChange={val => update({ source: { ...config.source, connectionId: val ? Number(val) : 0, database: '', tables: [] } })}
             options={connections.map(c => ({ value: String(c.id), label: c.name }))}
             placeholder={t('migration.sourceConn')}
+            className="w-full"
+          />
+
+          <DropdownSelect
+            value={config.source.database}
+            onChange={val => update({ source: { ...config.source, database: val, tables: [] } })}
+            options={sourceDatabases.map(db => ({ value: db, label: db }))}
+            placeholder={dbsLoading ? t('migration.loadingDatabases') : t('migration.sourceDatabase')}
             className="w-full"
           />
 

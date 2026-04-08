@@ -664,6 +664,7 @@ fn build_comment_links(
     }
 
     let mut count = 0;
+    let db_seg = database.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
 
     for (table_name, columns) in table_columns {
         let table_node_id = make_table_node_id(connection_id, database, table_name);
@@ -732,7 +733,6 @@ fn build_comment_links(
                 }
 
                 // 生成 comment 来源的 Link Node ID
-                let db_seg = database.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
                 let link_node_id = format!(
                     "{}:link:comment_{}{}_{}_{}",
                     connection_id, db_seg, table_name, r.target_table, col.name
@@ -838,6 +838,7 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
     let db_name = database.filter(|s| !s.is_empty())
         .or_else(|| config.database.clone())
         .unwrap_or_default();
+    let db_opt: Option<&str> = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
 
     let ds = match crate::datasource::pool_cache::get_or_create(
         connection_id, &config, &db_name, "",
@@ -889,7 +890,6 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
         let conn = crate::db::get().lock().unwrap();
         for (name, table) in &current_set {
             if !existing_set.contains_key(name) {
-                let db_opt = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
                 let node_id = make_table_node_id(connection_id, db_opt, name);
                 let metadata = serde_json::json!({
                     "schema": table.schema,
@@ -908,7 +908,6 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
         // 5. Detect removed tables — soft delete
         for name in existing_set.keys() {
             if !current_set.contains_key(name) {
-                let db_opt = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
                 let node_id = make_table_node_id(connection_id, db_opt, name);
                 conn.execute(
                     "UPDATE graph_nodes SET is_deleted = 1 WHERE id = ?1",
@@ -940,7 +939,6 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
             hasher.update(b"|");
         }
         let new_hash = format!("{:x}", hasher.finalize());
-        let db_opt = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
         let node_id = make_table_node_id(connection_id, db_opt, name);
         let table = current_set[name];
         let meta = serde_json::json!({

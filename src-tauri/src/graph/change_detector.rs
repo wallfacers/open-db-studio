@@ -155,10 +155,9 @@ struct ChangeEvent<'a> {
     schema: Option<&'a str>,
 }
 
-/// 生成 FK link 节点 ID（包含可选 database 段）
+/// 生成 FK link 节点 ID（委托给 event_processor 共享函数）
 fn make_link_id(connection_id: i64, database: Option<&str>, table: &str, ref_table: &str, column: &str) -> String {
-    let db_seg = database.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
-    format!("link:{}:{}{}:{}:{}", connection_id, db_seg, table, ref_table, column)
+    super::event_processor::make_fk_link_id(connection_id, database, table, ref_table, column)
 }
 
 /// 向 schema_change_log 插入一条变更记录。

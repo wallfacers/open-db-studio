@@ -64,14 +64,24 @@ pub(super) fn rebuild_fts(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')")
 }
 
+/// 构建可选的 database 前缀段（含尾部冒号），空时返回空串
+fn db_prefix(database: Option<&str>) -> String {
+    database.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default()
+}
+
 /// node_id 生成规则
 /// 多库驱动（MySQL 等）传入 database 后，ID 中会包含库名以避免同名表碰撞。
 /// 例：`8:table:test_project:users`、`8:column:test_project:users:id`
 pub(super) fn make_node_id(connection_id: i64, node_type: &str, database: Option<&str>, parts: &[&str]) -> String {
-    match database.filter(|s| !s.is_empty()) {
-        Some(db) => format!("{}:{}:{}:{}", connection_id, node_type, db, parts.join(":")),
-        None => format!("{}:{}:{}", connection_id, node_type, parts.join(":")),
-    }
+    let prefix = db_prefix(database);
+    format!("{}:{}:{}{}", connection_id, node_type, prefix, parts.join(":"))
+}
+
+/// FK link ID 生成规则（与 change_detector 共享格式）
+/// 例：`link:8:test_project:orders:users:user_id`
+pub(super) fn make_fk_link_id(connection_id: i64, database: Option<&str>, table: &str, ref_table: &str, column: &str) -> String {
+    let prefix = db_prefix(database);
+    format!("link:{}:{}{}:{}:{}", connection_id, prefix, table, ref_table, column)
 }
 
 // ─── 核心函数 ──────────────────────────────────────────────────────────────────
@@ -364,11 +374,7 @@ pub async fn process_pending_events(
                             let ev_db = ev.database.as_deref();
                             let table_node_id = make_node_id(conn_id, "table", ev_db, &[&ev.table_name]);
                             let ref_table_node_id = make_node_id(conn_id, "table", ev_db, &[ref_table]);
-                            let db_seg = ev_db.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
-                            let link_id = format!(
-                                "link:{}:{}{}:{}:{}",
-                                conn_id, db_seg, ev.table_name, ref_table, via_col
-                            );
+                            let link_id = make_fk_link_id(conn_id, ev_db, &ev.table_name, ref_table, via_col);
 
                             let cardinality = "N:1";
 

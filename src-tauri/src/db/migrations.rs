@@ -789,10 +789,10 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
     // 新格式 "8:table:test_project:users"。无法自动迁移旧 ID，直接清空让用户重建。
     {
         let need_v20: bool = conn.query_row(
-            "SELECT COUNT(*) FROM graph_nodes WHERE id NOT LIKE '%:%:%:%' AND node_type IN ('table','column') LIMIT 1",
+            "SELECT 1 FROM graph_nodes WHERE id NOT LIKE '%:%:%:%' AND node_type IN ('table','column') LIMIT 1",
             [],
             |r| r.get::<_, i64>(0),
-        ).unwrap_or(1) > 0;
+        ).unwrap_or(0) > 0;
         if need_v20 {
             conn.execute_batch(
                 "DELETE FROM graph_edges;

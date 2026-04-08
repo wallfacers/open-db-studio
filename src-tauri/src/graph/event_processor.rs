@@ -654,9 +654,9 @@ mod tests {
 
     #[test]
     fn test_make_node_id_format() {
-        assert_eq!(make_node_id(1, "table", &["orders"]), "1:table:orders");
+        assert_eq!(make_node_id(1, "table", None, &["orders"]), "1:table:orders");
         assert_eq!(
-            make_node_id(2, "column", &["orders", "id"]),
+            make_node_id(2, "column", None, &["orders", "id"]),
             "2:column:orders:id"
         );
     }
@@ -667,7 +667,7 @@ mod tests {
     fn test_add_table_inserts_node() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let node_id = make_node_id(conn_id, "table", &["orders"]);
+        let node_id = make_node_id(conn_id, "table", None, &["orders"]);
 
         // 执行 ADD_TABLE 插入逻辑
         conn.execute(
@@ -719,7 +719,7 @@ mod tests {
     fn test_user_source_node_not_overwritten() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let node_id = make_node_id(conn_id, "table", &["customers"]);
+        let node_id = make_node_id(conn_id, "table", None, &["customers"]);
 
         // 预插入 source='user' 的节点，带有用户自定义 metadata
         insert_node(&conn, &node_id, "table", "customers", "user", Some(r#"{"note":"vip"}"#));
@@ -747,7 +747,7 @@ mod tests {
     fn test_drop_table_marks_is_deleted() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let node_id = make_node_id(conn_id, "table", &["temp_data"]);
+        let node_id = make_node_id(conn_id, "table", None, &["temp_data"]);
 
         insert_node(&conn, &node_id, "table", "temp_data", "schema", None);
 
@@ -774,7 +774,7 @@ mod tests {
     fn test_drop_table_warns_user_source() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let node_id = make_node_id(conn_id, "table", &["important"]);
+        let node_id = make_node_id(conn_id, "table", None, &["important"]);
 
         insert_node(
             &conn,
@@ -834,8 +834,8 @@ mod tests {
     fn test_add_column_inserts_column_node() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let table_node_id = make_node_id(conn_id, "table", &["orders"]);
-        let col_node_id = make_node_id(conn_id, "column", &["orders", "amount"]);
+        let table_node_id = make_node_id(conn_id, "table", None, &["orders"]);
+        let col_node_id = make_node_id(conn_id, "column", None, &["orders", "amount"]);
 
         // 先插入父表节点
         insert_node(&conn, &table_node_id, "table", "orders", "schema", None);
@@ -954,7 +954,7 @@ mod tests {
     fn test_drop_column_marks_is_deleted() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let col_node_id = make_node_id(conn_id, "column", &["orders", "old_col"]);
+        let col_node_id = make_node_id(conn_id, "column", None, &["orders", "old_col"]);
 
         insert_node(&conn, &col_node_id, "column", "old_col", "schema", None);
 
@@ -981,7 +981,7 @@ mod tests {
     fn test_add_table_updates_existing_schema_node() {
         let conn = setup_db();
         let conn_id: i64 = 1;
-        let node_id = make_node_id(conn_id, "table", &["products"]);
+        let node_id = make_node_id(conn_id, "table", None, &["products"]);
 
         // 预插入 source='schema' 的旧节点
         insert_node(

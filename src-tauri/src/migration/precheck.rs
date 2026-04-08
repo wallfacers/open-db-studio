@@ -43,7 +43,7 @@ pub async fn run_precheck_for_job(
     config: &super::task_mgr::MigrationJobConfig,
 ) -> AppResult<PreCheckResult> {
     let src_connection_id = config.source.connection_id;
-    let dst_connection_id = config.target.connection_id;
+    let dst_connection_id = config.table_mappings.first().map(|m| m.target.connection_id).unwrap_or(0);
     let src_config = crate::db::get_connection_config(src_connection_id)?;
     let dst_config = crate::db::get_connection_config(dst_connection_id)?;
     let src_ds = crate::datasource::create_datasource(&src_config).await?;
@@ -51,7 +51,8 @@ pub async fn run_precheck_for_job(
     let mut all_items = Vec::new();
 
     // Derive table name from target config
-    let table_name = &config.target.table;
+    let _first_table = config.table_mappings.first().map(|m| m.target.table.as_str()).unwrap_or("");
+    let table_name = &config.table_mappings.first().map(|m| m.target.table.clone()).unwrap_or_default();
     if !table_name.is_empty() {
         let src_cols = src_ds.get_columns(table_name, None).await
             .unwrap_or_default();

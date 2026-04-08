@@ -2,26 +2,78 @@ use serde::{Deserialize, Serialize};
 
 // ── Job Config (stored as config_json) ──────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationJobConfig {
+    pub sync_mode: SyncMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incremental_config: Option<IncrementalConfig>,
     pub source: SourceConfig,
-    pub column_mapping: Vec<ColumnMapping>,
-    pub target: TargetConfig,
+    pub table_mappings: Vec<TableMapping>,
     pub pipeline: PipelineConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SourceConfig {
-    pub connection_id: i64,
-    pub query_mode: QueryMode,
-    pub query: String,
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncMode {
+    #[default]
+    Full,
+    Incremental,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncrementalConfig {
+    pub field: String,
+    pub field_type: IncrementalFieldType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum QueryMode { #[default] Auto, Custom }
+#[serde(rename_all = "camelCase")]
+pub enum IncrementalFieldType {
+    #[default]
+    Timestamp,
+    Numeric,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceConfig {
+    pub connection_id: i64,
+    #[serde(default)]
+    pub database: String,
+    pub query_mode: QueryMode,
+    #[serde(default)]
+    pub tables: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_query: Option<String>,
+    /// Legacy field — kept for backward-compat deserialization only
+    #[serde(default, skip_serializing)]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum QueryMode {
+    #[default]
+    Auto,
+    Custom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TableMapping {
+    pub source_table: String,
+    pub target: TargetConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_condition: Option<String>,
+    pub column_mappings: Vec<ColumnMapping>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnMapping {
     pub source_expr: String,
     pub target_col: String,
@@ -29,19 +81,30 @@ pub struct ColumnMapping {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TargetConfig {
     pub connection_id: i64,
+    #[serde(default)]
+    pub database: String,
     pub table: String,
     pub conflict_strategy: ConflictStrategy,
-    pub create_table_if_not_exists: bool,
+    pub create_if_not_exists: bool,
+    #[serde(default)]
     pub upsert_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ConflictStrategy { #[default] Insert, Upsert, Replace, Skip }
+pub enum ConflictStrategy {
+    #[default]
+    Insert,
+    Upsert,
+    Replace,
+    Skip,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineConfig {
     pub read_batch_size: usize,
     pub write_batch_size: usize,
@@ -64,6 +127,79 @@ impl Default for PipelineConfig {
             shard_count: None,
         }
     }
+}
+
+// ── Backward-compatible deserialization ──────────────────────
+
+/// Intermediate struct that accepts both old and new JSON formats.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawJobConfig {
+    #[serde(default)]
+    sync_mode: SyncMode,
+    incremental_config: Option<IncrementalConfig>,
+    source: serde_json::Value,
+    #[serde(default)]
+    table_mappings: Vec<TableMapping>,
+    pipeline: PipelineConfig,
+    // Legacy top-level fields
+    target: Option<serde_json::Value>,
+    column_mapping: Option<Vec<ColumnMapping>>,
+}
+
+impl<'de> Deserialize<'de> for MigrationJobConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawJobConfig::deserialize(deserializer)?;
+        let source: SourceConfig =
+            serde_json::from_value(raw.source.clone()).map_err(serde::de::Error::custom)?;
+
+        let table_mappings = if !raw.table_mappings.is_empty() {
+            raw.table_mappings
+        } else if let Some(target_val) = raw.target {
+            // Legacy format: top-level target + column_mapping → single TableMapping
+            let legacy_target: LegacyTargetConfig =
+                serde_json::from_value(target_val).map_err(serde::de::Error::custom)?;
+            let column_mappings = raw.column_mapping.unwrap_or_default();
+            vec![TableMapping {
+                source_table: "custom_query".to_string(),
+                target: TargetConfig {
+                    connection_id: legacy_target.connection_id,
+                    database: String::new(),
+                    table: legacy_target.table,
+                    conflict_strategy: legacy_target.conflict_strategy,
+                    create_if_not_exists: legacy_target.create_table_if_not_exists,
+                    upsert_keys: legacy_target.upsert_keys,
+                },
+                filter_condition: None,
+                column_mappings,
+            }]
+        } else {
+            Vec::new()
+        };
+
+        Ok(MigrationJobConfig {
+            sync_mode: raw.sync_mode,
+            incremental_config: raw.incremental_config,
+            source,
+            table_mappings,
+            pipeline: raw.pipeline,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyTargetConfig {
+    connection_id: i64,
+    table: String,
+    conflict_strategy: ConflictStrategy,
+    #[serde(default)]
+    create_table_if_not_exists: bool,
+    #[serde(default)]
+    upsert_keys: Vec<String>,
 }
 
 // ── DB Row types (returned to frontend) ─────────────────────
@@ -181,6 +317,7 @@ impl MigrationDirtyRecord {
 // ── Stats event (broadcast every second) ────────────────────
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationStatsEvent {
     pub job_id: i64,
     pub run_id: String,
@@ -192,13 +329,99 @@ pub struct MigrationStatsEvent {
     pub write_speed_rps: f64,
     pub eta_seconds: Option<f64>,
     pub progress_pct: Option<f64>,
+    pub current_mapping: Option<String>,
+    pub mapping_progress: Option<MappingProgress>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingProgress {
+    pub total: usize,
+    pub completed: usize,
+    pub current: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationLogEvent {
     pub job_id: i64,
     pub run_id: String,
-    pub level: String,   // SYSTEM / PRECHECK / DDL / INFO / PROGRESS / WARN / ERROR / STATS
+    pub level: String,
     pub message: String,
     pub timestamp: String,
+}
+
+// ── Tests ────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_new_config_format() {
+        let json = r#"{
+            "syncMode": "full",
+            "source": {
+                "connectionId": 1,
+                "database": "mydb",
+                "queryMode": "auto",
+                "tables": ["users", "orders"],
+                "customQuery": null
+            },
+            "tableMappings": [{
+                "sourceTable": "users",
+                "target": {
+                    "connectionId": 2,
+                    "database": "warehouse",
+                    "table": "t_users",
+                    "conflictStrategy": "INSERT",
+                    "createIfNotExists": false,
+                    "upsertKeys": []
+                },
+                "filterCondition": null,
+                "columnMappings": [
+                    {"sourceExpr": "id", "targetCol": "id", "targetType": "BIGINT"}
+                ]
+            }],
+            "pipeline": {
+                "readBatchSize": 10000,
+                "writeBatchSize": 1000,
+                "channelCapacity": 16,
+                "parallelism": 1,
+                "speedLimitRps": null,
+                "errorLimit": 0,
+                "shardCount": null
+            }
+        }"#;
+        let config: MigrationJobConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.sync_mode, SyncMode::Full);
+        assert_eq!(config.table_mappings.len(), 1);
+        assert_eq!(config.table_mappings[0].source_table, "users");
+        assert_eq!(config.table_mappings[0].target.database, "warehouse");
+        assert_eq!(config.source.tables.len(), 2);
+    }
+
+    #[test]
+    fn test_deserialize_old_config_format() {
+        let json = r#"{
+            "source": {"connectionId": 1, "queryMode": "auto", "query": "SELECT * FROM users"},
+            "columnMapping": [{"sourceExpr": "id", "targetCol": "id", "targetType": "INT"}],
+            "target": {"connectionId": 2, "table": "t_users", "conflictStrategy": "INSERT", "createTableIfNotExists": false, "upsertKeys": []},
+            "pipeline": {"readBatchSize": 10000, "writeBatchSize": 1000, "channelCapacity": 16, "parallelism": 1, "speedLimitRps": null, "errorLimit": 0, "shardCount": null}
+        }"#;
+        let config: MigrationJobConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.sync_mode, SyncMode::Full);
+        assert_eq!(config.table_mappings.len(), 1);
+        assert_eq!(config.table_mappings[0].target.table, "t_users");
+        assert_eq!(config.table_mappings[0].column_mappings.len(), 1);
+    }
+
+    #[test]
+    fn test_serialize_roundtrip() {
+        let config = MigrationJobConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: MigrationJobConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.sync_mode, SyncMode::Full);
+        assert!(parsed.table_mappings.is_empty());
+    }
 }

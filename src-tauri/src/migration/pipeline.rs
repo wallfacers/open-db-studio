@@ -106,6 +106,8 @@ fn emit_stats(
         write_speed_rps: delta_written,
         eta_seconds: eta,
         progress_pct: pct,
+        current_mapping: None,
+        mapping_progress: None,
     };
     let _ = app.emit(MIGRATION_STATS_EVENT, &event);
 }
@@ -274,7 +276,7 @@ async fn execute_pipeline(
     .await?;
 
     // ── Estimate row count ─────────────────────────────────────────────────
-    let source_query = config.source.query.trim().to_string();
+    let source_query = config.source.query.clone().unwrap_or_default().trim().to_string();
     let total_rows: Option<u64> = {
         let count_sql = format!("SELECT COUNT(*) FROM ({}) AS _mig_count_", source_query);
         match src_ds.execute(&count_sql).await {
@@ -309,9 +311,10 @@ async fn execute_pipeline(
     }
 
     // ── Resolve target datasource ──────────────────────────────────────────
-    let dst_conn_id = config.target.connection_id;
+    let first_mapping = config.table_mappings.first();
+    let dst_conn_id = first_mapping.map(|m| m.target.connection_id).unwrap_or(0);
     let dst_cfg = crate::db::get_connection_config(dst_conn_id)?;
-    let target_table = config.target.table.clone();
+    let target_table = first_mapping.map(|m| m.target.table.clone()).unwrap_or_default();
 
     emit_log(
         &app,
@@ -446,8 +449,8 @@ async fn execute_pipeline(
     let app_writer = app.clone();
     let run_id_writer = run_id.clone();
     let cancel_writer = cancel.clone();
-    let column_mapping = config.column_mapping.clone();
-    let conflict_strategy = config.target.conflict_strategy.clone();
+    let column_mapping = first_mapping.map(|m| m.column_mappings.clone()).unwrap_or_default();
+    let conflict_strategy = first_mapping.map(|m| m.target.conflict_strategy.clone()).unwrap_or_default();
     let error_limit = config.pipeline.error_limit;
     let dst_driver_writer = dst_driver.clone();
 

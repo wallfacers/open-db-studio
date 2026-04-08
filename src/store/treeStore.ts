@@ -247,6 +247,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           }
           // metrics_folder 放在所有 schema 节点之前
           children.unshift(makeMetricsFolderNode(nodeId, node.meta));
+        } else {
+          children.push(makeMetricsFolderNode(nodeId, node.meta));
+          children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
         }
       } else if (node.nodeType === 'schema') {
         const driver = node.meta.driver ?? 'postgres';

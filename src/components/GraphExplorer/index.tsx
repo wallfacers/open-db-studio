@@ -289,6 +289,32 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const [subgraphMode, setSubgraphMode] = useState(false);
   const [subgraphNodeIds, setSubgraphNodeIds] = useState<Set<string>>(new Set());
 
+  // ── Auto-clear UI selections when database or connection changes ────────────
+  useEffect(() => {
+    setSelectedNode(null);
+    setActivePanel((prev) => prev === 'detail' ? null : prev);
+    setPathFrom(null);
+    setPathTo(null);
+    setSubgraphMode(false);
+    setSubgraphNodeIds(new Set());
+    setHighlightedNodeIds(new Set());
+    setHighlightedEdgeIds(new Set());
+    setFocusedNodeId(null);
+  }, [internalConnId, internalDb]);
+
+  // ── Auto-close detail panel if selected node is no longer in canvas ───────
+  useEffect(() => {
+    if (activePanel === 'detail' && selectedNode) {
+      // Check if selectedNode is still in the rendered nodes
+      // (e.g. filtered out by search or type filter)
+      const existsInCanvas = rfNodes.some(n => n.id === selectedNode.id);
+      if (!existsInCanvas) {
+        setSelectedNode(null);
+        setActivePanel(null);
+      }
+    }
+  }, [rfNodes, selectedNode, activePanel]);
+
   const [editMode, setEditMode] = useState(false);
 
   // ── 编辑模式弹框状态 ──────────────────────────────────────────────────────
@@ -375,7 +401,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   // ── Filter + convert nodes ──────────────────────────────────────────────────
   const filteredRaw = useMemo(() => {
     const kw = searchQuery.trim().toLowerCase();
-    return rawNodes.filter((n) => {
+    const result = rawNodes.filter((n) => {
       if (!typeFilter.includes(n.node_type)) return false;
       if (!kw) return true;
       return (
@@ -384,6 +410,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         (n.aliases ?? '').toLowerCase().includes(kw)
       );
     });
+    console.log('[GraphExplorer] filteredRaw:', { rawCount: rawNodes.length, filteredCount: result.length, typeFilter, tableCount: result.filter(n => n.node_type === 'table').length });
+    return result;
   }, [rawNodes, typeFilter, searchQuery]);
 
   const linkCountMap = useMemo<Record<string, number>>(() => {
@@ -671,6 +699,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     if (!currentBuildTaskId) return;
     const task = bgTasks.find((t) => t.id === currentBuildTaskId);
     if (task && (task.status === 'completed' || task.status === 'failed')) {
+      console.log('[GraphExplorer] build completed, calling refetch. internalDb:', internalDb, 'internalConnId:', internalConnId);
       refetch();
       setIsBuilding(false);
       setCurrentBuildTaskId(null);

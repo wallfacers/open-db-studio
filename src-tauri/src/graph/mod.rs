@@ -9,8 +9,14 @@ pub use cache::{JoinPath, GraphCacheStore};
 pub use change_detector::ChangeEventType;
 pub use query::{GraphNode, GraphEdge, search_graph, SubGraph};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 use tauri::Emitter;
+
+/// 正在刷新的连接 ID 集合，防止同一连接并发/重复触发 refresh_schema_graph
+static REFRESH_IN_PROGRESS: Lazy<Mutex<HashSet<i64>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 
 /// 系统库/系统 schema 名，构建图谱和指标列表时统一过滤
 pub const SYSTEM_SCHEMAS: &[&str] = &[
@@ -775,7 +781,29 @@ fn build_comment_links(
 /// Lightweight incremental schema graph refresh.
 /// Detects table additions/removals and column changes, updates graph nodes accordingly.
 /// Does NOT re-parse comment links, sync metrics, or sync aliases.
+///
+/// 内置幂等保护：同一连接若已有刷新正在执行，后续所有调用（定时器、DDL 触发、手动点击）
+/// 均立即返回 Ok(())，直到当前刷新完成为止。
 pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) -> crate::AppResult<()> {
+    // ── 幂等入口：同一连接同时只允许一次刷新 ──────────────────────────
+    {
+        let mut in_progress = REFRESH_IN_PROGRESS.lock().unwrap();
+        if in_progress.contains(&connection_id) {
+            log::info!(
+                "[refresh_schema_graph] connection {} already refreshing, skipped",
+                connection_id
+            );
+            return Ok(());
+        }
+        in_progress.insert(connection_id);
+    }
+    // 无论成功还是失败，退出时都释放锁位
+    let result = refresh_schema_graph_inner(connection_id, database).await;
+    REFRESH_IN_PROGRESS.lock().unwrap().remove(&connection_id);
+    result
+}
+
+async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>) -> crate::AppResult<()> {
     use sha2::{Sha256, Digest};
 
     // 1. Get connection config and reuse pooled datasource

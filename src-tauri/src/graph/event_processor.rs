@@ -64,9 +64,14 @@ pub(super) fn rebuild_fts(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     conn.execute_batch("INSERT INTO graph_nodes_fts(graph_nodes_fts) VALUES('rebuild')")
 }
 
-/// node_id 生成规则（与 builder.rs 保持一致）
-pub(super) fn make_node_id(connection_id: i64, node_type: &str, parts: &[&str]) -> String {
-    format!("{}:{}:{}", connection_id, node_type, parts.join(":"))
+/// node_id 生成规则
+/// 多库驱动（MySQL 等）传入 database 后，ID 中会包含库名以避免同名表碰撞。
+/// 例：`8:table:test_project:users`、`8:column:test_project:users:id`
+pub(super) fn make_node_id(connection_id: i64, node_type: &str, database: Option<&str>, parts: &[&str]) -> String {
+    match database.filter(|s| !s.is_empty()) {
+        Some(db) => format!("{}:{}:{}:{}", connection_id, node_type, db, parts.join(":")),
+        None => format!("{}:{}:{}", connection_id, node_type, parts.join(":")),
+    }
 }
 
 // ─── 核心函数 ──────────────────────────────────────────────────────────────────
@@ -171,7 +176,8 @@ pub async fn process_pending_events(
         let step_result: anyhow::Result<()> = (|| -> anyhow::Result<()> { for ev in &events {
             match ev.event_type {
                 ChangeEventType::AddTable => {
-                    let node_id = make_node_id(conn_id, "table", &[&ev.table_name]);
+                    let ev_db = ev.database.as_deref();
+                    let node_id = make_node_id(conn_id, "table", ev_db, &[&ev.table_name]);
                     let existing_source = get_node_source(&db_conn, &node_id)?;
 
                     match existing_source.as_deref() {
@@ -215,7 +221,8 @@ pub async fn process_pending_events(
                         Some(c) => c,
                         None => continue,
                     };
-                    let col_node_id = make_node_id(conn_id, "column", &[&ev.table_name, col_name]);
+                    let ev_db = ev.database.as_deref();
+                    let col_node_id = make_node_id(conn_id, "column", ev_db, &[&ev.table_name, col_name]);
                     let existing_source = get_node_source(&db_conn, &col_node_id)?;
 
                     match existing_source.as_deref() {
@@ -235,7 +242,7 @@ pub async fn process_pending_events(
                                 ],
                             )?;
                             // 也需要更新 has_column 边（若表节点已存在）
-                            let table_node_id = make_node_id(conn_id, "table", &[&ev.table_name]);
+                            let table_node_id = make_node_id(conn_id, "table", ev_db, &[&ev.table_name]);
                             let edge_id = format!("{}->{}", table_node_id, col_node_id);
                             let _ = db_conn.execute(
                                 "INSERT OR IGNORE INTO graph_edges
@@ -261,7 +268,7 @@ pub async fn process_pending_events(
                 }
 
                 ChangeEventType::DropTable => {
-                    let node_id = make_node_id(conn_id, "table", &[&ev.table_name]);
+                    let node_id = make_node_id(conn_id, "table", ev.database.as_deref(), &[&ev.table_name]);
                     let existing_source = get_node_source(&db_conn, &node_id)?;
 
                     // 若 source='user' 则打⚠️标记到 metadata，不直接删除
@@ -299,7 +306,7 @@ pub async fn process_pending_events(
                         Some(c) => c,
                         None => continue,
                     };
-                    let col_node_id = make_node_id(conn_id, "column", &[&ev.table_name, col_name]);
+                    let col_node_id = make_node_id(conn_id, "column", ev.database.as_deref(), &[&ev.table_name, col_name]);
                     let existing_source = get_node_source(&db_conn, &col_node_id)?;
 
                     if existing_source.as_deref() == Some("user") {
@@ -354,11 +361,13 @@ pub async fn process_pending_events(
                                 continue;
                             }
 
-                            let table_node_id = make_node_id(conn_id, "table", &[&ev.table_name]);
-                            let ref_table_node_id = make_node_id(conn_id, "table", &[ref_table]);
+                            let ev_db = ev.database.as_deref();
+                            let table_node_id = make_node_id(conn_id, "table", ev_db, &[&ev.table_name]);
+                            let ref_table_node_id = make_node_id(conn_id, "table", ev_db, &[ref_table]);
+                            let db_seg = ev_db.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
                             let link_id = format!(
-                                "link:{}:{}:{}:{}",
-                                conn_id, ev.table_name, ref_table, via_col
+                                "link:{}:{}{}:{}:{}",
+                                conn_id, db_seg, ev.table_name, ref_table, via_col
                             );
 
                             let cardinality = "N:1";

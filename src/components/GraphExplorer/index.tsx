@@ -410,7 +410,6 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         (n.aliases ?? '').toLowerCase().includes(kw)
       );
     });
-    console.log('[GraphExplorer] filteredRaw:', { rawCount: rawNodes.length, filteredCount: result.length, typeFilter, tableCount: result.filter(n => n.node_type === 'table').length });
     return result;
   }, [rawNodes, typeFilter, searchQuery]);
 
@@ -434,8 +433,9 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     rawNodes
       .filter(n => n.node_type === 'column')
       .forEach(n => {
-        // 列节点 ID 格式: "{conn_id}:column:{table_name}:{col_name}"
-        // 目标表节点 ID: "{conn_id}:table:{table_name}"
+        // 列节点 ID 格式: "{conn_id}:column:[{db}:]{table_name}:{col_name}"
+        // 目标表节点 ID: "{conn_id}:table:[{db}:]{table_name}"
+        // 贪婪匹配 (.+) 自动兼容有无 database 前缀两种格式
         const match = n.id.match(/^(\d+):column:(.+):.+$/);
         if (!match) return;
         const tableId = `${match[1]}:table:${match[2]}`;
@@ -699,7 +699,6 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     if (!currentBuildTaskId) return;
     const task = bgTasks.find((t) => t.id === currentBuildTaskId);
     if (task && (task.status === 'completed' || task.status === 'failed')) {
-      console.log('[GraphExplorer] build completed, calling refetch. internalDb:', internalDb, 'internalConnId:', internalConnId);
       refetch();
       setIsBuilding(false);
       setCurrentBuildTaskId(null);

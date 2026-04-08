@@ -112,6 +112,11 @@ pub fn is_pg_driver(driver: &str) -> bool {
     matches!(driver, "postgres" | "gaussdb")
 }
 
+/// 生成 table 节点 ID（含可选 database 段，用于多库驱动区分同名表）
+fn make_table_node_id(connection_id: i64, database: Option<&str>, table_name: &str) -> String {
+    event_processor::make_node_id(connection_id, "table", database, &[table_name])
+}
+
 /// 生成 schema 限定名（PG 等多 schema 数据源使用 schema.table 格式）
 fn schema_qualified_name(schema: Option<&str>, name: &str) -> String {
     match schema {
@@ -458,7 +463,7 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
 
         // 仅在目标表节点存在（is_deleted=0）时建立边，防止死链
         if !table_name.is_empty() {
-            let table_node_id = format!("{}:table:{}", connection_id, table_name);
+            let table_node_id = make_table_node_id(connection_id, m.scope_database.as_deref(), table_name);
             let table_exists: bool = conn.query_row(
                 "SELECT COUNT(*) FROM graph_nodes WHERE id = ?1 AND is_deleted = 0",
                 [&table_node_id],
@@ -661,7 +666,7 @@ fn build_comment_links(
     let mut count = 0;
 
     for (table_name, columns) in table_columns {
-        let table_node_id = format!("{}:table:{}", connection_id, table_name);
+        let table_node_id = make_table_node_id(connection_id, database, table_name);
 
         for col in columns {
             let comment = match &col.comment {
@@ -696,7 +701,7 @@ fn build_comment_links(
                     continue;
                 }
 
-                let target_node_id = format!("{}:table:{}", connection_id, resolved_target);
+                let target_node_id = make_table_node_id(connection_id, database, &resolved_target);
 
                 // 检查是否已有 source='schema' 的 Link Node 连接这两张表
                 let schema_link_exists: bool = match conn.query_row(
@@ -727,9 +732,10 @@ fn build_comment_links(
                 }
 
                 // 生成 comment 来源的 Link Node ID
+                let db_seg = database.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
                 let link_node_id = format!(
-                    "{}:link:comment_{}_{}_{}",
-                    connection_id, table_name, r.target_table, col.name
+                    "{}:link:comment_{}{}_{}_{}",
+                    connection_id, db_seg, table_name, r.target_table, col.name
                 );
 
                 let metadata = serde_json::json!({
@@ -883,7 +889,8 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
         let conn = crate::db::get().lock().unwrap();
         for (name, table) in &current_set {
             if !existing_set.contains_key(name) {
-                let node_id = format!("{}:table:{}", connection_id, name);
+                let db_opt = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
+                let node_id = make_table_node_id(connection_id, db_opt, name);
                 let metadata = serde_json::json!({
                     "schema": table.schema,
                     "table_type": table.table_type,
@@ -901,7 +908,8 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
         // 5. Detect removed tables — soft delete
         for name in existing_set.keys() {
             if !current_set.contains_key(name) {
-                let node_id = format!("{}:table:{}", connection_id, name);
+                let db_opt = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
+                let node_id = make_table_node_id(connection_id, db_opt, name);
                 conn.execute(
                     "UPDATE graph_nodes SET is_deleted = 1 WHERE id = ?1",
                     [&node_id],
@@ -932,7 +940,8 @@ async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>
             hasher.update(b"|");
         }
         let new_hash = format!("{:x}", hasher.finalize());
-        let node_id = format!("{}:table:{}", connection_id, name);
+        let db_opt = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
+        let node_id = make_table_node_id(connection_id, db_opt, name);
         let table = current_set[name];
         let meta = serde_json::json!({
             "schema": table.schema,

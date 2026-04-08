@@ -115,3 +115,131 @@ pub async fn get_migration_run_history(job_id: i64) -> AppResult<Vec<MigrationRu
         .await
         .map_err(|e| AppError::Other(e.to_string()))?
 }
+
+// ── AI Column Mapping ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn ai_recommend_column_mappings(
+    source_connection_id: i64,
+    source_database: String,
+    source_table: String,
+    target_connection_id: i64,
+    target_database: String,
+    target_table: String,
+) -> AppResult<Vec<ColumnMapping>> {
+    use crate::datasource;
+
+    // Build LLM client from default config
+    let llm_client = {
+        let config = crate::db::get_default_llm_config()?
+            .ok_or_else(|| AppError::Other(
+                "No AI model configured. Please add one in Settings → AI Model.".into(),
+            ))?;
+        let api_type = match config.api_type.as_str() {
+            "anthropic" => crate::llm::ApiType::Anthropic,
+            _ => crate::llm::ApiType::Openai,
+        };
+        let base_url = if !config.base_url.is_empty() {
+            config.base_url.clone()
+        } else if !config.opencode_provider_id.is_empty() {
+            crate::agent::config::resolve_opencode_base_url(&config.opencode_provider_id)
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        crate::llm::client::LlmClient::new(
+            config.api_key,
+            Some(base_url),
+            Some(config.model),
+            Some(api_type),
+        )
+    };
+
+    // Get source columns
+    let src_cfg = crate::db::get_connection_config(source_connection_id)?;
+    let src_ds = if source_database.is_empty() {
+        datasource::create_datasource(&src_cfg).await?
+    } else {
+        datasource::create_datasource_with_db(&src_cfg, &source_database).await?
+    };
+    let src_cols = src_ds.get_columns(&source_table, None).await?;
+
+    if src_cols.is_empty() {
+        return Err(AppError::Other(
+            format!("Source table '{}' has no columns", source_table),
+        ));
+    }
+
+    // Try to get target columns (table may not exist yet)
+    let dst_cfg = crate::db::get_connection_config(target_connection_id)?;
+    let dst_ds = if target_database.is_empty() {
+        datasource::create_datasource(&dst_cfg).await?
+    } else {
+        datasource::create_datasource_with_db(&dst_cfg, &target_database).await?
+    };
+    let dst_cols = dst_ds.get_columns(&target_table, None).await.unwrap_or_default();
+
+    // Build schema strings for prompt
+    let src_schema_str = src_cols
+        .iter()
+        .map(|c| format!(
+            "  {} {}{}{}",
+            c.name,
+            c.data_type,
+            if c.is_primary_key { " PK" } else { "" },
+            if !c.is_nullable { " NOT NULL" } else { "" }
+        ))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let dst_schema_str = if dst_cols.is_empty() {
+        format!(
+            "Target table does not exist yet. Target database driver: {}. \
+             Suggest appropriate target column names and types.",
+            dst_cfg.driver
+        )
+    } else {
+        dst_cols
+            .iter()
+            .map(|c| format!(
+                "  {} {}{}{}",
+                c.name,
+                c.data_type,
+                if c.is_primary_key { " PK" } else { "" },
+                if !c.is_nullable { " NOT NULL" } else { "" }
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let prompt = format!(
+        "Generate column mappings for a data migration.\n\n\
+         Source table: {source_table} (driver: {src_driver})\n{src_schema_str}\n\n\
+         Target table: {target_table} (driver: {dst_driver})\n{dst_schema_str}\n\n\
+         Return a JSON array of objects with fields: sourceExpr, targetCol, targetType.\n\
+         Each object maps one source column expression to a target column.\n\
+         Only return the JSON array, no markdown fences or explanation.",
+        src_driver = src_cfg.driver,
+        dst_driver = dst_cfg.driver,
+    );
+
+    let messages = vec![crate::llm::client::ChatMessage {
+        role: "user".to_string(),
+        content: prompt,
+    }];
+    let ai_result = llm_client.chat(messages).await?;
+
+    // Extract the JSON array from the response
+    let trimmed = ai_result.trim();
+    let json_str = match (trimmed.find('['), trimmed.rfind(']')) {
+        (Some(start), Some(end)) if end >= start => &trimmed[start..=end],
+        _ => trimmed,
+    };
+
+    let mappings: Vec<ColumnMapping> = serde_json::from_str(json_str)
+        .map_err(|e| AppError::Other(
+            format!("Failed to parse AI response as column mappings: {}", e),
+        ))?;
+
+    Ok(mappings)
+}

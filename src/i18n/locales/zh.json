@@ -1133,6 +1133,7 @@
     "targetType": "目标类型",
     "aiMappingHint": "AI 生成映射：请在右侧 AI 助手中描述映射需求，AI 将自动填充字段映射表格。",
     "generating": "生成中...",
+    "loadingTables": "加载表列表...",
     "realtimeProgress": "实时进度",
     "noRunHistory": "暂无运行记录",
     "historyLabel": "历史记录：",

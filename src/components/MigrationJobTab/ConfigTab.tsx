@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, Plus, Trash2, Play, ShieldCheck, Save } from 'lucide-react'
 import { DropdownSelect } from '../common/DropdownSelect'
+import { TableSelector } from '../ImportExport/TableSelector'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface PipelineConfig {
@@ -10,7 +11,7 @@ interface PipelineConfig {
   speedLimitRps: number | null; errorLimit: number
 }
 interface JobConfig {
-  source: { connectionId: number; queryMode: 'auto' | 'custom'; query: string }
+  source: { connectionId: number; queryMode: 'auto' | 'custom'; query: string; tables: string[] }
   columnMapping: ColumnMapping[]
   target: { connectionId: number; table: string; conflictStrategy: string; createTableIfNotExists: boolean; upsertKeys: string[] }
   pipeline: PipelineConfig
@@ -26,7 +27,7 @@ interface Props {
 
 function defaultConfig(): JobConfig {
   return {
-    source: { connectionId: 0, queryMode: 'auto', query: '' },
+    source: { connectionId: 0, queryMode: 'auto', query: '', tables: [] },
     columnMapping: [],
     target: { connectionId: 0, table: '', conflictStrategy: 'INSERT', createTableIfNotExists: false, upsertKeys: [] },
     pipeline: { readBatchSize: 10000, writeBatchSize: 1000, parallelism: 1, speedLimitRps: null, errorLimit: 0 },
@@ -36,6 +37,8 @@ function defaultConfig(): JobConfig {
 export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck }: Props) {
   const { t } = useTranslation()
   const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
+  const [sourceTables, setSourceTables] = useState<Array<{ name: string }>>([])
+  const [tablesLoading, setTablesLoading] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [dirty, setDirty] = useState(false)
 
@@ -81,6 +84,18 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   useEffect(() => {
     invoke<Array<{ id: number; name: string }>>('list_connections').then(setConnections).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!config.source.connectionId) {
+      setSourceTables([])
+      return
+    }
+    setTablesLoading(true)
+    invoke<Array<{ name: string }>>('get_tables', { connectionId: config.source.connectionId, database: null })
+      .then(setSourceTables)
+      .catch(() => setSourceTables([]))
+      .finally(() => setTablesLoading(false))
+  }, [config.source.connectionId])
 
   const update = (patch: Partial<JobConfig>) => {
     setConfig(prev => ({ ...prev, ...patch }))
@@ -136,6 +151,20 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
               {t('migration.sqlMode')}
             </label>
           </div>
+
+          {config.source.queryMode === 'auto' && (
+            <div className="h-[180px] overflow-hidden flex flex-col">
+              {tablesLoading ? (
+                <div className="text-[11px] text-foreground-muted py-2">{t('migration.loadingTables')}</div>
+              ) : (
+                <TableSelector
+                  tables={sourceTables}
+                  selected={config.source.tables}
+                  onChange={tables => update({ source: { ...config.source, tables } })}
+                />
+              )}
+            </div>
+          )}
 
           {config.source.queryMode === 'custom' && (
             <textarea

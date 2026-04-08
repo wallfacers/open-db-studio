@@ -64,54 +64,6 @@ fn emit_log(app: &AppHandle, job_id: i64, run_id: &str, level: &str, message: &s
     let _ = app.emit(MIGRATION_LOG_EVENT, &event);
 }
 
-fn emit_stats(
-    app: &AppHandle,
-    job_id: i64,
-    run_id: &str,
-    stats: &Arc<PipelineStats>,
-    elapsed: f64,
-    total_rows: Option<u64>,
-    prev_read: u64,
-    prev_written: u64,
-) {
-    let rows_read = stats.rows_read.load(Ordering::Relaxed);
-    let rows_written = stats.rows_written.load(Ordering::Relaxed);
-    let delta_read = rows_read.saturating_sub(prev_read) as f64;
-    let delta_written = rows_written.saturating_sub(prev_written) as f64;
-    let (eta, pct) = if let Some(total) = total_rows {
-        if rows_read < total {
-            let rps = if elapsed > 0.0 {
-                rows_read as f64 / elapsed
-            } else {
-                1.0
-            };
-            let eta_secs = (total - rows_read) as f64 / rps.max(1.0);
-            let pct = (rows_read as f64 / total as f64 * 100.0).min(100.0);
-            (Some(eta_secs), Some(pct))
-        } else {
-            (Some(0.0), Some(100.0))
-        }
-    } else {
-        (None, None)
-    };
-
-    let event = MigrationStatsEvent {
-        job_id,
-        run_id: run_id.to_string(),
-        rows_read,
-        rows_written,
-        rows_failed: stats.rows_failed.load(Ordering::Relaxed),
-        bytes_transferred: stats.bytes_transferred.load(Ordering::Relaxed),
-        read_speed_rps: delta_read,
-        write_speed_rps: delta_written,
-        eta_seconds: eta,
-        progress_pct: pct,
-        current_mapping: None,
-        mapping_progress: None,
-    };
-    let _ = app.emit(MIGRATION_STATS_EVENT, &event);
-}
-
 // ── Internal batch type ───────────────────────────────────────────────────────
 
 type Row = Vec<serde_json::Value>;
@@ -191,6 +143,7 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
 
         let final_status = match &result {
             Ok(_) => "FINISHED",
+            Err(e) if e.to_string().starts_with("PARTIAL_FAILED") => "PARTIAL_FAILED",
             Err(_) => "FAILED",
         };
 
@@ -240,7 +193,7 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
     Ok(run_id)
 }
 
-// ── Core pipeline ─────────────────────────────────────────────────────────────
+// ── Orchestrator: iterate over all table mappings ─────────────────────────────
 
 async fn execute_pipeline(
     job_id: i64,
@@ -251,181 +204,337 @@ async fn execute_pipeline(
 ) -> AppResult<String> {
     let stats = PipelineStats::new();
     let start = Instant::now();
+    let total_mappings = config.table_mappings.len();
 
-    // ── Resolve source datasource ──────────────────────────────────────────
-    let src_conn_id = config.source.connection_id;
-    let src_cfg = crate::db::get_connection_config(src_conn_id)?;
+    if total_mappings == 0 {
+        return Err(AppError::Other("No table mappings configured".into()));
+    }
 
     emit_log(
         &app,
         job_id,
         &run_id,
         "SYSTEM",
-        &format!(
-            "Connecting to source: connection_id={} driver={}",
-            src_conn_id, src_cfg.driver
-        ),
+        &format!("Pipeline started: {} table mapping(s)", total_mappings),
     );
 
-    let src_ds = crate::datasource::pool_cache::get_or_create(
-        src_conn_id,
-        &src_cfg,
-        src_cfg.database.as_deref().unwrap_or(""),
-        "",
-    )
-    .await?;
+    let mut completed = 0usize;
+    let mut failed_mappings = Vec::new();
 
-    // ── Estimate row count ─────────────────────────────────────────────────
-    let source_query = config.source.query.clone().unwrap_or_default().trim().to_string();
-    let total_rows: Option<u64> = {
-        let count_sql = format!("SELECT COUNT(*) FROM ({}) AS _mig_count_", source_query);
-        match src_ds.execute(&count_sql).await {
-            Ok(result) => {
-                result
-                    .rows
-                    .first()
-                    .and_then(|r| r.first())
-                    .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n as u64)))
-            }
-            Err(e) => {
-                emit_log(
-                    &app,
-                    job_id,
-                    &run_id,
-                    "WARN",
-                    &format!("Could not estimate row count: {}", e),
-                );
-                None
-            }
+    for (idx, mapping) in config.table_mappings.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            emit_log(&app, job_id, &run_id, "SYSTEM", "Pipeline cancelled by user");
+            return Err(AppError::Other("Cancelled".into()));
         }
-    };
 
-    if let Some(total) = total_rows {
+        let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
         emit_log(
             &app,
             job_id,
             &run_id,
             "SYSTEM",
-            &format!("Estimated rows: {}", total),
+            &format!("[{}/{}] Starting: {}", idx + 1, total_mappings, mapping_label),
         );
+
+        match execute_single_mapping(
+            job_id,
+            &run_id,
+            &config,
+            mapping,
+            &app,
+            &cancel,
+            &stats,
+            idx,
+            total_mappings,
+        )
+        .await
+        {
+            Ok(summary) => {
+                completed += 1;
+                emit_log(
+                    &app,
+                    job_id,
+                    &run_id,
+                    "SYSTEM",
+                    &format!(
+                        "[{}/{}] Completed: {} — {}",
+                        idx + 1,
+                        total_mappings,
+                        mapping_label,
+                        summary
+                    ),
+                );
+            }
+            Err(e) => {
+                failed_mappings.push(mapping_label.clone());
+                emit_log(
+                    &app,
+                    job_id,
+                    &run_id,
+                    "ERROR",
+                    &format!(
+                        "[{}/{}] Failed: {} — {}",
+                        idx + 1,
+                        total_mappings,
+                        mapping_label,
+                        e
+                    ),
+                );
+            }
+        }
     }
 
-    // ── Resolve target datasource ──────────────────────────────────────────
-    let first_mapping = config.table_mappings.first();
-    let dst_conn_id = first_mapping.map(|m| m.target.connection_id).unwrap_or(0);
-    let dst_cfg = crate::db::get_connection_config(dst_conn_id)?;
-    let target_table = first_mapping.map(|m| m.target.table.clone()).unwrap_or_default();
+    // Write back incremental lastValue if applicable
+    if config.sync_mode == SyncMode::Incremental {
+        writeback_incremental_checkpoint(job_id, &config, &app, &run_id).await;
+    }
 
+    let elapsed = start.elapsed().as_secs_f64();
+    let rows_written = stats.rows_written.load(Ordering::Relaxed);
+    let rows_failed = stats.rows_failed.load(Ordering::Relaxed);
+
+    if failed_mappings.is_empty() {
+        Ok(format!(
+            "rows_written={} rows_failed={} elapsed={:.2}s",
+            rows_written, rows_failed, elapsed
+        ))
+    } else if completed > 0 {
+        Err(AppError::Other(format!(
+            "PARTIAL_FAILED: {}/{} succeeded, failed=[{}] rows_written={} elapsed={:.2}s",
+            completed,
+            total_mappings,
+            failed_mappings.join(", "),
+            rows_written,
+            elapsed
+        )))
+    } else {
+        Err(AppError::Other(format!(
+            "All {} mapping(s) failed: [{}]",
+            total_mappings,
+            failed_mappings.join(", ")
+        )))
+    }
+}
+
+// ── Single-mapping reader→writer sub-pipeline ─────────────────────────────────
+
+async fn execute_single_mapping(
+    job_id: i64,
+    run_id: &str,
+    config: &MigrationJobConfig,
+    mapping: &TableMapping,
+    app: &AppHandle,
+    cancel: &Arc<AtomicBool>,
+    global_stats: &Arc<PipelineStats>,
+    mapping_idx: usize,
+    total_mappings: usize,
+) -> AppResult<String> {
+    let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
+
+    // ── Build source SQL ──────────────────────────────────────────────────
+    let source_query = build_source_query(config, mapping)?;
     emit_log(
-        &app,
+        app,
         job_id,
-        &run_id,
+        run_id,
         "SYSTEM",
         &format!(
-            "Connecting to target: connection_id={} driver={} table={}",
-            dst_conn_id, dst_cfg.driver, target_table
+            "[{}] Source SQL: {}",
+            mapping_label,
+            if source_query.len() > 200 {
+                &source_query[..200]
+            } else {
+                &source_query
+            }
         ),
     );
 
-    let dst_ds = crate::datasource::pool_cache::get_or_create(
-        dst_conn_id,
-        &dst_cfg,
-        dst_cfg.database.as_deref().unwrap_or(""),
+    // ── Resolve source datasource ─────────────────────────────────────────
+    let src_conn_id = config.source.connection_id;
+    let src_cfg = crate::db::get_connection_config(src_conn_id)?;
+    let src_db = if config.source.database.is_empty() {
+        src_cfg.database.clone().unwrap_or_default()
+    } else {
+        config.source.database.clone()
+    };
+    let src_ds = crate::datasource::pool_cache::get_or_create(
+        src_conn_id,
+        &src_cfg,
+        &src_db,
         "",
     )
     .await?;
 
-    // ── mpsc channel: Reader → Writer ──────────────────────────────────────
-    let channel_cap = config.pipeline.channel_capacity.max(1);
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
+    // ── Resolve target datasource ─────────────────────────────────────────
+    let dst_conn_id = mapping.target.connection_id;
+    let dst_cfg = crate::db::get_connection_config(dst_conn_id)?;
+    let dst_db = if mapping.target.database.is_empty() {
+        dst_cfg.database.clone().unwrap_or_default()
+    } else {
+        mapping.target.database.clone()
+    };
+    let dst_ds = crate::datasource::pool_cache::get_or_create(
+        dst_conn_id,
+        &dst_cfg,
+        &dst_db,
+        "",
+    )
+    .await?;
 
+    // ── Auto-create table if needed ───────────────────────────────────────
+    if mapping.target.create_if_not_exists {
+        if let Err(e) = auto_create_target_table(
+            &*src_ds,
+            &*dst_ds,
+            &src_cfg.driver,
+            &dst_cfg.driver,
+            &mapping.source_table,
+            &mapping.target.table,
+            &mapping.column_mappings,
+            app,
+            job_id,
+            run_id,
+            &mapping_label,
+        )
+        .await
+        {
+            emit_log(
+                app,
+                job_id,
+                run_id,
+                "WARN",
+                &format!(
+                    "[{}] Auto-create table failed (continuing): {}",
+                    mapping_label, e
+                ),
+            );
+        }
+    }
+
+    // ── Estimate row count ────────────────────────────────────────────────
+    let total_rows: Option<u64> = {
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM ({}) AS _mig_count_",
+            source_query
+        );
+        match src_ds.execute(&count_sql).await {
+            Ok(result) => result
+                .rows
+                .first()
+                .and_then(|r| r.first())
+                .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n as u64))),
+            Err(_) => None,
+        }
+    };
+
+    // ── Pipeline config ───────────────────────────────────────────────────
+    let target_table = mapping.target.table.clone();
+    let dst_driver = dst_cfg.driver.clone();
+    let column_mapping = mapping.column_mappings.clone();
+    let conflict_strategy = mapping.target.conflict_strategy.clone();
+    let error_limit = config.pipeline.error_limit;
     let read_batch_size = config.pipeline.read_batch_size.max(1);
     let write_batch_size = config.pipeline.write_batch_size.max(1);
-    let dst_driver = dst_cfg.driver.clone();
+    let channel_cap = config.pipeline.channel_capacity.max(1);
 
-    // ── Stats broadcaster ──────────────────────────────────────────────────
-    let stats_clone = stats.clone();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
+
+    // ── Per-mapping stats ─────────────────────────────────────────────────
+    let mapping_stats = PipelineStats::new();
+    let ms_clone = mapping_stats.clone();
     let app_stats = app.clone();
-    let run_id_stats = run_id.clone();
-    let cancel_stats = cancel.clone();
+    let run_id_s = run_id.to_string();
+    let cancel_s = cancel.clone();
+    let gs = global_stats.clone();
+    let ml = mapping_label.clone();
     let stats_handle = tokio::spawn(async move {
         let mut prev_read = 0u64;
         let mut prev_written = 0u64;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            if cancel_stats.load(Ordering::Relaxed) {
+            if cancel_s.load(Ordering::Relaxed) {
                 break;
             }
-            let elapsed = start.elapsed().as_secs_f64();
-            emit_stats(
-                &app_stats,
+            let rows_read = ms_clone.rows_read.load(Ordering::Relaxed);
+            let rows_written = ms_clone.rows_written.load(Ordering::Relaxed);
+            let delta_read = rows_read.saturating_sub(prev_read) as f64;
+            let delta_written = rows_written.saturating_sub(prev_written) as f64;
+            let (eta, pct) = if let Some(total) = total_rows {
+                if rows_read < total {
+                    let rps = delta_read.max(1.0);
+                    let eta_secs = (total - rows_read) as f64 / rps;
+                    (
+                        Some(eta_secs),
+                        Some((rows_read as f64 / total as f64 * 100.0).min(100.0)),
+                    )
+                } else {
+                    (Some(0.0), Some(100.0))
+                }
+            } else {
+                (None, None)
+            };
+
+            let event = MigrationStatsEvent {
                 job_id,
-                &run_id_stats,
-                &stats_clone,
-                elapsed,
-                total_rows,
-                prev_read,
-                prev_written,
-            );
-            prev_read = stats_clone.rows_read.load(Ordering::Relaxed);
-            prev_written = stats_clone.rows_written.load(Ordering::Relaxed);
+                run_id: run_id_s.clone(),
+                rows_read: gs.rows_read.load(Ordering::Relaxed),
+                rows_written: gs.rows_written.load(Ordering::Relaxed),
+                rows_failed: gs.rows_failed.load(Ordering::Relaxed),
+                bytes_transferred: gs.bytes_transferred.load(Ordering::Relaxed),
+                read_speed_rps: delta_read,
+                write_speed_rps: delta_written,
+                eta_seconds: eta,
+                progress_pct: pct,
+                current_mapping: Some(ml.clone()),
+                mapping_progress: Some(MappingProgress {
+                    total: total_mappings,
+                    completed: mapping_idx,
+                    current: mapping_idx + 1,
+                }),
+            };
+            let _ = app_stats.emit(MIGRATION_STATS_EVENT, &event);
+            prev_read = rows_read;
+            prev_written = rows_written;
         }
     });
 
-    // ── Reader task ────────────────────────────────────────────────────────
-    let stats_reader = stats.clone();
+    // ── Reader task ───────────────────────────────────────────────────────
+    let ms_reader = mapping_stats.clone();
+    let gs_reader = global_stats.clone();
     let app_reader = app.clone();
-    let run_id_reader = run_id.clone();
-    let cancel_reader = cancel.clone();
+    let run_id_r = run_id.to_string();
+    let cancel_r = cancel.clone();
     let query = source_query.clone();
-
+    let ml_r = mapping_label.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
-        emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader started (paginated)");
-
         let mut offset = 0usize;
         let mut columns_opt: Option<Vec<String>> = None;
-        let mut page_num = 0usize;
-
         loop {
-            if cancel_reader.load(Ordering::Relaxed) {
-                emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader cancelled");
+            if cancel_r.load(Ordering::Relaxed) {
                 break;
             }
-
             let page = src_ds.execute_paginated(&query, read_batch_size, offset).await?;
-
             if page.rows.is_empty() {
                 break;
             }
-
             let fetched = page.rows.len();
-            page_num += 1;
-
             if columns_opt.is_none() {
                 columns_opt = Some(page.columns.clone());
                 emit_log(
                     &app_reader,
                     job_id,
-                    &run_id_reader,
+                    &run_id_r,
                     "SYSTEM",
-                    &format!("Reader: columns={}", page.columns.join(", ")),
+                    &format!("[{}] Columns: {}", ml_r, page.columns.join(", ")),
                 );
             }
-
-            emit_log(
-                &app_reader,
-                job_id,
-                &run_id_reader,
-                "SYSTEM",
-                &format!("Reader page {}: {} rows (offset={})", page_num, fetched, offset),
-            );
-
             for row in &page.rows {
                 let row_bytes: u64 = row.iter().map(json_value_len).sum();
-                stats_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
             }
-            stats_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
-
+            ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+            gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
             let batch = Batch {
                 rows: page.rows,
                 column_names: columns_opt.as_ref().unwrap().clone(),
@@ -433,30 +542,22 @@ async fn execute_pipeline(
             if tx.send(batch).await.is_err() {
                 break;
             }
-
             if fetched < read_batch_size {
                 break;
             }
             offset += fetched;
         }
-
-        emit_log(&app_reader, job_id, &run_id_reader, "SYSTEM", "Reader finished");
         Ok(())
     });
 
-    // ── Writer task ────────────────────────────────────────────────────────
-    let stats_writer = stats.clone();
+    // ── Writer task ───────────────────────────────────────────────────────
+    let ms_writer = mapping_stats.clone();
+    let gs_writer = global_stats.clone();
     let app_writer = app.clone();
-    let run_id_writer = run_id.clone();
-    let cancel_writer = cancel.clone();
-    let column_mapping = first_mapping.map(|m| m.column_mappings.clone()).unwrap_or_default();
-    let conflict_strategy = first_mapping.map(|m| m.target.conflict_strategy.clone()).unwrap_or_default();
-    let error_limit = config.pipeline.error_limit;
-    let dst_driver_writer = dst_driver.clone();
-
+    let run_id_w = run_id.to_string();
+    let cancel_w = cancel.clone();
+    let ml_w = mapping_label.clone();
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
-        emit_log(&app_writer, job_id, &run_id_writer, "SYSTEM", "Writer started");
-
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
@@ -467,25 +568,16 @@ async fn execute_pipeline(
         };
 
         while let Some(batch) = rx.recv().await {
-            if cancel_writer.load(Ordering::Relaxed) {
-                emit_log(
-                    &app_writer,
-                    job_id,
-                    &run_id_writer,
-                    "SYSTEM",
-                    "Writer cancelled",
-                );
+            if cancel_w.load(Ordering::Relaxed) {
                 break;
             }
-
             if buf_columns.is_empty() {
-                buf_columns = mapped_cols.clone()
+                buf_columns = mapped_cols
+                    .clone()
                     .unwrap_or_else(|| batch.column_names.clone());
             }
-
             for row in batch.rows {
                 write_buf.push(row);
-
                 if write_buf.len() >= write_batch_size {
                     let rows_to_write =
                         std::mem::replace(&mut write_buf, Vec::with_capacity(write_batch_size));
@@ -495,36 +587,27 @@ async fn execute_pipeline(
                         &buf_columns,
                         &rows_to_write,
                         &conflict_strategy,
-                        &dst_driver_writer,
+                        &dst_driver,
                     )
                     .await
                     {
                         Ok(n) => {
-                            stats_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                            ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                            gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
                         }
                         Err(e) => {
                             emit_log(
                                 &app_writer,
                                 job_id,
-                                &run_id_writer,
+                                &run_id_w,
                                 "ERROR",
-                                &format!("Write error: {}", e),
+                                &format!("[{}] Write error: {}", ml_w, e),
                             );
-                            stats_writer
-                                .rows_failed
-                                .fetch_add(rows_to_write.len() as u64, Ordering::Relaxed);
+                            let cnt = rows_to_write.len() as u64;
+                            ms_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
                             error_count += rows_to_write.len();
                             if error_limit > 0 && error_count >= error_limit {
-                                emit_log(
-                                    &app_writer,
-                                    job_id,
-                                    &run_id_writer,
-                                    "ERROR",
-                                    &format!(
-                                        "Error limit {} reached, aborting",
-                                        error_limit
-                                    ),
-                                );
                                 return Err(e);
                             }
                         }
@@ -532,7 +615,6 @@ async fn execute_pipeline(
                 }
             }
         }
-
         // Flush remainder
         if !write_buf.is_empty() {
             match write_batch(
@@ -541,48 +623,42 @@ async fn execute_pipeline(
                 &buf_columns,
                 &write_buf,
                 &conflict_strategy,
-                &dst_driver_writer,
+                &dst_driver,
             )
             .await
             {
                 Ok(n) => {
-                    stats_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                    ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                    gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
                 }
                 Err(e) => {
+                    let cnt = write_buf.len() as u64;
+                    ms_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
+                    gs_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
                     emit_log(
                         &app_writer,
                         job_id,
-                        &run_id_writer,
+                        &run_id_w,
                         "ERROR",
-                        &format!("Final flush error: {}", e),
+                        &format!("[{}] Final flush error: {}", ml_w, e),
                     );
-                    stats_writer
-                        .rows_failed
-                        .fetch_add(write_buf.len() as u64, Ordering::Relaxed);
                 }
             }
         }
-
-        emit_log(&app_writer, job_id, &run_id_writer, "SYSTEM", "Writer finished");
         Ok(())
     });
 
-    // ── Wait for reader and writer ─────────────────────────────────────────
     let reader_result = reader_handle.await;
     let writer_result = writer_handle.await;
-
-    // Stop stats broadcaster
     stats_handle.abort();
 
     // Check results
-    if let Err(e) = reader_result {
-        return Err(AppError::Other(format!("Reader task panicked: {}", e)));
+    if let Err(e) = &reader_result {
+        return Err(AppError::Other(format!("Reader panicked: {}", e)));
     }
-    if let Err(e) = writer_result {
-        return Err(AppError::Other(format!("Writer task panicked: {}", e)));
+    if let Err(e) = &writer_result {
+        return Err(AppError::Other(format!("Writer panicked: {}", e)));
     }
-
-    // Check for inner errors
     if let Ok(Err(e)) = reader_result {
         return Err(e);
     }
@@ -590,14 +666,190 @@ async fn execute_pipeline(
         return Err(e);
     }
 
-    let rows_written = stats.rows_written.load(Ordering::Relaxed);
-    let rows_failed = stats.rows_failed.load(Ordering::Relaxed);
-    let elapsed = start.elapsed().as_secs_f64();
+    let written = mapping_stats.rows_written.load(Ordering::Relaxed);
+    let failed = mapping_stats.rows_failed.load(Ordering::Relaxed);
+    Ok(format!("written={} failed={}", written, failed))
+}
 
-    Ok(format!(
-        "rows_written={} rows_failed={} elapsed={:.2}s",
-        rows_written, rows_failed, elapsed
-    ))
+// ── Build source SQL ──────────────────────────────────────────────────────────
+
+fn build_source_query(config: &MigrationJobConfig, mapping: &TableMapping) -> AppResult<String> {
+    let base_query = if config.source.query_mode == QueryMode::Custom {
+        config.source.custom_query.clone().unwrap_or_default()
+    } else {
+        format!("SELECT * FROM {}", mapping.source_table)
+    };
+
+    if base_query.trim().is_empty() {
+        return Err(AppError::Other(format!(
+            "Empty source query for mapping {}→{}",
+            mapping.source_table, mapping.target.table
+        )));
+    }
+
+    let mut conditions = Vec::new();
+
+    if config.sync_mode == SyncMode::Incremental {
+        if let Some(ref inc) = config.incremental_config {
+            if let Some(ref last_val) = inc.last_value {
+                if !last_val.is_empty() {
+                    match inc.field_type {
+                        IncrementalFieldType::Timestamp => {
+                            conditions.push(format!("{} > '{}'", inc.field, last_val));
+                        }
+                        IncrementalFieldType::Numeric => {
+                            conditions.push(format!("{} > {}", inc.field, last_val));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(ref filter) = mapping.filter_condition {
+        if !filter.trim().is_empty() {
+            conditions.push(filter.clone());
+        }
+    }
+
+    if conditions.is_empty() {
+        Ok(base_query)
+    } else {
+        Ok(format!(
+            "SELECT * FROM ({}) AS _mig_src_ WHERE {}",
+            base_query,
+            conditions.join(" AND ")
+        ))
+    }
+}
+
+// ── Auto-create target table ──────────────────────────────────────────────────
+
+async fn auto_create_target_table(
+    src_ds: &dyn crate::datasource::DataSource,
+    dst_ds: &dyn crate::datasource::DataSource,
+    src_driver: &str,
+    dst_driver: &str,
+    source_table: &str,
+    target_table: &str,
+    column_mappings: &[ColumnMapping],
+    app: &AppHandle,
+    job_id: i64,
+    run_id: &str,
+    mapping_label: &str,
+) -> AppResult<()> {
+    let columns = src_ds.get_columns(source_table, None).await?;
+    if columns.is_empty() {
+        emit_log(
+            app,
+            job_id,
+            run_id,
+            "WARN",
+            &format!(
+                "[{}] Cannot auto-create: source table schema unavailable",
+                mapping_label
+            ),
+        );
+        return Ok(());
+    }
+
+    let type_overrides: HashMap<String, String> = column_mappings
+        .iter()
+        .filter(|m| !m.target_type.is_empty())
+        .map(|m| (m.source_expr.clone(), m.target_type.clone()))
+        .collect();
+
+    let ddl = super::ddl_convert::generate_create_table_ddl(
+        src_driver,
+        dst_driver,
+        target_table,
+        &columns,
+        &type_overrides,
+    );
+
+    emit_log(
+        app,
+        job_id,
+        run_id,
+        "DDL",
+        &format!(
+            "[{}] Auto-create DDL: {}",
+            mapping_label,
+            if ddl.len() > 300 { &ddl[..300] } else { &ddl }
+        ),
+    );
+
+    dst_ds.execute(&ddl).await?;
+    Ok(())
+}
+
+// ── Writeback incremental checkpoint ─────────────────────────────────────────
+
+async fn writeback_incremental_checkpoint(
+    job_id: i64,
+    config: &MigrationJobConfig,
+    app: &AppHandle,
+    run_id: &str,
+) {
+    let Some(ref inc) = config.incremental_config else {
+        return;
+    };
+    let src_conn_id = config.source.connection_id;
+    let Ok(src_cfg) = crate::db::get_connection_config(src_conn_id) else {
+        return;
+    };
+    let src_db = if config.source.database.is_empty() {
+        src_cfg.database.clone().unwrap_or_default()
+    } else {
+        config.source.database.clone()
+    };
+    let Ok(src_ds) = crate::datasource::pool_cache::get_or_create(
+        src_conn_id,
+        &src_cfg,
+        &src_db,
+        "",
+    )
+    .await
+    else {
+        return;
+    };
+
+    for mapping in &config.table_mappings {
+        let sql = format!("SELECT MAX({}) FROM {}", inc.field, mapping.source_table);
+        if let Ok(result) = src_ds.execute(&sql).await {
+            if let Some(max_val) = result
+                .rows
+                .first()
+                .and_then(|r| r.first())
+                .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| Some(v.to_string())))
+            {
+                if max_val != "null" {
+                    let mut new_config = config.clone();
+                    if let Some(ref mut ic) = new_config.incremental_config {
+                        ic.last_value = Some(max_val.clone());
+                    }
+                    if let Ok(json) = serde_json::to_string(&new_config) {
+                        let db = crate::db::get().lock().unwrap();
+                        let _ = db.execute(
+                            "UPDATE migration_jobs SET config_json=?1 WHERE id=?2",
+                            rusqlite::params![json, job_id],
+                        );
+                    }
+                    emit_log(
+                        app,
+                        job_id,
+                        run_id,
+                        "SYSTEM",
+                        &format!(
+                            "Incremental checkpoint updated: {} = {}",
+                            inc.field, max_val
+                        ),
+                    );
+                    return;
+                }
+            }
+        }
+    }
 }
 
 // ── Batch write helper ────────────────────────────────────────────────────────
@@ -622,7 +874,9 @@ async fn write_batch(
         (ConflictStrategy::Replace, "sqlite") => ("INSERT OR REPLACE INTO", ""),
         (ConflictStrategy::Skip, "mysql" | "doris" | "tidb") => ("INSERT IGNORE INTO", ""),
         (ConflictStrategy::Replace, "mysql" | "doris" | "tidb") => ("REPLACE INTO", ""),
-        (ConflictStrategy::Skip, "postgres" | "gaussdb") => ("INSERT INTO", " ON CONFLICT DO NOTHING"),
+        (ConflictStrategy::Skip, "postgres" | "gaussdb") => {
+            ("INSERT INTO", " ON CONFLICT DO NOTHING")
+        }
         _ => ("INSERT INTO", ""),
     };
 
@@ -631,7 +885,11 @@ async fn write_batch(
         "sqlserver" => |c| format!("[{}]", c.replace(']', "]]")),
         _ => |c| format!("\"{}\"", c.replace('"', "\"\"")),
     };
-    let col_list = columns.iter().map(|c| quote_col(c)).collect::<Vec<_>>().join(", ");
+    let col_list = columns
+        .iter()
+        .map(|c| quote_col(c))
+        .collect::<Vec<_>>()
+        .join(", ");
     let quoted_table = quote_col(table);
 
     let escape_style = ds.string_escape_style();
@@ -658,4 +916,3 @@ async fn write_batch(
     ds.execute(&sql).await?;
     Ok(rows.len())
 }
-

@@ -768,7 +768,10 @@
     "colName": "Table Name",
     "colRows": "Rows (est.)",
     "colSize": "Size",
-    "selectedCount": "Selected: {{selected}} / {{total}} tables"
+    "selectedCount": "Selected: {{selected}} / {{total}} tables",
+    "filteredCount": "{{count}} matched",
+    "pageInfo": "{{page}} / {{total}}",
+    "noResults": "No results"
   },
   "error": {
     "askAi": "Ask AI",
@@ -1089,8 +1092,11 @@
     "rename": "Rename",
     "delete": "Delete",
     "move": "Move",
+    "open": "Open",
     "run": "Run",
     "stop": "Stop",
+    "targetCategory": "Category",
+    "rootCategory": "Root",
     "precheck": "Pre-check",
     "save": "Save",
     "configTab": "Config",

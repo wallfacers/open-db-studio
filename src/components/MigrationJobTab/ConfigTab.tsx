@@ -176,7 +176,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
           </div>
 
           {config.source.queryMode === 'auto' && (
-            <div className="h-[180px] overflow-hidden flex flex-col">
+            <div className="h-[400px] overflow-hidden flex flex-col">
               {tablesLoading ? (
                 <div className="text-[11px] text-foreground-muted py-2">{t('migration.loadingTables')}</div>
               ) : (

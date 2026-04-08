@@ -734,7 +734,10 @@
     "colName": "表名",
     "colRows": "行数(估算)",
     "colSize": "大小",
-    "selectedCount": "已选: {{selected}} / {{total}} 个表"
+    "selectedCount": "已选: {{selected}} / {{total}} 个表",
+    "filteredCount": "匹配 {{count}} 个",
+    "pageInfo": "{{page}} / {{total}} 页",
+    "noResults": "无匹配结果"
   },
   "taskCenter": {
     "clearCompleted": "清除已完成",
@@ -1090,8 +1093,11 @@
     "rename": "重命名",
     "delete": "删除",
     "move": "移动",
+    "open": "打开",
     "run": "运行",
     "stop": "停止",
+    "targetCategory": "所属目录",
+    "rootCategory": "根目录",
     "precheck": "预检查",
     "save": "保存",
     "configTab": "配置",

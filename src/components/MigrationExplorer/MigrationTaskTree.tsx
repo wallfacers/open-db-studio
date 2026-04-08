@@ -215,7 +215,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
               {jobNode.status !== 'RUNNING' && (
                 <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
                   onClick={() => { onOpenJob(jobNode.jobId, jobNode.label); setCtxMenu(null) }}>
-                  <ArrowLeftRight size={13} />{t('migration.run')}
+                  <ArrowLeftRight size={13} />{t('migration.open')}
                 </button>
               )}
               {jobNode.status === 'RUNNING' && (

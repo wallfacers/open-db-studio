@@ -69,6 +69,7 @@ impl Default for PipelineConfig {
 // ── DB Row types (returned to frontend) ─────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationCategory {
     pub id: i64,
     pub name: String,
@@ -90,6 +91,7 @@ impl MigrationCategory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationJob {
     pub id: i64,
     pub name: String,

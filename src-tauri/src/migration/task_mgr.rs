@@ -154,7 +154,7 @@ impl<'de> Deserialize<'de> for MigrationJobConfig {
     {
         let raw = RawJobConfig::deserialize(deserializer)?;
         let source: SourceConfig =
-            serde_json::from_value(raw.source.clone()).map_err(serde::de::Error::custom)?;
+            serde_json::from_value(raw.source).map_err(serde::de::Error::custom)?;
 
         let table_mappings = if !raw.table_mappings.is_empty() {
             raw.table_mappings

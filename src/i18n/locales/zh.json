@@ -1153,6 +1153,16 @@
     "bytesTransferred": "传输大小",
     "dirtyRecords": "脏数据记录",
     "defaultCategoryName": "新建分类",
-    "defaultJobName": "新建任务"
+    "defaultJobName": "新建任务",
+    "tableMapping": "表映射",
+    "sourceTable": "源表",
+    "targetTable": "目标表",
+    "filterCondition": "过滤条件",
+    "columnMapping": "列映射",
+    "duplicateRow": "复制行",
+    "addMappingRow": "添加映射行",
+    "aiRecommendAll": "AI推荐全部",
+    "multiTargetWarning": "多个源→{{table}}（N:1合并）",
+    "conditionRouteInfo": "{{table}}有{{count}}条路由，使用不同的过滤条件"
   }
 }

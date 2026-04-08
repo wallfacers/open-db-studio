@@ -1152,6 +1152,16 @@
     "bytesTransferred": "Transferred",
     "dirtyRecords": "Dirty Records",
     "defaultCategoryName": "New Category",
-    "defaultJobName": "New Task"
+    "defaultJobName": "New Task",
+    "tableMapping": "Table Mapping",
+    "sourceTable": "Source Table",
+    "targetTable": "Target Table",
+    "filterCondition": "Filter Condition",
+    "columnMapping": "Column Mapping",
+    "duplicateRow": "Duplicate Row",
+    "addMappingRow": "Add Mapping Row",
+    "aiRecommendAll": "AI Recommend All",
+    "multiTargetWarning": "Multiple sources → {{table}} (N:1 merge)",
+    "conditionRouteInfo": "{{table}} has {{count}} routes with different filters"
   }
 }

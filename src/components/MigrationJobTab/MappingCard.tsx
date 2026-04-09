@@ -1,11 +1,10 @@
 import { CheckCircle2, XCircle, Loader2, Circle, ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
-import { MappingCardState, MigrationLogEvent } from '../../store/migrationStore'
+import { MappingCardState } from '../../store/migrationStore'
 
 interface Props {
   card: MappingCardState
-  logs: MigrationLogEvent[]
 }
 
 const BORDER_COLORS: Record<string, string> = {
@@ -22,7 +21,7 @@ const STATUS_BG: Record<string, string> = {
   pending: 'bg-foreground-ghost/10 text-foreground-ghost',
 }
 
-export function MappingCard({ card, logs }: Props) {
+export function MappingCard({ card }: Props) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 
@@ -84,23 +83,39 @@ export function MappingCard({ card, logs }: Props) {
         </div>
       </button>
 
-      {/* Expanded error / logs */}
+      {/* Expanded details */}
       {expanded && (
         <div className="px-3 pb-2 space-y-1">
+          {/* Error */}
           {card.error && (
             <div className="text-[10px] text-error font-mono break-all bg-error/5 rounded px-2 py-1">
               {card.error}
             </div>
           )}
-          {tableLogs.length > 0 && (
-            <div className="font-mono text-[10px] text-foreground-muted bg-background-base rounded p-1.5 max-h-32 overflow-y-auto">
-              {tableLogs.map((log, i) => (
-                <div key={i} className="leading-4">
-                  <span className="text-foreground-ghost">[{log.level}]</span> {log.message}
-                </div>
-              ))}
+          {/* Progress details */}
+          <div className="text-[10px] space-y-0.5 bg-background-base rounded p-2">
+            {card.startedAt && (
+              <div className="text-foreground-muted">
+                {t('migration.startedAt')}: <span className="text-foreground-default font-medium">{formatTimestamp(card.startedAt)}</span>
+              </div>
+            )}
+            {card.finishedAt && (
+              <div className="text-foreground-muted">
+                {t('migration.finishedAt')}: <span className="text-foreground-default font-medium">{formatTimestamp(card.finishedAt)}</span>
+              </div>
+            )}
+            {card.elapsedMs !== undefined && (
+              <div className="text-foreground-muted">
+                {t('migration.elapsed')}: <span className="text-foreground-default font-medium">{formatElapsed(card.elapsedMs)}</span>
+              </div>
+            )}
+            <div className="text-foreground-muted">
+              {t('migration.rowsWritten')}: <span className="text-foreground-default font-medium">{card.rowsWritten.toLocaleString()}</span>
             </div>
-          )}
+            <div className="text-foreground-muted">
+              Failed: <span className={card.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{card.rowsFailed}</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1190,6 +1190,8 @@
     "collapseDetails": "收起详情",
     "mappingCards": "表映射详情",
     "pending": "等待中",
-    "running": "运行中"
+    "running": "运行中",
+    "startedAt": "开始时间",
+    "finishedAt": "结束时间"
   }
 }

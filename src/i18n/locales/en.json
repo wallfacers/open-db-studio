@@ -1189,6 +1189,8 @@
     "collapseDetails": "Collapse Details",
     "mappingCards": "Table Mapping Details",
     "pending": "Pending",
-    "running": "Running"
+    "running": "Running",
+    "startedAt": "Started At",
+    "finishedAt": "Finished At"
   }
 }

@@ -1,10 +1,38 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Download, CheckCircle2, XCircle } from 'lucide-react'
+import { Download, CheckCircle2, XCircle, Clock, AlertCircle, StopCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { MigrationRunHistory, MigrationDirtyRecord } from '../../store/migrationStore'
 
 interface Props { jobId: number }
+
+function statusIcon(status: string) {
+  switch (status) {
+    case 'FINISHED': return <CheckCircle2 size={14} className="text-success flex-shrink-0" />
+    case 'FAILED': return <XCircle size={14} className="text-error flex-shrink-0" />
+    case 'STOPPED': return <StopCircle size={14} className="text-foreground-muted flex-shrink-0" />
+    default: return <AlertCircle size={14} className="text-warning flex-shrink-0" />
+  }
+}
+
+function fmtBytes(b: number): string {
+  if (b <= 0) return '0 B'
+  if (b > 1e9) return `${(b / 1e9).toFixed(2)} GB`
+  if (b > 1e6) return `${(b / 1e6).toFixed(1)} MB`
+  if (b > 1024) return `${(b / 1024).toFixed(0)} KB`
+  return `${b} B`
+}
+
+function fmtDur(ms: number | null): string {
+  if (ms == null || ms <= 0) return '-'
+  if (ms > 60000) return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function statusLabel(status: string, t: (key: string) => string): string {
+  if (status === 'FINISHED') return t('migration.success')
+  return status
+}
 
 export function StatsTab({ jobId }: Props) {
   const { t } = useTranslation()
@@ -24,11 +52,6 @@ export function StatsTab({ jobId }: Props) {
       .then(setDirty).catch(() => {})
   }, [selectedRun?.runId, jobId])
 
-  const fmtBytes = (b: number) => b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1024).toFixed(0)} KB`
-  const fmtDur = (ms: number | null) => ms == null ? '-' : ms > 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`
-
-  const run = selectedRun
-
   const handleExportCsv = () => {
     if (!dirty.length) return
     const header = 'row_index,field_name,raw_value,error_msg\n'
@@ -40,79 +63,120 @@ export function StatsTab({ jobId }: Props) {
     a.click()
   }
 
-  if (!run) return (
+  // ── No history ──
+  if (!history.length) return (
     <div className="flex items-center justify-center h-full text-foreground-muted text-[13px]">
       {t('migration.noRunHistory')}
     </div>
   )
 
-  const isSuccess = run.status === 'FINISHED'
+  const run = selectedRun
+  const isSuccess = run?.status === 'FINISHED'
 
   return (
-    <div className="p-4 overflow-y-auto h-full flex flex-col gap-4">
-      {/* Run selector */}
-      {history.length > 1 && (
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-foreground-muted">{t('migration.historyLabel')}</span>
-          <select
-            value={run.runId}
-            onChange={e => setSelectedRun(history.find(h => h.runId === e.target.value) ?? null)}
-            className="bg-background-elevated border border-border-strong rounded px-2 py-1 text-[11px] text-foreground-default outline-none"
-          >
-            {history.map(h => <option key={h.runId} value={h.runId}>{h.startedAt} — {h.status}</option>)}
-          </select>
+    <div className="flex h-full">
+      {/* Left: history list */}
+      <div className="w-56 flex-shrink-0 border-r border-border-subtle flex flex-col bg-background-panel">
+        <div className="px-3 py-2 text-[11px] font-medium text-foreground-subtle uppercase tracking-wider border-b border-border-subtle">
+          {t('migration.historyLabel')}
         </div>
-      )}
-
-      {/* Summary */}
-      <div className="bg-background-panel border border-border-subtle rounded p-3">
-        <div className="flex items-center gap-2 mb-3">
-          {isSuccess
-            ? <CheckCircle2 size={16} className="text-success" />
-            : <XCircle size={16} className="text-error" />}
-          <span className="text-[13px] font-medium text-foreground-default">
-            {isSuccess ? t('migration.success') : run.status}
-          </span>
-          <span className="text-[11px] text-foreground-muted ml-2">{t('migration.duration')} {fmtDur(run.durationMs ?? 0)}</span>
-          <span className="text-[11px] text-foreground-subtle ml-auto">{run.startedAt}</span>
-        </div>
-
-        <div className="grid grid-cols-4 gap-2">
-          {([
-            [t('migration.rowsReadLabel'), (run.rowsRead ?? 0).toLocaleString(), ''],
-            [t('migration.rowsWrittenLabel'), (run.rowsWritten ?? 0).toLocaleString(), ''],
-            [t('migration.rowsFailedLabel'), (run.rowsFailed ?? 0).toString(), (run.rowsFailed ?? 0) > 0 ? 'text-error' : ''],
-            [t('migration.bytesTransferred'), fmtBytes(run.bytesTransferred ?? 0), ''],
-          ] as [string, string, string][]).map(([label, val, cls]) => (
-            <div key={label} className="bg-background-elevated border border-border-subtle rounded p-2 text-center">
-              <div className="text-[10px] text-foreground-subtle mb-1">{label}</div>
-              <div className={`text-[15px] font-semibold text-foreground-default ${cls}`}>{val}</div>
-            </div>
-          ))}
+        <div className="flex-1 overflow-y-auto">
+          {history.map(h => {
+            const active = selectedRun?.runId === h.runId
+            return (
+              <button
+                key={h.runId}
+                onClick={() => setSelectedRun(h)}
+                className={`w-full text-left px-3 py-2.5 border-b border-border-subtle/50 transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-accent/10 border-l-2 border-l-accent'
+                    : 'hover:bg-background-elevated/50 border-l-2 border-l-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  {statusIcon(h.status)}
+                  <span className="text-[12px] text-foreground-default font-medium truncate">
+                    {statusLabel(h.status, t)}
+                  </span>
+                </div>
+                <div className="text-[10px] text-foreground-muted mt-1 flex items-center gap-1">
+                  <Clock size={9} />
+                  <span>{h.startedAt}</span>
+                </div>
+                <div className="text-[10px] text-foreground-subtle mt-0.5">
+                  {fmtDur(h.durationMs)} · {(h.rowsWritten ?? 0).toLocaleString()} rows
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Dirty records */}
-      {dirty.length > 0 && (
-        <div className="bg-background-panel border border-border-subtle rounded p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] font-medium text-foreground-default">{t('migration.dirtyRecords')} ({dirty.length})</span>
-            <button onClick={handleExportCsv} className="flex items-center gap-1 text-[11px] text-foreground-muted hover:text-foreground transition-colors duration-150">
-              <Download size={12} />{t('migration.exportCsv')}
-            </button>
-          </div>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {dirty.map(d => (
-              <div key={d.id} className="text-[11px] text-foreground-muted bg-background-elevated rounded px-2 py-1 font-mono">
-                <span className="text-error">#{d.rowIndex ?? '?'}</span>
-                {d.fieldName && <span> | {d.fieldName}</span>}
-                {d.rawValue && <span> | "{d.rawValue}"</span>}
-                {d.errorMsg && <span className="text-warning"> → {d.errorMsg}</span>}
+      {/* Right: detail */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+        {run && (
+          <>
+            {/* Summary */}
+            <div className="bg-background-elevated border border-border-subtle rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-4">
+                {isSuccess
+                  ? <CheckCircle2 size={18} className="text-success" />
+                  : <XCircle size={18} className="text-error" />}
+                <span className="text-[14px] font-semibold text-foreground-default">
+                  {isSuccess ? t('migration.success') : run.status}
+                </span>
+                {run.durationMs != null && (
+                  <span className="text-[12px] text-foreground-muted ml-2">
+                    {t('migration.duration')} {fmtDur(run.durationMs)}
+                  </span>
+                )}
+                <span className="text-[11px] text-foreground-subtle ml-auto">{run.startedAt}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+
+              <div className="grid grid-cols-4 gap-3">
+                {([
+                  [t('migration.rowsReadLabel'), (run.rowsRead ?? 0).toLocaleString(), ''],
+                  [t('migration.rowsWrittenLabel'), (run.rowsWritten ?? 0).toLocaleString(), ''],
+                  [t('migration.rowsFailedLabel'), (run.rowsFailed ?? 0).toLocaleString(), (run.rowsFailed ?? 0) > 0 ? 'text-error' : ''],
+                  [t('migration.bytesTransferred'), fmtBytes(run.bytesTransferred ?? 0), ''],
+                ] as [string, string, string][]).map(([label, val, cls]) => (
+                  <div key={label} className="bg-background-base border border-border-subtle rounded-lg p-3 text-center">
+                    <div className="text-[10px] text-foreground-subtle mb-1.5">{label}</div>
+                    <div className={`text-[16px] font-semibold text-foreground-default ${cls}`}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dirty records */}
+            {dirty.length > 0 && (
+              <div className="bg-background-elevated border border-border-subtle rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[13px] font-medium text-foreground-default">
+                    {t('migration.dirtyRecords')} ({dirty.length})
+                  </span>
+                  <button
+                    onClick={handleExportCsv}
+                    className="flex items-center gap-1.5 text-[12px] text-foreground-muted hover:text-foreground transition-colors"
+                  >
+                    <Download size={13} />{t('migration.exportCsv')}
+                  </button>
+                </div>
+                <div className="space-y-1 max-h-64 overflow-y-auto">
+                  {dirty.map(d => (
+                    <div key={d.id} className="text-[11px] text-foreground-muted bg-background-base rounded px-2.5 py-1.5 font-mono flex items-center gap-2">
+                      <span className="text-error flex-shrink-0">#{d.rowIndex ?? '?'}</span>
+                      {d.fieldName && <span className="text-foreground-subtle flex-shrink-0">{d.fieldName}</span>}
+                      {d.rawValue && <span className="truncate">"{d.rawValue}"</span>}
+                      {d.errorMsg && <span className="text-warning flex-shrink-0 ml-auto">{d.errorMsg}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

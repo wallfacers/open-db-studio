@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-// Reuse DropdownSelect's global open-event mechanism
 let dropdownIdCounter = 0;
 const DROPDOWN_OPEN_EVENT = 'combobox-select-open';
 
@@ -52,10 +51,7 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
     if (!open) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (
-        triggerRef.current?.contains(target) ||
-        dropdownRef.current?.contains(target)
-      ) return;
+      if (triggerRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
       close();
     };
     document.addEventListener('mousedown', handler, true);
@@ -107,30 +103,33 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
     return options.filter(o => o.label.toLowerCase().includes(term));
   }, [searchText, options]);
 
-  // Sync searchText with value when opening
   useEffect(() => {
     if (open) setSearchText('');
   }, [open]);
 
   return (
-    <div ref={triggerRef} className={`relative flex items-center ${className}`}>
-      {/* Editable input */}
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="flex-1 bg-background-elevated border border-border-strong rounded-l px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
-      />
-      {/* Dropdown toggle button */}
-      <div
-        className="flex items-center justify-center bg-background-elevated border border-l-0 border-border-strong rounded-r px-1 cursor-pointer hover:border-border-focus transition-colors select-none"
-        onClick={handleToggle}
-      >
-        <ChevronDown
-          size={11}
-          className={`text-foreground-muted transition-transform ${open ? 'rotate-180' : ''}`}
+    <div ref={triggerRef} className={`relative ${className}`}>
+      {/* Single input with embedded chevron */}
+      <div className="relative">
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full bg-background-elevated border border-border-strong rounded px-2 py-1 pr-6 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
         />
+        {/* Chevron inside the input on the right */}
+        <button
+          type="button"
+          className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-4 h-4 cursor-pointer text-foreground-muted hover:text-foreground transition-colors"
+          onClick={handleToggle}
+          tabIndex={-1}
+        >
+          <ChevronDown
+            size={12}
+            className={`transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
       </div>
 
       {/* Dropdown list */}
@@ -141,11 +140,11 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
           style={{
             top: pos.top + 4,
             left: pos.left,
-            width: pos.width + 20,
+            width: Math.max(pos.width, 200),
             maxHeight,
           }}
         >
-          <div className="p-1.5 border-b border-border-default sticky top-0 bg-background-elevated">
+          <div className="p-1.5 border-b border-border-subtle sticky top-0 bg-background-elevated">
             <input
               ref={searchInputRef}
               className="w-full bg-background-base border border-border-strong rounded px-2 py-1 text-xs text-foreground-default outline-none focus:border-border-focus"
@@ -161,8 +160,8 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
           {filteredOptions.map(opt => (
             <div
               key={opt.value}
-              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-border-default transition-colors duration-150
-                          ${value === opt.value ? 'text-accent' : 'text-foreground'}`}
+              className={`px-3 py-1.5 text-[12px] cursor-pointer hover:bg-background-hover transition-colors duration-150
+                          ${value === opt.value ? 'text-accent font-medium' : 'text-foreground'}`}
               onClick={() => { onChange(opt.value); close(); }}
             >
               {opt.label}

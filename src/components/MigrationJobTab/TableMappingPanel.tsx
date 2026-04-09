@@ -91,11 +91,11 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
       </div>
 
       {/* Header */}
-      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1 text-[10px] text-foreground-subtle px-1">
+      <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,2fr)_auto] gap-2 mb-1 text-[10px] text-foreground-subtle px-2">
         <span>{t('migration.sourceTable')}</span>
         <span>{t('migration.targetTable')}</span>
         <span>{t('migration.filterCondition')}</span>
-        <span />
+        <span className="w-[84px]" />
       </div>
 
       {/* Rows */}
@@ -113,8 +113,8 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
         }
         return (
           <div key={idx}>
-            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1 hover:bg-background-hover rounded px-1 py-0.5 transition-colors items-center">
-              <input value={m.sourceTable} readOnly className={inputCls + " w-full opacity-70"} />
+            <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,2fr)_auto] gap-2 mb-1 hover:bg-background-hover rounded px-2 py-0.5 transition-colors items-center">
+              <input value={m.sourceTable} readOnly className={inputCls + " w-full opacity-70 cursor-default"} />
               <ComboboxSelect
                 value={m.target.table}
                 options={targetTables.map(t => ({ value: t.name, label: t.name }))}
@@ -124,8 +124,8 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
               <input
                 value={m.filterCondition || ''}
                 onChange={e => updateMapping(idx, { filterCondition: e.target.value })}
-                placeholder={isMultiSource ? "WHERE ..." : ""}
-                className={inputCls + " w-full"}
+                placeholder="WHERE id > 100 AND status = 'active'"
+                className={inputCls + " w-full font-mono"}
               />
               <div className="flex items-center gap-0.5">
                 <button onClick={toggleExpand}

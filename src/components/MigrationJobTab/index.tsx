@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { useMigrationStore, MigrationJob } from '../../store/migrationStore'
+import { useConfirm } from '../../hooks/useConfirm'
 import { ConfigTab } from './ConfigTab'
 import { LogTab } from './LogTab'
 import { StatsTab } from './StatsTab'
@@ -12,6 +13,7 @@ type SubTab = 'config' | 'log' | 'stats'
 
 export function MigrationJobTab({ jobId }: Props) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const store = useMigrationStore()
   const [activeTab, setActiveTab] = useState<SubTab>('config')
   const [configJson, setConfigJson] = useState('{}')
@@ -44,7 +46,10 @@ export function MigrationJobTab({ jobId }: Props) {
   }
 
   const handlePrecheck = async () => {
-    alert('预检查完成：连接正常，类型兼容性检查通过。')
+    await confirm({
+      title: t('migration.precheck'),
+      message: t('migration.precheckSuccess', { defaultValue: '预检查完成：连接正常，类型兼容性检查通过。' }),
+    })
   }
 
   const tabCls = (tab: SubTab) =>

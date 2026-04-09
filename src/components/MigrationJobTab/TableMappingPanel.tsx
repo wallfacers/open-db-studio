@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, ChevronDown, Copy, Trash2, Columns3, Sparkles } from 'lucide-react'
+import { Plus, Copy, Trash2, Columns3, Sparkles } from 'lucide-react'
 import { ColumnMappingPanel } from './ColumnMappingPanel'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
@@ -25,8 +25,7 @@ interface Props {
 
 export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpdate, hasAi, onAiRecommend, aiLoadingMap }: Props) {
   const { t } = useTranslation()
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
-  const [openMenu, setOpenMenu] = useState<number | null>(null)
+  const [expandedIdxs, setExpandedIdxs] = useState<Set<number>>(() => new Set(mappings.map((_, i) => i)))
 
   const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
 
@@ -46,13 +45,15 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
     const next = [...mappings]
     next.splice(idx + 1, 0, { ...JSON.parse(JSON.stringify(mappings[idx])), filterCondition: '' })
     onUpdate(next)
-    setOpenMenu(null)
   }
 
   const removeRow = (idx: number) => {
     onUpdate(mappings.filter((_, i) => i !== idx))
-    if (expandedIdx === idx) setExpandedIdx(null)
-    setOpenMenu(null)
+    setExpandedIdxs(prev => {
+      const next = new Set(prev)
+      next.delete(idx)
+      return next
+    })
   }
 
   const addRow = () => {
@@ -101,52 +102,51 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
         const tKey = `${m.target.connectionId}:${m.target.database}:${m.target.table}`
         const isMultiTarget = !!(m.target.table && (targetCounts.get(tKey) || 0) > 1)
         const isMultiSource = !!(m.sourceTable && (sourceCounts.get(m.sourceTable) || 0) > 1)
+        const isExpanded = expandedIdxs.has(idx)
+        const toggleExpand = () => {
+          setExpandedIdxs(prev => {
+            const next = new Set(prev)
+            if (next.has(idx)) next.delete(idx); else next.add(idx)
+            return next
+          })
+        }
         return (
           <div key={idx}>
-            <div className="grid grid-cols-[1fr_1fr_1fr_36px] gap-1 mb-1 hover:bg-background-hover rounded px-1 py-0.5 transition-colors">
+            <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1 hover:bg-background-hover rounded px-1 py-0.5 transition-colors items-center">
               <input value={m.sourceTable} readOnly className={inputCls + " w-full opacity-70"} />
               <input
                 value={m.target.table}
                 onChange={e => updateTarget(idx, { table: e.target.value })}
-                placeholder="target_table"
-                list={`target-tables-${idx}`}
+                placeholder={t('migration.targetTable')}
                 className={inputCls + " w-full"}
               />
-              <datalist id={`target-tables-${idx}`}>
-                {targetTables.map(t => <option key={t.name} value={t.name} />)}
-              </datalist>
               <input
                 value={m.filterCondition || ''}
                 onChange={e => updateMapping(idx, { filterCondition: e.target.value })}
                 placeholder={isMultiSource ? "WHERE ..." : ""}
                 className={inputCls + " w-full"}
               />
-              <div className="relative">
-                <button onClick={() => setOpenMenu(openMenu === idx ? null : idx)}
-                  className="p-1 text-foreground-muted hover:text-foreground transition-colors">
-                  <ChevronDown size={14} />
+              <div className="flex items-center gap-0.5">
+                <button onClick={toggleExpand}
+                  className={`p-1 text-foreground-muted hover:text-foreground transition-colors rounded ${isExpanded ? 'text-accent' : ''}`}
+                  title={t('migration.columnMapping')}>
+                  <Columns3 size={14} />
                 </button>
-                {openMenu === idx && (
-                  <div className="absolute right-0 top-full z-50 bg-background-panel border border-border-subtle rounded shadow-lg py-1 min-w-[120px]">
-                    <button onClick={() => { setExpandedIdx(expandedIdx === idx ? null : idx); setOpenMenu(null) }}
-                      className="w-full px-3 py-1.5 text-[11px] text-left hover:bg-background-hover flex items-center gap-2">
-                      <Columns3 size={12} />{t('migration.columnMapping')}
-                    </button>
-                    <button onClick={() => duplicateRow(idx)}
-                      className="w-full px-3 py-1.5 text-[11px] text-left hover:bg-background-hover flex items-center gap-2">
-                      <Copy size={12} />{t('migration.duplicateRow')}
-                    </button>
-                    <button onClick={() => removeRow(idx)}
-                      className="w-full px-3 py-1.5 text-[11px] text-left hover:bg-background-hover text-error flex items-center gap-2">
-                      <Trash2 size={12} />{t('migration.delete')}
-                    </button>
-                  </div>
-                )}
+                <button onClick={() => duplicateRow(idx)}
+                  className="p-1 text-foreground-muted hover:text-foreground transition-colors rounded"
+                  title={t('migration.duplicateRow')}>
+                  <Copy size={14} />
+                </button>
+                <button onClick={() => removeRow(idx)}
+                  className="p-1 text-foreground-muted hover:text-error transition-colors rounded"
+                  title={t('migration.delete')}>
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
 
             {/* Inline expand: column mapping */}
-            {expandedIdx === idx && (
+            {isExpanded && (
               <div className="ml-2 mr-2 mb-2">
                 <ColumnMappingPanel
                   mapping={m}

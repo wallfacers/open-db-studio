@@ -69,7 +69,7 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
           )}
           <button onClick={deriveFromSource}
             className="flex items-center gap-1 px-2 py-0.5 text-[10px] border border-border-strong text-foreground-muted rounded hover:bg-background-hover transition-colors">
-            <TableProperties size={10} />Derive from Source
+            <TableProperties size={10} />{t('migration.deriveFromSource')}
           </button>
         </div>
       </div>
@@ -84,9 +84,9 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
 
       {cms.map((cm, idx) => (
         <div key={idx} className="grid grid-cols-[1fr_1fr_100px_24px] gap-1 mb-1 hover:bg-background-hover rounded px-1 py-0.5 transition-colors">
-          <input value={cm.sourceExpr} onChange={e => updateCm(idx, { sourceExpr: e.target.value })} className={inputCls + " w-full"} placeholder="col or expr" />
-          <input value={cm.targetCol} onChange={e => updateCm(idx, { targetCol: e.target.value })} className={inputCls + " w-full"} placeholder="target_col" />
-          <input value={cm.targetType} onChange={e => updateCm(idx, { targetType: e.target.value })} className={inputCls + " w-full"} placeholder="TEXT" />
+          <input value={cm.sourceExpr} onChange={e => updateCm(idx, { sourceExpr: e.target.value })} className={inputCls + " w-full"} placeholder={t('migration.sourceFieldExpr')} />
+          <input value={cm.targetCol} onChange={e => updateCm(idx, { targetCol: e.target.value })} className={inputCls + " w-full"} placeholder={t('migration.targetField')} />
+          <input value={cm.targetType} onChange={e => updateCm(idx, { targetType: e.target.value })} className={inputCls + " w-full"} placeholder={t('migration.targetType')} />
           <button onClick={() => removeCm(idx)} className="p-0.5 text-foreground-muted hover:text-error transition-colors">
             <Trash2 size={11} />
           </button>
@@ -106,7 +106,7 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
           {t('migration.autoCreateTable')}
         </label>
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground-subtle">Conflict Strategy:</span>
+          <span className="text-foreground-subtle">{t('migration.conflictStrategy')}:</span>
           <DropdownSelect
             value={mapping.target.conflictStrategy}
             onChange={val => onUpdateTarget({ conflictStrategy: val })}
@@ -121,7 +121,7 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
         </div>
         {mapping.target.conflictStrategy === 'UPSERT' && (
           <div className="flex items-center gap-1.5">
-            <span className="text-foreground-subtle">Keys:</span>
+            <span className="text-foreground-subtle">{t('migration.upsertKeys')}:</span>
             <input
               value={mapping.target.upsertKeys.join(', ')}
               onChange={e => onUpdateTarget({ upsertKeys: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}

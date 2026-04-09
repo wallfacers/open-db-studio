@@ -41,7 +41,7 @@ interface JobConfig {
 interface Props {
   jobId: number
   configJson: string
-  onSave: (configJson: string) => Promise<void>
+  onSave: (configJson: string, silent?: boolean) => Promise<void>
   onRun: () => Promise<void>
   onPrecheck: () => void
 }
@@ -158,7 +158,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       return
     }
     setTargetDbsLoading(true)
-    invoke<string[]>('list_databases', { connectionId: config.defaultTargetConnId })
+    invoke<string[]>('list_databases_for_metrics', { connectionId: config.defaultTargetConnId })
       .then(setTargetDatabases)
       .catch(() => setTargetDatabases([]))
       .finally(() => setTargetDbsLoading(false))
@@ -179,11 +179,11 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
     setDirty(true)
   }
 
-  const updateAndSave = async (patch: Partial<JobConfig>) => {
+  const updateAndSave = async (patch: Partial<JobConfig>, silent = false) => {
     const newConfig = { ...config, ...patch }
     setConfig(newConfig)
     setDirty(false)
-    await onSave(JSON.stringify(newConfig, null, 2))
+    await onSave(JSON.stringify(newConfig, null, 2), silent)
   }
 
   const prevTablesRef = useRef<string[]>([])
@@ -343,14 +343,14 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
           </div>
           <DropdownSelect
             value={config.defaultTargetConnId ? String(config.defaultTargetConnId) : ''}
-            onChange={val => updateAndSave({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' })}
+            onChange={val => updateAndSave({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' }, true)}
             options={connections.map(c => ({ value: String(c.id), label: c.name }))}
             placeholder={t('migration.targetConn')}
             className="w-full"
           />
           <DropdownSelect
             value={config.defaultTargetDb}
-            onChange={val => updateAndSave({ defaultTargetDb: val })}
+            onChange={val => updateAndSave({ defaultTargetDb: val }, true)}
             options={targetDatabases.map(db => ({ value: db, label: db }))}
             placeholder={targetDbsLoading ? t('migration.loadingDatabases') : t('migration.targetDatabase')}
             className="w-full"
@@ -369,7 +369,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
                   type="number"
                   min={0}
                   value={config.pipeline[key] as number ?? 0}
-                  onChange={e => update({ pipeline: { ...config.pipeline, [key]: Number(e.target.value) } })}
+                  onChange={e => updateAndSave({ pipeline: { ...config.pipeline, [key]: Number(e.target.value) } }, true)}
                   className={inputCls + " w-full"}
                 />
               </label>

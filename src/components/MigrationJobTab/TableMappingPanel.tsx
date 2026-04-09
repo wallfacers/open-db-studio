@@ -90,7 +90,7 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
       </div>
 
       {/* Header */}
-      <div className="grid grid-cols-[1fr_1fr_1fr_36px] gap-1 mb-1 text-[10px] text-foreground-subtle px-1">
+      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1 text-[10px] text-foreground-subtle px-1">
         <span>{t('migration.sourceTable')}</span>
         <span>{t('migration.targetTable')}</span>
         <span>{t('migration.filterCondition')}</span>

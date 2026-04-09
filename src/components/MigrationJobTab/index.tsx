@@ -152,7 +152,7 @@ export function MigrationJobTab({ jobId }: Props) {
             {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
           </div>
           <div className="ml-auto flex items-center gap-1 px-2 flex-shrink-0">
-            {/* 结构化/原始切换 — 直接内联，不用 LogViewToggle 避免其外层 border-b 干扰 */}
+            {/* Structured/raw toggle — inlined here to avoid LogViewToggle's outer border-b interfering with the tab-bar */}
             <div className="flex items-center bg-background-elevated rounded-md p-0.5">
               <Tooltip content={t('migration.structuredView')}>
                 <button
@@ -183,9 +183,7 @@ export function MigrationJobTab({ jobId }: Props) {
             jobId={jobId}
             stats={run?.stats ?? null}
             logs={run?.logs ?? []}
-            isRunning={isRunning}
             viewMode={viewMode}
-            onViewModeChange={setViewMode}
           />
         </div>
       </div>

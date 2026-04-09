@@ -10,9 +10,7 @@ interface Props {
   jobId: number
   stats: MigrationStatsEvent | null
   logs: MigrationLogEvent[]
-  isRunning: boolean
   viewMode: LogViewMode
-  onViewModeChange: (mode: LogViewMode) => void
 }
 
 const LOG_COLORS: Record<string, string> = {

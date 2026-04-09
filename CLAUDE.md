@@ -1,108 +1,130 @@
-# CLAUDE.md — open-db-studio 智能体上下文工程文件
+# CLAUDE.md — open-db-studio Agent Context
 
-本文件是 Claude Code 的核心上下文入口。每次开始任务前先阅读本文件，
-再根据任务类型查阅对应子文档。
+This file is the primary context entry point for Claude Code. Read this file before starting any task, then consult the relevant sub-documents based on the task type.
 
-## 项目概述
+## Project Overview
 
-**open-db-studio** 是一款本地优先的 AI 数据库 IDE 桌面应用，复刻 chat2db 核心功能。
+**open-db-studio** is a local-first AI database IDE desktop application, replicating the core features of chat2db.
 
-核心价值：连接多数据源 → 自然语言转 SQL → 执行查询 → 可视化结果，**全程本地运行**。
+Core value: Connect to multiple data sources -> Natural language to SQL -> Execute queries -> Visualize results, **all running locally**.
 
-产品定位：**AI-Native Database Client**
+Product positioning: **AI-Native Database Client**
 
-## 技术栈
+## Tech Stack
 
-| 层级 | 技术 |
-|------|------|
-| 桌面框架 | Tauri 2.x |
-| 前端 | React 18 + TypeScript + Vite |
-| 状态管理 | Zustand |
-| 路由 | React Router v6 |
-| 后端 | Rust |
-| 内置数据库 | SQLite（via rusqlite）— 存储应用配置 |
-| 外部数据源 | MySQL、PostgreSQL、Oracle（占位）、SQL Server（占位） |
-| AI 接入 | Rust 层统一代理（OpenAI 兼容接口） |
+| Layer | Technology |
+|-------|------------|
+| Desktop Framework | Tauri 2.x |
+| Frontend | React 18 + TypeScript + Vite |
+| State Management | Zustand |
+| Routing | React Router v6 |
+| Backend | Rust |
+| Built-in Database | SQLite (via rusqlite) — stores app configuration |
+| External Data Sources | MySQL, PostgreSQL, Oracle (placeholder), SQL Server (placeholder) |
+| AI Integration | Rust-layer unified proxy (OpenAI-compatible API) |
 
-## 目录结构
+## Directory Structure
 
 ```
 open-db-studio/
-├── CLAUDE.md              # 本文件（智能体上下文入口）
-├── ARCHITECTURE.md        # 系统架构详述
-├── src/                   # React 前端
-├── src-tauri/             # Rust 后端
+├── CLAUDE.md              # This file (agent context entry point)
+├── ARCHITECTURE.md        # Detailed system architecture
+├── src/                   # React frontend
+├── src-tauri/             # Rust backend
 │   └── src/
-│       ├── commands.rs    # 所有 Tauri invoke 命令注册
-│       ├── db/            # 内置 SQLite（配置存储）
-│       ├── datasource/    # 多数据源连接管理
-│       └── llm/           # AI 请求统一代理
-├── prompts/               # SQL 生成/解释/优化 Prompt 模板
-├── schema/                # 内置 SQLite DDL（init.sql）
-└── docs/                  # 文档记录系统（见下方导航）
+│       ├── commands.rs    # All Tauri invoke command registrations
+│       ├── db/            # Built-in SQLite (config storage)
+│       ├── datasource/    # Multi-datasource connection management
+│       └── llm/           # AI request unified proxy
+├── prompts/               # SQL generation/explanation/optimization prompt templates
+├── schema/                # Built-in SQLite DDL (init.sql)
+└── docs/                  # Documentation system (see navigation below)
 ```
 
-## 文档导航
+## Documentation Navigation
 
-| 文档 | 用途 |
-|------|------|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统架构、模块说明、数据流 |
-| [docs/DESIGN.md](./docs/DESIGN.md) | UI/UX 设计规范 |
-| [docs/FRONTEND.md](./docs/FRONTEND.md) | 前端开发规范与组件说明 |
-| [docs/PLANS.md](./docs/PLANS.md) | 当前开发计划与路线图 |
-| [docs/BRANCH_STRATEGY.md](./docs/BRANCH_STRATEGY.md) | 分支策略与发版规范 |
-| [docs/QUALITY_SCORE.md](./docs/QUALITY_SCORE.md) | 代码质量标准 |
-| [docs/SECURITY.md](./docs/SECURITY.md) | 安全策略（API Key、连接凭证） |
-| [docs/design-docs/datasource-arch.md](./docs/design-docs/datasource-arch.md) | 多数据源架构设计 |
-| [docs/design-docs/ai-pipeline.md](./docs/design-docs/ai-pipeline.md) | AI SQL 生成流程 |
-| [docs/adr/](./docs/adr/) | 架构决策记录（ADR） |
+| Document | Purpose |
+|----------|---------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture, module descriptions, data flow |
+| [docs/DESIGN.md](./docs/DESIGN.md) | UI/UX design specifications |
+| [docs/FRONTEND.md](./docs/FRONTEND.md) | Frontend development standards and component docs |
+| [docs/PLANS.md](./docs/PLANS.md) | Current development plan and roadmap |
+| [docs/BRANCH_STRATEGY.md](./docs/BRANCH_STRATEGY.md) | Branch strategy and release process |
+| [docs/QUALITY_SCORE.md](./docs/QUALITY_SCORE.md) | Code quality standards |
+| [docs/SECURITY.md](./docs/SECURITY.md) | Security policies (API keys, connection credentials) |
+| [docs/design-docs/datasource-arch.md](./docs/design-docs/datasource-arch.md) | Multi-datasource architecture design |
+| [docs/design-docs/ai-pipeline.md](./docs/design-docs/ai-pipeline.md) | AI SQL generation pipeline |
+| [docs/adr/](./docs/adr/) | Architecture Decision Records (ADR) |
 
-## Shell 环境约定
+## Shell Environment
 
-本项目在 Windows 上开发，执行命令前需判断当前 shell：
+This project is developed on Windows. Determine the current shell before running commands:
 
-| Shell | 路径写法 |
-|-------|---------|
-| Git Bash / MSYS2 | `/d/project/java/source/open-db-studio/...` 或相对路径 |
+| Shell | Path Format |
+|-------|-------------|
+| Git Bash / MSYS2 | `/d/project/java/source/open-db-studio/...` or relative paths |
 | PowerShell / CMD | `D:\project\java\source\open-db-studio\...` |
 
-在 Git Bash 中 `\` 是转义字符，`D:\project\...` 的反斜杠会被吞掉导致路径错误。优先使用**相对路径**可以规避 shell 差异。
+In Git Bash, `\` is an escape character — backslashes in `D:\project\...` will be swallowed, causing path errors. Prefer **relative paths** to avoid shell differences.
 
-## 开发命令
+## Development Commands
 
 ```bash
-npm run dev              # 仅前端（端口 1420）
-npm run tauri:dev        # Tauri 前后端联调
-npm run tauri:build      # 打包
-npx tsc --noEmit         # TypeScript 类型检查
-cd src-tauri && cargo check   # Rust 编译检查
+npm run dev              # Frontend only (port 1420)
+npm run tauri:dev        # Tauri full-stack dev
+npm run tauri:build      # Production build
+npx tsc --noEmit         # TypeScript type checking
+cd src-tauri && cargo check   # Rust compile check
 ```
 
-## 前后端通信约定
+## Frontend-Backend Communication
 
-前端通过 Tauri `invoke()` 调用 Rust 命令（定义在 `src-tauri/src/commands.rs`）：
+The frontend calls Rust commands (defined in `src-tauri/src/commands.rs`) via Tauri `invoke()`:
 
 ```typescript
 import { invoke } from '@tauri-apps/api/core'
 await invoke('test_connection', { config: { driver: 'mysql', host: '...', port: 3306, database: '...', username: '...', password: '...' } })
 await invoke('execute_query', { connectionId: 1, sql: 'SELECT 1' })
-await invoke('ai_generate_sql', { prompt: '查询用户表前10条', connectionId: 1 })
+await invoke('ai_generate_sql', { prompt: 'Query first 10 rows from users table', connectionId: 1 })
 ```
 
-## 关键约定
+## Key Conventions
 
-- 数据库操作（内置 SQLite + 外部数据源）全部在 Rust 层，前端不直接访问
-- 所有 AI 请求走 `src-tauri/src/llm/client.rs` 统一代理
-- 连接密码必须 AES-256 加密存储，见 [docs/SECURITY.md](./docs/SECURITY.md)
-- 时间戳使用 ISO 8601 字符串存储
-- 新增 Rust 命令后必须在 `lib.rs` 的 `generate_handler![]` 中注册
-- 修改代码后检查 [docs/PLANS.md](./docs/PLANS.md) 中的文档新鲜度触发表
-- 分支策略：日常开发在 `dev` 分支，`master` 仅用于发版，详见 [docs/BRANCH_STRATEGY.md](./docs/BRANCH_STRATEGY.md)
-- 发版流程：合并 `dev` → `master` 触发 CI 自动构建三平台安装包并打 tag，详见 `.github/workflows/release.yml`
+- All database operations (built-in SQLite + external data sources) run in the Rust layer; the frontend never accesses databases directly
+- All AI requests go through `src-tauri/src/llm/client.rs` unified proxy
+- Connection passwords MUST be stored with AES-256 encryption — see [docs/SECURITY.md](./docs/SECURITY.md)
+- Timestamps are stored as ISO 8601 strings
+- New Rust commands MUST be registered in `generate_handler![]` in `lib.rs`
+- After modifying code, check the documentation freshness trigger table in [docs/PLANS.md](./docs/PLANS.md)
+- Branch strategy: daily development on `dev` branch, `master` is for releases only — see [docs/BRANCH_STRATEGY.md](./docs/BRANCH_STRATEGY.md)
+- Release process: merging `dev` -> `master` triggers CI to auto-build installers for 3 platforms and create a tag — see `.github/workflows/release.yml`
 
-## 任务开始前检查清单
+## Working Behavior Rules
 
-1. 阅读 CLAUDE.md（本文件）
-2. 根据任务类型查阅对应文档（见文档导航）
-3. 了解相关模块现有代码再修改
-4. 遵循 [docs/QUALITY_SCORE.md](./docs/QUALITY_SCORE.md) 中的质量标准
+### Bug Fixes
+- When fixing a bug, proactively inspect related code and fix associated issues together
+
+### Post-Edit Verification
+- After every code edit, you **MUST** run type checking (`npx tsc --noEmit`) and lint validation
+
+### Response Style
+- Be concise and direct. No filler explanations
+
+### Plan Mode (MANDATORY)
+- For multi-step changes that don't qualify as major refactors, you **MUST** use `/plan` (Plan Mode) to align on the approach before writing code
+
+### Brainstorming (MANDATORY)
+- For major changes (new modules, architecture adjustments, cross-module refactors), you **MUST** invoke the `brainstorming` skill first
+
+### Testing
+- New features **MUST** have corresponding tests. No tests = not done
+
+### Clarify Before Acting
+- If requirements, scope, or implementation approach are unclear, you **MUST** ask the user for clarification first. Never guess
+
+## Pre-Task Checklist
+
+1. Read CLAUDE.md (this file)
+2. Consult relevant documents based on task type (see Documentation Navigation)
+3. Understand existing code in related modules before making changes
+4. Follow the quality standards in [docs/QUALITY_SCORE.md](./docs/QUALITY_SCORE.md)

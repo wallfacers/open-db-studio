@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useMemo } from 'react'
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen,
-  ArrowLeftRight, Loader2, CheckCircle2, XCircle,
+  ArrowLeftRight, Loader2, CheckCircle2, XCircle, Square,
   FolderPlus, FilePlus, Pencil, Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'

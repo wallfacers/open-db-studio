@@ -25,7 +25,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     const psMatch = message.match(PIPELINE_START_RE)
     if (psMatch) {
       milestones.push({
-        id: 'pipeline_start',
+        id: `pipeline_start:${timestamp}`,
         type: 'pipeline_start',
         label: 'Pipeline started',
         status: 'running',
@@ -142,7 +142,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
       const elapsedSec = parseFloat(pfMatch[4])
 
       milestones.push({
-        id: 'pipeline_finish',
+        id: `pipeline_finish:${timestamp}`,
         type: 'pipeline_finish',
         label: status === 'success' ? 'Pipeline finished' : `Pipeline ${pfMatch[1]}`,
         status,

@@ -121,8 +121,8 @@ export function StatsTab({ jobId }: Props) {
                   <div className="flex items-center gap-1.5">
                     {statusIcon(run.status)}
                     <span className="text-foreground-default">{statusLabel(run.status, t)}</span>
-                    {run.durationMs != null && (
-                      <span className="text-foreground-muted text-[10px] ml-1">({fmtDur(run.durationMs)})</span>
+                    {run.durationMs != null && run.durationMs > 0 && (
+                      <span className="text-foreground-muted text-[10px] ml-1">{fmtDur(run.durationMs)}</span>
                     )}
                   </div>
                 </td>

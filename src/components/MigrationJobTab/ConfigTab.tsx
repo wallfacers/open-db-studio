@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
-import { Play, ShieldCheck, Save } from 'lucide-react'
+import { Play, ShieldCheck } from 'lucide-react'
 import { DropdownSelect } from '../common/DropdownSelect'
 import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
 import { SyncModeSection } from './SyncModeSection'
 import { TableMappingPanel } from './TableMappingPanel'
-import { X } from 'lucide-react'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface TargetConfig {
@@ -28,6 +27,8 @@ interface PipelineConfig {
 interface JobConfig {
   syncMode: 'full' | 'incremental'
   incrementalConfig?: IncrementalConfig
+  defaultTargetConnId: number
+  defaultTargetDb: string
   source: {
     connectionId: number; database: string
     queryMode: 'auto' | 'custom'
@@ -40,14 +41,16 @@ interface JobConfig {
 interface Props {
   jobId: number
   configJson: string
-  onSave: (configJson: string) => void
-  onRun: () => void
+  onSave: (configJson: string) => Promise<void>
+  onRun: () => Promise<void>
   onPrecheck: () => void
 }
 
 function defaultConfig(): JobConfig {
   return {
     syncMode: 'full',
+    defaultTargetConnId: 0,
+    defaultTargetDb: '',
     source: { connectionId: 0, database: '', queryMode: 'auto', tables: [] },
     tableMappings: [],
     pipeline: {
@@ -75,10 +78,6 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   const [dirty, setDirty] = useState(false)
   const [aiLoadingMap, setAiLoadingMap] = useState<Record<number, boolean>>({})
   const [hasAi, setHasAi] = useState(false)
-  const savedConfigRef = useRef<JobConfig | null>(null)
-
-  const [defaultTargetConnId, setDefaultTargetConnId] = useState(0)
-  const [defaultTargetDb, setDefaultTargetDb] = useState('')
 
   const [config, setConfig] = useState<JobConfig>(() => {
     try {
@@ -87,6 +86,8 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       return {
         ...def,
         ...parsed,
+        defaultTargetConnId: parsed.defaultTargetConnId ?? parsed.tableMappings?.[0]?.target?.connectionId ?? 0,
+        defaultTargetDb: parsed.defaultTargetDb ?? parsed.tableMappings?.[0]?.target?.database ?? '',
         source: { ...def.source, ...(parsed.source || {}) },
         pipeline: { ...def.pipeline, ...(parsed.pipeline || {}) },
         tableMappings: parsed.tableMappings || [],
@@ -96,31 +97,27 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
     }
   })
 
-  // Initialize saved config ref on mount
-  useEffect(() => {
-    savedConfigRef.current = JSON.parse(JSON.stringify(config))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
 
   useEffect(() => {
-    if (!dirty && configJson) {
+    if (!dirtyRef.current && configJson) {
       try {
         const parsed = JSON.parse(configJson)
         const def = defaultConfig()
         setConfig({
           ...def,
           ...parsed,
+          defaultTargetConnId: parsed.defaultTargetConnId ?? parsed.tableMappings?.[0]?.target?.connectionId ?? 0,
+          defaultTargetDb: parsed.defaultTargetDb ?? parsed.tableMappings?.[0]?.target?.database ?? '',
           source: { ...def.source, ...(parsed.source || {}) },
           pipeline: { ...def.pipeline, ...(parsed.pipeline || {}) },
           tableMappings: parsed.tableMappings || [],
         })
-        if (parsed.tableMappings?.[0]?.target) {
-          setDefaultTargetConnId(parsed.tableMappings[0].target.connectionId || 0)
-          setDefaultTargetDb(parsed.tableMappings[0].target.database || '')
-        }
       } catch {}
     }
-  }, [configJson, dirty])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configJson])
 
   useEffect(() => {
     invoke<Array<{ id: number; name: string }>>('list_connections').then(setConnections).catch(() => {})
@@ -155,27 +152,27 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   }, [config.source.connectionId, config.source.database])
 
   useEffect(() => {
-    if (!defaultTargetConnId) {
+    if (!config.defaultTargetConnId) {
       setTargetDatabases([])
       setTargetTables([])
       return
     }
     setTargetDbsLoading(true)
-    invoke<string[]>('list_databases', { connectionId: defaultTargetConnId })
+    invoke<string[]>('list_databases', { connectionId: config.defaultTargetConnId })
       .then(setTargetDatabases)
       .catch(() => setTargetDatabases([]))
       .finally(() => setTargetDbsLoading(false))
-  }, [defaultTargetConnId])
+  }, [config.defaultTargetConnId])
 
   useEffect(() => {
-    if (!defaultTargetConnId || !defaultTargetDb) {
+    if (!config.defaultTargetConnId || !config.defaultTargetDb) {
       setTargetTables([])
       return
     }
-    invoke<Array<{ name: string }>>('get_tables', { connectionId: defaultTargetConnId, database: defaultTargetDb })
+    invoke<Array<{ name: string }>>('get_tables', { connectionId: config.defaultTargetConnId, database: config.defaultTargetDb })
       .then(setTargetTables)
       .catch(() => setTargetTables([]))
-  }, [defaultTargetConnId, defaultTargetDb])
+  }, [config.defaultTargetConnId, config.defaultTargetDb])
 
   const update = (patch: Partial<JobConfig>) => {
     setConfig(prev => ({ ...prev, ...patch }))
@@ -199,8 +196,8 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       next.push({
         sourceTable: t,
         target: {
-          connectionId: defaultTargetConnId,
-          database: defaultTargetDb,
+          connectionId: config.defaultTargetConnId,
+          database: config.defaultTargetDb,
           table: t,
           conflictStrategy: 'INSERT',
           createIfNotExists: false,
@@ -216,6 +213,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   const handleAiRecommend = async (mappingIdx: number) => {
     const m = config.tableMappings[mappingIdx]
     if (!m) return
+    await autoSaveIfDirty()
     setAiLoadingMap(prev => ({ ...prev, [mappingIdx]: true }))
     try {
       const result = await invoke<Array<{ sourceExpr: string; targetCol: string; targetType: string }>>(
@@ -239,20 +237,16 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
     }
   }
 
-  const handleSave = () => {
-    onSave(JSON.stringify(config, null, 2))
-    savedConfigRef.current = JSON.parse(JSON.stringify(config))
-    setDirty(false)
+  const autoSaveIfDirty = async () => {
+    if (dirtyRef.current) {
+      await onSave(JSON.stringify(config, null, 2))
+      setDirty(false)
+    }
   }
 
-  const handleCancel = () => {
-    const saved = savedConfigRef.current
-    if (saved) {
-      setConfig(saved)
-      setDefaultTargetConnId(saved.tableMappings?.[0]?.target?.connectionId || 0)
-      setDefaultTargetDb(saved.tableMappings?.[0]?.target?.database || '')
-    }
-    setDirty(false)
+  const handleRun = async () => {
+    await autoSaveIfDirty()
+    await onRun()
   }
 
   const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
@@ -341,22 +335,15 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
             {t('migration.targetEnd')} ({t('migration.defaults')})
           </div>
           <DropdownSelect
-            value={defaultTargetConnId ? String(defaultTargetConnId) : ''}
-            onChange={val => {
-              setDefaultTargetConnId(val ? Number(val) : 0)
-              setDefaultTargetDb('')
-              setDirty(true)
-            }}
+            value={config.defaultTargetConnId ? String(config.defaultTargetConnId) : ''}
+            onChange={val => update({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' })}
             options={connections.map(c => ({ value: String(c.id), label: c.name }))}
             placeholder={t('migration.targetConn')}
             className="w-full"
           />
           <DropdownSelect
-            value={defaultTargetDb}
-            onChange={val => {
-              setDefaultTargetDb(val)
-              setDirty(true)
-            }}
+            value={config.defaultTargetDb}
+            onChange={val => update({ defaultTargetDb: val })}
             options={targetDatabases.map(db => ({ value: db, label: db }))}
             placeholder={targetDbsLoading ? t('migration.loadingDatabases') : t('migration.targetDatabase')}
             className="w-full"
@@ -387,7 +374,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       {/* Table Mapping */}
       <TableMappingPanel
         mappings={config.tableMappings}
-        defaultTarget={{ connectionId: defaultTargetConnId, database: defaultTargetDb }}
+        defaultTarget={{ connectionId: config.defaultTargetConnId, database: config.defaultTargetDb }}
         targetTables={targetTables}
         onUpdate={tableMappings => update({ tableMappings })}
         hasAi={hasAi}
@@ -404,21 +391,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
           <ShieldCheck size={13} />{t('migration.precheck')}
         </button>
         <button
-          onClick={handleCancel}
-          disabled={!dirty}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] border border-border-strong text-foreground-muted rounded hover:bg-background-hover transition-colors disabled:opacity-40"
-        >
-          <X size={13} />{t('migration.cancel', { defaultValue: 'Cancel' })}
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={!dirty}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] border border-border-strong text-foreground-muted rounded hover:bg-background-hover transition-colors disabled:opacity-40"
-        >
-          <Save size={13} />{t('migration.save')}
-        </button>
-        <button
-          onClick={onRun}
+          onClick={handleRun}
           className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] bg-accent text-foreground rounded hover:bg-accent-hover transition-colors"
         >
           <Play size={13} />{t('migration.run')}

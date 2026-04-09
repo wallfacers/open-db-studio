@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next'
-import { X, Copy, Download } from 'lucide-react'
+import { X, Copy, Check } from 'lucide-react'
 import { MigrationLogEvent } from '../../store/migrationStore'
 import { formatDateTime } from '../../utils/migrationLogParser'
+import { useState, useEffect } from 'react'
 
 interface Props {
   logs: MigrationLogEvent[]
@@ -17,19 +18,25 @@ const LEVEL_COLORS: Record<string, string> = {
 
 export function LogDetailModal({ logs, onClose }: Props) {
   const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [onClose])
 
   const handleCopy = () => {
     const text = logs.map(l => `[${l.timestamp}] ${l.level}: ${l.message}`).join('\n')
-    navigator.clipboard.writeText(text).catch(() => {})
-  }
-
-  const handleExport = () => {
-    const text = logs.map(l => `[${l.timestamp}] ${l.level}: ${l.message}`).join('\n')
-    const blob = new Blob([text], { type: 'text/plain' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `migration_logs_${Date.now()}.txt`
-    a.click()
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {})
   }
 
   return (
@@ -48,20 +55,19 @@ export function LogDetailModal({ logs, onClose }: Props) {
             {t('migration.logDetailTitle', { defaultValue: '运行日志详情' })}
           </span>
           <div className="flex items-center gap-1">
-            <button
-              onClick={handleCopy}
-              className="p-1.5 hover:bg-background-hover rounded text-foreground-muted hover:text-foreground-default transition-colors"
-              title="复制"
-            >
-              <Copy size={14} />
-            </button>
-            <button
-              onClick={handleExport}
-              className="p-1.5 hover:bg-background-hover rounded text-foreground-muted hover:text-foreground-default transition-colors"
-              title="导出"
-            >
-              <Download size={14} />
-            </button>
+            {copied ? (
+              <span className="text-foreground-muted text-xs px-2 py-1.5">
+                {t('migration.logDetailCopied', { defaultValue: '已复制' })}
+              </span>
+            ) : (
+              <button
+                onClick={handleCopy}
+                className="p-1.5 hover:bg-background-hover rounded text-foreground-muted hover:text-foreground-default transition-colors"
+                title={t('migration.logDetailCopy', { defaultValue: '复制' })}
+              >
+                <Copy size={14} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 hover:bg-background-hover rounded text-foreground-muted hover:text-foreground-default transition-colors"

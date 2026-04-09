@@ -75,6 +75,7 @@ export function MappingCard({ card, logs }: Props) {
           <span>{card.rowsWritten.toLocaleString()} <span className="text-foreground-ghost">w</span></span>
           {card.rowsFailed > 0 && <span className="text-error">{card.rowsFailed} <span className="text-foreground-ghost">f</span></span>}
           {card.elapsedMs !== undefined && <span>{formatElapsed(card.elapsedMs)}</span>}
+          {card.startedAt && <span className="text-foreground-ghost">{formatTimestamp(card.startedAt)}</span>}
         </div>
 
         {/* Expand chevron */}
@@ -113,4 +114,9 @@ function formatElapsed(ms: number): string {
   const min = Math.floor(sec / 60)
   const rem = (sec % 60).toFixed(0)
   return `${min}m${rem}s`
+}
+
+function formatTimestamp(ts: string): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('zh-CN', { hour12: false })
 }

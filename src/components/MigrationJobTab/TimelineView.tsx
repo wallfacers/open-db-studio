@@ -73,6 +73,9 @@ export function TimelineView({ milestones, stats }: Props) {
 
                     {/* Sub-info row */}
                     <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-foreground-ghost">
+                        {formatTimestamp(m.timestamp)}
+                      </span>
                       {m.elapsedMs !== undefined && (
                         <span className="text-[10px] text-foreground-muted">
                           {t('migration.elapsed')} {formatElapsed(m.elapsedMs)}
@@ -132,4 +135,9 @@ function formatElapsed(ms: number): string {
   const min = Math.floor(sec / 60)
   const rem = (sec % 60).toFixed(0)
   return `${min}m${rem}s`
+}
+
+function formatTimestamp(ts: string): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('zh-CN', { hour12: false })
 }

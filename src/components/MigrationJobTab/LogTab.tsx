@@ -144,6 +144,7 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
         <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] bg-background-base">
           {logs.map((log, i) => (
             <div key={i} className={`leading-5 ${LOG_COLORS[log.level] ?? 'text-foreground-muted'}`}>
+              <span className="text-foreground-ghost mr-1">[{formatTimestamp(log.timestamp)}]</span>
               <span className="text-foreground-ghost mr-1">[{log.level}]</span>
               {log.message}
             </div>
@@ -160,4 +161,9 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
       </div>
     </div>
   )
+}
+
+function formatTimestamp(ts: string): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('zh-CN', { hour12: false })
 }

@@ -18,26 +18,8 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
   const milestones: MigrationMilestone[] = []
   let totalMappings = 0
 
-  // Track cumulative rowsRead from stats events
-  let lastRowsRead = 0
-  const tableRowsRead = new Map<string, number>()
-
   for (const log of logs) {
-    const { message, timestamp, level } = log
-
-    // Track stats events for rowsRead
-    if (level === 'STATS') {
-      const readMatch = message.match(/rows_read=(\d+)/)
-      if (readMatch) {
-        lastRowsRead = parseInt(readMatch[1], 10)
-      }
-      // Per-table rows read from mapping progress
-      const mappingReadMatch = message.match(/mapping_rows_read=(\d+)/)
-      if (mappingReadMatch) {
-        // We'll distribute this across active cards
-      }
-      continue
-    }
+    const { message, timestamp } = log
 
     // Pipeline start
     const psMatch = message.match(PIPELINE_START_RE)
@@ -178,7 +160,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     }
   }
 
-  // Fix table_start milestone statuses based on completion events
+  // Post-processing: reconcile table_start milestones with completion events
   const hasPipelineStart = milestones.some(m => m.type === 'pipeline_start')
   const hasPipelineFinish = milestones.some(m => m.type === 'pipeline_finish')
 
@@ -189,31 +171,33 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     if (m.type === 'table_failed') failedLabels.add(m.label)
   }
 
-  // Find the index of the first failed table
-  let firstFailedIndex = -1
-  for (const m of milestones) {
-    if (m.type === 'table_failed') {
-      firstFailedIndex = m.mappingIndex ?? -1
-      break
+  // When pipeline is finished, remove table_start milestones that have a corresponding
+  // table_complete or table_failed — they would otherwise appear as duplicate rows
+  if (hasPipelineFinish) {
+    const toRemove = new Set<string>()
+    for (const m of milestones) {
+      if (m.type === 'table_start' && (completedLabels.has(m.label) || failedLabels.has(m.label))) {
+        toRemove.add(m.id)
+      }
     }
+    // Rebuild milestones without duplicate table_start entries
+    milestones.splice(
+      0,
+      milestones.length,
+      ...milestones.filter(m => !toRemove.has(m.id)),
+    )
   }
 
+  // Mark table_start milestones: running tables during an active pipeline keep 'running' status
   for (const m of milestones) {
     if (m.type === 'table_start' && m.status === 'running') {
-      if (completedLabels.has(m.label)) {
-        m.status = 'success'
-      } else if (failedLabels.has(m.label)) {
-        m.status = 'failed'
-      } else if (firstFailedIndex > 0 && (m.mappingIndex ?? 0) > firstFailedIndex) {
-        // Tables after the first failed one should be marked as failed too
-        m.status = 'failed'
-      }
+      if (completedLabels.has(m.label)) m.status = 'success'
+      else if (failedLabels.has(m.label)) m.status = 'failed'
     }
   }
 
   if (hasPipelineStart && !hasPipelineFinish) {
-    // Pipeline is still running
-    // Mark tables that haven't started yet as 'pending'
+    // Pipeline is still running — mark tables that haven't started yet as 'pending'
     const startedLabels = new Set<string>()
     for (const m of milestones) {
       if (m.type === 'table_start') startedLabels.add(m.label)
@@ -227,15 +211,18 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     }
   }
 
-  // Mark pending cards for tables that haven't started yet (when pipeline failed)
-  if (hasPipelineFinish && firstFailedIndex > 0) {
-    // Tables with index > firstFailedIndex are pending/never ran
-    for (const [label, card] of cardMap) {
-      if (!completedLabels.has(label) && !failedLabels.has(label)) {
-        if ((card.mappingIndex ?? 0) > firstFailedIndex) {
-          card.status = 'pending'
-          card.error = '未运行 (上游失败)'
-        }
+  // When pipeline finished with failures, mark tables that never got completion as pending
+  if (hasPipelineFinish) {
+    const finishedIndices = new Set<number>()
+    for (const m of milestones) {
+      if ((m.type === 'table_complete' || m.type === 'table_failed') && m.mappingIndex !== undefined) {
+        finishedIndices.add(m.mappingIndex)
+      }
+    }
+    for (const card of cardMap.values()) {
+      if (card.status === 'running' && !finishedIndices.has(card.mappingIndex)) {
+        card.status = 'pending'
+        card.error = '未运行 (上游失败)'
       }
     }
   }

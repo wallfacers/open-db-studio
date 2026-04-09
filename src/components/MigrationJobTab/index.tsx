@@ -5,7 +5,7 @@ import { useMigrationStore, MigrationJob, LogViewMode } from '../../store/migrat
 import { useConfirm } from '../../hooks/useConfirm'
 import { useToastStore } from '../../store/toastStore'
 import { ConfigTab, ConfigTabHandle } from './ConfigTab'
-import { Play, Square, ShieldCheck, ListTree, Code } from 'lucide-react'
+import { Play, Square, ShieldCheck, ListTree, Code, Save } from 'lucide-react'
 import { Tooltip } from '../common/Tooltip'
 import { LogTab } from './LogTab'
 import { StatsTab } from './StatsTab'
@@ -22,6 +22,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const [configJson, setConfigJson] = useState('{}')
   const [logHeight, setLogHeight] = useState(0)
   const [viewMode, setViewMode] = useState<LogViewMode>('structured')
+  const [configDirty, setConfigDirty] = useState(false)
 
   const configTabRef = useRef<ConfigTabHandle>(null)
 
@@ -52,8 +53,11 @@ export function MigrationJobTab({ jobId }: Props) {
   }
 
   const handleRun = async () => {
-    await configTabRef.current?.save()
     await store.runJob(jobId)
+  }
+
+  const handleSaveConfig = async () => {
+    await configTabRef.current?.save()
   }
 
   const handleStop = async () => {
@@ -96,7 +100,8 @@ export function MigrationJobTab({ jobId }: Props) {
       <div className="flex-shrink-0 h-10 flex items-center px-3 gap-1 bg-background-void border-b border-border-default">
         <Tooltip content={isRunning ? t('migration.stop') : t('migration.run')}>
           <button
-            className={`p-1.5 rounded transition-colors ${
+            disabled={configDirty}
+            className={`p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               isRunning
                 ? 'text-error hover:bg-border-default'
                 : 'text-accent hover:bg-border-default'
@@ -115,6 +120,19 @@ export function MigrationJobTab({ jobId }: Props) {
             <ShieldCheck size={16} />
           </button>
         </Tooltip>
+        {configDirty && (
+          <>
+            <div className="w-[1px] h-4 bg-border-strong mx-1" />
+            <Tooltip content={t('migration.save')}>
+              <button
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-[12px] bg-accent text-white hover:bg-accent-hover transition-colors"
+                onClick={handleSaveConfig}
+              >
+                <Save size={13} />{t('migration.save')}
+              </button>
+            </Tooltip>
+          </>
+        )}
       </div>
 
       {/* Sub-tab bar */}
@@ -131,6 +149,7 @@ export function MigrationJobTab({ jobId }: Props) {
             jobId={jobId}
             configJson={configJson}
             onSave={handleSave}
+            onDirtyChange={setConfigDirty}
           />
         )}
         {activeTab === 'stats' && <StatsTab jobId={jobId} />}

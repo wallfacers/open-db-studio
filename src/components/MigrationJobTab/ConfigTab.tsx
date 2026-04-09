@@ -39,6 +39,7 @@ interface Props {
   jobId: number
   configJson: string
   onSave: (configJson: string, silent?: boolean) => Promise<void>
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 function defaultConfig(): JobConfig {
@@ -60,7 +61,7 @@ function defaultConfig(): JobConfig {
 }
 
 export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
-  { jobId: _jobId, configJson, onSave },
+  { jobId: _jobId, configJson, onSave, onDirtyChange },
   ref
 ) {
   const { t } = useTranslation()
@@ -96,6 +97,8 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
 
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
+
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
 
   useImperativeHandle(ref, () => ({
     save: async () => {
@@ -185,13 +188,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
     setDirty(true)
   }
 
-  const updateAndSave = async (patch: Partial<JobConfig>, silent = false) => {
-    const newConfig = { ...config, ...patch }
-    setConfig(newConfig)
-    setDirty(false)
-    await onSave(JSON.stringify(newConfig, null, 2), silent)
-  }
-
   const prevTablesRef = useRef<string[]>([])
   useEffect(() => {
     if (config.source.queryMode !== 'auto') return
@@ -226,7 +222,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
   const handleAiRecommend = async (mappingIdx: number) => {
     const m = config.tableMappings[mappingIdx]
     if (!m) return
-    await autoSaveIfDirty()
     setAiLoadingMap(prev => ({ ...prev, [mappingIdx]: true }))
     try {
       const result = await invoke<Array<{ sourceExpr: string; targetCol: string; targetType: string }>>(
@@ -247,13 +242,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
       console.error('AI recommend failed:', e)
     } finally {
       setAiLoadingMap(prev => ({ ...prev, [mappingIdx]: false }))
-    }
-  }
-
-  const autoSaveIfDirty = async () => {
-    if (dirtyRef.current) {
-      await onSave(JSON.stringify(config, null, 2))
-      setDirty(false)
     }
   }
 
@@ -337,14 +325,14 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
           </div>
           <DropdownSelect
             value={config.defaultTargetConnId ? String(config.defaultTargetConnId) : ''}
-            onChange={val => updateAndSave({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' }, true)}
+            onChange={val => update({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' })}
             options={connections.map(c => ({ value: String(c.id), label: c.name }))}
             placeholder={t('migration.targetConn')}
             className="w-full"
           />
           <DropdownSelect
             value={config.defaultTargetDb}
-            onChange={val => updateAndSave({ defaultTargetDb: val }, true)}
+            onChange={val => update({ defaultTargetDb: val })}
             options={targetDatabases.map(db => ({ value: db, label: db }))}
             placeholder={targetDbsLoading ? t('migration.loadingDatabases') : t('migration.targetDatabase')}
             className="w-full"
@@ -363,7 +351,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
                   type="number"
                   min={0}
                   value={config.pipeline[key] as number ?? 0}
-                  onChange={e => updateAndSave({ pipeline: { ...config.pipeline, [key]: Number(e.target.value) } }, true)}
+                  onChange={e => update({ pipeline: { ...config.pipeline, [key]: Number(e.target.value) } })}
                   className={inputCls + " w-full"}
                 />
               </label>

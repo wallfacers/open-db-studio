@@ -1,7 +1,11 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState, useMemo } from 'react'
 import { Square, Download } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { MigrationLogEvent, MigrationStatsEvent } from '../../store/migrationStore'
+import { MigrationLogEvent, MigrationStatsEvent, LogViewMode } from '../../store/migrationStore'
+import { LogViewToggle } from './LogViewToggle'
+import { TimelineView } from './TimelineView'
+import { MappingCard } from './MappingCard'
+import { parseMilestones } from '../../utils/migrationLogParser'
 
 interface Props {
   jobId: number
@@ -25,10 +29,15 @@ const LOG_COLORS: Record<string, string> = {
 export function LogTab({ stats, logs, isRunning, onStop }: Props) {
   const { t } = useTranslation()
   const logEndRef = useRef<HTMLDivElement>(null)
+  const [viewMode, setViewMode] = useState<LogViewMode>('structured')
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs.length])
+    if (viewMode === 'raw') {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs.length, viewMode])
+
+  const { milestones, cards } = useMemo(() => parseMilestones(logs), [logs])
 
   const handleExport = () => {
     const text = logs.map(l => `[${l.timestamp}] [${l.level}] ${l.message}`).join('\n')
@@ -102,16 +111,46 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
         </>)}
       </div>
 
-      {/* Log output */}
-      <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] bg-background-base">
-        {logs.map((log, i) => (
-          <div key={i} className={`leading-5 ${LOG_COLORS[log.level] ?? 'text-foreground-muted'}`}>
-            <span className="text-foreground-ghost mr-1">[{log.level}]</span>
-            {log.message}
-          </div>
-        ))}
-        <div ref={logEndRef} />
-      </div>
+      {/* View toggle */}
+      <LogViewToggle mode={viewMode} onChange={setViewMode} />
+
+      {/* Content area */}
+      {viewMode === 'structured' ? (
+        <div className="flex-1 overflow-y-auto bg-background-base">
+          {/* Timeline */}
+          {milestones.length > 0 && <TimelineView milestones={milestones} stats={stats} />}
+
+          {/* Mapping cards */}
+          {cards.length > 0 && (
+            <div className="px-3 pb-2 space-y-1.5">
+              <div className="text-[11px] text-foreground-muted font-medium mt-2 mb-1">
+                {t('migration.mappingCards')}
+              </div>
+              {cards.map((card) => (
+                <MappingCard key={`${card.sourceTable}-${card.targetTable}`} card={card} logs={logs} />
+              ))}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {milestones.length === 0 && cards.length === 0 && (
+            <div className="flex items-center justify-center h-24 text-foreground-muted text-xs">
+              {t('migration.noRunHistory')}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Raw log output */
+        <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] bg-background-base">
+          {logs.map((log, i) => (
+            <div key={i} className={`leading-5 ${LOG_COLORS[log.level] ?? 'text-foreground-muted'}`}>
+              <span className="text-foreground-ghost mr-1">[{log.level}]</span>
+              {log.message}
+            </div>
+          ))}
+          <div ref={logEndRef} />
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex justify-end p-2 border-t border-border-subtle flex-shrink-0">

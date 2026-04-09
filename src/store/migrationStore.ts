@@ -72,6 +72,36 @@ export interface MigrationLogEvent {
   timestamp: string
 }
 
+export interface MigrationMilestone {
+  id: string
+  type: 'pipeline_start' | 'table_start' | 'table_complete' | 'table_failed' | 'pipeline_finish'
+  label: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  timestamp: string
+  elapsedMs?: number
+  rowsWritten?: number
+  rowsFailed?: number
+  error?: string
+  mappingIndex?: number
+  totalMappings?: number
+}
+
+export interface MappingCardState {
+  sourceTable: string
+  targetTable: string
+  status: 'pending' | 'running' | 'success' | 'failed'
+  rowsWritten: number
+  rowsFailed: number
+  startedAt?: string
+  finishedAt?: string
+  elapsedMs?: number
+  error?: string
+  mappingIndex: number
+  totalMappings: number
+}
+
+export type LogViewMode = 'structured' | 'raw'
+
 export type MigTreeNode =
   | { nodeType: 'category'; id: string; label: string; parentId: string | null; sortOrder: number }
   | { nodeType: 'job'; id: string; label: string; parentId: string | null; jobId: number; status: string | null }
@@ -295,7 +325,26 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
       })
     })
 
-    register<{ jobId: number; runId: string; status: string }>('migration_finished', (payload) => {
+    register<{ jobId: number; runId: string; status: string; rowsRead?: number; rowsWritten?: number; rowsFailed?: number; bytesTransferred?: number; elapsedSeconds?: number }>('migration_finished', (payload) => {
+      // Merge final stats into the run's stats snapshot
+      set(s => {
+        const runs = new Map(s.activeRuns)
+        const existing = runs.get(payload.jobId)
+        if (existing && existing.runId === payload.runId && existing.stats) {
+          const stats = { ...existing.stats }
+          if (payload.rowsRead !== undefined) stats.rowsRead = payload.rowsRead
+          if (payload.rowsWritten !== undefined) stats.rowsWritten = payload.rowsWritten
+          if (payload.rowsFailed !== undefined) stats.rowsFailed = payload.rowsFailed
+          if (payload.bytesTransferred !== undefined) stats.bytesTransferred = payload.bytesTransferred
+          if (payload.elapsedSeconds !== undefined) {
+            stats.progressPct = 100
+            stats.etaSeconds = 0
+          }
+          runs.set(payload.jobId, { ...existing, stats })
+          return { activeRuns: runs }
+        }
+        return { activeRuns: runs }
+      })
       get().updateJobStatus(payload.jobId, payload.status)
     })
 

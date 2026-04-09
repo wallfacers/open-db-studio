@@ -1175,6 +1175,20 @@
     "incrementalSync": "Incremental Sync",
     "incrementalField": "Incremental Field",
     "fieldType": "Field Type",
-    "lastCheckpoint": "Last Checkpoint"
+    "lastCheckpoint": "Last Checkpoint",
+    "structuredView": "Structured View",
+    "rawLog": "Raw Log",
+    "pipelineStart": "Pipeline Started",
+    "pipelineFinish": "Pipeline Finished",
+    "tableMigration": "Table Migration",
+    "tableStart": "Starting",
+    "tableComplete": "Complete",
+    "tableFailed": "Failed",
+    "elapsed": "Elapsed",
+    "expandDetails": "Expand Details",
+    "collapseDetails": "Collapse Details",
+    "mappingCards": "Table Mapping Details",
+    "pending": "Pending",
+    "running": "Running"
   }
 }

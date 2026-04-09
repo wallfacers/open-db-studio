@@ -1176,6 +1176,20 @@
     "incrementalSync": "增量同步",
     "incrementalField": "增量字段",
     "fieldType": "字段类型",
-    "lastCheckpoint": "最后检查点"
+    "lastCheckpoint": "最后检查点",
+    "structuredView": "结构化视图",
+    "rawLog": "原始日志",
+    "pipelineStart": "管道启动",
+    "pipelineFinish": "管道完成",
+    "tableMigration": "表迁移",
+    "tableStart": "开始迁移",
+    "tableComplete": "迁移完成",
+    "tableFailed": "迁移失败",
+    "elapsed": "耗时",
+    "expandDetails": "展开详情",
+    "collapseDetails": "收起详情",
+    "mappingCards": "表映射详情",
+    "pending": "等待中",
+    "running": "运行中"
   }
 }

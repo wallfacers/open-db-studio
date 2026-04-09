@@ -105,7 +105,7 @@ await invoke('ai_generate_sql', { prompt: 'Query first 10 rows from users table'
 - When fixing a bug, proactively inspect related code and fix associated issues together
 
 ### Post-Edit Verification
-- After every code edit, you **MUST** run type checking (`npx tsc --noEmit`) and lint validation
+- After every code edit, you **MUST** run type checking (`npx tsc --noEmit`) and Rust compile check (`cd src-tauri && cargo check`)
 
 ### Response Style
 - Be concise and direct. No filler explanations

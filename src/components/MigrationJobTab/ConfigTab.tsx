@@ -179,6 +179,13 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
     setDirty(true)
   }
 
+  const updateAndSave = async (patch: Partial<JobConfig>) => {
+    const newConfig = { ...config, ...patch }
+    setConfig(newConfig)
+    setDirty(false)
+    await onSave(JSON.stringify(newConfig, null, 2))
+  }
+
   const prevTablesRef = useRef<string[]>([])
   useEffect(() => {
     if (config.source.queryMode !== 'auto') return
@@ -336,14 +343,14 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
           </div>
           <DropdownSelect
             value={config.defaultTargetConnId ? String(config.defaultTargetConnId) : ''}
-            onChange={val => update({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' })}
+            onChange={val => updateAndSave({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' })}
             options={connections.map(c => ({ value: String(c.id), label: c.name }))}
             placeholder={t('migration.targetConn')}
             className="w-full"
           />
           <DropdownSelect
             value={config.defaultTargetDb}
-            onChange={val => update({ defaultTargetDb: val })}
+            onChange={val => updateAndSave({ defaultTargetDb: val })}
             options={targetDatabases.map(db => ({ value: db, label: db }))}
             placeholder={targetDbsLoading ? t('migration.loadingDatabases') : t('migration.targetDatabase')}
             className="w-full"

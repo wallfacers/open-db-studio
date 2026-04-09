@@ -1122,6 +1122,8 @@
     "errorLimit": "Error Limit",
     "rowsRead": "Rows Read",
     "rowsWritten": "Rows Written",
+    "read": "Read",
+    "write": "Write",
     "dirtyRows": "Dirty Rows",
     "speed": "Speed",
     "eta": "ETA",

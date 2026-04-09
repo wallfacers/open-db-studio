@@ -1123,6 +1123,8 @@
     "errorLimit": "容错行",
     "rowsRead": "已读取",
     "rowsWritten": "已写入",
+    "read": "读取",
+    "write": "写入",
     "dirtyRows": "脏数据",
     "speed": "速度",
     "eta": "预计剩余",

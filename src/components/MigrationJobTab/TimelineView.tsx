@@ -81,6 +81,11 @@ export function TimelineView({ milestones, stats }: Props) {
                           {t('migration.elapsed')} {formatElapsed(m.elapsedMs)}
                         </span>
                       )}
+                      {m.rowsRead !== undefined && m.type !== 'pipeline_start' && (
+                        <span className="text-[10px] text-foreground-muted">
+                          {t('migration.rowsRead')} {m.rowsRead.toLocaleString()}
+                        </span>
+                      )}
                       {m.rowsWritten !== undefined && m.type !== 'pipeline_start' && (
                         <span className="text-[10px] text-foreground-muted">
                           {t('migration.rowsWritten')} {m.rowsWritten.toLocaleString()}
@@ -103,6 +108,9 @@ export function TimelineView({ milestones, stats }: Props) {
                 {/* Expanded details */}
                 {isExpanded && (m.type === 'table_complete' || m.type === 'table_failed') && (
                   <div className="ml-9 mt-1 mb-1 p-2 bg-background-elevated rounded text-[10px] space-y-0.5">
+                    <div className="text-foreground-muted">
+                      {t('migration.rowsRead')}: <span className="text-foreground-default font-medium">{m.rowsRead?.toLocaleString() ?? 0}</span>
+                    </div>
                     <div className="text-foreground-muted">
                       {t('migration.rowsWritten')}: <span className="text-foreground-default font-medium">{m.rowsWritten?.toLocaleString() ?? 0}</span>
                     </div>

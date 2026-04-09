@@ -698,7 +698,8 @@ async fn execute_single_mapping(
 
     let written = mapping_stats.rows_written.load(Ordering::Relaxed);
     let failed = mapping_stats.rows_failed.load(Ordering::Relaxed);
-    Ok(format!("written={} failed={}", written, failed))
+    let read = mapping_stats.rows_read.load(Ordering::Relaxed);
+    Ok(format!("read={} written={} failed={}", read, written, failed))
 }
 
 // ── Build source SQL ──────────────────────────────────────────────────────────

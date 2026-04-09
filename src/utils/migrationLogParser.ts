@@ -2,7 +2,7 @@ import { MigrationLogEvent, MigrationMilestone, MappingCardState } from '../stor
 
 const ARROW = '\u{2192}' // →
 const TABLE_START_RE = /^\[(\d+)\/(\d+)\]\s+Starting:\s+(.+)$/
-const TABLE_COMPLETE_RE = /^\[(\d+)\/(\d+)\]\s+Completed:\s+(.+?)\s+—\s+written=(\d+)\s+failed=(\d+)$/
+const TABLE_COMPLETE_RE = /^\[(\d+)\/(\d+)\]\s+Completed:\s+(.+?)\s+—\s+read=(\d+)\s+written=(\d+)\s+failed=(\d+)$/
 const TABLE_FAILED_RE = /^\[(\d+)\/(\d+)\]\s+Failed:\s+(.+?)\s+—\s+(.+)$/
 const PIPELINE_START_RE = /^Pipeline started: job_id=(\d+)$/
 const PIPELINE_FINISH_RE = /^Pipeline (FINISHED|PARTIAL_FAILED|FAILED):.*rows_written=(\d+)\s+rows_failed=(\d+)\s+elapsed=([\d.]+)s$/
@@ -18,8 +18,26 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
   const milestones: MigrationMilestone[] = []
   let totalMappings = 0
 
+  // Track cumulative rowsRead from stats events
+  let lastRowsRead = 0
+  const tableRowsRead = new Map<string, number>()
+
   for (const log of logs) {
-    const { message, timestamp } = log
+    const { message, timestamp, level } = log
+
+    // Track stats events for rowsRead
+    if (level === 'STATS') {
+      const readMatch = message.match(/rows_read=(\d+)/)
+      if (readMatch) {
+        lastRowsRead = parseInt(readMatch[1], 10)
+      }
+      // Per-table rows read from mapping progress
+      const mappingReadMatch = message.match(/mapping_rows_read=(\d+)/)
+      if (mappingReadMatch) {
+        // We'll distribute this across active cards
+      }
+      continue
+    }
 
     // Pipeline start
     const psMatch = message.match(PIPELINE_START_RE)
@@ -65,6 +83,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
         sourceTable,
         targetTable,
         status: 'running',
+        rowsRead: 0,
         rowsWritten: 0,
         rowsFailed: 0,
         startedAt: timestamp,
@@ -78,8 +97,9 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     const tcMatch = message.match(TABLE_COMPLETE_RE)
     if (tcMatch) {
       const label = tcMatch[3]
-      const rowsWritten = parseInt(tcMatch[4], 10)
-      const rowsFailed = parseInt(tcMatch[5], 10)
+      const rowsRead = parseInt(tcMatch[4], 10)
+      const rowsWritten = parseInt(tcMatch[5], 10)
+      const rowsFailed = parseInt(tcMatch[6], 10)
 
       milestones.push({
         id: `table_complete:${label}`,
@@ -87,6 +107,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
         label,
         status: 'success',
         timestamp,
+        rowsRead,
         rowsWritten,
         rowsFailed,
         mappingIndex: parseInt(tcMatch[1], 10),
@@ -96,6 +117,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
       const card = cardMap.get(label)
       if (card) {
         card.status = 'success'
+        card.rowsRead = rowsRead
         card.rowsWritten = rowsWritten
         card.rowsFailed = rowsFailed
         card.finishedAt = timestamp
@@ -166,28 +188,53 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     if (m.type === 'table_complete') completedLabels.add(m.label)
     if (m.type === 'table_failed') failedLabels.add(m.label)
   }
+
+  // Find the index of the first failed table
+  let firstFailedIndex = -1
+  for (const m of milestones) {
+    if (m.type === 'table_failed') {
+      firstFailedIndex = m.mappingIndex ?? -1
+      break
+    }
+  }
+
   for (const m of milestones) {
     if (m.type === 'table_start' && m.status === 'running') {
-      if (completedLabels.has(m.label)) m.status = 'success'
-      else if (failedLabels.has(m.label)) m.status = 'failed'
+      if (completedLabels.has(m.label)) {
+        m.status = 'success'
+      } else if (failedLabels.has(m.label)) {
+        m.status = 'failed'
+      } else if (firstFailedIndex > 0 && (m.mappingIndex ?? 0) > firstFailedIndex) {
+        // Tables after the first failed one should be marked as failed too
+        m.status = 'failed'
+      }
     }
   }
 
   if (hasPipelineStart && !hasPipelineFinish) {
-    // Mark currently running table — keep as 'running'
+    // Pipeline is still running
+    // Mark tables that haven't started yet as 'pending'
+    const startedLabels = new Set<string>()
     for (const m of milestones) {
-      if (m.type === 'table_start' && m.status === 'running') {
-        // This is the currently running table, keep as 'running'
+      if (m.type === 'table_start') startedLabels.add(m.label)
+    }
+    for (const [label, card] of cardMap) {
+      if (!completedLabels.has(label) && !failedLabels.has(label) && card.status === 'running') {
+        if (!startedLabels.has(label)) {
+          card.status = 'pending'
+        }
       }
     }
+  }
 
-    // Mark tables that haven't started yet as 'pending'
+  // Mark pending cards for tables that haven't started yet (when pipeline failed)
+  if (hasPipelineFinish && firstFailedIndex > 0) {
+    // Tables with index > firstFailedIndex are pending/never ran
     for (const [label, card] of cardMap) {
-      if (!completedLabels.has(label) && card.status === 'running') {
-        // Check if this table has a table_start milestone
-        const hasStart = milestones.some(m => m.type === 'table_start' && m.label === label)
-        if (!hasStart) {
+      if (!completedLabels.has(label) && !failedLabels.has(label)) {
+        if ((card.mappingIndex ?? 0) > firstFailedIndex) {
           card.status = 'pending'
+          card.error = '未运行 (上游失败)'
         }
       }
     }
@@ -197,16 +244,6 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
   for (const card of cardMap.values()) {
     if (card.startedAt && card.finishedAt) {
       card.elapsedMs = new Date(card.finishedAt).getTime() - new Date(card.startedAt).getTime()
-    }
-  }
-
-  // Add pending cards for tables that haven't started yet
-  if (totalMappings > 0 && cardMap.size < totalMappings) {
-    const startedLabels = new Set(cardMap.keys())
-    for (let i = 1; i <= totalMappings; i++) {
-      if (!startedLabels.has(`placeholder_${i}`)) {
-        // We don't know the table names yet for pending ones, skip
-      }
     }
   }
 

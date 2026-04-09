@@ -79,6 +79,7 @@ export interface MigrationMilestone {
   status: 'pending' | 'running' | 'success' | 'failed'
   timestamp: string
   elapsedMs?: number
+  rowsRead?: number
   rowsWritten?: number
   rowsFailed?: number
   error?: string
@@ -90,6 +91,7 @@ export interface MappingCardState {
   sourceTable: string
   targetTable: string
   status: 'pending' | 'running' | 'success' | 'failed'
+  rowsRead: number
   rowsWritten: number
   rowsFailed: number
   startedAt?: string

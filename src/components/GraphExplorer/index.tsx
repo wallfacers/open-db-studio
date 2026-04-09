@@ -721,11 +721,50 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Search panel handlers ───────────────────────────────────────────────────
 
+  const selectNodeById = useCallback((nodeId: string) => {
+    const raw = rawNodes.find((n) => n.id === nodeId);
+    const rfNode = rfNodes.find((n) => n.id === nodeId);
+    if (!raw) return;
+
+    // Calculate 1-hop neighbors from filteredEdges
+    const neighborNodeIds = new Set<string>();
+    const neighborEdgeIds = new Set<string>();
+
+    filteredEdges.forEach(edge => {
+      if (edge.from_node === nodeId) {
+        neighborNodeIds.add(edge.to_node);
+        neighborEdgeIds.add(edge.id);
+      } else if (edge.to_node === nodeId) {
+        neighborNodeIds.add(edge.from_node);
+        neighborEdgeIds.add(edge.id);
+      }
+    });
+
+    // Include the clicked node itself
+    neighborNodeIds.add(nodeId);
+
+    // Set focus state
+    setFocusedNodeId(nodeId);
+    setHighlightedNodeIds(neighborNodeIds);
+    setHighlightedEdgeIds(neighborEdgeIds);
+
+    // Smoothly center the node in viewport if available
+    if (rfNode) {
+      const nodeWidth = rfNode.measured?.width ?? (rfNode.type === 'link' ? 260 : 240);
+      const nodeHeight = rfNode.measured?.height ?? (rfNode.type === 'link' ? 70 : 100);
+      const centerX = (rfNode.position?.x ?? 0) + nodeWidth / 2;
+      const centerY = (rfNode.position?.y ?? 0) + nodeHeight / 2;
+      setCenter(centerX, centerY, { zoom: getZoom(), duration: 300 });
+    }
+
+    // Open detail panel
+    setSelectedNode(raw);
+    setActivePanel('detail');
+  }, [rawNodes, rfNodes, filteredEdges, setCenter, getZoom]);
+
   const handleHighlightNode = useCallback((nodeId: string) => {
-    setHighlightedNodeIds(new Set([nodeId]));
-    setHighlightedEdgeIds(new Set());
-    setTimeout(() => setHighlightedNodeIds(new Set()), 2000);
-  }, []);
+    selectNodeById(nodeId);
+  }, [selectNodeById]);
 
   const handleHighlightPath = useCallback((nodeIds: Set<string>, edgeIds: Set<string>) => {
     setHighlightedNodeIds(new Set(nodeIds));
@@ -747,43 +786,9 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   // ── Node click → focus 1-hop neighbors + open detail ────────────────────────
   const onNodeClick: NodeMouseHandler = useCallback(
     (_evt, node) => {
-      // Calculate 1-hop neighbors from filteredEdges
-      const neighborNodeIds = new Set<string>();
-      const neighborEdgeIds = new Set<string>();
-
-      filteredEdges.forEach(edge => {
-        if (edge.from_node === node.id) {
-          neighborNodeIds.add(edge.to_node);
-          neighborEdgeIds.add(edge.id);
-        } else if (edge.to_node === node.id) {
-          neighborNodeIds.add(edge.from_node);
-          neighborEdgeIds.add(edge.id);
-        }
-      });
-
-      // Include the clicked node itself
-      neighborNodeIds.add(node.id);
-
-      // Set focus state
-      setFocusedNodeId(node.id);
-      setHighlightedNodeIds(neighborNodeIds);
-      setHighlightedEdgeIds(neighborEdgeIds);
-
-      // Smoothly center the clicked node in viewport
-      const nodeWidth = node.measured?.width ?? (node.type === 'link' ? 260 : 240);
-      const nodeHeight = node.measured?.height ?? (node.type === 'link' ? 70 : 100);
-      const centerX = (node.position?.x ?? 0) + nodeWidth / 2;
-      const centerY = (node.position?.y ?? 0) + nodeHeight / 2;
-      setCenter(centerX, centerY, { zoom: getZoom(), duration: 300 });
-
-      // Open detail panel
-      const raw = rawNodes.find((n) => n.id === node.id);
-      if (raw) {
-        setSelectedNode(raw);
-        setActivePanel('detail');
-      }
+      selectNodeById(node.id);
     },
-    [rawNodes, filteredEdges, setCenter, getZoom],
+    [selectNodeById],
   );
 
   // ── Pane click → clear focus; double-click → close detail ───────────────────
@@ -1182,6 +1187,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
             nodeNameMap={nodeNameMap}
             onClose={() => { setSelectedNode(null); setActivePanel(null); }}
             onAliasUpdated={handleAliasUpdated}
+            onNodeClick={handleHighlightNode}
             onRefresh={refetch}
           />
         )}

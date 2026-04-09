@@ -180,12 +180,38 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
             "SYSTEM",
             &format!("Pipeline {}: {}", final_status, msg),
         );
+
+        // Parse final stats from summary message
+        let mut final_rows_read = 0u64;
+        let mut final_rows_written = 0u64;
+        let mut final_rows_failed = 0u64;
+        let mut final_bytes = 0u64;
+        let mut final_elapsed = 0f64;
+
+        // Try to parse rows_written, rows_failed, elapsed from the summary string
+        for part in msg.split_whitespace() {
+            if let Some(val) = part.strip_prefix("rows_written=") {
+                final_rows_written = val.replace('s', "").parse().unwrap_or(0);
+            }
+            if let Some(val) = part.strip_prefix("rows_failed=") {
+                final_rows_failed = val.parse().unwrap_or(0);
+            }
+            if let Some(val) = part.strip_prefix("elapsed=") {
+                final_elapsed = val.replace('s', "").parse().unwrap_or(0.0);
+            }
+        }
+
         let _ = app_clone.emit(
             MIGRATION_FINISHED_EVENT,
             serde_json::json!({
                 "jobId": job_id,
                 "runId": run_id_clone,
                 "status": final_status,
+                "rowsRead": final_rows_read,
+                "rowsWritten": final_rows_written,
+                "rowsFailed": final_rows_failed,
+                "bytesTransferred": final_bytes,
+                "elapsedSeconds": final_elapsed,
             }),
         );
     });
@@ -707,8 +733,13 @@ fn build_source_query(config: &MigrationJobConfig, mapping: &TableMapping) -> Ap
     }
 
     if let Some(ref filter) = mapping.filter_condition {
-        if !filter.trim().is_empty() {
-            conditions.push(filter.clone());
+        let trimmed = filter.trim();
+        if !trimmed.is_empty() {
+            let condition = trimmed
+                .strip_prefix("WHERE ")
+                .or_else(|| trimmed.strip_prefix("where "))
+                .unwrap_or(trimmed);
+            conditions.push(condition.to_string());
         }
     }
 

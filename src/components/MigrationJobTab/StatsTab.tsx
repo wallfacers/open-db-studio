@@ -4,6 +4,7 @@ import { CheckCircle2, XCircle, Clock, AlertCircle, StopCircle, Trash2, Ellipsis
 import { useTranslation } from 'react-i18next'
 import { MigrationRunHistory, MigrationLogEvent, useMigrationStore } from '../../store/migrationStore'
 import { LogDetailModal } from './LogDetailModal'
+import { formatDateTime } from '../../utils/migrationLogParser'
 
 interface Props { jobId: number }
 
@@ -116,7 +117,7 @@ export function StatsTab({ jobId }: Props) {
           <tbody>
             {paginated.map(run => (
               <tr key={run.runId} className="border-b border-border-subtle/50 hover:bg-background-elevated/30 transition-colors">
-                <td className="px-3 py-2.5 text-foreground-default font-mono text-[11px]">{run.startedAt}</td>
+                <td className="px-3 py-2.5 text-foreground-default font-mono text-[11px]">{formatDateTime(run.startedAt)}</td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-1.5">
                     {statusIcon(run.status)}

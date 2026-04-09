@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { X, Copy, Download } from 'lucide-react'
 import { MigrationLogEvent } from '../../store/migrationStore'
+import { formatDateTime } from '../../utils/migrationLogParser'
 
 interface Props {
   logs: MigrationLogEvent[]
@@ -75,7 +76,7 @@ export function LogDetailModal({ logs, onClose }: Props) {
           {logs.length > 0 ? (
             logs.map((log, i) => (
               <div key={i} className="py-0.5 whitespace-pre-wrap">
-                <span className="text-foreground-subtle">[{log.timestamp}]</span>{' '}
+                <span className="text-foreground-subtle">[{formatDateTime(log.timestamp)}]</span>{' '}
                 <span className={LEVEL_COLORS[log.level] ?? 'text-foreground-muted'}>{log.level}</span>{' '}
                 <span className="text-foreground-default">{log.message}</span>
               </div>

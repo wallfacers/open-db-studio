@@ -238,3 +238,20 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
 
   return { milestones, cards }
 }
+
+/** Format ISO timestamp to local datetime string without T separator.
+ *  e.g. "2026-04-09T17:23:41.851Z" -> "2026-04-10 01:23:41" (UTC+8)
+ */
+export function formatDateTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  const MM = pad(d.getMonth() + 1)
+  const dd = pad(d.getDate())
+  const hh = pad(d.getHours())
+  const mm = pad(d.getMinutes())
+  const ss = pad(d.getSeconds())
+  return `${yyyy}-${MM}-${dd} ${hh}:${mm}:${ss}`
+}

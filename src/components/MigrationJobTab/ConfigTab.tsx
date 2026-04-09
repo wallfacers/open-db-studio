@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { Play, ShieldCheck } from 'lucide-react'
 import { DropdownSelect } from '../common/DropdownSelect'
 import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
-import { SyncModeSection } from './SyncModeSection'
 import { TableMappingPanel } from './TableMappingPanel'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
@@ -16,17 +15,12 @@ interface TableMapping {
   sourceTable: string; target: TargetConfig
   filterCondition?: string; columnMappings: ColumnMapping[]
 }
-interface IncrementalConfig {
-  field: string; fieldType: 'timestamp' | 'numeric'; lastValue?: string
-}
 interface PipelineConfig {
   readBatchSize: number; writeBatchSize: number; parallelism: number
   channelCapacity: number; speedLimitRps: number | null; errorLimit: number
   shardCount: number | null
 }
 interface JobConfig {
-  syncMode: 'full' | 'incremental'
-  incrementalConfig?: IncrementalConfig
   defaultTargetConnId: number
   defaultTargetDb: string
   source: {
@@ -48,7 +42,6 @@ interface Props {
 
 function defaultConfig(): JobConfig {
   return {
-    syncMode: 'full',
     defaultTargetConnId: 0,
     defaultTargetDb: '',
     source: { connectionId: 0, database: '', queryMode: 'auto', tables: [] },
@@ -260,13 +253,6 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full">
-      {/* Sync Mode */}
-      <SyncModeSection
-        syncMode={config.syncMode}
-        incrementalConfig={config.incrementalConfig}
-        onChange={(syncMode, incrementalConfig) => update({ syncMode, incrementalConfig })}
-      />
-
       {/* Source + Target defaults */}
       <div className="grid grid-cols-2 gap-4">
         {/* Source */}

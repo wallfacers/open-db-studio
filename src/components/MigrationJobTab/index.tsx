@@ -28,6 +28,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const run = store.activeRuns.get(jobId)
   const jobNode = store.nodes.get(`job_${jobId}`)
   const isRunning = jobNode?.nodeType === 'job' && jobNode.status === 'RUNNING'
+  const hasFailed = jobNode?.nodeType === 'job' && jobNode.status === 'FAILED'
 
   useEffect(() => {
     invoke<MigrationJob[]>('list_migration_jobs')
@@ -138,7 +139,7 @@ export function MigrationJobTab({ jobId }: Props) {
       {/* Log Panel Resize Handle */}
       {logHeight > 0 && (
         <div
-          className="h-1 cursor-row-resize z-10 hover:bg-accent transition-colors flex-shrink-0"
+          className="h-[5px] cursor-row-resize z-10 hover:bg-accent transition-colors flex-shrink-0 border-t border-border-default"
           onMouseDown={handleLogResize}
         />
       )}
@@ -150,6 +151,12 @@ export function MigrationJobTab({ jobId }: Props) {
           <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-2 border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0">
             <span>{t('migration.logTab')}</span>
             {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
+            <Tooltip content={t('common.close', { defaultValue: '关闭' })}>
+              <span
+                className="hover:bg-border-default rounded p-0.5 leading-none transition-colors duration-200 cursor-pointer"
+                onClick={() => setLogHeight(0)}
+              >✕</span>
+            </Tooltip>
           </div>
           <div className="ml-auto flex items-center gap-1 px-2 flex-shrink-0">
             {/* Structured/raw toggle — inlined here to avoid LogViewToggle's outer border-b interfering with the tab-bar */}
@@ -171,10 +178,6 @@ export function MigrationJobTab({ jobId }: Props) {
                 </button>
               </Tooltip>
             </div>
-            <button
-              className="p-0.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-border-default transition-colors leading-none text-xs ml-1"
-              onClick={() => setLogHeight(0)}
-            >✕</button>
           </div>
         </div>
         {/* Log content */}
@@ -184,6 +187,7 @@ export function MigrationJobTab({ jobId }: Props) {
             stats={run?.stats ?? null}
             logs={run?.logs ?? []}
             viewMode={viewMode}
+            hasFailed={hasFailed}
           />
         </div>
       </div>

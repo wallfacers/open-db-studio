@@ -11,6 +11,7 @@ interface Props {
   stats: MigrationStatsEvent | null
   logs: MigrationLogEvent[]
   viewMode: LogViewMode
+  hasFailed?: boolean
 }
 
 const LOG_COLORS: Record<string, string> = {
@@ -24,7 +25,7 @@ const LOG_COLORS: Record<string, string> = {
   PROGRESS: 'text-foreground-muted',
 }
 
-export function LogTab({ stats, logs, viewMode }: Props) {
+export function LogTab({ stats, logs, viewMode, hasFailed }: Props) {
   const { t } = useTranslation()
   const logEndRef = useRef<HTMLDivElement>(null)
 
@@ -58,7 +59,7 @@ export function LogTab({ stats, logs, viewMode }: Props) {
         {stats && (<>
           {/* Progress bar */}
           <div className="h-1.5 bg-background-elevated rounded mb-2 overflow-hidden">
-            <div className="h-full bg-accent transition-all duration-500 rounded" style={{ width: `${pct}%` }} />
+            <div className={`h-full transition-all duration-500 rounded ${hasFailed ? 'bg-error' : 'bg-accent'}`} style={{ width: `${pct}%` }} />
           </div>
 
           {/* Mapping progress indicator */}
@@ -83,7 +84,7 @@ export function LogTab({ stats, logs, viewMode }: Props) {
             </div>
             <div>
               <span className="text-foreground-subtle">{t('migration.speed')}  </span>
-              <span className="text-accent">{Math.round(stats.writeSpeedRps).toLocaleString()} r/s</span>
+              <span className={hasFailed ? 'text-error' : 'text-accent'}>{Math.round(stats.writeSpeedRps).toLocaleString()} r/s</span>
             </div>
             {stats.etaSeconds !== null && (
               <div>

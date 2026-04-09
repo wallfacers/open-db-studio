@@ -104,13 +104,13 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
         <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
           <thead className="sticky top-0 bg-background-base z-10">
             <tr>
-              <th className="w-8 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal">
+              <th className="w-8 px-2 py-1.5 border-b border-r border-border-default text-foreground-muted font-normal text-center">
                 <input
                   ref={headerCheckboxRef}
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleAll}
-                  className="accent-accent cursor-pointer"
+                  className="accent-accent cursor-pointer align-middle"
                   title={allSelected ? t('tableSelector.deselectAll') : t('tableSelector.selectAll')}
                 />
               </th>
@@ -126,13 +126,13 @@ export const TableSelector: React.FC<Props> = ({ tables, selected, onChange }) =
                 onClick={() => toggleTable(t.name)}
                 className={`border-b border-border-default cursor-pointer hover:bg-background-hover transition-colors duration-150 ${selected.includes(t.name) ? 'bg-background-active' : ''}`}
               >
-                <td className="px-2 py-1.5 border-r border-border-default">
+                <td className="px-2 py-1.5 border-r border-border-default text-center">
                   <input
                     type="checkbox"
                     checked={selected.includes(t.name)}
                     onChange={() => toggleTable(t.name)}
                     onClick={(e) => e.stopPropagation()}
-                    className="accent-accent"
+                    className="accent-accent align-middle"
                   />
                 </td>
                 <td className="px-3 py-1.5 border-r border-border-default text-foreground max-w-[200px] truncate">{t.name}</td>

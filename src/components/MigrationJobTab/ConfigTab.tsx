@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { Play, ShieldCheck, Save } from 'lucide-react'
 import { DropdownSelect } from '../common/DropdownSelect'
-import { TableSelector } from '../ImportExport/TableSelector'
+import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
 import { SyncModeSection } from './SyncModeSection'
 import { TableMappingPanel } from './TableMappingPanel'
 import { X } from 'lucide-react'
@@ -67,7 +67,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
   const [sourceDatabases, setSourceDatabases] = useState<string[]>([])
   const [targetDatabases, setTargetDatabases] = useState<string[]>([])
-  const [sourceTables, setSourceTables] = useState<Array<{ name: string }>>([])
+  const [sourceTables, setSourceTables] = useState<TableInfo[]>([])
   const [targetTables, setTargetTables] = useState<Array<{ name: string }>>([])
   const [dbsLoading, setDbsLoading] = useState(false)
   const [targetDbsLoading, setTargetDbsLoading] = useState(false)
@@ -148,8 +148,8 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       return
     }
     setTablesLoading(true)
-    invoke<Array<{ name: string }>>('get_tables', { connectionId: config.source.connectionId, database: config.source.database })
-      .then(setSourceTables)
+    invoke<Array<{ name: string; row_count: number | null; size: string | null }>>('list_tables_with_stats', { connectionId: config.source.connectionId, database: config.source.database, schema: null })
+      .then(stats => setSourceTables(stats.map(s => ({ name: s.name, rowCount: s.row_count ?? undefined, size: s.size ?? undefined }))))
       .catch(() => setSourceTables([]))
       .finally(() => setTablesLoading(false))
   }, [config.source.connectionId, config.source.database])

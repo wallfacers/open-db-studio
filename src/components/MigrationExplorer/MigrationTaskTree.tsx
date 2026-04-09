@@ -112,6 +112,8 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
     if (status === 'RUNNING') return <Loader2 size={14} className="text-accent animate-spin flex-shrink-0" />
     if (status === 'FINISHED') return <CheckCircle2 size={14} className="text-success flex-shrink-0" />
     if (status === 'FAILED') return <XCircle size={14} className="text-error flex-shrink-0" />
+    if (status === 'STOPPED') return <Square size={14} className="text-foreground-muted flex-shrink-0" />
+    if (status === 'PARTIAL_FAILED') return <XCircle size={14} className="text-warning flex-shrink-0" />
     return <ArrowLeftRight size={14} className="text-foreground-muted flex-shrink-0" />
   }
 
@@ -176,6 +178,16 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
             {node.nodeType === 'job' && node.status === 'FAILED' && (
               <span className="text-[10px] px-1 rounded text-error bg-error-subtle flex-shrink-0 ml-1">
                 {t('migration.statusFailed')}
+              </span>
+            )}
+            {node.nodeType === 'job' && node.status === 'PARTIAL_FAILED' && (
+              <span className="text-[10px] px-1 rounded text-warning bg-warning/10 flex-shrink-0 ml-1">
+                {t('migration.statusPartialFailed', { defaultValue: 'PARTIAL' })}
+              </span>
+            )}
+            {node.nodeType === 'job' && node.status === 'STOPPED' && (
+              <span className="text-[10px] px-1 rounded text-foreground-muted bg-background-hover flex-shrink-0 ml-1">
+                {t('migration.statusStopped')}
               </span>
             )}
           </div>

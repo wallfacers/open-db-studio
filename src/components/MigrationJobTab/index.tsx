@@ -38,8 +38,7 @@ export function MigrationJobTab({ jobId }: Props) {
   }
 
   const handleRun = async () => {
-    await invoke('run_migration_job', { jobId })
-    store.updateJobStatus(jobId, 'RUNNING')
+    await store.runJob(jobId)
     setActiveTab('log')
   }
 

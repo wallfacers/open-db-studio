@@ -154,6 +154,7 @@ interface MigrationStore {
   deleteJob: (id: number) => Promise<void>
   moveJob: (id: number, categoryId: number | null) => Promise<void>
   updateJobStatus: (jobId: number, status: string) => void
+  runJob: (jobId: number) => Promise<void>
   startListening: () => () => void
 }
 
@@ -293,6 +294,18 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     return { nodes }
   }),
 
+  runJob: async (jobId) => {
+    // Optimistically set to RUNNING, but only if we are not already receiving a finished event
+    get().updateJobStatus(jobId, 'RUNNING')
+    try {
+      await invoke('run_migration_job', { jobId })
+    } catch (err) {
+      console.error('[migrationStore] runJob failed:', err)
+      get().updateJobStatus(jobId, 'FAILED')
+      throw err
+    }
+  },
+
   startListening: () => {
     let cleaned = false
     const unlisteners: Array<() => void> = []
@@ -324,18 +337,30 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
           ? existing
           : { runId: payload.runId, stats: null, logs: [] }
         runs.set(payload.jobId, { ...run, stats: payload })
+        
+        // Also ensure the job status is RUNNING if we are receiving stats
+        const nodes = new Map(s.nodes)
+        const nodeId = migJobNodeId(payload.jobId)
+        const node = nodes.get(nodeId)
+        if (node && node.nodeType === 'job' && node.status !== 'RUNNING') {
+          nodes.set(nodeId, { ...node, status: 'RUNNING' })
+          return { activeRuns: runs, nodes }
+        }
+        
         return { activeRuns: runs }
       })
     })
 
     register<{ jobId: number; runId: string; status: string; rowsRead?: number; rowsWritten?: number; rowsFailed?: number; bytesTransferred?: number; elapsedSeconds?: number }>('migration_finished', (payload) => {
+      console.log(`[migrationStore] finished event for job ${payload.jobId}, status=${payload.status}`);
+      
       // Synthesize a Pipeline FINISHED/FAILED log entry so the parser can
       // update pipeline_start status and deduplicate table_start milestones
       const finishLog: MigrationLogEvent = {
         jobId: payload.jobId,
         runId: payload.runId,
         level: 'SYSTEM',
-        message: `Pipeline ${payload.status}: rows_read=${payload.rowsRead ?? 0} rows_written=${payload.rowsWritten ?? 0} rows_failed=${payload.rowsFailed ?? 0} bytes_transferred=${payload.bytesTransferred ?? 0} elapsed=${(payload.elapsedSeconds ?? 0).toFixed(2)}s`,
+        message: `Pipeline ${payload.status}: rows_written=${payload.rowsWritten ?? 0} rows_failed=${payload.rowsFailed ?? 0} elapsed=${(payload.elapsedSeconds ?? 0).toFixed(2)}s`,
         timestamp: new Date().toISOString(),
       }
 
@@ -347,10 +372,10 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
           const stats = existing.stats ? { ...existing.stats } : {
             jobId: payload.jobId,
             runId: payload.runId,
-            rowsRead: 0,
-            rowsWritten: 0,
-            rowsFailed: 0,
-            bytesTransferred: 0,
+            rowsRead: payload.rowsRead ?? 0,
+            rowsWritten: payload.rowsWritten ?? 0,
+            rowsFailed: payload.rowsFailed ?? 0,
+            bytesTransferred: payload.bytesTransferred ?? 0,
             readSpeedRps: 0,
             writeSpeedRps: 0,
             etaSeconds: 0,
@@ -371,17 +396,34 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
             stats,
             logs: [...existing.logs, finishLog].slice(-500),
           })
-          return { activeRuns: runs }
+          
+          // Also update nodes status in the same set call to avoid race conditions
+          const nodes = new Map(s.nodes)
+          const nodeId = migJobNodeId(payload.jobId)
+          const node = nodes.get(nodeId)
+          if (node && node.nodeType === 'job') {
+            nodes.set(nodeId, { ...node, status: payload.status })
+          }
+          
+          return { activeRuns: runs, nodes }
         }
+        
         // Even if no existing run, create one so the finish log is visible
         runs.set(payload.jobId, {
           runId: payload.runId,
           stats: null,
           logs: [finishLog],
         })
-        return { activeRuns: runs }
+        
+        const nodes = new Map(s.nodes)
+        const nodeId = migJobNodeId(payload.jobId)
+        const node = nodes.get(nodeId)
+        if (node && node.nodeType === 'job') {
+          nodes.set(nodeId, { ...node, status: payload.status })
+        }
+        
+        return { activeRuns: runs, nodes }
       })
-      get().updateJobStatus(payload.jobId, payload.status)
     })
 
     return () => { cleaned = true; unlisteners.forEach(u => u()) }

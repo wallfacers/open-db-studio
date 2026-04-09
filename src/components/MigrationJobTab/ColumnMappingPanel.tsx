@@ -119,17 +119,19 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
             className="w-24"
           />
         </div>
-        {mapping.target.conflictStrategy === 'UPSERT' && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-foreground-subtle">{t('migration.upsertKeys')}:</span>
-            <input
-              value={mapping.target.upsertKeys.join(', ')}
-              onChange={e => onUpdateTarget({ upsertKeys: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-              className={inputCls + " w-32"}
-              placeholder="id"
-            />
-          </div>
-        )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-foreground-subtle">{t('migration.upsertKeys')}:</span>
+          <input
+            value={mapping.target.upsertKeys.join(', ')}
+            onChange={e => onUpdateTarget({ upsertKeys: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+            disabled={mapping.target.conflictStrategy !== 'UPSERT'}
+            className={
+              inputCls + ' w-32 ' +
+              (mapping.target.conflictStrategy !== 'UPSERT' ? 'opacity-50 cursor-not-allowed' : '')
+            }
+            placeholder="id"
+          />
+        </div>
       </div>
     </div>
   )

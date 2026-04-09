@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
-import { useMigrationStore, MigrationJob } from '../../store/migrationStore'
+import { useMigrationStore, MigrationJob, LogViewMode } from '../../store/migrationStore'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useToastStore } from '../../store/toastStore'
 import { ConfigTab, ConfigTabHandle } from './ConfigTab'
-import { Play, Square, ShieldCheck } from 'lucide-react'
+import { Play, Square, ShieldCheck, ListTree, Code } from 'lucide-react'
 import { Tooltip } from '../common/Tooltip'
 import { LogTab } from './LogTab'
 import { StatsTab } from './StatsTab'
@@ -21,6 +21,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const [activeTab, setActiveTab] = useState<SubTab>('config')
   const [configJson, setConfigJson] = useState('{}')
   const [logHeight, setLogHeight] = useState(0)
+  const [viewMode, setViewMode] = useState<LogViewMode>('structured')
 
   const configTabRef = useRef<ConfigTabHandle>(null)
 
@@ -144,16 +145,37 @@ export function MigrationJobTab({ jobId }: Props) {
 
       {/* Log Bottom Panel */}
       <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: logHeight }}>
-        {/* Panel header */}
-        <div className="flex items-center bg-background-base border-b border-border-default px-3 h-[38px] flex-shrink-0">
-          <span className="text-xs text-foreground-muted flex items-center">
-            {t('migration.logTab')}
-            {isRunning && <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-accent inline-block animate-pulse" />}
-          </span>
-          <button
-            className="ml-auto p-0.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-border-default transition-colors leading-none text-xs"
-            onClick={() => setLogHeight(0)}
-          >✕</button>
+        {/* Log tab-bar — SQL editor result pane style */}
+        <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
+          <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-2 border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0">
+            <span>{t('migration.logTab')}</span>
+            {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
+          </div>
+          <div className="ml-auto flex items-center gap-1 px-2 flex-shrink-0">
+            {/* 结构化/原始切换 — 直接内联，不用 LogViewToggle 避免其外层 border-b 干扰 */}
+            <div className="flex items-center bg-background-elevated rounded-md p-0.5">
+              <Tooltip content={t('migration.structuredView')}>
+                <button
+                  onClick={() => setViewMode('structured')}
+                  className={`p-1 rounded transition-colors ${viewMode === 'structured' ? 'bg-accent text-white' : 'text-foreground-muted hover:text-foreground-default'}`}
+                >
+                  <ListTree size={12} />
+                </button>
+              </Tooltip>
+              <Tooltip content={t('migration.rawLog')}>
+                <button
+                  onClick={() => setViewMode('raw')}
+                  className={`p-1 rounded transition-colors ${viewMode === 'raw' ? 'bg-accent text-white' : 'text-foreground-muted hover:text-foreground-default'}`}
+                >
+                  <Code size={12} />
+                </button>
+              </Tooltip>
+            </div>
+            <button
+              className="p-0.5 rounded text-foreground-muted hover:text-foreground-default hover:bg-border-default transition-colors leading-none text-xs ml-1"
+              onClick={() => setLogHeight(0)}
+            >✕</button>
+          </div>
         </div>
         {/* Log content */}
         <div className="flex-1 min-h-0 overflow-hidden">
@@ -162,7 +184,8 @@ export function MigrationJobTab({ jobId }: Props) {
             stats={run?.stats ?? null}
             logs={run?.logs ?? []}
             isRunning={isRunning}
-            onStop={handleStop}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>

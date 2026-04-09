@@ -1,8 +1,7 @@
-import { useRef, useEffect, useState, useMemo } from 'react'
-import { Square, Download } from 'lucide-react'
+import { useRef, useEffect, useMemo } from 'react'
+import { Download } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { MigrationLogEvent, MigrationStatsEvent, LogViewMode } from '../../store/migrationStore'
-import { LogViewToggle } from './LogViewToggle'
 import { TimelineView } from './TimelineView'
 import { MappingCard } from './MappingCard'
 import { parseMilestones } from '../../utils/migrationLogParser'
@@ -12,7 +11,8 @@ interface Props {
   stats: MigrationStatsEvent | null
   logs: MigrationLogEvent[]
   isRunning: boolean
-  onStop: () => void
+  viewMode: LogViewMode
+  onViewModeChange: (mode: LogViewMode) => void
 }
 
 const LOG_COLORS: Record<string, string> = {
@@ -26,10 +26,9 @@ const LOG_COLORS: Record<string, string> = {
   PROGRESS: 'text-foreground-muted',
 }
 
-export function LogTab({ stats, logs, isRunning, onStop }: Props) {
+export function LogTab({ stats, logs, viewMode }: Props) {
   const { t } = useTranslation()
   const logEndRef = useRef<HTMLDivElement>(null)
-  const [viewMode, setViewMode] = useState<LogViewMode>('structured')
 
   useEffect(() => {
     if (viewMode === 'raw') {
@@ -54,16 +53,8 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
     <div className="flex flex-col h-full">
       {/* Stats bar */}
       <div className="p-3 border-b border-border-subtle flex-shrink-0">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center mb-2">
           <span className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.realtimeProgress')}</span>
-          {isRunning && (
-            <button
-              onClick={onStop}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] border border-error text-error rounded hover:bg-error-subtle transition-colors duration-150"
-            >
-              <Square size={10} fill="currentColor" />{t('migration.stop')}
-            </button>
-          )}
         </div>
 
         {stats && (<>
@@ -110,9 +101,6 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
           </div>
         </>)}
       </div>
-
-      {/* View toggle */}
-      <LogViewToggle mode={viewMode} onChange={setViewMode} />
 
       {/* Content area */}
       {viewMode === 'structured' ? (

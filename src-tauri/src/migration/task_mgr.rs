@@ -51,6 +51,7 @@ pub struct SourceConfig {
     pub custom_query: Option<String>,
     /// Legacy field — kept for backward-compat deserialization only
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     pub query: Option<String>,
 }
 

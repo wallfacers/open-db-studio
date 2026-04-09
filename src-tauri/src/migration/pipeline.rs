@@ -182,10 +182,10 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
         );
 
         // Parse final stats from summary message
-        let mut final_rows_read = 0u64;
+        let final_rows_read = 0u64;
         let mut final_rows_written = 0u64;
         let mut final_rows_failed = 0u64;
-        let mut final_bytes = 0u64;
+        let final_bytes = 0u64;
         let mut final_elapsed = 0f64;
 
         // Try to parse rows_written, rows_failed, elapsed from the summary string

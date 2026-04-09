@@ -273,7 +273,11 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     register<MigrationLogEvent>('migration_log', (payload) => {
       set(s => {
         const runs = new Map(s.activeRuns)
-        const run = runs.get(payload.jobId) ?? { runId: payload.runId, stats: null, logs: [] }
+        const existing = runs.get(payload.jobId)
+        // New run started: reset logs and stats
+        const run = existing && existing.runId === payload.runId
+          ? existing
+          : { runId: payload.runId, stats: null, logs: [] }
         runs.set(payload.jobId, { ...run, logs: [...run.logs, payload].slice(-500) })
         return { activeRuns: runs }
       })
@@ -282,7 +286,10 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     register<MigrationStatsEvent>('migration_stats', (payload) => {
       set(s => {
         const runs = new Map(s.activeRuns)
-        const run = runs.get(payload.jobId) ?? { runId: payload.runId, stats: null, logs: [] }
+        const existing = runs.get(payload.jobId)
+        const run = existing && existing.runId === payload.runId
+          ? existing
+          : { runId: payload.runId, stats: null, logs: [] }
         runs.set(payload.jobId, { ...run, stats: payload })
         return { activeRuns: runs }
       })
@@ -290,11 +297,6 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
 
     register<{ jobId: number; runId: string; status: string }>('migration_finished', (payload) => {
       get().updateJobStatus(payload.jobId, payload.status)
-      set(s => {
-        const runs = new Map(s.activeRuns)
-        runs.delete(payload.jobId)
-        return { activeRuns: runs }
-      })
     })
 
     return () => { cleaned = true; unlisteners.forEach(u => u()) }

@@ -183,8 +183,8 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
         let _ = app_clone.emit(
             MIGRATION_FINISHED_EVENT,
             serde_json::json!({
-                "job_id": job_id,
-                "run_id": run_id_clone,
+                "jobId": job_id,
+                "runId": run_id_clone,
                 "status": final_status,
             }),
         );

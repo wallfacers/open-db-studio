@@ -73,16 +73,16 @@ export function StatsTab({ jobId }: Props) {
           <span className="text-[13px] font-medium text-foreground-default">
             {isSuccess ? t('migration.success') : run.status}
           </span>
-          <span className="text-[11px] text-foreground-muted ml-2">{t('migration.duration')} {fmtDur(run.durationMs)}</span>
+          <span className="text-[11px] text-foreground-muted ml-2">{t('migration.duration')} {fmtDur(run.durationMs ?? 0)}</span>
           <span className="text-[11px] text-foreground-subtle ml-auto">{run.startedAt}</span>
         </div>
 
         <div className="grid grid-cols-4 gap-2">
           {([
-            [t('migration.rowsReadLabel'), run.rowsRead.toLocaleString(), ''],
-            [t('migration.rowsWrittenLabel'), run.rowsWritten.toLocaleString(), ''],
-            [t('migration.rowsFailedLabel'), run.rowsFailed.toString(), run.rowsFailed > 0 ? 'text-error' : ''],
-            [t('migration.bytesTransferred'), fmtBytes(run.bytesTransferred), ''],
+            [t('migration.rowsReadLabel'), (run.rowsRead ?? 0).toLocaleString(), ''],
+            [t('migration.rowsWrittenLabel'), (run.rowsWritten ?? 0).toLocaleString(), ''],
+            [t('migration.rowsFailedLabel'), (run.rowsFailed ?? 0).toString(), (run.rowsFailed ?? 0) > 0 ? 'text-error' : ''],
+            [t('migration.bytesTransferred'), fmtBytes(run.bytesTransferred ?? 0), ''],
           ] as [string, string, string][]).map(([label, val, cls]) => (
             <div key={label} className="bg-background-elevated border border-border-subtle rounded p-2 text-center">
               <div className="text-[10px] text-foreground-subtle mb-1">{label}</div>

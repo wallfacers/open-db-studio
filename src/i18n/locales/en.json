@@ -1139,6 +1139,7 @@
     "aiMappingHint": "AI Mapping: Describe your mapping needs in the AI Assistant panel, and AI will auto-fill the field mapping table.",
     "generating": "Generating...",
     "sourceDatabase": "Select database",
+    "targetDatabase": "Target Database",
     "loadingDatabases": "Loading databases...",
     "loadingTables": "Loading tables...",
     "realtimeProgress": "Realtime Progress",

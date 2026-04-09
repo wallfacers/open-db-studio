@@ -120,6 +120,7 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
                 options={targetTables.map(t => ({ value: t.name, label: t.name }))}
                 onChange={val => updateTarget(idx, { table: val })}
                 placeholder={t('migration.targetTable')}
+                wrapperClassName="w-full"
               />
               <input
                 value={m.filterCondition || ''}

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { useMigrationStore, MigrationJob } from '../../store/migrationStore'
 import { useConfirm } from '../../hooks/useConfirm'
+import { useToastStore } from '../../store/toastStore'
 import { ConfigTab } from './ConfigTab'
 import { LogTab } from './LogTab'
 import { StatsTab } from './StatsTab'
@@ -33,6 +34,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const handleSave = async (json: string) => {
     await invoke('update_migration_job_config', { id: jobId, configJson: json })
     setConfigJson(json)
+    useToastStore.getState().show(t('migration.configSaved', { defaultValue: '配置已保存' }), 'success')
   }
 
   const handleRun = async () => {

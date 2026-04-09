@@ -12,6 +12,7 @@ interface ComboboxSelectProps {
   placeholder?: string;
   onChange: (value: string) => void;
   className?: string;
+  wrapperClassName?: string;
   maxHeight?: number;
 }
 
@@ -21,6 +22,7 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
   placeholder = '',
   onChange,
   className = '',
+  wrapperClassName = '',
   maxHeight = 240,
 }) => {
   const [open, setOpen] = useState(false);
@@ -108,7 +110,7 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
   }, [open]);
 
   return (
-    <div ref={triggerRef} className={`relative ${className}`}>
+    <div ref={triggerRef} className={`relative ${wrapperClassName}`}>
       {/* Single input with embedded chevron */}
       <div className="relative">
         <input
@@ -116,7 +118,7 @@ export const ComboboxSelect: React.FC<ComboboxSelectProps> = ({
           value={value}
           onChange={e => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full bg-background-elevated border border-border-strong rounded px-2 py-1 pr-6 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
+          className={`w-full bg-background-elevated border border-border-strong rounded px-2 py-1 pr-6 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors ${className}`}
         />
         {/* Chevron inside the input on the right */}
         <button

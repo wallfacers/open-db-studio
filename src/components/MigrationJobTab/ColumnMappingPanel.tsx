@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { Sparkles, Plus, Trash2, TableProperties } from 'lucide-react'
 import { DropdownSelect } from '../common/DropdownSelect'
+import { INPUT_CLS } from './styles'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface TargetConfig {
@@ -24,7 +25,6 @@ interface Props {
 
 export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, aiLoading, onAiRecommend }: Props) {
   const { t } = useTranslation()
-  const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
 
   const cms = mapping.columnMappings
 
@@ -84,9 +84,9 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
 
       {cms.map((cm, idx) => (
         <div key={idx} className="grid grid-cols-[1fr_1fr_100px_24px] gap-1 mb-1 hover:bg-background-hover rounded px-1 py-0.5 transition-colors">
-          <input value={cm.sourceExpr} onChange={e => updateCm(idx, { sourceExpr: e.target.value })} className={inputCls + " w-full"} placeholder={t('migration.sourceFieldExpr')} />
-          <input value={cm.targetCol} onChange={e => updateCm(idx, { targetCol: e.target.value })} className={inputCls + " w-full"} placeholder={t('migration.targetField')} />
-          <input value={cm.targetType} onChange={e => updateCm(idx, { targetType: e.target.value })} className={inputCls + " w-full"} placeholder={t('migration.targetType')} />
+          <input value={cm.sourceExpr} onChange={e => updateCm(idx, { sourceExpr: e.target.value })} className={INPUT_CLS + " w-full"} placeholder={t('migration.sourceFieldExpr')} />
+          <input value={cm.targetCol} onChange={e => updateCm(idx, { targetCol: e.target.value })} className={INPUT_CLS + " w-full"} placeholder={t('migration.targetField')} />
+          <input value={cm.targetType} onChange={e => updateCm(idx, { targetType: e.target.value })} className={INPUT_CLS + " w-full"} placeholder={t('migration.targetType')} />
           <button onClick={() => removeCm(idx)} className="p-0.5 text-foreground-muted hover:text-error transition-colors">
             <Trash2 size={11} />
           </button>
@@ -125,7 +125,7 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
             value={mapping.target.upsertKeys.join(', ')}
             onChange={e => onUpdateTarget({ upsertKeys: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
             disabled={mapping.target.conflictStrategy !== 'UPSERT'}
-            className={inputCls + ' w-32' + (mapping.target.conflictStrategy !== 'UPSERT' ? ' opacity-50 cursor-not-allowed' : '')}
+            className={INPUT_CLS + ' w-32' + (mapping.target.conflictStrategy !== 'UPSERT' ? ' opacity-50 cursor-not-allowed' : '')}
             placeholder="id"
           />
         </div>

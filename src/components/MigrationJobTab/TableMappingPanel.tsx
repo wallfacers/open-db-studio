@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Copy, Trash2, Columns3, Sparkles } from 'lucide-react'
 import { ColumnMappingPanel } from './ColumnMappingPanel'
 import { ComboboxSelect } from '../common/ComboboxSelect'
+import { INPUT_CLS } from './styles'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface TargetConfig {
@@ -27,8 +28,6 @@ interface Props {
 export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpdate, hasAi, onAiRecommend, aiLoadingMap }: Props) {
   const { t } = useTranslation()
   const [expandedIdxs, setExpandedIdxs] = useState<Set<number>>(() => new Set(mappings.map((_, i) => i)))
-
-  const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
 
   const updateMapping = (idx: number, patch: Partial<TableMapping>) => {
     const next = [...mappings]
@@ -114,7 +113,7 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
         return (
           <div key={idx}>
             <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(160px,2fr)_auto] gap-2 mb-1 hover:bg-background-hover rounded px-2 py-0.5 transition-colors items-center">
-              <input value={m.sourceTable} readOnly className={inputCls + " w-full opacity-70 cursor-default"} />
+              <input value={m.sourceTable} readOnly className={INPUT_CLS + " w-full opacity-70 cursor-default"} />
               <ComboboxSelect
                 value={m.target.table}
                 options={targetTables.map(t => ({ value: t.name, label: t.name }))}
@@ -126,7 +125,7 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
                 value={m.filterCondition || ''}
                 onChange={e => updateMapping(idx, { filterCondition: e.target.value })}
                 placeholder="WHERE id > 100 AND status = 'active'"
-                className={inputCls + " w-full font-mono"}
+                className={INPUT_CLS + " w-full font-mono"}
               />
               <div className="flex items-center gap-0.5">
                 <button onClick={toggleExpand}

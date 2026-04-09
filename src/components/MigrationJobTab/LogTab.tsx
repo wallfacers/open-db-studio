@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { MigrationLogEvent, MigrationStatsEvent, LogViewMode } from '../../store/migrationStore'
 import { TimelineView } from './TimelineView'
 import { MappingCard } from './MappingCard'
-import { parseMilestones } from '../../utils/migrationLogParser'
+import { parseMilestones, formatTimestamp } from '../../utils/migrationLogParser'
 
 interface Props {
   jobId: number
@@ -148,9 +148,4 @@ export function LogTab({ stats, logs, viewMode, hasFailed }: Props) {
       </div>
     </div>
   )
-}
-
-function formatTimestamp(ts: string): string {
-  const d = new Date(ts)
-  return d.toLocaleTimeString('zh-CN', { hour12: false })
 }

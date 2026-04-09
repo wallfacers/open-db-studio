@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { DropdownSelect } from '../common/DropdownSelect'
 import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
 import { TableMappingPanel } from './TableMappingPanel'
+import { INPUT_CLS } from './styles'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface TargetConfig {
@@ -245,8 +246,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
     }
   }
 
-  const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
-
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full">
       {/* Source + Target defaults */}
@@ -313,7 +312,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
               onChange={e => update({ source: { ...config.source, customQuery: e.target.value } })}
               placeholder="SELECT ..."
               rows={6}
-              className={inputCls + " w-full resize-none font-mono text-[11px]"}
+              className={INPUT_CLS + " w-full resize-none font-mono text-[11px]"}
             />
           )}
         </div>
@@ -352,7 +351,7 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
                   min={0}
                   value={config.pipeline[key] as number ?? 0}
                   onChange={e => update({ pipeline: { ...config.pipeline, [key]: Number(e.target.value) } })}
-                  className={inputCls + " w-full"}
+                  className={INPUT_CLS + " w-full"}
                 />
               </label>
             ))}

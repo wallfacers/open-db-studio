@@ -5,20 +5,12 @@ import { useTranslation } from 'react-i18next'
 import { MigrationRunHistory, MigrationLogEvent, useMigrationStore } from '../../store/migrationStore'
 import { LogDetailModal } from './LogDetailModal'
 import { formatDateTime } from '../../utils/migrationLogParser'
+import { MigrationStatusIcon } from './StatusIcons'
 
 interface Props { jobId: number }
 
 const PAGE_SIZE = 10
 
-function statusIcon(status: string) {
-  switch (status) {
-    case 'FINISHED': return <CheckCircle2 size={14} className="text-success flex-shrink-0" />
-    case 'FAILED':
-    case 'PARTIAL_FAILED': return <XCircle size={14} className="text-error flex-shrink-0" />
-    case 'STOPPED': return <StopCircle size={14} className="text-foreground-muted flex-shrink-0" />
-    default: return <AlertCircle size={14} className="text-warning flex-shrink-0" />
-  }
-}
 
 function statusLabel(status: string, t: (key: string) => string): string {
   const map: Record<string, string> = {
@@ -120,7 +112,7 @@ export function StatsTab({ jobId }: Props) {
                 <td className="px-3 py-2.5 text-foreground-default font-mono text-[11px]">{formatDateTime(run.startedAt)}</td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-1.5">
-                    {statusIcon(run.status)}
+                    <MigrationStatusIcon status={run.status} />
                     <span className="text-foreground-default">{statusLabel(run.status, t)}</span>
                     {run.durationMs != null && run.durationMs > 0 && (
                       <span className="text-foreground-muted text-[10px] ml-1">{fmtDur(run.durationMs)}</span>

@@ -255,3 +255,23 @@ export function formatDateTime(iso: string): string {
   const ss = pad(d.getSeconds())
   return `${yyyy}-${MM}-${dd} ${hh}:${mm}:${ss}`
 }
+
+/** Format ISO timestamp to local time-only string (24h).
+ *  e.g. "2026-04-09T17:23:41.851Z" -> "01:23:41" (UTC+8)
+ */
+export function formatTimestamp(ts: string): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+/** Format elapsed milliseconds to human-readable duration.
+ *  e.g. 500 -> "500ms", 30000 -> "30.0s", 125000 -> "2m5s"
+ */
+export function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms.toFixed(0)}ms`
+  const sec = ms / 1000
+  if (sec < 60) return `${sec.toFixed(1)}s`
+  const min = Math.floor(sec / 60)
+  const rem = (sec % 60).toFixed(0)
+  return `${min}m${rem}s`
+}

@@ -1,7 +1,9 @@
-import { CheckCircle2, XCircle, Loader2, Circle, ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { MigrationMilestone, MigrationStatsEvent } from '../../store/migrationStore'
+import { formatElapsed, formatTimestamp } from '../../utils/migrationLogParser'
+import { TableStatusIcon } from './StatusIcons'
 
 interface Props {
   milestones: MigrationMilestone[]
@@ -43,10 +45,7 @@ export function TimelineView({ milestones, stats }: Props) {
                 >
                   {/* Status icon */}
                   <div className="relative z-10 flex-shrink-0 mt-0.5 w-6 h-6 flex items-center justify-center bg-background-base">
-                    {m.status === 'success' && <CheckCircle2 size={16} className="text-success" />}
-                    {m.status === 'failed' && <XCircle size={16} className="text-error" />}
-                    {m.status === 'running' && <Loader2 size={16} className="text-accent animate-spin" />}
-                    {m.status === 'pending' && <Circle size={14} className="text-foreground-ghost" />}
+                    <TableStatusIcon status={m.status} size={16} />
                   </div>
 
                   {/* Content */}
@@ -134,18 +133,4 @@ export function TimelineView({ milestones, stats }: Props) {
       </div>
     </div>
   )
-}
-
-function formatElapsed(ms: number): string {
-  if (ms < 1000) return `${ms.toFixed(0)}ms`
-  const sec = ms / 1000
-  if (sec < 60) return `${sec.toFixed(1)}s`
-  const min = Math.floor(sec / 60)
-  const rem = (sec % 60).toFixed(0)
-  return `${min}m${rem}s`
-}
-
-function formatTimestamp(ts: string): string {
-  const d = new Date(ts)
-  return d.toLocaleTimeString('zh-CN', { hour12: false })
 }

@@ -803,6 +803,22 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V21: migration_run_history 新增 log_content 列（运行日志持久化）
+    {
+        let has_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('migration_run_history') WHERE name='log_content'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_col {
+            conn.execute_batch("ALTER TABLE migration_run_history ADD COLUMN log_content TEXT")?;
+            log::info!("V21: added migration_run_history.log_content column");
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

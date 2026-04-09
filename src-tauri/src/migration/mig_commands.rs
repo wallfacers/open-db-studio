@@ -116,6 +116,42 @@ pub async fn get_migration_run_history(job_id: i64) -> AppResult<Vec<MigrationRu
         .map_err(|e| AppError::Other(e.to_string()))?
 }
 
+#[tauri::command]
+pub async fn delete_migration_run_history(
+    job_id: i64,
+    run_id: String,
+) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let db = crate::db::get().lock().unwrap();
+        db.execute(
+            "DELETE FROM migration_run_history WHERE job_id=?1 AND run_id=?2",
+            rusqlite::params![job_id, run_id],
+        )?;
+        Ok::<_, rusqlite::Error>(())
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))??;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn persist_migration_run_logs(
+    run_id: String,
+    logs_json: String,
+) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let db = crate::db::get().lock().unwrap();
+        db.execute(
+            "UPDATE migration_run_history SET log_content=?1 WHERE run_id=?2",
+            rusqlite::params![logs_json, run_id],
+        )?;
+        Ok::<_, rusqlite::Error>(())
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))??;
+    Ok(())
+}
+
 // ── AI Column Mapping ──────────────────────────────────────────
 
 #[tauri::command]

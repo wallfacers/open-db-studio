@@ -268,6 +268,7 @@ pub struct MigrationRunHistory {
     pub duration_ms: Option<i64>,
     pub started_at: String,
     pub finished_at: Option<String>,
+    pub log_content: Option<String>,
 }
 
 impl MigrationRunHistory {
@@ -284,6 +285,7 @@ impl MigrationRunHistory {
             duration_ms: row.get(8)?,
             started_at: row.get(9)?,
             finished_at: row.get(10)?,
+            log_content: row.get(11)?,
         })
     }
 }

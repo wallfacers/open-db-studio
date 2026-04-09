@@ -451,7 +451,8 @@ CREATE TABLE IF NOT EXISTS migration_run_history (
   bytes_transferred INTEGER NOT NULL DEFAULT 0,
   duration_ms       INTEGER,
   started_at        TEXT NOT NULL,
-  finished_at       TEXT
+  finished_at       TEXT,
+  log_content       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_migration_dirty_records_job_run

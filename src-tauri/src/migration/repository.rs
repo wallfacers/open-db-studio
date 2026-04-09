@@ -137,10 +137,10 @@ pub fn get_run_history(job_id: i64) -> AppResult<Vec<MigrationRunHistory>> {
     let db = crate::db::get().lock().unwrap();
     let mut stmt = db.prepare(
         "SELECT id, job_id, run_id, status, rows_read, rows_written, rows_failed,
-                bytes_transferred, duration_ms, started_at, finished_at
+                bytes_transferred, duration_ms, started_at, finished_at, log_content
          FROM migration_run_history
          WHERE job_id=?1
-         ORDER BY started_at DESC LIMIT 20",
+         ORDER BY started_at DESC",
     )?;
     let rows = stmt.query_map(params![job_id], MigrationRunHistory::from_row)?;
     Ok(rows.filter_map(|r| r.ok()).collect())

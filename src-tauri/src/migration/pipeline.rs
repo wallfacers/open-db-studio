@@ -16,6 +16,37 @@ const MIGRATION_LOG_EVENT: &str = "migration_log";
 const MIGRATION_STATS_EVENT: &str = "migration_stats";
 const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
 
+// ── Log collector (thread-safe) ──────────────────────────────────────────────
+
+pub struct LogCollector(pub Vec<MigrationLogEvent>);
+
+impl LogCollector {
+    fn new() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self(Vec::new())))
+    }
+
+    fn emit_and_record(
+        &self,
+        app: &AppHandle,
+        job_id: i64,
+        run_id: &str,
+        level: &str,
+        message: &str,
+    ) {
+        let event = MigrationLogEvent {
+            job_id,
+            run_id: run_id.to_string(),
+            level: level.to_string(),
+            message: message.to_string(),
+            timestamp: chrono::Utc::now()
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string(),
+        };
+        let _ = app.emit(MIGRATION_LOG_EVENT, &event);
+        self.0.push(event.clone());
+    }
+}
+
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
 pub struct PipelineStats {
@@ -49,7 +80,7 @@ pub fn cancel_run(job_id: i64) {
     }
 }
 
-// ── Emit helpers ──────────────────────────────────────────────────────────────
+// ── Standalone emit (for helpers that don't collect logs) ─────────────────────
 
 fn emit_log(app: &AppHandle, job_id: i64, run_id: &str, level: &str, message: &str) {
     let event = MigrationLogEvent {
@@ -125,7 +156,9 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
         )?;
     }
 
-    emit_log(
+    let log_collector = LogCollector::new();
+
+    log_collector.lock().unwrap().emit_and_record(
         &app,
         job_id,
         &run_id,
@@ -135,10 +168,11 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
 
     let run_id_clone = run_id.clone();
     let app_clone = app.clone();
+    let log_collector_clone = log_collector.clone();
 
     tokio::spawn(async move {
         let result =
-            execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel)
+            execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel, log_collector_clone.clone())
                 .await;
 
         let final_status = match &result {
@@ -153,52 +187,73 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
             runs.remove(&job_id);
         }
 
-        let msg = match &result {
-            Ok(summary) => summary.clone(),
-            Err(e) => e.to_string(),
+        let (msg, logs) = match result {
+            Ok((summary, logs)) => (summary, logs),
+            Err(e) => (e.to_string(), Vec::new()),
         };
 
-        // Persist final status
-        {
-            let db = crate::db::get().lock().unwrap();
-            let _ = db.execute(
-                "UPDATE migration_jobs SET last_status=?1 WHERE id=?2",
-                params![final_status, job_id],
-            );
-            let _ = db.execute(
-                "UPDATE migration_run_history \
-                 SET status=?1, finished_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
-                 WHERE run_id=?2",
-                params![final_status, &run_id_clone],
-            );
-        }
-
-        emit_log(
+        let log_collector = log_collector_clone.lock().unwrap();
+        log_collector.emit_and_record(
             &app_clone,
             job_id,
             &run_id_clone,
             "SYSTEM",
             &format!("Pipeline {}: {}", final_status, msg),
         );
+        let logs_json = serde_json::to_string(&log_collector.0).unwrap_or_default();
+        drop(log_collector);
 
-        // Parse final stats from summary message
-        let final_rows_read = 0u64;
-        let mut final_rows_written = 0u64;
-        let mut final_rows_failed = 0u64;
-        let final_bytes = 0u64;
-        let mut final_elapsed = 0f64;
+        // Persist final status + stats + logs
+        {
+            let db = crate::db::get().lock().unwrap();
+            let _ = db.execute(
+                "UPDATE migration_jobs SET last_status=?1 WHERE id=?2",
+                params![final_status, job_id],
+            );
 
-        // Try to parse rows_written, rows_failed, elapsed from the summary string
-        for part in msg.split_whitespace() {
-            if let Some(val) = part.strip_prefix("rows_written=") {
-                final_rows_written = val.replace('s', "").parse().unwrap_or(0);
+            // Parse stats from summary message
+            let mut final_rows_read = 0u64;
+            let mut final_rows_written = 0u64;
+            let mut final_rows_failed = 0u64;
+            let mut final_bytes = 0u64;
+            let mut final_elapsed = 0f64;
+
+            for part in msg.split_whitespace() {
+                if let Some(val) = part.strip_prefix("rows_read=") {
+                    final_rows_read = val.parse().unwrap_or(0);
+                }
+                if let Some(val) = part.strip_prefix("rows_written=") {
+                    final_rows_written = val.parse().unwrap_or(0);
+                }
+                if let Some(val) = part.strip_prefix("rows_failed=") {
+                    final_rows_failed = val.parse().unwrap_or(0);
+                }
+                if let Some(val) = part.strip_prefix("bytes_transferred=") {
+                    final_bytes = val.parse().unwrap_or(0);
+                }
+                if let Some(val) = part.strip_prefix("elapsed=") {
+                    final_elapsed = val.replace('s', "").parse().unwrap_or(0.0);
+                }
             }
-            if let Some(val) = part.strip_prefix("rows_failed=") {
-                final_rows_failed = val.parse().unwrap_or(0);
-            }
-            if let Some(val) = part.strip_prefix("elapsed=") {
-                final_elapsed = val.replace('s', "").parse().unwrap_or(0.0);
-            }
+
+            let duration_ms = (final_elapsed * 1000.0) as i64;
+            let _ = db.execute(
+                "UPDATE migration_run_history \
+                 SET status=?1, finished_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+                     rows_read=?2, rows_written=?3, rows_failed=?4, \
+                     bytes_transferred=?5, duration_ms=?6, log_content=?7 \
+                 WHERE run_id=?8",
+                params![
+                    final_status,
+                    final_rows_read as i64,
+                    final_rows_written as i64,
+                    final_rows_failed as i64,
+                    final_bytes as i64,
+                    duration_ms,
+                    logs_json,
+                    &run_id_clone,
+                ],
+            );
         }
 
         let _ = app_clone.emit(
@@ -227,7 +282,8 @@ async fn execute_pipeline(
     config: MigrationJobConfig,
     app: AppHandle,
     cancel: Arc<AtomicBool>,
-) -> AppResult<String> {
+    logs: Arc<Mutex<LogCollector>>,
+) -> AppResult<(String, Vec<MigrationLogEvent>)> {
     let stats = PipelineStats::new();
     let start = Instant::now();
     let total_mappings = config.table_mappings.len();
@@ -236,7 +292,7 @@ async fn execute_pipeline(
         return Err(AppError::Other("No table mappings configured".into()));
     }
 
-    emit_log(
+    logs.lock().unwrap().emit_and_record(
         &app,
         job_id,
         &run_id,
@@ -249,12 +305,12 @@ async fn execute_pipeline(
 
     for (idx, mapping) in config.table_mappings.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            emit_log(&app, job_id, &run_id, "SYSTEM", "Pipeline cancelled by user");
+            logs.lock().unwrap().emit_and_record(&app, job_id, &run_id, "SYSTEM", "Pipeline cancelled by user");
             return Err(AppError::Other("Cancelled".into()));
         }
 
         let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
-        emit_log(
+        logs.lock().unwrap().emit_and_record(
             &app,
             job_id,
             &run_id,
@@ -272,12 +328,13 @@ async fn execute_pipeline(
             &stats,
             idx,
             total_mappings,
+            logs.clone(),
         )
         .await
         {
             Ok(summary) => {
                 completed += 1;
-                emit_log(
+                logs.lock().unwrap().emit_and_record(
                     &app,
                     job_id,
                     &run_id,
@@ -293,7 +350,7 @@ async fn execute_pipeline(
             }
             Err(e) => {
                 failed_mappings.push(mapping_label.clone());
-                emit_log(
+                logs.lock().unwrap().emit_and_record(
                     &app,
                     job_id,
                     &run_id,
@@ -316,31 +373,41 @@ async fn execute_pipeline(
     }
 
     let elapsed = start.elapsed().as_secs_f64();
+    let rows_read = stats.rows_read.load(Ordering::Relaxed);
     let rows_written = stats.rows_written.load(Ordering::Relaxed);
     let rows_failed = stats.rows_failed.load(Ordering::Relaxed);
+    let bytes = stats.bytes_transferred.load(Ordering::Relaxed);
+    let logs_snapshot = logs.lock().unwrap().0.clone();
 
     if failed_mappings.is_empty() {
-        Ok(format!(
-            "rows_written={} rows_failed={} elapsed={:.2}s",
-            rows_written, rows_failed, elapsed
+        Ok((
+            format!(
+                "rows_read={} rows_written={} rows_failed={} bytes_transferred={} elapsed={:.2}s",
+                rows_read, rows_written, rows_failed, bytes, elapsed
+            ),
+            logs_snapshot,
         ))
     } else if completed > 0 {
         Err(AppError::Other(format!(
-            "PARTIAL_FAILED: {}/{} succeeded, failed=[{}] rows_written={} rows_failed={} elapsed={:.2}s",
+            "PARTIAL_FAILED: {}/{} succeeded, failed=[{}] rows_read={} rows_written={} rows_failed={} bytes_transferred={} elapsed={:.2}s",
             completed,
             total_mappings,
             failed_mappings.join(", "),
+            rows_read,
             rows_written,
             rows_failed,
+            bytes,
             elapsed
         )))
     } else {
         Err(AppError::Other(format!(
-            "All {} mapping(s) failed: [{}] rows_written={} rows_failed={} elapsed={:.2}s",
+            "All {} mapping(s) failed: [{}] rows_read={} rows_written={} rows_failed={} bytes_transferred={} elapsed={:.2}s",
             total_mappings,
             failed_mappings.join(", "),
+            rows_read,
             rows_written,
             rows_failed,
+            bytes,
             elapsed
         )))
     }
@@ -358,12 +425,13 @@ async fn execute_single_mapping(
     global_stats: &Arc<PipelineStats>,
     mapping_idx: usize,
     total_mappings: usize,
+    logs: Arc<Mutex<LogCollector>>,
 ) -> AppResult<String> {
     let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
 
     // ── Build source SQL ──────────────────────────────────────────────────
     let source_query = build_source_query(config, mapping)?;
-    emit_log(
+    logs.lock().unwrap().emit_and_record(
         app,
         job_id,
         run_id,
@@ -428,7 +496,7 @@ async fn execute_single_mapping(
         )
         .await
         {
-            emit_log(
+            logs.lock().unwrap().emit_and_record(
                 app,
                 job_id,
                 run_id,
@@ -550,13 +618,7 @@ async fn execute_single_mapping(
             let fetched = page.rows.len();
             if columns_opt.is_none() {
                 columns_opt = Some(page.columns.clone());
-                emit_log(
-                    &app_reader,
-                    job_id,
-                    &run_id_r,
-                    "SYSTEM",
-                    &format!("[{}] Columns: {}", ml_r, page.columns.join(", ")),
-                );
+                // Log emitted via event; collector used only for main-thread logs
             }
             for row in &page.rows {
                 let row_bytes: u64 = row.iter().map(json_value_len).sum();

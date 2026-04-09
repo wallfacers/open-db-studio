@@ -26,7 +26,7 @@ impl LogCollector {
     }
 
     fn emit_and_record(
-        &self,
+        &mut self,
         app: &AppHandle,
         job_id: i64,
         run_id: &str,
@@ -187,12 +187,12 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
             runs.remove(&job_id);
         }
 
-        let (msg, logs) = match result {
+        let (msg, _logs) = match result {
             Ok((summary, logs)) => (summary, logs),
             Err(e) => (e.to_string(), Vec::new()),
         };
 
-        let log_collector = log_collector_clone.lock().unwrap();
+        let mut log_collector = log_collector_clone.lock().unwrap();
         log_collector.emit_and_record(
             &app_clone,
             job_id,
@@ -203,6 +203,31 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
         let logs_json = serde_json::to_string(&log_collector.0).unwrap_or_default();
         drop(log_collector);
 
+        // Parse stats from summary message
+        let mut final_rows_read = 0u64;
+        let mut final_rows_written = 0u64;
+        let mut final_rows_failed = 0u64;
+        let mut final_bytes = 0u64;
+        let mut final_elapsed = 0f64;
+
+        for part in msg.split_whitespace() {
+            if let Some(val) = part.strip_prefix("rows_read=") {
+                final_rows_read = val.parse().unwrap_or(0);
+            }
+            if let Some(val) = part.strip_prefix("rows_written=") {
+                final_rows_written = val.parse().unwrap_or(0);
+            }
+            if let Some(val) = part.strip_prefix("rows_failed=") {
+                final_rows_failed = val.parse().unwrap_or(0);
+            }
+            if let Some(val) = part.strip_prefix("bytes_transferred=") {
+                final_bytes = val.parse().unwrap_or(0);
+            }
+            if let Some(val) = part.strip_prefix("elapsed=") {
+                final_elapsed = val.replace('s', "").parse().unwrap_or(0.0);
+            }
+        }
+
         // Persist final status + stats + logs
         {
             let db = crate::db::get().lock().unwrap();
@@ -210,31 +235,6 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
                 "UPDATE migration_jobs SET last_status=?1 WHERE id=?2",
                 params![final_status, job_id],
             );
-
-            // Parse stats from summary message
-            let mut final_rows_read = 0u64;
-            let mut final_rows_written = 0u64;
-            let mut final_rows_failed = 0u64;
-            let mut final_bytes = 0u64;
-            let mut final_elapsed = 0f64;
-
-            for part in msg.split_whitespace() {
-                if let Some(val) = part.strip_prefix("rows_read=") {
-                    final_rows_read = val.parse().unwrap_or(0);
-                }
-                if let Some(val) = part.strip_prefix("rows_written=") {
-                    final_rows_written = val.parse().unwrap_or(0);
-                }
-                if let Some(val) = part.strip_prefix("rows_failed=") {
-                    final_rows_failed = val.parse().unwrap_or(0);
-                }
-                if let Some(val) = part.strip_prefix("bytes_transferred=") {
-                    final_bytes = val.parse().unwrap_or(0);
-                }
-                if let Some(val) = part.strip_prefix("elapsed=") {
-                    final_elapsed = val.replace('s', "").parse().unwrap_or(0.0);
-                }
-            }
 
             let duration_ms = (final_elapsed * 1000.0) as i64;
             let _ = db.execute(
@@ -599,11 +599,11 @@ async fn execute_single_mapping(
     // ── Reader task ───────────────────────────────────────────────────────
     let ms_reader = mapping_stats.clone();
     let gs_reader = global_stats.clone();
-    let app_reader = app.clone();
-    let run_id_r = run_id.to_string();
+    let _app_reader = app.clone();
+    let _run_id_r = run_id.to_string();
     let cancel_r = cancel.clone();
     let query = source_query.clone();
-    let ml_r = mapping_label.clone();
+    let _ml_r = mapping_label.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         let mut offset = 0usize;
         let mut columns_opt: Option<Vec<String>> = None;

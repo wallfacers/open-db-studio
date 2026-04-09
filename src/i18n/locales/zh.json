@@ -1102,7 +1102,7 @@
     "save": "保存",
     "configTab": "配置",
     "logTab": "运行日志",
-    "statsTab": "统计报告",
+    "statsTab": "运行历史",
     "sourceConn": "源连接",
     "targetConn": "目标连接",
     "tableMode": "表选择模式",
@@ -1194,6 +1194,18 @@
     "pending": "等待中",
     "running": "运行中",
     "startedAt": "开始时间",
-    "finishedAt": "结束时间"
+    "finishedAt": "结束时间",
+    "colRecordTime": "记录时间",
+    "colStatus": "状态",
+    "colRowsRead": "读取行数",
+    "colRowsWritten": "写入行数",
+    "colRowsFailed": "失败行数",
+    "colTransferredSize": "传输大小",
+    "colLogDetails": "运行日志",
+    "colActions": "操作",
+    "logDetailTitle": "运行日志详情",
+    "noLogs": "无日志内容",
+    "deleteRunConfirm": "确定删除这条运行记录？",
+    "runDeleted": "运行记录已删除"
   }
 }

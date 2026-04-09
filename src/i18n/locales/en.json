@@ -1101,7 +1101,7 @@
     "save": "Save",
     "configTab": "Config",
     "logTab": "Run Log",
-    "statsTab": "Stats",
+    "statsTab": "Run History",
     "sourceConn": "Source Connection",
     "targetConn": "Target Connection",
     "tableMode": "Table Mode",
@@ -1193,6 +1193,18 @@
     "pending": "Pending",
     "running": "Running",
     "startedAt": "Started At",
-    "finishedAt": "Finished At"
+    "finishedAt": "Finished At",
+    "colRecordTime": "Record Time",
+    "colStatus": "Status",
+    "colRowsRead": "Rows Read",
+    "colRowsWritten": "Rows Written",
+    "colRowsFailed": "Rows Failed",
+    "colTransferredSize": "Transferred",
+    "colLogDetails": "Log Details",
+    "colActions": "Actions",
+    "logDetailTitle": "Run Log Details",
+    "noLogs": "No log content",
+    "deleteRunConfirm": "Delete this run record?",
+    "runDeleted": "Run record deleted"
   }
 }

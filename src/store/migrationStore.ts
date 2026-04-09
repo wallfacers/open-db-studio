@@ -36,6 +36,7 @@ export interface MigrationRunHistory {
   durationMs: number | null
   startedAt: string
   finishedAt: string | null
+  logContent: string | null
 }
 
 export interface MigrationDirtyRecord {

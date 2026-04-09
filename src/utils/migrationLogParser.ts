@@ -156,23 +156,28 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     }
   }
 
-  // Mark remaining running table milestones as 'pending' if no pipeline has started yet
+  // Fix table_start milestone statuses based on completion events
   const hasPipelineStart = milestones.some(m => m.type === 'pipeline_start')
   const hasPipelineFinish = milestones.some(m => m.type === 'pipeline_finish')
 
-  if (hasPipelineStart && !hasPipelineFinish) {
-    // Find the currently running table (last table_start without a complete/failed)
-    const completedLabels = new Set<string>()
-    for (const m of milestones) {
-      if (m.type === 'table_complete' || m.type === 'table_failed') {
-        completedLabels.add(m.label)
-      }
+  const completedLabels = new Set<string>()
+  const failedLabels = new Set<string>()
+  for (const m of milestones) {
+    if (m.type === 'table_complete') completedLabels.add(m.label)
+    if (m.type === 'table_failed') failedLabels.add(m.label)
+  }
+  for (const m of milestones) {
+    if (m.type === 'table_start' && m.status === 'running') {
+      if (completedLabels.has(m.label)) m.status = 'success'
+      else if (failedLabels.has(m.label)) m.status = 'failed'
     }
+  }
+
+  if (hasPipelineStart && !hasPipelineFinish) {
+    // Mark currently running table — keep as 'running'
     for (const m of milestones) {
-      if (m.type === 'table_start' && m.status === 'running' && !completedLabels.has(m.label)) {
-        // This is the currently running table — keep as 'running'
-      } else if (m.type === 'table_start' && m.status === 'running' && completedLabels.has(m.label)) {
-        m.status = 'success'
+      if (m.type === 'table_start' && m.status === 'running') {
+        // This is the currently running table, keep as 'running'
       }
     }
 

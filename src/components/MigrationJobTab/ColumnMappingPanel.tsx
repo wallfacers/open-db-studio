@@ -125,10 +125,7 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
             value={mapping.target.upsertKeys.join(', ')}
             onChange={e => onUpdateTarget({ upsertKeys: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
             disabled={mapping.target.conflictStrategy !== 'UPSERT'}
-            className={
-              inputCls + ' w-32 ' +
-              (mapping.target.conflictStrategy !== 'UPSERT' ? 'opacity-50 cursor-not-allowed' : '')
-            }
+            className={inputCls + ' w-32' + (mapping.target.conflictStrategy !== 'UPSERT' ? ' opacity-50 cursor-not-allowed' : '')}
             placeholder="id"
           />
         </div>

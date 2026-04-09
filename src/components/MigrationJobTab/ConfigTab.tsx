@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
-import { Play, ShieldCheck } from 'lucide-react'
 import { DropdownSelect } from '../common/DropdownSelect'
 import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
 import { TableMappingPanel } from './TableMappingPanel'
@@ -32,12 +31,14 @@ interface JobConfig {
   pipeline: PipelineConfig
 }
 
+export interface ConfigTabHandle {
+  save: () => Promise<void>
+}
+
 interface Props {
   jobId: number
   configJson: string
   onSave: (configJson: string, silent?: boolean) => Promise<void>
-  onRun: () => Promise<void>
-  onPrecheck: () => void
 }
 
 function defaultConfig(): JobConfig {
@@ -58,7 +59,10 @@ function defaultConfig(): JobConfig {
   }
 }
 
-export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck }: Props) {
+export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
+  { jobId: _jobId, configJson, onSave },
+  ref
+) {
   const { t } = useTranslation()
   const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
   const [sourceDatabases, setSourceDatabases] = useState<string[]>([])
@@ -92,6 +96,15 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
 
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
+
+  useImperativeHandle(ref, () => ({
+    save: async () => {
+      if (dirtyRef.current) {
+        await onSave(JSON.stringify(config, null, 2))
+        setDirty(false)
+      }
+    },
+  }), [config, onSave])
 
   useEffect(() => {
     if (!dirtyRef.current && configJson) {
@@ -244,11 +257,6 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
     }
   }
 
-  const handleRun = async () => {
-    await autoSaveIfDirty()
-    await onRun()
-  }
-
   const inputCls = "bg-background-elevated border border-border-strong rounded px-2 py-1 text-[12px] text-foreground-default outline-none focus:border-border-focus transition-colors"
 
   return (
@@ -375,21 +383,6 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
         aiLoadingMap={aiLoadingMap}
       />
 
-      {/* Action Bar */}
-      <div className="flex items-center justify-end gap-2 border-t border-border-subtle pt-3 mt-auto">
-        <button
-          onClick={onPrecheck}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] border border-border-strong text-foreground-muted rounded hover:bg-background-hover transition-colors"
-        >
-          <ShieldCheck size={13} />{t('migration.precheck')}
-        </button>
-        <button
-          onClick={handleRun}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] bg-accent text-foreground rounded hover:bg-accent-hover transition-colors"
-        >
-          <Play size={13} />{t('migration.run')}
-        </button>
-      </div>
     </div>
   )
-}
+}) // forwardRef 闭合

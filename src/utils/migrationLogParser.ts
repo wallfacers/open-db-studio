@@ -5,7 +5,7 @@ const TABLE_START_RE = /^\[(\d+)\/(\d+)\]\s+Starting:\s+(.+)$/
 const TABLE_COMPLETE_RE = /^\[(\d+)\/(\d+)\]\s+Completed:\s+(.+?)\s+—\s+written=(\d+)\s+failed=(\d+)$/
 const TABLE_FAILED_RE = /^\[(\d+)\/(\d+)\]\s+Failed:\s+(.+?)\s+—\s+(.+)$/
 const PIPELINE_START_RE = /^Pipeline started: job_id=(\d+)$/
-const PIPELINE_FINISH_RE = /^Pipeline (FINISHED|PARTIAL_FAILED|FAILED):\s+rows_written=(\d+)\s+rows_failed=(\d+)\s+elapsed=([\d.]+)s$/
+const PIPELINE_FINISH_RE = /^Pipeline (FINISHED|PARTIAL_FAILED|FAILED):.*rows_written=(\d+)\s+rows_failed=(\d+)\s+elapsed=([\d.]+)s$/
 const TABLE_MAPPINGS_RE = /^Pipeline started:\s+(\d+)\s+table mapping\(s\)$/
 
 interface ParseResult {

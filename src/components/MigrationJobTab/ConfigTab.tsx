@@ -6,6 +6,7 @@ import { DropdownSelect } from '../common/DropdownSelect'
 import { TableSelector } from '../ImportExport/TableSelector'
 import { SyncModeSection } from './SyncModeSection'
 import { TableMappingPanel } from './TableMappingPanel'
+import { X } from 'lucide-react'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface TargetConfig {
@@ -74,6 +75,7 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
   const [dirty, setDirty] = useState(false)
   const [aiLoadingMap, setAiLoadingMap] = useState<Record<number, boolean>>({})
   const [hasAi, setHasAi] = useState(false)
+  const savedConfigRef = useRef<JobConfig | null>(null)
 
   const [defaultTargetConnId, setDefaultTargetConnId] = useState(0)
   const [defaultTargetDb, setDefaultTargetDb] = useState('')
@@ -93,6 +95,12 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
       return defaultConfig()
     }
   })
+
+  // Initialize saved config ref on mount
+  useEffect(() => {
+    savedConfigRef.current = JSON.parse(JSON.stringify(config))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!dirty && configJson) {
@@ -233,6 +241,17 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
 
   const handleSave = () => {
     onSave(JSON.stringify(config, null, 2))
+    savedConfigRef.current = JSON.parse(JSON.stringify(config))
+    setDirty(false)
+  }
+
+  const handleCancel = () => {
+    const saved = savedConfigRef.current
+    if (saved) {
+      setConfig(saved)
+      setDefaultTargetConnId(saved.tableMappings?.[0]?.target?.connectionId || 0)
+      setDefaultTargetDb(saved.tableMappings?.[0]?.target?.database || '')
+    }
     setDirty(false)
   }
 
@@ -383,6 +402,13 @@ export function ConfigTab({ jobId: _jobId, configJson, onSave, onRun, onPrecheck
           className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] border border-border-strong text-foreground-muted rounded hover:bg-background-hover transition-colors"
         >
           <ShieldCheck size={13} />{t('migration.precheck')}
+        </button>
+        <button
+          onClick={handleCancel}
+          disabled={!dirty}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] border border-border-strong text-foreground-muted rounded hover:bg-background-hover transition-colors disabled:opacity-40"
+        >
+          <X size={13} />{t('migration.cancel', { defaultValue: 'Cancel' })}
         </button>
         <button
           onClick={handleSave}

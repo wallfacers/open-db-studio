@@ -326,18 +326,22 @@ async fn execute_pipeline(
         ))
     } else if completed > 0 {
         Err(AppError::Other(format!(
-            "PARTIAL_FAILED: {}/{} succeeded, failed=[{}] rows_written={} elapsed={:.2}s",
+            "PARTIAL_FAILED: {}/{} succeeded, failed=[{}] rows_written={} rows_failed={} elapsed={:.2}s",
             completed,
             total_mappings,
             failed_mappings.join(", "),
             rows_written,
+            rows_failed,
             elapsed
         )))
     } else {
         Err(AppError::Other(format!(
-            "All {} mapping(s) failed: [{}]",
+            "All {} mapping(s) failed: [{}] rows_written={} rows_failed={} elapsed={:.2}s",
             total_mappings,
-            failed_mappings.join(", ")
+            failed_mappings.join(", "),
+            rows_written,
+            rows_failed,
+            elapsed
         )))
     }
 }

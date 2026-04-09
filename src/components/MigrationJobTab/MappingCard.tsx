@@ -1,10 +1,11 @@
 import { CheckCircle2, XCircle, Loader2, Circle, ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
-import { MappingCardState } from '../../store/migrationStore'
+import { MappingCardState, MigrationLogEvent } from '../../store/migrationStore'
 
 interface Props {
   card: MappingCardState
+  logs?: MigrationLogEvent[]
 }
 
 const BORDER_COLORS: Record<string, string> = {
@@ -21,7 +22,7 @@ const STATUS_BG: Record<string, string> = {
   pending: 'bg-foreground-ghost/10 text-foreground-ghost',
 }
 
-export function MappingCard({ card }: Props) {
+export function MappingCard({ card, logs = [] }: Props) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 

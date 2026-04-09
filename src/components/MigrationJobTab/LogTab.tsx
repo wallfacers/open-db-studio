@@ -127,7 +127,7 @@ export function LogTab({ stats, logs, isRunning, onStop }: Props) {
                 {t('migration.mappingCards')}
               </div>
               {cards.map((card) => (
-                <MappingCard key={`${card.sourceTable}-${card.targetTable}`} card={card} />
+                <MappingCard key={`${card.sourceTable}-${card.targetTable}`} card={card} logs={logs} />
               ))}
             </div>
           )}

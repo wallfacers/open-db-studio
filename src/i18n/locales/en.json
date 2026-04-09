@@ -874,6 +874,8 @@
       "firstPage": "First",
       "prevPage": "Previous",
       "nextPage": "Next",
+      "lastPage": "Last",
+      "total": "Total",
       "displayName": "Display Name",
       "relatedTable": "Related Table",
       "relatedColumn": "Related Column",

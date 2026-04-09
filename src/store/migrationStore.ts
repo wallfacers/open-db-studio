@@ -329,12 +329,35 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     })
 
     register<{ jobId: number; runId: string; status: string; rowsRead?: number; rowsWritten?: number; rowsFailed?: number; bytesTransferred?: number; elapsedSeconds?: number }>('migration_finished', (payload) => {
+      // Synthesize a Pipeline FINISHED/FAILED log entry so the parser can
+      // update pipeline_start status and deduplicate table_start milestones
+      const finishLog: MigrationLogEvent = {
+        jobId: payload.jobId,
+        runId: payload.runId,
+        level: 'SYSTEM',
+        message: `Pipeline ${payload.status}: rows_read=${payload.rowsRead ?? 0} rows_written=${payload.rowsWritten ?? 0} rows_failed=${payload.rowsFailed ?? 0} bytes_transferred=${payload.bytesTransferred ?? 0} elapsed=${(payload.elapsedSeconds ?? 0).toFixed(2)}s`,
+        timestamp: new Date().toISOString(),
+      }
+
       // Merge final stats into the run's stats snapshot
       set(s => {
         const runs = new Map(s.activeRuns)
         const existing = runs.get(payload.jobId)
-        if (existing && existing.runId === payload.runId && existing.stats) {
-          const stats = { ...existing.stats }
+        if (existing && existing.runId === payload.runId) {
+          const stats = existing.stats ? { ...existing.stats } : {
+            jobId: payload.jobId,
+            runId: payload.runId,
+            rowsRead: 0,
+            rowsWritten: 0,
+            rowsFailed: 0,
+            bytesTransferred: 0,
+            readSpeedRps: 0,
+            writeSpeedRps: 0,
+            etaSeconds: 0,
+            progressPct: 100,
+            currentMapping: null,
+            mappingProgress: null,
+          }
           if (payload.rowsRead !== undefined) stats.rowsRead = payload.rowsRead
           if (payload.rowsWritten !== undefined) stats.rowsWritten = payload.rowsWritten
           if (payload.rowsFailed !== undefined) stats.rowsFailed = payload.rowsFailed
@@ -343,9 +366,19 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
             stats.progressPct = 100
             stats.etaSeconds = 0
           }
-          runs.set(payload.jobId, { ...existing, stats })
+          runs.set(payload.jobId, {
+            ...existing,
+            stats,
+            logs: [...existing.logs, finishLog].slice(-500),
+          })
           return { activeRuns: runs }
         }
+        // Even if no existing run, create one so the finish log is visible
+        runs.set(payload.jobId, {
+          runId: payload.runId,
+          stats: null,
+          logs: [finishLog],
+        })
         return { activeRuns: runs }
       })
       get().updateJobStatus(payload.jobId, payload.status)

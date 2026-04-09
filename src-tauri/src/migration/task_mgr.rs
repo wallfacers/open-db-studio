@@ -256,6 +256,7 @@ impl MigrationJob {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationRunHistory {
     pub id: i64,
     pub job_id: i64,
@@ -291,6 +292,7 @@ impl MigrationRunHistory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationDirtyRecord {
     pub id: i64,
     pub job_id: i64,

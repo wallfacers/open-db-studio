@@ -875,6 +875,8 @@
       "firstPage": "首页",
       "prevPage": "上一页",
       "nextPage": "下一页",
+      "lastPage": "末页",
+      "total": "共",
       "displayName": "显示名称",
       "relatedTable": "关联表",
       "relatedColumn": "关联字段",

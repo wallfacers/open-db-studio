@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Copy, Trash2, Columns3, Sparkles } from 'lucide-react'
 import { ColumnMappingPanel } from './ColumnMappingPanel'
+import { ComboboxSelect } from '../common/ComboboxSelect'
 
 interface ColumnMapping { sourceExpr: string; targetCol: string; targetType: string }
 interface TargetConfig {
@@ -114,11 +115,11 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
           <div key={idx}>
             <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1 mb-1 hover:bg-background-hover rounded px-1 py-0.5 transition-colors items-center">
               <input value={m.sourceTable} readOnly className={inputCls + " w-full opacity-70"} />
-              <input
+              <ComboboxSelect
                 value={m.target.table}
-                onChange={e => updateTarget(idx, { table: e.target.value })}
+                options={targetTables.map(t => ({ value: t.name, label: t.name }))}
+                onChange={val => updateTarget(idx, { table: val })}
                 placeholder={t('migration.targetTable')}
-                className={inputCls + " w-full"}
               />
               <input
                 value={m.filterCondition || ''}

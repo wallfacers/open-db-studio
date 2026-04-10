@@ -157,57 +157,57 @@ export function MigrationJobTab({ jobId }: Props) {
 
       {/* Log Bottom Panel */}
       {logHeight > 0 && (
-        <div className="flex flex-col bg-background-void flex-shrink-0 relative" style={{ height: logHeight }}>
-          {/* Resize Handle — absolutely positioned at top, no layout gap */}
+        <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: logHeight }}>
+          {/* Resize Handle — in-flow, no overlap with tab bar */}
           <div
-            className="absolute top-0 left-0 right-0 h-[5px] cursor-row-resize z-10 border-t border-border-default hover:border-accent transition-colors"
+            className="h-[5px] flex-shrink-0 cursor-row-resize border-t border-border-default hover:border-accent transition-colors"
             onMouseDown={handleLogResize}
           />
-          {/* Log tab-bar — SQL editor result pane style */}
+          {/* Log tab-bar */}
           <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
-          <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-2 border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0">
-            <span>{t('migration.logTab')}</span>
-            {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
-            <Tooltip content={t('common.close', { defaultValue: '关闭' })}>
-              <span
-                className="hover:bg-border-default rounded p-0.5 leading-none transition-colors duration-200 cursor-pointer"
-                onClick={() => setLogHeight(0)}
-              >✕</span>
-            </Tooltip>
-          </div>
-          <div className="ml-auto flex items-center gap-1 px-2 flex-shrink-0">
-            {/* Structured/raw toggle — inlined here to avoid LogViewToggle's outer border-b interfering with the tab-bar */}
-            <div className="flex items-center bg-background-elevated rounded-md p-0.5">
-              <Tooltip content={t('migration.structuredView')}>
-                <button
-                  onClick={() => setViewMode('structured')}
-                  className={`p-1 rounded transition-colors ${viewMode === 'structured' ? 'bg-accent text-white' : 'text-foreground-muted hover:text-foreground-default'}`}
-                >
-                  <ListTree size={12} />
-                </button>
-              </Tooltip>
-              <Tooltip content={t('migration.rawLog')}>
-                <button
-                  onClick={() => setViewMode('raw')}
-                  className={`p-1 rounded transition-colors ${viewMode === 'raw' ? 'bg-accent text-white' : 'text-foreground-muted hover:text-foreground-default'}`}
-                >
-                  <Code size={12} />
-                </button>
+            <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-2 border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0">
+              <span>{t('migration.logTab')}</span>
+              {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
+              <Tooltip content={t('common.close', { defaultValue: '关闭' })}>
+                <span
+                  className="hover:bg-border-default rounded p-0.5 leading-none transition-colors duration-200 cursor-pointer"
+                  onClick={() => setLogHeight(0)}
+                >✕</span>
               </Tooltip>
             </div>
+            <div className="ml-auto flex items-center gap-1 px-2 flex-shrink-0">
+              <div className="flex items-center bg-background-elevated rounded-md p-0.5">
+                <Tooltip content={t('migration.structuredView')}>
+                  <button
+                    onClick={() => setViewMode('structured')}
+                    className={`p-1 rounded transition-colors ${viewMode === 'structured' ? 'bg-accent text-white' : 'text-foreground-muted hover:text-foreground-default'}`}
+                  >
+                    <ListTree size={12} />
+                  </button>
+                </Tooltip>
+                <Tooltip content={t('migration.rawLog')}>
+                  <button
+                    onClick={() => setViewMode('raw')}
+                    className={`p-1 rounded transition-colors ${viewMode === 'raw' ? 'bg-accent text-white' : 'text-foreground-muted hover:text-foreground-default'}`}
+                  >
+                    <Code size={12} />
+                  </button>
+                </Tooltip>
+              </div>
+            </div>
+          </div>
+          {/* Log content */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <LogTab
+              jobId={jobId}
+              stats={run?.stats ?? null}
+              logs={run?.logs ?? []}
+              viewMode={viewMode}
+              hasFailed={hasFailed}
+            />
           </div>
         </div>
-        {/* Log content */}
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <LogTab
-            jobId={jobId}
-            stats={run?.stats ?? null}
-            logs={run?.logs ?? []}
-            viewMode={viewMode}
-            hasFailed={hasFailed}
-          />
-        </div>
-      </div>
+      )}
     </div>
   )
 }

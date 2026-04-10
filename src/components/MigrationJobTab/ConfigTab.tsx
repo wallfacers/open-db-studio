@@ -318,18 +318,22 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
           {/* Pipeline params */}
           <div className="border-t border-border-subtle pt-2 mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
             {([
-              ['readBatchSize', t('migration.readBatch')],
-              ['writeBatchSize', t('migration.writeBatch')],
-              ['parallelism', t('migration.parallelism')],
-              ['errorLimit', t('migration.errorLimit')],
-            ] as [keyof PipelineConfig, string][]).map(([key, label]) => (
+              ['readBatchSize', t('migration.readBatch'), 1, 50000],
+              ['writeBatchSize', t('migration.writeBatch'), 1, 5000],
+              ['parallelism', t('migration.parallelism'), 1, 16],
+              ['errorLimit', t('migration.errorLimit'), 0, 100000],
+            ] as [keyof PipelineConfig, string, number, number][]).map(([key, label, min, max]) => (
               <label key={key} className="flex flex-col gap-0.5">
                 <span className="text-[10px] text-foreground-subtle">{label}</span>
                 <input
                   type="number"
-                  min={0}
+                  min={min}
+                  max={max}
                   value={config.pipeline[key] as number ?? 0}
-                  onChange={e => update({ pipeline: { ...config.pipeline, [key]: Number(e.target.value) } })}
+                  onChange={e => {
+                    const v = Math.max(min, Math.min(max, Number(e.target.value) || 0))
+                    update({ pipeline: { ...config.pipeline, [key]: v } })
+                  }}
                   className={INPUT_CLS + " w-full"}
                 />
               </label>

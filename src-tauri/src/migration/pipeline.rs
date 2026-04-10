@@ -3,10 +3,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use futures_util::stream::{self, StreamExt};
 use once_cell::sync::Lazy;
 use rusqlite::params;
 use tauri::AppHandle;
 use tauri::Emitter;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -287,76 +289,67 @@ async fn execute_pipeline(
         return Err(AppError::Other("No table mappings configured".into()));
     }
 
+    let parallelism = config.pipeline.parallelism.max(1).min(16);
+
     logs.lock().unwrap().emit_and_record(
         &app,
         job_id,
         &run_id,
         "SYSTEM",
-        &format!("Executing: {} table mapping(s)", total_mappings),
+        &format!("Executing: {} table mapping(s), parallelism={}", total_mappings, parallelism),
     );
+
+    let config = Arc::new(config);
+
+    // Build futures for each table mapping
+    let mapping_futures: Vec<_> = config.table_mappings.iter().enumerate().map(|(idx, mapping)| {
+        let config = config.clone();
+        let mapping = mapping.clone();
+        let app = app.clone();
+        let cancel = cancel.clone();
+        let stats = stats.clone();
+        let logs = logs.clone();
+        let run_id = run_id.clone();
+        async move {
+            let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
+            if cancel.load(Ordering::Relaxed) {
+                return (idx, mapping_label, Err(AppError::Other("Cancelled".into())));
+            }
+            logs.lock().unwrap().emit_and_record(
+                &app, job_id, &run_id, "SYSTEM",
+                &format!("[{}/{}] Starting: {}", idx + 1, total_mappings, mapping_label),
+            );
+            let result = execute_single_mapping(
+                job_id, &run_id, &config, &mapping, &app, &cancel, &stats,
+                idx, total_mappings, logs.clone(),
+            ).await;
+            (idx, mapping_label, result)
+        }
+    }).collect();
+
+    // Execute mappings concurrently with buffer_unordered
+    let mapping_results: Vec<_> = stream::iter(mapping_futures)
+        .buffer_unordered(parallelism)
+        .collect()
+        .await;
 
     let mut completed = 0usize;
     let mut failed_mappings = Vec::new();
 
-    for (idx, mapping) in config.table_mappings.iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
-            logs.lock().unwrap().emit_and_record(&app, job_id, &run_id, "SYSTEM", "Pipeline cancelled by user");
-            return Err(AppError::Other("Cancelled".into()));
-        }
-
-        let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
-        logs.lock().unwrap().emit_and_record(
-            &app,
-            job_id,
-            &run_id,
-            "SYSTEM",
-            &format!("[{}/{}] Starting: {}", idx + 1, total_mappings, mapping_label),
-        );
-
-        match execute_single_mapping(
-            job_id,
-            &run_id,
-            &config,
-            mapping,
-            &app,
-            &cancel,
-            &stats,
-            idx,
-            total_mappings,
-            logs.clone(),
-        )
-        .await
-        {
+    for (idx, mapping_label, result) in mapping_results {
+        match result {
             Ok(summary) => {
                 completed += 1;
                 logs.lock().unwrap().emit_and_record(
-                    &app,
-                    job_id,
-                    &run_id,
-                    "SYSTEM",
-                    &format!(
-                        "[{}/{}] Completed: {} — {}",
-                        idx + 1,
-                        total_mappings,
-                        mapping_label,
-                        summary
-                    ),
+                    &app, job_id, &run_id, "SYSTEM",
+                    &format!("[{}/{}] Completed: {} — {}", idx + 1, total_mappings, mapping_label, summary),
                 );
             }
             Err(e) => {
                 failed_mappings.push(mapping_label.clone());
                 logs.lock().unwrap().emit_and_record(
-                    &app,
-                    job_id,
-                    &run_id,
-                    "ERROR",
-                    &format!(
-                        "[{}/{}] Failed: {} — {}",
-                        idx + 1,
-                        total_mappings,
-                        mapping_label,
-                        e
-                    ),
+                    &app, job_id, &run_id, "ERROR",
+                    &format!("[{}/{}] Failed: {} — {}", idx + 1, total_mappings, mapping_label, e),
                 );
             }
         }
@@ -569,12 +562,18 @@ async fn execute_single_mapping(
         }
     }
 
-    let error_limit = config.pipeline.error_limit;
-    let read_batch_size = config.pipeline.read_batch_size.max(1);
-    let write_batch_size = config.pipeline.write_batch_size.max(1);
-    let channel_cap = config.pipeline.channel_capacity.max(1);
+    let error_limit = config.pipeline.error_limit.min(100_000);
+    let read_batch_size = config.pipeline.read_batch_size.max(1).min(50_000);
+    let write_batch_size = config.pipeline.write_batch_size.max(1).min(5_000);
+    let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
+    let parallelism = config.pipeline.parallelism.max(1).min(16);
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
+    // ── Mapped columns ───────────────────────────────────────────────────
+    let mapped_cols: Option<Vec<String>> = if !column_mapping.is_empty() {
+        Some(column_mapping.iter().map(|m| m.target_col.clone()).collect())
+    } else {
+        None
+    };
 
     // ── Per-mapping stats ─────────────────────────────────────────────────
     let mapping_stats = PipelineStats::new();
@@ -640,14 +639,203 @@ async fn execute_single_mapping(
         }
     });
 
-    // ── Reader task ───────────────────────────────────────────────────────
+    // ── Detect parallelism mode ──────────────────────────────────────────
+    let shard_pk = if parallelism > 1 {
+        match src_ds.get_columns(&mapping.source_table, None).await {
+            Ok(columns) => detect_integer_pk(&columns),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    let pipeline_result = if let Some(pk_col) = shard_pk {
+        // ── Shard Mode: N independent reader+writer pipelines ────────────
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "SYSTEM",
+            &format!("[{}] Using Shard mode: {} shards on column '{}'", mapping_label, parallelism, pk_col),
+        );
+        if parallelism > 5 {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!("[{}] parallelism({}) exceeds default pool_max_connections(5); writes may queue", mapping_label, parallelism),
+            );
+        }
+
+        let mut shard_handles = Vec::new();
+        for shard_id in 0..parallelism {
+            let shard_query = build_shard_query(&source_query, &pk_col, shard_id, parallelism, &src_cfg.driver);
+            let shard_label = format!("{}[shard:{}/{}]", mapping_label, shard_id, parallelism);
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "SYSTEM",
+                &format!("[{}] SQL: {}", shard_label,
+                    if shard_query.len() > 200 { &shard_query[..200] } else { &shard_query }),
+            );
+            let handle = tokio::spawn(run_reader_writer_pair(
+                shard_query,
+                src_ds.clone(),
+                dst_ds.clone(),
+                target_table.clone(),
+                dst_driver.clone(),
+                mapped_cols.clone(),
+                conflict_strategy.clone(),
+                upsert_keys.clone(),
+                read_batch_size,
+                write_batch_size,
+                channel_cap,
+                error_limit,
+                1, // each shard is single-writer
+                cancel.clone(),
+                mapping_stats.clone(),
+                global_stats.clone(),
+                app.clone(),
+                job_id,
+                run_id.to_string(),
+                shard_label,
+            ));
+            shard_handles.push(handle);
+        }
+
+        let mut shard_errors = Vec::new();
+        for (i, handle) in shard_handles.into_iter().enumerate() {
+            match handle.await {
+                Err(e) => shard_errors.push(format!("shard {} panicked: {}", i, e)),
+                Ok(Err(e)) => shard_errors.push(format!("shard {} failed: {}", i, e)),
+                Ok(Ok(())) => {}
+            }
+        }
+        if shard_errors.is_empty() { Ok(()) } else {
+            Err(AppError::Other(format!("Shard errors: {}", shard_errors.join("; "))))
+        }
+    } else {
+        // ── Semaphore Mode: 1 reader + N concurrent writers ──────────────
+        // When parallelism=1, semaphore degenerates to sequential (no overhead)
+        if parallelism > 1 {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "SYSTEM",
+                &format!("[{}] Using Semaphore mode: 1 reader + {} concurrent writers", mapping_label, parallelism),
+            );
+            if parallelism > 5 {
+                logs.lock().unwrap().emit_and_record(
+                    app, job_id, run_id, "WARN",
+                    &format!("[{}] parallelism({}) exceeds default pool_max_connections(5); writes may queue", mapping_label, parallelism),
+                );
+            }
+        }
+        run_reader_writer_pair(
+            source_query,
+            src_ds,
+            dst_ds,
+            target_table.clone(),
+            dst_driver.clone(),
+            mapped_cols,
+            conflict_strategy.clone(),
+            upsert_keys.clone(),
+            read_batch_size,
+            write_batch_size,
+            channel_cap,
+            error_limit,
+            parallelism,
+            cancel.clone(),
+            mapping_stats.clone(),
+            global_stats.clone(),
+            app.clone(),
+            job_id,
+            run_id.to_string(),
+            mapping_label.clone(),
+        ).await
+    };
+
+    stats_handle.abort();
+    pipeline_result?;
+
+    let written = mapping_stats.rows_written.load(Ordering::Relaxed);
+    let failed = mapping_stats.rows_failed.load(Ordering::Relaxed);
+    let read = mapping_stats.rows_read.load(Ordering::Relaxed);
+    Ok(format!("read={} written={} failed={}", read, written, failed))
+}
+
+// ── PK detection for shard mode ──────────────────────────────────────────────
+
+fn detect_integer_pk(columns: &[crate::datasource::ColumnMeta]) -> Option<String> {
+    let integer_patterns = [
+        "int", "integer", "bigint", "smallint", "tinyint", "mediumint",
+        "serial", "bigserial", "smallserial", "int2", "int4", "int8", "number",
+    ];
+    columns.iter()
+        .find(|c| {
+            c.is_primary_key && {
+                let dt = c.data_type.to_lowercase();
+                integer_patterns.iter().any(|p| dt.contains(p))
+            }
+        })
+        .map(|c| c.name.clone())
+}
+
+// ── Shard query builder ──────────────────────────────────────────────────────
+
+fn build_shard_query(
+    original_query: &str,
+    pk_col: &str,
+    shard_id: usize,
+    total_shards: usize,
+    driver: &str,
+) -> String {
+    let shard_condition = match driver {
+        "mysql" | "tidb" | "doris" => format!(
+            "MOD(`{}`, {}) = {}", pk_col.replace('`', "``"), total_shards, shard_id
+        ),
+        "clickhouse" => format!(
+            "modulo(`{}`, {}) = {}", pk_col.replace('`', "``"), total_shards, shard_id
+        ),
+        "sqlserver" => format!(
+            "([{}] % {}) = {}", pk_col.replace(']', "]]"), total_shards, shard_id
+        ),
+        "sqlite" => format!(
+            "(\"{}\" % {}) = {}", pk_col.replace('"', "\"\""), total_shards, shard_id
+        ),
+        // postgres, gaussdb, db2
+        _ => format!(
+            "MOD(\"{}\", {}) = {}", pk_col.replace('"', "\"\""), total_shards, shard_id
+        ),
+    };
+    format!(
+        "SELECT * FROM ({}) AS _mig_shard_ WHERE {}",
+        original_query, shard_condition
+    )
+}
+
+// ── Reader + Writer sub-pipeline (reusable per shard or full table) ──────────
+
+#[allow(clippy::too_many_arguments)]
+async fn run_reader_writer_pair(
+    source_query: String,
+    src_ds: Arc<dyn crate::datasource::DataSource>,
+    dst_ds: Arc<dyn crate::datasource::DataSource>,
+    target_table: String,
+    dst_driver: String,
+    mapped_cols: Option<Vec<String>>,
+    conflict_strategy: ConflictStrategy,
+    upsert_keys: Vec<String>,
+    read_batch_size: usize,
+    write_batch_size: usize,
+    channel_cap: usize,
+    error_limit: usize,
+    writer_parallelism: usize,
+    cancel: Arc<AtomicBool>,
+    mapping_stats: Arc<PipelineStats>,
+    global_stats: Arc<PipelineStats>,
+    app: AppHandle,
+    job_id: i64,
+    run_id: String,
+    label: String,
+) -> AppResult<()> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
+
+    // ── Reader task ───────────────────────────────────────────────────
     let ms_reader = mapping_stats.clone();
     let gs_reader = global_stats.clone();
-    let _app_reader = app.clone();
-    let _run_id_r = run_id.to_string();
     let cancel_r = cancel.clone();
-    let query = source_query.clone();
-    let _ml_r = mapping_label.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         let mut offset = 0usize;
         let mut columns_opt: Option<Vec<String>> = None;
@@ -655,14 +843,13 @@ async fn execute_single_mapping(
             if cancel_r.load(Ordering::Relaxed) {
                 break;
             }
-            let page = src_ds.execute_paginated(&query, read_batch_size, offset).await?;
+            let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
             if page.rows.is_empty() {
                 break;
             }
             let fetched = page.rows.len();
             if columns_opt.is_none() {
                 columns_opt = Some(page.columns.clone());
-                // Log emitted via event; collector used only for main-thread logs
             }
             for row in &page.rows {
                 let row_bytes: u64 = row.iter().map(json_value_len).sum();
@@ -686,23 +873,20 @@ async fn execute_single_mapping(
         Ok(())
     });
 
-    // ── Writer task ───────────────────────────────────────────────────────
+    // ── Writer task (semaphore-controlled concurrent writes) ──────────
     let ms_writer = mapping_stats.clone();
     let gs_writer = global_stats.clone();
     let app_writer = app.clone();
-    let run_id_w = run_id.to_string();
+    let run_id_w = run_id.clone();
     let cancel_w = cancel.clone();
-    let ml_w = mapping_label.clone();
-    let upsert_keys_w = upsert_keys.clone();
+    let label_w = label.clone();
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
+        let semaphore = Arc::new(Semaphore::new(writer_parallelism));
+        let (result_tx, mut result_rx) =
+            tokio::sync::mpsc::unbounded_channel::<(u64, u64)>();
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
-        let mapped_cols: Option<Vec<String>> = if !column_mapping.is_empty() {
-            Some(column_mapping.iter().map(|m| m.target_col.clone()).collect())
-        } else {
-            None
-        };
 
         while let Some(batch) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
@@ -716,87 +900,141 @@ async fn execute_single_mapping(
             for row in batch.rows {
                 write_buf.push(row);
                 if write_buf.len() >= write_batch_size {
-                    let rows_to_write =
-                        std::mem::replace(&mut write_buf, Vec::with_capacity(write_batch_size));
-                    match write_batch(
-                        &*dst_ds,
-                        &target_table,
-                        &buf_columns,
-                        &rows_to_write,
-                        &conflict_strategy,
-                        &upsert_keys_w,
-                        &dst_driver,
-                    )
-                    .await
-                    {
-                        Ok(n) => {
-                            ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
-                            gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
-                        }
-                        Err(e) => {
-                            emit_log(
-                                &app_writer,
-                                job_id,
-                                &run_id_w,
-                                "ERROR",
-                                &format!("[{}] Write error: {}", ml_w, e),
-                            );
-                            let cnt = rows_to_write.len() as u64;
-                            ms_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
-                            error_count += rows_to_write.len();
-                            if error_limit > 0 && error_count >= error_limit {
-                                return Err(e);
-                            }
-                        }
+                    // Drain completed writes (non-blocking)
+                    while let Ok((ok, fail)) = result_rx.try_recv() {
+                        ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                        gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                        ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        error_count += fail as usize;
                     }
+                    if error_limit > 0 && error_count >= error_limit {
+                        return Err(AppError::Other(format!(
+                            "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                        )));
+                    }
+
+                    let rows_to_write = std::mem::replace(
+                        &mut write_buf,
+                        Vec::with_capacity(write_batch_size),
+                    );
+                    let permit = semaphore.clone().acquire_owned().await
+                        .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+                    let dst_clone = dst_ds.clone();
+                    let table_clone = target_table.clone();
+                    let cols_clone = buf_columns.clone();
+                    let cs_clone = conflict_strategy.clone();
+                    let uk_clone = upsert_keys.clone();
+                    let drv_clone = dst_driver.clone();
+                    let rtx = result_tx.clone();
+                    let app_clone = app_writer.clone();
+                    let lbl = label_w.clone();
+                    let rid = run_id_w.clone();
+
+                    tokio::spawn(async move {
+                        let (ok, fail) = match write_batch(
+                            &*dst_clone, &table_clone, &cols_clone,
+                            &rows_to_write, &cs_clone, &uk_clone, &drv_clone,
+                        ).await {
+                            Ok(n) => (n as u64, 0u64),
+                            Err(e) => {
+                                emit_log(&app_clone, job_id, &rid, "WARN",
+                                    &format!("[{}] Batch write failed ({}), retrying row-by-row…", lbl, e));
+                                let mut row_ok = 0u64;
+                                let mut row_fail = 0u64;
+                                for single_row in &rows_to_write {
+                                    match write_batch(
+                                        &*dst_clone, &table_clone, &cols_clone,
+                                        std::slice::from_ref(single_row),
+                                        &cs_clone, &uk_clone, &drv_clone,
+                                    ).await {
+                                        Ok(n) => row_ok += n as u64,
+                                        Err(_) => row_fail += 1,
+                                    }
+                                }
+                                if row_fail > 0 {
+                                    emit_log(&app_clone, job_id, &rid, "ERROR",
+                                        &format!("[{}] Row-by-row retry: {} succeeded, {} failed", lbl, row_ok, row_fail));
+                                }
+                                (row_ok, row_fail)
+                            }
+                        };
+                        let _ = rtx.send((ok, fail));
+                        drop(permit);
+                    });
                 }
             }
         }
+
         // Flush remainder
         if !write_buf.is_empty() {
+            let _permit = semaphore.clone().acquire_owned().await
+                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
             match write_batch(
-                &*dst_ds,
-                &target_table,
-                &buf_columns,
-                &write_buf,
-                &conflict_strategy,
-                &upsert_keys_w,
-                &dst_driver,
-            )
-            .await
-            {
+                &*dst_ds, &target_table, &buf_columns, &write_buf,
+                &conflict_strategy, &upsert_keys, &dst_driver,
+            ).await {
                 Ok(n) => {
                     ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
                     gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
                 }
                 Err(e) => {
-                    let cnt = write_buf.len() as u64;
-                    ms_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(cnt, Ordering::Relaxed);
-                    emit_log(
-                        &app_writer,
-                        job_id,
-                        &run_id_w,
-                        "ERROR",
-                        &format!("[{}] Final flush error: {}", ml_w, e),
-                    );
+                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                        &format!("[{}] Final flush failed ({}), retrying row-by-row…", label_w, e));
+                    let mut row_ok = 0u64;
+                    let mut row_fail = 0u64;
+                    for single_row in &write_buf {
+                        match write_batch(
+                            &*dst_ds, &target_table, &buf_columns,
+                            std::slice::from_ref(single_row),
+                            &conflict_strategy, &upsert_keys, &dst_driver,
+                        ).await {
+                            Ok(n) => row_ok += n as u64,
+                            Err(_) => row_fail += 1,
+                        }
+                    }
+                    ms_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
+                    gs_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
+                    ms_writer.rows_failed.fetch_add(row_fail, Ordering::Relaxed);
+                    gs_writer.rows_failed.fetch_add(row_fail, Ordering::Relaxed);
+                    error_count += row_fail as usize;
+                    if row_fail > 0 {
+                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                            &format!("[{}] Final flush row-by-row: {} succeeded, {} failed", label_w, row_ok, row_fail));
+                    }
                 }
             }
         }
+
+        // Wait for all pending concurrent writes to complete
+        drop(result_tx);
+        while let Some((ok, fail)) = result_rx.recv().await {
+            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+            error_count += fail as usize;
+        }
+
+        // Final error limit check (covers flush remainder + all pending writes)
+        if error_limit > 0 && error_count >= error_limit {
+            return Err(AppError::Other(format!(
+                "Error limit ({}) exceeded: {} errors", error_limit, error_count
+            )));
+        }
+
         Ok(())
     });
 
+    // ── Await both tasks ─────────────────────────────────────────────
     let reader_result = reader_handle.await;
     let writer_result = writer_handle.await;
-    stats_handle.abort();
 
-    // Check results
     if let Err(e) = &reader_result {
-        return Err(AppError::Other(format!("Reader panicked: {}", e)));
+        return Err(AppError::Other(format!("[{}] Reader panicked: {}", label, e)));
     }
     if let Err(e) = &writer_result {
-        return Err(AppError::Other(format!("Writer panicked: {}", e)));
+        return Err(AppError::Other(format!("[{}] Writer panicked: {}", label, e)));
     }
     if let Ok(Err(e)) = reader_result {
         return Err(e);
@@ -805,10 +1043,7 @@ async fn execute_single_mapping(
         return Err(e);
     }
 
-    let written = mapping_stats.rows_written.load(Ordering::Relaxed);
-    let failed = mapping_stats.rows_failed.load(Ordering::Relaxed);
-    let read = mapping_stats.rows_read.load(Ordering::Relaxed);
-    Ok(format!("read={} written={} failed={}", read, written, failed))
+    Ok(())
 }
 
 // ── Build source SQL ──────────────────────────────────────────────────────────

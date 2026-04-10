@@ -90,7 +90,7 @@ interface TreeStore {
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
-  loadChildren: (nodeId: string) => Promise<void>;
+  loadChildren: (nodeId: string) => Promise<string[]>;
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string) => void;
   refreshNode: (nodeId: string) => Promise<void>;
@@ -184,10 +184,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  loadChildren: async (nodeId: string) => {
+  loadChildren: async (nodeId: string): Promise<string[]> => {
     const { nodes, loadingIds } = get();
     const node = nodes.get(nodeId);
-    if (!node || node.loaded || loadingIds.has(nodeId)) return;
+    if (!node || node.loaded || loadingIds.has(nodeId)) return [];
 
     set(s => ({ loadingIds: new Set([...s.loadingIds, nodeId]) }));
 
@@ -401,6 +401,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         if (updated) newNodes.set(nodeId, { ...updated, loaded: true });
         return { nodes: newNodes };
       });
+      return children.map(c => c.id);
     } catch (e) {
       set(s => {
         const newNodes = new Map(s.nodes);
@@ -410,6 +411,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         expandedIds.delete(nodeId); // 加载失败时折叠，避免"展开但无内容"
         return { nodes: newNodes, error: String(e), expandedIds };
       });
+      return [];
     } finally {
       set(s => {
         const newLoading = new Set(s.loadingIds);
@@ -470,17 +472,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     });
 
     // 3. 加载新子节点（loadChildren 内部会调用 _addNodes 更新/添加节点）
-    await get().loadChildren(nodeId);
+    const newChildrenIds = await get().loadChildren(nodeId);
 
-    // 4. 清理那些在数据库中已不存在的旧节点（即：原来有，但新加载列表里没有的）
-    const currentNodes = get().nodes;
-    const currentChildrenIds = new Set(
-      Array.from(currentNodes.values())
-        .filter(n => n.parentId === nodeId)
-        .map(n => n.id)
-    );
-
-    const toRemove = oldChildrenIds.filter(id => !currentChildrenIds.has(id));
+    // 4. 清理那些在数据库中已不存在的旧节点
+    const toRemove = oldChildrenIds.filter(id => !newChildrenIds.includes(id));
     if (toRemove.length > 0) {
       set(s => {
         const nodesMap = new Map(s.nodes);

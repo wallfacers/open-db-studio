@@ -49,7 +49,7 @@ interface MetricsTreeState {
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
-  loadChildren: (nodeId: string) => Promise<void>;
+  loadChildren: (nodeId: string) => Promise<string[]>;
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
   refreshNode: (nodeId: string) => Promise<void>;
@@ -139,24 +139,25 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     }
   },
 
-  loadChildren: async (nodeId: string) => {
+  loadChildren: async (nodeId: string): Promise<string[]> => {
     const { nodes, loadingIds } = get();
-    if (loadingIds.has(nodeId)) return;
+    if (loadingIds.has(nodeId)) return [];
     const node = nodes.get(nodeId);
-    if (!node) return;
+    if (!node) return [];
 
     // group 节点：子节点已在 init 中建好，只需标记 loaded
     if (node.nodeType === 'group') {
       const newNodes = new Map(get().nodes);
       newNodes.set(nodeId, { ...node, loaded: true });
       set({ nodes: newNodes });
-      return;
+      return [];
     }
 
     set(s => ({ loadingIds: new Set([...s.loadingIds, nodeId]) }));
 
     try {
       const newNodes = new Map(get().nodes);
+      const loadedChildIds: string[] = [];
 
       if (node.nodeType === 'connection') {
         const { connectionId } = node.meta;
@@ -168,6 +169,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
         const newCounts = new Map(get().metricCounts);
         for (const db of dbs) {
           const id = metricsDbNodeId(connectionId!, db);
+          loadedChildIds.push(id);
           newNodes.set(id, {
             id,
             nodeType: 'database',
@@ -181,6 +183,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
         }
         newNodes.set(nodeId, { ...node, loaded: true });
         set({ nodes: newNodes, metricCounts: newCounts });
+        return loadedChildIds;
 
       } else if (node.nodeType === 'database') {
         const { connectionId, database } = node.meta;
@@ -199,6 +202,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
           const newCounts = new Map(get().metricCounts);
           for (const sc of schemas) {
             const id = metricsSchemaNodeId(connectionId!, database!, sc);
+            loadedChildIds.push(id);
             newNodes.set(id, {
               id,
               nodeType: 'schema',
@@ -212,6 +216,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
           }
           newNodes.set(nodeId, { ...node, loaded: true });
           set({ nodes: newNodes, metricCounts: newCounts });
+          return loadedChildIds;
         } else {
           const metrics: Metric[] = await invoke('list_metrics_by_node', {
             connectionId,
@@ -221,6 +226,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
           });
           for (const m of metrics) {
             const id = metricsMetricNodeId(m.id);
+            loadedChildIds.push(id);
             newNodes.set(id, {
               id,
               nodeType: 'metric',
@@ -235,6 +241,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
           newCounts.set(nodeId, metrics.length);
           newNodes.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
           set({ nodes: newNodes, metricCounts: newCounts });
+          return loadedChildIds;
         }
 
       } else if (node.nodeType === 'schema') {
@@ -247,6 +254,7 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
         });
         for (const m of metrics) {
           const id = metricsMetricNodeId(m.id);
+          loadedChildIds.push(id);
           newNodes.set(id, {
             id,
             nodeType: 'metric',
@@ -261,20 +269,23 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
         newCounts.set(nodeId, metrics.length);
         newNodes.set(nodeId, { ...node, loaded: true, hasChildren: metrics.length > 0 });
         set({ nodes: newNodes, metricCounts: newCounts });
+        return loadedChildIds;
       }
-    } catch {
+      return loadedChildIds;
+      } catch {
       set(s => {
         const expandedIds = new Set(s.expandedIds);
         expandedIds.delete(nodeId); // 加载失败时折叠，避免"展开但无内容"
         return { expandedIds };
       });
-    } finally {
+      return [];
+      } finally {
       set(s => {
-        const ids = new Set(s.loadingIds);
-        ids.delete(nodeId);
-        return { loadingIds: ids };
+        const newLoading = new Set(s.loadingIds);
+        newLoading.delete(nodeId);
+        return { loadingIds: newLoading };
       });
-    }
+      }
   },
 
   toggleExpand: (nodeId: string) => {
@@ -310,20 +321,45 @@ export const useMetricsTreeStore = create<MetricsTreeState>((set, get) => ({
     const { nodes } = get();
     const node = nodes.get(nodeId);
     if (!node) return;
-    const newNodes = new Map(nodes);
-    // 递归删除所有子孙节点
-    const removeChildren = (pid: string) => {
-      for (const [id, n] of newNodes) {
-        if (n.parentId === pid) {
-          removeChildren(id);
-          newNodes.delete(id);
+    
+    // 1. 记下当前子孙节点 ID
+    const oldChildrenIds = Array.from(nodes.values())
+      .filter(n => n.parentId === nodeId)
+      .map(n => n.id);
+
+    // 2. 重置 loaded 状态以允许 loadChildren 重新执行
+    set(s => {
+      const newNodes = new Map(s.nodes);
+      newNodes.set(nodeId, { ...node, loaded: false });
+      return { nodes: newNodes };
+    });
+
+    // 3. 加载新子节点
+    const newChildrenIds = await get().loadChildren(nodeId);
+
+    // 4. 清理那些在数据库中已不存在的旧节点
+    const toRemove = oldChildrenIds.filter(id => !newChildrenIds.includes(id));
+    if (toRemove.length > 0) {
+      set(s => {
+        const nodesMap = new Map(s.nodes);
+        const expandedIds = new Set(s.expandedIds);
+        const metricCounts = new Map(s.metricCounts);
+
+        const removeRecursive = (id: string) => {
+          nodesMap.delete(id);
+          expandedIds.delete(id);
+          metricCounts.delete(id);
+          for (const [nodeKey, n] of nodesMap.entries()) {
+            if (n.parentId === id) removeRecursive(nodeKey);
+          }
+        };
+
+        for (const id of toRemove) {
+          removeRecursive(id);
         }
-      }
-    };
-    removeChildren(nodeId);
-    newNodes.set(nodeId, { ...node, loaded: false });
-    set({ nodes: newNodes });
-    await get().loadChildren(nodeId);
+        return { nodes: nodesMap, expandedIds, metricCounts };
+      });
+    }
   },
 
   deleteMetric: async (metricId: number, nodeId: string, knownParentNodeId?: string) => {

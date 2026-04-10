@@ -2708,6 +2708,14 @@ pub async fn clear_graph_node_positions(
     crate::graph::query::clear_node_positions(connection_id, database.as_deref())
 }
 
+#[tauri::command]
+pub async fn auto_layout_graph(
+    connection_id: i64,
+    database: Option<String>,
+) -> AppResult<()> {
+    crate::graph::layout::auto_layout_new_nodes(connection_id, database.as_deref())
+}
+
 // ============ 跨数据源迁移 ============
 
 #[allow(dead_code)]

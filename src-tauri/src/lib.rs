@@ -287,6 +287,7 @@ pub fn run() {
             commands::update_graph_node_metadata,
             commands::save_graph_node_position,
             commands::clear_graph_node_positions,
+            commands::auto_layout_graph,
             commands::ai_generate_metrics,
             commands::list_tables_with_column_count,
             commands::ai_generate_sql_v2,

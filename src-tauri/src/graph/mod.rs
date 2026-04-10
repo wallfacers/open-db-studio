@@ -2,6 +2,7 @@ pub mod cache;
 pub mod change_detector;
 pub mod comment_parser;
 pub mod event_processor;
+pub mod layout;
 pub mod query;
 pub mod traversal;
 
@@ -280,6 +281,8 @@ pub async fn run_graph_build(
             return;
         }
     };
+    // 保存 database 值供步骤 9（自动布局）使用，避免被 filter() 移走
+    let layout_database: Option<String> = database.clone();
     // 若调用方指定了 database（如 MySQL 多库场景），覆盖连接配置中存储的默认库名
     if let Some(db) = database.filter(|s| !s.is_empty()) {
         config.database = Some(db);
@@ -378,6 +381,12 @@ pub async fn run_graph_build(
         let app_state = app.state::<crate::AppState>();
         app_state.graph_cache.invalidate(connection_id).await;
         log_and_emit(&app, &task_id, &mut logs, "INFO", "图缓存已失效，下次查询将重新加载");
+    }
+
+    // 9. 为新增节点分配初始坐标（position_x IS NULL → 自动布局）
+    match crate::graph::layout::auto_layout_new_nodes(connection_id, layout_database.as_deref()) {
+        Ok(()) => log_and_emit(&app, &task_id, &mut logs, "INFO", "新节点初始坐标分配完成"),
+        Err(e) => log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("自动布局失败（不影响主流程）: {}", e)),
     }
 
     emit_completed(&app, &task_id, &logs, table_count);

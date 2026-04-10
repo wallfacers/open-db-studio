@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useMemo } from 'react'
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen,
   ArrowLeftRight, Loader2, CheckCircle2, XCircle, Square,
-  FolderPlus, FilePlus, Pencil, Trash2,
+  FolderPlus, FilePlus, Pencil, Trash2, FolderInput,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useMigrationStore, MigTreeNode, isCategoryEmpty } from '../../store/migrationStore'
@@ -66,12 +66,78 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: MigTreeNode } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
   const editRef = useRef<HTMLInputElement>(null)
 
   const visible = useMemo(
     () => computeVisible(store.nodes, store.expandedIds, searchQuery),
     [store.nodes, store.expandedIds, searchQuery],
   )
+
+  // ── Drag & Drop ────────────────────────────────────────────
+  const handleDragStart = useCallback((e: React.DragEvent, node: MigTreeNode) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ nodeType: node.nodeType, id: node.id }))
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, node: MigTreeNode) => {
+    // Only allow dropping onto categories
+    if (node.nodeType !== 'category') return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverId(node.id)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    setDragOverId(null)
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetNode: MigTreeNode) => {
+    e.preventDefault()
+    setDragOverId(null)
+    if (targetNode.nodeType !== 'category') return
+
+    let data: { nodeType: string; id: string }
+    try {
+      data = JSON.parse(e.dataTransfer.getData('text/plain'))
+    } catch { return }
+
+    const targetCatId = Number(targetNode.id.replace('cat_', ''))
+
+    if (data.nodeType === 'job') {
+      const jobId = Number(data.id.replace('job_', ''))
+      await store.moveJob(jobId, targetCatId)
+    } else if (data.nodeType === 'category') {
+      const catId = Number(data.id.replace('cat_', ''))
+      if (catId === targetCatId) return
+      try {
+        await store.moveCategory(catId, targetCatId)
+      } catch (err: any) {
+        console.error('[MigrationTree] move category failed:', err)
+      }
+    }
+  }, [store])
+
+  const handleDropToRoot = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOverId(null)
+    let data: { nodeType: string; id: string }
+    try {
+      data = JSON.parse(e.dataTransfer.getData('text/plain'))
+    } catch { return }
+
+    if (data.nodeType === 'job') {
+      const jobId = Number(data.id.replace('job_', ''))
+      await store.moveJob(jobId, null)
+    } else if (data.nodeType === 'category') {
+      const catId = Number(data.id.replace('cat_', ''))
+      try {
+        await store.moveCategory(catId, null)
+      } catch (err: any) {
+        console.error('[MigrationTree] move category to root failed:', err)
+      }
+    }
+  }, [store])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, node: MigTreeNode) => {
     e.preventDefault()
@@ -118,7 +184,12 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
   }
 
   return (
-    <div className="flex-1 overflow-y-auto select-none" onClick={() => setCtxMenu(null)}>
+    <div
+      className="flex-1 overflow-y-auto select-none"
+      onClick={() => setCtxMenu(null)}
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+      onDrop={handleDropToRoot}
+    >
       {visible.map(node => {
         const isSelected = store.selectedId === node.id
         const isExpanded = store.expandedIds.has(node.id)
@@ -127,9 +198,12 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
         return (
           <div
             key={node.id}
+            draggable
+            onDragStart={e => handleDragStart(e, node)}
             className={`flex items-center py-1 px-2 cursor-pointer outline-none
               hover:bg-background-hover transition-colors duration-150
-              ${isSelected ? 'bg-border-default' : ''}`}
+              ${isSelected ? 'bg-border-default' : ''}
+              ${dragOverId === node.id && node.nodeType === 'category' ? 'bg-accent/10 border-l-2 border-accent' : ''}`}
             style={{ paddingLeft: `${node.depth * 16 + 8}px` }}
             onClick={() => {
               store.selectNode(node.id)
@@ -137,6 +211,9 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
               else if (node.nodeType === 'job') onOpenJob(node.jobId, node.label)
             }}
             onContextMenu={e => handleContextMenu(e, node)}
+            onDragOver={node.nodeType === 'category' ? e => handleDragOver(e, node) : undefined}
+            onDragLeave={node.nodeType === 'category' ? handleDragLeave : undefined}
+            onDrop={node.nodeType === 'category' ? e => handleDrop(e, node) : undefined}
           >
             {/* Chevron */}
             <div className="w-4 h-4 mr-1 flex items-center justify-center text-foreground-muted flex-shrink-0">
@@ -218,6 +295,12 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
               onClick={() => { startEdit(ctxMenu.node); setCtxMenu(null) }}>
               <Pencil size={13} />{t('migration.rename')}
             </button>
+            {ctxMenu.node.parentId !== null && (
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
+                onClick={() => { store.moveCategory(Number(ctxMenu.node.id.replace('cat_', '')), null); setCtxMenu(null) }}>
+                <FolderInput size={13} />{t('migration.moveToRoot', { defaultValue: 'Move to Root' })}
+              </button>
+            )}
             <div className="border-t border-border-subtle my-1" />
             {isEmpty ? (
               <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error hover:bg-background-hover transition-colors duration-150"
@@ -253,6 +336,12 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
                 onClick={() => { startEdit(jobNode); setCtxMenu(null) }}>
                 <Pencil size={13} />{t('migration.rename')}
               </button>
+              {jobNode.parentId !== null && (
+                <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
+                  onClick={() => { store.moveJob(jobNode.jobId, null); setCtxMenu(null) }}>
+                  <FolderInput size={13} />{t('migration.moveToRoot', { defaultValue: 'Move to Root' })}
+                </button>
+              )}
               <div className="border-t border-border-subtle my-1" />
               <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error hover:bg-background-hover transition-colors duration-150"
                 onClick={() => { store.deleteJob(jobNode.jobId); setCtxMenu(null) }}>

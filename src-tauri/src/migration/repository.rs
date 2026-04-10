@@ -39,6 +39,39 @@ pub fn rename_category(id: i64, name: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub fn move_category(id: i64, parent_id: Option<i64>) -> AppResult<()> {
+    // 防止循环引用：不能将分类移动到其自身或任何子分类下
+    if let Some(target_parent) = parent_id {
+        let db = crate::db::get().lock().unwrap();
+        let mut is_descendant = false;
+        let mut current = Some(target_parent);
+        while let Some(cid) = current {
+            if cid == id {
+                is_descendant = true;
+                break;
+            }
+            let parent: Option<i64> = db.query_row(
+                "SELECT parent_id FROM migration_categories WHERE id=?1",
+                params![cid],
+                |row| row.get(0),
+            ).ok();
+            current = parent;
+        }
+        if is_descendant {
+            return Err(crate::error::AppError::Other(
+                "Cannot move a category into its own subtree".into(),
+            ));
+        }
+    }
+
+    let db = crate::db::get().lock().unwrap();
+    db.execute(
+        "UPDATE migration_categories SET parent_id=?1 WHERE id=?2",
+        params![parent_id, id],
+    )?;
+    Ok(())
+}
+
 pub fn delete_category(id: i64) -> AppResult<()> {
     let db = crate::db::get().lock().unwrap();
     db.execute(

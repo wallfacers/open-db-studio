@@ -34,6 +34,13 @@ pub async fn delete_migration_category(id: i64) -> AppResult<()> {
         .map_err(|e| AppError::Other(e.to_string()))?
 }
 
+#[tauri::command]
+pub async fn move_migration_category(id: i64, parent_id: Option<i64>) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || super::repository::move_category(id, parent_id))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+}
+
 // ── Jobs ─────────────────────────────────────────────────────
 
 #[tauri::command]

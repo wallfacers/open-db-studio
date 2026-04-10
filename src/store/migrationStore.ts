@@ -178,6 +178,7 @@ interface MigrationStore {
   renameJob: (id: number, name: string) => Promise<void>
   deleteJob: (id: number) => Promise<void>
   moveJob: (id: number, categoryId: number | null) => Promise<void>
+  moveCategory: (id: number, parentId: number | null) => Promise<void>
   updateJobStatus: (jobId: number, status: string) => void
   runJob: (jobId: number) => Promise<void>
   startListening: () => () => void
@@ -310,6 +311,22 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
         nodes.set(nodeId, {
           ...node,
           parentId: categoryId ? migCatNodeId(categoryId) : null,
+        })
+      }
+      return { nodes }
+    })
+  },
+
+  moveCategory: async (id, parentId) => {
+    await invoke('move_migration_category', { id, parentId })
+    set(s => {
+      const nodes = new Map(s.nodes)
+      const nodeId = migCatNodeId(id)
+      const node = nodes.get(nodeId)
+      if (node && node.nodeType === 'category') {
+        nodes.set(nodeId, {
+          ...node,
+          parentId: parentId ? migCatNodeId(parentId) : null,
         })
       }
       return { nodes }

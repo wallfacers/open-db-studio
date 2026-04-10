@@ -375,6 +375,7 @@ pub fn run() {
             migration::mig_commands::create_migration_category,
             migration::mig_commands::rename_migration_category,
             migration::mig_commands::delete_migration_category,
+            migration::mig_commands::move_migration_category,
             migration::mig_commands::list_migration_jobs,
             migration::mig_commands::create_migration_job,
             migration::mig_commands::update_migration_job_config,

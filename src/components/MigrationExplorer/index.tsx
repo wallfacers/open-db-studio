@@ -139,7 +139,7 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
     >
       {/* Resize handle */}
       <div
-        className="absolute right-[-2px] top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent z-10"
+        className="absolute right-[-2px] top-0 bottom-0 w-[4.5px] cursor-col-resize hover:bg-accent z-10"
         onMouseDown={handleMouseDown}
       />
 

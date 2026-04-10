@@ -157,15 +157,15 @@ export function MigrationJobTab({ jobId }: Props) {
 
       {/* Log Bottom Panel */}
       {logHeight > 0 && (
-        <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: logHeight }}>
-          {/* Resize Handle — in-flow, no overlap with tab bar */}
+        <div className="flex flex-col bg-background-void flex-shrink-0 relative border-t border-border-default" style={{ height: logHeight }}>
+          {/* Resize Handle — absolute overlay */}
           <div
-            className="h-[5px] flex-shrink-0 cursor-row-resize border-t border-border-default hover:border-accent transition-colors bg-background-base"
+            className="absolute left-0 right-0 top-[-2px] h-[4.5px] cursor-row-resize hover:bg-accent z-10 transition-colors"
             onMouseDown={handleLogResize}
           />
           {/* Log tab-bar */}
-          <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
-            <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-2 border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0">
+          <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto mt-[-1px]">
+            <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-[3px] border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0 pt-[1px]">
               <span>{t('migration.logTab')}</span>
               {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
               <Tooltip content={t('common.close', { defaultValue: '关闭' })}>

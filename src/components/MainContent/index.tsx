@@ -1295,20 +1295,19 @@ export const MainContent: React.FC<MainContentProps> = ({
               />
             </div>
 
-            {/* Results Resizer */}
-            <div
-              className="h-1 cursor-row-resize z-10 hover:bg-accent transition-colors"
-              onMouseDown={handleResultsResize}
-            />
-
             {/* Results Area */}
-            <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: resultsHeight }}>
+            <div className="flex flex-col bg-background-void flex-shrink-0 relative border-t border-border-default" style={{ height: resultsHeight }}>
+              {/* Results Resizer — absolute overlay */}
+              <div
+                className="absolute left-0 right-0 top-[-2px] h-[4.5px] cursor-row-resize z-10 hover:bg-accent transition-colors"
+                onMouseDown={handleResultsResize}
+              />
               {/* Result tabs — one per result set, numbered from 1 */}
-              <div className="flex items-center bg-background-base border-b border-border-default overflow-x-auto">
+              <div className="flex items-center bg-background-base border-b border-border-default overflow-x-auto mt-[-1px]">
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-border-default flex-shrink-0 transition-colors duration-200 ${selectedResultPane === idx ? `bg-background-void ${result.kind === 'error' ? 'text-error border-t-error' : 'text-accent border-t-accent'}` : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-[3px] border-r border-r-border-default flex-shrink-0 transition-colors duration-200 pt-[1px] ${selectedResultPane === idx ? `bg-background-void ${result.kind === 'error' ? 'text-error border-t-error' : 'text-accent border-t-accent'}` : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
                     onClick={() => setSelectedResultPane(idx)}
                     onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                   >
@@ -1335,7 +1334,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {/* SQL 解释 Tab — 仅在有内容或正在解释时显示 */}
                 {(explanationStreaming[activeTab] || explanationContent[activeTab]) && (
                   <div
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-border-default flex-shrink-0 transition-colors duration-200 ${selectedResultPane === 'explanation' ? 'bg-background-void text-accent border-t-accent' : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-[3px] border-r border-r-border-default flex-shrink-0 transition-colors duration-200 pt-[1px] ${selectedResultPane === 'explanation' ? 'bg-background-void text-accent border-t-accent' : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
                     onClick={() => setSelectedResultPane('explanation')}
                     onContextMenu={(e) => { e.preventDefault(); setExplanationContextMenu({ x: e.clientX, y: e.clientY }); }}
                   >

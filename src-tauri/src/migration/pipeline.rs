@@ -1150,6 +1150,8 @@ async fn write_batch(
         suffix,
     );
 
-    ds.execute(&sql).await?;
-    Ok(rows.len())
+    let result = ds.execute(&sql).await?;
+    // Use actual rows_affected from the driver (MySQL/PG already return this correctly).
+    // Cap at rows.len() to handle MySQL double-count for ON DUPLICATE KEY UPDATE / REPLACE INTO.
+    Ok(result.row_count.min(rows.len()))
 }

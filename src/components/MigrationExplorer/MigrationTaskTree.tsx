@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useMigrationStore, MigTreeNode, isCategoryEmpty } from '../../store/migrationStore'
 import { migCatNodeId, migJobNodeId } from '../../utils/nodeId'
 import { Tooltip } from '../common/Tooltip'
+import { MigrationMoveModal } from './MigrationMoveModal'
 
 interface Props {
   searchQuery: string
@@ -67,6 +68,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [moveTargetNode, setMoveTargetNode] = useState<MigTreeNode | null>(null)
   const editRef = useRef<HTMLInputElement>(null)
 
   const visible = useMemo(
@@ -295,12 +297,10 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
               onClick={() => { startEdit(ctxMenu.node); setCtxMenu(null) }}>
               <Pencil size={13} />{t('migration.rename')}
             </button>
-            {ctxMenu.node.parentId !== null && (
-              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-                onClick={() => { store.moveCategory(Number(ctxMenu.node.id.replace('cat_', '')), null); setCtxMenu(null) }}>
-                <FolderInput size={13} />{t('migration.moveToRoot', { defaultValue: 'Move to Root' })}
-              </button>
-            )}
+            <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
+              onClick={() => { setMoveTargetNode(ctxMenu.node); setCtxMenu(null) }}>
+              <FolderInput size={13} />{t('migration.move')}
+            </button>
             <div className="border-t border-border-subtle my-1" />
             {isEmpty ? (
               <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error hover:bg-background-hover transition-colors duration-150"
@@ -336,12 +336,10 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
                 onClick={() => { startEdit(jobNode); setCtxMenu(null) }}>
                 <Pencil size={13} />{t('migration.rename')}
               </button>
-              {jobNode.parentId !== null && (
-                <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-                  onClick={() => { store.moveJob(jobNode.jobId, null); setCtxMenu(null) }}>
-                  <FolderInput size={13} />{t('migration.moveToRoot', { defaultValue: 'Move to Root' })}
-                </button>
-              )}
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
+                onClick={() => { setMoveTargetNode(jobNode); setCtxMenu(null) }}>
+                <FolderInput size={13} />{t('migration.move')}
+              </button>
               <div className="border-t border-border-subtle my-1" />
               <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error hover:bg-background-hover transition-colors duration-150"
                 onClick={() => { store.deleteJob(jobNode.jobId); setCtxMenu(null) }}>
@@ -352,6 +350,13 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
         </div>
         )
       })()}
+
+      {moveTargetNode && (
+        <MigrationMoveModal
+          node={moveTargetNode}
+          onClose={() => setMoveTargetNode(null)}
+        />
+      )}
     </div>
   )
 }

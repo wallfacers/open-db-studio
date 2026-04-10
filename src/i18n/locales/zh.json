@@ -543,7 +543,11 @@
     "copy": "复制",
     "bind": "绑定",
     "loading": "加载中...",
-    "open": "打开"
+    "open": "打开",
+    "success": "成功",
+    "error": "错误",
+    "current": "当前",
+    "name": "名称"
   },
   "groupModal": {
     "createTitle": "新建分组",
@@ -1100,6 +1104,7 @@
     "stop": "停止",
     "targetCategory": "所属目录",
     "rootCategory": "根目录",
+    "selectTargetCategory": "选择目标分类",
     "precheck": "预检查",
     "save": "保存",
     "configTab": "配置",

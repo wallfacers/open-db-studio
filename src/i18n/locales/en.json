@@ -542,7 +542,11 @@
     "copy": "Copy",
     "bind": "Bind",
     "loading": "Loading...",
-    "open": "Open"
+    "open": "Open",
+    "success": "Success",
+    "error": "Error",
+    "current": "Current",
+    "name": "Name"
   },
   "groupModal": {
     "createTitle": "New Group",
@@ -1099,6 +1103,7 @@
     "stop": "Stop",
     "targetCategory": "Category",
     "rootCategory": "Root",
+    "selectTargetCategory": "Select target category",
     "precheck": "Pre-check",
     "save": "Save",
     "configTab": "Config",

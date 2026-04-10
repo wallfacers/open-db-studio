@@ -1303,7 +1303,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 onMouseDown={handleResultsResize}
               />
               {/* Result tabs — one per result set, numbered from 1 */}
-              <div className="flex items-center bg-background-base border-b border-border-default overflow-x-auto mt-[-1px]">
+              <div className="flex items-center bg-background-base border-b border-border-default overflow-x-auto">
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}

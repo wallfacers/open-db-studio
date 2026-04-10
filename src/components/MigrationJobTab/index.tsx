@@ -164,7 +164,7 @@ export function MigrationJobTab({ jobId }: Props) {
             onMouseDown={handleLogResize}
           />
           {/* Log tab-bar */}
-          <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto mt-[-1px]">
+          <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
             <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-[3px] border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0 pt-[1px]">
               <span>{t('migration.logTab')}</span>
               {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}

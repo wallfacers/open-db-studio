@@ -341,7 +341,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     }
   }, [pendingConnect, connectEdgeType, refetch]);
 
-  const { fitView, setCenter, getZoom } = useReactFlow();
+  const { fitView } = useReactFlow();
   const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
   const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -521,7 +521,6 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     setRfNodes(laid);
     setRfEdges(laidEdges);
     // Defer fitView until layout is painted, but skip when a node is focused
-    // (focused node uses setCenter in onNodeClick for smooth centering)
     if (!focusedNodeId) {
       const timerId = setTimeout(() => {
         fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
@@ -702,19 +701,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     setHighlightedNodeIds(neighborNodeIds);
     setHighlightedEdgeIds(neighborEdgeIds);
 
-    // Smoothly center the node in viewport if available
-    if (rfNode) {
-      const nodeWidth = rfNode.measured?.width ?? (rfNode.type === 'link' ? 260 : 240);
-      const nodeHeight = rfNode.measured?.height ?? (rfNode.type === 'link' ? 70 : 100);
-      const centerX = (rfNode.position?.x ?? 0) + nodeWidth / 2;
-      const centerY = (rfNode.position?.y ?? 0) + nodeHeight / 2;
-      setCenter(centerX, centerY, { zoom: getZoom(), duration: 300 });
-    }
-
     // Open detail panel
     setSelectedNode(raw);
     setActivePanel('detail');
-  }, [rawNodes, rfNodes, filteredEdges, setCenter, getZoom]);
+  }, [rawNodes, rfNodes, filteredEdges]);
 
   const handleHighlightNode = useCallback((nodeId: string) => {
     selectNodeById(nodeId);

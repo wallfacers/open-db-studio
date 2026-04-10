@@ -2,6 +2,30 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { migCatNodeId, migJobNodeId } from '../utils/nodeId'
+import { useQueryStore } from './queryStore'
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+/** 检查分类是否包含子任务或子分类（递归查找所有后代） */
+export function isCategoryEmpty(nodes: Map<string, MigTreeNode>, catId: string): boolean {
+  // Collect all descendant category IDs
+  const descendantCats: string[] = []
+  const collectCats = (parentId: string) => {
+    nodes.forEach(node => {
+      if (node.nodeType === 'category' && node.parentId === parentId) {
+        descendantCats.push(node.id)
+        collectCats(node.id)
+      }
+    })
+  }
+  collectCats(catId)
+
+  // Check if any job belongs to this category or its descendants
+  const checkIds = [catId, ...descendantCats]
+  return !Array.from(nodes.values()).some(
+    node => node.nodeType === 'job' && checkIds.includes(node.parentId!)
+  )
+}
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -236,6 +260,11 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
   },
 
   deleteCategory: async (id) => {
+    const catId = migCatNodeId(id)
+    if (!isCategoryEmpty(get().nodes, catId)) {
+      throw new Error('CATEGORY_NOT_EMPTY')
+    }
+
     await invoke('delete_migration_category', { id })
     await get().init()
   },
@@ -257,6 +286,7 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
       if (node) nodes.set(nodeId, { ...node, label: name })
       return { nodes }
     })
+    useQueryStore.getState().updateMigrationJobTabTitle(id, name)
   },
 
   deleteJob: async (id) => {
@@ -266,6 +296,7 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
       nodes.delete(migJobNodeId(id))
       return { nodes }
     })
+    useQueryStore.getState().closeMigrationJobTab(id)
   },
 
   moveJob: async (id, categoryId) => {

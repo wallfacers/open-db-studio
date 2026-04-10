@@ -5,7 +5,7 @@ import {
   FolderPlus, FilePlus, Pencil, Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useMigrationStore, MigTreeNode } from '../../store/migrationStore'
+import { useMigrationStore, MigTreeNode, isCategoryEmpty } from '../../store/migrationStore'
 import { migCatNodeId, migJobNodeId } from '../../utils/nodeId'
 import { Tooltip } from '../common/Tooltip'
 
@@ -195,7 +195,11 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
       })}
 
       {/* Context Menu */}
-      {ctxMenu && (
+      {ctxMenu && (() => {
+        const isEmpty = ctxMenu.node.nodeType === 'category'
+          ? isCategoryEmpty(store.nodes, ctxMenu.node.id)
+          : true
+        return (
         <div
           className="fixed z-50 bg-background-base border border-border-default rounded shadow-xl py-1 min-w-[160px]"
           style={{ top: ctxMenu.y, left: ctxMenu.x }}
@@ -215,10 +219,19 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
               <Pencil size={13} />{t('migration.rename')}
             </button>
             <div className="border-t border-border-subtle my-1" />
-            <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error hover:bg-background-hover transition-colors duration-150"
-              onClick={() => { store.deleteCategory(Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
-              <Trash2 size={13} />{t('migration.delete')}
-            </button>
+            {isEmpty ? (
+              <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error hover:bg-background-hover transition-colors duration-150"
+                onClick={() => { store.deleteCategory(Number(ctxMenu.node.id.replace('cat_', ''))); setCtxMenu(null) }}>
+                <Trash2 size={13} />{t('migration.delete')}
+              </button>
+            ) : (
+              <Tooltip content={t('migration.deleteCategoryNotEmpty')}>
+                <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-error/40 cursor-not-allowed"
+                  disabled>
+                  <Trash2 size={13} />{t('migration.delete')}
+                </button>
+              </Tooltip>
+            )}
           </>)}
 
           {ctxMenu.node.nodeType === 'job' && (() => {
@@ -248,7 +261,8 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
             </>)
           })()}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

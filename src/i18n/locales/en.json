@@ -1214,6 +1214,7 @@
     "firstPage": "First",
     "prevPage": "Previous",
     "nextPage": "Next",
-    "lastPage": "Last"
+    "lastPage": "Last",
+    "deleteCategoryNotEmpty": "Category contains tasks or sub-categories. Please empty the category before deleting."
   }
 }

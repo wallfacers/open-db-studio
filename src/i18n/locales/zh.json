@@ -1215,6 +1215,7 @@
     "firstPage": "首页",
     "prevPage": "上一页",
     "nextPage": "下一页",
-    "lastPage": "末页"
+    "lastPage": "末页",
+    "deleteCategoryNotEmpty": "分类下存在任务或子分类，无法删除。请先清空分类内容。"
   }
 }

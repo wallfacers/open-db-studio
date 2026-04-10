@@ -154,7 +154,25 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
   }, [config.defaultTargetConnId, config.defaultTargetDb])
 
   const update = (patch: Partial<JobConfig>) => {
-    setConfig(prev => ({ ...prev, ...patch }))
+    setConfig(prev => {
+      const next = { ...prev, ...patch }
+      
+      // If default target connection or database changed, sync existing mappings
+      if (patch.hasOwnProperty('defaultTargetConnId') || patch.hasOwnProperty('defaultTargetDb')) {
+        const connId = next.defaultTargetConnId
+        const db = next.defaultTargetDb
+        next.tableMappings = next.tableMappings.map(m => ({
+          ...m,
+          target: {
+            ...m.target,
+            connectionId: connId,
+            database: db,
+          }
+        }))
+      }
+      
+      return next
+    })
     setDirty(true)
   }
 

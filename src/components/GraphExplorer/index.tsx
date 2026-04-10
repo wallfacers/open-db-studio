@@ -48,6 +48,11 @@ const NODE_H = 100;
 const LINK_NODE_W = 260;
 const LINK_NODE_H = 70;
 const CLUSTER_THRESHOLD = 200;
+const GROUP_GAP_X = 600;     // 组间横向间距
+const GROUP_GAP_Y = 500;     // 组间纵向间距
+const MAX_COLS = 4;          // 每行最多组数
+const ESTIMATED_GROUP_W = 1400; // 预估每组宽度（用于新组网格定位）
+const ESTIMATED_GROUP_H = 600;  // 预估每组高度
 
 /** 节点是否拥有已保存的坐标（position_x/position_y 非 null） */
 function hasSavedPosition(n: Node): boolean {
@@ -61,40 +66,114 @@ function buildLayout(
   direction: 'LR' | 'TB' = 'LR',
   forceRelayout = false,
 ): { nodes: Node[]; edges: Edge[] } {
-  // 如果所有节点都有已保存坐标且不是强制重排，直接使用保存的坐标
+  // 快速路径：所有节点都有已保存坐标且不强制重排
   const allSaved = !forceRelayout && nodes.length > 0 && nodes.every(hasSavedPosition);
   if (allSaved) return { nodes, edges };
 
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
-
+  // ── 按 connection_id|database 分组 ───────────────────────────────────────
+  const groupMap = new Map<string, Node[]>();
   nodes.forEach((n) => {
-    const isLink = n.type === 'link';
-    g.setNode(n.id, { width: isLink ? LINK_NODE_W : NODE_W, height: isLink ? LINK_NODE_H : NODE_H });
-  });
-  edges.forEach((e) => {
-    if (e.source && e.target) g.setEdge(e.source, e.target);
+    const d = n.data as Record<string, unknown>;
+    const key = `${d?.connection_id ?? 0}|${d?.database ?? ''}`;
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key)!.push(n);
   });
 
-  dagre.layout(g);
-
-  const laid = nodes.map((n) => {
-    // 有已保存坐标且非强制重排时保持原位
-    if (!forceRelayout && hasSavedPosition(n)) return n;
-    const pos = g.node(n.id);
-    const isLink = n.type === 'link';
-    const w = isLink ? LINK_NODE_W : NODE_W;
-    const h = isLink ? LINK_NODE_H : NODE_H;
-    return {
-      ...n,
-      position: {
-        x: pos ? pos.x - w / 2 : 0,
-        y: pos ? pos.y - h / 2 : 0,
-      },
-    };
+  // 有已保存节点的组优先，其次按节点数降序
+  const sortedGroups = [...groupMap.entries()].sort((a, b) => {
+    const aHasPos = a[1].some((n) => !forceRelayout && hasSavedPosition(n));
+    const bHasPos = b[1].some((n) => !forceRelayout && hasSavedPosition(n));
+    if (aHasPos && !bHasPos) return -1;
+    if (!aHasPos && bHasPos) return 1;
+    return b[1].length - a[1].length;
   });
-  return { nodes: laid, edges };
+
+  // 计算所有已有坐标节点的全局最大 X，作为新组的起始基准
+  let existingMaxX = 0;
+  sortedGroups.forEach(([, groupNodes]) => {
+    groupNodes.forEach((n) => {
+      if (!forceRelayout && hasSavedPosition(n)) {
+        const d = n.data as Record<string, unknown>;
+        const nx = (d.position_x as number) + NODE_W;
+        if (nx > existingMaxX) existingMaxX = nx;
+      }
+    });
+  });
+
+  const resultNodes = new Map<string, Node>(nodes.map((n) => [n.id, n]));
+  let newGroupCol = 0;
+  let newGroupRow = 0;
+
+  sortedGroups.forEach(([, groupNodes]) => {
+    // 本组中需要重新分配坐标的节点
+    const needsLayout = groupNodes.filter((n) => forceRelayout || !hasSavedPosition(n));
+    if (needsLayout.length === 0) return;
+
+    // ── 本组 Dagre（仅对 needsLayout 中有边连接的节点建图）────────────────
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
+
+    needsLayout.forEach((n) => {
+      const isLink = n.type === 'link';
+      g.setNode(n.id, { width: isLink ? LINK_NODE_W : NODE_W, height: isLink ? LINK_NODE_H : NODE_H });
+    });
+
+    const needsLayoutIds = new Set(needsLayout.map((n) => n.id));
+    edges.forEach((e) => {
+      if (needsLayoutIds.has(e.source) && needsLayoutIds.has(e.target)) {
+        g.setEdge(e.source, e.target);
+      }
+    });
+
+    dagre.layout(g);
+
+    // ── 计算本组新节点的基准偏移 ──────────────────────────────────────────
+    const positioned = groupNodes.filter((n) => !forceRelayout && hasSavedPosition(n));
+    let baseX: number;
+    let baseY: number;
+
+    if (positioned.length > 0) {
+      // 有已保存节点：在其右侧插入
+      const d0 = positioned[0].data as Record<string, unknown>;
+      const maxX = positioned.reduce((m, n) => {
+        const d = n.data as Record<string, unknown>;
+        return Math.max(m, (d.position_x as number) + NODE_W);
+      }, 0);
+      const minY = positioned.reduce((m, n) => {
+        const d = n.data as Record<string, unknown>;
+        return Math.min(m, d.position_y as number);
+      }, (d0.position_y as number) ?? 0);
+      baseX = maxX + GROUP_GAP_X;
+      baseY = minY;
+    } else {
+      // 全新组：按网格排列
+      baseX = existingMaxX + newGroupCol * (ESTIMATED_GROUP_W + GROUP_GAP_X);
+      baseY = newGroupRow * (ESTIMATED_GROUP_H + GROUP_GAP_Y);
+      newGroupCol++;
+      if (newGroupCol >= MAX_COLS) {
+        newGroupCol = 0;
+        newGroupRow++;
+      }
+    }
+
+    // ── 应用 Dagre 坐标 ───────────────────────────────────────────────────
+    needsLayout.forEach((n) => {
+      const pos = g.node(n.id);
+      const isLink = n.type === 'link';
+      const w = isLink ? LINK_NODE_W : NODE_W;
+      const h = isLink ? LINK_NODE_H : NODE_H;
+      resultNodes.set(n.id, {
+        ...n,
+        position: {
+          x: baseX + (pos ? pos.x - w / 2 : 0),
+          y: baseY + (pos ? pos.y - h / 2 : 0),
+        },
+      });
+    });
+  });
+
+  return { nodes: nodes.map((n) => resultNodes.get(n.id) ?? n), edges };
 }
 
 // ── Cluster folding ───────────────────────────────────────────────────────────

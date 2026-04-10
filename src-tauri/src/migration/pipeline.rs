@@ -511,7 +511,11 @@ async fn execute_single_mapping(
                 .rows
                 .first()
                 .and_then(|r| r.first())
-                .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n as u64))),
+                .and_then(|v| {
+                    v.as_u64()
+                        .or_else(|| v.as_i64().map(|n| n as u64))
+                        .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+                }),
             Err(_) => None,
         }
     };

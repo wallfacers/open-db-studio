@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useMigrationStore, MigTreeNode, isCategoryEmpty } from '../../store/migrationStore'
 import { migCatNodeId, migJobNodeId } from '../../utils/nodeId'
 import { Tooltip } from '../common/Tooltip'
-import { MigrationMoveModal } from './MigrationMoveModal'
+import { MigrationMovePicker } from './MigrationMovePicker'
 
 interface Props {
   searchQuery: string
@@ -68,7 +68,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [dragOverId, setDragOverId] = useState<string | null>(null)
-  const [moveTargetNode, setMoveTargetNode] = useState<MigTreeNode | null>(null)
+  const [movePicker, setMovePicker] = useState<{ x: number; y: number; node: MigTreeNode } | null>(null)
   const editRef = useRef<HTMLInputElement>(null)
 
   const visible = useMemo(
@@ -298,7 +298,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
               <Pencil size={13} />{t('migration.rename')}
             </button>
             <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-              onClick={() => { setMoveTargetNode(ctxMenu.node); setCtxMenu(null) }}>
+              onClick={() => { setMovePicker({ node: ctxMenu.node, x: ctxMenu.x, y: ctxMenu.y }); setCtxMenu(null) }}>
               <FolderInput size={13} />{t('migration.move')}
             </button>
             <div className="border-t border-border-subtle my-1" />
@@ -337,7 +337,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
                 <Pencil size={13} />{t('migration.rename')}
               </button>
               <button className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 text-foreground-default hover:bg-background-hover transition-colors duration-150"
-                onClick={() => { setMoveTargetNode(jobNode); setCtxMenu(null) }}>
+                onClick={() => { setMovePicker({ node: jobNode, x: ctxMenu.x, y: ctxMenu.y }); setCtxMenu(null) }}>
                 <FolderInput size={13} />{t('migration.move')}
               </button>
               <div className="border-t border-border-subtle my-1" />
@@ -351,10 +351,12 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
         )
       })()}
 
-      {moveTargetNode && (
-        <MigrationMoveModal
-          node={moveTargetNode}
-          onClose={() => setMoveTargetNode(null)}
+      {movePicker && (
+        <MigrationMovePicker
+          node={movePicker.node}
+          x={movePicker.x}
+          y={movePicker.y}
+          onClose={() => setMovePicker(null)}
         />
       )}
     </div>

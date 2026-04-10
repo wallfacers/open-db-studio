@@ -83,6 +83,7 @@ export interface MigrationStatsEvent {
   bytesTransferred: number
   readSpeedRps: number
   writeSpeedRps: number
+  bytesSpeedBps: number
   etaSeconds: number | null
   progressPct: number | null
   currentMapping: string | null
@@ -409,6 +410,7 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
             bytesTransferred: payload.bytesTransferred ?? 0,
             readSpeedRps: 0,
             writeSpeedRps: 0,
+            bytesSpeedBps: 0,
             etaSeconds: 0,
             progressPct: 100,
             currentMapping: null,

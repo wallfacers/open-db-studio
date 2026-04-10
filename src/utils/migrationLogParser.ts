@@ -275,3 +275,12 @@ export function formatElapsed(ms: number): string {
   const rem = (sec % 60).toFixed(0)
   return `${min}m${rem}s`
 }
+
+/** Format bytes-per-second speed to human-readable string.
+ *  < 1 MiB/s → KB/s (1 decimal), ≥ 1 MiB/s → MB/s (2 decimals)
+ *  e.g. 512000 -> "500.0 KB/s", 2097152 -> "2.00 MB/s"
+ */
+export function fmtBytesSpeed(bps: number): string {
+  if (bps < 1_048_576) return `${(bps / 1024).toFixed(1)} KB/s`
+  return `${(bps / 1_048_576).toFixed(2)} MB/s`
+}

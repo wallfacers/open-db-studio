@@ -1204,6 +1204,7 @@
     "colRowsWritten": "写入行数",
     "colRowsFailed": "失败行数",
     "colTransferredSize": "传输大小",
+    "colSpeed": "速度",
     "colLogDetails": "运行日志",
     "colActions": "操作",
     "logDetailTitle": "运行日志详情",

@@ -4,7 +4,7 @@ import { CheckCircle2, XCircle, Clock, AlertCircle, StopCircle, Trash2, Ellipsis
 import { useTranslation } from 'react-i18next'
 import { MigrationRunHistory, MigrationLogEvent, useMigrationStore } from '../../store/migrationStore'
 import { LogDetailModal } from './LogDetailModal'
-import { formatDateTime } from '../../utils/migrationLogParser'
+import { formatDateTime, fmtBytesSpeed } from '../../utils/migrationLogParser'
 import { MigrationStatusIcon } from './StatusIcons'
 
 interface Props { jobId: number }
@@ -102,6 +102,7 @@ export function StatsTab({ jobId }: Props) {
               <th className="text-right px-3 py-2 font-medium">{t('migration.colRowsWritten')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colRowsFailed')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colTransferredSize')}</th>
+              <th className="text-right px-3 py-2 font-medium">{t('migration.colSpeed')}</th>
               <th className="text-center px-3 py-2 font-medium w-20">{t('migration.colLogDetails')}</th>
               <th className="text-center px-3 py-2 font-medium w-16">{t('migration.colActions')}</th>
             </tr>
@@ -123,6 +124,20 @@ export function StatsTab({ jobId }: Props) {
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsWritten ?? 0).toLocaleString()}</td>
                 <td className={`px-3 py-2.5 text-right font-mono ${(run.rowsFailed ?? 0) > 0 ? 'text-error' : 'text-foreground-muted'}`}>{(run.rowsFailed ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{fmtBytes(run.bytesTransferred ?? 0)}</td>
+                <td className="px-3 py-2.5 text-right">
+                  {(() => {
+                    const durationSec = (run.durationMs ?? 0) / 1000
+                    if (durationSec <= 0) return <span className="text-foreground-muted">-</span>
+                    const rowsPerSec = (run.rowsWritten ?? 0) / durationSec
+                    const bytesPerSec = (run.bytesTransferred ?? 0) / durationSec
+                    return (
+                      <div className="flex flex-col items-end gap-0">
+                        <span className="text-accent text-[11px] font-medium">{Math.round(rowsPerSec).toLocaleString()} r/s</span>
+                        <span className="text-accent text-[11px]">{fmtBytesSpeed(bytesPerSec)}</span>
+                      </div>
+                    )
+                  })()}
+                </td>
                 <td className="px-3 py-2.5 text-center">
                   <button
                     onClick={() => handleViewLogs(run)}

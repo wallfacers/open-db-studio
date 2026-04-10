@@ -334,6 +334,7 @@ pub struct MigrationStatsEvent {
     pub bytes_transferred: u64,
     pub read_speed_rps: f64,
     pub write_speed_rps: f64,
+    pub bytes_speed_bps: f64,  // 瞬时字节速度（字节/秒），每秒差分计算
     pub eta_seconds: Option<f64>,
     pub progress_pct: Option<f64>,
     pub current_mapping: Option<String>,

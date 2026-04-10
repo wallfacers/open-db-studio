@@ -583,6 +583,7 @@ async fn execute_single_mapping(
     let stats_handle = tokio::spawn(async move {
         let mut prev_read = 0u64;
         let mut prev_written = 0u64;
+        let mut prev_bytes = 0u64;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             if cancel_s.load(Ordering::Relaxed) {
@@ -592,6 +593,8 @@ async fn execute_single_mapping(
             let rows_written = ms_clone.rows_written.load(Ordering::Relaxed);
             let delta_read = rows_read.saturating_sub(prev_read) as f64;
             let delta_written = rows_written.saturating_sub(prev_written) as f64;
+            let bytes_now = ms_clone.bytes_transferred.load(Ordering::Relaxed);
+            let delta_bytes = bytes_now.saturating_sub(prev_bytes) as f64;
             let (eta, pct) = if let Some(total) = total_rows {
                 if rows_read < total {
                     let rps = delta_read.max(1.0);
@@ -616,6 +619,7 @@ async fn execute_single_mapping(
                 bytes_transferred: gs.bytes_transferred.load(Ordering::Relaxed),
                 read_speed_rps: delta_read,
                 write_speed_rps: delta_written,
+                bytes_speed_bps: delta_bytes,
                 eta_seconds: eta,
                 progress_pct: pct,
                 current_mapping: Some(ml.clone()),
@@ -628,6 +632,7 @@ async fn execute_single_mapping(
             let _ = app_stats.emit(MIGRATION_STATS_EVENT, &event);
             prev_read = rows_read;
             prev_written = rows_written;
+            prev_bytes = bytes_now;
         }
     });
 

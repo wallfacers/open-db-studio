@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { MigrationLogEvent, MigrationStatsEvent, LogViewMode } from '../../store/migrationStore'
 import { TimelineView } from './TimelineView'
 import { MappingCard } from './MappingCard'
-import { parseMilestones, formatTimestamp } from '../../utils/migrationLogParser'
+import { parseMilestones, formatTimestamp, fmtBytesSpeed } from '../../utils/migrationLogParser'
 
 interface Props {
   jobId: number
@@ -65,8 +65,12 @@ export function LogTab({ stats, logs, viewMode, hasFailed }: Props) {
             <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.dirtyRows')} </span><span className={stats.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{stats.rowsFailed.toLocaleString()}</span></span>
             <span className="text-border-strong flex-shrink-0">|</span>
             <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{Math.round(stats.writeSpeedRps).toLocaleString()} r/s</span>
+            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{fmtBytesSpeed(stats.bytesSpeedBps)}</span>
             {stats.etaSeconds !== null && (
-              <span className="text-foreground-default flex-shrink-0">{stats.etaSeconds < 60 ? `${Math.round(stats.etaSeconds)}s` : `${Math.round(stats.etaSeconds / 60)}m${Math.round(stats.etaSeconds % 60)}s`}</span>
+              <>
+                <span className="text-border-strong flex-shrink-0">|</span>
+                <span className="text-foreground-default flex-shrink-0">{stats.etaSeconds < 60 ? `${Math.round(stats.etaSeconds)}s` : `${Math.round(stats.etaSeconds / 60)}m${Math.round(stats.etaSeconds % 60)}s`}</span>
+              </>
             )}
             {stats.currentMapping && stats.mappingProgress && (
               <>

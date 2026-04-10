@@ -1203,6 +1203,7 @@
     "colRowsWritten": "Rows Written",
     "colRowsFailed": "Rows Failed",
     "colTransferredSize": "Transferred",
+    "colSpeed": "Speed",
     "colLogDetails": "Log Details",
     "colActions": "Actions",
     "logDetailTitle": "Run Log Details",

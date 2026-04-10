@@ -29,13 +29,12 @@ import {
 import dagre from 'dagre';
 import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store';
-import { useConnectionStore } from '../../store/connectionStore';
 import { useGraphData } from './useGraphData';
 import { nodeTypes, edgeTypes } from './nodeTypes';
 import { getEdgeStyleBySource } from './graphUtils';
 import { NodeDetail } from './NodeDetail';
 import { AliasEditor } from './AliasEditor';
-import { DropdownSelect } from '../common/DropdownSelect';
+import { ConnectionDbSelector } from '../common/ConnectionDbSelector';
 import type { GraphNode } from './useGraphData';
 import { GraphSearchPanel } from './GraphSearchPanel';
 import { Tooltip } from '../common/Tooltip';
@@ -218,55 +217,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const { t } = useTranslation();
 
   // ── Independent connection / database selection ────────────────────────────
-  const { connections, loadConnections } = useConnectionStore();
-  const [internalConnId, setInternalConnId] = useState<number | null>(() => connectionId);
-  const [internalDb, setInternalDb] = useState<string | null>(() => database ?? null);
-  const [databases, setDatabases] = useState<string[]>([]);
-  const [dbLoading, setDbLoading] = useState(false);
-  const [dbError, setDbError] = useState<string | null>(null);
+  const [internalConnId, setInternalConnId] = useState<number>(() => connectionId ?? 0);
+  const [internalDb, setInternalDb] = useState<string>(() => database ?? '');
 
-  // Ensure connections are loaded
-  useEffect(() => {
-    if (connections.length === 0) loadConnections();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Load database list when connection changes
-  useEffect(() => {
-    if (internalConnId === null) {
-      setDatabases([]);
-      setDbError(null);
-      return;
-    }
-    let cancelled = false;
-    setDbLoading(true);
-    setDbError(null);
-
-    const timeoutId = setTimeout(() => {
-      if (!cancelled) {
-        cancelled = true;
-        setDbLoading(false);
-        setDbError('加载超时');
-      }
-    }, 15000);
-
-    invoke<string[]>('list_databases_for_metrics', { connectionId: internalConnId })
-      .then(dbs => { if (!cancelled) setDatabases(dbs); })
-      .catch((err) => {
-        if (!cancelled) {
-          setDatabases([]);
-          setDbError(typeof err === 'string' ? err : '加载失败');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setDbLoading(false);
-        clearTimeout(timeoutId);
-      });
-
-    return () => { cancelled = true; clearTimeout(timeoutId); };
-  }, [internalConnId]);
-
-  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId, internalDb);
+  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId > 0 ? internalConnId : null, internalDb || null);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -344,7 +298,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   const handleAddNodeSubmit = useCallback(async () => {
     const name = addNodeName.trim();
-    if (!name || !internalConnId) return;
+    if (!name || internalConnId === 0) return;
     setAddNodeLoading(true);
     try {
       await invoke('add_user_node', {
@@ -591,10 +545,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const handleAutoLayout = useCallback(async () => {
     // 清除本次拖拽缓存和数据库中的已保存坐标
     draggedPositionsRef.current.clear();
-    if (internalConnId !== null) {
+    if (internalConnId > 0) {
       await invoke('clear_graph_node_positions', {
         connectionId: internalConnId,
-        database: internalDb ?? null,
+        database: internalDb || null,
       }).catch((err) => console.warn('[GraphExplorer] clear positions failed:', err));
     }
     const { nodes: laid, edges: laidEdges } = buildLayout(rfNodes, rfEdges, 'LR', true);
@@ -650,10 +604,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Build schema graph (with TaskBar integration) ───────────────────────────
   const handleBuildGraph = useCallback(async () => {
-    if (internalConnId === null) return;
+    if (!internalConnId) return;
     setIsBuilding(true);
     try {
-      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId: internalConnId, database: internalDb ?? null });
+      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId: internalConnId, database: internalDb || null });
 
       let taskId: string | null = null;
       if (result && typeof result === 'object' && 'task_id' in result) {
@@ -692,7 +646,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
       // Fallback: still try to refresh
       refetch();
     }
-  }, [connectionId, refetch, _addTaskStub, loadTasks]);
+  }, [internalConnId, internalDb, refetch, _addTaskStub, loadTasks]);
 
   // ── Watch bgTasks for build_schema_graph completion ──────────────────────────
   useEffect(() => {
@@ -920,34 +874,16 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         <Network size={16} className="text-accent flex-shrink-0" />
         <span className="text-foreground-default text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 
-        {/* Connection selector */}
-        <DropdownSelect
-          value={internalConnId !== null ? String(internalConnId) : ''}
-          options={connections.map(c => ({ value: String(c.id), label: c.name }))}
-          placeholder={t('graphExplorer.selectConnection')}
-          onChange={(v) => {
-            setInternalConnId(v ? Number(v) : null);
-            setInternalDb(null);
-          }}
-          className="w-36"
+        {/* Connection + Database selector */}
+        <ConnectionDbSelector
+          connectionId={internalConnId}
+          database={internalDb}
+          onConnectionChange={v => { setInternalConnId(v); setInternalDb(''); }}
+          onDatabaseChange={setInternalDb}
+          connectionPlaceholder={t('graphExplorer.selectConnection')}
+          databasePlaceholder={t('graphExplorer.allDatabases', '全部数据库')}
+          direction="horizontal"
         />
-
-        {/* Database selector (optional, shown when databases are available) */}
-        {internalConnId !== null && databases.length > 0 && !dbLoading && (
-          <DropdownSelect
-            value={internalDb ?? ''}
-            options={databases.map(db => ({ value: db, label: db }))}
-            placeholder={t('graphExplorer.allDatabases', '全部数据库')}
-            onChange={(v) => setInternalDb(v || null)}
-            className="w-32"
-          />
-        )}
-        {internalConnId !== null && dbLoading && (
-          <Loader2 size={14} className="animate-spin text-foreground-muted" />
-        )}
-        {internalConnId !== null && !dbLoading && dbError && (
-          <span className="text-[11px] text-error" title={dbError}>{dbError}</span>
-        )}
 
         {/* Type filter */}
         <div className="flex items-center gap-1">
@@ -1089,11 +1025,11 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative graph-canvas-container" onMouseMove={onEdgeMouseMove}>
           {/* Empty state overlay */}
-          {!loading && (internalConnId === null || rfNodes.length === 0) && (
+          {!loading && (!internalConnId || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
               <Network size={36} className="text-border-strong mb-3" />
               <p className="text-foreground-muted text-sm">
-                {internalConnId === null
+                {!internalConnId
                   ? t('graphExplorer.selectConnection')
                   : rawNodes.length === 0
                     ? t('graphExplorer.noData')
@@ -1195,7 +1131,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         {/* Search / Path panel */}
         {activePanel === 'search' && (
           <GraphSearchPanel
-            connectionId={internalConnId}
+            connectionId={internalConnId > 0 ? internalConnId : null}
             visibleNodeIds={visibleNodeIds}
             pathFrom={pathFrom}
             pathTo={pathTo}

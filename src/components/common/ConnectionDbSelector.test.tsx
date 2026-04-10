@@ -158,4 +158,21 @@ describe('ConnectionDbSelector', () => {
     await flushAsync()
     expect(container.textContent).toContain('连接超时')
   })
+
+  it('shows error indicator in horizontal mode when database load fails', async () => {
+    mockInvoke.mockRejectedValue('timeout')
+    const { container } = renderIntoDoc(
+      <ConnectionDbSelector
+        connectionId={1}
+        database=""
+        direction="horizontal"
+        onConnectionChange={() => {}}
+        onDatabaseChange={() => {}}
+      />,
+    )
+    await flushAsync()
+    const errorSpan = container.querySelector('span[title="timeout"]')
+    expect(errorSpan).not.toBeNull()
+    expect(errorSpan?.textContent).toBe('!')
+  })
 })

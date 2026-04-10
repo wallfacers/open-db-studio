@@ -514,7 +514,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     // 合并本次会话拖拽过的坐标，防止高亮/焦点等状态变化导致位置回弹
     const mergedNodes = flowNodes.map(n => {
       const dragged = draggedPositionsRef.current.get(n.id);
-      if (dragged) return { ...n, position: dragged };
+      if (dragged) return { ...n, position: dragged, data: { ...n.data as Record<string, unknown>, position_x: dragged.x, position_y: dragged.y } };
       return n;
     });
     const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);

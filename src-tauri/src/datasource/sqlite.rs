@@ -68,11 +68,24 @@ impl DataSource for SqliteDataSource {
             // semicolon-separated statements in a single call.
             let trimmed = crate::datasource::utils::strip_leading_comments(&sql).to_uppercase();
             if !trimmed.starts_with("SELECT") && !trimmed.starts_with("PRAGMA") && !trimmed.starts_with("EXPLAIN") {
-                guard
-                    .execute_batch(&sql)
-                    .map_err(|e| AppError::Datasource(e.to_string()))?;
-                let duration_ms = start.elapsed().as_millis() as u64;
-                return Ok(QueryResult { columns: vec![], rows: vec![], row_count: 0, duration_ms });
+                let stmts = crate::datasource::utils::split_sql_statements(&sql);
+                let duration_ms;
+                let affected = if stmts.len() == 1 {
+                    // Single statement: use execute() to get affected row count
+                    let n = guard
+                        .execute(&sql, [])
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    duration_ms = start.elapsed().as_millis() as u64;
+                    n
+                } else {
+                    // Multi-statement batch (DDL scripts etc.): execute_batch doesn't return count
+                    guard
+                        .execute_batch(&sql)
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    duration_ms = start.elapsed().as_millis() as u64;
+                    0
+                };
+                return Ok(QueryResult { columns: vec![], rows: vec![], row_count: affected, duration_ms });
             }
 
             let mut stmt = guard

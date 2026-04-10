@@ -78,10 +78,11 @@ pub(super) fn make_node_id(connection_id: i64, node_type: &str, database: Option
 }
 
 /// FK link ID 生成规则（与 change_detector 共享格式）
-/// 例：`link:8:test_project:orders:users:user_id`
+/// 格式与 make_node_id 一致：`{connection_id}:link:{database}:{table}:{ref_table}:{column}`
+/// 例：`8:link:test_project:orders:users:user_id`
 pub(super) fn make_fk_link_id(connection_id: i64, database: Option<&str>, table: &str, ref_table: &str, column: &str) -> String {
     let prefix = db_prefix(database);
-    format!("link:{}:{}{}:{}:{}", connection_id, prefix, table, ref_table, column)
+    format!("{}:link:{}{}:{}:{}", connection_id, prefix, table, ref_table, column)
 }
 
 // ─── 核心函数 ──────────────────────────────────────────────────────────────────

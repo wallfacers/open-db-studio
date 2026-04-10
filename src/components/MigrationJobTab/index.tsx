@@ -125,10 +125,10 @@ export function MigrationJobTab({ jobId }: Props) {
             <div className="w-[1px] h-4 bg-border-strong mx-1" />
             <Tooltip content={t('migration.save')}>
               <button
-                className="flex items-center gap-1.5 px-2 py-1 rounded text-[12px] bg-accent text-white hover:bg-accent-hover transition-colors"
+                className="p-1.5 rounded transition-colors text-accent hover:bg-border-default"
                 onClick={handleSaveConfig}
               >
-                <Save size={13} />{t('migration.save')}
+                <Save size={16} />
               </button>
             </Tooltip>
           </>
@@ -155,18 +155,16 @@ export function MigrationJobTab({ jobId }: Props) {
         {activeTab === 'stats' && <StatsTab jobId={jobId} />}
       </div>
 
-      {/* Log Panel Resize Handle */}
-      {logHeight > 0 && (
-        <div
-          className="h-[5px] cursor-row-resize z-10 hover:bg-accent transition-colors flex-shrink-0 border-t border-border-default"
-          onMouseDown={handleLogResize}
-        />
-      )}
-
       {/* Log Bottom Panel */}
-      <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: logHeight }}>
-        {/* Log tab-bar — SQL editor result pane style */}
-        <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
+      {logHeight > 0 && (
+        <div className="flex flex-col bg-background-void flex-shrink-0 relative" style={{ height: logHeight }}>
+          {/* Resize Handle — absolutely positioned at top, no layout gap */}
+          <div
+            className="absolute top-0 left-0 right-0 h-[5px] cursor-row-resize z-10 border-t border-border-default hover:border-accent transition-colors"
+            onMouseDown={handleLogResize}
+          />
+          {/* Log tab-bar — SQL editor result pane style */}
+          <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
           <div className="px-3 h-[38px] flex items-center gap-1.5 text-xs border-t-2 border-accent bg-background-void text-accent border-r border-r-border-default flex-shrink-0">
             <span>{t('migration.logTab')}</span>
             {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}

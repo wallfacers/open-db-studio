@@ -521,6 +521,7 @@ async fn execute_single_mapping(
     let dst_driver = dst_cfg.driver.clone();
     let column_mapping = mapping.column_mappings.clone();
     let conflict_strategy = mapping.target.conflict_strategy.clone();
+    let upsert_keys = mapping.target.upsert_keys.clone();
     let error_limit = config.pipeline.error_limit;
     let read_batch_size = config.pipeline.read_batch_size.max(1);
     let write_batch_size = config.pipeline.write_batch_size.max(1);
@@ -640,6 +641,7 @@ async fn execute_single_mapping(
     let run_id_w = run_id.to_string();
     let cancel_w = cancel.clone();
     let ml_w = mapping_label.clone();
+    let upsert_keys_w = upsert_keys.clone();
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
@@ -670,6 +672,7 @@ async fn execute_single_mapping(
                         &buf_columns,
                         &rows_to_write,
                         &conflict_strategy,
+                        &upsert_keys_w,
                         &dst_driver,
                     )
                     .await
@@ -706,6 +709,7 @@ async fn execute_single_mapping(
                 &buf_columns,
                 &write_buf,
                 &conflict_strategy,
+                &upsert_keys_w,
                 &dst_driver,
             )
             .await
@@ -952,28 +956,101 @@ async fn write_batch(
     columns: &[String],
     rows: &[Row],
     conflict_strategy: &ConflictStrategy,
+    upsert_keys: &[String],
     driver: &str,
 ) -> AppResult<usize> {
     if rows.is_empty() || columns.is_empty() {
         return Ok(0);
     }
 
-    let (keyword, suffix) = match (conflict_strategy, driver) {
-        (ConflictStrategy::Skip, "sqlite") => ("INSERT OR IGNORE INTO", ""),
-        (ConflictStrategy::Replace, "sqlite") => ("INSERT OR REPLACE INTO", ""),
-        (ConflictStrategy::Skip, "mysql" | "doris" | "tidb") => ("INSERT IGNORE INTO", ""),
-        (ConflictStrategy::Replace, "mysql" | "doris" | "tidb") => ("REPLACE INTO", ""),
-        (ConflictStrategy::Skip, "postgres" | "gaussdb") => {
-            ("INSERT INTO", " ON CONFLICT DO NOTHING")
-        }
-        _ => ("INSERT INTO", ""),
-    };
-
     let quote_col: fn(&str) -> String = match driver {
         "mysql" | "doris" | "tidb" | "clickhouse" => |c| format!("`{}`", c.replace('`', "``")),
         "sqlserver" => |c| format!("[{}]", c.replace(']', "]]")),
         _ => |c| format!("\"{}\"", c.replace('"', "\"\"")),
     };
+
+    let key_set: std::collections::HashSet<&str> =
+        upsert_keys.iter().map(|s| s.as_str()).collect();
+
+    let (keyword, suffix): (&str, std::borrow::Cow<str>) = match (conflict_strategy, driver) {
+        (ConflictStrategy::Skip, "sqlite") => ("INSERT OR IGNORE INTO", "".into()),
+        (ConflictStrategy::Replace, "sqlite") => ("INSERT OR REPLACE INTO", "".into()),
+        (ConflictStrategy::Skip, "mysql" | "doris" | "tidb") => ("INSERT IGNORE INTO", "".into()),
+        (ConflictStrategy::Replace, "mysql" | "doris" | "tidb") => ("REPLACE INTO", "".into()),
+        (ConflictStrategy::Skip, "postgres" | "gaussdb") => {
+            ("INSERT INTO", " ON CONFLICT DO NOTHING".into())
+        }
+        // Upsert for MySQL-compatible: INSERT INTO ... ON DUPLICATE KEY UPDATE col=VALUES(col)
+        (ConflictStrategy::Upsert, "mysql" | "doris" | "tidb") => {
+            let update_parts: Vec<String> = columns
+                .iter()
+                .filter(|c| !key_set.contains(c.as_str()))
+                .map(|c| format!("{}=VALUES({})", quote_col(c), quote_col(c)))
+                .collect();
+            if update_parts.is_empty() {
+                ("INSERT IGNORE INTO", "".into())
+            } else {
+                (
+                    "INSERT INTO",
+                    format!(" ON DUPLICATE KEY UPDATE {}", update_parts.join(", ")).into(),
+                )
+            }
+        }
+        // Upsert for PostgreSQL / GaussDB: INSERT INTO ... ON CONFLICT (keys) DO UPDATE SET col=EXCLUDED.col
+        (ConflictStrategy::Upsert, "postgres" | "gaussdb") => {
+            let update_parts: Vec<String> = columns
+                .iter()
+                .filter(|c| !key_set.contains(c.as_str()))
+                .map(|c| format!("{}=EXCLUDED.{}", quote_col(c), quote_col(c)))
+                .collect();
+            if upsert_keys.is_empty() || update_parts.is_empty() {
+                ("INSERT INTO", " ON CONFLICT DO NOTHING".into())
+            } else {
+                let key_cols = upsert_keys
+                    .iter()
+                    .map(|k| quote_col(k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    "INSERT INTO",
+                    format!(
+                        " ON CONFLICT ({}) DO UPDATE SET {}",
+                        key_cols,
+                        update_parts.join(", ")
+                    )
+                    .into(),
+                )
+            }
+        }
+        // Upsert for SQLite (3.24+): INSERT INTO ... ON CONFLICT (keys) DO UPDATE SET col=excluded.col
+        (ConflictStrategy::Upsert, "sqlite") => {
+            let update_parts: Vec<String> = columns
+                .iter()
+                .filter(|c| !key_set.contains(c.as_str()))
+                .map(|c| format!("{}=excluded.{}", quote_col(c), quote_col(c)))
+                .collect();
+            if upsert_keys.is_empty() || update_parts.is_empty() {
+                ("INSERT OR REPLACE INTO", "".into())
+            } else {
+                let key_cols = upsert_keys
+                    .iter()
+                    .map(|k| quote_col(k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    "INSERT INTO",
+                    format!(
+                        " ON CONFLICT ({}) DO UPDATE SET {}",
+                        key_cols,
+                        update_parts.join(", ")
+                    )
+                    .into(),
+                )
+            }
+        }
+        _ => ("INSERT INTO", "".into()),
+    };
+
     let col_list = columns
         .iter()
         .map(|c| quote_col(c))

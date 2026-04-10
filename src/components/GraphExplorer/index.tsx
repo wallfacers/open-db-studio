@@ -675,16 +675,38 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     // Calculate 1-hop neighbors from filteredEdges
     const neighborNodeIds = new Set<string>();
     const neighborEdgeIds = new Set<string>();
+    const potentialLinkNodes = new Set<string>();
 
     filteredEdges.forEach(edge => {
       if (edge.from_node === nodeId) {
         neighborNodeIds.add(edge.to_node);
         neighborEdgeIds.add(edge.id);
+        if (raw.node_type !== 'link') potentialLinkNodes.add(edge.to_node);
       } else if (edge.to_node === nodeId) {
         neighborNodeIds.add(edge.from_node);
         neighborEdgeIds.add(edge.id);
+        if (raw.node_type !== 'link') potentialLinkNodes.add(edge.from_node);
       }
     });
+
+    // 2nd pass: if clicked node is not a link, expand its 1-hop neighbors that ARE links
+    if (raw.node_type !== 'link' && potentialLinkNodes.size > 0) {
+      const actualLinkNodes = new Set(
+        rawNodes.filter(n => n.node_type === 'link' && potentialLinkNodes.has(n.id)).map(n => n.id)
+      );
+      
+      if (actualLinkNodes.size > 0) {
+        filteredEdges.forEach(edge => {
+          if (actualLinkNodes.has(edge.from_node)) {
+            neighborNodeIds.add(edge.to_node);
+            neighborEdgeIds.add(edge.id);
+          } else if (actualLinkNodes.has(edge.to_node)) {
+            neighborNodeIds.add(edge.from_node);
+            neighborEdgeIds.add(edge.id);
+          }
+        });
+      }
+    }
 
     // Include the clicked node itself
     neighborNodeIds.add(nodeId);

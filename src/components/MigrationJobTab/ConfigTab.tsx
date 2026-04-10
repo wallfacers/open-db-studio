@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
-import { DropdownSelect } from '../common/DropdownSelect'
+import { ConnectionDbSelector } from '../common/ConnectionDbSelector'
 import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
 import { TableMappingPanel } from './TableMappingPanel'
 import { INPUT_CLS } from './styles'
@@ -66,13 +66,8 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
   ref
 ) {
   const { t } = useTranslation()
-  const [connections, setConnections] = useState<Array<{ id: number; name: string }>>([])
-  const [sourceDatabases, setSourceDatabases] = useState<string[]>([])
-  const [targetDatabases, setTargetDatabases] = useState<string[]>([])
   const [sourceTables, setSourceTables] = useState<TableInfo[]>([])
   const [targetTables, setTargetTables] = useState<Array<{ name: string }>>([])
-  const [dbsLoading, setDbsLoading] = useState(false)
-  const [targetDbsLoading, setTargetDbsLoading] = useState(false)
   const [tablesLoading, setTablesLoading] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [aiLoadingMap, setAiLoadingMap] = useState<Record<number, boolean>>({})
@@ -130,24 +125,10 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
   }, [configJson])
 
   useEffect(() => {
-    invoke<Array<{ id: number; name: string }>>('list_connections').then(setConnections).catch(() => {})
     invoke<{ id: number } | null>('get_default_llm_config')
       .then(r => setHasAi(r !== null))
       .catch(() => setHasAi(false))
   }, [])
-
-  useEffect(() => {
-    if (!config.source.connectionId) {
-      setSourceDatabases([])
-      setSourceTables([])
-      return
-    }
-    setDbsLoading(true)
-    invoke<string[]>('list_databases', { connectionId: config.source.connectionId })
-      .then(setSourceDatabases)
-      .catch(() => setSourceDatabases([]))
-      .finally(() => setDbsLoading(false))
-  }, [config.source.connectionId])
 
   useEffect(() => {
     if (!config.source.connectionId || !config.source.database) {
@@ -160,19 +141,6 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
       .catch(() => setSourceTables([]))
       .finally(() => setTablesLoading(false))
   }, [config.source.connectionId, config.source.database])
-
-  useEffect(() => {
-    if (!config.defaultTargetConnId) {
-      setTargetDatabases([])
-      setTargetTables([])
-      return
-    }
-    setTargetDbsLoading(true)
-    invoke<string[]>('list_databases_for_metrics', { connectionId: config.defaultTargetConnId })
-      .then(setTargetDatabases)
-      .catch(() => setTargetDatabases([]))
-      .finally(() => setTargetDbsLoading(false))
-  }, [config.defaultTargetConnId])
 
   useEffect(() => {
     if (!config.defaultTargetConnId || !config.defaultTargetDb) {
@@ -253,25 +221,19 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
         {/* Source */}
         <div className="bg-background-panel border border-border-subtle rounded p-3 flex flex-col gap-2">
           <div className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.sourceEnd')}</div>
-          <DropdownSelect
-            value={config.source.connectionId ? String(config.source.connectionId) : ''}
-            onChange={val => update({
-              source: { ...config.source, connectionId: val ? Number(val) : 0, database: '', tables: [] },
+          <ConnectionDbSelector
+            connectionId={config.source.connectionId}
+            database={config.source.database}
+            onConnectionChange={val => update({
+              source: { ...config.source, connectionId: val, database: '', tables: [] },
               tableMappings: [],
             })}
-            options={connections.map(c => ({ value: String(c.id), label: c.name }))}
-            placeholder={t('migration.sourceConn')}
-            className="w-full"
-          />
-          <DropdownSelect
-            value={config.source.database}
-            onChange={val => update({
+            onDatabaseChange={val => update({
               source: { ...config.source, database: val, tables: [] },
               tableMappings: [],
             })}
-            options={sourceDatabases.map(db => ({ value: db, label: db }))}
-            placeholder={dbsLoading ? t('migration.loadingDatabases') : t('migration.sourceDatabase')}
-            className="w-full"
+            connectionPlaceholder={t('migration.sourceConn')}
+            databasePlaceholder={t('migration.sourceDatabase')}
           />
           <div className="flex gap-2 text-[12px]">
             <label className="flex items-center gap-1 cursor-pointer text-foreground-muted">
@@ -322,19 +284,13 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
           <div className="text-[11px] text-foreground-muted uppercase tracking-wide">
             {t('migration.targetEnd')} ({t('migration.defaults')})
           </div>
-          <DropdownSelect
-            value={config.defaultTargetConnId ? String(config.defaultTargetConnId) : ''}
-            onChange={val => update({ defaultTargetConnId: val ? Number(val) : 0, defaultTargetDb: '' })}
-            options={connections.map(c => ({ value: String(c.id), label: c.name }))}
-            placeholder={t('migration.targetConn')}
-            className="w-full"
-          />
-          <DropdownSelect
-            value={config.defaultTargetDb}
-            onChange={val => update({ defaultTargetDb: val })}
-            options={targetDatabases.map(db => ({ value: db, label: db }))}
-            placeholder={targetDbsLoading ? t('migration.loadingDatabases') : t('migration.targetDatabase')}
-            className="w-full"
+          <ConnectionDbSelector
+            connectionId={config.defaultTargetConnId}
+            database={config.defaultTargetDb}
+            onConnectionChange={val => update({ defaultTargetConnId: val, defaultTargetDb: '' })}
+            onDatabaseChange={val => update({ defaultTargetDb: val })}
+            connectionPlaceholder={t('migration.targetConn')}
+            databasePlaceholder={t('migration.targetDatabase')}
           />
           {/* Pipeline params */}
           <div className="border-t border-border-subtle pt-2 mt-1 grid grid-cols-2 gap-x-3 gap-y-1">

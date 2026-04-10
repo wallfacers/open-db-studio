@@ -109,7 +109,7 @@ function buildLayout(
     const needsLayout = groupNodes.filter((n) => forceRelayout || !hasSavedPosition(n));
     if (needsLayout.length === 0) return;
 
-    // ── 本组 Dagre（仅对 needsLayout 中有边连接的节点建图）────────────────
+    // ── 本组 Dagre（对 needsLayout 中所有节点建图，只包含两端均在 needsLayout 中的边）────────────────
     const g = new dagre.graphlib.Graph();
     g.setDefaultEdgeLabel(() => ({}));
     g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
@@ -135,17 +135,16 @@ function buildLayout(
 
     if (positioned.length > 0) {
       // 有已保存节点：在其右侧插入
-      const d0 = positioned[0].data as Record<string, unknown>;
       const maxX = positioned.reduce((m, n) => {
         const d = n.data as Record<string, unknown>;
         return Math.max(m, (d.position_x as number) + NODE_W);
-      }, 0);
+      }, -Infinity);
       const minY = positioned.reduce((m, n) => {
         const d = n.data as Record<string, unknown>;
         return Math.min(m, d.position_y as number);
-      }, (d0.position_y as number) ?? 0);
-      baseX = maxX + GROUP_GAP_X;
-      baseY = minY;
+      }, Infinity);
+      baseX = (isFinite(maxX) ? maxX : 0) + GROUP_GAP_X;
+      baseY = isFinite(minY) ? minY : 0;
     } else {
       // 全新组：按网格排列
       baseX = existingMaxX + newGroupCol * (ESTIMATED_GROUP_W + GROUP_GAP_X);

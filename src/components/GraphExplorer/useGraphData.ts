@@ -9,6 +9,7 @@ export interface GraphNode {
   aliases: string;
   metadata: string;
   connection_id: number;
+  database?: string | null;
   is_deleted: number;
   source: string;
   position_x: number | null;

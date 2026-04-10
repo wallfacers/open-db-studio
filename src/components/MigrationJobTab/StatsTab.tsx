@@ -121,7 +121,7 @@ export function StatsTab({ jobId }: Props) {
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsRead ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsWritten ?? 0).toLocaleString()}</td>
-                <td className="px-3 py-2.5 text-right font-mono {(run.rowsFailed ?? 0) > 0 ? 'text-error' : 'text-foreground-muted'}">{(run.rowsFailed ?? 0).toLocaleString()}</td>
+                <td className={`px-3 py-2.5 text-right font-mono ${(run.rowsFailed ?? 0) > 0 ? 'text-error' : 'text-foreground-muted'}`}>{(run.rowsFailed ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{fmtBytes(run.bytesTransferred ?? 0)}</td>
                 <td className="px-3 py-2.5 text-center">
                   <button
@@ -153,7 +153,7 @@ export function StatsTab({ jobId }: Props) {
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-2 border-t border-border-subtle bg-background-base flex-shrink-0">
           <span className="text-[11px] text-foreground-muted">
-            {t('metricsExplorer.metricList.total')} {history.length}
+            {t('migration.total')} {history.length}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -161,14 +161,14 @@ export function StatsTab({ jobId }: Props) {
               disabled={safePage === 1}
               className="px-2 py-1 text-[11px] rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              {t('metricsExplorer.metricList.firstPage')}
+              {t('migration.firstPage')}
             </button>
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={safePage === 1}
               className="px-2 py-1 text-[11px] rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              {t('metricsExplorer.metricList.prevPage')}
+              {t('migration.prevPage')}
             </button>
             <span className="px-2 text-[11px] text-foreground-default min-w-[60px] text-center">
               {safePage} / {totalPages}
@@ -178,14 +178,14 @@ export function StatsTab({ jobId }: Props) {
               disabled={safePage === totalPages}
               className="px-2 py-1 text-[11px] rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              {t('metricsExplorer.metricList.nextPage')}
+              {t('migration.nextPage')}
             </button>
             <button
               onClick={() => setPage(totalPages)}
               disabled={safePage === totalPages}
               className="px-2 py-1 text-[11px] rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              {t('metricsExplorer.metricList.lastPage')}
+              {t('migration.lastPage')}
             </button>
           </div>
         </div>

@@ -18,6 +18,18 @@ const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
 
 // ── Log collector (thread-safe) ──────────────────────────────────────────────
 
+fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> MigrationLogEvent {
+    MigrationLogEvent {
+        job_id,
+        run_id: run_id.to_string(),
+        level: level.to_string(),
+        message: message.to_string(),
+        timestamp: chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string(),
+    }
+}
+
 pub struct LogCollector(pub Vec<MigrationLogEvent>);
 
 impl LogCollector {
@@ -33,17 +45,9 @@ impl LogCollector {
         level: &str,
         message: &str,
     ) {
-        let event = MigrationLogEvent {
-            job_id,
-            run_id: run_id.to_string(),
-            level: level.to_string(),
-            message: message.to_string(),
-            timestamp: chrono::Utc::now()
-                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-                .to_string(),
-        };
+        let event = build_log_event(job_id, run_id, level, message);
         let _ = app.emit(MIGRATION_LOG_EVENT, &event);
-        self.0.push(event.clone());
+        self.0.push(event);
     }
 }
 
@@ -83,16 +87,7 @@ pub fn cancel_run(job_id: i64) {
 // ── Standalone emit (for helpers that don't collect logs) ─────────────────────
 
 fn emit_log(app: &AppHandle, job_id: i64, run_id: &str, level: &str, message: &str) {
-    let event = MigrationLogEvent {
-        job_id,
-        run_id: run_id.to_string(),
-        level: level.to_string(),
-        message: message.to_string(),
-        timestamp: chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string(),
-    };
-    let _ = app.emit(MIGRATION_LOG_EVENT, &event);
+    let _ = app.emit(MIGRATION_LOG_EVENT, &build_log_event(job_id, run_id, level, message));
 }
 
 // ── Internal batch type ───────────────────────────────────────────────────────
@@ -187,9 +182,9 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
             runs.remove(&job_id);
         }
 
-        let (msg, _logs) = match result {
-            Ok((summary, logs)) => (summary, logs),
-            Err(e) => (e.to_string(), Vec::new()),
+        let msg = match result {
+            Ok(summary) => summary,
+            Err(e) => e.to_string(),
         };
 
         let mut log_collector = log_collector_clone.lock().unwrap();
@@ -283,7 +278,7 @@ async fn execute_pipeline(
     app: AppHandle,
     cancel: Arc<AtomicBool>,
     logs: Arc<Mutex<LogCollector>>,
-) -> AppResult<(String, Vec<MigrationLogEvent>)> {
+) -> AppResult<String> {
     let stats = PipelineStats::new();
     let start = Instant::now();
     let total_mappings = config.table_mappings.len();
@@ -297,7 +292,7 @@ async fn execute_pipeline(
         job_id,
         &run_id,
         "SYSTEM",
-        &format!("Pipeline started: {} table mapping(s)", total_mappings),
+        &format!("Executing: {} table mapping(s)", total_mappings),
     );
 
     let mut completed = 0usize;
@@ -377,15 +372,11 @@ async fn execute_pipeline(
     let rows_written = stats.rows_written.load(Ordering::Relaxed);
     let rows_failed = stats.rows_failed.load(Ordering::Relaxed);
     let bytes = stats.bytes_transferred.load(Ordering::Relaxed);
-    let logs_snapshot = logs.lock().unwrap().0.clone();
 
     if failed_mappings.is_empty() {
-        Ok((
-            format!(
-                "rows_read={} rows_written={} rows_failed={} bytes_transferred={} elapsed={:.2}s",
-                rows_read, rows_written, rows_failed, bytes, elapsed
-            ),
-            logs_snapshot,
+        Ok(format!(
+            "rows_read={} rows_written={} rows_failed={} bytes_transferred={} elapsed={:.2}s",
+            rows_read, rows_written, rows_failed, bytes, elapsed
         ))
     } else if completed > 0 {
         Err(AppError::Other(format!(

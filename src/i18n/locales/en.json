@@ -1205,8 +1205,14 @@
     "colLogDetails": "Log Details",
     "colActions": "Actions",
     "logDetailTitle": "Run Log Details",
+    "logDetailCopied": "Copied",
     "noLogs": "No log content",
     "deleteRunConfirm": "Delete this run record?",
-    "runDeleted": "Run record deleted"
+    "runDeleted": "Run record deleted",
+    "total": "Total",
+    "firstPage": "First",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "lastPage": "Last"
   }
 }

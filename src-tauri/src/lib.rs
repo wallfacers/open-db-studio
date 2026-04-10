@@ -386,7 +386,6 @@ pub fn run() {
             migration::mig_commands::stop_migration_job,
             migration::mig_commands::ai_recommend_column_mappings,
             migration::mig_commands::delete_migration_run_history,
-            migration::mig_commands::persist_migration_run_logs,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

@@ -146,6 +146,15 @@ pub fn get_run_history(job_id: i64) -> AppResult<Vec<MigrationRunHistory>> {
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
+pub fn delete_run_history(job_id: i64, run_id: &str) -> AppResult<()> {
+    let db = crate::db::get().lock().unwrap();
+    db.execute(
+        "DELETE FROM migration_run_history WHERE job_id=?1 AND run_id=?2",
+        params![job_id, run_id],
+    )?;
+    Ok(())
+}
+
 /// Migrate all jobs from old config format (top-level target) to new format (tableMappings).
 /// Called once at startup. Idempotent — already-migrated configs are unchanged.
 pub fn migrate_legacy_configs() -> AppResult<()> {

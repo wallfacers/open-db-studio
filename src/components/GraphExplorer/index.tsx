@@ -520,13 +520,6 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
-    // Defer fitView until layout is painted, but skip when a node is focused
-    if (!focusedNodeId) {
-      const timerId = setTimeout(() => {
-        fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
-      }, 80);
-      return () => clearTimeout(timerId);
-    }
   }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId, selfRefLinkIds]);
 
   // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────

@@ -455,14 +455,55 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   selectNode: (nodeId: string) => set({ selectedId: nodeId }),
 
   refreshNode: async (nodeId: string) => {
-    get()._removeSubtree(nodeId);
+    const { nodes } = get();
+    // 1. 记下当前子节点 ID，用于加载后清理已删除的节点
+    const oldChildrenIds = Array.from(nodes.values())
+      .filter(n => n.parentId === nodeId)
+      .map(n => n.id);
+
+    // 2. 重置 loaded 状态以允许 loadChildren 重新执行
     set(s => {
       const newNodes = new Map(s.nodes);
       const node = newNodes.get(nodeId);
       if (node) newNodes.set(nodeId, { ...node, loaded: false });
       return { nodes: newNodes };
     });
+
+    // 3. 加载新子节点（loadChildren 内部会调用 _addNodes 更新/添加节点）
     await get().loadChildren(nodeId);
+
+    // 4. 清理那些在数据库中已不存在的旧节点（即：原来有，但新加载列表里没有的）
+    const currentNodes = get().nodes;
+    const currentChildrenIds = new Set(
+      Array.from(currentNodes.values())
+        .filter(n => n.parentId === nodeId)
+        .map(n => n.id)
+    );
+
+    const toRemove = oldChildrenIds.filter(id => !currentChildrenIds.has(id));
+    if (toRemove.length > 0) {
+      set(s => {
+        const nodesMap = new Map(s.nodes);
+        const searchIndex = new Map(s.searchIndex);
+        const expandedIds = new Set(s.expandedIds);
+        const metricCounts = new Map(s.metricCounts);
+
+        const removeRecursive = (id: string) => {
+          nodesMap.delete(id);
+          searchIndex.delete(id);
+          expandedIds.delete(id);
+          metricCounts.delete(id);
+          for (const [nodeKey, node] of nodesMap.entries()) {
+            if (node.parentId === id) removeRecursive(nodeKey);
+          }
+        };
+
+        for (const id of toRemove) {
+          removeRecursive(id);
+        }
+        return { nodes: nodesMap, searchIndex, expandedIds, metricCounts };
+      });
+    }
   },
 
   search: (query: string): TreeNode[] => {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Copy, Trash2, Columns3, Sparkles } from 'lucide-react'
+import { Plus, Copy, Trash2, Columns3 } from 'lucide-react'
 import { ColumnMappingPanel } from './ColumnMappingPanel'
 import { ComboboxSelect } from '../common/ComboboxSelect'
 import { INPUT_CLS } from './styles'
@@ -81,12 +81,6 @@ export function TableMappingPanel({ mappings, defaultTarget, targetTables, onUpd
     <div className="bg-background-panel border border-border-subtle rounded p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[12px] font-medium text-foreground-default">{t('migration.tableMapping')}</span>
-        {hasAi && (
-          <button onClick={() => mappings.forEach((_, i) => onAiRecommend(i))}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] bg-accent text-foreground rounded hover:bg-accent-hover transition-colors">
-            <Sparkles size={12} />{t('migration.aiRecommendAll')}
-          </button>
-        )}
       </div>
 
       {/* Header */}

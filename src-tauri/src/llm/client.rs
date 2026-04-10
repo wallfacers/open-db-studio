@@ -211,7 +211,6 @@ impl LlmClient {
             .client
             .post(&url)
             .bearer_auth(&self.api_key)
-            .header("x-agent", "true")
             .json(&body)
             .send()
             .await

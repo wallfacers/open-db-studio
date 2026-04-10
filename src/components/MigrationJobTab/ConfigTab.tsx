@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
+import { useToastStore } from '../../store/toastStore'
 import { ConnectionDbSelector } from '../common/ConnectionDbSelector'
 import { TableSelector, TableInfo } from '../ImportExport/TableSelector'
 import { TableMappingPanel } from './TableMappingPanel'
@@ -191,6 +192,10 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
   const handleAiRecommend = async (mappingIdx: number) => {
     const m = config.tableMappings[mappingIdx]
     if (!m) return
+    if (!config.source.connectionId || !m.target.connectionId) {
+      useToastStore.getState().show(t('migration.aiRecommendNoConnection', { defaultValue: '请先选择来源和目标连接' }), 'error')
+      return
+    }
     setAiLoadingMap(prev => ({ ...prev, [mappingIdx]: true }))
     try {
       const result = await invoke<Array<{ sourceExpr: string; targetCol: string; targetType: string }>>(

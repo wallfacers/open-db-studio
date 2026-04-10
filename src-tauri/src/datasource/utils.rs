@@ -42,10 +42,25 @@ fn hex_to_binary_literal(hex_str: &str, style: &StringEscapeStyle) -> String {
     }
 }
 
+/// 判断字符串是否为可直接作为 SQL 整数字面量写入的纯十进制整数。
+/// 条件：全为数字、无前导零（单个 "0" 除外）、长度 ≤ 20（涵盖 u64::MAX）。
+///
+/// 用途：BIT(n) 列读取后以十进制字符串存储，若带引号写入 MySQL 会按字节串处理，
+/// 引发 "Data too long"（如 '255' 为 3 字节 > BIT(8) 的 1 字节上限）。
+/// 不带引号的整数字面量则被正确解析为数值。
+fn is_pure_integer(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 20
+        && s.chars().all(|c| c.is_ascii_digit())
+        && (s.len() == 1 || !s.starts_with('0'))
+}
+
 /// 将 serde_json::Value 安全转换为 SQL 字面量字符串。
 /// 根据目标驱动的 StringEscapeStyle 选择正确的转义规则，避免 SQL 注入和数据损坏。
-/// 特殊处理：自动识别读取阶段产生的 "0x<hex>" / "\\x<hex>" 二进制编码，
-/// 将其还原为目标驱动正确的二进制字面量语法，防止 "Data too long" 错误。
+/// 特殊处理：
+///   - "0x<hex>" / "\\x<hex>" 二进制编码 → 目标驱动的二进制字面量（防止 "Data too long"）
+///   - 纯十进制整数字符串（BIT/BIGINT 读取结果）→ 不带引号的整数字面量
+///     （BIT 列若带引号写入，MySQL 按字节串计算宽度会超出位宽限制）
 pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> String {
     match v {
         serde_json::Value::Null => "NULL".to_string(),
@@ -54,6 +69,8 @@ pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> St
         serde_json::Value::String(s) => {
             if is_hex_binary(s) {
                 hex_to_binary_literal(s, style)
+            } else if is_pure_integer(s) {
+                s.clone()
             } else {
                 escape_string_literal(s, style)
             }
@@ -302,5 +319,73 @@ mod tests {
         let v = serde_json::Value::String("0x01".to_string());
         let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
         assert_eq!(result, "X'01'");
+    }
+
+    // ── BIT(n) / 纯整数字符串测试 ─────────────────────────────────────────────
+
+    #[test]
+    fn test_bit_single_digit_unquoted() {
+        // BIT(8) 单位数值：应写为不带引号的整数字面量
+        let v = serde_json::Value::String("5".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "5");
+    }
+
+    #[test]
+    fn test_bit_multi_digit_unquoted() {
+        // BIT(8) 多位数值（如 255）：若带引号写入会引发 "Data too long"，应不带引号
+        let v = serde_json::Value::String("255".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "255");
+    }
+
+    #[test]
+    fn test_bigint_large_value_unquoted() {
+        // BIGINT UNSIGNED 大值：应写为不带引号的整数字面量
+        let v = serde_json::Value::String("18446744073709551615".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "18446744073709551615");
+    }
+
+    #[test]
+    fn test_leading_zero_string_stays_quoted() {
+        // 前导零字符串（如 "007"）不是整数字面量，保留引号以防数据截断
+        let v = serde_json::Value::String("007".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "'007'");
+    }
+
+    #[test]
+    fn test_zero_value_unquoted() {
+        // 单个 "0" 应写为不带引号的整数字面量
+        let v = serde_json::Value::String("0".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "0");
+    }
+
+    #[test]
+    fn test_negative_integer_string_stays_quoted() {
+        // 负数字符串（含 '-'）不符合纯整数条件，保留引号
+        let v = serde_json::Value::String("-123".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "'-123'");
+    }
+
+    #[test]
+    fn test_decimal_string_stays_quoted() {
+        // DECIMAL 值（含 '.'）保留引号
+        let v = serde_json::Value::String("10.9000".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "'10.9000'");
+    }
+
+    #[test]
+    fn test_pure_integer_all_drivers() {
+        // 纯整数写入对所有驱动均不带引号
+        let v = serde_json::Value::String("42".to_string());
+        assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::Standard), "42");
+        assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::PostgresLiteral), "42");
+        assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::TSql), "42");
+        assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::SQLiteLiteral), "42");
     }
 }

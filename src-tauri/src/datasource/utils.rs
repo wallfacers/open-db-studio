@@ -1,13 +1,63 @@
 use crate::datasource::StringEscapeStyle;
 
+/// 判断字符串是否为十六进制编码的二进制数据。
+/// MySQL 读取阶段将非 UTF-8 的二进制转为 "0x<hex>"，PostgreSQL 转为 "\\x<hex>"。
+fn is_hex_binary(s: &str) -> bool {
+    if s.len() >= 2 && s.starts_with("0x") {
+        s[2..].chars().all(|c| c.is_ascii_hexdigit())
+    } else if s.len() >= 2 && s.starts_with("\\x") {
+        s[2..].chars().all(|c| c.is_ascii_hexdigit())
+    } else {
+        false
+    }
+}
+
+/// 将十六进制二进制字符串转为目标驱动正确的 SQL 二进制字面量。
+fn hex_to_binary_literal(hex_str: &str, style: &StringEscapeStyle) -> String {
+    let hex_data = if hex_str.starts_with("0x") {
+        &hex_str[2..]
+    } else if hex_str.starts_with("\\x") {
+        &hex_str[2..]
+    } else {
+        return escape_string_literal(hex_str, style);
+    };
+
+    match style {
+        // MySQL / ClickHouse / TiDB / Doris: 使用 X'<hex>' 语法
+        StringEscapeStyle::Standard => {
+            format!("X'{}'", hex_data)
+        }
+        // PostgreSQL: 使用 E'\\x<hex>' 语法
+        StringEscapeStyle::PostgresLiteral => {
+            format!("E'\\\\x{}'", hex_data)
+        }
+        // SQL Server: 使用 0x<hex>（无引号）
+        StringEscapeStyle::TSql => {
+            format!("0x{}", hex_data)
+        }
+        // SQLite: 使用 X'<hex>' 语法
+        StringEscapeStyle::SQLiteLiteral => {
+            format!("X'{}'", hex_data)
+        }
+    }
+}
+
 /// 将 serde_json::Value 安全转换为 SQL 字面量字符串。
 /// 根据目标驱动的 StringEscapeStyle 选择正确的转义规则，避免 SQL 注入和数据损坏。
+/// 特殊处理：自动识别读取阶段产生的 "0x<hex>" / "\\x<hex>" 二进制编码，
+/// 将其还原为目标驱动正确的二进制字面量语法，防止 "Data too long" 错误。
 pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> String {
     match v {
         serde_json::Value::Null => "NULL".to_string(),
         serde_json::Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
         serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::String(s) => escape_string_literal(s, style),
+        serde_json::Value::String(s) => {
+            if is_hex_binary(s) {
+                hex_to_binary_literal(s, style)
+            } else {
+                escape_string_literal(s, style)
+            }
+        }
         _ => escape_string_literal(&v.to_string(), style),
     }
 }
@@ -206,5 +256,51 @@ mod tests {
     fn test_number_value() {
         let v = serde_json::json!(42);
         assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::Standard), "42");
+    }
+
+    #[test]
+    fn test_mysql_hex_binary_literal() {
+        // MySQL 读取阶段产生的 0x 前缀 hex 字符串应转为 X'<hex>' 语法
+        let v = serde_json::Value::String("0x0102030405060708090a0b0c0d0e0f10".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "X'0102030405060708090a0b0c0d0e0f10'");
+    }
+
+    #[test]
+    fn test_pg_hex_binary_literal() {
+        // PostgreSQL 读取阶段产生的 \x 前缀 hex 字符串应转为 E'\\x<hex>' 语法
+        let v = serde_json::Value::String("\\x0102030405060708090a0b0c0d0e0f10".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::PostgresLiteral);
+        assert_eq!(result, "E'\\\\x0102030405060708090a0b0c0d0e0f10'");
+    }
+
+    #[test]
+    fn test_sqlite_hex_binary_literal() {
+        let v = serde_json::Value::String("0x0102030405060708".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::SQLiteLiteral);
+        assert_eq!(result, "X'0102030405060708'");
+    }
+
+    #[test]
+    fn test_tsql_hex_binary_literal() {
+        let v = serde_json::Value::String("0x0102030405060708".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::TSql);
+        assert_eq!(result, "0x0102030405060708");
+    }
+
+    #[test]
+    fn test_non_hex_string_not_converted() {
+        // 普通字符串即使以 "0x" 开头但后面不是纯 hex，应作为普通字符串处理
+        let v = serde_json::Value::String("0xGGGG".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "'0xGGGG'");
+    }
+
+    #[test]
+    fn test_short_hex_binary() {
+        // 短 hex 也应正确处理
+        let v = serde_json::Value::String("0x01".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "X'01'");
     }
 }

@@ -102,6 +102,8 @@ pub enum ConflictStrategy {
     Upsert,
     Replace,
     Skip,
+    /// Truncate the target table first, then plain INSERT (full overwrite)
+    Overwrite,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

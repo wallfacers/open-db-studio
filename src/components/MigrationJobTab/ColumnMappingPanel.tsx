@@ -115,8 +115,9 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
               { value: 'UPSERT', label: t('migration.conflictUpsert') },
               { value: 'REPLACE', label: t('migration.conflictReplace') },
               { value: 'SKIP', label: t('migration.conflictSkip') },
+              { value: 'OVERWRITE', label: t('migration.conflictOverwrite') },
             ]}
-            className="w-24"
+            className="w-28"
           />
         </div>
         <div className="flex items-center gap-1.5">
@@ -124,8 +125,8 @@ export function ColumnMappingPanel({ mapping, onUpdate, onUpdateTarget, hasAi, a
           <input
             value={mapping.target.upsertKeys.join(', ')}
             onChange={e => onUpdateTarget({ upsertKeys: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-            disabled={mapping.target.conflictStrategy !== 'UPSERT'}
-            className={INPUT_CLS + ' w-32' + (mapping.target.conflictStrategy !== 'UPSERT' ? ' opacity-50 cursor-not-allowed' : '')}
+            disabled={!['UPSERT', 'REPLACE'].includes(mapping.target.conflictStrategy)}
+            className={INPUT_CLS + ' w-32' + (!['UPSERT', 'REPLACE'].includes(mapping.target.conflictStrategy) ? ' opacity-50 cursor-not-allowed' : '')}
             placeholder="id"
           />
         </div>

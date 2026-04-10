@@ -1116,6 +1116,7 @@
     "conflictUpsert": "UPSERT",
     "conflictReplace": "REPLACE",
     "conflictSkip": "SKIP",
+    "conflictOverwrite": "OVERWRITE",
     "autoCreateTable": "自动建表",
     "readBatch": "读批次",
     "writeBatch": "写批次",

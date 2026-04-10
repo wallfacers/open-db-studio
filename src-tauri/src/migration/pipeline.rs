@@ -522,6 +522,49 @@ async fn execute_single_mapping(
     let column_mapping = mapping.column_mappings.clone();
     let conflict_strategy = mapping.target.conflict_strategy.clone();
     let upsert_keys = mapping.target.upsert_keys.clone();
+
+    // ── Pre-flight warnings for conflict strategy misconfigurations ───────
+    match (&conflict_strategy, dst_cfg.driver.as_str()) {
+        (ConflictStrategy::Upsert, "postgres" | "gaussdb") if upsert_keys.is_empty() => {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!("[{}] Upsert on PostgreSQL requires upsert_keys; falling back to Skip (ON CONFLICT DO NOTHING)", mapping_label),
+            );
+        }
+        (ConflictStrategy::Upsert, "sqlite") if upsert_keys.is_empty() => {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!("[{}] Upsert on SQLite requires upsert_keys; falling back to Replace (INSERT OR REPLACE INTO)", mapping_label),
+            );
+        }
+        (ConflictStrategy::Replace, "postgres" | "gaussdb") if upsert_keys.is_empty() => {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!("[{}] Replace on PostgreSQL requires upsert_keys to identify conflict target; falling back to Skip (ON CONFLICT DO NOTHING)", mapping_label),
+            );
+        }
+        _ => {}
+    }
+
+    // ── Overwrite: truncate target table before pipeline starts ──────────
+    if conflict_strategy == ConflictStrategy::Overwrite {
+        let truncate_sql = match dst_cfg.driver.as_str() {
+            "sqlite" => format!("DELETE FROM \"{}\"", mapping.target.table.replace('"', "\"\"")),
+            "sqlserver" => format!("TRUNCATE TABLE [{}]", mapping.target.table.replace(']', "]]")),
+            _ => format!("TRUNCATE TABLE `{}`", mapping.target.table.replace('`', "``")),
+        };
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "SYSTEM",
+            &format!("[{}] Overwrite: truncating target table — {}", mapping_label, truncate_sql),
+        );
+        if let Err(e) = dst_ds.execute(&truncate_sql).await {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!("[{}] Truncate failed (continuing): {}", mapping_label, e),
+            );
+        }
+    }
+
     let error_limit = config.pipeline.error_limit;
     let read_batch_size = config.pipeline.read_batch_size.max(1);
     let write_batch_size = config.pipeline.write_batch_size.max(1);
@@ -1048,6 +1091,34 @@ async fn write_batch(
                 )
             }
         }
+        // Replace for PostgreSQL/GaussDB: INSERT INTO ... ON CONFLICT (keys) DO UPDATE SET all_cols=EXCLUDED.col
+        // Without upsert_keys, fall back to Skip (ON CONFLICT DO NOTHING) — warning already emitted upstream
+        (ConflictStrategy::Replace, "postgres" | "gaussdb") => {
+            if upsert_keys.is_empty() {
+                ("INSERT INTO", " ON CONFLICT DO NOTHING".into())
+            } else {
+                let update_parts: Vec<String> = columns
+                    .iter()
+                    .map(|c| format!("{}=EXCLUDED.{}", quote_col(c), quote_col(c)))
+                    .collect();
+                let key_cols = upsert_keys
+                    .iter()
+                    .map(|k| quote_col(k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (
+                    "INSERT INTO",
+                    format!(
+                        " ON CONFLICT ({}) DO UPDATE SET {}",
+                        key_cols,
+                        update_parts.join(", ")
+                    )
+                    .into(),
+                )
+            }
+        }
+        // Overwrite: table was already truncated; use plain INSERT
+        (ConflictStrategy::Overwrite, _) => ("INSERT INTO", "".into()),
         _ => ("INSERT INTO", "".into()),
     };
 

@@ -1115,6 +1115,7 @@
     "conflictUpsert": "UPSERT",
     "conflictReplace": "REPLACE",
     "conflictSkip": "SKIP",
+    "conflictOverwrite": "OVERWRITE",
     "autoCreateTable": "Auto Create Table",
     "readBatch": "Read Batch",
     "writeBatch": "Write Batch",

@@ -160,7 +160,7 @@ export function MigrationJobTab({ jobId }: Props) {
         <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: logHeight }}>
           {/* Resize Handle — in-flow, no overlap with tab bar */}
           <div
-            className="h-[5px] flex-shrink-0 cursor-row-resize border-t border-border-default hover:border-accent transition-colors"
+            className="h-[5px] flex-shrink-0 cursor-row-resize border-t border-border-default hover:border-accent transition-colors bg-background-base"
             onMouseDown={handleLogResize}
           />
           {/* Log tab-bar */}

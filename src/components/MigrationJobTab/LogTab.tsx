@@ -50,55 +50,32 @@ export function LogTab({ stats, logs, viewMode, hasFailed }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Stats bar */}
-      <div className="p-3 border-b border-border-subtle flex-shrink-0">
-        <div className="flex items-center mb-2">
-          <span className="text-[11px] text-foreground-muted uppercase tracking-wide">{t('migration.realtimeProgress')}</span>
-        </div>
-
-        {stats && (<>
-          {/* Progress bar */}
-          <div className="h-1.5 bg-background-elevated rounded mb-2 overflow-hidden">
-            <div className={`h-full transition-all duration-500 rounded ${hasFailed ? 'bg-error' : 'bg-accent'}`} style={{ width: `${pct}%` }} />
-          </div>
-
-          {/* Mapping progress indicator */}
-          {stats.currentMapping && stats.mappingProgress && (
-            <div className="text-[11px] text-foreground-muted mb-1">
-              [{stats.mappingProgress.current}/{stats.mappingProgress.total}] {t('migration.migrating')} {stats.currentMapping} ...
+      {/* Stats bar — single row */}
+      <div className="flex items-center gap-2 px-3 h-8 border-b border-border-subtle flex-shrink-0 text-[11px] overflow-x-auto">
+        <span className="text-foreground-muted uppercase tracking-wide flex-shrink-0">{t('migration.realtimeProgress')}</span>
+        {stats && (
+          <>
+            <div className="w-24 h-1 bg-background-elevated rounded overflow-hidden flex-shrink-0">
+              <div className={`h-full transition-all duration-500 rounded ${hasFailed ? 'bg-error' : 'bg-accent'}`} style={{ width: `${pct}%` }} />
             </div>
-          )}
-
-          <div className="grid grid-cols-3 gap-2 text-[11px]">
-            <div>
-              <span className="text-foreground-subtle">{t('migration.rowsRead')}  </span>
-              <span className="text-foreground-default font-medium">{stats.rowsRead.toLocaleString()}</span>
-            </div>
-            <div>
-              <span className="text-foreground-subtle">{t('migration.rowsWritten')}  </span>
-              <span className="text-foreground-default font-medium">{stats.rowsWritten.toLocaleString()}</span>
-            </div>
-            <div>
-              <span className="text-foreground-subtle">{t('migration.dirtyRows')}  </span>
-              <span className={stats.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{stats.rowsFailed}</span>
-            </div>
-            <div>
-              <span className="text-foreground-subtle">{t('migration.speed')}  </span>
-              <span className={hasFailed ? 'text-error' : 'text-accent'}>{Math.round(stats.writeSpeedRps).toLocaleString()} r/s</span>
-            </div>
+            <span className="text-foreground-default font-medium flex-shrink-0">{pct.toFixed(1)}%</span>
+            <span className="text-border-strong flex-shrink-0">|</span>
+            <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.rowsRead')} </span><span className="text-foreground-default font-medium">{stats.rowsRead.toLocaleString()}</span></span>
+            <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.rowsWritten')} </span><span className="text-foreground-default font-medium">{stats.rowsWritten.toLocaleString()}</span></span>
+            <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.dirtyRows')} </span><span className={stats.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{stats.rowsFailed.toLocaleString()}</span></span>
+            <span className="text-border-strong flex-shrink-0">|</span>
+            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{Math.round(stats.writeSpeedRps).toLocaleString()} r/s</span>
             {stats.etaSeconds !== null && (
-              <div>
-                <span className="text-foreground-subtle">{t('migration.eta')}  </span>
-                <span className="text-foreground-default">{stats.etaSeconds < 60 ? `${Math.round(stats.etaSeconds)}s` : `${Math.round(stats.etaSeconds / 60)}m${Math.round(stats.etaSeconds % 60)}s`}</span>
-              </div>
+              <span className="text-foreground-default flex-shrink-0">{stats.etaSeconds < 60 ? `${Math.round(stats.etaSeconds)}s` : `${Math.round(stats.etaSeconds / 60)}m${Math.round(stats.etaSeconds % 60)}s`}</span>
             )}
-            {pct > 0 && (
-              <div>
-                <span className="text-foreground-default font-medium">{pct.toFixed(1)}%</span>
-              </div>
+            {stats.currentMapping && stats.mappingProgress && (
+              <>
+                <span className="text-border-strong flex-shrink-0">|</span>
+                <span className="text-foreground-muted flex-shrink-0">[{stats.mappingProgress.current}/{stats.mappingProgress.total}] {stats.currentMapping}</span>
+              </>
             )}
-          </div>
-        </>)}
+          </>
+        )}
       </div>
 
       {/* Content area */}

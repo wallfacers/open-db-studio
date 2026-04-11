@@ -736,18 +736,45 @@ async fn execute_single_mapping(
             Err(AppError::Other(format!("Shard errors: {}", shard_errors.join("; "))))
         }
     } else {
-        // ── Semaphore Mode: 1 reader + N concurrent writers ──────────────
-        // When parallelism=1, semaphore degenerates to sequential (no overhead)
-        if parallelism > 1 {
+        // ── Single reader (parallelism == 1 or no integer PK found) ─────
+        //
+        // Attempt cursor-based reading (O(n)) via PK range split.
+        // Falls back to OFFSET if no integer PK is detected.
+        let pk_cursor = if let Some(pk_col) = detect_integer_pk_from_ds(&*src_ds, &mapping.source_table).await {
+            match crate::migration::splitter::compute_pk_splits(
+                &*src_ds, &source_query, &pk_col, &src_cfg.driver, 1,
+            ).await {
+                Some(splits) => {
+                    // 1 split = full table range; cursor reader handles all pages
+                    logs.lock().unwrap().emit_and_record(
+                        app, job_id, run_id, "SYSTEM",
+                        &format!("[{}] Cursor mode on '{}': range [{}, {})",
+                            mapping_label, pk_col,
+                            splits[0].start,
+                            splits[0].end.map(|e| e.to_string()).unwrap_or_else(|| "∞".into())),
+                    );
+                    Some((pk_col, splits.into_iter().next().unwrap()))
+                }
+                None => {
+                    logs.lock().unwrap().emit_and_record(
+                        app, job_id, run_id, "WARN",
+                        &format!("[{}] MIN/MAX query failed; falling back to OFFSET pagination", mapping_label),
+                    );
+                    None
+                }
+            }
+        } else {
             logs.lock().unwrap().emit_and_record(
-                app, job_id, run_id, "SYSTEM",
-                &format!("[{}] Using Semaphore mode: 1 reader + {} concurrent writers", mapping_label, parallelism),
+                app, job_id, run_id, "WARN",
+                &format!("[{}] No integer PK found; using OFFSET pagination (may be slow for large tables)", mapping_label),
             );
-        }
+            None
+        };
+
         run_reader_writer_pair(
             source_query,
-            None,                    // pk_split: will be cursor split in Task 5
-            src_cfg.driver.clone(),  // src_driver
+            pk_cursor,
+            src_cfg.driver.clone(),
             src_ds,
             dst_ds,
             target_table.clone(),
@@ -794,6 +821,14 @@ fn detect_integer_pk(columns: &[crate::datasource::ColumnMeta]) -> Option<String
             }
         })
         .map(|c| c.name.clone())
+}
+
+/// Fetch columns for `table` from `ds` and return the integer PK column name, if any.
+async fn detect_integer_pk_from_ds(
+    ds: &dyn crate::datasource::DataSource,
+    table: &str,
+) -> Option<String> {
+    ds.get_columns(table, None).await.ok().as_deref().and_then(detect_integer_pk)
 }
 
 // ── Shard query builder ──────────────────────────────────────────────────────

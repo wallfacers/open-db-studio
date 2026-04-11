@@ -347,7 +347,11 @@ export const ConfigTab = forwardRef<ConfigTabHandle, Props>(function ConfigTab(
         mappings={config.tableMappings}
         defaultTarget={{ connectionId: config.defaultTargetConnId, database: config.defaultTargetDb }}
         targetTables={targetTables}
-        onUpdate={tableMappings => update({ tableMappings })}
+        onUpdate={tableMappings => {
+          const remainingSources = new Set(tableMappings.map(m => m.sourceTable))
+          const nextTables = config.source.tables.filter(t => remainingSources.has(t) || t === 'custom_query')
+          update({ tableMappings, source: { ...config.source, tables: nextTables } })
+        }}
         hasAi={hasAi}
         onAiRecommend={handleAiRecommend}
         aiLoadingMap={aiLoadingMap}

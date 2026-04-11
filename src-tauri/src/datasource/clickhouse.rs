@@ -500,5 +500,51 @@ impl DataSource for ClickHouseDataSource {
         })
     }
 
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // Build JSONEachRow format: one JSON object per line
+        let mut body = String::with_capacity(rows.len() * 200);
+        for row in rows {
+            let mut obj = serde_json::Map::new();
+            for (i, col) in columns.iter().enumerate() {
+                if let Some(val) = row.get(i) {
+                    obj.insert(col.clone(), val.clone());
+                }
+            }
+            body.push_str(
+                &serde_json::to_string(&serde_json::Value::Object(obj))
+                    .unwrap_or_default(),
+            );
+            body.push('\n');
+        }
+
+        let quote = |c: &str| format!("`{}`", c.replace('`', "``"));
+        let col_list = columns
+            .iter()
+            .map(|c| quote(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let insert_sql = format!(
+            "INSERT INTO {} ({}) FORMAT JSONEachRow",
+            quote(table),
+            col_list
+        );
+
+        // Send INSERT + JSONEachRow data via the HTTP interface
+        let sql_with_data = format!("{}\n{}", insert_sql, body);
+        self.execute(&sql_with_data).await?;
+        Ok(rows.len())
+    }
 }
 

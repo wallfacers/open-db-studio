@@ -127,20 +127,20 @@ pub struct PipelineConfig {
 }
 
 fn default_transaction_batch_size() -> usize {
-    10
+    1
 }
 
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            read_batch_size: 10_000,
-            write_batch_size: 1_000,
-            channel_capacity: 16,
-            parallelism: 1,
+            read_batch_size: 5_000,
+            write_batch_size: 2_048,
+            channel_capacity: 32,
+            parallelism: 4,
             speed_limit_rps: None,
             error_limit: 0,
             shard_count: None,
-            transaction_batch_size: 10,
+            transaction_batch_size: 1,
             write_pause_ms: None,
         }
     }

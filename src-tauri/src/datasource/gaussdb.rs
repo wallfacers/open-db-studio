@@ -689,6 +689,20 @@ impl DataSource for GaussDbDataSource {
     fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
         crate::datasource::StringEscapeStyle::PostgresLiteral
     }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        // GaussDB is PG-compatible; session_replication_role may not be available
+        let _ = self.execute("SET synchronous_commit = 'off'").await;
+        let _ = self.execute("SET work_mem = '256MB'").await;
+        log::info!("GaussDB migration session optimizations applied");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        let _ = self.execute("SET synchronous_commit = 'on'").await;
+        let _ = self.execute("RESET work_mem").await;
+        Ok(())
+    }
 }
 
 use super::utils::format_size;

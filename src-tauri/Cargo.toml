@@ -43,6 +43,7 @@ sqlx = { version = "0.8", features = [
 
 # MySQL bulk write (LOAD DATA LOCAL INFILE) for migration pipeline
 mysql_async = "0.34"
+urlencoding = "2"
 
 rust_decimal = "1"
 
@@ -81,6 +82,9 @@ regex = "1"
 
 # SHA-256（知识图谱列哈希）
 sha2 = "0.10"
+
+# Bytes (used by mysql_async LOAD DATA handler)
+bytes = "1"
 
 # 其他
 lru = "0.12"

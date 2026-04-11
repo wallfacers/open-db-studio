@@ -1,3 +1,4 @@
+pub mod bulk_write;
 pub mod clickhouse;
 pub mod db2;
 pub mod gaussdb;
@@ -491,6 +492,67 @@ pub trait DataSource: Send + Sync {
             total += self.execute(stmt).await?.row_count;
         }
         Ok(total)
+    }
+
+    /// 批量写入行数据到指定表。
+    /// 默认实现使用逐行 INSERT，各驱动按需覆盖以使用原生批量写入协议。
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+        // Fallback: build simple INSERT VALUES statements and execute
+        let escape_style = self.string_escape_style();
+        let mut total = 0;
+        for row in rows {
+            let vals: Vec<String> = row.iter().map(|v| match v {
+                serde_json::Value::Null => "NULL".to_string(),
+                serde_json::Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::String(s) => {
+                    let escaped = match &escape_style {
+                        StringEscapeStyle::Standard => s.replace('\\', "\\\\").replace('\'', "\\'"),
+                        _ => s.replace('\'', "''"),
+                    };
+                    format!("'{}'", escaped)
+                }
+                other => {
+                    let s = other.to_string();
+                    let escaped = match &escape_style {
+                        StringEscapeStyle::Standard => s.replace('\\', "\\\\").replace('\'', "\\'"),
+                        _ => s.replace('\'', "''"),
+                    };
+                    format!("'{}'", escaped)
+                }
+            }).collect();
+            let sql = format!("INSERT INTO `{}` ({}) VALUES ({})",
+                table,
+                columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
+                vals.join(", "),
+            );
+            self.execute(&sql).await?;
+            total += 1;
+        }
+        Ok(total)
+    }
+
+    // ── Migration-specific methods ──────────────────────────────────────────
+
+    /// Set session-level parameters to optimize bulk write throughput.
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        Ok(())
+    }
+
+    /// Restore session-level parameters after migration completes.
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        Ok(())
     }
 
     /// 分页执行查询，返回第 `offset` 行起的 `limit` 行数据。

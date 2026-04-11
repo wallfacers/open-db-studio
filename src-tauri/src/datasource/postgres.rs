@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
 use super::utils::format_size;
-use crate::AppResult;
+use crate::{AppError, AppResult};
 
 pub struct PostgresDataSource {
     pool: PgPool,
+    mig_session_active: std::sync::atomic::AtomicBool,
 }
 
 /// 将 PgRow 第 i 列转换为 serde_json::Value，按类型名精确派发。
@@ -284,7 +285,6 @@ impl PostgresDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
-        use crate::AppError;
         let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
         // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
@@ -342,7 +342,29 @@ impl PostgresDataSource {
             .idle_timeout(Duration::from_secs(idle_timeout as u64))
             .connect_with(opts)
             .await?;
-        Ok(Self { pool })
+        Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false) })
+    }
+
+    async fn bulk_write_copy(&self, table: &str, columns: &[String], rows: &[Vec<serde_json::Value>]) -> AppResult<usize> {
+        use sqlx::postgres::PgPoolCopyExt;
+
+        let quote = |c: &str| format!("\"{}\"", c.replace('"', "\"\""));
+        let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+        let csv_data = crate::datasource::bulk_write::rows_to_csv(rows);
+
+        let copy_sql = format!(
+            "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '')",
+            quote(table), col_list
+        );
+
+        let mut copy_in = self.pool.copy_in_raw(&copy_sql).await
+            .map_err(|e| AppError::Datasource(format!("COPY FROM STDIN: {}", e)))?;
+        copy_in.send(csv_data.as_slice()).await
+            .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY send: {}", e)))?;
+        let rows_copied = copy_in.finish().await
+            .map_err(|e| AppError::Datasource(format!("COPY finish: {}", e)))?;
+
+        Ok(rows_copied as usize)
     }
 }
 
@@ -763,6 +785,70 @@ impl DataSource for PostgresDataSource {
 
     fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
         crate::datasource::StringEscapeStyle::PostgresLiteral
+    }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        let mut conn = self.pool.acquire().await?;
+        let _ = sqlx::query("SET session_replication_role = 'replica'").execute(&mut *conn).await;
+        let _ = sqlx::query("SET synchronous_commit = 'off'").execute(&mut *conn).await;
+        let _ = sqlx::query("SET work_mem = '256MB'").execute(&mut *conn).await;
+        self.mig_session_active.store(true, std::sync::atomic::Ordering::Relaxed);
+        log::info!("PostgreSQL migration session optimizations applied");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        if !self.mig_session_active.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut conn = self.pool.acquire().await?;
+        let _ = sqlx::query("SET session_replication_role = 'origin'").execute(&mut *conn).await;
+        let _ = sqlx::query("SET synchronous_commit = 'on'").execute(&mut *conn).await;
+        let _ = sqlx::query("RESET work_mem").execute(&mut *conn).await;
+        self.mig_session_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // COPY FROM STDIN doesn't support ON CONFLICT, so only use it for simple Insert or Overwrite
+        if !matches!(
+            conflict_strategy,
+            crate::migration::task_mgr::ConflictStrategy::Insert
+                | crate::migration::task_mgr::ConflictStrategy::Overwrite
+        ) {
+            let escape_style = self.string_escape_style();
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            return Ok(result.row_count.min(rows.len()));
+        }
+
+        // Try COPY FROM STDIN for simple INSERT / Overwrite
+        match self.bulk_write_copy(table, columns, rows).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                log::warn!("PostgreSQL COPY failed ({}), falling back to INSERT", e);
+                let escape_style = self.string_escape_style();
+                let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                    &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+                );
+                let result = self.execute(&sql).await?;
+                Ok(result.row_count.min(rows.len()))
+            }
+        }
     }
 }
 

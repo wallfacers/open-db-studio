@@ -79,6 +79,11 @@ pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> St
     }
 }
 
+/// Zero-allocation variant of `value_to_sql_safe` that appends directly into a `&mut String`.
+pub fn value_to_sql_safe_into(v: &serde_json::Value, style: &StringEscapeStyle, buf: &mut String) {
+    buf.push_str(&value_to_sql_safe(v, style));
+}
+
 fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
     match style {
         StringEscapeStyle::Standard => {

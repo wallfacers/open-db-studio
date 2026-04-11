@@ -42,6 +42,11 @@ use super::utils::format_size;
 pub struct MySqlDataSource {
     pool: MySqlPool,
     dialect: Dialect,
+    mig_session_active: std::sync::atomic::AtomicBool,
+    /// Dedicated mysql_async pool for LOAD DATA LOCAL INFILE (migration only).
+    mig_async_pool: tokio::sync::OnceCell<mysql_async::Pool>,
+    /// Connection config stored for building mysql_async pool on demand.
+    conn_url: String,
 }
 
 impl MySqlDataSource {
@@ -106,7 +111,21 @@ impl MySqlDataSource {
             .test_before_acquire(true)
             .connect_with(opts)
             .await?;
-        Ok(Self { pool, dialect })
+        let conn_url = format!(
+            "mysql://{}:{}@{}:{}/{}",
+            urlencoding::encode(username),
+            urlencoding::encode(password),
+            host,
+            port,
+            urlencoding::encode(database),
+        );
+        Ok(Self {
+            pool,
+            dialect,
+            mig_session_active: std::sync::atomic::AtomicBool::new(false),
+            mig_async_pool: tokio::sync::OnceCell::new(),
+            conn_url,
+        })
     }
 }
 
@@ -558,9 +577,138 @@ impl DataSource for MySqlDataSource {
         })
     }
 
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query("SET unique_checks = 0").execute(&mut *conn).await?;
+        sqlx::query("SET foreign_key_checks = 0").execute(&mut *conn).await?;
+        if let Err(e) = sqlx::query("SET sql_log_bin = 0").execute(&mut *conn).await {
+            log::info!("Migration: SET sql_log_bin=0 skipped ({}), binlog will remain active", e);
+        }
+        let _ = sqlx::query("SET SESSION bulk_insert_buffer_size = 268435456").execute(&mut *conn).await;
+        self.mig_session_active.store(true, std::sync::atomic::Ordering::Relaxed);
+        log::info!("Migration session optimizations applied (driver={})",
+            match self.dialect { Dialect::MySQL => "mysql", Dialect::Doris => "doris", Dialect::TiDB => "tidb" });
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        if !self.mig_session_active.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut conn = self.pool.acquire().await?;
+        let _ = sqlx::query("SET unique_checks = 1").execute(&mut *conn).await;
+        let _ = sqlx::query("SET foreign_key_checks = 1").execute(&mut *conn).await;
+        self.mig_session_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        log::info!("Migration session optimizations reverted");
+        Ok(())
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        use crate::datasource::bulk_write;
+
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // LOAD DATA doesn't support ON DUPLICATE KEY UPDATE — fall back to INSERT
+        if matches!(conflict_strategy, crate::migration::task_mgr::ConflictStrategy::Upsert) {
+            let escape_style = self.string_escape_style();
+            let sql = bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            return Ok(result.row_count.min(rows.len()));
+        }
+
+        match self.bulk_write_load_data(table, columns, rows, conflict_strategy).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                log::warn!("LOAD DATA failed ({}), falling back to optimized INSERT", e);
+                let escape_style = self.string_escape_style();
+                let sql = bulk_write::build_insert_sql_optimized(
+                    &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+                );
+                let result = self.execute(&sql).await?;
+                Ok(result.row_count.min(rows.len()))
+            }
+        }
+    }
+
 }
 
 impl MySqlDataSource {
+    async fn get_mig_pool(&self) -> AppResult<&mysql_async::Pool> {
+        self.mig_async_pool.get_or_try_init(|| async {
+            let opts = mysql_async::Opts::from_url(&self.conn_url)
+                .map_err(|e| AppError::Datasource(format!("mysql_async URL parse: {}", e)))?;
+            let pool_opts = mysql_async::PoolOpts::default()
+                .with_constraints(
+                    mysql_async::PoolConstraints::new(1, 4).unwrap()
+                );
+            let opts = mysql_async::OptsBuilder::from_opts(opts)
+                .pool_opts(pool_opts);
+            Ok(mysql_async::Pool::new(opts))
+        }).await
+    }
+
+    async fn bulk_write_load_data(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+    ) -> AppResult<usize> {
+        use mysql_async::prelude::*;
+        use futures_util::StreamExt;
+        use crate::datasource::bulk_write::rows_to_tsv;
+
+        let pool = self.get_mig_pool().await?;
+        let mut conn = pool.get_conn().await
+            .map_err(|e| AppError::Datasource(format!("mysql_async get_conn: {}", e)))?;
+
+        let tsv_data = rows_to_tsv(rows);
+        let tsv_bytes = bytes::Bytes::from(tsv_data);
+
+        // Local infile handler: returns a stream that yields the TSV data in one chunk.
+        conn.set_infile_handler(async move {
+            Ok(futures_util::stream::once(
+                async move { Ok(tsv_bytes) }
+            ).boxed())
+        });
+
+        let quote = |c: &str| format!("`{}`", c.replace('`', "``"));
+        let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+        let replace_keyword = match conflict_strategy {
+            crate::migration::task_mgr::ConflictStrategy::Replace => " REPLACE",
+            crate::migration::task_mgr::ConflictStrategy::Skip => " IGNORE",
+            _ => "",
+        };
+
+        let load_sql = format!(
+            "LOAD DATA LOCAL INFILE 'migration_batch.tsv'{} INTO TABLE {} \
+             FIELDS TERMINATED BY '\\t' \
+             LINES TERMINATED BY '\\n' \
+             ({})",
+            replace_keyword,
+            quote(table),
+            col_list,
+        );
+
+        conn.query_drop(&load_sql).await
+            .map_err(|e| AppError::Datasource(format!("LOAD DATA: {}", e)))?;
+
+        let affected = conn.affected_rows();
+        Ok(affected as usize)
+    }
+
     /// Doris 专用：用 information_schema.COLUMNS 手工拼接标准 DDL（用于 AI 上下文注入）
     async fn doris_build_standard_ddl(&self, table: &str) -> AppResult<String> {
         let rows = sqlx::query(

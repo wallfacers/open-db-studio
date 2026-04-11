@@ -472,6 +472,116 @@ impl DataSource for SqliteDataSource {
     fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
         crate::datasource::StringEscapeStyle::SQLiteLiteral
     }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let guard = conn.blocking_lock();
+            guard.execute_batch("PRAGMA synchronous = OFF; PRAGMA cache_size = -64000;")
+                .map_err(|e| AppError::Datasource(format!("SQLite session setup: {}", e)))
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))??;
+        log::info!("SQLite migration session optimizations applied");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let guard = conn.blocking_lock();
+            guard.execute_batch("PRAGMA synchronous = FULL; PRAGMA cache_size = -2000;")
+                .map_err(|e| AppError::Datasource(format!("SQLite session teardown: {}", e)))
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))??;
+        Ok(())
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        let table = table.to_string();
+        let columns = columns.to_vec();
+        let rows = rows.to_vec();
+        let conflict_strategy = conflict_strategy.clone();
+        let conn = Arc::clone(&self.conn);
+
+        tokio::task::spawn_blocking(move || -> AppResult<usize> {
+            let guard = conn.blocking_lock();
+            let quote = |c: &str| format!("\"{}\"", c.replace('"', "\"\""));
+            let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+            let placeholders = (1..=columns.len())
+                .map(|i| format!("?{}", i))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let keyword = match conflict_strategy {
+                crate::migration::task_mgr::ConflictStrategy::Skip => "INSERT OR IGNORE INTO",
+                crate::migration::task_mgr::ConflictStrategy::Replace => "INSERT OR REPLACE INTO",
+                _ => "INSERT INTO",
+            };
+            let sql = format!(
+                "{} {} ({}) VALUES ({})",
+                keyword,
+                quote(&table),
+                col_list,
+                placeholders
+            );
+
+            let tx = guard
+                .unchecked_transaction()
+                .map_err(|e| AppError::Datasource(format!("SQLite transaction: {}", e)))?;
+            {
+                let mut stmt = tx
+                    .prepare(&sql)
+                    .map_err(|e| AppError::Datasource(format!("SQLite prepare: {}", e)))?;
+                for row in &rows {
+                    let params: Vec<rusqlite::types::Value> = row
+                        .iter()
+                        .map(|v| match v {
+                            serde_json::Value::Null => rusqlite::types::Value::Null,
+                            serde_json::Value::Bool(b) => {
+                                rusqlite::types::Value::Integer(if *b { 1 } else { 0 })
+                            }
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    rusqlite::types::Value::Integer(i)
+                                } else if let Some(f) = n.as_f64() {
+                                    rusqlite::types::Value::Real(f)
+                                } else {
+                                    rusqlite::types::Value::Text(n.to_string())
+                                }
+                            }
+                            serde_json::Value::String(s) => {
+                                rusqlite::types::Value::Text(s.clone())
+                            }
+                            other => rusqlite::types::Value::Text(other.to_string()),
+                        })
+                        .collect();
+                    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                        params.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+                    stmt.execute(params_ref.as_slice())
+                        .map_err(|e| AppError::Datasource(format!("SQLite execute: {}", e)))?;
+                }
+            }
+            tx.commit()
+                .map_err(|e| AppError::Datasource(format!("SQLite commit: {}", e)))?;
+            Ok(rows.len())
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))?
+    }
 }
 
 /// 对单张表执行 SELECT COUNT(*)，失败时返回 None

@@ -25,10 +25,6 @@ const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
 const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 
 /// Maximum estimated SQL payload size (bytes) for a single INSERT statement.
-/// When accumulated row data exceeds this threshold, flush the write buffer early
-/// even if write_batch_size has not been reached. Prevents generating oversized INSERTs
-/// that exceed the target database's max_allowed_packet or cause excessive WAL/binlog growth.
-const MAX_WRITE_SQL_BYTES: usize = 4 * 1024 * 1024; // 4 MB
 
 /// Number of consecutive fully-failed write batches (0 rows written) before the writer
 /// aborts the pipeline. Prevents infinite timeout-retry loops when the target database
@@ -574,6 +570,14 @@ async fn execute_single_mapping(
     )
     .await?;
 
+    // ── Setup migration session on target datasource ─────────────────────
+    if let Err(e) = dst_ds.setup_migration_session().await {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!("[{}] Migration session setup failed: {} (continuing with defaults)", mapping_label, e),
+        );
+    }
+
     // ── Auto-create table if needed ───────────────────────────────────────
     if mapping.target.create_if_not_exists {
         if let Err(e) = auto_create_target_table(
@@ -760,6 +764,7 @@ async fn execute_single_mapping(
         None
     };
 
+    let dst_ds_teardown = dst_ds.clone();
     let pipeline_result = if let Some(pk_col) = shard_pk {
         // ── Range-Split Mode: N independent cursor reader+writer pairs ───
         // DataX/SeaTunnel style: divide [MIN(pk), MAX(pk)] into `parallelism`
@@ -806,9 +811,7 @@ async fn execute_single_mapping(
                     job_id,
                     run_id.to_string(),
                     mapping_label.clone(),
-                    config.pipeline.transaction_batch_size,
                     config.pipeline.speed_limit_rps,
-                    config.pipeline.write_pause_ms,
                 ).await
             }
             Some(splits) => {
@@ -859,9 +862,7 @@ async fn execute_single_mapping(
                         job_id,
                         run_id.to_string(),
                         split_label,
-                        config.pipeline.transaction_batch_size,
                         config.pipeline.speed_limit_rps,
-                        config.pipeline.write_pause_ms,
                     ));
                     split_handles.push(handle);
                 }
@@ -940,14 +941,20 @@ async fn execute_single_mapping(
             job_id,
             run_id.to_string(),
             mapping_label.clone(),
-            config.pipeline.transaction_batch_size,
             config.pipeline.speed_limit_rps,
-            config.pipeline.write_pause_ms,
         ).await
     };
 
     stats_handle.abort();
     pipeline_result?;
+
+    // ── Teardown migration session on target datasource ──────────────────
+    if let Err(e) = dst_ds_teardown.teardown_migration_session().await {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!("[{}] Migration session teardown failed: {}", mapping_label, e),
+        );
+    }
 
     let written = mapping_stats.rows_written.load(Ordering::Relaxed);
     let failed = mapping_stats.rows_failed.load(Ordering::Relaxed);
@@ -1006,9 +1013,7 @@ async fn run_reader_writer_pair(
     job_id: i64,
     run_id: String,
     label: String,
-    transaction_batch_size: usize,
     speed_limit_rps: Option<u64>,
-    write_pause_ms: Option<u64>,
 ) -> AppResult<()> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
 
@@ -1151,25 +1156,19 @@ async fn run_reader_writer_pair(
         Ok(())
     });
 
-    // ── Writer task (transaction-batched, semaphore-controlled) ────────
+    // ── Writer task (bulk_write, semaphore-controlled) ───────────────────
     let ms_writer = mapping_stats.clone();
     let gs_writer = global_stats.clone();
     let app_writer = app.clone();
     let run_id_w = run_id.clone();
     let cancel_w = cancel.clone();
     let label_w = label.clone();
-    let txn_batch_size = transaction_batch_size.max(1).min(100);
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         let semaphore = write_semaphore;
-        let (result_tx, mut result_rx) =
-            tokio::sync::mpsc::unbounded_channel::<(u64, u64)>();
         let mut error_count = 0usize;
         let mut consecutive_full_fails = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
-        let mut buf_estimated_bytes: usize = 0;
         let mut buf_columns: Vec<String> = Vec::new();
-        // Transaction batching: accumulate write batches, flush as a group
-        let mut pending_groups: Vec<Vec<Row>> = Vec::new();
 
         while let Some(batch) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
@@ -1180,162 +1179,103 @@ async fn run_reader_writer_pair(
                     .clone()
                     .unwrap_or_else(|| batch.column_names.clone());
             }
+
             for row in batch.rows {
-                buf_estimated_bytes += row.iter().map(|v| json_value_len(v) as usize + 3).sum::<usize>();
                 write_buf.push(row);
-                if write_buf.len() >= write_batch_size || buf_estimated_bytes >= MAX_WRITE_SQL_BYTES {
-                    // Push current write_buf into pending_groups
-                    let rows_to_group = std::mem::replace(
+                if write_buf.len() >= write_batch_size {
+                    let rows_to_write = std::mem::replace(
                         &mut write_buf,
                         Vec::with_capacity(write_batch_size),
                     );
-                    buf_estimated_bytes = 0;
-                    pending_groups.push(rows_to_group);
+                    let batch_len = rows_to_write.len() as u64;
 
-                    if pending_groups.len() >= txn_batch_size {
-                        // Drain completed writes (non-blocking)
-                        while let Ok((ok, fail)) = result_rx.try_recv() {
+                    let _permit = semaphore.clone().acquire_owned().await
+                        .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+                    match tokio::time::timeout(
+                        tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                        dst_ds.bulk_write(
+                            &target_table, &buf_columns, &rows_to_write,
+                            &conflict_strategy, &upsert_keys, &dst_driver,
+                        )
+                    ).await {
+                        Ok(Ok(n)) => {
+                            let ok = n as u64;
+                            let fail = batch_len.saturating_sub(ok);
                             ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
                             gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            error_count += fail as usize;
+                            if fail > 0 {
+                                ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                error_count += fail as usize;
+                            }
                             if ok == 0 && fail > 0 {
                                 consecutive_full_fails += 1;
-                            } else if ok > 0 {
+                            } else {
                                 consecutive_full_fails = 0;
                             }
                         }
-                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                        Ok(Err(e)) => {
                             emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                &format!("[{}] Circuit breaker: {} consecutive batches fully failed, aborting pipeline",
-                                    label_w, consecutive_full_fails));
-                            drop(result_tx);
-                            while let Ok((ok, fail)) = result_rx.try_recv() {
-                                ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                                gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                                ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            }
-                            return Err(AppError::Other(format!(
-                                "Circuit breaker: {} consecutive write batches fully failed — target database may be unreachable",
-                                consecutive_full_fails
-                            )));
+                                &format!("[{}] bulk_write failed: {}", label_w, e));
+                            ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            error_count += batch_len as usize;
+                            consecutive_full_fails += 1;
                         }
-                        if error_limit > 0 && error_count >= error_limit {
-                            drop(result_tx);
-                            while let Ok((ok, fail)) = result_rx.try_recv() {
-                                ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                                gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                                ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            }
-                            return Err(AppError::Other(format!(
-                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                            )));
+                        Err(_) => {
+                            emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
+                                    label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                            ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            error_count += batch_len as usize;
+                            consecutive_full_fails += 1;
                         }
+                    }
 
-                        // Flush pending_groups as a transaction batch
-                        let groups_to_write = std::mem::take(&mut pending_groups);
-                        let permit = semaphore.clone().acquire_owned().await
-                            .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-                        let dst_clone = dst_ds.clone();
-                        let table_clone = target_table.clone();
-                        let cols_clone = buf_columns.clone();
-                        let cs_clone = conflict_strategy.clone();
-                        let uk_clone = upsert_keys.clone();
-                        let drv_clone = dst_driver.clone();
-                        let rtx = result_tx.clone();
-                        let app_clone = app_writer.clone();
-                        let lbl = label_w.clone();
-                        let rid = run_id_w.clone();
-                        let pause_ms = write_pause_ms;
-
-                        let _handle = tokio::spawn(async move {
-                            let total_rows: u64 = groups_to_write.iter().map(|g| g.len() as u64).sum();
-                            let timed = tokio::time::timeout(
-                                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                                write_batch_group(
-                                    &*dst_clone, &table_clone, &cols_clone,
-                                    &groups_to_write, &cs_clone, &uk_clone, &drv_clone,
-                                    &app_clone, job_id, &rid, &lbl,
-                                )
-                            ).await;
-                            let results = match timed {
-                                Ok(r) => r,
-                                Err(_) => {
-                                    emit_log(&app_clone, job_id, &rid, "WARN",
-                                        &format!("[{}] Transaction batch timed out after {}s ({} rows treated as failed)",
-                                            lbl, WRITE_BATCH_TIMEOUT_SECS, total_rows));
-                                    vec![(0u64, total_rows)]
-                                }
-                            };
-                            for (ok, fail) in results {
-                                let _ = rtx.send((ok, fail));
-                            }
-                            // write_pause_ms: cooldown between commits
-                            if let Some(ms) = pause_ms {
-                                tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
-                            }
-                            drop(permit);
-                        });
+                    // Circuit breaker
+                    if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                            &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
+                        return Err(AppError::Other(format!(
+                            "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                        )));
+                    }
+                    if error_limit > 0 && error_count >= error_limit {
+                        return Err(AppError::Other(format!(
+                            "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                        )));
                     }
                 }
             }
         }
 
-        // Flush remainder: first push any remaining write_buf into pending_groups
+        // Flush remainder
         if !write_buf.is_empty() {
-            pending_groups.push(std::mem::take(&mut write_buf));
-        }
-
-        // Flush remaining pending_groups
-        if !pending_groups.is_empty() {
+            let batch_len = write_buf.len() as u64;
             let _permit = semaphore.clone().acquire_owned().await
                 .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-            let total_rows: u64 = pending_groups.iter().map(|g| g.len() as u64).sum();
-            let timed = tokio::time::timeout(
-                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                write_batch_group(
-                    &*dst_ds, &target_table, &buf_columns,
-                    &pending_groups, &conflict_strategy, &upsert_keys, &dst_driver,
-                    &app_writer, job_id, &run_id_w, &label_w,
-                )
-            ).await;
-            let results = match timed {
-                Ok(r) => r,
-                Err(_) => {
-                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                        &format!("[{}] Final flush timed out after {}s ({} rows treated as failed)",
-                            label_w, WRITE_BATCH_TIMEOUT_SECS, total_rows));
-                    vec![(0u64, total_rows)]
+            match dst_ds.bulk_write(
+                &target_table, &buf_columns, &write_buf,
+                &conflict_strategy, &upsert_keys, &dst_driver,
+            ).await {
+                Ok(n) => {
+                    ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                    gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                    let fail = batch_len.saturating_sub(n as u64);
+                    if fail > 0 {
+                        ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                    }
                 }
-            };
-            for (ok, fail) in results {
-                ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                if fail > 0 {
-                    ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                    error_count += fail as usize;
+                Err(e) => {
+                    emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                        &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
+                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
                 }
             }
-        }
-
-        drop(result_tx);
-        while let Some((ok, fail)) = result_rx.recv().await {
-            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-            error_count += fail as usize;
-        }
-
-        // Final error limit check
-        if error_limit > 0 && error_count >= error_limit {
-            return Err(AppError::Other(format!(
-                "Error limit ({}) exceeded: {} errors", error_limit, error_count
-            )));
         }
 
         Ok(())
@@ -1538,330 +1478,4 @@ async fn writeback_incremental_checkpoint(
     }
 }
 
-// ── Batch write helper ────────────────────────────────────────────────────────
 
-/// Pure SQL builder: construct a multi-row INSERT statement without executing it.
-/// Extracts the SQL-building logic from write_batch so it can be reused by
-/// write_batch_group for transaction batching.
-fn build_insert_sql(
-    escape_style: &crate::datasource::StringEscapeStyle,
-    table: &str,
-    columns: &[String],
-    rows: &[Row],
-    conflict_strategy: &ConflictStrategy,
-    upsert_keys: &[String],
-    driver: &str,
-) -> String {
-    let quote_col: fn(&str) -> String = match driver {
-        "mysql" | "doris" | "tidb" | "clickhouse" => |c| format!("`{}`", c.replace('`', "``")),
-        "sqlserver" => |c| format!("[{}]", c.replace(']', "]]")),
-        _ => |c| format!("\"{}\"", c.replace('"', "\"\"")),
-    };
-
-    let key_set: std::collections::HashSet<&str> =
-        upsert_keys.iter().map(|s| s.as_str()).collect();
-
-    let (keyword, suffix): (&str, std::borrow::Cow<str>) = match (conflict_strategy, driver) {
-        (ConflictStrategy::Skip, "sqlite") => ("INSERT OR IGNORE INTO", "".into()),
-        (ConflictStrategy::Replace, "sqlite") => ("INSERT OR REPLACE INTO", "".into()),
-        (ConflictStrategy::Skip, "mysql" | "doris" | "tidb") => ("INSERT IGNORE INTO", "".into()),
-        (ConflictStrategy::Replace, "mysql" | "doris" | "tidb") => ("REPLACE INTO", "".into()),
-        (ConflictStrategy::Skip, "postgres" | "gaussdb") => {
-            ("INSERT INTO", " ON CONFLICT DO NOTHING".into())
-        }
-        (ConflictStrategy::Upsert, "mysql" | "doris" | "tidb") => {
-            let update_parts: Vec<String> = columns
-                .iter()
-                .filter(|c| !key_set.contains(c.as_str()))
-                .map(|c| format!("{}=VALUES({})", quote_col(c), quote_col(c)))
-                .collect();
-            if update_parts.is_empty() {
-                ("INSERT IGNORE INTO", "".into())
-            } else {
-                (
-                    "INSERT INTO",
-                    format!(" ON DUPLICATE KEY UPDATE {}", update_parts.join(", ")).into(),
-                )
-            }
-        }
-        (ConflictStrategy::Upsert, "postgres" | "gaussdb") => {
-            let update_parts: Vec<String> = columns
-                .iter()
-                .filter(|c| !key_set.contains(c.as_str()))
-                .map(|c| format!("{}=EXCLUDED.{}", quote_col(c), quote_col(c)))
-                .collect();
-            if upsert_keys.is_empty() || update_parts.is_empty() {
-                ("INSERT INTO", " ON CONFLICT DO NOTHING".into())
-            } else {
-                let key_cols = upsert_keys
-                    .iter()
-                    .map(|k| quote_col(k))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                (
-                    "INSERT INTO",
-                    format!(
-                        " ON CONFLICT ({}) DO UPDATE SET {}",
-                        key_cols,
-                        update_parts.join(", ")
-                    )
-                    .into(),
-                )
-            }
-        }
-        (ConflictStrategy::Upsert, "sqlite") => {
-            let update_parts: Vec<String> = columns
-                .iter()
-                .filter(|c| !key_set.contains(c.as_str()))
-                .map(|c| format!("{}=excluded.{}", quote_col(c), quote_col(c)))
-                .collect();
-            if upsert_keys.is_empty() || update_parts.is_empty() {
-                ("INSERT OR REPLACE INTO", "".into())
-            } else {
-                let key_cols = upsert_keys
-                    .iter()
-                    .map(|k| quote_col(k))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                (
-                    "INSERT INTO",
-                    format!(
-                        " ON CONFLICT ({}) DO UPDATE SET {}",
-                        key_cols,
-                        update_parts.join(", ")
-                    )
-                    .into(),
-                )
-            }
-        }
-        (ConflictStrategy::Replace, "postgres" | "gaussdb") => {
-            if upsert_keys.is_empty() {
-                ("INSERT INTO", " ON CONFLICT DO NOTHING".into())
-            } else {
-                let update_parts: Vec<String> = columns
-                    .iter()
-                    .map(|c| format!("{}=EXCLUDED.{}", quote_col(c), quote_col(c)))
-                    .collect();
-                let key_cols = upsert_keys
-                    .iter()
-                    .map(|k| quote_col(k))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                (
-                    "INSERT INTO",
-                    format!(
-                        " ON CONFLICT ({}) DO UPDATE SET {}",
-                        key_cols,
-                        update_parts.join(", ")
-                    )
-                    .into(),
-                )
-            }
-        }
-        (ConflictStrategy::Overwrite, _) => ("INSERT INTO", "".into()),
-        _ => ("INSERT INTO", "".into()),
-    };
-
-    let col_list = columns
-        .iter()
-        .map(|c| quote_col(c))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let quoted_table = quote_col(table);
-
-    let row_placeholders: Vec<String> = rows
-        .iter()
-        .map(|row| {
-            let vals: Vec<String> = row
-                .iter()
-                .map(|v| crate::datasource::utils::value_to_sql_safe(v, escape_style))
-                .collect();
-            format!("({})", vals.join(", "))
-        })
-        .collect();
-
-    format!(
-        "{} {} ({}) VALUES {}{}",
-        keyword,
-        quoted_table,
-        col_list,
-        row_placeholders.join(", "),
-        suffix,
-    )
-}
-
-/// Build and execute a multi-row INSERT for `table` using the active datasource.
-/// Thin wrapper around build_insert_sql + ds.execute.
-/// Returns the number of rows that were inserted.
-async fn write_batch(
-    ds: &dyn crate::datasource::DataSource,
-    table: &str,
-    columns: &[String],
-    rows: &[Row],
-    conflict_strategy: &ConflictStrategy,
-    upsert_keys: &[String],
-    driver: &str,
-) -> AppResult<usize> {
-    if rows.is_empty() || columns.is_empty() {
-        return Ok(0);
-    }
-    let escape_style = ds.string_escape_style();
-    let sql = build_insert_sql(&escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver);
-    let result = ds.execute(&sql).await?;
-    Ok(result.row_count.min(rows.len()))
-}
-
-/// Returns true when the error is a transient TCP/connection-level failure that may
-/// succeed on retry (e.g. MySQL killed the connection under load). Data-level errors
-/// (duplicate key, constraint violation) are intentionally excluded.
-fn is_connection_error(err: &crate::error::AppError) -> bool {
-    // Check sqlx::Error variants directly for connection-level errors
-    if let crate::error::AppError::Sql(sqlx_err) = err {
-        return matches!(
-            sqlx_err,
-            sqlx::Error::Io(_) | sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut
-        );
-    }
-    // Fallback: string-match for wrapped errors
-    let s = err.to_string();
-    s.contains("expected to read")
-        || s.contains("got 0 bytes at EOF")
-        || s.contains("broken pipe")
-        || s.contains("connection reset")
-        || s.contains("error communicating with database")
-}
-
-/// Execute multiple write batches in a single transaction (one COMMIT for all).
-/// Falls back to individual write_batch calls (with canary retry) if the transaction fails.
-/// On transient connection errors, retries with exponential backoff before giving up.
-/// Returns Vec<(rows_ok, rows_failed)> for each batch group.
-async fn write_batch_group(
-    ds: &dyn crate::datasource::DataSource,
-    table: &str,
-    columns: &[String],
-    row_groups: &[Vec<Row>],
-    conflict_strategy: &ConflictStrategy,
-    upsert_keys: &[String],
-    driver: &str,
-    app: &AppHandle,
-    job_id: i64,
-    run_id: &str,
-    label: &str,
-) -> Vec<(u64, u64)> {
-    if row_groups.is_empty() {
-        return vec![];
-    }
-
-    let escape_style = ds.string_escape_style();
-    let sqls: Vec<String> = row_groups
-        .iter()
-        .filter(|g| !g.is_empty())
-        .map(|rows| build_insert_sql(&escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver))
-        .collect();
-
-    if sqls.is_empty() {
-        return vec![];
-    }
-
-    let total_rows: u64 = row_groups.iter().map(|g| g.len() as u64).sum();
-
-    // Try executing all statements in a single transaction.
-    // On transient connection errors, retry up to 2 times with exponential backoff (2 s, 4 s)
-    // to give the target database time to recover from momentary overload.
-    let mut txn_retries = 0u32;
-    let txn_result = loop {
-        match ds.execute_in_transaction(&sqls).await {
-            ok @ Ok(_) => break ok,
-            Err(e) if is_connection_error(&e) && txn_retries < 2 => {
-                txn_retries += 1;
-                let wait_secs = 1u64 << txn_retries; // 2 s, 4 s
-                emit_log(app, job_id, run_id, "WARN",
-                    &format!("[{}] Transaction connection error (retry {}/2, waiting {}s): {}",
-                        label, txn_retries, wait_secs, e));
-                tokio::time::sleep(tokio::time::Duration::from_secs(wait_secs)).await;
-            }
-            err @ Err(_) => break err,
-        }
-    };
-
-    match txn_result {
-        Ok(affected) => {
-            // Cap at total_rows to handle MySQL double-count
-            let ok = (affected as u64).min(total_rows);
-            vec![(ok, 0u64)]
-        }
-        Err(txn_err) => {
-            // Transaction failed — fall back to individual write_batch with canary retry per group
-            emit_log(app, job_id, run_id, "WARN",
-                &format!("[{}] Transaction batch failed ({}), falling back to individual batches…", label, txn_err));
-
-            // On connection errors, wait briefly before individual retries to allow DB recovery.
-            if is_connection_error(&txn_err) {
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            }
-
-            let mut results = Vec::with_capacity(row_groups.len());
-            for group in row_groups {
-                if group.is_empty() {
-                    continue;
-                }
-                let batch_len = group.len() as u64;
-
-                // Retry individual batch with exponential backoff on connection errors (1 s, 3 s).
-                let mut batch_retries = 0u32;
-                let batch_result = loop {
-                    match write_batch(ds, table, columns, group, conflict_strategy, upsert_keys, driver).await {
-                        ok @ Ok(_) => break ok,
-                        Err(e) if is_connection_error(&e) && batch_retries < 2 => {
-                            batch_retries += 1;
-                            let wait_ms = if batch_retries == 1 { 1000u64 } else { 3000u64 };
-                            emit_log(app, job_id, run_id, "WARN",
-                                &format!("[{}] Batch connection error (retry {}/2, waiting {}ms): {}",
-                                    label, batch_retries, wait_ms, e));
-                            tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
-                        }
-                        err @ Err(_) => break err,
-                    }
-                };
-
-                match batch_result {
-                    Ok(n) => results.push((n as u64, 0u64)),
-                    Err(e) => {
-                        emit_log(app, job_id, run_id, "WARN",
-                            &format!("[{}] Individual batch failed ({}), trying canary…", label, e));
-                        // Canary: try first row
-                        if let Some(first_row) = group.first() {
-                            if let Err(canary_err) = write_batch(
-                                ds, table, columns, std::slice::from_ref(first_row),
-                                conflict_strategy, upsert_keys, driver,
-                            ).await {
-                                emit_log(app, job_id, run_id, "ERROR",
-                                    &format!("[{}] Canary also failed ({}), skipping {} rows", label, canary_err, batch_len));
-                                results.push((0u64, batch_len));
-                                continue;
-                            }
-                        }
-                        // Canary passed — retry remaining rows individually
-                        let mut ok = 1u64;
-                        let mut fail = 0u64;
-                        for row in group.iter().skip(1) {
-                            match write_batch(
-                                ds, table, columns, std::slice::from_ref(row),
-                                conflict_strategy, upsert_keys, driver,
-                            ).await {
-                                Ok(n) => ok += n as u64,
-                                Err(re) => {
-                                    emit_log(app, job_id, run_id, "WARN",
-                                        &format!("[{}] Row write failed: {}", label, re));
-                                    fail += 1;
-                                }
-                            }
-                        }
-                        results.push((ok, fail));
-                    }
-                }
-            }
-            results
-        }
-    }
-}

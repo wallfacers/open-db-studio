@@ -1,3 +1,4 @@
+use crate::datasource::DataSource;
 use serde_json::Value;
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -55,6 +56,39 @@ pub fn quote_col_for_driver(col: &str, driver: &str) -> String {
         "sqlserver" => format!("[{}]", col.replace(']', "]]")),
         _ => format!("\"{}\"", col.replace('"', "\"\"")),
     }
+}
+
+/// Query MIN and MAX of `pk_col` over `source_query`, then return PK range splits.
+///
+/// Returns `None` when:
+/// - The MIN/MAX query fails (e.g. no index, permission denied)
+/// - The table is empty (MIN/MAX returns NULL)
+/// - `pk_col` cannot be parsed as i64
+///
+/// `split_count` controls how many splits to produce. Pass `parallelism` for
+/// parallel mode or `1` for single-reader cursor mode (one split = full table).
+pub async fn compute_pk_splits(
+    ds: &dyn DataSource,
+    source_query: &str,
+    pk_col: &str,
+    driver: &str,
+    split_count: usize,
+) -> Option<Vec<PkSplit>> {
+    let pk_q = quote_col_for_driver(pk_col, driver);
+    let sql = format!(
+        "SELECT MIN({pk}), MAX({pk}) FROM ({src}) AS _mig_minmax_",
+        pk = pk_q,
+        src = source_query,
+    );
+    let result = ds.execute(&sql).await.ok()?;
+    let row = result.rows.first()?;
+    let min_val = parse_i64_from_json(row.first()?)?;
+    let max_val = parse_i64_from_json(row.get(1)?)?;
+    if min_val > max_val {
+        return None;
+    }
+    let splits = compute_range_splits(min_val, max_val, split_count);
+    if splits.is_empty() { None } else { Some(splits) }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

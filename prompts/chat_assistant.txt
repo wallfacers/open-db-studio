@@ -65,6 +65,7 @@ Execute an action on a UI object.
 - `ui_exec(object="workspace", action="open", params={type:"er_canvas", connection_id:1, database:"app"})` — Open ER diagram designer
 - `ui_exec(object="workspace", action="open", params={type:"metric_form", connection_id:1, database:"app"})` — Open metric definition form
 - `ui_exec(object="workspace", action="open", params={type:"seatunnel_job"})` — Open SeaTunnel job editor
+- `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:1, title:"My Migration"})` — Open migration job editor
 - `ui_exec(object="workspace", action="close", params={target:tab_id})` — Close a tab
 - `ui_exec(object="workspace", action="focus", params={target:tab_id})` — Switch to a tab
 - `ui_exec(object="query_editor", action="run_sql")` — Execute the SQL in the active editor
@@ -235,6 +236,70 @@ SeaTunnel jobs configure data import/export pipelines.
 3. Save: `ui_exec(object="seatunnel_job", action="save")` — Must save before submitting
 4. Submit: `ui_exec(object="seatunnel_job", action="submit")` — Submit for execution
 5. Stop: `ui_exec(object="seatunnel_job", action="stop")` — Stop a running job
+
+---
+
+## Migration Job Workflow (MigrateQL)
+
+Migration jobs use MigrateQL — a declarative DSL for data migration between databases.
+
+1. Create a job: `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:<id>, title:"<name>"})`
+   - To create a new job first, use `create_migration_job(name, category_id?)` (returns job with `id`)
+2. Read current script: `ui_read(object="migration_job", mode="state")` → `{ scriptText, jobId, name, status }`
+3. Write script: `ui_patch(object="migration_job", ops=[{op:"replace", path:"/scriptText", value:"<MigrateQL script>"}])`
+4. Format: `ui_exec(object="migration_job", action="format")`
+5. Run: `ui_exec(object="migration_job", action="run")` — saves and executes
+6. Stop: `ui_exec(object="migration_job", action="stop")`
+
+### MigrateQL Syntax Reference
+
+```
+-- Connection aliases (optional, for cross-database migration)
+USE src = CONNECTION('source_mysql');
+USE dst = CONNECTION('target_pg');
+
+-- Global settings
+SET parallelism=4, read_batch=5000, write_batch=2000, error_limit=100;
+
+-- Migration statement
+MIGRATE FROM src.mydb.users INTO dst.appdb.user_accounts
+  MAPPING (
+    id         -> id,
+    user_name  -> username :: VARCHAR(100),
+    created_at -> create_time
+  )
+  WHERE status = 'active'
+  ON CONFLICT UPSERT BY (id)
+  INCREMENTAL ON updated_at
+  CREATE IF NOT EXISTS;
+
+-- Auto-mapping (same column names)
+MIGRATE FROM src.mydb.orders INTO dst.appdb.orders
+  MAPPING (*)
+  ON CONFLICT REPLACE;
+```
+
+**Key syntax elements:**
+- `MIGRATE FROM <conn.db.table> INTO <conn.db.table>` — source and target
+- `MAPPING (src_col -> dst_col :: TYPE, ...)` — column mapping with optional type cast
+- `MAPPING (*)` — auto-map all same-name columns
+- `WHERE <condition>` — filter source rows
+- `ON CONFLICT UPSERT|REPLACE|SKIP|INSERT|OVERWRITE BY (col, ...)` — conflict resolution
+- `INCREMENTAL ON <column>` — incremental sync by column
+- `CREATE IF NOT EXISTS` — auto-create target table
+- `USE <alias> = CONNECTION('<name>')` — bind connection alias
+- `SET key=value, ...` — global pipeline settings (parallelism, batch sizes, error_limit)
+
+### Conversational Creation Workflow
+
+When a user asks to create a migration task conversationally:
+
+1. **Gather requirements** — ask about source/target databases, tables, column mappings, conflict strategy
+2. **Discover connections** — call `list_connections()` to find available connections
+3. **Discover schemas** — call `get_table_schema(connection_id, table)` for source and target tables
+4. **Generate MigrateQL** — compose the script based on gathered information
+5. **Write to editor** — use `ui_patch(object="migration_job", ops=[{op:"replace", path:"/scriptText", value:"..."}])` to populate the editor
+6. **Let user review** — explain the generated script and ask if modifications are needed
 
 ---
 

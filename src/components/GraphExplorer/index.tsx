@@ -560,35 +560,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Sync to React Flow whenever filtered data changes ───────────────────────
   useEffect(() => {
-    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap).map(n => ({
-      ...n,
-      data: {
-        ...n.data,
-        isHighlighted: highlightedNodeIds.has(n.id),
-        isDimmed: highlightedNodeIds.size > 0 && !highlightedNodeIds.has(n.id),
-        isPathFrom: pathFrom?.id === n.id,
-        isPathTo: pathTo?.id === n.id,
-      },
-    }));
-    const flowEdges = toFlowEdges(filteredEdges, selfRefLinkIds).map(e => {
-      const isHighlighted = highlightedEdgeIds.has(e.id);
-      const isDimmed = highlightedEdgeIds.size > 0 && !highlightedEdgeIds.has(e.id);
-      return {
-        ...e,
-        data: {
-          ...e.data,
-          highlighted: isHighlighted,
-          dimmed: isDimmed,
-        },
-        // Keep style for backwards compatibility with non-RelationEdge edges
-        style: {
-          ...e.style,
-          ...(isHighlighted ? { stroke: 'var(--accent)', strokeWidth: 3 } : {}),
-          ...(isDimmed ? { opacity: 0.3 } : {}),
-        },
-        animated: isHighlighted,
-      };
-    });
+    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap);
+    const flowEdges = toFlowEdges(filteredEdges, selfRefLinkIds);
     // 合并本次会话拖拽过的坐标，防止高亮/焦点等状态变化导致位置回弹
     const mergedNodes = flowNodes.map(n => {
       const dragged = draggedPositionsRef.current.get(n.id);
@@ -598,7 +571,36 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
-  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId, selfRefLinkIds]);
+  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, selfRefLinkIds]);
+
+  // ── Apply highlight / path / focus data without re-layout ───────────────────
+  const { updateNode, updateEdge } = useReactFlow();
+  useEffect(() => {
+    const hasNodeHL = highlightedNodeIds.size > 0;
+    const hasEdgeHL = highlightedEdgeIds.size > 0;
+    for (const node of rfNodes) {
+      updateNode(node.id, {
+        data: {
+          isHighlighted: hasNodeHL && highlightedNodeIds.has(node.id),
+          isDimmed: hasNodeHL && !highlightedNodeIds.has(node.id),
+          isPathFrom: pathFrom?.id === node.id,
+          isPathTo: pathTo?.id === node.id,
+        },
+      });
+    }
+    for (const edge of rfEdges) {
+      const isHL = hasEdgeHL && highlightedEdgeIds.has(edge.id);
+      updateEdge(edge.id, {
+        data: { highlighted: isHL, dimmed: hasEdgeHL && !isHL },
+        style: {
+          ...edge.style,
+          ...(isHL ? { stroke: 'var(--accent)', strokeWidth: 3 } : {}),
+          ...(!isHL && hasEdgeHL ? { opacity: 0.3 } : {}),
+        },
+        animated: isHL,
+      });
+    }
+  }, [highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, rfNodes, rfEdges, updateNode, updateEdge]);
 
   // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────
   const onNodeDragStop: NodeMouseHandler = useCallback((_event, node) => {

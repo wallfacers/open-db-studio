@@ -179,7 +179,7 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, seatunnel_job, db_tree, history, er_canvas" },
+                        "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, db_tree, history, er_canvas, migration_job" },
                         "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
                         "mode": { "type": "string", "enum": ["state", "schema", "actions", "full"], "default": "state", "description": "Use 'full' to get state + actions + schema in one call" }
                     },

@@ -246,8 +246,19 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
   selectNode: (id) => set({ selectedId: id }),
 
   createCategory: async (name, parentId) => {
-    await invoke('create_migration_category', { name, parentId: parentId ?? null })
-    await get().init()
+    const category = await invoke<MigrationCategory>('create_migration_category', { name, parentId: parentId ?? null })
+    const catId = migCatNodeId(category.id)
+    set(s => {
+      const nodes = new Map(s.nodes)
+      nodes.set(catId, {
+        nodeType: 'category',
+        id: catId,
+        label: category.name,
+        parentId: category.parentId ? migCatNodeId(category.parentId) : null,
+        sortOrder: category.sortOrder,
+      })
+      return { nodes }
+    })
   },
 
   renameCategory: async (id, name) => {
@@ -266,16 +277,31 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
     if (!isCategoryEmpty(get().nodes, catId)) {
       throw new Error('CATEGORY_NOT_EMPTY')
     }
-
     await invoke('delete_migration_category', { id })
-    await get().init()
+    set(s => {
+      const nodes = new Map(s.nodes)
+      nodes.delete(catId)
+      return { nodes }
+    })
   },
 
   createJob: async (name, categoryId) => {
     const job = await invoke<MigrationJob>('create_migration_job', {
       name, categoryId: categoryId ?? null,
     })
-    await get().init()
+    const jobId = migJobNodeId(job.id)
+    set(s => {
+      const nodes = new Map(s.nodes)
+      nodes.set(jobId, {
+        nodeType: 'job',
+        id: jobId,
+        label: job.name,
+        parentId: job.categoryId ? migCatNodeId(job.categoryId) : null,
+        jobId: job.id,
+        status: job.lastStatus,
+      })
+      return { nodes }
+    })
     return job.id
   },
 

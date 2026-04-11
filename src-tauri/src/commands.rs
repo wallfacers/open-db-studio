@@ -1388,20 +1388,17 @@ pub async fn list_tables_with_stats(
     schema: Option<String>,
 ) -> AppResult<Vec<crate::datasource::TableStatInfo>> {
     let config = crate::db::get_connection_config(connection_id)?;
-    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
-    let stats = ds.list_tables_with_stats(&database, schema.as_deref()).await?;
-    
-    // 过滤系统库/Schema
     use crate::graph::SYSTEM_SCHEMAS;
-    Ok(stats.into_iter()
-        .filter(|_s| {
-            if SYSTEM_SCHEMAS.contains(&database.as_str()) { return false; }
-            if let Some(ref sch) = schema {
-                if SYSTEM_SCHEMAS.contains(&sch.as_str()) { return false; }
-            }
-            true
-        })
-        .collect())
+    if SYSTEM_SCHEMAS.contains(&database.as_str()) {
+        return Ok(vec![]);
+    }
+    if let Some(ref sch) = schema {
+        if SYSTEM_SCHEMAS.contains(&sch.as_str()) {
+            return Ok(vec![]);
+        }
+    }
+    let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
+    ds.list_tables_with_stats(&database, schema.as_deref()).await
 }
 
 #[tauri::command]

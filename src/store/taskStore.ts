@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 // 任务类型
-export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel' | 'ai_generate_metrics' | 'build_schema_graph';
+export type TaskType = 'export' | 'import' | 'migration' | 'ai_generate_metrics' | 'build_schema_graph';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface TaskLog {

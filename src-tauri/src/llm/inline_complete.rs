@@ -202,8 +202,6 @@ pub fn postprocess_completion(raw: &str, sql_before: &str, sql_after: &str) -> S
             sql_after
         };
         // Find longest suffix of result that matches a prefix of sql_after
-        let result_chars_len = result.char_indices().count();
-        let _ = result_chars_len; // may use later
         for i in (0..head.len()).rev() {
             if !head.is_char_boundary(i) { continue; }
             let prefix = &head[..i];

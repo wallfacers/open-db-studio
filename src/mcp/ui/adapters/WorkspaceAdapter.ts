@@ -14,7 +14,7 @@ export class WorkspaceAdapter implements UIObject {
           paramsSchema: {
             type: 'object',
             properties: {
-              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'seatunnel_job', 'migration_job'] },
+              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'migration_job'] },
               connection_id: { type: 'number' },
               database: { type: 'string' },
               schema: { type: 'string' },

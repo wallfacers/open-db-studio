@@ -10,7 +10,6 @@ vi.mock('../../../store/queryStore', () => ({
       openTableStructureTab: vi.fn(),
       openMetricTab: vi.fn(),
       openERDesignTab: vi.fn(),
-      openSeaTunnelJobTab: vi.fn(),
       openMigrationJobTab: vi.fn(),
       closeTab: vi.fn(),
       setActiveTabId: vi.fn(),

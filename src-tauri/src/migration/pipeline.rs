@@ -679,61 +679,114 @@ async fn execute_single_mapping(
     };
 
     let pipeline_result = if let Some(pk_col) = shard_pk {
-        // ── Shard Mode: N independent reader+writer pipelines ────────────
+        // ── Range-Split Mode: N independent cursor reader+writer pairs ───
+        // DataX/SeaTunnel style: divide [MIN(pk), MAX(pk)] into `parallelism`
+        // non-overlapping ranges. Each range spawns its own reader+writer.
+        // No MOD, no OFFSET — O(n) total.
         logs.lock().unwrap().emit_and_record(
             app, job_id, run_id, "SYSTEM",
-            &format!("[{}] Using Shard mode: {} shards on column '{}'", mapping_label, parallelism, pk_col),
+            &format!("[{}] Range-split mode: {} shards on column '{}'", mapping_label, parallelism, pk_col),
         );
 
-        // Scale channel_cap per shard to prevent O(parallelism * channel_cap) memory
-        let shard_channel_cap = (channel_cap / parallelism).max(2);
+        let splits_opt = crate::migration::splitter::compute_pk_splits(
+            &*src_ds, &source_query, &pk_col, &src_cfg.driver, parallelism,
+        ).await;
 
-        let mut shard_handles = Vec::new();
-        for shard_id in 0..parallelism {
-            let shard_query = build_shard_query(&source_query, &pk_col, shard_id, parallelism, &src_cfg.driver);
-            let shard_label = format!("{}[shard:{}/{}]", mapping_label, shard_id, parallelism);
-            logs.lock().unwrap().emit_and_record(
-                app, job_id, run_id, "SYSTEM",
-                &format!("[{}] SQL: {}", shard_label,
-                    if shard_query.len() > 200 { &shard_query[..200] } else { &shard_query }),
-            );
-            let handle = tokio::spawn(run_reader_writer_pair(
-                shard_query,
-                None,                    // pk_split: will be range split in Task 6
-                src_cfg.driver.clone(),  // src_driver
-                src_ds.clone(),
-                dst_ds.clone(),
-                target_table.clone(),
-                dst_driver.clone(),
-                mapped_cols.clone(),
-                conflict_strategy.clone(),
-                upsert_keys.clone(),
-                read_batch_size,
-                write_batch_size,
-                shard_channel_cap,
-                error_limit,
-                1, // each shard is single-writer
-                cancel.clone(),
-                mapping_stats.clone(),
-                global_stats.clone(),
-                app.clone(),
-                job_id,
-                run_id.to_string(),
-                shard_label,
-            ));
-            shard_handles.push(handle);
-        }
-
-        let mut shard_errors = Vec::new();
-        for (i, handle) in shard_handles.into_iter().enumerate() {
-            match handle.await {
-                Err(e) => shard_errors.push(format!("shard {} panicked: {}", i, e)),
-                Ok(Err(e)) => shard_errors.push(format!("shard {} failed: {}", i, e)),
-                Ok(Ok(())) => {}
+        match splits_opt {
+            None => {
+                // MIN/MAX failed (empty table or error) → fall back to single cursor reader
+                logs.lock().unwrap().emit_and_record(
+                    app, job_id, run_id, "WARN",
+                    &format!("[{}] Range-split: MIN/MAX failed; running single cursor reader", mapping_label),
+                );
+                // Attempt single cursor mode
+                let single_split = crate::migration::splitter::PkSplit { start: i64::MIN, end: None };
+                run_reader_writer_pair(
+                    source_query,
+                    Some((pk_col, single_split)),
+                    src_cfg.driver.clone(),
+                    src_ds,
+                    dst_ds,
+                    target_table.clone(),
+                    dst_driver.clone(),
+                    mapped_cols,
+                    conflict_strategy.clone(),
+                    upsert_keys.clone(),
+                    read_batch_size,
+                    write_batch_size,
+                    channel_cap,
+                    error_limit,
+                    1,
+                    cancel.clone(),
+                    mapping_stats.clone(),
+                    global_stats.clone(),
+                    app.clone(),
+                    job_id,
+                    run_id.to_string(),
+                    mapping_label.clone(),
+                ).await
             }
-        }
-        if shard_errors.is_empty() { Ok(()) } else {
-            Err(AppError::Other(format!("Shard errors: {}", shard_errors.join("; "))))
+            Some(splits) => {
+                // Scale channel_cap per split to prevent O(parallelism * channel_cap) memory
+                let split_channel_cap = (channel_cap / parallelism).max(2);
+                let actual_splits = splits.len();
+
+                logs.lock().unwrap().emit_and_record(
+                    app, job_id, run_id, "SYSTEM",
+                    &format!("[{}] {} range splits created (requested {})", mapping_label, actual_splits, parallelism),
+                );
+
+                let mut split_handles = Vec::new();
+                for (i, split) in splits.into_iter().enumerate() {
+                    let split_label = format!("{}[split:{}/{}]", mapping_label, i + 1, actual_splits);
+                    logs.lock().unwrap().emit_and_record(
+                        app, job_id, run_id, "SYSTEM",
+                        &format!("[{}] pk range [{}, {})",
+                            split_label,
+                            split.start,
+                            split.end.map(|e| e.to_string()).unwrap_or_else(|| "∞".into())),
+                    );
+                    let handle = tokio::spawn(run_reader_writer_pair(
+                        source_query.clone(),
+                        Some((pk_col.clone(), split)),
+                        src_cfg.driver.clone(),
+                        src_ds.clone(),
+                        dst_ds.clone(),
+                        target_table.clone(),
+                        dst_driver.clone(),
+                        mapped_cols.clone(),
+                        conflict_strategy.clone(),
+                        upsert_keys.clone(),
+                        read_batch_size,
+                        write_batch_size,
+                        split_channel_cap,
+                        error_limit,
+                        1, // each split is single-writer
+                        cancel.clone(),
+                        mapping_stats.clone(),
+                        global_stats.clone(),
+                        app.clone(),
+                        job_id,
+                        run_id.to_string(),
+                        split_label,
+                    ));
+                    split_handles.push(handle);
+                }
+
+                let mut split_errors = Vec::new();
+                for (i, handle) in split_handles.into_iter().enumerate() {
+                    match handle.await {
+                        Err(e) => split_errors.push(format!("split {} panicked: {}", i + 1, e)),
+                        Ok(Err(e)) => split_errors.push(format!("split {} failed: {}", i + 1, e)),
+                        Ok(Ok(())) => {}
+                    }
+                }
+                if split_errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(AppError::Other(format!("Split errors: {}", split_errors.join("; "))))
+                }
+            }
         }
     } else {
         // ── Single reader (parallelism == 1 or no integer PK found) ─────
@@ -831,40 +884,7 @@ async fn detect_integer_pk_from_ds(
     ds.get_columns(table, None).await.ok().as_deref().and_then(detect_integer_pk)
 }
 
-// ── Shard query builder ──────────────────────────────────────────────────────
-
-fn build_shard_query(
-    original_query: &str,
-    pk_col: &str,
-    shard_id: usize,
-    total_shards: usize,
-    driver: &str,
-) -> String {
-    let shard_condition = match driver {
-        "mysql" | "tidb" | "doris" => format!(
-            "MOD(`{}`, {}) = {}", pk_col.replace('`', "``"), total_shards, shard_id
-        ),
-        "clickhouse" => format!(
-            "modulo(`{}`, {}) = {}", pk_col.replace('`', "``"), total_shards, shard_id
-        ),
-        "sqlserver" => format!(
-            "([{}] % {}) = {}", pk_col.replace(']', "]]"), total_shards, shard_id
-        ),
-        "sqlite" => format!(
-            "(\"{}\" % {}) = {}", pk_col.replace('"', "\"\""), total_shards, shard_id
-        ),
-        // postgres, gaussdb, db2
-        _ => format!(
-            "MOD(\"{}\", {}) = {}", pk_col.replace('"', "\"\""), total_shards, shard_id
-        ),
-    };
-    format!(
-        "SELECT * FROM ({}) AS _mig_shard_ WHERE {}",
-        original_query, shard_condition
-    )
-}
-
-// ── Reader + Writer sub-pipeline (reusable per shard or full table) ──────────
+// ── Reader + Writer sub-pipeline (reusable per split or full table) ──────────
 
 #[allow(clippy::too_many_arguments)]
 async fn run_reader_writer_pair(

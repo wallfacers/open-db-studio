@@ -32,6 +32,10 @@ fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> Mig
     }
 }
 
+/// Maximum number of log events to keep in memory per run.
+/// Beyond this, oldest entries are dropped to prevent OOM.
+const LOG_COLLECTOR_MAX_ENTRIES: usize = 2000;
+
 pub struct LogCollector(pub Vec<MigrationLogEvent>);
 
 impl LogCollector {
@@ -50,6 +54,10 @@ impl LogCollector {
         let event = build_log_event(job_id, run_id, level, message);
         let _ = app.emit(MIGRATION_LOG_EVENT, &event);
         self.0.push(event);
+        // Cap growth: drop oldest entries when buffer exceeds threshold
+        if self.0.len() > LOG_COLLECTOR_MAX_ENTRIES {
+            self.0.drain(0..(self.0.len() - LOG_COLLECTOR_MAX_ENTRIES));
+        }
     }
 }
 
@@ -450,13 +458,6 @@ async fn execute_single_mapping(
     } else {
         config.source.database.clone()
     };
-    let src_ds = crate::datasource::pool_cache::get_or_create(
-        src_conn_id,
-        &src_cfg,
-        &src_db,
-        "",
-    )
-    .await?;
 
     // ── Resolve target datasource ─────────────────────────────────────────
     let dst_conn_id = mapping.target.connection_id;
@@ -466,11 +467,29 @@ async fn execute_single_mapping(
     } else {
         mapping.target.database.clone()
     };
-    let dst_ds = crate::datasource::pool_cache::get_or_create(
+
+    let error_limit = config.pipeline.error_limit.min(100_000);
+    let read_batch_size = config.pipeline.read_batch_size.max(1).min(50_000);
+    let write_batch_size = config.pipeline.write_batch_size.max(1).min(5_000);
+    let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
+    let parallelism = config.pipeline.parallelism.max(1).min(16);
+
+    // ── Dynamic pool sizing: ensure pool has enough connections for parallelism ──
+    let required_pool = (parallelism + 1) as u32; // 1 reader + parallelism writers
+    let src_ds = crate::datasource::pool_cache::get_or_create_with_pool_size(
+        src_conn_id,
+        &src_cfg,
+        &src_db,
+        "",
+        required_pool,
+    )
+    .await?;
+    let dst_ds = crate::datasource::pool_cache::get_or_create_with_pool_size(
         dst_conn_id,
         &dst_cfg,
         &dst_db,
         "",
+        required_pool,
     )
     .await?;
 
@@ -573,12 +592,6 @@ async fn execute_single_mapping(
         }
     }
 
-    let error_limit = config.pipeline.error_limit.min(100_000);
-    let read_batch_size = config.pipeline.read_batch_size.max(1).min(50_000);
-    let write_batch_size = config.pipeline.write_batch_size.max(1).min(5_000);
-    let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
-    let parallelism = config.pipeline.parallelism.max(1).min(16);
-
     // ── Mapped columns ───────────────────────────────────────────────────
     let mapped_cols: Option<Vec<String>> = if !column_mapping.is_empty() {
         Some(column_mapping.iter().map(|m| m.target_col.clone()).collect())
@@ -666,12 +679,9 @@ async fn execute_single_mapping(
             app, job_id, run_id, "SYSTEM",
             &format!("[{}] Using Shard mode: {} shards on column '{}'", mapping_label, parallelism, pk_col),
         );
-        if parallelism > 5 {
-            logs.lock().unwrap().emit_and_record(
-                app, job_id, run_id, "WARN",
-                &format!("[{}] parallelism({}) exceeds default pool_max_connections(5); writes may queue", mapping_label, parallelism),
-            );
-        }
+
+        // Scale channel_cap per shard to prevent O(parallelism * channel_cap) memory
+        let shard_channel_cap = (channel_cap / parallelism).max(2);
 
         let mut shard_handles = Vec::new();
         for shard_id in 0..parallelism {
@@ -693,7 +703,7 @@ async fn execute_single_mapping(
                 upsert_keys.clone(),
                 read_batch_size,
                 write_batch_size,
-                channel_cap,
+                shard_channel_cap,
                 error_limit,
                 1, // each shard is single-writer
                 cancel.clone(),
@@ -726,12 +736,6 @@ async fn execute_single_mapping(
                 app, job_id, run_id, "SYSTEM",
                 &format!("[{}] Using Semaphore mode: 1 reader + {} concurrent writers", mapping_label, parallelism),
             );
-            if parallelism > 5 {
-                logs.lock().unwrap().emit_and_record(
-                    app, job_id, run_id, "WARN",
-                    &format!("[{}] parallelism({}) exceeds default pool_max_connections(5); writes may queue", mapping_label, parallelism),
-                );
-            }
         }
         run_reader_writer_pair(
             source_query,
@@ -898,6 +902,8 @@ async fn run_reader_writer_pair(
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
+        // Track fire-and-forget write tasks so we can abort them on exit.
+        let mut pending_writes: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
         while let Some(batch) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
@@ -920,6 +926,17 @@ async fn run_reader_writer_pair(
                         error_count += fail as usize;
                     }
                     if error_limit > 0 && error_count >= error_limit {
+                        // Abort pending writes and drain remaining results before returning.
+                        for handle in &pending_writes {
+                            handle.abort();
+                        }
+                        drop(result_tx);
+                        while let Ok((ok, fail)) = result_rx.try_recv() {
+                            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        }
                         return Err(AppError::Other(format!(
                             "Error limit ({}) exceeded: {} errors", error_limit, error_count
                         )));
@@ -942,7 +959,7 @@ async fn run_reader_writer_pair(
                     let lbl = label_w.clone();
                     let rid = run_id_w.clone();
 
-                    tokio::spawn(async move {
+                    let handle = tokio::spawn(async move {
                         let (ok, fail) = match write_batch(
                             &*dst_clone, &table_clone, &cols_clone,
                             &rows_to_write, &cs_clone, &uk_clone, &drv_clone,
@@ -973,6 +990,7 @@ async fn run_reader_writer_pair(
                         let _ = rtx.send((ok, fail));
                         drop(permit);
                     });
+                    pending_writes.push(handle);
                 }
             }
         }
@@ -1017,7 +1035,14 @@ async fn run_reader_writer_pair(
             }
         }
 
-        // Wait for all pending concurrent writes to complete
+        // Abort all orphan write tasks that are still running.
+        // These are fire-and-forget spawns that may be holding connections.
+        for handle in &pending_writes {
+            handle.abort();
+        }
+
+        // Drain results from any tasks that completed before we aborted them.
+        // Wait for all pending concurrent writes to complete (or already-aborted ones to finish).
         drop(result_tx);
         while let Some((ok, fail)) = result_rx.recv().await {
             ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);

@@ -83,6 +83,7 @@ fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
     match style {
         StringEscapeStyle::Standard => {
             let escaped = single_pass_escape(s, |c, out| match c {
+                '\0' => out.push_str("\\0"),
                 '\\' => out.push_str("\\\\"),
                 '\'' => out.push_str("\\'"),
                 _ => out.push(c),
@@ -90,8 +91,9 @@ fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
             format!("'{}'", escaped)
         }
         StringEscapeStyle::PostgresLiteral => {
-            if s.contains('\\') {
+            if s.contains('\\') || s.contains('\0') {
                 let escaped = single_pass_escape(s, |c, out| match c {
+                    '\0' => out.push_str("\\0"),
                     '\\' => out.push_str("\\\\"),
                     '\'' => out.push_str("\\'"),
                     _ => out.push(c),
@@ -387,5 +389,31 @@ mod tests {
         assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::PostgresLiteral), "42");
         assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::TSql), "42");
         assert_eq!(value_to_sql_safe(&v, &StringEscapeStyle::SQLiteLiteral), "42");
+    }
+
+    #[test]
+    fn test_nul_byte_escaped_in_standard() {
+        // NUL 字节在 MySQL Standard 模式下应转义为 \0
+        let v = serde_json::Value::String("hello\x00world".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        assert_eq!(result, "'hello\\0world'");
+    }
+
+    #[test]
+    fn test_nul_byte_triggers_e_mode_in_postgres() {
+        // NUL 字节即使没有反斜杠，PostgreSQL 也应使用 E'...' 模式
+        let v = serde_json::Value::String("hello\x00world".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::PostgresLiteral);
+        assert!(result.starts_with("E'"), "Expected E' prefix, got: {}", result);
+        assert!(result.contains("\\0"), "Expected escaped NUL, got: {}", result);
+    }
+
+    #[test]
+    fn test_nul_combined_with_other_escapes() {
+        // NUL + 单引号 + 反斜杠 同时出现
+        let v = serde_json::Value::String("it's\x00a\\test".to_string());
+        let result = value_to_sql_safe(&v, &StringEscapeStyle::Standard);
+        // ' → \', \0 → \0, \ → \\
+        assert_eq!(result, r"'it\'s\0a\\test'");
     }
 }

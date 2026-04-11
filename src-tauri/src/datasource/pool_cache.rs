@@ -67,6 +67,50 @@ pub async fn get_or_create(
     Ok(ds)
 }
 
+/// 获取或创建缓存的数据源，可指定最小连接池大小。
+/// 用于迁移管道等场景需要根据并行度动态扩展连接池。
+pub async fn get_or_create_with_pool_size(
+    connection_id: i64,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    min_pool_size: u32,
+) -> AppResult<Arc<dyn DataSource>> {
+    // SQLite 不走缓存
+    if config.driver == "sqlite" {
+        return create_datasource_arc(config, database, schema).await;
+    }
+
+    let key: CacheKey = (connection_id, database.to_string(), schema.to_string());
+
+    // 快速路径：已有缓存直接返回
+    {
+        let cache = POOL_CACHE.lock().await;
+        if let Some(ds) = cache.get(&key) {
+            return Ok(Arc::clone(ds));
+        }
+    }
+
+    // 慢路径：创建新连接池（覆盖 pool_max_connections）
+    let mut cfg = config.clone();
+    let current = cfg.pool_max_connections.unwrap_or(0) as u32;
+    if min_pool_size > current {
+        cfg.pool_max_connections = Some(min_pool_size);
+    }
+    let ds = create_datasource_arc(&cfg, database, schema).await?;
+
+    let mut cache = POOL_CACHE.lock().await;
+    if let Some(existing) = cache.get(&key) {
+        return Ok(Arc::clone(existing));
+    }
+    cache.insert(key, Arc::clone(&ds));
+    log::info!(
+        "Pool cache created (pool_size={}): connection_id={} database={:?} schema={:?}",
+        cfg.pool_max_connections.unwrap_or(0), connection_id, database, schema
+    );
+    Ok(ds)
+}
+
 /// 删除或更新连接时调用，清除该连接的所有缓存连接池
 pub async fn invalidate(connection_id: i64) {
     let mut cache = POOL_CACHE.lock().await;

@@ -677,7 +677,12 @@ impl MySqlDataSource {
     }
 
     /// Build INSERT SQL respecting MySQL's max_allowed_packet by chunking rows.
-    /// Prevents "connection dropped" errors when batch contains large TEXT/BLOB/JSON values.
+    /// INSERT fallback with max_allowed_packet-aware chunking.
+    ///
+    /// Unlike DataX (which relies on JDBC `rewriteBatchedStatements=true` + a
+    /// fixed `batchByteSize=32MB` that can *also* exceed default `max_allowed_packet`),
+    /// we query the server's actual `max_allowed_packet` at runtime and split
+    /// rows so that each generated INSERT SQL stays safely within 75% of that limit.
     async fn bulk_write_insert_chunked(
         &self,
         table: &str,
@@ -689,46 +694,117 @@ impl MySqlDataSource {
     ) -> AppResult<usize> {
         use crate::datasource::bulk_write;
 
-        // Conservative safe chunk size: 16 MB (covers most default max_allowed_packet settings).
-        const SAFE_CHUNK_SIZE: usize = 16 * 1024 * 1024;
+        // Query actual max_allowed_packet from the server (default ~64 MB on modern MySQL).
+        // Falls back to a conservative 48 MB on failure (75% of 64 MB).
+        let max_packet = self.query_max_allowed_packet().await;
+        // Use 75% of max_allowed_packet to leave headroom for protocol overhead.
+        let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
 
-        // Estimate single row size by sampling first row
-        let sample_size = self.estimate_row_size(&rows[0]);
-        let rows_per_chunk = if sample_size > 0 {
-            (SAFE_CHUNK_SIZE / sample_size).max(1)
-        } else {
-            rows.len()
-        };
-
-        let mut total_written = 0usize;
         let escape_style = self.string_escape_style();
 
-        for chunk in rows.chunks(rows_per_chunk) {
+        // Pre-compute each row's estimated SQL size (accurate, not raw-data sampling).
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+
+            // Accumulate rows until adding the next one would exceed the limit.
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                // If a single row alone exceeds the limit, we must send it anyway
+                // (it will likely fail on the server side, but there's no way to split it).
+                if chunk_end > chunk_start && chunk_sql_size + row_size > max_sql_bytes {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+
+            let chunk = &rows[chunk_start..chunk_end];
             let sql = bulk_write::build_insert_sql_optimized(
                 &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
             );
+
+            // Safety: verify the actual SQL doesn't exceed the limit. If it does
+            // (estimation underestimated), split further by dropping rows one at a time.
+            if sql.len() > max_sql_bytes && chunk.len() > 1 {
+                let mut hi = chunk.len() - 1;
+                let mut lo = 1;
+                let mut best = 1;
+                while lo <= hi {
+                    let mid = (lo + hi) / 2;
+                    let test_sql = bulk_write::build_insert_sql_optimized(
+                        &escape_style, table, columns, &chunk[..mid], conflict_strategy, upsert_keys, driver,
+                    );
+                    if test_sql.len() <= max_sql_bytes {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                let sql = bulk_write::build_insert_sql_optimized(
+                    &escape_style, table, columns, &chunk[..best], conflict_strategy, upsert_keys, driver,
+                );
+                let result = self.execute(&sql).await?;
+                total_written += result.row_count.min(best);
+                chunk_start += best;
+                log::warn!(
+                    "INSERT chunk SQL estimated {} bytes but actual {} bytes (max {}), \
+                     split from {} to {} rows",
+                    chunk_sql_size, sql.len(), max_sql_bytes, chunk.len(), best,
+                );
+                continue;
+            }
+
             let result = self.execute(&sql).await?;
             total_written += result.row_count.min(chunk.len());
+            chunk_start = chunk_end;
         }
 
         Ok(total_written)
     }
 
-    /// Estimate the serialized size of a single row in bytes.
-    fn estimate_row_size(&self, row: &[serde_json::Value]) -> usize {
-        let mut size = 0usize;
-        for v in row {
-            size += match v {
-                serde_json::Value::Null => 4,
-                serde_json::Value::Bool(_) => 1,
-                serde_json::Value::Number(n) => n.to_string().len(),
-                serde_json::Value::String(s) => s.len() * 2 + 4,
-                other => other.to_string().len(),
-            };
+    /// Query the server's max_allowed_packet setting in bytes.
+    /// Returns 48 MB (conservative default) if the query fails.
+    async fn query_max_allowed_packet(&self) -> usize {
+        const DEFAULT: usize = 48 * 1024 * 1024; // 75% of 64 MB
+        match sqlx::query_scalar::<_, i64>("SELECT @@max_allowed_packet")
+            .fetch_optional(&self.pool)
+            .await
+        {
+            Ok(Some(v)) if v > 0 => v as usize,
+            _ => DEFAULT,
         }
-        size
     }
+}
 
+/// Estimate the SQL size for a single row (used for chunk pre-computation).
+fn estimate_row_sql_size(
+    row: &[serde_json::Value],
+    escape_style: &crate::datasource::StringEscapeStyle,
+    columns: &[String],
+    table: &str,
+    conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+    upsert_keys: &[String],
+    driver: &str,
+) -> usize {
+    // Build a single-row INSERT to measure actual SQL size.
+    // This is accurate because build_insert_sql_optimized matches the real output.
+    let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+        escape_style, table, columns, &[row.to_vec()],
+        conflict_strategy, upsert_keys, driver,
+    );
+    sql.len()
+}
+
+impl MySqlDataSource {
     async fn bulk_write_load_data(
         &self,
         table: &str,

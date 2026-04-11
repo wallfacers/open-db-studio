@@ -64,8 +64,8 @@ Execute an action on a UI object.
 - `ui_exec(object="workspace", action="open", params={type:"table_form", connection_id:1, database:"app", table:"users"})` — Open table structure editor for existing table
 - `ui_exec(object="workspace", action="open", params={type:"er_canvas", connection_id:1, database:"app"})` — Open ER diagram designer
 - `ui_exec(object="workspace", action="open", params={type:"metric_form", connection_id:1, database:"app"})` — Open metric definition form
-- `ui_exec(object="workspace", action="open", params={type:"seatunnel_job"})` — Open SeaTunnel job editor
-- `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:1, title:"My Migration"})` — Open migration job editor
+- `ui_exec(object="workspace", action="open", params={type:"new_migration_job", title:"My Migration"})` — Create and open a new migration job tab (returns job_id)
+- `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:1, title:"My Migration"})` — Open an existing migration job tab
 - `ui_exec(object="workspace", action="close", params={target:tab_id})` — Close a tab
 - `ui_exec(object="workspace", action="focus", params={target:tab_id})` — Switch to a tab
 - `ui_exec(object="query_editor", action="run_sql")` — Execute the SQL in the active editor
@@ -227,24 +227,13 @@ Use `ui_read(object="metric_form", mode="schema")` for full field details.
 
 ---
 
-## SeaTunnel Job Workflow
-
-SeaTunnel jobs configure data import/export pipelines.
-
-1. Open: `ui_exec(object="workspace", action="open", params={type:"seatunnel_job"})`
-2. Edit via `ui_patch`: Patchable fields — `/jobName`, `/configJson`, `/connectionId`, `/categoryId`
-3. Save: `ui_exec(object="seatunnel_job", action="save")` — Must save before submitting
-4. Submit: `ui_exec(object="seatunnel_job", action="submit")` — Submit for execution
-5. Stop: `ui_exec(object="seatunnel_job", action="stop")` — Stop a running job
-
----
-
 ## Migration Job Workflow (MigrateQL)
 
 Migration jobs use MigrateQL — a declarative DSL for data migration between databases.
 
-1. Create a job: `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:<id>, title:"<name>"})`
-   - To create a new job first, use `create_migration_job(name, category_id?)` (returns job with `id`)
+1. Create or open a job:
+   - New: `ui_exec(object="workspace", action="open", params={type:"new_migration_job", title:"<name>"})` → returns `{ objectId, job_id }`
+   - Existing: `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:<id>, title:"<name>"})`
 2. Read current script: `ui_read(object="migration_job", mode="state")` → `{ scriptText, jobId, name, status }`
 3. Write script: `ui_patch(object="migration_job", ops=[{op:"replace", path:"/scriptText", value:"<MigrateQL script>"}])`
 4. Format: `ui_exec(object="migration_job", action="format")`

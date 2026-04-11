@@ -276,6 +276,26 @@ export function formatElapsed(ms: number): string {
   return `${min}m${rem}s`
 }
 
+/** Format bytes to human-readable string.
+ *  e.g. 0 -> "0 B", 500 -> "500 B", 2048 -> "2 KB", 5242880 -> "5.00 MB", 1073741824 -> "1.00 GB"
+ */
+export function fmtBytes(b: number): string {
+  if (b <= 0) return '0 B'
+  if (b > 1e9) return `${(b / 1e9).toFixed(2)} GB`
+  if (b > 1e6) return `${(b / 1e6).toFixed(1)} MB`
+  if (b > 1024) return `${(b / 1024).toFixed(0)} KB`
+  return `${b} B`
+}
+
+/** Format duration milliseconds to human-readable string.
+ *  e.g. 500 -> "0.5s", 30000 -> "30.0s", 125000 -> "2m5s"
+ */
+export function fmtDuration(ms: number | null): string {
+  if (ms == null || ms <= 0) return '-'
+  if (ms > 60000) return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
 /** Format bytes-per-second speed to human-readable string.
  *  < 1 MiB/s → KB/s (1 decimal), ≥ 1 MiB/s → MB/s (2 decimals)
  *  e.g. 512000 -> "500.0 KB/s", 2097152 -> "2.00 MB/s"

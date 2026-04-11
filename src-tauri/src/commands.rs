@@ -152,7 +152,7 @@ fn resolve_base_url(config: &crate::db::models::LlmConfig) -> String {
     String::new()
 }
 
-fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
+pub(crate) fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let config = crate::db::get_default_llm_config()?
         .ok_or_else(|| crate::AppError::Other(
             "No AI model configured. Please add one in Settings → AI Model.".into()

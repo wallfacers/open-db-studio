@@ -4,12 +4,12 @@ import { useMigrationStore, MigrationJob } from '../../store/migrationStore'
 import { MigrationToolbar } from './MigrationToolbar'
 import { MigrationEditor } from './MigrationEditor'
 import { ResultPanel } from './ResultPanel'
-import { MigrateQLLspAdapter } from './LspAdapter'
 
 interface Props { jobId: number }
 
 export function MigrationJobTab({ jobId }: Props) {
-  const store = useMigrationStore()
+  const run = useMigrationStore(s => s.activeRuns.get(jobId))
+  const jobNode = useMigrationStore(s => s.nodes.get(`job_${jobId}`))
   const [scriptText, setScriptText] = useState('')
   const [resultHeight, setResultHeight] = useState(0)
   const [ghostTextEnabled, setGhostTextEnabled] = useState(false)
@@ -17,16 +17,9 @@ export function MigrationJobTab({ jobId }: Props) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scriptTextRef = useRef(scriptText)
   scriptTextRef.current = scriptText
-
-  // Expose LSP adapter ref so toolbar can call format
-  const lspAdapterRef = useRef<MigrateQLLspAdapter | null>(null)
-
-  const run = store.activeRuns.get(jobId)
-  const jobNode = store.nodes.get(`job_${jobId}`)
   const isRunning = jobNode?.nodeType === 'job' && jobNode.status === 'RUNNING'
   const hasFailed = jobNode?.nodeType === 'job' && jobNode.status === 'FAILED'
 
-  // Load script from DB on mount
   useEffect(() => {
     invoke<MigrationJob[]>('list_migration_jobs')
       .then((jobs) => {
@@ -35,12 +28,10 @@ export function MigrationJobTab({ jobId }: Props) {
       }).catch(() => {})
   }, [jobId])
 
-  // Open result panel when run starts
   useEffect(() => {
     if (isRunning && resultHeight === 0) setResultHeight(250)
   }, [isRunning]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup save timer on unmount
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -76,8 +67,8 @@ export function MigrationJobTab({ jobId }: Props) {
     try {
       await invoke('update_migration_job_script', { id: jobId, scriptText: scriptTextRef.current })
     } catch { /* continue to run even if save fails */ }
-    await store.runJob(jobId)
-  }, [jobId, store])
+    await useMigrationStore.getState().runJob(jobId)
+  }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStop = useCallback(async () => {
     await invoke('stop_migration_job', { jobId })

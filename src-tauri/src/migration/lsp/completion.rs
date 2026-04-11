@@ -157,29 +157,10 @@ pub async fn complete_inline(
         }
     }
 
-    // Build LLM client from default config
-    let config = match crate::db::get_default_llm_config() {
-        Ok(Some(c)) => c,
-        _ => return Ok(None), // No AI configured, silently skip
+    let llm = match crate::commands::build_llm_client() {
+        Ok(client) => client,
+        Err(_) => return Ok(None),
     };
-    let api_type = match config.api_type.as_str() {
-        "anthropic" => crate::llm::ApiType::Anthropic,
-        _ => crate::llm::ApiType::Openai,
-    };
-    let base_url = if !config.base_url.is_empty() {
-        config.base_url.clone()
-    } else if !config.opencode_provider_id.is_empty() {
-        crate::agent::config::resolve_opencode_base_url(&config.opencode_provider_id)
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-    let llm = crate::llm::client::LlmClient::new(
-        config.api_key,
-        Some(base_url),
-        Some(config.model),
-        Some(api_type),
-    );
 
     // Build prompt from template
     let template = include_str!("../../../../prompts/migration_ghost_text.md");

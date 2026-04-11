@@ -86,37 +86,49 @@ export function MigrationEditor({ value, onChange, onSave, ghostTextEnabled }: P
     adapter.start()
     lspAdapterRef.current = adapter
 
-    // Ghost Text inline completion
+    // Ghost Text inline completion with debounce
+    const ghostTextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     lspDisposablesRef.current.push(
       monaco.languages.registerInlineCompletionsProvider(MIGRATEQL_LANGUAGE_ID, {
         provideInlineCompletions: async (model: MonacoEditorType.ITextModel, position: Position, _context: languages.InlineCompletionContext, _token: CancellationToken) => {
           if (!ghostTextRef.current) return { items: [] }
-          try {
-            const result = await invoke<string | null>('lsp_request', {
-              method: 'textDocument/inlineCompletion',
-              params: {
-                text: model.getValue(),
-                position: {
-                  line: position.lineNumber - 1,
-                  column: position.column - 1,
-                },
-              },
-            })
-            if (!result) return { items: [] }
-            return {
-              items: [{
-                insertText: result,
-                range: new monaco.Range(
-                  position.lineNumber, position.column,
-                  position.lineNumber, position.column,
-                ),
-              }],
-            }
-          } catch {
-            return { items: [] }
+          // Debounce: cancel previous timer, wait 500ms of cursor silence before LLM call
+          return new Promise<languages.InlineCompletions<languages.InlineCompletion>>((resolve) => {
+            if (ghostTextTimerRef.current) clearTimeout(ghostTextTimerRef.current)
+            ghostTextTimerRef.current = setTimeout(async () => {
+              try {
+                const result = await invoke<string | null>('lsp_request', {
+                  method: 'textDocument/inlineCompletion',
+                  params: {
+                    text: model.getValue(),
+                    position: {
+                      line: position.lineNumber - 1,
+                      column: position.column - 1,
+                    },
+                  },
+                })
+                if (!result) return resolve({ items: [] })
+                resolve({
+                  items: [{
+                    insertText: result,
+                    range: new monaco.Range(
+                      position.lineNumber, position.column,
+                      position.lineNumber, position.column,
+                    ),
+                  }],
+                })
+              } catch {
+                resolve({ items: [] })
+              }
+            }, 500)
+          })
+        },
+        freeInlineCompletions: () => {
+          if (ghostTextTimerRef.current) {
+            clearTimeout(ghostTextTimerRef.current)
+            ghostTextTimerRef.current = null
           }
         },
-        freeInlineCompletions: () => {},
       }),
     )
 
@@ -169,10 +181,4 @@ export function MigrationEditor({ value, onChange, onSave, ghostTextEnabled }: P
       }}
     />
   )
-}
-
-/** Expose a handle to access the underlying LSP adapter for formatting. */
-MigrationEditor.getLspAdapter = () => {
-  // This is a module-level accessor; callers in index.tsx will use a ref instead.
-  return null
 }

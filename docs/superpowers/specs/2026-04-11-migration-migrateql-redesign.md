@@ -811,6 +811,144 @@ LspAdapter.test.ts                  -- invoke mock, debounce behavior, response 
 ResultPanel.test.tsx                -- Tab switching, panel rendering
 ```
 
+---
+
+## 9. Frontend UI Design
+
+All UI elements MUST use the project's semantic color system (Tailwind v4 CSS variables). No hardcoded hex values.
+
+### Color System Reference
+
+| Role | Variable | Usage |
+|------|----------|-------|
+| Panel background | `bg-background-panel` | Editor container, result panel |
+| Elevated background | `bg-background-elevated` | Dropdown triggers, cards |
+| Hover background | `bg-background-hover` | List item hover, tab hover |
+| Void background | `bg-background-void` | Deep background, result area |
+| Accent | `text-accent` | Active tab indicator, selected items, run button |
+| Default text | `text-foreground-default` | Editor text, labels |
+| Muted text | `text-foreground-muted` | Placeholders, secondary info |
+| Default border | `border-border-default` | Dividers, inactive borders |
+| Strong border | `border-border-strong` | Input borders, dropdown borders |
+| Focus border | `border-border-focus` | Focus rings, hover borders |
+
+### Toolbar Design
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ h-10, bg-background-panel, border-b border-border-default    │
+│                                                              │
+│ [▶] [■]  [Format] [✦ Ghost]              │ Connection info │
+│                                                              │
+│ gap-1, px-2                               text-foreground-muted │
+└──────────────────────────────────────────────────────────────┘
+
+Button states:
+- Default:  bg-transparent text-foreground-muted
+- Hover:    bg-background-hover text-foreground-default
+- Active:   text-accent (e.g., Ghost Text enabled)
+- Run btn:  hover:text-success
+- Stop btn: hover:text-error (only visible during run)
+- Size:     h-7 w-7, rounded, transition-colors duration-150
+```
+
+### Dropdown / Select (MUST match project theme)
+
+All dropdowns in migration editor (if any future additions) MUST use the existing `DropdownSelect` component from `src/components/common/DropdownSelect.tsx`. Style rules:
+
+```
+Trigger:
+  bg-background-elevated
+  border border-border-strong
+  hover:border-border-focus
+  text-foreground-default text-xs
+  rounded px-2 py-1
+
+Dropdown panel:
+  bg-background-elevated
+  border border-border-strong
+  rounded shadow-lg
+  z-[200] (portal to body)
+
+Options:
+  px-3 py-1.5 text-[12px]
+  hover:bg-border-default
+  transition-colors duration-150
+
+Selected option:
+  text-accent (#10B981)
+
+Search input (if searchable):
+  bg-background-base
+  border border-border-strong
+  focus:border-border-focus
+  text-foreground-default
+  placeholder:text-foreground-muted
+```
+
+No custom dropdown implementations. Reuse `DropdownSelect` for consistency.
+
+### Result Panel Tabs
+
+```
+Tab bar:
+  bg-background-base, border-t border-border-default
+
+Active tab:
+  bg-background-void text-accent
+  border-t-[3px] border-t-accent
+
+Inactive tab:
+  bg-background-hover text-foreground-muted
+  border-t-transparent
+  hover:bg-background-elevated
+
+Tab size:
+  px-3 h-[38px] flex items-center gap-1.5 text-xs
+```
+
+### MappingCard (Runtime Progress)
+
+Retained from existing design, follows current style:
+
+```
+Container:
+  border-l-2 {status-color} bg-background-elevated rounded-r-md
+
+Status border colors:
+  success:  border-l-success
+  running:  border-l-accent
+  failed:   border-l-error
+  pending:  border-l-foreground-ghost
+
+Stats text:
+  text-[10px] text-foreground-muted
+  Important values: text-foreground-default font-medium
+```
+
+### Monaco Editor Container
+
+```
+Container:
+  flex-1 bg-background-panel min-h-0 relative
+
+Editor theme:
+  Reuse existing 'odb-dark' theme registration
+  Register 'migrateql' language with MonarchTokenizer
+
+Gutter/line numbers:
+  Inherit from odb-dark theme
+```
+
+### Splitter (Drag Handle)
+
+```
+  h-[4.5px] cursor-row-resize
+  bg-transparent
+  hover:bg-accent/30
+  transition-colors
+```
+
 ### End-to-End Verification
 
 ```

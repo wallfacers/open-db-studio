@@ -3833,6 +3833,7 @@ pub struct OpenCodeProvider {
     pub id: String,
     pub name: String,
     pub source: String,
+    pub api_type: String,
     pub models: Vec<OpenCodeProviderModel>,
 }
 
@@ -3870,13 +3871,20 @@ pub async fn agent_list_providers(
         let id = p["id"].as_str()?.to_string();
         let name = p["name"].as_str().unwrap_or(&id).to_string();
         let source = p["source"].as_str().unwrap_or("").to_string();
+        // 从 npm 字段或 provider id 推断 api_type
+        let npm = p["npm"].as_str().unwrap_or("");
+        let api_type = if npm.contains("anthropic") || id == "anthropic" {
+            "anthropic"
+        } else {
+            "openai"
+        }.to_string();
         let models = p["models"].as_object()
             .map(|m| m.iter().map(|(k, v)| OpenCodeProviderModel {
                 id: k.clone(),
                 name: v["name"].as_str().unwrap_or(k).to_string(),
             }).collect::<Vec<_>>())
             .unwrap_or_default();
-        Some(OpenCodeProvider { id, name, source, models })
+        Some(OpenCodeProvider { id, name, source, api_type, models })
     }).collect();
     Ok(providers)
 }

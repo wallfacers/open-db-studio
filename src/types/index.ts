@@ -450,6 +450,7 @@ export interface OpenCodeProvider {
   id: string;
   name: string;
   source: string;  // "api" | "config" | "custom"
+  api_type: ApiType;
   models: OpenCodeProviderModel[];
 }
 

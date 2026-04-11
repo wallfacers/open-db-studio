@@ -277,6 +277,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return;
     }
 
+    // 已处于终态（cancelled/completed/failed）的任务：忽略滞后的非终态事件
+    // 防止 cancel_task 后后端仍在 emit running 事件导致状态回退、Stop 按钮复现
+    const TERMINAL: TaskStatus[] = ['completed', 'failed', 'cancelled'];
+    const existing = get().tasks.find((t) => t.id === event.task_id);
+    if (existing && TERMINAL.includes(existing.status) && !TERMINAL.includes(event.status)) {
+      return;
+    }
+
     // 日志事件：只追加日志，不更新进度字段
     if (event.log_line) {
       get().appendLog(event.task_id, {

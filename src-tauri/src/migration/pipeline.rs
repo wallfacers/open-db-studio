@@ -116,18 +116,29 @@ fn json_value_len(v: &serde_json::Value) -> u64 {
 /// Launch the ETL pipeline for `job_id`.
 /// Returns the `run_id` immediately — the pipeline runs in a background task.
 pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
-    let config_json: String = tokio::task::spawn_blocking(move || -> AppResult<String> {
+    let script_text: String = tokio::task::spawn_blocking(move || -> AppResult<String> {
         let db = crate::db::get().lock().unwrap();
         db.query_row(
-            "SELECT config_json FROM migration_jobs WHERE id=?1",
+            "SELECT script_text FROM migration_jobs WHERE id=?1",
             params![job_id],
             |r| r.get(0),
         ).map_err(Into::into)
     })
     .await
     .map_err(|e| AppError::Other(format!("spawn_blocking failed: {}", e)))??;
-    let config: MigrationJobConfig = serde_json::from_str(&config_json)
-        .map_err(|e| AppError::Other(e.to_string()))?;
+
+    let ast = crate::migration::lang::parser::parse(&script_text)
+        .map_err(|e| AppError::Other(format!("MigrateQL parse error: {e}")))?;
+
+    let resolve_connection = |name: &str| -> Option<i64> {
+        crate::db::find_connection_id_by_name(name).ok().flatten()
+    };
+
+    let config = crate::migration::lang::compiler::compile(&ast, &resolve_connection)
+        .map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.message.clone()).collect();
+            AppError::Other(format!("MigrateQL compile errors: {}", msgs.join("; ")))
+        })?;
 
     let run_id = Uuid::new_v4().to_string();
     let cancel = Arc::new(AtomicBool::new(false));
@@ -1204,17 +1215,8 @@ async fn writeback_incremental_checkpoint(
                 .and_then(|v| v.as_str().map(|s| s.to_string()).or_else(|| Some(v.to_string())))
             {
                 if max_val != "null" {
-                    let mut new_config = config.clone();
-                    if let Some(ref mut ic) = new_config.incremental_config {
-                        ic.last_value = Some(max_val.clone());
-                    }
-                    if let Ok(json) = serde_json::to_string(&new_config) {
-                        let db = crate::db::get().lock().unwrap();
-                        let _ = db.execute(
-                            "UPDATE migration_jobs SET config_json=?1 WHERE id=?2",
-                            rusqlite::params![json, job_id],
-                        );
-                    }
+                    // TODO: persist incremental checkpoint in dedicated storage
+                    // (script_text is now MigrateQL, not JSON — cannot update in-place)
                     emit_log(
                         app,
                         job_id,

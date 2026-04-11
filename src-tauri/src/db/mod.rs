@@ -94,6 +94,20 @@ pub fn get_connection_by_id(id: i64) -> AppResult<Option<models::Connection>> {
     Ok(result)
 }
 
+/// 根据连接名称查找连接 ID（MigrateQL 编译器使用）
+pub fn find_connection_id_by_name(name: &str) -> AppResult<Option<i64>> {
+    let db = get().lock().unwrap();
+    match db.query_row(
+        "SELECT id FROM connections WHERE name = ?1",
+        rusqlite::params![name],
+        |row| row.get::<_, i64>(0),
+    ) {
+        Ok(id) => Ok(Some(id)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// 列出所有连接配置（不包含密码）
 pub fn list_connections() -> AppResult<Vec<models::Connection>> {
     let conn = get().lock().unwrap();

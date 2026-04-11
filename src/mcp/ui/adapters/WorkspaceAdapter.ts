@@ -76,14 +76,15 @@ export class WorkspaceAdapter implements UIObject {
             if (!job_id) return { success: false, error: 'job_id is required for migration_job' }
             const jobTitle = params?.title ?? `Migration #${job_id}`
             store.openMigrationJobTab(job_id, jobTitle)
-            break
+            // Return stable objectId (job_id-based, not timestamp-based)
+            return { success: true, data: { objectId: `migration_job_${job_id}` } }
           }
           case 'new_migration_job': {
             const name = params?.title ?? 'New Migration'
             const newJobId = await useMigrationStore.getState().createJob(name)
             store.openMigrationJobTab(newJobId, name)
-            const objectId = useQueryStore.getState().activeTabId
-            return { success: true, data: { objectId, job_id: newJobId } }
+            // objectId is stable: migration_job_${jobId}, survives tab close/reopen
+            return { success: true, data: { objectId: `migration_job_${newJobId}`, job_id: newJobId } }
           }
           default:
             return { success: false, error: `Unknown tab type: ${type}` }

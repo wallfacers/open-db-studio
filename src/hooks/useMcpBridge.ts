@@ -6,6 +6,7 @@ import { uiRouter } from '../mcp/ui'
 import { WorkspaceAdapter } from '../mcp/ui/adapters/WorkspaceAdapter'
 import { DbTreeAdapter } from '../mcp/ui/adapters/DbTreeAdapter'
 import { HistoryAdapter } from '../mcp/ui/adapters/HistoryAdapter'
+import { MigrationExplorerAdapter } from '../mcp/ui/adapters/MigrationExplorerAdapter'
 
 interface UIRequestPayload {
   request_id: string;
@@ -23,6 +24,7 @@ export function useMcpBridge() {
   uiRouter.registerInstance('workspace', new WorkspaceAdapter())
   uiRouter.registerInstance('db_tree', new DbTreeAdapter())
   uiRouter.registerInstance('history', new HistoryAdapter())
+  uiRouter.registerInstance('migration_explorer', new MigrationExplorerAdapter())
   // Inject active tab provider (avoids circular dep between UIRouter and queryStore)
   uiRouter.setActiveTabIdProvider(() => useQueryStore.getState().activeTabId)
 

@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useMigrationStore, MigrationJob } from '../../store/migrationStore'
 import { MigrationToolbar } from './MigrationToolbar'
 import { MigrationEditor } from './MigrationEditor'
-import { ResultPanel } from './ResultPanel'
+import { ResultPanel, PanelTab } from './ResultPanel'
 import { useUIObjectRegistry } from '../../mcp/ui'
 import { MigrationJobAdapter } from '../../mcp/ui/adapters/MigrationJobAdapter'
 import { useQueryStore } from '../../store/queryStore'
@@ -16,6 +16,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const [scriptText, setScriptText] = useState('')
   const [resultHeight, setResultHeight] = useState(0)
   const [ghostTextEnabled, setGhostTextEnabled] = useState(false)
+  const [activeResultTab, setActiveResultTab] = useState<PanelTab>('logs')
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scriptTextRef = useRef(scriptText)
@@ -56,6 +57,11 @@ export function MigrationJobTab({ jobId }: Props) {
   useEffect(() => {
     if (isRunning && resultHeight === 0) setResultHeight(250)
   }, [isRunning]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleOpenHistory = useCallback(() => {
+    if (resultHeight === 0) setResultHeight(250)
+    setActiveResultTab('stats')
+  }, [resultHeight])
 
   useEffect(() => {
     return () => {
@@ -143,6 +149,7 @@ export function MigrationJobTab({ jobId }: Props) {
         onStop={handleStop}
         onFormat={handleFormat}
         onToggleGhostText={() => setGhostTextEnabled(v => !v)}
+        onOpenHistory={handleOpenHistory}
       />
 
       {/* Editor */}
@@ -164,6 +171,8 @@ export function MigrationJobTab({ jobId }: Props) {
           stats={run?.stats ?? null}
           logs={run?.logs ?? []}
           height={resultHeight}
+          activeTab={activeResultTab}
+          onTabChange={setActiveResultTab}
           onResize={handleResultResize}
           onClose={() => setResultHeight(0)}
         />

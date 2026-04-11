@@ -1,11 +1,6 @@
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
 import { Play, Square, FileEdit, Sparkles, History } from 'lucide-react'
 import { Tooltip } from '../common/Tooltip'
-import { BaseModal } from '../common/BaseModal'
-import { MigrationRunHistory } from '../../store/migrationStore'
-import { RunHistoryTable } from './ResultPanel/RunHistoryTable'
 
 interface Props {
   jobId: number
@@ -15,27 +10,19 @@ interface Props {
   onStop: () => void
   onFormat: () => void
   onToggleGhostText: () => void
+  onOpenHistory: () => void
 }
 
 export function MigrationToolbar({
-  jobId,
   isRunning,
   ghostTextEnabled,
   onRun,
   onStop,
   onFormat,
   onToggleGhostText,
+  onOpenHistory,
 }: Props) {
   const { t } = useTranslation()
-  const [historyModalOpen, setHistoryModalOpen] = useState(false)
-  const [history, setHistory] = useState<MigrationRunHistory[]>([])
-
-  const openHistory = () => {
-    invoke<MigrationRunHistory[]>('get_migration_run_history', { jobId })
-      .then(setHistory)
-      .catch(() => setHistory([]))
-      .then(() => setHistoryModalOpen(true))
-  }
 
   return (
     <div className="flex-shrink-0 h-10 flex items-center px-3 gap-1 bg-background-void border-b border-border-default">
@@ -67,7 +54,7 @@ export function MigrationToolbar({
       <Tooltip content={t('migration.statsTab')}>
         <button
           className="p-1.5 rounded transition-colors text-foreground-muted hover:text-foreground-default hover:bg-border-default"
-          onClick={openHistory}
+          onClick={onOpenHistory}
         >
           <History size={16} />
         </button>
@@ -87,19 +74,6 @@ export function MigrationToolbar({
         </button>
       </Tooltip>
 
-      {/* Run History Modal */}
-      {historyModalOpen && (
-        <BaseModal
-          title={t('migration.statsTab')}
-          onClose={() => setHistoryModalOpen(false)}
-          width={1100}
-          closeOnBackdrop
-        >
-          <div className="h-[400px]">
-            <RunHistoryTable jobId={jobId} history={history} />
-          </div>
-        </BaseModal>
-      )}
     </div>
   )
 }

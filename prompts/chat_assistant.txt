@@ -232,8 +232,8 @@ Use `ui_read(object="metric_form", mode="schema")` for full field details.
 Migration jobs use MigrateQL — a declarative DSL for data migration between databases.
 
 1. Create or open a job:
-   - New: `ui_exec(object="workspace", action="open", params={type:"new_migration_job", title:"<name>"})` → returns `{ objectId, job_id }`
-   - Existing: `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:<id>, title:"<name>"})`
+   - New: `ui_exec(object="workspace", action="open", params={type:"new_migration_job", title:"<name>"})` → returns `{ objectId, job_id }`. The `objectId` format is `migration_job_<job_id>` — it is **stable** and survives tab close/reopen.
+   - Existing: `ui_exec(object="workspace", action="open", params={type:"migration_job", job_id:<id>, title:"<name>"})` → returns `{ objectId: "migration_job_<id>" }`
 2. Read current script: `ui_read(object="migration_job", mode="state")` → `{ scriptText, jobId, name, status }`
 3. Write script: `ui_patch(object="migration_job", ops=[{op:"replace", path:"/scriptText", value:"<MigrateQL script>"}])`
 4. Format: `ui_exec(object="migration_job", action="format")`
@@ -278,6 +278,28 @@ MIGRATE FROM src.mydb.orders INTO dst.appdb.orders
 - `CREATE IF NOT EXISTS` — auto-create target table
 - `USE <alias> = CONNECTION('<name>')` — bind connection alias
 - `SET key=value, ...` — global pipeline settings (parallelism, batch sizes, error_limit)
+
+### Migration Tree Management
+
+Use `migration_explorer` to manage jobs and categories in the sidebar tree. IDs are numeric integers.
+
+- `ui_read(object="migration_explorer", mode="state")` — List all nodes: `[{ nodeType, id, label, parentId, jobId?, status? }, ...]`
+- `ui_exec(object="migration_explorer", action="create_category", params={name:"Prod Migrations"})` — Create top-level category
+- `ui_exec(object="migration_explorer", action="create_category", params={name:"Sub", parent_id:3})` — Create nested category
+- `ui_exec(object="migration_explorer", action="rename_category", params={id:3, name:"New Name"})` — Rename category
+- `ui_exec(object="migration_explorer", action="delete_category", params={id:3})` — Delete empty category
+- `ui_exec(object="migration_explorer", action="create_job", params={name:"My Job"})` — Create job at root
+- `ui_exec(object="migration_explorer", action="create_job", params={name:"My Job", category_id:3})` — Create job in category (returns `{ job_id }`)
+- `ui_exec(object="migration_explorer", action="rename_job", params={id:1, name:"New Name"})` — Rename job
+- `ui_exec(object="migration_explorer", action="delete_job", params={id:1})` — Delete job
+- `ui_exec(object="migration_explorer", action="move_job", params={id:1, category_id:3})` — Move job to category
+- `ui_exec(object="migration_explorer", action="move_job", params={id:1, category_id:null})` — Move job to root
+- `ui_exec(object="migration_explorer", action="move_category", params={id:3, parent_id:5})` — Move category under another
+- `ui_exec(object="migration_explorer", action="move_category", params={id:3, parent_id:null})` — Move category to root
+
+**Workflow tip:** Call `ui_read(object="migration_explorer", mode="state")` first to get current IDs, then use them in exec actions.
+
+---
 
 ### Conversational Creation Workflow
 

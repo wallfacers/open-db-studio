@@ -6,7 +6,7 @@ import { LogTab } from '../LogTab'
 import { StatsTab } from '../StatsTab'
 import { MigrationStatsEvent, MigrationLogEvent, LogViewMode } from '../../../store/migrationStore'
 
-type PanelTab = 'logs' | 'stats'
+export type PanelTab = 'logs' | 'stats'
 
 interface Props {
   jobId: number
@@ -15,6 +15,8 @@ interface Props {
   stats: MigrationStatsEvent | null
   logs: MigrationLogEvent[]
   height: number
+  activeTab: PanelTab
+  onTabChange: (tab: PanelTab) => void
   onResize: (e: React.MouseEvent) => void
   onClose: () => void
 }
@@ -26,11 +28,12 @@ export function ResultPanel({
   stats,
   logs,
   height,
+  activeTab,
+  onTabChange,
   onResize,
   onClose,
 }: Props) {
   const { t } = useTranslation()
-  const [activeTab, setActiveTab] = useState<PanelTab>('logs')
   const [viewMode, setViewMode] = useState<LogViewMode>('structured')
 
   const tabCls = (tab: PanelTab) =>
@@ -50,11 +53,11 @@ export function ResultPanel({
 
       {/* Tab bar */}
       <div className="flex items-center bg-background-base border-b border-border-default flex-shrink-0 overflow-x-auto">
-        <button className={tabCls('logs')} onClick={() => setActiveTab('logs')}>
+        <button className={tabCls('logs')} onClick={() => onTabChange('logs')}>
           <span>{t('migration.logTab')}</span>
           {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
         </button>
-        <button className={tabCls('stats')} onClick={() => setActiveTab('stats')}>
+        <button className={tabCls('stats')} onClick={() => onTabChange('stats')}>
           <BarChart2 size={12} />
           <span>{t('migration.statsTab')}</span>
         </button>

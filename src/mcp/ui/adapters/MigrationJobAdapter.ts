@@ -14,9 +14,12 @@ const MIGRATION_JOB_PATCH_CAPABILITIES: PatchCapability[] = [
 
 export class MigrationJobAdapter implements UIObject {
   type = 'migration_job'
+  /** Stable identifier: migration_job_${jobId}. Does NOT change when the tab is closed/reopened. */
   objectId: string
   title: string
   private jobId: number
+  /** The actual tab ID (timestamp-based). Used only for the focus action. */
+  private tabId: string
 
   /** Injected by MigrationJobTab — reads current editor content */
   getScriptText: () => string = () => ''
@@ -26,7 +29,8 @@ export class MigrationJobAdapter implements UIObject {
   triggerSave: () => Promise<void> = async () => {}
 
   constructor(tabId: string, jobId: number, title: string) {
-    this.objectId = tabId
+    this.objectId = `migration_job_${jobId}`
+    this.tabId = tabId
     this.jobId = jobId
     this.title = title
   }
@@ -140,7 +144,7 @@ export class MigrationJobAdapter implements UIObject {
           return { success: true }
 
         case 'focus':
-          useQueryStore.getState().setActiveTabId(this.objectId)
+          useQueryStore.getState().setActiveTabId(this.tabId)
           return { success: true }
 
         default:

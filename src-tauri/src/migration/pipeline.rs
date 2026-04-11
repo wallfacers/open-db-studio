@@ -18,6 +18,12 @@ const MIGRATION_LOG_EVENT: &str = "migration_log";
 const MIGRATION_STATS_EVENT: &str = "migration_stats";
 const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
 
+/// Maximum time to wait for a single write-batch (including row-by-row retry) to complete.
+/// When target disk I/O is saturated, write_batch hangs indefinitely, holding the semaphore
+/// permit, causing the writer loop to stall, the channel to fill, and the reader to block —
+/// a complete pipeline freeze. This timeout breaks the deadlock and turns it into a countable failure.
+const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
+
 // ── Log collector (thread-safe) ──────────────────────────────────────────────
 
 fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> MigrationLogEvent {
@@ -474,7 +480,9 @@ async fn execute_single_mapping(
     let parallelism = config.pipeline.parallelism.max(1).min(16);
 
     // ── Dynamic pool sizing: ensure pool has enough connections for parallelism ──
-    let required_pool = (parallelism + 1) as u32; // 1 reader + parallelism writers
+    // range-split: parallelism concurrent readers (src) + parallelism concurrent writers (dst)
+    // each pool needs at least parallelism slots; +1 is a safety margin for pre-flight queries.
+    let required_pool = (parallelism + 1) as u32;
     let src_ds = crate::datasource::pool_cache::get_or_create_with_pool_size(
         src_conn_id,
         &src_cfg,
@@ -716,7 +724,7 @@ async fn execute_single_mapping(
                     write_batch_size,
                     channel_cap,
                     error_limit,
-                    1,
+                    Arc::new(Semaphore::new(1)),
                     cancel.clone(),
                     mapping_stats.clone(),
                     global_stats.clone(),
@@ -735,6 +743,11 @@ async fn execute_single_mapping(
                     app, job_id, run_id, "SYSTEM",
                     &format!("[{}] {} range splits created (requested {})", mapping_label, actual_splits, parallelism),
                 );
+
+                // Shared across all splits: caps total concurrent writes at `parallelism`.
+                // Replaces per-split independent semaphores that caused N×1 = N concurrent
+                // writes to simultaneously hammer the target disk.
+                let write_sem = Arc::new(Semaphore::new(parallelism));
 
                 let mut split_handles = Vec::new();
                 for (i, split) in splits.into_iter().enumerate() {
@@ -761,7 +774,7 @@ async fn execute_single_mapping(
                         write_batch_size,
                         split_channel_cap,
                         error_limit,
-                        1, // each split is single-writer
+                        write_sem.clone(),
                         cancel.clone(),
                         mapping_stats.clone(),
                         global_stats.clone(),
@@ -839,7 +852,7 @@ async fn execute_single_mapping(
             write_batch_size,
             channel_cap,
             error_limit,
-            parallelism,
+            Arc::new(Semaphore::new(parallelism)),
             cancel.clone(),
             mapping_stats.clone(),
             global_stats.clone(),
@@ -902,7 +915,7 @@ async fn run_reader_writer_pair(
     write_batch_size: usize,
     channel_cap: usize,
     error_limit: usize,
-    writer_parallelism: usize,
+    write_semaphore: Arc<Semaphore>,
     cancel: Arc<AtomicBool>,
     mapping_stats: Arc<PipelineStats>,
     global_stats: Arc<PipelineStats>,
@@ -1024,7 +1037,7 @@ async fn run_reader_writer_pair(
     let cancel_w = cancel.clone();
     let label_w = label.clone();
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
-        let semaphore = Arc::new(Semaphore::new(writer_parallelism));
+        let semaphore = write_semaphore;
         let (result_tx, mut result_rx) =
             tokio::sync::mpsc::unbounded_channel::<(u64, u64)>();
         let mut error_count = 0usize;
@@ -1082,35 +1095,50 @@ async fn run_reader_writer_pair(
                     let rid = run_id_w.clone();
 
                     let _handle = tokio::spawn(async move {
-                        let (ok, fail) = match write_batch(
-                            &*dst_clone, &table_clone, &cols_clone,
-                            &rows_to_write, &cs_clone, &uk_clone, &drv_clone,
-                        ).await {
-                            Ok(n) => (n as u64, 0u64),
-                            Err(e) => {
-                                emit_log(&app_clone, job_id, &rid, "WARN",
-                                    &format!("[{}] Batch write failed ({}), retrying row-by-row…", lbl, e));
-                                let mut row_ok = 0u64;
-                                let mut row_fail = 0u64;
-                                for single_row in &rows_to_write {
-                                    match write_batch(
-                                        &*dst_clone, &table_clone, &cols_clone,
-                                        std::slice::from_ref(single_row),
-                                        &cs_clone, &uk_clone, &drv_clone,
-                                    ).await {
-                                        Ok(n) => row_ok += n as u64,
-                                        Err(e) => {
-                                            emit_log(&app_clone, job_id, &rid, "WARN",
-                                                &format!("[{}] Row write failed: {}", lbl, e));
-                                            row_fail += 1;
+                        let batch_len = rows_to_write.len() as u64;
+                        let timed = tokio::time::timeout(
+                            tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                            async {
+                                match write_batch(
+                                    &*dst_clone, &table_clone, &cols_clone,
+                                    &rows_to_write, &cs_clone, &uk_clone, &drv_clone,
+                                ).await {
+                                    Ok(n) => (n as u64, 0u64),
+                                    Err(e) => {
+                                        emit_log(&app_clone, job_id, &rid, "WARN",
+                                            &format!("[{}] Batch write failed ({}), retrying row-by-row…", lbl, e));
+                                        let mut row_ok = 0u64;
+                                        let mut row_fail = 0u64;
+                                        for single_row in &rows_to_write {
+                                            match write_batch(
+                                                &*dst_clone, &table_clone, &cols_clone,
+                                                std::slice::from_ref(single_row),
+                                                &cs_clone, &uk_clone, &drv_clone,
+                                            ).await {
+                                                Ok(n) => row_ok += n as u64,
+                                                Err(e) => {
+                                                    emit_log(&app_clone, job_id, &rid, "WARN",
+                                                        &format!("[{}] Row write failed: {}", lbl, e));
+                                                    row_fail += 1;
+                                                }
+                                            }
                                         }
+                                        if row_fail > 0 {
+                                            emit_log(&app_clone, job_id, &rid, "ERROR",
+                                                &format!("[{}] Row-by-row retry: {} succeeded, {} failed", lbl, row_ok, row_fail));
+                                        }
+                                        (row_ok, row_fail)
                                     }
                                 }
-                                if row_fail > 0 {
-                                    emit_log(&app_clone, job_id, &rid, "ERROR",
-                                        &format!("[{}] Row-by-row retry: {} succeeded, {} failed", lbl, row_ok, row_fail));
-                                }
-                                (row_ok, row_fail)
+                            }
+                        ).await;
+                        let (ok, fail) = match timed {
+                            Ok(counts) => counts,
+                            Err(_) => {
+                                emit_log(&app_clone, job_id, &rid, "WARN",
+                                    &format!("[{}] Write batch timed out after {}s ({} rows treated as failed)",
+                                        lbl, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                                (0u64, batch_len)
                             }
                         };
                         let _ = rtx.send((ok, fail));
@@ -1124,43 +1152,56 @@ async fn run_reader_writer_pair(
         if !write_buf.is_empty() {
             let _permit = semaphore.clone().acquire_owned().await
                 .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-            match write_batch(
-                &*dst_ds, &target_table, &buf_columns, &write_buf,
-                &conflict_strategy, &upsert_keys, &dst_driver,
-            ).await {
-                Ok(n) => {
-                    ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
-                    gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
-                }
-                Err(e) => {
-                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                        &format!("[{}] Final flush failed ({}), retrying row-by-row…", label_w, e));
-                    let mut row_ok = 0u64;
-                    let mut row_fail = 0u64;
-                    for single_row in &write_buf {
-                        match write_batch(
-                            &*dst_ds, &target_table, &buf_columns,
-                            std::slice::from_ref(single_row),
-                            &conflict_strategy, &upsert_keys, &dst_driver,
-                        ).await {
-                            Ok(n) => row_ok += n as u64,
-                            Err(e) => {
-                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                    &format!("[{}] Row write failed: {}", label_w, e));
-                                row_fail += 1;
+            let flush_len = write_buf.len() as u64;
+            let timed = tokio::time::timeout(
+                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                async {
+                    match write_batch(
+                        &*dst_ds, &target_table, &buf_columns, &write_buf,
+                        &conflict_strategy, &upsert_keys, &dst_driver,
+                    ).await {
+                        Ok(n) => (n as u64, 0u64),
+                        Err(e) => {
+                            emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                &format!("[{}] Final flush failed ({}), retrying row-by-row…", label_w, e));
+                            let mut row_ok = 0u64;
+                            let mut row_fail = 0u64;
+                            for single_row in &write_buf {
+                                match write_batch(
+                                    &*dst_ds, &target_table, &buf_columns,
+                                    std::slice::from_ref(single_row),
+                                    &conflict_strategy, &upsert_keys, &dst_driver,
+                                ).await {
+                                    Ok(n) => row_ok += n as u64,
+                                    Err(e) => {
+                                        emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                            &format!("[{}] Row write failed: {}", label_w, e));
+                                        row_fail += 1;
+                                    }
+                                }
                             }
+                            (row_ok, row_fail)
                         }
                     }
-                    ms_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
-                    gs_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
-                    ms_writer.rows_failed.fetch_add(row_fail, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(row_fail, Ordering::Relaxed);
-                    error_count += row_fail as usize;
-                    if row_fail > 0 {
-                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                            &format!("[{}] Final flush row-by-row: {} succeeded, {} failed", label_w, row_ok, row_fail));
-                    }
                 }
+            ).await;
+            let (row_ok, row_fail) = match timed {
+                Ok(counts) => counts,
+                Err(_) => {
+                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                        &format!("[{}] Final flush timed out after {}s ({} rows treated as failed)",
+                            label_w, WRITE_BATCH_TIMEOUT_SECS, flush_len));
+                    (0u64, flush_len)
+                }
+            };
+            ms_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
+            gs_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
+            if row_fail > 0 {
+                ms_writer.rows_failed.fetch_add(row_fail, Ordering::Relaxed);
+                gs_writer.rows_failed.fetch_add(row_fail, Ordering::Relaxed);
+                error_count += row_fail as usize;
+                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                    &format!("[{}] Final flush: {} succeeded, {} failed", label_w, row_ok, row_fail));
             }
         }
 

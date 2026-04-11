@@ -187,12 +187,12 @@ impl DataSource for MySqlDataSource {
                             val.map(|v| serde_json::Value::String(v.to_string()))
                                 .unwrap_or(serde_json::Value::Null)
                         } else if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(i) {
-                            // VARBINARY / BLOB 列：转为 UTF-8 字符串展示，非 UTF-8 则显示为十六进制
+                            // VARBINARY / BLOB 列：统一转为十六进制表示。
+                            // 若直接解为 UTF-8，含 \x1a（CTRL+Z）等控制字节的合法 UTF-8 二进制数据
+                            // 会在目标端 INSERT 时破坏 SQL 解析，导致迁移失败。
+                            // 写入路径的 is_hex_binary() 会识别 "0x…" 并生成安全的 X'…' 字面量。
                             val.map(|b| {
-                                serde_json::Value::String(
-                                    String::from_utf8(b.clone())
-                                        .unwrap_or_else(|_| format!("0x{}", hex::encode(&b)))
-                                )
+                                serde_json::Value::String(format!("0x{}", hex::encode(&b)))
                             }).unwrap_or(serde_json::Value::Null)
                         } else {
                             serde_json::Value::Null

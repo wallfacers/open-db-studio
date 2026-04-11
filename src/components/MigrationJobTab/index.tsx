@@ -136,6 +136,7 @@ export function MigrationJobTab({ jobId }: Props) {
     <div className="flex flex-col h-full bg-background-base">
       {/* Toolbar */}
       <MigrationToolbar
+        jobId={jobId}
         isRunning={isRunning}
         ghostTextEnabled={ghostTextEnabled}
         onRun={handleRun}

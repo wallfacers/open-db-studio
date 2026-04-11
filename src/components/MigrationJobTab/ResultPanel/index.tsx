@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ListTree, Code, BarChart2, History } from 'lucide-react'
+import { ListTree, Code, BarChart2 } from 'lucide-react'
 import { Tooltip } from '../../common/Tooltip'
 import { LogTab } from '../LogTab'
 import { StatsTab } from '../StatsTab'
-import { HistoryTab } from './HistoryTab'
 import { MigrationStatsEvent, MigrationLogEvent, LogViewMode } from '../../../store/migrationStore'
 
-type PanelTab = 'logs' | 'stats' | 'history'
+type PanelTab = 'logs' | 'stats'
 
 interface Props {
   jobId: number
@@ -59,10 +58,6 @@ export function ResultPanel({
           <BarChart2 size={12} />
           <span>{t('migration.statsTab')}</span>
         </button>
-        <button className={tabCls('history')} onClick={() => setActiveTab('history')}>
-          <History size={12} />
-          <span>{t('migration.historyTab', { defaultValue: 'History' })}</span>
-        </button>
 
         {/* Close + view mode controls (shown only for logs tab) */}
         <div className="ml-auto flex items-center gap-1 px-2 flex-shrink-0">
@@ -109,7 +104,6 @@ export function ResultPanel({
           />
         )}
         {activeTab === 'stats' && <StatsTab jobId={jobId} />}
-        {activeTab === 'history' && <HistoryTab jobId={jobId} />}
       </div>
     </div>
   )

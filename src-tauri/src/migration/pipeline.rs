@@ -24,6 +24,17 @@ const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
 /// a complete pipeline freeze. This timeout breaks the deadlock and turns it into a countable failure.
 const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 
+/// Maximum estimated SQL payload size (bytes) for a single INSERT statement.
+/// When accumulated row data exceeds this threshold, flush the write buffer early
+/// even if write_batch_size has not been reached. Prevents generating oversized INSERTs
+/// that exceed the target database's max_allowed_packet or cause excessive WAL/binlog growth.
+const MAX_WRITE_SQL_BYTES: usize = 4 * 1024 * 1024; // 4 MB
+
+/// Number of consecutive fully-failed write batches (0 rows written) before the writer
+/// aborts the pipeline. Prevents infinite timeout-retry loops when the target database
+/// is unreachable (e.g., disk full, server down).
+const CONSECUTIVE_FAIL_LIMIT: usize = 5;
+
 // ── Log collector (thread-safe) ──────────────────────────────────────────────
 
 fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> MigrationLogEvent {
@@ -1101,7 +1112,9 @@ async fn run_reader_writer_pair(
         let (result_tx, mut result_rx) =
             tokio::sync::mpsc::unbounded_channel::<(u64, u64)>();
         let mut error_count = 0usize;
+        let mut consecutive_full_fails = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
+        let mut buf_estimated_bytes: usize = 0;
         let mut buf_columns: Vec<String> = Vec::new();
 
         while let Some(batch) = rx.recv().await {
@@ -1114,8 +1127,9 @@ async fn run_reader_writer_pair(
                     .unwrap_or_else(|| batch.column_names.clone());
             }
             for row in batch.rows {
+                buf_estimated_bytes += row.iter().map(|v| json_value_len(v) as usize + 3).sum::<usize>();
                 write_buf.push(row);
-                if write_buf.len() >= write_batch_size {
+                if write_buf.len() >= write_batch_size || buf_estimated_bytes >= MAX_WRITE_SQL_BYTES {
                     // Drain completed writes (non-blocking)
                     while let Ok((ok, fail)) = result_rx.try_recv() {
                         ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
@@ -1123,6 +1137,27 @@ async fn run_reader_writer_pair(
                         ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
                         gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
                         error_count += fail as usize;
+                        if ok == 0 && fail > 0 {
+                            consecutive_full_fails += 1;
+                        } else if ok > 0 {
+                            consecutive_full_fails = 0;
+                        }
+                    }
+                    if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                            &format!("[{}] Circuit breaker: {} consecutive batches fully failed, aborting pipeline",
+                                label_w, consecutive_full_fails));
+                        drop(result_tx);
+                        while let Ok((ok, fail)) = result_rx.try_recv() {
+                            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        }
+                        return Err(AppError::Other(format!(
+                            "Circuit breaker: {} consecutive write batches fully failed — target database may be unreachable",
+                            consecutive_full_fails
+                        )));
                     }
                     if error_limit > 0 && error_count >= error_limit {
                         drop(result_tx);
@@ -1141,6 +1176,7 @@ async fn run_reader_writer_pair(
                         &mut write_buf,
                         Vec::with_capacity(write_batch_size),
                     );
+                    buf_estimated_bytes = 0;
                     let permit = semaphore.clone().acquire_owned().await
                         .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
                     let dst_clone = dst_ds.clone();
@@ -1167,9 +1203,24 @@ async fn run_reader_writer_pair(
                                     Err(e) => {
                                         emit_log(&app_clone, job_id, &rid, "WARN",
                                             &format!("[{}] Batch write failed ({}), retrying row-by-row…", lbl, e));
-                                        let mut row_ok = 0u64;
+                                        // Canary: try the first row; if it also fails the problem is systemic
+                                        // (disk full, connection dead) — skip remaining rows to avoid amplifying I/O.
+                                        if let Some(first_row) = rows_to_write.first() {
+                                            if let Err(canary_err) = write_batch(
+                                                &*dst_clone, &table_clone, &cols_clone,
+                                                std::slice::from_ref(first_row),
+                                                &cs_clone, &uk_clone, &drv_clone,
+                                            ).await {
+                                                emit_log(&app_clone, job_id, &rid, "ERROR",
+                                                    &format!("[{}] Canary row also failed ({}), skipping row-by-row retry ({} rows treated as failed)",
+                                                        lbl, canary_err, batch_len));
+                                                return (0u64, batch_len);
+                                            }
+                                        }
+                                        // Canary passed — problem is data-specific; retry remaining rows
+                                        let mut row_ok = 1u64; // canary row succeeded
                                         let mut row_fail = 0u64;
-                                        for single_row in &rows_to_write {
+                                        for single_row in rows_to_write.iter().skip(1) {
                                             match write_batch(
                                                 &*dst_clone, &table_clone, &cols_clone,
                                                 std::slice::from_ref(single_row),
@@ -1224,23 +1275,43 @@ async fn run_reader_writer_pair(
                         Err(e) => {
                             emit_log(&app_writer, job_id, &run_id_w, "WARN",
                                 &format!("[{}] Final flush failed ({}), retrying row-by-row…", label_w, e));
-                            let mut row_ok = 0u64;
-                            let mut row_fail = 0u64;
-                            for single_row in &write_buf {
+                            // Canary check: if first row also fails, skip remaining
+                            if let Some(first_row) = write_buf.first() {
                                 match write_batch(
                                     &*dst_ds, &target_table, &buf_columns,
-                                    std::slice::from_ref(single_row),
+                                    std::slice::from_ref(first_row),
                                     &conflict_strategy, &upsert_keys, &dst_driver,
                                 ).await {
-                                    Ok(n) => row_ok += n as u64,
-                                    Err(e) => {
-                                        emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                            &format!("[{}] Row write failed: {}", label_w, e));
-                                        row_fail += 1;
+                                    Err(canary_err) => {
+                                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                            &format!("[{}] Canary row also failed ({}), skipping row-by-row retry ({} rows treated as failed)",
+                                                label_w, canary_err, flush_len));
+                                        (0u64, flush_len)
+                                    }
+                                    Ok(_) => {
+                                        // Canary passed — problem is data-specific; retry remaining rows
+                                        let mut row_ok = 1u64;
+                                        let mut row_fail = 0u64;
+                                        for single_row in write_buf.iter().skip(1) {
+                                            match write_batch(
+                                                &*dst_ds, &target_table, &buf_columns,
+                                                std::slice::from_ref(single_row),
+                                                &conflict_strategy, &upsert_keys, &dst_driver,
+                                            ).await {
+                                                Ok(n) => row_ok += n as u64,
+                                                Err(e) => {
+                                                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                                        &format!("[{}] Row write failed: {}", label_w, e));
+                                                    row_fail += 1;
+                                                }
+                                            }
+                                        }
+                                        (row_ok, row_fail)
                                     }
                                 }
+                            } else {
+                                (0u64, 0u64)
                             }
-                            (row_ok, row_fail)
                         }
                     }
                 }

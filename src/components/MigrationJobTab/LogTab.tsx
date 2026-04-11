@@ -64,7 +64,7 @@ export function LogTab({ stats, logs, viewMode, hasFailed }: Props) {
             <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.rowsWritten')} </span><span className="text-foreground-default font-medium">{stats.rowsWritten.toLocaleString()}</span></span>
             <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.dirtyRows')} </span><span className={stats.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{stats.rowsFailed.toLocaleString()}</span></span>
             <span className="text-border-strong flex-shrink-0">|</span>
-            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{Math.round(stats.writeSpeedRps).toLocaleString()} r/s</span>
+            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{Math.round(stats.writeSpeedRps).toLocaleString()} {t('migration.rowsPerSec')}</span>
             <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{fmtBytesSpeed(stats.bytesSpeedBps)}</span>
             {stats.etaSeconds !== null && (
               <>

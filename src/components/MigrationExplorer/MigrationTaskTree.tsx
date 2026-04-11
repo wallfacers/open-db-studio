@@ -261,7 +261,7 @@ export function MigrationTaskTree({ searchQuery, onOpenJob, onCreateItem }: Prop
             )}
             {node.nodeType === 'job' && node.status === 'PARTIAL_FAILED' && (
               <span className="text-[10px] px-1 rounded text-warning bg-warning/10 flex-shrink-0 ml-1">
-                {t('migration.statusPartialFailed', { defaultValue: 'PARTIAL' })}
+                {t('migration.statusPartialFailed')}
               </span>
             )}
             {node.nodeType === 'job' && node.status === 'STOPPED' && (

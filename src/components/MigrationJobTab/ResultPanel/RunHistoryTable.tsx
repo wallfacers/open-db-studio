@@ -100,7 +100,7 @@ export function RunHistoryTable({ jobId, history }: Props) {
                     const bytesPerSec = (run.bytesTransferred ?? 0) / durationSec
                     return (
                       <div className="flex flex-col items-end gap-0">
-                        <span className="text-accent text-[11px] font-medium">{Math.round(rowsPerSec).toLocaleString()} r/s</span>
+                        <span className="text-accent text-[11px] font-medium">{Math.round(rowsPerSec).toLocaleString()} {t('migration.rowsPerSec')}</span>
                         <span className="text-accent text-[11px]">{fmtBytesSpeed(bytesPerSec)}</span>
                       </div>
                     )

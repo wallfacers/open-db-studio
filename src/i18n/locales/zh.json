@@ -1222,6 +1222,16 @@
     "prevPage": "上一页",
     "nextPage": "下一页",
     "lastPage": "末页",
-    "deleteCategoryNotEmpty": "分类下存在任务或子分类，无法删除。请先清空分类内容。"
+    "deleteCategoryNotEmpty": "分类下存在任务或子分类，无法删除。请先清空分类内容。",
+    "nameExists": "名称已存在",
+    "statusPartialFailed": "部分失败",
+    "format": "格式化",
+    "ghostText": "AI 幽灵文本",
+    "pipelineStarted": "管道启动",
+    "pipelineFailed": "管道{{status}}",
+    "failedShort": "失败",
+    "failedLabel": "失败",
+    "rowsPerSec": "行/秒",
+    "notRunUpstreamFailed": "未运行（上游失败）"
   }
 }

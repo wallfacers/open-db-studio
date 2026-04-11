@@ -27,7 +27,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
       milestones.push({
         id: `pipeline_start:${timestamp}`,
         type: 'pipeline_start',
-        label: 'Pipeline started',
+        label: 'pipeline_started',
         status: 'running',
         timestamp,
       })
@@ -144,7 +144,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
       milestones.push({
         id: `pipeline_finish:${timestamp}`,
         type: 'pipeline_finish',
-        label: status === 'success' ? 'Pipeline finished' : `Pipeline ${pfMatch[1]}`,
+        label: status === 'success' ? 'pipeline_finished' : `pipeline_${pfMatch[1]}`,
         status,
         timestamp,
         rowsWritten,
@@ -222,7 +222,7 @@ export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
     for (const card of cardMap.values()) {
       if (card.status === 'running' && !finishedIndices.has(card.mappingIndex)) {
         card.status = 'pending'
-        card.error = '未运行 (上游失败)'
+        card.error = 'notRunUpstreamFailed'
       }
     }
   }

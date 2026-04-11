@@ -38,7 +38,7 @@ export function MigrationToolbar({
       </Tooltip>
 
       {/* Format */}
-      <Tooltip content={t('migration.format', { defaultValue: 'Format' })}>
+      <Tooltip content={t('migration.format')}>
         <button
           className="p-1.5 rounded transition-colors text-foreground-muted hover:text-foreground-default hover:bg-border-default"
           onClick={onFormat}
@@ -48,7 +48,7 @@ export function MigrationToolbar({
       </Tooltip>
 
       {/* Ghost Text toggle */}
-      <Tooltip content={t('migration.ghostText', { defaultValue: 'AI Ghost Text' })}>
+      <Tooltip content={t('migration.ghostText')}>
         <button
           className={`p-1.5 rounded transition-colors ${
             ghostTextEnabled

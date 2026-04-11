@@ -47,6 +47,11 @@ export function MappingCard({ card, logs = [] }: Props) {
     [logs, card.sourceTable, card.targetTable]
   )
 
+  const translateError = (key: string): string => {
+    if (key === 'notRunUpstreamFailed') return t('migration.notRunUpstreamFailed')
+    return key
+  }
+
   return (
     <div className={`border-l-2 ${BORDER_COLORS[card.status]} bg-background-elevated rounded-r-md overflow-hidden`}>
       {/* Header: status icon + table names + expand chevron */}
@@ -101,7 +106,7 @@ export function MappingCard({ card, logs = [] }: Props) {
         {card.elapsedMs !== undefined && (
           <span>{t('migration.elapsed')}: <span className="text-foreground-default font-medium">{formatElapsed(card.elapsedMs)}</span></span>
         )}
-        <span>Failed: <span className={card.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{card.rowsFailed}</span></span>
+        <span>{t('migration.failedLabel')}: <span className={card.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{card.rowsFailed}</span></span>
       </div>
 
       {/* Expanded details */}
@@ -109,7 +114,7 @@ export function MappingCard({ card, logs = [] }: Props) {
         <div className="px-3 pb-2 space-y-1">
           {card.error && (
             <div className="text-[10px] text-error font-mono break-all bg-error/5 rounded px-2 py-1">
-              {card.error}
+              {translateError(card.error)}
             </div>
           )}
           {/* Table-specific logs */}

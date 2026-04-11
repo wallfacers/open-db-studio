@@ -22,6 +22,18 @@ export function TimelineView({ milestones, stats }: Props) {
     )
   }
 
+  const translateLabel = (label: string): string => {
+    switch (label) {
+      case 'pipeline_started': return t('migration.pipelineStarted')
+      case 'pipeline_finished': return t('migration.pipelineFinish')
+      case 'pipeline_FINISHED': return t('migration.pipelineFinish')
+      case 'pipeline_FAILED': return t('migration.pipelineFailed', { status: 'FAILED' })
+      case 'pipeline_PARTIAL_FAILED': return t('migration.pipelineFailed', { status: 'PARTIAL_FAILED' })
+      case 'notRunUpstreamFailed': return t('migration.notRunUpstreamFailed')
+      default: return label
+    }
+  }
+
   const toggleExpand = (id: string) => {
     setExpandedId(prev => prev === id ? null : id)
   }
@@ -61,7 +73,7 @@ export function TimelineView({ milestones, stats }: Props) {
                         m.status === 'running' ? 'text-accent font-medium' :
                         'text-foreground-default'
                       }`}>
-                        {m.label}
+                        {translateLabel(m.label)}
                       </span>
                       {m.mappingIndex && m.totalMappings && (
                         <span className="text-[10px] text-foreground-ghost flex-shrink-0">
@@ -92,12 +104,12 @@ export function TimelineView({ milestones, stats }: Props) {
                       )}
                       {m.rowsFailed !== undefined && m.rowsFailed > 0 && (
                         <span className="text-[10px] text-error">
-                          {m.rowsFailed} failed
+                          {m.rowsFailed} {t('migration.failedShort')}
                         </span>
                       )}
                       {m.error && (
-                        <span className="text-[10px] text-error truncate" title={m.error}>
-                          {m.error}
+                        <span className="text-[10px] text-error truncate" title={translateLabel(m.error)}>
+                          {translateLabel(m.error)}
                         </span>
                       )}
                     </div>
@@ -114,7 +126,7 @@ export function TimelineView({ milestones, stats }: Props) {
                       {t('migration.rowsWritten')}: <span className="text-foreground-default font-medium">{m.rowsWritten?.toLocaleString() ?? 0}</span>
                     </div>
                     <div className="text-foreground-muted">
-                      Failed: <span className={m.rowsFailed ? 'text-error font-medium' : 'text-foreground-default'}>{m.rowsFailed ?? 0}</span>
+                      {t('migration.failedLabel')}: <span className={m.rowsFailed ? 'text-error font-medium' : 'text-foreground-default'}>{m.rowsFailed ?? 0}</span>
                     </div>
                     {m.elapsedMs !== undefined && (
                       <div className="text-foreground-muted">
@@ -122,7 +134,7 @@ export function TimelineView({ milestones, stats }: Props) {
                       </div>
                     )}
                     {m.error && (
-                      <div className="text-error mt-1 font-mono break-all">{m.error}</div>
+                      <div className="text-error mt-1 font-mono break-all">{translateLabel(m.error)}</div>
                     )}
                   </div>
                 )}

@@ -84,7 +84,7 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
     const exists = Array.from(store.nodes.values()).some(n =>
       n.nodeType === 'category' && n.label.toLowerCase() === name.toLowerCase()
     )
-    if (exists) return t('migration.nameExists', { defaultValue: 'Name already exists' })
+    if (exists) return t('migration.nameExists')
     return null
   }
 
@@ -117,7 +117,7 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
       n => n.nodeType === 'job' && n.label.toLowerCase() === name.toLowerCase()
     )
     if (exists) {
-      setJobModal(m => ({ ...m, nameError: t('migration.nameExists', { defaultValue: 'Name already exists' }) }))
+      setJobModal(m => ({ ...m, nameError: t('migration.nameExists') }))
       return
     }
     setJobModal(m => ({ ...m, loading: true }))
@@ -126,7 +126,7 @@ export function MigrationExplorer({ sidebarWidth, onResize, hidden }: Props) {
       handleOpenJob(id, name)
       closeJobModal()
     } catch (e: any) {
-      setJobModal(m => ({ ...m, loading: false, nameError: e.message || 'Error' }))
+      setJobModal(m => ({ ...m, loading: false, nameError: e.message || t('common.error') }))
     }
   }
 

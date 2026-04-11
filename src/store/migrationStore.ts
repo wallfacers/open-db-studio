@@ -41,7 +41,7 @@ export interface MigrationJob {
   id: number
   name: string
   categoryId: number | null
-  configJson: string
+  scriptText: string
   lastStatus: 'RUNNING' | 'FINISHED' | 'FAILED' | 'STOPPED' | 'PARTIAL_FAILED' | null
   lastRunAt: string | null
   createdAt: string

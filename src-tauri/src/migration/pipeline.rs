@@ -699,6 +699,8 @@ async fn execute_single_mapping(
             );
             let handle = tokio::spawn(run_reader_writer_pair(
                 shard_query,
+                None,                    // pk_split: will be range split in Task 6
+                src_cfg.driver.clone(),  // src_driver
                 src_ds.clone(),
                 dst_ds.clone(),
                 target_table.clone(),
@@ -744,6 +746,8 @@ async fn execute_single_mapping(
         }
         run_reader_writer_pair(
             source_query,
+            None,                    // pk_split: will be cursor split in Task 5
+            src_cfg.driver.clone(),  // src_driver
             src_ds,
             dst_ds,
             target_table.clone(),
@@ -830,6 +834,8 @@ fn build_shard_query(
 #[allow(clippy::too_many_arguments)]
 async fn run_reader_writer_pair(
     source_query: String,
+    pk_split: Option<(String, crate::migration::splitter::PkSplit)>, // (pk_col, split)
+    src_driver: String,
     src_ds: Arc<dyn crate::datasource::DataSource>,
     dst_ds: Arc<dyn crate::datasource::DataSource>,
     target_table: String,
@@ -857,38 +863,100 @@ async fn run_reader_writer_pair(
     let gs_reader = global_stats.clone();
     let cancel_r = cancel.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
-        let mut offset = 0usize;
-        let mut columns_opt: Option<Vec<String>> = None;
-        loop {
-            if cancel_r.load(Ordering::Relaxed) {
-                break;
+        use crate::migration::splitter::{parse_i64_from_json, quote_col_for_driver};
+
+        if let Some((pk_col, split)) = pk_split {
+            // ── Cursor-based split reader (O(n)) ──────────────────────────────
+            let pk_q = quote_col_for_driver(&pk_col, &src_driver);
+            let mut cursor = split.start;
+            let mut pk_col_idx: Option<usize> = None;
+            let mut columns_opt: Option<Vec<String>> = None;
+
+            loop {
+                if cancel_r.load(Ordering::Relaxed) {
+                    break;
+                }
+                let range_cond = match split.end {
+                    Some(end) => format!("{pk} >= {cursor} AND {pk} < {end}", pk = pk_q, cursor = cursor, end = end),
+                    None      => format!("{pk} >= {cursor}", pk = pk_q, cursor = cursor),
+                };
+                let page_sql = format!(
+                    "SELECT * FROM ({src}) AS _mig_s_ WHERE {cond} ORDER BY {pk} LIMIT {limit}",
+                    src = source_query, cond = range_cond, pk = pk_q, limit = read_batch_size,
+                );
+                let page = src_ds.execute(&page_sql).await?;
+                if page.rows.is_empty() {
+                    break;
+                }
+                let fetched = page.rows.len();
+
+                // Resolve column list and pk column index on first page.
+                if columns_opt.is_none() {
+                    pk_col_idx = page.columns.iter().position(|c| c.eq_ignore_ascii_case(&pk_col));
+                    columns_opt = Some(page.columns.clone());
+                }
+
+                // Advance cursor past the last seen PK value.
+                let last_pk = page.rows.last()
+                    .and_then(|r| pk_col_idx.and_then(|i| r.get(i)))
+                    .and_then(parse_i64_from_json)
+                    .unwrap_or(i64::MAX);
+                cursor = last_pk.saturating_add(1);
+
+                for row in &page.rows {
+                    let row_bytes: u64 = row.iter().map(json_value_len).sum();
+                    ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                    gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                }
+                ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+                gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+
+                let batch = Batch {
+                    rows: page.rows,
+                    column_names: columns_opt.as_ref().unwrap().clone(),
+                };
+                if tx.send(batch).await.is_err() {
+                    break;
+                }
+                if fetched < read_batch_size {
+                    break; // Last page of this split — done.
+                }
             }
-            let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
-            if page.rows.is_empty() {
-                break;
+        } else {
+            // ── Fallback: OFFSET-based reader (tables without integer PK) ────
+            let mut offset = 0usize;
+            let mut columns_opt: Option<Vec<String>> = None;
+            loop {
+                if cancel_r.load(Ordering::Relaxed) {
+                    break;
+                }
+                let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
+                if page.rows.is_empty() {
+                    break;
+                }
+                let fetched = page.rows.len();
+                if columns_opt.is_none() {
+                    columns_opt = Some(page.columns.clone());
+                }
+                for row in &page.rows {
+                    let row_bytes: u64 = row.iter().map(json_value_len).sum();
+                    ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                    gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                }
+                ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+                gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+                let batch = Batch {
+                    rows: page.rows,
+                    column_names: columns_opt.as_ref().unwrap().clone(),
+                };
+                if tx.send(batch).await.is_err() {
+                    break;
+                }
+                if fetched < read_batch_size {
+                    break;
+                }
+                offset += fetched;
             }
-            let fetched = page.rows.len();
-            if columns_opt.is_none() {
-                columns_opt = Some(page.columns.clone());
-            }
-            for row in &page.rows {
-                let row_bytes: u64 = row.iter().map(json_value_len).sum();
-                ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
-                gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
-            }
-            ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
-            gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
-            let batch = Batch {
-                rows: page.rows,
-                column_names: columns_opt.as_ref().unwrap().clone(),
-            };
-            if tx.send(batch).await.is_err() {
-                break;
-            }
-            if fetched < read_batch_size {
-                break;
-            }
-            offset += fetched;
         }
         Ok(())
     });

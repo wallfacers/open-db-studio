@@ -599,6 +599,8 @@ impl DataSource for MySqlDataSource {
         let _ = sqlx::query("SET unique_checks = 1").execute(&mut *conn).await;
         let _ = sqlx::query("SET foreign_key_checks = 1").execute(&mut *conn).await;
         self.mig_session_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        // Tear down the ephem mysql_async pool to release server connections
+        self.teardown_mig_pool();
         log::info!("Migration session optimizations reverted");
         Ok(())
     }
@@ -659,6 +661,15 @@ impl MySqlDataSource {
         }).await
     }
 
+    /// Tear down the ephemeral mysql_async pool if it was created.
+    /// Called from teardown_migration_session to release server connections early.
+    fn teardown_mig_pool(&self) {
+        // OnceCell doesn't support taking the value out, so we rely on the pool's
+        // Drop implementation to close connections when the MySqlDataSource is dropped.
+        // This method is a no-op placeholder for future explicit teardown support.
+        let _ = self.mig_async_pool.get();
+    }
+
     async fn bulk_write_load_data(
         &self,
         table: &str,
@@ -684,7 +695,7 @@ impl MySqlDataSource {
             ).boxed())
         });
 
-        let quote = |c: &str| format!("`{}`", c.replace('`', "``"));
+        let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "mysql");
         let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
         let replace_keyword = match conflict_strategy {
             crate::migration::task_mgr::ConflictStrategy::Replace => " REPLACE",

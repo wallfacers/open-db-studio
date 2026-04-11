@@ -3,6 +3,7 @@
 
 use std::io::Write as IoWrite;
 use crate::datasource::StringEscapeStyle;
+use crate::datasource::utils::is_hex_binary;
 use crate::migration::task_mgr::ConflictStrategy;
 
 type Row = Vec<serde_json::Value>;
@@ -145,11 +146,7 @@ pub fn build_insert_sql_optimized(
     upsert_keys: &[String],
     driver: &str,
 ) -> String {
-    let quote_col: fn(&str) -> String = match driver {
-        "mysql" | "doris" | "tidb" | "clickhouse" => |c| format!("`{}`", c.replace('`', "``")),
-        "sqlserver" => |c| format!("[{}]", c.replace(']', "]]")),
-        _ => |c| format!("\"{}\"", c.replace('"', "\"\"")),
-    };
+    let quote_col = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, driver);
 
     let key_set: std::collections::HashSet<&str> =
         upsert_keys.iter().map(|s| s.as_str()).collect();
@@ -250,10 +247,4 @@ pub fn build_conflict_clause(
         }
         _ => ("INSERT INTO", String::new()),
     }
-}
-
-fn is_hex_binary(s: &str) -> bool {
-    s.len() >= 4
-        && (s.starts_with("0x") || s.starts_with("\\x"))
-        && s[2..].chars().all(|c| c.is_ascii_hexdigit())
 }

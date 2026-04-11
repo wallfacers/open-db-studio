@@ -512,26 +512,9 @@ pub trait DataSource: Send + Sync {
         let escape_style = self.string_escape_style();
         let mut total = 0;
         for row in rows {
-            let vals: Vec<String> = row.iter().map(|v| match v {
-                serde_json::Value::Null => "NULL".to_string(),
-                serde_json::Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::String(s) => {
-                    let escaped = match &escape_style {
-                        StringEscapeStyle::Standard => s.replace('\\', "\\\\").replace('\'', "\\'"),
-                        _ => s.replace('\'', "''"),
-                    };
-                    format!("'{}'", escaped)
-                }
-                other => {
-                    let s = other.to_string();
-                    let escaped = match &escape_style {
-                        StringEscapeStyle::Standard => s.replace('\\', "\\\\").replace('\'', "\\'"),
-                        _ => s.replace('\'', "''"),
-                    };
-                    format!("'{}'", escaped)
-                }
-            }).collect();
+            let vals: Vec<String> = row.iter()
+                .map(|v| crate::datasource::utils::value_to_sql_safe(v, &escape_style))
+                .collect();
             let sql = format!("INSERT INTO `{}` ({}) VALUES ({})",
                 table,
                 columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),

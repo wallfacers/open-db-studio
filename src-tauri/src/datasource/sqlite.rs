@@ -519,7 +519,7 @@ impl DataSource for SqliteDataSource {
 
         tokio::task::spawn_blocking(move || -> AppResult<usize> {
             let guard = conn.blocking_lock();
-            let quote = |c: &str| format!("\"{}\"", c.replace('"', "\"\""));
+            let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "sqlite");
             let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
             let placeholders = (1..=columns.len())
                 .map(|i| format!("?{}", i))

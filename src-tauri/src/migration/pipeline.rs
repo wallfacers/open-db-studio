@@ -660,10 +660,11 @@ async fn execute_single_mapping(
 
     // ── Overwrite: truncate target table before pipeline starts ──────────
     if conflict_strategy == ConflictStrategy::Overwrite {
-        let truncate_sql = match dst_cfg.driver.as_str() {
-            "sqlite" => format!("DELETE FROM \"{}\"", mapping.target.table.replace('"', "\"\"")),
-            "sqlserver" => format!("TRUNCATE TABLE [{}]", mapping.target.table.replace(']', "]]")),
-            _ => format!("TRUNCATE TABLE `{}`", mapping.target.table.replace('`', "``")),
+        let quoted_table = crate::datasource::utils::quote_identifier_for_driver(&mapping.target.table, &dst_cfg.driver);
+        let truncate_sql = if dst_cfg.driver == "sqlite" {
+            format!("DELETE FROM {}", quoted_table)
+        } else {
+            format!("TRUNCATE TABLE {}", quoted_table)
         };
         logs.lock().unwrap().emit_and_record(
             app, job_id, run_id, "SYSTEM",
@@ -697,6 +698,7 @@ async fn execute_single_mapping(
         let mut prev_read = 0u64;
         let mut prev_written = 0u64;
         let mut prev_bytes = 0u64;
+        let mut prev_failed = 0u64;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             if cancel_s.load(Ordering::Relaxed) {
@@ -704,9 +706,18 @@ async fn execute_single_mapping(
             }
             let rows_read = ms_clone.rows_read.load(Ordering::Relaxed);
             let rows_written = ms_clone.rows_written.load(Ordering::Relaxed);
+            let rows_failed = ms_clone.rows_failed.load(Ordering::Relaxed);
+            let bytes_now = ms_clone.bytes_transferred.load(Ordering::Relaxed);
+
+            // Skip emit if nothing changed since last tick
+            if rows_read == prev_read && rows_written == prev_written
+                && rows_failed == prev_failed && bytes_now == prev_bytes
+            {
+                continue;
+            }
+
             let delta_read = rows_read.saturating_sub(prev_read) as f64;
             let delta_written = rows_written.saturating_sub(prev_written) as f64;
-            let bytes_now = ms_clone.bytes_transferred.load(Ordering::Relaxed);
             let delta_bytes = bytes_now.saturating_sub(prev_bytes) as f64;
             let (eta, pct) = if let Some(total) = total_rows {
                 if rows_read < total {
@@ -750,6 +761,7 @@ async fn execute_single_mapping(
             let _ = app_stats.emit(MIGRATION_STATS_EVENT, &event);
             prev_read = rows_read;
             prev_written = rows_written;
+            prev_failed = rows_failed;
             prev_bytes = bytes_now;
         }
     });
@@ -1467,11 +1479,10 @@ async fn writeback_incremental_checkpoint(
                         run_id,
                         "SYSTEM",
                         &format!(
-                            "Incremental checkpoint updated: {} = {}",
-                            inc.field, max_val
+                            "Incremental checkpoint updated: {} = {} (table: {})",
+                            inc.field, max_val, mapping.source_table
                         ),
                     );
-                    return;
                 }
             }
         }

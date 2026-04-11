@@ -2,14 +2,11 @@ use crate::datasource::StringEscapeStyle;
 
 /// 判断字符串是否为十六进制编码的二进制数据。
 /// MySQL 读取阶段将非 UTF-8 的二进制转为 "0x<hex>"，PostgreSQL 转为 "\\x<hex>"。
-fn is_hex_binary(s: &str) -> bool {
-    if s.len() >= 2 && s.starts_with("0x") {
-        s[2..].chars().all(|c| c.is_ascii_hexdigit())
-    } else if s.len() >= 2 && s.starts_with("\\x") {
-        s[2..].chars().all(|c| c.is_ascii_hexdigit())
-    } else {
-        false
-    }
+/// 阈值 >= 4 确保至少有一个字节的 hex 数据（2 字节前缀 + 至少 2 个 hex 字符）。
+pub fn is_hex_binary(s: &str) -> bool {
+    s.len() >= 4
+        && (s.starts_with("0x") || s.starts_with("\\x"))
+        && s[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// 将十六进制二进制字符串转为目标驱动正确的 SQL 二进制字面量。
@@ -81,7 +78,26 @@ pub fn value_to_sql_safe(v: &serde_json::Value, style: &StringEscapeStyle) -> St
 
 /// Zero-allocation variant of `value_to_sql_safe` that appends directly into a `&mut String`.
 pub fn value_to_sql_safe_into(v: &serde_json::Value, style: &StringEscapeStyle, buf: &mut String) {
-    buf.push_str(&value_to_sql_safe(v, style));
+    match v {
+        serde_json::Value::Null => buf.push_str("NULL"),
+        serde_json::Value::Bool(b) => buf.push_str(if *b { "1" } else { "0" }),
+        serde_json::Value::Number(n) => {
+            use std::fmt::Write;
+            let _ = write!(buf, "{}", n);
+        }
+        serde_json::Value::String(s) => {
+            if is_hex_binary(s) {
+                buf.push_str(&hex_to_binary_literal(s, style));
+            } else if is_pure_integer(s) {
+                buf.push_str(s);
+            } else {
+                buf.push_str(&escape_string_literal(s, style));
+            }
+        }
+        other => {
+            buf.push_str(&escape_string_literal(&other.to_string(), style));
+        }
+    }
 }
 
 fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
@@ -148,6 +164,22 @@ pub fn format_size(bytes: i64) -> String {
 /// 使用双引号包裹并转义内部双引号，防止 SQL 注入。
 pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// 根据驱动类型转义 SQL 标识符（列名/表名）。
+/// 各驱动使用不同的引号风格，统一从此函数获取以避免散落的内联闭包。
+pub fn quote_identifier_for_driver(name: &str, driver: &str) -> String {
+    match driver {
+        "mysql" | "doris" | "tidb" | "clickhouse" => {
+            format!("`{}`", name.replace('`', "``"))
+        }
+        "sqlserver" => {
+            format!("[{}]", name.replace(']', "]]"))
+        }
+        _ => {
+            format!("\"{}\"", name.replace('"', "\"\""))
+        }
+    }
 }
 
 /// 去掉 SQL 开头的行注释（--）和块注释（/* */），

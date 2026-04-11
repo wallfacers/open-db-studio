@@ -348,7 +348,7 @@ impl PostgresDataSource {
     async fn bulk_write_copy(&self, table: &str, columns: &[String], rows: &[Vec<serde_json::Value>]) -> AppResult<usize> {
         use sqlx::postgres::PgPoolCopyExt;
 
-        let quote = |c: &str| format!("\"{}\"", c.replace('"', "\"\""));
+        let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "postgres");
         let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
         let csv_data = crate::datasource::bulk_write::rows_to_csv(rows);
 

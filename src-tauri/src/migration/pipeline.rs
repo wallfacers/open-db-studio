@@ -606,6 +606,7 @@ async fn execute_single_mapping(
     let cancel_s = cancel.clone();
     let gs = global_stats.clone();
     let ml = mapping_label.clone();
+    let stats_start = std::time::Instant::now();
     let stats_handle = tokio::spawn(async move {
         let mut prev_read = 0u64;
         let mut prev_written = 0u64;
@@ -623,12 +624,17 @@ async fn execute_single_mapping(
             let delta_bytes = bytes_now.saturating_sub(prev_bytes) as f64;
             let (eta, pct) = if let Some(total) = total_rows {
                 if rows_read < total {
-                    let rps = delta_read.max(1.0);
-                    let eta_secs = (total - rows_read) as f64 / rps;
-                    (
-                        Some(eta_secs),
-                        Some((rows_read as f64 / total as f64 * 100.0).min(100.0)),
-                    )
+                    // Use cumulative average RPS to avoid absurd ETAs when a single
+                    // tick has zero throughput (e.g. momentary pause → max(1.0)
+                    // caused "126167m40s" style ETAs).
+                    let elapsed_secs = stats_start.elapsed().as_secs_f64().max(0.001);
+                    let avg_rps = rows_read as f64 / elapsed_secs;
+                    let eta_opt = if avg_rps >= 1.0 {
+                        Some((total - rows_read) as f64 / avg_rps)
+                    } else {
+                        None // rate too low / not yet started — skip ETA display
+                    };
+                    (eta_opt, Some((rows_read as f64 / total as f64 * 100.0).min(100.0)))
                 } else {
                     (Some(0.0), Some(100.0))
                 }
@@ -901,7 +907,6 @@ async fn run_reader_writer_pair(
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
-        let mut pending_writes: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
         while let Some(batch) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
@@ -924,9 +929,6 @@ async fn run_reader_writer_pair(
                         error_count += fail as usize;
                     }
                     if error_limit > 0 && error_count >= error_limit {
-                        for handle in &pending_writes {
-                            handle.abort();
-                        }
                         drop(result_tx);
                         while let Ok((ok, fail)) = result_rx.try_recv() {
                             ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
@@ -956,7 +958,7 @@ async fn run_reader_writer_pair(
                     let lbl = label_w.clone();
                     let rid = run_id_w.clone();
 
-                    let handle = tokio::spawn(async move {
+                    let _handle = tokio::spawn(async move {
                         let (ok, fail) = match write_batch(
                             &*dst_clone, &table_clone, &cols_clone,
                             &rows_to_write, &cs_clone, &uk_clone, &drv_clone,
@@ -974,7 +976,11 @@ async fn run_reader_writer_pair(
                                         &cs_clone, &uk_clone, &drv_clone,
                                     ).await {
                                         Ok(n) => row_ok += n as u64,
-                                        Err(_) => row_fail += 1,
+                                        Err(e) => {
+                                            emit_log(&app_clone, job_id, &rid, "WARN",
+                                                &format!("[{}] Row write failed: {}", lbl, e));
+                                            row_fail += 1;
+                                        }
                                     }
                                 }
                                 if row_fail > 0 {
@@ -987,7 +993,6 @@ async fn run_reader_writer_pair(
                         let _ = rtx.send((ok, fail));
                         drop(permit);
                     });
-                    pending_writes.push(handle);
                 }
             }
         }
@@ -1016,7 +1021,11 @@ async fn run_reader_writer_pair(
                             &conflict_strategy, &upsert_keys, &dst_driver,
                         ).await {
                             Ok(n) => row_ok += n as u64,
-                            Err(_) => row_fail += 1,
+                            Err(e) => {
+                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                    &format!("[{}] Row write failed: {}", label_w, e));
+                                row_fail += 1;
+                            }
                         }
                     }
                     ms_writer.rows_written.fetch_add(row_ok, Ordering::Relaxed);
@@ -1030,11 +1039,6 @@ async fn run_reader_writer_pair(
                     }
                 }
             }
-        }
-
-        // Abort any in-flight write tasks that are still holding connections.
-        for handle in pending_writes.drain(..) {
-            handle.abort();
         }
 
         drop(result_tx);

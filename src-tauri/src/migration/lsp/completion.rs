@@ -104,6 +104,8 @@ fn parameter_completions() -> Vec<CompletionItem> {
         ("speed_limit_rps", "Max rows/sec (empty=unlimited)"),
         ("channel_capacity", "Pipeline buffer size (default 16)"),
         ("shard_count", "Number of shards for parallel read"),
+        ("transaction_batch", "Write batches per COMMIT (1-100, default 10)"),
+        ("write_pause_ms", "Cooldown ms between commits (empty=none)"),
     ].into_iter().map(|(name, desc)| CompletionItem {
         label: name.into(),
         kind: "parameter".into(),

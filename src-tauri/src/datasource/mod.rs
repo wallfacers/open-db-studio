@@ -482,6 +482,17 @@ pub trait DataSource: Send + Sync {
         StringEscapeStyle::Standard
     }
 
+    /// 在单个事务中执行多条 SQL 语句（一次 COMMIT），减少 fsync 次数。
+    /// 默认实现逐条 execute（无事务包裹），各驱动按需覆盖以使用原生事务。
+    /// 返回所有语句影响的总行数。
+    async fn execute_in_transaction(&self, statements: &[String]) -> AppResult<usize> {
+        let mut total = 0;
+        for stmt in statements {
+            total += self.execute(stmt).await?.row_count;
+        }
+        Ok(total)
+    }
+
     /// 分页执行查询，返回第 `offset` 行起的 `limit` 行数据。
     /// 默认实现通过子查询包裹原始 SQL，适用于 MySQL / PostgreSQL / SQLite / ClickHouse。
     /// SQL Server 需覆盖此方法以使用 OFFSET/FETCH NEXT 语法。

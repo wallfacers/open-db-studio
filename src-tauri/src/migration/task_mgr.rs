@@ -116,6 +116,18 @@ pub struct PipelineConfig {
     pub speed_limit_rps: Option<u64>,
     pub error_limit: usize,
     pub shard_count: Option<usize>,
+    /// Number of write batches to group into a single database transaction (COMMIT).
+    /// Higher values reduce fsync count but increase memory usage and failure blast radius.
+    /// Default: 10. Clamped to [1, 100].
+    #[serde(default = "default_transaction_batch_size")]
+    pub transaction_batch_size: usize,
+    /// Optional cooldown (ms) between transaction commits, giving disk I/O breathing room.
+    #[serde(default)]
+    pub write_pause_ms: Option<u64>,
+}
+
+fn default_transaction_batch_size() -> usize {
+    10
 }
 
 impl Default for PipelineConfig {
@@ -128,6 +140,8 @@ impl Default for PipelineConfig {
             speed_limit_rps: None,
             error_limit: 0,
             shard_count: None,
+            transaction_batch_size: 10,
+            write_pause_ms: None,
         }
     }
 }

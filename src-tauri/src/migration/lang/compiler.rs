@@ -68,6 +68,16 @@ pub fn compile(
                             pipeline.shard_count = Some(*v as usize);
                         }
                     }
+                    "transaction_batch" | "txn_batch" => {
+                        if let SetValue::Int(v) = &a.value {
+                            pipeline.transaction_batch_size = (*v as usize).max(1).min(100);
+                        }
+                    }
+                    "write_pause_ms" => {
+                        if let SetValue::Int(v) = &a.value {
+                            pipeline.write_pause_ms = Some(*v as u64);
+                        }
+                    }
                     other => {
                         errors.push(CompileError {
                             message: format!("unknown SET parameter: {other}"),

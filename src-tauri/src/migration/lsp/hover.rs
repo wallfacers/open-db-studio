@@ -78,6 +78,8 @@ fn hover_set_param(word: &str) -> Option<HoverInfo> {
         "speed_limit_rps" => "**speed_limit_rps** (optional)\n\nMax rows per second. Omit for unlimited.",
         "channel_capacity" => "**channel_capacity** (default: 16)\n\nPipeline backpressure buffer size in batches.",
         "shard_count" => "**shard_count** (optional)\n\nForce N shards for parallel reads (auto-detected by default).",
+        "transaction_batch" | "txn_batch" => "**transaction_batch** `1-100` (default: 10)\n\nNumber of write batches grouped into a single COMMIT. Higher values reduce disk fsync count.",
+        "write_pause_ms" => "**write_pause_ms** (optional)\n\nCooldown in milliseconds between transaction commits. Gives disk I/O breathing room.",
         _ => return None,
     };
     Some(HoverInfo {

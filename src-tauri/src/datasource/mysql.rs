@@ -496,6 +496,19 @@ impl DataSource for MySqlDataSource {
         }
     }
 
+    async fn execute_in_transaction(&self, statements: &[String]) -> AppResult<usize> {
+        use sqlx::Acquire;
+        let mut conn = self.pool.acquire().await?;
+        let mut tx = conn.begin().await?;
+        let mut total = 0usize;
+        for stmt in statements {
+            let result = sqlx::query(stmt).execute(&mut *tx).await?;
+            total += result.rows_affected() as usize;
+        }
+        tx.commit().await?;
+        Ok(total)
+    }
+
     async fn get_db_stats(&self, database: Option<&str>) -> AppResult<DbStats> {
         let db = database.unwrap_or("");
         let sql = if db.is_empty() {

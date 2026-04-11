@@ -47,6 +47,10 @@ pub struct MySqlDataSource {
     mig_async_pool: tokio::sync::OnceCell<mysql_async::Pool>,
     /// Connection config stored for building mysql_async pool on demand.
     conn_url: String,
+    /// Tracks whether LOAD DATA LOCAL INFILE is unsupported by the server.
+    /// Once set to true, all future bulk_write calls skip LOAD DATA entirely
+    /// and use optimized INSERT directly, avoiding log spam.
+    load_data_disabled: std::sync::atomic::AtomicBool,
 }
 
 impl MySqlDataSource {
@@ -112,7 +116,7 @@ impl MySqlDataSource {
             .connect_with(opts)
             .await?;
         let conn_url = format!(
-            "mysql://{}:{}@{}:{}/{}",
+            "mysql://{}:{}@{}:{}/{}?local_infile=true",
             urlencoding::encode(username),
             urlencoding::encode(password),
             host,
@@ -125,6 +129,7 @@ impl MySqlDataSource {
             mig_session_active: std::sync::atomic::AtomicBool::new(false),
             mig_async_pool: tokio::sync::OnceCell::new(),
             conn_url,
+            load_data_disabled: std::sync::atomic::AtomicBool::new(false),
         })
     }
 }
@@ -615,32 +620,32 @@ impl DataSource for MySqlDataSource {
         upsert_keys: &[String],
         driver: &str,
     ) -> AppResult<usize> {
-        use crate::datasource::bulk_write;
-
         if rows.is_empty() || columns.is_empty() {
             return Ok(0);
         }
 
         // LOAD DATA doesn't support ON DUPLICATE KEY UPDATE — fall back to INSERT
         if matches!(conflict_strategy, crate::migration::task_mgr::ConflictStrategy::Upsert) {
-            let escape_style = self.string_escape_style();
-            let sql = bulk_write::build_insert_sql_optimized(
-                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
-            );
-            let result = self.execute(&sql).await?;
-            return Ok(result.row_count.min(rows.len()));
+            return self.bulk_write_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
+        // If LOAD DATA was already disabled (server rejected it), skip straight to INSERT.
+        if self.load_data_disabled.load(std::sync::atomic::Ordering::Relaxed) {
+            return self.bulk_write_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
         }
 
         match self.bulk_write_load_data(table, columns, rows, conflict_strategy).await {
             Ok(n) => Ok(n),
             Err(e) => {
-                log::warn!("LOAD DATA failed ({}), falling back to optimized INSERT", e);
-                let escape_style = self.string_escape_style();
-                let sql = bulk_write::build_insert_sql_optimized(
-                    &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
-                );
-                let result = self.execute(&sql).await?;
-                Ok(result.row_count.min(rows.len()))
+                // First failure: log WARN and set the flag so we don't retry LOAD DATA.
+                // Subsequent hits: log DEBUG only, avoiding log spam.
+                let prev = self.load_data_disabled.swap(true, std::sync::atomic::Ordering::Relaxed);
+                if prev {
+                    log::debug!("LOAD DATA unavailable, using optimized INSERT (suppressed repeat warning)");
+                } else {
+                    log::warn!("LOAD DATA failed ({}), falling back to optimized INSERT for this session", e);
+                }
+                self.bulk_write_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await
             }
         }
     }
@@ -669,6 +674,59 @@ impl MySqlDataSource {
         // Drop implementation to close connections when the MySqlDataSource is dropped.
         // This method is a no-op placeholder for future explicit teardown support.
         let _ = self.mig_async_pool.get();
+    }
+
+    /// Build INSERT SQL respecting MySQL's max_allowed_packet by chunking rows.
+    /// Prevents "connection dropped" errors when batch contains large TEXT/BLOB/JSON values.
+    async fn bulk_write_insert_chunked(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        use crate::datasource::bulk_write;
+
+        // Conservative safe chunk size: 16 MB (covers most default max_allowed_packet settings).
+        const SAFE_CHUNK_SIZE: usize = 16 * 1024 * 1024;
+
+        // Estimate single row size by sampling first row
+        let sample_size = self.estimate_row_size(&rows[0]);
+        let rows_per_chunk = if sample_size > 0 {
+            (SAFE_CHUNK_SIZE / sample_size).max(1)
+        } else {
+            rows.len()
+        };
+
+        let mut total_written = 0usize;
+        let escape_style = self.string_escape_style();
+
+        for chunk in rows.chunks(rows_per_chunk) {
+            let sql = bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            total_written += result.row_count.min(chunk.len());
+        }
+
+        Ok(total_written)
+    }
+
+    /// Estimate the serialized size of a single row in bytes.
+    fn estimate_row_size(&self, row: &[serde_json::Value]) -> usize {
+        let mut size = 0usize;
+        for v in row {
+            size += match v {
+                serde_json::Value::Null => 4,
+                serde_json::Value::Bool(_) => 1,
+                serde_json::Value::Number(n) => n.to_string().len(),
+                serde_json::Value::String(s) => s.len() * 2 + 4,
+                other => other.to_string().len(),
+            };
+        }
+        size
     }
 
     async fn bulk_write_load_data(

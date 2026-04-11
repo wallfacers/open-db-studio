@@ -422,7 +422,7 @@ CREATE TABLE IF NOT EXISTS migration_jobs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL,
   category_id INTEGER REFERENCES migration_categories(id) ON DELETE SET NULL,
-  config_json TEXT NOT NULL DEFAULT '{}',
+  script_text TEXT NOT NULL DEFAULT '',
   last_status TEXT CHECK(last_status IN ('RUNNING','FINISHED','FAILED','STOPPED','PARTIAL_FAILED')),
   last_run_at TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

@@ -86,7 +86,7 @@ pub fn delete_category(id: i64) -> AppResult<()> {
 pub fn list_jobs() -> AppResult<Vec<MigrationJob>> {
     let db = crate::db::get().lock().unwrap();
     let mut stmt = db.prepare(
-        "SELECT id, name, category_id, config_json, last_status, last_run_at, created_at, updated_at
+        "SELECT id, name, category_id, script_text, last_status, last_run_at, created_at, updated_at
          FROM migration_jobs ORDER BY updated_at DESC",
     )?;
     let rows = stmt.query_map([], MigrationJob::from_row)?;
@@ -94,16 +94,14 @@ pub fn list_jobs() -> AppResult<Vec<MigrationJob>> {
 }
 
 pub fn create_job(name: &str, category_id: Option<i64>) -> AppResult<MigrationJob> {
-    let default_config = serde_json::to_string(&MigrationJobConfig::default())
-        .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
     let db = crate::db::get().lock().unwrap();
     db.execute(
-        "INSERT INTO migration_jobs (name, category_id, config_json) VALUES (?1, ?2, ?3)",
-        params![name, category_id, default_config],
+        "INSERT INTO migration_jobs (name, category_id, script_text) VALUES (?1, ?2, ?3)",
+        params![name, category_id, ""],
     )?;
     let id = db.last_insert_rowid();
     let job = db.query_row(
-        "SELECT id, name, category_id, config_json, last_status, last_run_at, created_at, updated_at
+        "SELECT id, name, category_id, script_text, last_status, last_run_at, created_at, updated_at
          FROM migration_jobs WHERE id=?1",
         params![id],
         MigrationJob::from_row,
@@ -111,15 +109,13 @@ pub fn create_job(name: &str, category_id: Option<i64>) -> AppResult<MigrationJo
     Ok(job)
 }
 
-pub fn update_job_config(id: i64, config_json: &str) -> AppResult<()> {
-    serde_json::from_str::<MigrationJobConfig>(config_json)
-        .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
+pub fn update_job_script(id: i64, script_text: &str) -> AppResult<()> {
     let db = crate::db::get().lock().unwrap();
     db.execute(
         "UPDATE migration_jobs \
-         SET config_json=?1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+         SET script_text=?1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
          WHERE id=?2",
-        params![config_json, id],
+        params![script_text, id],
     )?;
     Ok(())
 }
@@ -188,31 +184,3 @@ pub fn delete_run_history(job_id: i64, run_id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Migrate all jobs from old config format (top-level target) to new format (tableMappings).
-/// Called once at startup. Idempotent — already-migrated configs are unchanged.
-pub fn migrate_legacy_configs() -> AppResult<()> {
-    let db = crate::db::get().lock().unwrap();
-    let mut stmt = db.prepare(
-        "SELECT id, config_json FROM migration_jobs",
-    )?;
-    let jobs: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    for (id, config_json) in jobs {
-        // Try to parse. The custom deserializer handles migration automatically.
-        if let Ok(config) = serde_json::from_str::<MigrationJobConfig>(&config_json) {
-            // Re-serialize in new format
-            let new_json = serde_json::to_string(&config)
-                .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
-            if new_json != config_json {
-                db.execute(
-                    "UPDATE migration_jobs SET config_json=?1 WHERE id=?2",
-                    params![new_json, id],
-                )?;
-            }
-        }
-    }
-    Ok(())
-}

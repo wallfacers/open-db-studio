@@ -40,6 +40,10 @@ sqlx = { version = "0.8", features = [
   "rust_decimal",
   "uuid",
 ] }
+
+# MySQL bulk write (LOAD DATA LOCAL INFILE) for migration pipeline
+mysql_async = "0.34"
+
 rust_decimal = "1"
 
 # HTTP 客户端（LLM 代理）

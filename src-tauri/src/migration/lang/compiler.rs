@@ -4,6 +4,7 @@ use crate::migration::task_mgr::*;
 #[derive(Debug, Clone)]
 pub struct CompileError {
     pub message: String,
+    #[allow(dead_code)]
     pub span: Span,
 }
 

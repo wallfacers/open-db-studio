@@ -68,6 +68,7 @@ export function MigrationEditor({ value, onChange, onSave, ghostTextEnabled }: P
   useEffect(() => { onSaveRef.current = onSave }, [onSave])
   const ghostTextRef = useRef(ghostTextEnabled ?? false)
   useEffect(() => { ghostTextRef.current = ghostTextEnabled ?? false }, [ghostTextEnabled])
+  const ghostTextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleEditorDidMount: OnMount = useCallback((editor, monaco: Monaco) => {
     editorRef.current = editor
@@ -87,7 +88,6 @@ export function MigrationEditor({ value, onChange, onSave, ghostTextEnabled }: P
     lspAdapterRef.current = adapter
 
     // Ghost Text inline completion with debounce
-    const ghostTextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     lspDisposablesRef.current.push(
       monaco.languages.registerInlineCompletionsProvider(MIGRATEQL_LANGUAGE_ID, {
         provideInlineCompletions: async (model: MonacoEditorType.ITextModel, position: Position, _context: languages.InlineCompletionContext, _token: CancellationToken) => {

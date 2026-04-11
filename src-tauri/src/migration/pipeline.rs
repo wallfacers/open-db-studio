@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -36,11 +36,11 @@ fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> Mig
 /// Beyond this, oldest entries are dropped to prevent OOM.
 const LOG_COLLECTOR_MAX_ENTRIES: usize = 2000;
 
-pub struct LogCollector(pub Vec<MigrationLogEvent>);
+pub struct LogCollector(pub VecDeque<MigrationLogEvent>);
 
 impl LogCollector {
     fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self(Vec::new())))
+        Arc::new(Mutex::new(Self(VecDeque::new())))
     }
 
     fn emit_and_record(
@@ -53,10 +53,9 @@ impl LogCollector {
     ) {
         let event = build_log_event(job_id, run_id, level, message);
         let _ = app.emit(MIGRATION_LOG_EVENT, &event);
-        self.0.push(event);
-        // Cap growth: drop oldest entries when buffer exceeds threshold
+        self.0.push_back(event);
         if self.0.len() > LOG_COLLECTOR_MAX_ENTRIES {
-            self.0.drain(0..(self.0.len() - LOG_COLLECTOR_MAX_ENTRIES));
+            self.0.pop_front();
         }
     }
 }
@@ -902,7 +901,6 @@ async fn run_reader_writer_pair(
         let mut error_count = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
-        // Track fire-and-forget write tasks so we can abort them on exit.
         let mut pending_writes: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
         while let Some(batch) = rx.recv().await {
@@ -926,7 +924,6 @@ async fn run_reader_writer_pair(
                         error_count += fail as usize;
                     }
                     if error_limit > 0 && error_count >= error_limit {
-                        // Abort pending writes and drain remaining results before returning.
                         for handle in &pending_writes {
                             handle.abort();
                         }
@@ -1035,14 +1032,11 @@ async fn run_reader_writer_pair(
             }
         }
 
-        // Abort all orphan write tasks that are still running.
-        // These are fire-and-forget spawns that may be holding connections.
-        for handle in &pending_writes {
+        // Abort any in-flight write tasks that are still holding connections.
+        for handle in pending_writes.drain(..) {
             handle.abort();
         }
 
-        // Drain results from any tasks that completed before we aborted them.
-        // Wait for all pending concurrent writes to complete (or already-aborted ones to finish).
         drop(result_tx);
         while let Some((ok, fail)) = result_rx.recv().await {
             ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);

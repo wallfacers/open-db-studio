@@ -23,7 +23,9 @@ use crate::AppResult;
 
 type CacheKey = (i64, String, String);
 
-static POOL_CACHE: Lazy<Mutex<HashMap<CacheKey, Arc<dyn DataSource>>>> =
+// Value: (datasource, configured pool_max_connections).
+// The stored size is used to detect whether an existing pool satisfies a larger request.
+static POOL_CACHE: Lazy<Mutex<HashMap<CacheKey, (Arc<dyn DataSource>, u32)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// 获取或创建缓存的数据源。
@@ -36,39 +38,15 @@ pub async fn get_or_create(
     database: &str,
     schema: &str,
 ) -> AppResult<Arc<dyn DataSource>> {
-    // SQLite 不走缓存
-    if config.driver == "sqlite" {
-        return create_datasource_arc(config, database, schema).await;
-    }
-
-    let key: CacheKey = (connection_id, database.to_string(), schema.to_string());
-
-    // 快速路径：已有缓存直接返回
-    {
-        let cache = POOL_CACHE.lock().await;
-        if let Some(ds) = cache.get(&key) {
-            return Ok(Arc::clone(ds));
-        }
-    }
-
-    // 慢路径：创建新连接池
-    let ds = create_datasource_arc(config, database, schema).await?;
-
-    let mut cache = POOL_CACHE.lock().await;
-    // Double-checked：等锁期间可能已被其他任务插入
-    if let Some(existing) = cache.get(&key) {
-        return Ok(Arc::clone(existing));
-    }
-    cache.insert(key, Arc::clone(&ds));
-    log::info!(
-        "Pool cache created: connection_id={} database={:?} schema={:?}",
-        connection_id, database, schema
-    );
-    Ok(ds)
+    get_or_create_with_pool_size(connection_id, config, database, schema, 0).await
 }
 
 /// 获取或创建缓存的数据源，可指定最小连接池大小。
 /// 用于迁移管道等场景需要根据并行度动态扩展连接池。
+///
+/// 若缓存中已有连接池且其 pool_max_connections >= min_pool_size，直接复用；
+/// 否则以覆盖后的 pool_max_connections 重建并替换缓存条目（旧连接池被
+/// 已持有 Arc 的调用方继续使用，新调用方得到扩容后的连接池）。
 pub async fn get_or_create_with_pool_size(
     connection_id: i64,
     config: &ConnectionConfig,
@@ -83,11 +61,13 @@ pub async fn get_or_create_with_pool_size(
 
     let key: CacheKey = (connection_id, database.to_string(), schema.to_string());
 
-    // 快速路径：已有缓存直接返回
+    // 快速路径：已有缓存且满足容量要求时直接返回
     {
         let cache = POOL_CACHE.lock().await;
-        if let Some(ds) = cache.get(&key) {
-            return Ok(Arc::clone(ds));
+        if let Some((ds, cached_size)) = cache.get(&key) {
+            if *cached_size >= min_pool_size {
+                return Ok(Arc::clone(ds));
+            }
         }
     }
 
@@ -97,16 +77,20 @@ pub async fn get_or_create_with_pool_size(
     if min_pool_size > current {
         cfg.pool_max_connections = Some(min_pool_size);
     }
+    let actual_pool_size = cfg.pool_max_connections.unwrap_or(0);
     let ds = create_datasource_arc(&cfg, database, schema).await?;
 
     let mut cache = POOL_CACHE.lock().await;
-    if let Some(existing) = cache.get(&key) {
-        return Ok(Arc::clone(existing));
+    // Double-checked：等锁期间可能已被其他任务插入或升级
+    if let Some((existing, cached_size)) = cache.get(&key) {
+        if *cached_size >= min_pool_size {
+            return Ok(Arc::clone(existing));
+        }
     }
-    cache.insert(key, Arc::clone(&ds));
+    cache.insert(key, (Arc::clone(&ds), actual_pool_size));
     log::info!(
         "Pool cache created (pool_size={}): connection_id={} database={:?} schema={:?}",
-        cfg.pool_max_connections.unwrap_or(0), connection_id, database, schema
+        actual_pool_size, connection_id, database, schema
     );
     Ok(ds)
 }
@@ -130,7 +114,7 @@ pub async fn invalidate(connection_id: i64) {
 pub async fn close_all() {
     let mut cache = POOL_CACHE.lock().await;
     let count = cache.len();
-    cache.clear();
+    cache.clear(); // Arc drop triggers pool close
     if count > 0 {
         log::info!("Pool cache: closed all {} cached pool(s) on app exit", count);
     }

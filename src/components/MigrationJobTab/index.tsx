@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useMigrationStore, MigrationJob } from '../../store/migrationStore'
 import { MigrationToolbar } from './MigrationToolbar'
 import { MigrationEditor } from './MigrationEditor'
 import { ResultPanel } from './ResultPanel'
+import { useUIObjectRegistry } from '../../mcp/ui'
+import { MigrationJobAdapter } from '../../mcp/ui/adapters/MigrationJobAdapter'
+import { useQueryStore } from '../../store/queryStore'
 
 interface Props { jobId: number }
 
@@ -19,6 +22,28 @@ export function MigrationJobTab({ jobId }: Props) {
   scriptTextRef.current = scriptText
   const isRunning = jobNode?.nodeType === 'job' && jobNode.status === 'RUNNING'
   const hasFailed = jobNode?.nodeType === 'job' && jobNode.status === 'FAILED'
+
+  // Find the tabId for this job
+  const tabId = useQueryStore(s => s.tabs.find(t => t.type === 'migration_job' && t.migrationJobId === jobId)?.id) ?? ''
+  const jobLabel = jobNode?.nodeType === 'job' ? jobNode.label : `Migration #${jobId}`
+
+  const adapter = useMemo(() => {
+    if (!tabId) return null
+    return new MigrationJobAdapter(tabId, jobId, jobLabel)
+  }, [tabId, jobId, jobLabel])
+
+  // Inject script read/write callbacks
+  useEffect(() => {
+    if (!adapter) return
+    adapter.getScriptText = () => scriptTextRef.current
+    adapter.setScriptText = (value: string) => setScriptText(value)
+    adapter.triggerSave = async () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      await invoke('update_migration_job_script', { id: jobId, scriptText: scriptTextRef.current })
+    }
+  }, [adapter, jobId])
+
+  useUIObjectRegistry(adapter)
 
   useEffect(() => {
     invoke<MigrationJob[]>('list_migration_jobs')

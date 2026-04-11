@@ -98,6 +98,12 @@ impl MySqlDataSource {
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
             .idle_timeout(Duration::from_secs(idle_timeout as u64))
+            // Recycle connections after 10 min to prevent using connections that the
+            // MySQL server has silently killed (e.g. due to wait_timeout on the server side).
+            .max_lifetime(Duration::from_secs(600))
+            // Ping before checkout so stale connections are detected immediately
+            // rather than mid-transaction, which causes unrecoverable EOF errors.
+            .test_before_acquire(true)
             .connect_with(opts)
             .await?;
         Ok(Self { pool, dialect })

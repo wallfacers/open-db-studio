@@ -550,20 +550,23 @@ async fn execute_single_mapping(
     let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
     let parallelism = config.pipeline.parallelism.max(1).min(16);
 
-    // ── Dynamic pool sizing: ensure pool has enough connections for parallelism ──
-    // range-split: parallelism concurrent readers (src) + parallelism concurrent writers (dst)
-    // each pool needs at least parallelism slots; +1 is a safety margin for pre-flight queries.
+    // ── Dedicated ephemeral connection pools for this mapping ─────────────
+    // Migration pools are intentionally NOT cached in the global pool cache so that:
+    //   - Large pool sizes (parallelism+1) don't evict or replace the normal
+    //     app pools used by the tree navigator and query editor.
+    //   - Pools are fully closed as soon as the mapping finishes (success,
+    //     failure, or cancel) — the Arc refcount drops to zero and sqlx
+    //     releases all connections to the server automatically.
+    // pool size = parallelism + 1 (safety margin for pre-flight COUNT/MIN/MAX queries)
     let required_pool = (parallelism + 1) as u32;
-    let src_ds = crate::datasource::pool_cache::get_or_create_with_pool_size(
-        src_conn_id,
+    let src_ds = crate::datasource::pool_cache::create_ephemeral(
         &src_cfg,
         &src_db,
         "",
         required_pool,
     )
     .await?;
-    let dst_ds = crate::datasource::pool_cache::get_or_create_with_pool_size(
-        dst_conn_id,
+    let dst_ds = crate::datasource::pool_cache::create_ephemeral(
         &dst_cfg,
         &dst_db,
         "",
@@ -1708,8 +1711,29 @@ async fn write_batch(
     Ok(result.row_count.min(rows.len()))
 }
 
+/// Returns true when the error is a transient TCP/connection-level failure that may
+/// succeed on retry (e.g. MySQL killed the connection under load). Data-level errors
+/// (duplicate key, constraint violation) are intentionally excluded.
+fn is_connection_error(err: &crate::error::AppError) -> bool {
+    // Check sqlx::Error variants directly for connection-level errors
+    if let crate::error::AppError::Sql(sqlx_err) = err {
+        return matches!(
+            sqlx_err,
+            sqlx::Error::Io(_) | sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut
+        );
+    }
+    // Fallback: string-match for wrapped errors
+    let s = err.to_string();
+    s.contains("expected to read")
+        || s.contains("got 0 bytes at EOF")
+        || s.contains("broken pipe")
+        || s.contains("connection reset")
+        || s.contains("error communicating with database")
+}
+
 /// Execute multiple write batches in a single transaction (one COMMIT for all).
 /// Falls back to individual write_batch calls (with canary retry) if the transaction fails.
+/// On transient connection errors, retries with exponential backoff before giving up.
 /// Returns Vec<(rows_ok, rows_failed)> for each batch group.
 async fn write_batch_group(
     ds: &dyn crate::datasource::DataSource,
@@ -1741,8 +1765,26 @@ async fn write_batch_group(
 
     let total_rows: u64 = row_groups.iter().map(|g| g.len() as u64).sum();
 
-    // Try executing all statements in a single transaction
-    match ds.execute_in_transaction(&sqls).await {
+    // Try executing all statements in a single transaction.
+    // On transient connection errors, retry up to 2 times with exponential backoff (2 s, 4 s)
+    // to give the target database time to recover from momentary overload.
+    let mut txn_retries = 0u32;
+    let txn_result = loop {
+        match ds.execute_in_transaction(&sqls).await {
+            ok @ Ok(_) => break ok,
+            Err(e) if is_connection_error(&e) && txn_retries < 2 => {
+                txn_retries += 1;
+                let wait_secs = 1u64 << txn_retries; // 2 s, 4 s
+                emit_log(app, job_id, run_id, "WARN",
+                    &format!("[{}] Transaction connection error (retry {}/2, waiting {}s): {}",
+                        label, txn_retries, wait_secs, e));
+                tokio::time::sleep(tokio::time::Duration::from_secs(wait_secs)).await;
+            }
+            err @ Err(_) => break err,
+        }
+    };
+
+    match txn_result {
         Ok(affected) => {
             // Cap at total_rows to handle MySQL double-count
             let ok = (affected as u64).min(total_rows);
@@ -1753,13 +1795,36 @@ async fn write_batch_group(
             emit_log(app, job_id, run_id, "WARN",
                 &format!("[{}] Transaction batch failed ({}), falling back to individual batches…", label, txn_err));
 
+            // On connection errors, wait briefly before individual retries to allow DB recovery.
+            if is_connection_error(&txn_err) {
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+
             let mut results = Vec::with_capacity(row_groups.len());
             for group in row_groups {
                 if group.is_empty() {
                     continue;
                 }
                 let batch_len = group.len() as u64;
-                match write_batch(ds, table, columns, group, conflict_strategy, upsert_keys, driver).await {
+
+                // Retry individual batch with exponential backoff on connection errors (1 s, 3 s).
+                let mut batch_retries = 0u32;
+                let batch_result = loop {
+                    match write_batch(ds, table, columns, group, conflict_strategy, upsert_keys, driver).await {
+                        ok @ Ok(_) => break ok,
+                        Err(e) if is_connection_error(&e) && batch_retries < 2 => {
+                            batch_retries += 1;
+                            let wait_ms = if batch_retries == 1 { 1000u64 } else { 3000u64 };
+                            emit_log(app, job_id, run_id, "WARN",
+                                &format!("[{}] Batch connection error (retry {}/2, waiting {}ms): {}",
+                                    label, batch_retries, wait_ms, e));
+                            tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
+                        }
+                        err @ Err(_) => break err,
+                    }
+                };
+
+                match batch_result {
                     Ok(n) => results.push((n as u64, 0u64)),
                     Err(e) => {
                         emit_log(app, job_id, run_id, "WARN",

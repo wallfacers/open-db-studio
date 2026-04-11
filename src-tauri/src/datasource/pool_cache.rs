@@ -120,6 +120,37 @@ pub async fn close_all() {
     }
 }
 
+/// Create a dedicated datasource that is **not** stored in the global cache.
+///
+/// Intended for migration pipelines and other short-lived workloads that need
+/// their own connection pool, sized for the task, and fully closed when the
+/// workload finishes — without interfering with the app's normal connection reuse.
+///
+/// Lifecycle: the returned `Arc` is the sole owner. When every clone of the `Arc`
+/// is dropped (i.e. when the migration task and all its split workers exit), the
+/// underlying connection pool is closed automatically by sqlx.
+///
+/// `min_pool_size` overrides `config.pool_max_connections` when larger, allowing
+/// the caller to request at least as many slots as its parallelism requires.
+pub async fn create_ephemeral(
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    min_pool_size: u32,
+) -> AppResult<Arc<dyn DataSource>> {
+    let mut cfg = config.clone();
+    let current = cfg.pool_max_connections.unwrap_or(0) as u32;
+    if min_pool_size > current {
+        cfg.pool_max_connections = Some(min_pool_size);
+    }
+    let actual = cfg.pool_max_connections.unwrap_or(0);
+    log::info!(
+        "Migration ephemeral pool created (pool_size={}, driver={}, database={:?})",
+        actual, cfg.driver, database
+    );
+    create_datasource_arc(&cfg, database, schema).await
+}
+
 async fn create_datasource_arc(
     config: &ConnectionConfig,
     database: &str,

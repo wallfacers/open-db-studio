@@ -819,6 +819,24 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V22: migration_jobs 列重命名 config_json -> script_text
+    {
+        let has_old_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('migration_jobs') WHERE name='config_json'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if has_old_col {
+            conn.execute_batch(
+                "ALTER TABLE migration_jobs RENAME COLUMN config_json TO script_text",
+            )?;
+            log::info!("V22: renamed migration_jobs.config_json -> script_text");
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

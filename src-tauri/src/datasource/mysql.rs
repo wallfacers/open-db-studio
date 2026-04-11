@@ -521,6 +521,7 @@ impl DataSource for MySqlDataSource {
         }
     }
 
+    #[allow(dead_code)]
     async fn execute_in_transaction(&self, statements: &[String]) -> AppResult<usize> {
         use sqlx::Acquire;
         let mut conn = self.pool.acquire().await?;

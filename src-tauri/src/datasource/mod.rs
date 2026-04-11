@@ -486,6 +486,7 @@ pub trait DataSource: Send + Sync {
     /// 在单个事务中执行多条 SQL 语句（一次 COMMIT），减少 fsync 次数。
     /// 默认实现逐条 execute（无事务包裹），各驱动按需覆盖以使用原生事务。
     /// 返回所有语句影响的总行数。
+    #[allow(dead_code)]
     async fn execute_in_transaction(&self, statements: &[String]) -> AppResult<usize> {
         let mut total = 0;
         for stmt in statements {

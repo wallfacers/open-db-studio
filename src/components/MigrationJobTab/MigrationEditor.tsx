@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react'
 import MonacoEditor, { type BeforeMount, type OnMount, type Monaco } from '@monaco-editor/react'
-import type { editor as MonacoEditorType } from 'monaco-editor'
+import type { editor as MonacoEditorType, Position, CancellationToken, languages } from 'monaco-editor'
+import { invoke } from '@tauri-apps/api/core'
 import { registerMigrateQLLanguage, MIGRATEQL_LANGUAGE_ID } from './MonarchTokenizer'
 import { MigrateQLLspAdapter } from './LspAdapter'
 
@@ -8,6 +9,7 @@ interface Props {
   value: string
   onChange: (value: string) => void
   onSave: () => void
+  ghostTextEnabled?: boolean
 }
 
 const handleEditorWillMount: BeforeMount = (monaco) => {
@@ -58,12 +60,14 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
   })
 }
 
-export function MigrationEditor({ value, onChange, onSave }: Props) {
+export function MigrationEditor({ value, onChange, onSave, ghostTextEnabled }: Props) {
   const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null)
   const lspAdapterRef = useRef<MigrateQLLspAdapter | null>(null)
   const lspDisposablesRef = useRef<{ dispose(): void }[]>([])
   const onSaveRef = useRef(onSave)
   useEffect(() => { onSaveRef.current = onSave }, [onSave])
+  const ghostTextRef = useRef(ghostTextEnabled ?? false)
+  useEffect(() => { ghostTextRef.current = ghostTextEnabled ?? false }, [ghostTextEnabled])
 
   const handleEditorDidMount: OnMount = useCallback((editor, monaco: Monaco) => {
     editorRef.current = editor
@@ -81,6 +85,40 @@ export function MigrationEditor({ value, onChange, onSave }: Props) {
     )
     adapter.start()
     lspAdapterRef.current = adapter
+
+    // Ghost Text inline completion
+    lspDisposablesRef.current.push(
+      monaco.languages.registerInlineCompletionsProvider(MIGRATEQL_LANGUAGE_ID, {
+        provideInlineCompletions: async (model: MonacoEditorType.ITextModel, position: Position, _context: languages.InlineCompletionContext, _token: CancellationToken) => {
+          if (!ghostTextRef.current) return { items: [] }
+          try {
+            const result = await invoke<string | null>('lsp_request', {
+              method: 'textDocument/inlineCompletion',
+              params: {
+                text: model.getValue(),
+                position: {
+                  line: position.lineNumber - 1,
+                  column: position.column - 1,
+                },
+              },
+            })
+            if (!result) return { items: [] }
+            return {
+              items: [{
+                insertText: result,
+                range: new monaco.Range(
+                  position.lineNumber, position.column,
+                  position.lineNumber, position.column,
+                ),
+              }],
+            }
+          } catch {
+            return { items: [] }
+          }
+        },
+        freeInlineCompletions: () => {},
+      }),
+    )
 
     // Ctrl+S keybinding
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {

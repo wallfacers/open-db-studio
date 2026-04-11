@@ -27,6 +27,10 @@ pub async fn handle_request(
             let result = super::hover::hover(&params, app).await?;
             Ok(serde_json::to_value(result)?)
         }
+        "textDocument/inlineCompletion" => {
+            let result = super::completion::complete_inline(&params, app).await?;
+            Ok(serde_json::to_value(result)?)
+        }
         _ => Err(AppError::Other(format!("unknown LSP method: {method}"))),
     }
 }

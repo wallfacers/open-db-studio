@@ -137,3 +137,70 @@ fn keyword_completions() -> Vec<CompletionItem> {
         insert_text: Some(if kw == "MIGRATE FROM" { "MIGRATE FROM ".into() } else { format!("{kw} ") }),
     }).collect()
 }
+
+pub async fn complete_inline(
+    params: &serde_json::Value,
+    _app: &tauri::AppHandle,
+) -> crate::error::AppResult<Option<String>> {
+    let text = params["text"].as_str().unwrap_or("");
+    let cursor_line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
+
+    // Build context with referenced connection schemas
+    let partial_ast = crate::migration::lang::parser::parse_partial(text);
+    let mut schema_info = String::new();
+
+    for stmt in &partial_ast.statements {
+        if let crate::migration::lang::ast::Statement::Use(u) = stmt {
+            if let Ok(Some(id)) = crate::db::find_connection_id_by_name(&u.connection_name) {
+                schema_info.push_str(&format!("Connection '{}' (id: {id})\n", u.connection_name));
+            }
+        }
+    }
+
+    // Build LLM client from default config
+    let config = match crate::db::get_default_llm_config() {
+        Ok(Some(c)) => c,
+        _ => return Ok(None), // No AI configured, silently skip
+    };
+    let api_type = match config.api_type.as_str() {
+        "anthropic" => crate::llm::ApiType::Anthropic,
+        _ => crate::llm::ApiType::Openai,
+    };
+    let base_url = if !config.base_url.is_empty() {
+        config.base_url.clone()
+    } else if !config.opencode_provider_id.is_empty() {
+        crate::agent::config::resolve_opencode_base_url(&config.opencode_provider_id)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let llm = crate::llm::client::LlmClient::new(
+        config.api_key,
+        Some(base_url),
+        Some(config.model),
+        Some(api_type),
+    );
+
+    // Build prompt from template
+    let template = include_str!("../../../../prompts/migration_ghost_text.md");
+    let prompt = template
+        .replace("{{schemas}}", &schema_info)
+        .replace("{{current_script}}", text)
+        .replace("{{cursor_line}}", &cursor_line.to_string());
+
+    let messages = vec![crate::llm::client::ChatMessage {
+        role: "user".to_string(),
+        content: prompt,
+    }];
+
+    let params = crate::llm::client::ChatParams {
+        temperature: Some(0.1),
+        max_tokens: Some(500),
+        stop: None,
+    };
+
+    match llm.chat_with_params(messages, params).await {
+        Ok(suggestion) => Ok(Some(suggestion.trim().to_string())),
+        Err(_) => Ok(None),
+    }
+}

@@ -134,6 +134,7 @@ export function MigrationJobTab({ jobId }: Props) {
           value={scriptText}
           onChange={handleScriptChange}
           onSave={handleSave}
+          ghostTextEnabled={ghostTextEnabled}
         />
       </div>
 

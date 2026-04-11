@@ -99,8 +99,13 @@ pub async fn run_migration_job(
 }
 
 #[tauri::command]
-pub async fn stop_migration_job(job_id: i64) -> AppResult<()> {
-    super::pipeline::cancel_run(job_id);
+pub async fn stop_migration_job(job_id: i64, app: tauri::AppHandle) -> AppResult<()> {
+    let was_active = super::pipeline::cancel_run(job_id);
+    if !was_active {
+        // No active pipeline (e.g. after app restart with stale RUNNING status).
+        // Force-stop in DB and emit event so the UI unblocks immediately.
+        super::pipeline::force_stop_stale_job(job_id, &app)?;
+    }
     Ok(())
 }
 

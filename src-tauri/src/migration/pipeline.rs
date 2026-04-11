@@ -91,12 +91,69 @@ impl PipelineStats {
 static ACTIVE_RUNS: Lazy<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn cancel_run(job_id: i64) {
+/// Sets the cancel flag for an active run. Returns `true` if the job was active, `false` if not found.
+pub fn cancel_run(job_id: i64) -> bool {
     if let Ok(runs) = ACTIVE_RUNS.lock() {
         if let Some(flag) = runs.get(&job_id) {
             flag.store(true, Ordering::SeqCst);
+            return true;
         }
     }
+    false
+}
+
+/// Called on app startup to reset any jobs left in RUNNING state (e.g. from a crash or forced quit).
+pub fn cleanup_stale_running_jobs() {
+    if let Ok(db) = crate::db::get().lock() {
+        let _ = db.execute(
+            "UPDATE migration_jobs SET last_status='STOPPED' WHERE last_status='RUNNING'",
+            [],
+        );
+        let _ = db.execute(
+            "UPDATE migration_run_history \
+             SET status='STOPPED', finished_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+             WHERE status='RUNNING'",
+            [],
+        );
+    }
+    log::info!("[migration] cleaned up stale RUNNING jobs on startup");
+}
+
+/// Forcibly marks a job as STOPPED in the DB and emits a `migration_finished` event.
+/// Used when stop is requested but no active pipeline exists (e.g. after app restart).
+pub fn force_stop_stale_job(job_id: i64, app: &AppHandle) -> AppResult<()> {
+    let run_id = {
+        let db = crate::db::get().lock().unwrap();
+        let _ = db.execute(
+            "UPDATE migration_jobs SET last_status='STOPPED' WHERE id=?1",
+            params![job_id],
+        );
+        let _ = db.execute(
+            "UPDATE migration_run_history \
+             SET status='STOPPED', finished_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+             WHERE job_id=?1 AND status='RUNNING'",
+            params![job_id],
+        );
+        db.query_row(
+            "SELECT run_id FROM migration_run_history WHERE job_id=?1 ORDER BY started_at DESC LIMIT 1",
+            params![job_id],
+            |r| r.get::<_, String>(0),
+        ).unwrap_or_else(|_| Uuid::new_v4().to_string())
+    };
+    let _ = app.emit(
+        MIGRATION_FINISHED_EVENT,
+        serde_json::json!({
+            "jobId": job_id,
+            "runId": run_id,
+            "status": "STOPPED",
+            "rowsRead": 0,
+            "rowsWritten": 0,
+            "rowsFailed": 0,
+            "bytesTransferred": 0,
+            "elapsedSeconds": 0.0,
+        }),
+    );
+    Ok(())
 }
 
 // ── Standalone emit (for helpers that don't collect logs) ─────────────────────
@@ -192,13 +249,16 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
     let log_collector_clone = log_collector.clone();
 
     tokio::spawn(async move {
+        let cancel_ref = cancel.clone();
         let result =
             execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel, log_collector_clone.clone())
                 .await;
 
+        let was_cancelled = cancel_ref.load(Ordering::Relaxed);
         let final_status = match &result {
             Ok(_) => "FINISHED",
             Err(e) if e.to_string().starts_with("PARTIAL_FAILED") => "PARTIAL_FAILED",
+            Err(_) if was_cancelled => "STOPPED",
             Err(_) => "FAILED",
         };
 

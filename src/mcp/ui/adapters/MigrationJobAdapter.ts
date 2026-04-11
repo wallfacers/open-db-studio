@@ -111,39 +111,43 @@ export class MigrationJobAdapter implements UIObject {
   }
 
   async exec(action: string, _params?: any): Promise<ExecResult> {
-    switch (action) {
-      case 'run': {
-        await this.triggerSave()
-        await useMigrationStore.getState().runJob(this.jobId)
-        return { success: true }
-      }
-
-      case 'stop':
-        await invoke('stop_migration_job', { jobId: this.jobId })
-        return { success: true }
-
-      case 'format': {
-        const result = await invoke<string | null>('lsp_request', {
-          method: 'textDocument/formatting',
-          params: { text: this.getScriptText() },
-        })
-        if (result) {
-          this.setScriptText(result)
-          await invoke('update_migration_job_script', { id: this.jobId, scriptText: result })
+    try {
+      switch (action) {
+        case 'run': {
+          await this.triggerSave()
+          await useMigrationStore.getState().runJob(this.jobId)
+          return { success: true }
         }
-        return { success: true }
+
+        case 'stop':
+          await invoke('stop_migration_job', { jobId: this.jobId })
+          return { success: true }
+
+        case 'format': {
+          const result = await invoke<string | null>('lsp_request', {
+            method: 'textDocument/formatting',
+            params: { text: this.getScriptText() },
+          })
+          if (result) {
+            this.setScriptText(result)
+            await invoke('update_migration_job_script', { id: this.jobId, scriptText: result })
+          }
+          return { success: true }
+        }
+
+        case 'save':
+          await this.triggerSave()
+          return { success: true }
+
+        case 'focus':
+          useQueryStore.getState().setActiveTabId(this.objectId)
+          return { success: true }
+
+        default:
+          return execError(`Unknown action: ${action}`, 'Available actions: run, stop, format, save, focus')
       }
-
-      case 'save':
-        await this.triggerSave()
-        return { success: true }
-
-      case 'focus':
-        useQueryStore.getState().setActiveTabId(this.objectId)
-        return { success: true }
-
-      default:
-        return execError(`Unknown action: ${action}`, 'Available actions: run, stop, format, save, focus')
+    } catch (e) {
+      return { success: false, error: String(e) }
     }
   }
 }

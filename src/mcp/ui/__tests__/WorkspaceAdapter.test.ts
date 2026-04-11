@@ -11,6 +11,7 @@ vi.mock('../../../store/queryStore', () => ({
       openMetricTab: vi.fn(),
       openERDesignTab: vi.fn(),
       openSeaTunnelJobTab: vi.fn(),
+      openMigrationJobTab: vi.fn(),
       closeTab: vi.fn(),
       setActiveTabId: vi.fn(),
     }),
@@ -60,6 +61,12 @@ describe('WorkspaceAdapter', () => {
   it('exec focus calls setActiveTabId', async () => {
     const ws = new WorkspaceAdapter()
     const result = await ws.exec('focus', { target: 'tab_1' })
+    expect(result.success).toBe(true)
+  })
+
+  it('exec open migration_job calls openMigrationJobTab', async () => {
+    const ws = new WorkspaceAdapter()
+    const result = await ws.exec('open', { type: 'migration_job', job_id: 42, title: 'My Job' })
     expect(result.success).toBe(true)
   })
 })

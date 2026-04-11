@@ -14,7 +14,7 @@ export class WorkspaceAdapter implements UIObject {
           paramsSchema: {
             type: 'object',
             properties: {
-              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'seatunnel_job'] },
+              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'seatunnel_job', 'migration_job'] },
               connection_id: { type: 'number' },
               database: { type: 'string' },
               schema: { type: 'string' },
@@ -70,6 +70,12 @@ export class WorkspaceAdapter implements UIObject {
           case 'er_canvas':
             if (project_id) store.openERDesignTab(project_id, `ER #${project_id}`)
             break
+          case 'migration_job': {
+            if (!job_id) return { success: false, error: 'job_id is required for migration_job' }
+            const jobTitle = params?.title ?? `Migration #${job_id}`
+            store.openMigrationJobTab(job_id, jobTitle)
+            break
+          }
           default:
             return { success: false, error: `Unknown tab type: ${type}` }
         }

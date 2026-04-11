@@ -58,8 +58,6 @@ pub fn run() {
             log::info!("Using app data dir: {:?}", app_data_dir);
             crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
-            migration::repository::migrate_legacy_configs().ok();
-
             // MCP server 只绑 TCP 端口，速度极快，需要端口号写入 AppState
             let mcp_port = tauri::async_runtime::block_on(
                 crate::mcp::start_mcp_server(app.handle().clone())
@@ -378,7 +376,7 @@ pub fn run() {
             migration::mig_commands::move_migration_category,
             migration::mig_commands::list_migration_jobs,
             migration::mig_commands::create_migration_job,
-            migration::mig_commands::update_migration_job_config,
+            migration::mig_commands::update_migration_job_script,
             migration::mig_commands::rename_migration_job,
             migration::mig_commands::delete_migration_job,
             migration::mig_commands::move_migration_job,
@@ -386,8 +384,8 @@ pub fn run() {
             migration::mig_commands::get_migration_run_history,
             migration::mig_commands::run_migration_job,
             migration::mig_commands::stop_migration_job,
-            migration::mig_commands::ai_recommend_column_mappings,
             migration::mig_commands::delete_migration_run_history,
+            migration::mig_commands::lsp_request,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

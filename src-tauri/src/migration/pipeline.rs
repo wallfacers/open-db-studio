@@ -1744,19 +1744,22 @@ async fn run_reader_writer_pair(
         }
 
         // Commit any lingering open txn (group accumulated < txn_batch_size when reader closed).
-        if group.has_pending() {
-            if mysql_txn.is_some() {
-                commit_mysql_group!();
-            } else if pg_txn.is_some() {
-                commit_pg_group!();
-            }
-        } else {
-            // No pending inserts but maybe a stray empty txn; roll it back just in case.
-            if let Some(txn) = mysql_txn.take() {
-                let _ = txn.rollback().await;
-            }
-            if let Some(txn) = pg_txn.take() {
-                let _ = txn.rollback().await;
+        #[allow(unused_assignments)]
+        {
+            if group.has_pending() {
+                if mysql_txn.is_some() {
+                    commit_mysql_group!();
+                } else if pg_txn.is_some() {
+                    commit_pg_group!();
+                }
+            } else {
+                // No pending inserts but maybe a stray empty txn; roll it back just in case.
+                if let Some(txn) = mysql_txn.take() {
+                    let _ = txn.rollback().await;
+                }
+                if let Some(txn) = pg_txn.take() {
+                    let _ = txn.rollback().await;
+                }
             }
         }
 

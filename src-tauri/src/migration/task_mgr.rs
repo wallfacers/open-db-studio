@@ -151,23 +151,23 @@ fn default_max_bytes_per_tx() -> Option<u64> {
 }
 
 fn default_byte_capacity() -> Option<u64> {
-    Some(8 * 1024 * 1024) // 8 MB — matches DataX default byteCapacity
+    Some(64 * 1024 * 1024) // 64 MB — increased for better throughput on home PCs
 }
 
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            read_batch_size: 2_000,
-            write_batch_size: 2_048,
-            channel_capacity: 32,
+            read_batch_size: 5_000,
+            write_batch_size: 5_000,
+            channel_capacity: 16,
             parallelism: 4,
             speed_limit_rps: None,
             error_limit: 0,
             shard_count: None,
-            transaction_batch_size: 10,
+            transaction_batch_size: 3,
             write_pause_ms: None,
             max_bytes_per_tx: Some(4 * 1024 * 1024),
-            byte_capacity: Some(8 * 1024 * 1024),
+            byte_capacity: Some(64 * 1024 * 1024),
         }
     }
 }

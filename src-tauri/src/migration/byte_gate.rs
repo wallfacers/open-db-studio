@@ -67,17 +67,23 @@ impl ByteGate {
     }
 }
 
-/// Estimate the byte size of a batch of serde_json::Value rows.
+/// Estimate memory usage of a batch of JSON rows, including Rust metadata overhead.
 pub fn estimate_batch_bytes(rows: &[Vec<serde_json::Value>]) -> u64 {
-    rows.iter()
-        .flat_map(|row| row.iter())
-        .map(|v| estimate_value_bytes(v))
-        .sum()
+    let mut total = 0u64;
+    for row in rows {
+        // Vec overhead
+        total += 24;
+        for v in row {
+            // serde_json::Value enum + String/Number overhead
+            total += 32 + estimate_value_bytes(v);
+        }
+    }
+    total
 }
 
 fn estimate_value_bytes(v: &serde_json::Value) -> u64 {
     match v {
-        serde_json::Value::Null => 4,       // "NULL"
+        serde_json::Value::Null => 4,
         serde_json::Value::Bool(_) => 1,
         serde_json::Value::Number(n) => n.to_string().len() as u64,
         serde_json::Value::String(s) => s.len() as u64,
@@ -85,12 +91,17 @@ fn estimate_value_bytes(v: &serde_json::Value) -> u64 {
     }
 }
 
-/// Estimate the byte size of a batch of native MigrationRows.
+/// Estimate memory usage of a batch of native MigrationRows, including Rust metadata overhead.
 pub fn estimate_native_batch_bytes(
     rows: &[crate::migration::native_row::MigrationRow],
 ) -> u64 {
-    rows.iter()
-        .flat_map(|row| row.values.iter())
-        .map(|v| v.estimated_sql_size() as u64)
-        .sum()
+    let mut total = 0u64;
+    for row in rows {
+        total += 24; // Vec overhead
+        for v in &row.values {
+            // Approx 32 bytes for MigrationValue enum and nested field overheads
+            total += 32 + v.estimated_sql_size() as u64;
+        }
+    }
+    total
 }

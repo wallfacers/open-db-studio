@@ -647,7 +647,7 @@ impl DataSource for MySqlDataSource {
         txn: &mut crate::datasource::BulkWriteTxn,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         upsert_keys: &[String],
         driver: &str,
@@ -656,7 +656,7 @@ impl DataSource for MySqlDataSource {
             crate::datasource::BulkWriteTxn::MySql(tx) => {
                 let max_packet = self.query_and_cache_max_allowed_packet().await;
                 Self::bulk_write_native_in_txn_static(
-                    tx, table, columns, rows,
+                    tx, table, columns, &rows,
                     conflict_strategy, upsert_keys, driver, max_packet,
                 ).await
             }
@@ -810,7 +810,7 @@ impl DataSource for MySqlDataSource {
         &self,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         upsert_keys: &[String],
         driver: &str,
@@ -829,7 +829,7 @@ impl DataSource for MySqlDataSource {
             return self.bulk_write_native_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
         }
 
-        match self.bulk_write_load_data_native(table, columns, rows, conflict_strategy).await {
+        match self.bulk_write_load_data_native(table, columns, rows.clone(), conflict_strategy).await {
             Ok(n) => Ok(n),
             Err(e) => {
                 let prev = self.load_data_disabled.swap(true, std::sync::atomic::Ordering::Relaxed);
@@ -1111,7 +1111,7 @@ impl MySqlDataSource {
         &self,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
     ) -> AppResult<usize> {
         use mysql_async::prelude::*;
@@ -1123,14 +1123,15 @@ impl MySqlDataSource {
 
         let _ = conn.query_drop("SET SESSION unique_checks = 0; SET SESSION foreign_key_checks = 0; SET SESSION sql_log_bin = 0;").await;
 
-        let rows_vec = rows.to_vec();
+        let rows_arc = std::sync::Arc::new(rows);
         conn.set_infile_handler(async move {
-            let stream = futures_util::stream::iter(rows_vec)
+            let len = rows_arc.len();
+            let stream = futures_util::stream::iter(0..len)
                 .chunks(1000) // Batch 1000 rows into one TSV chunk for better throughput
-                .map(|chunk| {
-                    let mut buf = Vec::with_capacity(chunk.len() * 128);
-                    for row in chunk {
-                        row.to_tsv_line(&mut buf);
+                .map(move |chunk_indices| {
+                    let mut buf = Vec::with_capacity(chunk_indices.len() * 128);
+                    for idx in chunk_indices {
+                        rows_arc[idx].to_tsv_line(&mut buf);
                     }
                     Ok(bytes::Bytes::from(buf))
                 });
@@ -1250,7 +1251,7 @@ impl MySqlDataSource {
         &self,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         upsert_keys: &[String],
         driver: &str,

@@ -50,7 +50,7 @@ enum WriteMethod<'a> {
         rows: &'a [Row],
     },
     BulkWriteNative {
-        rows: &'a [crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
     },
 }
 
@@ -1532,7 +1532,7 @@ async fn run_reader_writer_pair(
                             }
                             if let Some(ref mut txn) = txn_handle {
                                 let _permit = semaphore.clone().acquire_owned().await.map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-                                let write_res = dst_ds.bulk_write_in_txn(txn, &target_table, &buf_columns, &batch_rows, &conflict_strategy, &upsert_keys, &dst_driver).await;
+                                let write_res = dst_ds.bulk_write_in_txn(txn, &target_table, &buf_columns, batch_rows, &conflict_strategy, &upsert_keys, &dst_driver).await;
                                 match write_res {
                                     Ok(n) => {
                                         let ok = n as u64; let fail = batch_len.saturating_sub(ok);
@@ -1560,7 +1560,7 @@ async fn run_reader_writer_pair(
                         }
                         let (write_res, wrote_ok) = flush_write_batch(
                             dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns,
-                            WriteMethod::BulkWriteNative { rows: &batch_rows }, &conflict_strategy, &upsert_keys, &dst_driver,
+                            WriteMethod::BulkWriteNative { rows: batch_rows }, &conflict_strategy, &upsert_keys, &dst_driver,
                             batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer,
                         ).await?;
                         if !wrote_ok {
@@ -1586,14 +1586,14 @@ async fn run_reader_writer_pair(
             let batch_len = native_buf.len() as u64;
             if let Some(ref mut txn) = txn_handle {
                 let _permit = semaphore.clone().acquire_owned().await.map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-                let write_res = dst_ds.bulk_write_in_txn(txn, &target_table, &buf_columns, &native_buf, &conflict_strategy, &upsert_keys, &dst_driver).await;
+                let write_res = dst_ds.bulk_write_in_txn(txn, &target_table, &buf_columns, std::mem::take(&mut native_buf), &conflict_strategy, &upsert_keys, &dst_driver).await;
                 if let Ok(n) = write_res {
                     ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed); gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
                 } else {
                     ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed); gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
                 }
             } else {
-                let (r, _) = flush_write_batch(dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns, WriteMethod::BulkWriteNative { rows: &native_buf }, &conflict_strategy, &upsert_keys, &dst_driver, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer).await?;
+                let (r, _) = flush_write_batch(dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns, WriteMethod::BulkWriteNative { rows: std::mem::take(&mut native_buf) }, &conflict_strategy, &upsert_keys, &dst_driver, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer).await?;
                 handle_write_result!(error_count, consecutive_full_fails, r, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
             }
         }

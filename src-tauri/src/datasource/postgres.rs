@@ -1059,7 +1059,7 @@ impl DataSource for PostgresDataSource {
         txn: &mut crate::datasource::BulkWriteTxn,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         upsert_keys: &[String],
         driver: &str,
@@ -1067,7 +1067,7 @@ impl DataSource for PostgresDataSource {
         match txn {
             crate::datasource::BulkWriteTxn::Postgres(tx) => {
                 Self::bulk_write_native_in_txn_static(
-                    tx, table, columns, rows,
+                    tx, table, columns, &rows,
                     conflict_strategy, upsert_keys, driver,
                 ).await
             }
@@ -1192,7 +1192,7 @@ impl DataSource for PostgresDataSource {
         &self,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         upsert_keys: &[String],
         driver: &str,
@@ -1207,21 +1207,21 @@ impl DataSource for PostgresDataSource {
             crate::migration::task_mgr::ConflictStrategy::Insert
                 | crate::migration::task_mgr::ConflictStrategy::Overwrite
         ) {
-            return self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+            return self.bulk_write_native_insert(table, columns, &rows, conflict_strategy, upsert_keys, driver).await;
         }
 
         // Cached: skip COPY if previously failed
         if self.copy_disabled.load(std::sync::atomic::Ordering::Acquire) {
-            return self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+            return self.bulk_write_native_insert(table, columns, &rows, conflict_strategy, upsert_keys, driver).await;
         }
 
         // Try COPY FROM STDIN with native CSV serialization
-        match self.bulk_write_copy_native(table, columns, rows).await {
+        match self.bulk_write_copy_native(table, columns, &rows).await {
             Ok(n) => Ok(n),
             Err(e) => {
                 self.copy_disabled.store(true, std::sync::atomic::Ordering::Release);
                 log::warn!("PostgreSQL native COPY failed ({}), falling back to INSERT", e);
-                self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await
+                self.bulk_write_native_insert(table, columns, &rows, conflict_strategy, upsert_keys, driver).await
             }
         }
     }

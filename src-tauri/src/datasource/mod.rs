@@ -518,7 +518,7 @@ pub trait DataSource: Send + Sync {
         _txn: &mut BulkWriteTxn,
         _table: &str,
         _columns: &[String],
-        _rows: &[crate::migration::native_row::MigrationRow],
+        _rows: Vec<crate::migration::native_row::MigrationRow>,
         _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         _upsert_keys: &[String],
         _driver: &str,
@@ -723,13 +723,13 @@ pub trait DataSource: Send + Sync {
         &self,
         table: &str,
         columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
         conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
         upsert_keys: &[String],
         driver: &str,
     ) -> AppResult<usize> {
         // Default: convert to serde_json::Value and delegate to bulk_write
-        let json_rows: Vec<Vec<serde_json::Value>> = rows.iter()
+        let json_rows: Vec<Vec<serde_json::Value>> = rows.into_iter()
             .map(|r| r.to_json_row())
             .collect();
         self.bulk_write(table, columns, &json_rows, conflict_strategy, upsert_keys, driver).await

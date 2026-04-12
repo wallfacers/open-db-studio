@@ -441,6 +441,96 @@ impl PostgresDataSource {
 
         Ok(rows_copied as usize)
     }
+
+    /// COPY FROM STDIN from native MigrationRows (avoids serde_json::Value).
+    async fn bulk_write_copy_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+    ) -> AppResult<usize> {
+        use sqlx::postgres::PgPoolCopyExt;
+        use crate::migration::native_row::migration_rows_to_csv;
+
+        let mut col_list = String::with_capacity(columns.len() * 32);
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 { col_list.push_str(", "); }
+            crate::datasource::utils::quote_identifier_for_driver_into(col, "postgres", &mut col_list);
+        }
+        let csv_data = migration_rows_to_csv(rows);
+
+        let mut quoted_table = String::new();
+        crate::datasource::utils::quote_identifier_for_driver_into(table, "postgres", &mut quoted_table);
+
+        let copy_sql = format!(
+            "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '')",
+            quoted_table, col_list
+        );
+
+        let mut copy_in = self.pool.copy_in_raw(&copy_sql).await
+            .map_err(|e| AppError::Datasource(format!("COPY native: {}", e)))?;
+        copy_in.send(csv_data.as_slice()).await
+            .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY native send: {}", e)))?;
+        let rows_copied = copy_in.finish().await
+            .map_err(|e| AppError::Datasource(format!("COPY native finish: {}", e)))?;
+
+        Ok(rows_copied as usize)
+    }
+
+    /// Native INSERT from MigrationRows using SQL literal serialization.
+    async fn bulk_write_native_insert(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        let escape_style = self.string_escape_style();
+
+        use crate::datasource::bulk_write::InsertTemplate;
+        let num_cols = columns.len();
+        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+
+        // Chunk to ~4MB
+        const MAX_SQL_BYTES: usize = 4 * 1024 * 1024;
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for v in &r.values {
+                    size += v.estimated_sql_size();
+                }
+                size
+            })
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = build_pg_native_chunk_sql(&tmpl, chunk, &escape_style);
+
+            let result = self.execute(&sql).await?;
+            total_written += result.row_count.min(chunk.len());
+
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
+    }
 }
 
 #[async_trait]
@@ -957,6 +1047,38 @@ impl DataSource for PostgresDataSource {
         Ok(Some((columns, mig_rows)))
     }
 
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // COPY FROM STDIN doesn't support ON CONFLICT — fall back to INSERT
+        if !matches!(
+            conflict_strategy,
+            crate::migration::task_mgr::ConflictStrategy::Insert
+                | crate::migration::task_mgr::ConflictStrategy::Overwrite
+        ) {
+            return self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
+        // Try COPY FROM STDIN with native CSV serialization
+        match self.bulk_write_copy_native(table, columns, rows).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                log::warn!("PostgreSQL native COPY failed ({}), falling back to INSERT", e);
+                self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await
+            }
+        }
+    }
+
     async fn bulk_write(
         &self,
         table: &str,
@@ -1001,6 +1123,35 @@ impl DataSource for PostgresDataSource {
 }
 
 // ============================================================
+/// Build multi-row INSERT SQL from native MigrationRows (PostgreSQL).
+fn build_pg_native_chunk_sql(
+    tmpl: &crate::datasource::bulk_write::InsertTemplate,
+    rows: &[crate::migration::native_row::MigrationRow],
+    escape_style: &crate::datasource::StringEscapeStyle,
+) -> String {
+    let num_cols = rows.first().map(|r| r.values.len()).unwrap_or(0);
+    let estimated_size = tmpl.prefix.len() + rows.len() * num_cols * 30 + tmpl.suffix.len();
+    let mut sql = String::with_capacity(estimated_size);
+    sql.push_str(&tmpl.prefix);
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        if row_idx > 0 {
+            sql.push_str(", ");
+        }
+        sql.push('(');
+        for (col_idx, v) in row.values.iter().enumerate() {
+            if col_idx > 0 {
+                sql.push_str(", ");
+            }
+            v.to_sql_literal_into(escape_style, &mut sql);
+        }
+        sql.push(')');
+    }
+
+    sql.push_str(&tmpl.suffix);
+    sql
+}
+
 /// Estimate the SQL size for a single row (used for chunk pre-computation).
 /// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
 #[allow(dead_code)]

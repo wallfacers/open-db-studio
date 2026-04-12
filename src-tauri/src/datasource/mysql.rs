@@ -734,6 +734,43 @@ impl DataSource for MySqlDataSource {
         Ok(Some((columns, mig_rows)))
     }
 
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // LOAD DATA doesn't support ON DUPLICATE KEY UPDATE — fall back to INSERT
+        if matches!(conflict_strategy, crate::migration::task_mgr::ConflictStrategy::Upsert) {
+            return self.bulk_write_native_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
+        // If LOAD DATA was already disabled (server rejected it), skip straight to INSERT.
+        if self.load_data_disabled.load(std::sync::atomic::Ordering::Relaxed) {
+            return self.bulk_write_native_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
+        match self.bulk_write_load_data_native(table, columns, rows, conflict_strategy).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                let prev = self.load_data_disabled.swap(true, std::sync::atomic::Ordering::Relaxed);
+                if prev {
+                    log::debug!("LOAD DATA unavailable, using native INSERT (suppressed repeat warning)");
+                } else {
+                    log::warn!("LOAD DATA failed ({}), falling back to native INSERT for this session", e);
+                }
+                self.bulk_write_native_insert_chunked(table, columns, rows, conflict_strategy, upsert_keys, driver).await
+            }
+        }
+    }
+
     async fn bulk_write(
         &self,
         table: &str,
@@ -900,6 +937,35 @@ impl MySqlDataSource {
 
 }
 
+/// Build multi-row INSERT SQL from native MigrationRows using an InsertTemplate.
+fn build_native_chunk_sql(
+    tmpl: &crate::datasource::bulk_write::InsertTemplate,
+    rows: &[crate::migration::native_row::MigrationRow],
+    escape_style: &crate::datasource::StringEscapeStyle,
+) -> String {
+    let num_cols = rows.first().map(|r| r.values.len()).unwrap_or(0);
+    let estimated_size = tmpl.prefix.len() + rows.len() * num_cols * 30 + tmpl.suffix.len();
+    let mut sql = String::with_capacity(estimated_size);
+    sql.push_str(&tmpl.prefix);
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        if row_idx > 0 {
+            sql.push_str(", ");
+        }
+        sql.push('(');
+        for (col_idx, v) in row.values.iter().enumerate() {
+            if col_idx > 0 {
+                sql.push_str(", ");
+            }
+            v.to_sql_literal_into(escape_style, &mut sql);
+        }
+        sql.push(')');
+    }
+
+    sql.push_str(&tmpl.suffix);
+    sql
+}
+
 /// Shared INSERT chunking logic using a pool reference for execution.
 async fn bulk_write_chunked_impl(
     pool: &MySqlPool,
@@ -1025,6 +1091,137 @@ fn estimate_row_sql_size(
 }
 
 impl MySqlDataSource {
+    /// LOAD DATA LOCAL INFILE from native MigrationRows (avoids serde_json::Value).
+    async fn bulk_write_load_data_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+    ) -> AppResult<usize> {
+        use mysql_async::prelude::*;
+        use futures_util::StreamExt;
+        use crate::migration::native_row::migration_rows_to_tsv;
+
+        let pool = self.get_mig_pool().await?;
+        let mut conn = pool.get_conn().await
+            .map_err(|e| AppError::Datasource(format!("mysql_async get_conn: {}", e)))?;
+
+        let _ = conn.query_drop("SET SESSION unique_checks = 0; SET SESSION foreign_key_checks = 0; SET SESSION sql_log_bin = 0;").await;
+
+        let tsv_data = migration_rows_to_tsv(rows);
+        let tsv_bytes = bytes::Bytes::from(tsv_data);
+
+        conn.set_infile_handler(async move {
+            Ok(futures_util::stream::once(
+                async move { Ok(tsv_bytes) }
+            ).boxed())
+        });
+
+        let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "mysql");
+        let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+        let replace_keyword = match conflict_strategy {
+            crate::migration::task_mgr::ConflictStrategy::Replace => " REPLACE",
+            crate::migration::task_mgr::ConflictStrategy::Skip => " IGNORE",
+            _ => "",
+        };
+
+        let load_sql = format!(
+            "LOAD DATA LOCAL INFILE 'migration_batch.tsv'{} INTO TABLE {} \
+             FIELDS TERMINATED BY '\\t' \
+             LINES TERMINATED BY '\\n' \
+             ({})",
+            replace_keyword,
+            quote(table),
+            col_list,
+        );
+
+        conn.query_drop(&load_sql).await
+            .map_err(|e| AppError::Datasource(format!("LOAD DATA native: {}", e)))?;
+
+        let affected = conn.affected_rows();
+        Ok(affected as usize)
+    }
+
+    /// Native INSERT chunked: MigrationRow → SQL literal directly (no serde_json intermediate).
+    async fn bulk_write_native_insert_chunked(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        let max_packet = self.query_and_cache_max_allowed_packet().await;
+        let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
+        let escape_style = self.string_escape_style();
+        let num_cols = columns.len();
+
+        use crate::datasource::bulk_write::InsertTemplate;
+        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for v in &r.values {
+                    size += v.estimated_sql_size();
+                }
+                size
+            })
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > max_sql_bytes {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
+
+            if sql.len() > max_sql_bytes && chunk.len() > 1 {
+                // Binary search fallback
+                let mut hi = chunk.len() - 1;
+                let mut lo = 1;
+                let mut best = 1;
+                while lo <= hi {
+                    let mid = (lo + hi) / 2;
+                    let test_sql = build_native_chunk_sql(&tmpl, &chunk[..mid], &escape_style);
+                    if test_sql.len() <= max_sql_bytes {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                let sql = build_native_chunk_sql(&tmpl, &chunk[..best], &escape_style);
+                let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(&self.pool).await
+                    .map_err(|e| AppError::Datasource(format!("Native INSERT chunk: {}", e)))?;
+                total_written += result.rows_affected().min(best as u64) as usize;
+                chunk_start += best;
+                continue;
+            }
+
+            let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(&self.pool).await
+                .map_err(|e| AppError::Datasource(format!("Native INSERT chunk: {}", e)))?;
+            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
+    }
+
     async fn bulk_write_load_data(
         &self,
         table: &str,

@@ -644,6 +644,32 @@ pub trait DataSource: Send + Sync {
             .collect();
         Ok(Some((columns, mig_rows)))
     }
+
+    /// Batch-write native-typed rows to a table.
+    ///
+    /// This is the dedicated write path for migration when the source produced
+    /// `MigrationRow` via `migration_read_sql()`. It avoids converting
+    /// MigrationValue → serde_json::Value → SQL, using direct TSV/COPY/INSERT
+    /// serialization from native types.
+    ///
+    /// Default implementation converts MigrationValue → serde_json::Value and
+    /// delegates to `bulk_write()`. Drivers that support fast bulk protocols
+    /// (MySQL LOAD DATA, PostgreSQL COPY) override this with native paths.
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        // Default: convert to serde_json::Value and delegate to bulk_write
+        let json_rows: Vec<Vec<serde_json::Value>> = rows.iter()
+            .map(|r| r.to_json_row())
+            .collect();
+        self.bulk_write(table, columns, &json_rows, conflict_strategy, upsert_keys, driver).await
+    }
 }
 
 /// Convert a serde_json::Value (from execute()) to a native MigrationValue.

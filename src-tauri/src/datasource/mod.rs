@@ -389,6 +389,9 @@ pub enum StringEscapeStyle {
 /// 数据源统一抽象 trait
 #[async_trait]
 pub trait DataSource: Send + Sync {
+    /// Downcast to `Any` for type-specific operations (e.g., transaction wrapping in pipeline).
+    fn as_any(&self) -> &dyn std::any::Any;
+
     async fn test_connection(&self) -> AppResult<()>;
     async fn execute(&self, sql: &str) -> AppResult<QueryResult>;
     async fn get_tables(&self) -> AppResult<Vec<TableMeta>>;

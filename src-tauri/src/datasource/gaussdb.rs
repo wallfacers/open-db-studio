@@ -208,6 +208,8 @@ fn gauss_row_value(row: &tokio_gaussdb::Row, i: usize) -> serde_json::Value {
 
 #[async_trait]
 impl DataSource for GaussDbDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         self.client
             .query("SELECT 1", &[])

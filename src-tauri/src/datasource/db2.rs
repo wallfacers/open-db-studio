@@ -276,6 +276,8 @@ const TABLE_STATS_SQL: &str = "SELECT TABNAME, CARD, NPAGES * PAGESIZE AS SIZE_B
 
 #[async_trait]
 impl DataSource for Db2DataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         #[cfg(not(feature = "db2-driver"))]
         return Err(AppError::Datasource(

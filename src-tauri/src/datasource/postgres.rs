@@ -340,6 +340,14 @@ impl PostgresDataSource {
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
             .idle_timeout(Duration::from_secs(idle_timeout as u64))
+            // Apply session-level optimizations on every connection for bulk writes.
+            .after_connect(|conn, _meta| Box::pin(async move {
+                use sqlx::Executor;
+                let _ = conn.execute("SET session_replication_role = 'replica'").await;
+                let _ = conn.execute("SET synchronous_commit = 'off'").await;
+                let _ = conn.execute("SET work_mem = '256MB'").await;
+                Ok(())
+            }))
             .connect_with(opts)
             .await?;
         Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false) })
@@ -370,6 +378,8 @@ impl PostgresDataSource {
 
 #[async_trait]
 impl DataSource for PostgresDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())

@@ -43,6 +43,8 @@ impl OracleDataSource {
 
 #[async_trait]
 impl DataSource for OracleDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         #[cfg(not(feature = "oracle-driver"))]
         return Err(AppError::Datasource("Oracle driver not enabled.".into()));

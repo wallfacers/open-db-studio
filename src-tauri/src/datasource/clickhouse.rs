@@ -110,6 +110,8 @@ struct TableStatRow {
 
 #[async_trait]
 impl DataSource for ClickHouseDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         self.client
             .query("SELECT 1")

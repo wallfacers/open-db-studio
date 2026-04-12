@@ -127,7 +127,7 @@ pub struct PipelineConfig {
 }
 
 fn default_transaction_batch_size() -> usize {
-    1
+    10
 }
 
 impl Default for PipelineConfig {

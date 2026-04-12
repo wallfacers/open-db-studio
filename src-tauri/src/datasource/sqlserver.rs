@@ -127,6 +127,8 @@ use super::utils::format_size;
 
 #[async_trait]
 impl DataSource for SqlServerDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         self.connect().await?;
         Ok(())

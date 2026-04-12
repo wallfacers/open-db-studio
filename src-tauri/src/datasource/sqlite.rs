@@ -45,6 +45,8 @@ impl SqliteDataSource {
 
 #[async_trait]
 impl DataSource for SqliteDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         let conn = Arc::clone(&self.conn);
         tokio::task::spawn_blocking(move || {

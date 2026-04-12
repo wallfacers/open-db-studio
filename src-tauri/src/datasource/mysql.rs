@@ -40,7 +40,7 @@ fn get_opt_str(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
 use super::utils::format_size;
 
 pub struct MySqlDataSource {
-    pool: MySqlPool,
+    pub(crate) pool: MySqlPool,
     dialect: Dialect,
     mig_session_active: std::sync::atomic::AtomicBool,
     /// Dedicated mysql_async pool for LOAD DATA LOCAL INFILE (migration only).
@@ -113,6 +113,17 @@ impl MySqlDataSource {
             // Ping before checkout so stale connections are detected immediately
             // rather than mid-transaction, which causes unrecoverable EOF errors.
             .test_before_acquire(true)
+            // Apply session-level optimizations on every connection (not just one).
+            // These mirror DataX's approach: disable unique_checks, FK checks,
+            // binlog, and strict mode to minimize fsync pressure during bulk writes.
+            .after_connect(|conn, _meta| Box::pin(async move {
+                use sqlx::Executor;
+                let _ = conn.execute("SET SESSION unique_checks = 0").await;
+                let _ = conn.execute("SET SESSION foreign_key_checks = 0").await;
+                let _ = conn.execute("SET SESSION sql_log_bin = 0").await;
+                let _ = conn.execute("SET SESSION innodb_strict_mode = 0").await;
+                Ok(())
+            }))
             .connect_with(opts)
             .await?;
         let conn_url = format!(
@@ -136,6 +147,8 @@ impl MySqlDataSource {
 
 #[async_trait]
 impl DataSource for MySqlDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
@@ -590,7 +603,7 @@ impl DataSource for MySqlDataSource {
         if let Err(e) = sqlx::query("SET sql_log_bin = 0").execute(&mut *conn).await {
             log::info!("Migration: SET sql_log_bin=0 skipped ({}), binlog will remain active", e);
         }
-        let _ = sqlx::query("SET SESSION bulk_insert_buffer_size = 268435456").execute(&mut *conn).await;
+        // Note: bulk_insert_buffer_size is MyISAM-only; removed. InnoDB uses after_connect hooks.
         self.mig_session_active.store(true, std::sync::atomic::Ordering::Relaxed);
         log::info!("Migration session optimizations applied (driver={})",
             match self.dialect { Dialect::MySQL => "mysql", Dialect::Doris => "doris", Dialect::TiDB => "tidb" });
@@ -692,17 +705,32 @@ impl MySqlDataSource {
         upsert_keys: &[String],
         driver: &str,
     ) -> AppResult<usize> {
+        let max_packet = self.query_max_allowed_packet().await;
+        let escape_style = self.string_escape_style();
+        bulk_write_chunked_impl(
+            &self.pool, max_packet, escape_style,
+            table, columns, rows, conflict_strategy, upsert_keys, driver,
+        ).await
+    }
+
+    /// Same as `bulk_write_insert_chunked` but executes within an explicit
+    /// transaction, so that multiple calls share a single COMMIT/fsync.
+    pub async fn bulk_write_in_txn(
+        &self,
+        txn: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
         use crate::datasource::bulk_write;
 
-        // Query actual max_allowed_packet from the server (default ~64 MB on modern MySQL).
-        // Falls back to a conservative 48 MB on failure (75% of 64 MB).
-        let max_packet = self.query_max_allowed_packet().await;
-        // Use 75% of max_allowed_packet to leave headroom for protocol overhead.
+        let max_packet = 48 * 1024 * 1024;
         let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
-
         let escape_style = self.string_escape_style();
 
-        // Pre-compute each row's estimated SQL size (accurate, not raw-data sampling).
         let row_sizes: Vec<usize> = rows.iter()
             .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
             .collect();
@@ -713,26 +741,20 @@ impl MySqlDataSource {
         while chunk_start < rows.len() {
             let mut chunk_sql_size = 0usize;
             let mut chunk_end = chunk_start;
-
-            // Accumulate rows until adding the next one would exceed the limit.
             while chunk_end < rows.len() {
                 let row_size = row_sizes[chunk_end];
-                // If a single row alone exceeds the limit, we must send it anyway
-                // (it will likely fail on the server side, but there's no way to split it).
                 if chunk_end > chunk_start && chunk_sql_size + row_size > max_sql_bytes {
                     break;
                 }
                 chunk_sql_size += row_size;
                 chunk_end += 1;
             }
-
             let chunk = &rows[chunk_start..chunk_end];
             let sql = bulk_write::build_insert_sql_optimized(
                 &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
             );
 
-            // Safety: verify the actual SQL doesn't exceed the limit. If it does
-            // (estimation underestimated), split further by dropping rows one at a time.
+            // Binary search fallback if estimation underestimates.
             if sql.len() > max_sql_bytes && chunk.len() > 1 {
                 let mut hi = chunk.len() - 1;
                 let mut lo = 1;
@@ -752,25 +774,106 @@ impl MySqlDataSource {
                 let sql = bulk_write::build_insert_sql_optimized(
                     &escape_style, table, columns, &chunk[..best], conflict_strategy, upsert_keys, driver,
                 );
-                let result = self.execute(&sql).await?;
-                total_written += result.row_count.min(best);
+                let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(&mut **txn).await
+                    .map_err(|e| AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+                total_written += result.rows_affected().min(best as u64) as usize;
                 chunk_start += best;
-                log::warn!(
-                    "INSERT chunk SQL estimated {} bytes but actual {} bytes (max {}), \
-                     split from {} to {} rows",
-                    chunk_sql_size, sql.len(), max_sql_bytes, chunk.len(), best,
-                );
                 continue;
             }
 
-            let result = self.execute(&sql).await?;
-            total_written += result.row_count.min(chunk.len());
+            let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(&mut **txn).await
+                .map_err(|e| AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
             chunk_start = chunk_end;
         }
 
         Ok(total_written)
     }
 
+}
+
+/// Shared INSERT chunking logic using a pool reference for execution.
+async fn bulk_write_chunked_impl(
+    pool: &MySqlPool,
+    max_packet: usize,
+    escape_style: crate::datasource::StringEscapeStyle,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<serde_json::Value>],
+    conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+    upsert_keys: &[String],
+    driver: &str,
+) -> AppResult<usize> {
+    use crate::datasource::bulk_write;
+
+    let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
+
+    let row_sizes: Vec<usize> = rows.iter()
+        .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
+        .collect();
+
+    let mut total_written = 0usize;
+    let mut chunk_start = 0;
+
+    while chunk_start < rows.len() {
+        let mut chunk_sql_size = 0usize;
+        let mut chunk_end = chunk_start;
+
+        while chunk_end < rows.len() {
+            let row_size = row_sizes[chunk_end];
+            if chunk_end > chunk_start && chunk_sql_size + row_size > max_sql_bytes {
+                break;
+            }
+            chunk_sql_size += row_size;
+            chunk_end += 1;
+        }
+
+        let chunk = &rows[chunk_start..chunk_end];
+        let sql = bulk_write::build_insert_sql_optimized(
+            &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
+        );
+
+        if sql.len() > max_sql_bytes && chunk.len() > 1 {
+            let mut hi = chunk.len() - 1;
+            let mut lo = 1;
+            let mut best = 1;
+            while lo <= hi {
+                let mid = (lo + hi) / 2;
+                let test_sql = bulk_write::build_insert_sql_optimized(
+                    &escape_style, table, columns, &chunk[..mid], conflict_strategy, upsert_keys, driver,
+                );
+                if test_sql.len() <= max_sql_bytes {
+                    best = mid;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            let sql = bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, &chunk[..best], conflict_strategy, upsert_keys, driver,
+            );
+            let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(pool).await
+                .map_err(|e| AppError::Datasource(format!("INSERT chunk execute: {}", e)))?;
+            total_written += result.rows_affected().min(best as u64) as usize;
+            chunk_start += best;
+            log::warn!(
+                "INSERT chunk SQL estimated {} bytes but actual {} bytes (max {}), \
+                 split from {} to {} rows",
+                chunk_sql_size, sql.len(), max_sql_bytes, chunk.len(), best,
+            );
+            continue;
+        }
+
+        let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(pool).await
+            .map_err(|e| AppError::Datasource(format!("INSERT chunk execute: {}", e)))?;
+        total_written += result.rows_affected().min(chunk.len() as u64) as usize;
+        chunk_start = chunk_end;
+    }
+
+    Ok(total_written)
+}
+
+impl MySqlDataSource {
     /// Query the server's max_allowed_packet setting in bytes.
     /// Returns 48 MB (conservative default) if the query fails.
     async fn query_max_allowed_packet(&self) -> usize {
@@ -786,22 +889,31 @@ impl MySqlDataSource {
 }
 
 /// Estimate the SQL size for a single row (used for chunk pre-computation).
+/// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
 fn estimate_row_sql_size(
     row: &[serde_json::Value],
-    escape_style: &crate::datasource::StringEscapeStyle,
+    _escape_style: &crate::datasource::StringEscapeStyle,
     columns: &[String],
-    table: &str,
-    conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
-    upsert_keys: &[String],
-    driver: &str,
+    _table: &str,
+    _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+    _upsert_keys: &[String],
+    _driver: &str,
 ) -> usize {
-    // Build a single-row INSERT to measure actual SQL size.
-    // This is accurate because build_insert_sql_optimized matches the real output.
-    let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
-        escape_style, table, columns, &[row.to_vec()],
-        conflict_strategy, upsert_keys, driver,
-    );
-    sql.len()
+    // Overhead: "INSERT INTO `table` (col1, ...) VALUES (NULL, ...);" ≈ cols*3 bytes
+    let mut size = columns.len() * 3;
+    for val in row {
+        size += match val {
+            serde_json::Value::Null => 4,          // "NULL"
+            serde_json::Value::Bool(b) => if *b { 4 } else { 5 }, // "true"/"false" as literals
+            serde_json::Value::Number(n) => n.to_string().len() + 1, // number + comma
+            serde_json::Value::String(s) => {
+                // Opening/closing quotes + content preview + separator + escape headroom
+                2 + s.len().min(64) + 4
+            }
+            _ => 70, // array/object: conservative default
+        };
+    }
+    size
 }
 
 impl MySqlDataSource {
@@ -819,6 +931,10 @@ impl MySqlDataSource {
         let pool = self.get_mig_pool().await?;
         let mut conn = pool.get_conn().await
             .map_err(|e| AppError::Datasource(format!("mysql_async get_conn: {}", e)))?;
+
+        // Session optimizations for LOAD DATA (this pool is separate from sqlx,
+        // so after_connect on the sqlx pool does NOT affect these connections).
+        let _ = conn.query_drop("SET SESSION unique_checks = 0; SET SESSION foreign_key_checks = 0; SET SESSION sql_log_bin = 0;").await;
 
         let tsv_data = rows_to_tsv(rows);
         let tsv_bytes = bytes::Bytes::from(tsv_data);

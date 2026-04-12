@@ -18,6 +18,19 @@ const MIGRATION_LOG_EVENT: &str = "migration_log";
 const MIGRATION_STATS_EVENT: &str = "migration_stats";
 const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
 
+/// Format a number with comma separators (e.g. 100000000 -> "100,000,000").
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result
+}
+
 /// Maximum time to wait for a single write-batch (including row-by-row retry) to complete.
 /// When target disk I/O is saturated, write_batch hangs indefinitely, holding the semaphore
 /// permit, causing the writer loop to stall, the channel to fill, and the reader to block —
@@ -568,6 +581,16 @@ async fn execute_pipeline(
     }
 }
 
+/// Maximum rows the pipeline will process per single table mapping without an explicit
+/// `WHERE` filter. Beyond this threshold, the engine emits a warning and caps the effective
+/// parallelism to prevent memory exhaustion. Users should chunk large migrations manually.
+const MAX_ROWS_SOFT_THRESHOLD: u64 = 100_000_000; // 100M rows
+
+/// Hard cap on estimated rows — if the source table exceeds this, the pipeline still runs
+/// but emits a strong warning. This prevents accidental full-table migrations of billion-row
+/// tables that could run for days.
+const MAX_ROWS_HARD_CAP: u64 = 1_000_000_000; // 1B rows
+
 // ── Single-mapping reader→writer sub-pipeline ─────────────────────────────────
 
 async fn execute_single_mapping(
@@ -708,6 +731,34 @@ async fn execute_single_mapping(
             Err(_) => None,
         }
     };
+
+    // ── Large table warnings ──────────────────────────────────────────────
+    if let Some(rows) = total_rows {
+        if rows >= MAX_ROWS_HARD_CAP {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] Source table has ~{} rows (exceeds {} hard cap). \
+                     Consider splitting into smaller chunks with WHERE clauses \
+                     (e.g. by date range or ID range) to avoid multi-day migrations.",
+                    mapping_label,
+                    format_number(rows),
+                    format_number(MAX_ROWS_HARD_CAP),
+                ),
+            );
+        } else if rows >= MAX_ROWS_SOFT_THRESHOLD {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] Source table has ~{} rows (exceeds {} soft threshold). \
+                     Monitor memory usage and consider chunking with WHERE clauses.",
+                    mapping_label,
+                    format_number(rows),
+                    format_number(MAX_ROWS_SOFT_THRESHOLD),
+                ),
+            );
+        }
+    }
 
     // ── Pipeline config ───────────────────────────────────────────────────
     let target_table = mapping.target.table.clone();

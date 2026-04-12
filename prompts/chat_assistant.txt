@@ -279,6 +279,42 @@ MIGRATE FROM src.mydb.orders INTO dst.appdb.orders
 - `USE <alias> = CONNECTION('<name>')` — bind connection alias
 - `SET key=value, ...` — global pipeline settings (parallelism, batch sizes, error_limit)
 
+### Batch Size Recommendations by Table Size
+
+Before generating SET parameters, **always query the source table row count first**:
+```sql
+SELECT COUNT(*) FROM <source_table>;
+```
+If the table has a primary key, you can also estimate via `get_table_schema` to check column count and types.
+
+Use the row count to choose appropriate parameters:
+
+| Source Rows | `parallelism` | `read_batch` | `write_batch` | Notes |
+|---|---|---|---|---|
+| < 100K | 1–2 | 2000 | 2048 | Defaults are fine; parallelism overhead > benefit |
+| 100K – 1M | 4 | 3000 | 2048 | Use default `parallelism=4`; range-split kicks in |
+| 1M – 10M | 6–8 | 5000 | 2048 | Needs integer PK; 8 splits ≈ 18 DB connections |
+| 10M – 100M | 8 | 5000 | 2048 | Sweet spot; >8 parallelism strains source DB pool |
+| > 100M | 8 | 5000–8000 | 2048–3000 | Chunk with `WHERE` clauses; don't rely on parallelism alone |
+
+**Memory per split** (approximate, for a 50-column table):
+- Channel buffer: `(channel_cap / parallelism) × read_batch` rows
+- Writer buffer: `write_batch` rows
+- Example at `parallelism=8, read_batch=5000, write_batch=2048`: ~66MB/split × 8 = ~530MB total
+
+**Hard limits enforced by the engine:**
+- `read_batch`: clamped to `[1, 50000]`
+- `write_batch`: clamped to `[1, 5000]`
+- `parallelism`: clamped to `[1, 16]`
+- `channel_capacity`: clamped to `[1, 64]`
+- `transaction_batch_size`: clamped to `[1, 100]`
+
+**Important rules:**
+- `parallelism > 1` **requires an integer primary key** on the source table for range-split mode. Without it, the engine falls back to single-cursor OFFSET pagination regardless of the parallelism setting.
+- For tables > 10M rows, **always recommend** `error_limit` (e.g. 100) so the pipeline stops on unexpected data issues instead of silently skipping millions of bad rows.
+- For tables > 50M rows, recommend adding `WHERE` clauses to split the migration into chunks (e.g. by date range or ID range) rather than migrating the entire table in one job.
+- `read_batch > 5000` is rarely beneficial — it increases channel memory linearly but doesn't improve throughput (the bottleneck is usually source DB query speed, not batch size).
+
 ### Migration Tree Management
 
 Use `migration_explorer` to manage jobs and categories in the sidebar tree. IDs are numeric integers.

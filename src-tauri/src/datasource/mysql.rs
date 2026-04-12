@@ -51,6 +51,8 @@ pub struct MySqlDataSource {
     /// Once set to true, all future bulk_write calls skip LOAD DATA entirely
     /// and use optimized INSERT directly, avoiding log spam.
     load_data_disabled: std::sync::atomic::AtomicBool,
+    /// Cached max_allowed_packet value (queried once from server).
+    max_allowed_packet: std::sync::OnceLock<usize>,
 }
 
 impl MySqlDataSource {
@@ -59,6 +61,16 @@ impl MySqlDataSource {
     }
 
     pub async fn new_with_dialect(config: &ConnectionConfig, dialect: Dialect) -> AppResult<Self> {
+        Self::build(config, dialect, false).await
+    }
+
+    /// Constructor for migration pipelines — applies session-level optimizations
+    /// (disable binlog, unique checks, FK checks) on every connection via after_connect.
+    pub async fn new_for_migration(config: &ConnectionConfig, dialect: Dialect) -> AppResult<Self> {
+        Self::build(config, dialect, true).await
+    }
+
+    async fn build(config: &ConnectionConfig, dialect: Dialect, for_migration: bool) -> AppResult<Self> {
         let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
         // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟 ~21 秒
@@ -103,29 +115,27 @@ impl MySqlDataSource {
         let idle_timeout = config.pool_idle_timeout_secs.unwrap_or(300);
         let acquire_timeout = config.connect_timeout_secs.unwrap_or(30);
 
-        let pool = MySqlPoolOptions::new()
+        let mut pool_opts = MySqlPoolOptions::new()
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
             .idle_timeout(Duration::from_secs(idle_timeout as u64))
-            // Recycle connections after 10 min to prevent using connections that the
-            // MySQL server has silently killed (e.g. due to wait_timeout on the server side).
             .max_lifetime(Duration::from_secs(600))
-            // Ping before checkout so stale connections are detected immediately
-            // rather than mid-transaction, which causes unrecoverable EOF errors.
-            .test_before_acquire(true)
-            // Apply session-level optimizations on every connection (not just one).
-            // These mirror DataX's approach: disable unique_checks, FK checks,
-            // binlog, and strict mode to minimize fsync pressure during bulk writes.
-            .after_connect(|conn, _meta| Box::pin(async move {
+            .test_before_acquire(true);
+
+        // Migration pools: apply session optimizations on every connection.
+        // Normal pools: no after_connect hook — binlog/checks remain at server defaults.
+        if for_migration {
+            pool_opts = pool_opts.after_connect(|conn, _meta| Box::pin(async move {
                 use sqlx::Executor;
                 let _ = conn.execute("SET SESSION unique_checks = 0").await;
                 let _ = conn.execute("SET SESSION foreign_key_checks = 0").await;
                 let _ = conn.execute("SET SESSION sql_log_bin = 0").await;
                 let _ = conn.execute("SET SESSION innodb_strict_mode = 0").await;
                 Ok(())
-            }))
-            .connect_with(opts)
-            .await?;
+            }));
+        }
+
+        let pool = pool_opts.connect_with(opts).await?;
         let conn_url = format!(
             "mysql://{}:{}@{}:{}/{}?local_infile=true",
             urlencoding::encode(username),
@@ -141,6 +151,7 @@ impl MySqlDataSource {
             mig_async_pool: tokio::sync::OnceCell::new(),
             conn_url,
             load_data_disabled: std::sync::atomic::AtomicBool::new(false),
+            max_allowed_packet: std::sync::OnceLock::new(),
         })
     }
 }
@@ -705,7 +716,7 @@ impl MySqlDataSource {
         upsert_keys: &[String],
         driver: &str,
     ) -> AppResult<usize> {
-        let max_packet = self.query_max_allowed_packet().await;
+        let max_packet = self.query_and_cache_max_allowed_packet().await;
         let escape_style = self.string_escape_style();
         bulk_write_chunked_impl(
             &self.pool, max_packet, escape_style,
@@ -730,9 +741,12 @@ impl MySqlDataSource {
         let max_packet = 48 * 1024 * 1024;
         let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
         let escape_style = self.string_escape_style();
+        let num_cols = columns.len();
+
+        let tmpl = bulk_write::InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
 
         let row_sizes: Vec<usize> = rows.iter()
-            .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
+            .map(|r| estimate_row_sql_size(r, &escape_style, num_cols))
             .collect();
 
         let mut total_written = 0usize;
@@ -750,9 +764,7 @@ impl MySqlDataSource {
                 chunk_end += 1;
             }
             let chunk = &rows[chunk_start..chunk_end];
-            let sql = bulk_write::build_insert_sql_optimized(
-                &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
-            );
+            let sql = tmpl.build_chunk_sql(chunk, &escape_style, num_cols);
 
             // Binary search fallback if estimation underestimates.
             if sql.len() > max_sql_bytes && chunk.len() > 1 {
@@ -761,9 +773,7 @@ impl MySqlDataSource {
                 let mut best = 1;
                 while lo <= hi {
                     let mid = (lo + hi) / 2;
-                    let test_sql = bulk_write::build_insert_sql_optimized(
-                        &escape_style, table, columns, &chunk[..mid], conflict_strategy, upsert_keys, driver,
-                    );
+                    let test_sql = tmpl.build_chunk_sql(&chunk[..mid], &escape_style, num_cols);
                     if test_sql.len() <= max_sql_bytes {
                         best = mid;
                         lo = mid + 1;
@@ -771,9 +781,7 @@ impl MySqlDataSource {
                         hi = mid - 1;
                     }
                 }
-                let sql = bulk_write::build_insert_sql_optimized(
-                    &escape_style, table, columns, &chunk[..best], conflict_strategy, upsert_keys, driver,
-                );
+                let sql = tmpl.build_chunk_sql(&chunk[..best], &escape_style, num_cols);
                 let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(&mut **txn).await
                     .map_err(|e| AppError::Datasource(format!("INSERT in txn: {}", e)))?;
                 total_written += result.rows_affected().min(best as u64) as usize;
@@ -807,9 +815,13 @@ async fn bulk_write_chunked_impl(
     use crate::datasource::bulk_write;
 
     let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
+    let num_cols = columns.len();
+
+    // Build template once — prefix/suffix are invariant across chunks.
+    let tmpl = bulk_write::InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
 
     let row_sizes: Vec<usize> = rows.iter()
-        .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
+        .map(|r| estimate_row_sql_size(r, &escape_style, num_cols))
         .collect();
 
     let mut total_written = 0usize;
@@ -829,9 +841,7 @@ async fn bulk_write_chunked_impl(
         }
 
         let chunk = &rows[chunk_start..chunk_end];
-        let sql = bulk_write::build_insert_sql_optimized(
-            &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
-        );
+        let sql = tmpl.build_chunk_sql(chunk, &escape_style, num_cols);
 
         if sql.len() > max_sql_bytes && chunk.len() > 1 {
             let mut hi = chunk.len() - 1;
@@ -839,9 +849,7 @@ async fn bulk_write_chunked_impl(
             let mut best = 1;
             while lo <= hi {
                 let mid = (lo + hi) / 2;
-                let test_sql = bulk_write::build_insert_sql_optimized(
-                    &escape_style, table, columns, &chunk[..mid], conflict_strategy, upsert_keys, driver,
-                );
+                let test_sql = tmpl.build_chunk_sql(&chunk[..mid], &escape_style, num_cols);
                 if test_sql.len() <= max_sql_bytes {
                     best = mid;
                     lo = mid + 1;
@@ -849,18 +857,11 @@ async fn bulk_write_chunked_impl(
                     hi = mid - 1;
                 }
             }
-            let sql = bulk_write::build_insert_sql_optimized(
-                &escape_style, table, columns, &chunk[..best], conflict_strategy, upsert_keys, driver,
-            );
+            let sql = tmpl.build_chunk_sql(&chunk[..best], &escape_style, num_cols);
             let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql).execute(pool).await
                 .map_err(|e| AppError::Datasource(format!("INSERT chunk execute: {}", e)))?;
             total_written += result.rows_affected().min(best as u64) as usize;
             chunk_start += best;
-            log::warn!(
-                "INSERT chunk SQL estimated {} bytes but actual {} bytes (max {}), \
-                 split from {} to {} rows",
-                chunk_sql_size, sql.len(), max_sql_bytes, chunk.len(), best,
-            );
             continue;
         }
 
@@ -874,17 +875,22 @@ async fn bulk_write_chunked_impl(
 }
 
 impl MySqlDataSource {
-    /// Query the server's max_allowed_packet setting in bytes.
-    /// Returns 48 MB (conservative default) if the query fails.
-    async fn query_max_allowed_packet(&self) -> usize {
-        const DEFAULT: usize = 48 * 1024 * 1024; // 75% of 64 MB
-        match sqlx::query_scalar::<_, i64>("SELECT @@max_allowed_packet")
+    /// Async: query the server's max_allowed_packet and cache the result.
+    /// Subsequent calls return the cached value without network round-trip.
+    async fn query_and_cache_max_allowed_packet(&self) -> usize {
+        if let Some(&v) = self.max_allowed_packet.get() {
+            return v;
+        }
+        const DEFAULT: usize = 48 * 1024 * 1024;
+        let val = match sqlx::query_scalar::<_, i64>("SELECT @@max_allowed_packet")
             .fetch_optional(&self.pool)
             .await
         {
             Ok(Some(v)) if v > 0 => v as usize,
             _ => DEFAULT,
-        }
+        };
+        let _ = self.max_allowed_packet.set(val);
+        val
     }
 }
 
@@ -893,22 +899,23 @@ impl MySqlDataSource {
 fn estimate_row_sql_size(
     row: &[serde_json::Value],
     _escape_style: &crate::datasource::StringEscapeStyle,
-    columns: &[String],
-    _table: &str,
-    _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
-    _upsert_keys: &[String],
-    _driver: &str,
+    num_cols: usize,
 ) -> usize {
-    // Overhead: "INSERT INTO `table` (col1, ...) VALUES (NULL, ...);" ≈ cols*3 bytes
-    let mut size = columns.len() * 3;
+    // Overhead: "(NULL, NULL, ...)," ≈ cols*3 bytes
+    let mut size = num_cols * 3;
     for val in row {
         size += match val {
             serde_json::Value::Null => 4,          // "NULL"
             serde_json::Value::Bool(b) => if *b { 4 } else { 5 }, // "true"/"false" as literals
-            serde_json::Value::Number(n) => n.to_string().len() + 1, // number + comma
+            serde_json::Value::Number(_) => {
+                // Max number display length without allocating.
+                // u64::MAX = 20 digits, i64::MIN = 20 chars, f64 max ≈ 24 chars.
+                // Use 24 as conservative upper bound + 1 for comma overhead.
+                25
+            }
             serde_json::Value::String(s) => {
-                // Opening/closing quotes + content preview + separator + escape headroom
-                2 + s.len().min(64) + 4
+                // Opening/closing quotes + content + escape headroom + separator
+                3 + s.len() + (s.len() / 16)
             }
             _ => 70, // array/object: conservative default
         };

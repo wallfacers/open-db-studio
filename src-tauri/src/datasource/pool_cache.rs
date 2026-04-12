@@ -132,6 +132,10 @@ pub async fn close_all() {
 ///
 /// `min_pool_size` overrides `config.pool_max_connections` when larger, allowing
 /// the caller to request at least as many slots as its parallelism requires.
+///
+/// Uses `new_for_migration` for MySQL-family drivers so that session-level
+/// optimizations (disable binlog, unique checks, etc.) are applied via
+/// `after_connect` on every connection — without polluting normal UI pools.
 pub async fn create_ephemeral(
     config: &ConnectionConfig,
     database: &str,
@@ -148,7 +152,41 @@ pub async fn create_ephemeral(
         "Migration ephemeral pool created (pool_size={}, driver={}, database={:?})",
         actual, cfg.driver, database
     );
-    create_datasource_arc(&cfg, database, schema).await
+    create_datasource_arc_for_migration(&cfg, database, schema).await
+}
+
+/// Migration-specific datasource creation — uses `new_for_migration` for MySQL-family
+/// drivers so that bulk-write session optimizations are baked into every connection.
+async fn create_datasource_arc_for_migration(
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+) -> AppResult<Arc<dyn DataSource>> {
+    let mut cfg = config.clone();
+    if !database.is_empty() {
+        cfg.database = Some(database.to_string());
+    }
+    validate_connection_config(&cfg)?;
+    let ds: Arc<dyn DataSource> = match cfg.driver.as_str() {
+        "mysql" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::MySQL).await?),
+        "postgres" => {
+            let s = if schema.is_empty() { None } else { Some(schema) };
+            Arc::new(super::postgres::PostgresDataSource::new_with_schema(&cfg, s).await?)
+        }
+        "oracle" => Arc::new(super::oracle::OracleDataSource::new(&cfg).await?),
+        "sqlserver" => Arc::new(super::sqlserver::SqlServerDataSource::new(&cfg).await?),
+        "sqlite" => Arc::new(super::sqlite::SqliteDataSource::new(&cfg).await?),
+        "doris" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::Doris).await?),
+        "tidb" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::TiDB).await?),
+        "clickhouse" => Arc::new(super::clickhouse::ClickHouseDataSource::new(&cfg).await?),
+        "gaussdb" => {
+            let s = if schema.is_empty() { None } else { Some(schema) };
+            Arc::new(super::gaussdb::GaussDbDataSource::new_with_schema(&cfg, s).await?)
+        }
+        "db2" => Arc::new(super::db2::Db2DataSource::new(&cfg).await?),
+        d => return Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
+    };
+    Ok(ds)
 }
 
 async fn create_datasource_arc(

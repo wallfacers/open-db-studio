@@ -9,7 +9,33 @@ pub fn is_hex_binary(s: &str) -> bool {
         && s[2..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// 将十六进制二进制字符串转为目标驱动正确的 SQL 二进制字面量。
+/// Zero-allocation variant: appends the binary literal directly into `buf`.
+fn hex_to_binary_literal_into(hex_str: &str, style: &StringEscapeStyle, buf: &mut String) {
+    let hex_data = if hex_str.starts_with("0x") || hex_str.starts_with("\\x") {
+        &hex_str[2..]
+    } else {
+        escape_string_literal_into(hex_str, style, buf);
+        return;
+    };
+    match style {
+        StringEscapeStyle::Standard | StringEscapeStyle::SQLiteLiteral => {
+            buf.push_str("X'");
+            buf.push_str(hex_data);
+            buf.push('\'');
+        }
+        StringEscapeStyle::PostgresLiteral => {
+            buf.push_str("E'\\\\x");
+            buf.push_str(hex_data);
+            buf.push('\'');
+        }
+        StringEscapeStyle::TSql => {
+            buf.push_str("0x");
+            buf.push_str(hex_data);
+        }
+    }
+}
+
+/// Allocating version — kept for callers outside the hot path.
 fn hex_to_binary_literal(hex_str: &str, style: &StringEscapeStyle) -> String {
     let hex_data = if hex_str.starts_with("0x") {
         &hex_str[2..]
@@ -87,63 +113,74 @@ pub fn value_to_sql_safe_into(v: &serde_json::Value, style: &StringEscapeStyle, 
         }
         serde_json::Value::String(s) => {
             if is_hex_binary(s) {
-                buf.push_str(&hex_to_binary_literal(s, style));
+                hex_to_binary_literal_into(s, style, buf);
             } else if is_pure_integer(s) {
                 buf.push_str(s);
             } else {
-                buf.push_str(&escape_string_literal(s, style));
+                escape_string_literal_into(s, style, buf);
             }
         }
         other => {
-            buf.push_str(&escape_string_literal(&other.to_string(), style));
+            let s = other.to_string();
+            escape_string_literal_into(&s, style, buf);
         }
     }
 }
 
 fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
+    let mut buf = String::with_capacity(s.len() + 4);
+    escape_string_literal_into(s, style, &mut buf);
+    buf
+}
+
+/// Zero-allocation variant: appends the escaped+quoted string literal directly into `buf`.
+pub fn escape_string_literal_into(s: &str, style: &StringEscapeStyle, buf: &mut String) {
     match style {
         StringEscapeStyle::Standard => {
-            let escaped = single_pass_escape(s, |c, out| match c {
-                '\0' => out.push_str("\\0"),
-                '\\' => out.push_str("\\\\"),
-                '\'' => out.push_str("\\'"),
-                _ => out.push(c),
-            });
-            format!("'{}'", escaped)
+            buf.push('\'');
+            for c in s.chars() {
+                match c {
+                    '\0' => buf.push_str("\\0"),
+                    '\\' => buf.push_str("\\\\"),
+                    '\'' => buf.push_str("\\'"),
+                    _ => buf.push(c),
+                }
+            }
+            buf.push('\'');
         }
         StringEscapeStyle::PostgresLiteral => {
             if s.contains('\\') || s.contains('\0') {
-                let escaped = single_pass_escape(s, |c, out| match c {
-                    '\0' => out.push_str("\\0"),
-                    '\\' => out.push_str("\\\\"),
-                    '\'' => out.push_str("\\'"),
-                    _ => out.push(c),
-                });
-                format!("E'{}'", escaped)
+                buf.push_str("E'");
+                for c in s.chars() {
+                    match c {
+                        '\0' => buf.push_str("\\0"),
+                        '\\' => buf.push_str("\\\\"),
+                        '\'' => buf.push_str("\\'"),
+                        _ => buf.push(c),
+                    }
+                }
             } else {
-                let escaped = single_pass_escape(s, |c, out| match c {
-                    '\'' => out.push_str("''"),
-                    _ => out.push(c),
-                });
-                format!("'{}'", escaped)
+                buf.push('\'');
+                for c in s.chars() {
+                    match c {
+                        '\'' => buf.push_str("''"),
+                        _ => buf.push(c),
+                    }
+                }
             }
+            buf.push('\'');
         }
         StringEscapeStyle::TSql | StringEscapeStyle::SQLiteLiteral => {
-            let escaped = single_pass_escape(s, |c, out| match c {
-                '\'' => out.push_str("''"),
-                _ => out.push(c),
-            });
-            format!("'{}'", escaped)
+            buf.push('\'');
+            for c in s.chars() {
+                match c {
+                    '\'' => buf.push_str("''"),
+                    _ => buf.push(c),
+                }
+            }
+            buf.push('\'');
         }
     }
-}
-
-fn single_pass_escape(s: &str, mut escape_char: impl FnMut(char, &mut String)) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        escape_char(c, &mut out);
-    }
-    out
 }
 
 /// 将字节数格式化为人类可读的文件大小字符串。
@@ -169,15 +206,46 @@ pub fn quote_identifier(name: &str) -> String {
 /// 根据驱动类型转义 SQL 标识符（列名/表名）。
 /// 各驱动使用不同的引号风格，统一从此函数获取以避免散落的内联闭包。
 pub fn quote_identifier_for_driver(name: &str, driver: &str) -> String {
+    let mut buf = String::with_capacity(name.len() + 4);
+    quote_identifier_for_driver_into(name, driver, &mut buf);
+    buf
+}
+
+/// Zero-allocation variant: appends the quoted identifier directly into `buf`.
+pub fn quote_identifier_for_driver_into(name: &str, driver: &str, buf: &mut String) {
     match driver {
         "mysql" | "doris" | "tidb" | "clickhouse" => {
-            format!("`{}`", name.replace('`', "``"))
+            buf.push('`');
+            for c in name.chars() {
+                if c == '`' {
+                    buf.push_str("``");
+                } else {
+                    buf.push(c);
+                }
+            }
+            buf.push('`');
         }
         "sqlserver" => {
-            format!("[{}]", name.replace(']', "]]"))
+            buf.push('[');
+            for c in name.chars() {
+                if c == ']' {
+                    buf.push_str("]]");
+                } else {
+                    buf.push(c);
+                }
+            }
+            buf.push(']');
         }
         _ => {
-            format!("\"{}\"", name.replace('"', "\"\""))
+            buf.push('"');
+            for c in name.chars() {
+                if c == '"' {
+                    buf.push_str("\"\"");
+                } else {
+                    buf.push(c);
+                }
+            }
+            buf.push('"');
         }
     }
 }

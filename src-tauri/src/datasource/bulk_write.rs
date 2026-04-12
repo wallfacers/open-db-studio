@@ -136,7 +136,86 @@ pub fn rows_to_csv(rows: &[Row]) -> Vec<u8> {
 
 // ── Optimized multi-row INSERT (universal fallback) ───────────────────────
 
+/// Pre-computed INSERT prefix/suffix that is invariant across chunks.
+/// Built once per batch, reused for every chunk within that batch.
+pub struct InsertTemplate {
+    /// "INSERT [IGNORE] INTO `table` (`col1`, `col2`, ...) VALUES "
+    pub prefix: String,
+    /// Suffix (e.g., " ON DUPLICATE KEY UPDATE ...") — may be empty.
+    pub suffix: String,
+}
+
+impl InsertTemplate {
+    pub fn new(
+        table: &str,
+        columns: &[String],
+        conflict_strategy: &ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> Self {
+        use crate::datasource::utils::quote_identifier_for_driver_into;
+
+        let key_set: std::collections::HashSet<&str> =
+            upsert_keys.iter().map(|s| s.as_str()).collect();
+
+        let quote_col = |c: &str, buf: &mut String| {
+            quote_identifier_for_driver_into(c, driver, buf);
+        };
+
+        let (keyword, suffix) = build_conflict_clause(conflict_strategy, driver, columns, &key_set, upsert_keys, &|c: &str| {
+            let mut buf = String::new();
+            quote_col(c, &mut buf);
+            buf
+        });
+
+        let mut prefix = String::with_capacity(keyword.len() + table.len() + columns.len() * 32 + 20);
+        prefix.push_str(keyword);
+        prefix.push(' ');
+        quote_identifier_for_driver_into(table, driver, &mut prefix);
+        prefix.push_str(" (");
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 {
+                prefix.push_str(", ");
+            }
+            quote_identifier_for_driver_into(col, driver, &mut prefix);
+        }
+        prefix.push_str(") VALUES ");
+
+        Self { prefix, suffix }
+    }
+
+    /// Build the full INSERT SQL for a chunk of rows using this template.
+    pub fn build_chunk_sql(
+        &self,
+        rows: &[Row],
+        escape_style: &StringEscapeStyle,
+        cols: usize,
+    ) -> String {
+        let estimated_size = self.prefix.len() + rows.len() * cols * 40 + self.suffix.len();
+        let mut sql = String::with_capacity(estimated_size);
+        sql.push_str(&self.prefix);
+
+        for (row_idx, row) in rows.iter().enumerate() {
+            if row_idx > 0 {
+                sql.push_str(", ");
+            }
+            sql.push('(');
+            for (col_idx, v) in row.iter().enumerate() {
+                if col_idx > 0 {
+                    sql.push_str(", ");
+                }
+                crate::datasource::utils::value_to_sql_safe_into(v, escape_style, &mut sql);
+            }
+            sql.push(')');
+        }
+
+        sql.push_str(&self.suffix);
+        sql
+    }
+}
+
 /// Build a multi-row INSERT statement using a pre-allocated String buffer.
+/// Convenience wrapper for callers that don't need chunk-level reuse.
 pub fn build_insert_sql_optimized(
     escape_style: &StringEscapeStyle,
     table: &str,
@@ -146,42 +225,8 @@ pub fn build_insert_sql_optimized(
     upsert_keys: &[String],
     driver: &str,
 ) -> String {
-    let quote_col = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, driver);
-
-    let key_set: std::collections::HashSet<&str> =
-        upsert_keys.iter().map(|s| s.as_str()).collect();
-
-    let (keyword, suffix) = build_conflict_clause(conflict_strategy, driver, columns, &key_set, upsert_keys, &quote_col);
-
-    let col_list = columns.iter().map(|c| quote_col(c)).collect::<Vec<_>>().join(", ");
-    let quoted_table = quote_col(table);
-
-    let estimated_size = rows.len() * columns.len() * 80 + 200;
-    let mut sql = String::with_capacity(estimated_size);
-
-    sql.push_str(keyword);
-    sql.push(' ');
-    sql.push_str(&quoted_table);
-    sql.push_str(" (");
-    sql.push_str(&col_list);
-    sql.push_str(") VALUES ");
-
-    for (row_idx, row) in rows.iter().enumerate() {
-        if row_idx > 0 {
-            sql.push_str(", ");
-        }
-        sql.push('(');
-        for (col_idx, v) in row.iter().enumerate() {
-            if col_idx > 0 {
-                sql.push_str(", ");
-            }
-            crate::datasource::utils::value_to_sql_safe_into(v, escape_style, &mut sql);
-        }
-        sql.push(')');
-    }
-
-    sql.push_str(&suffix);
-    sql
+    let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+    tmpl.build_chunk_sql(rows, escape_style, columns.len())
 }
 
 /// Build conflict clause — extracted for reuse by drivers (e.g., PostgreSQL temp table merge).

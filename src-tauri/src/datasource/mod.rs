@@ -384,6 +384,16 @@ pub enum StringEscapeStyle {
     SQLiteLiteral,
 }
 
+// ─── BulkWriteTxn ─────────────────────────────────────────────────────────────
+
+/// Transaction handle for bulk writes. Driver-specific implementations.
+/// Used by the migration pipeline to batch writes within a single transaction,
+/// reducing fsync frequency from ~5000 per 10GB to ~310.
+pub enum BulkWriteTxn {
+    MySql(sqlx::Transaction<'static, sqlx::MySql>),
+    Postgres(sqlx::Transaction<'static, sqlx::Postgres>),
+}
+
 // ─── DataSource Trait ────────────────────────────────────────────────────────
 
 /// 数据源统一抽象 trait
@@ -491,6 +501,35 @@ pub trait DataSource: Send + Sync {
     /// 用于 pipeline writer 减少 autocommit fsync 开销。默认 false，sqlx 池化驱动按需覆盖。
     fn supports_txn_bulk_write(&self) -> bool {
         false
+    }
+
+    /// Begin a transaction for batched writes.
+    /// Returns a transaction handle that must be passed to subsequent calls.
+    /// Default: no transaction support (auto-commit mode).
+    async fn begin_bulk_write_txn(&self) -> AppResult<Option<BulkWriteTxn>> {
+        Ok(None)
+    }
+
+    /// Execute bulk write within an existing transaction.
+    /// The handle must come from `begin_bulk_write_txn`.
+    /// Default: returns error (not supported by this driver).
+    async fn bulk_write_in_txn(
+        &self,
+        _txn: &mut BulkWriteTxn,
+        _table: &str,
+        _columns: &[String],
+        _rows: &[crate::migration::native_row::MigrationRow],
+        _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        Err(AppError::Other("bulk_write_in_txn not supported by this driver".into()))
+    }
+
+    /// Commit the transaction, releasing all accumulated writes.
+    /// Default: no-op (transaction was never started).
+    async fn commit_bulk_write_txn(&self, _txn: BulkWriteTxn) -> AppResult<()> {
+        Ok(())
     }
 
     /// 在单个事务中执行多条 SQL 语句（一次 COMMIT），减少 fsync 次数。

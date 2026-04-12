@@ -1233,7 +1233,7 @@ async fn run_reader_writer_pair(
     write_batch_size: usize,
     channel_cap: usize,
     error_limit: usize,
-    _txn_batch_size: usize,
+    txn_batch_size: usize,
     write_semaphore: Arc<Semaphore>,
     cancel: Arc<AtomicBool>,
     mapping_stats: Arc<PipelineStats>,
@@ -1520,7 +1520,7 @@ async fn run_reader_writer_pair(
         Ok(())
     });
 
-    // ── Writer task (bulk_write with grouped commits) ────────────────────
+    // ── Writer task (bulk_write with transaction batching) ────────────────────
     let ms_writer = mapping_stats.clone();
     let gs_writer = global_stats.clone();
     let app_writer = app.clone();
@@ -1534,6 +1534,14 @@ async fn run_reader_writer_pair(
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut native_buf: Vec<crate::migration::native_row::MigrationRow> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
+
+        // ── Transaction batching state (native path only) ───────────────────
+        // BEGIN → N × bulk_write_in_txn → COMMIT pattern reduces fsync
+        // from ~5000 per 10GB to ~310 (txn_batch_size=10 means 10 batches per COMMIT)
+        let supports_txn = dst_ds.supports_txn_bulk_write();
+        let mut txn_handle: Option<crate::datasource::BulkWriteTxn> = None;
+        let mut batches_in_txn = 0usize;
+        let mut txn_mode_active = supports_txn && txn_batch_size > 1;
 
         while let Some(msg) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
@@ -1607,6 +1615,126 @@ async fn run_reader_writer_pair(
                         let batch_rows: Vec<_> = native_buf.drain(..write_batch_size).collect();
                         let batch_len = batch_rows.len() as u64;
 
+                        // ── Transaction batching path ─────────────────────────────
+                        // BEGIN → N × bulk_write_in_txn → COMMIT pattern
+                        if txn_mode_active {
+                            // Begin transaction if not active
+                            if txn_handle.is_none() {
+                                match dst_ds.begin_bulk_write_txn().await {
+                                    Ok(Some(txn)) => {
+                                        txn_handle = Some(txn);
+                                        batches_in_txn = 0;
+                                        emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+                                            &format!("[{}] Transaction started", label_w));
+                                    }
+                                    Ok(None) | Err(_) => {
+                                        // Transaction begin failed - fall back to auto-commit
+                                        emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                            &format!("[{}] Transaction begin failed; falling back to auto-commit", label_w));
+                                        txn_mode_active = false;
+                                        txn_handle = None;
+                                    }
+                                }
+                            }
+
+                            if let Some(ref mut txn) = txn_handle {
+                                // Execute bulk_write within transaction
+                                let _permit = semaphore.clone().acquire_owned().await
+                                    .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+                                let write_res = dst_ds.bulk_write_in_txn(
+                                    txn,
+                                    &target_table,
+                                    &buf_columns,
+                                    &batch_rows,
+                                    &conflict_strategy,
+                                    &upsert_keys,
+                                    &dst_driver,
+                                ).await;
+
+                                match write_res {
+                                    Ok(n) => {
+                                        let ok = n as u64;
+                                        let fail = batch_len.saturating_sub(ok);
+                                        ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                                        gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                                        if fail > 0 {
+                                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                            error_count = error_count.saturating_add(fail as usize);
+                                        }
+                                        consecutive_full_fails = 0;
+                                        batches_in_txn += 1;
+
+                                        // Commit when accumulated enough batches
+                                        if batches_in_txn >= txn_batch_size {
+                                            let txn_to_commit = txn_handle.take().unwrap();
+                                            dst_ds.commit_bulk_write_txn(txn_to_commit).await?;
+                                            emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+                                                &format!("[{}] Transaction committed: {} batches", label_w, batches_in_txn));
+                                            batches_in_txn = 0;
+                                            // Re-begin transaction for next batch group
+                                            match dst_ds.begin_bulk_write_txn().await {
+                                                Ok(Some(txn)) => txn_handle = Some(txn),
+                                                Ok(None) | Err(_) => {
+                                                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                                        &format!("[{}] Transaction begin failed after commit; falling back to auto-commit", label_w));
+                                                    txn_mode_active = false;
+                                                }
+                                            }
+                                        }
+
+                                        if let Some(pause_ms) = write_pause_ms {
+                                            if pause_ms > 0 {
+                                                tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // Write failed - drop transaction (implicit rollback)
+                                        let err_msg = e.to_string();
+                                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                            &format!("[{}] bulk_write_in_txn failed: {} (transaction dropped)", label_w, err_msg));
+                                        ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                        gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                        error_count = error_count.saturating_add(batch_len as usize);
+                                        consecutive_full_fails += 1;
+
+                                        // Drop transaction (rollback by dropping)
+                                        txn_handle = None;
+                                        batches_in_txn = 0;
+
+                                        // Attempt to re-begin transaction
+                                        match dst_ds.begin_bulk_write_txn().await {
+                                            Ok(Some(txn)) => txn_handle = Some(txn),
+                                            Ok(None) | Err(_) => {
+                                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                                    &format!("[{}] Transaction begin failed after error; falling back to auto-commit", label_w));
+                                                txn_mode_active = false;
+                                            }
+                                        }
+
+                                        // Circuit breaker check
+                                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                                &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
+                                            return Err(AppError::Other(format!(
+                                                "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                                            )));
+                                        }
+                                        if error_limit > 0 && error_count >= error_limit {
+                                            return Err(AppError::Other(format!(
+                                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                                            )));
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                            // Fallback: txn_handle is None after failed begin, use auto-commit
+                        }
+
+                        // ── Auto-commit path (fallback or txn_batch_size=1) ───────
                         let (write_res, wrote_ok) = flush_write_batch(
                             dst_ds.clone(), semaphore.clone(),
                             &target_table, &buf_columns,
@@ -1673,21 +1801,72 @@ async fn run_reader_writer_pair(
         // Drain remainder (MigrationBatch path)
         if !native_buf.is_empty() {
             let batch_len = native_buf.len() as u64;
-            let (r, wrote_ok) = flush_write_batch(
-                dst_ds.clone(), semaphore.clone(),
-                &target_table, &buf_columns,
-                WriteMethod::BulkWriteNative { rows: &native_buf },
-                &conflict_strategy, &upsert_keys, &dst_driver,
-                batch_len,
-                &app_writer, job_id, &run_id_w, &label_w,
-                &ms_writer, &gs_writer,
-            ).await?;
-            if !wrote_ok {
-                error_count = error_count.saturating_add(batch_len as usize);
-                consecutive_full_fails += 1;
+
+            // Use transaction path if active
+            if let Some(ref mut txn) = txn_handle {
+                let _permit = semaphore.clone().acquire_owned().await
+                    .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+                let write_res = dst_ds.bulk_write_in_txn(
+                    txn,
+                    &target_table,
+                    &buf_columns,
+                    &native_buf,
+                    &conflict_strategy,
+                    &upsert_keys,
+                    &dst_driver,
+                ).await;
+
+                match write_res {
+                    Ok(n) => {
+                        let ok = n as u64;
+                        let fail = batch_len.saturating_sub(ok);
+                        ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                        gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                        if fail > 0 {
+                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                            error_count = error_count.saturating_add(fail as usize);
+                        }
+                        batches_in_txn += 1;
+                        emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+                            &format!("[{}] Drain remainder: {} rows in transaction", label_w, batch_len));
+                    }
+                    Err(e) => {
+                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                            &format!("[{}] Drain remainder bulk_write_in_txn failed: {}", label_w, e));
+                        ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                        gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                        error_count = error_count.saturating_add(batch_len as usize);
+                        // Drop transaction (rollback)
+                        txn_handle = None;
+                    }
+                }
+            } else {
+                // Auto-commit path
+                let (r, wrote_ok) = flush_write_batch(
+                    dst_ds.clone(), semaphore.clone(),
+                    &target_table, &buf_columns,
+                    WriteMethod::BulkWriteNative { rows: &native_buf },
+                    &conflict_strategy, &upsert_keys, &dst_driver,
+                    batch_len,
+                    &app_writer, job_id, &run_id_w, &label_w,
+                    &ms_writer, &gs_writer,
+                ).await?;
+                if !wrote_ok {
+                    error_count = error_count.saturating_add(batch_len as usize);
+                    consecutive_full_fails += 1;
+                }
+                handle_write_result!(error_count, consecutive_full_fails, r, batch_len,
+                    &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
             }
-            handle_write_result!(error_count, consecutive_full_fails, r, batch_len,
-                &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+        }
+
+        // Commit pending transaction if any
+        if let Some(txn) = txn_handle {
+            emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+                &format!("[{}] Final transaction commit: {} batches", label_w, batches_in_txn));
+            dst_ds.commit_bulk_write_txn(txn).await?;
         }
 
         Ok(())

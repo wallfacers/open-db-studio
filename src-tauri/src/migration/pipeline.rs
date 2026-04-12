@@ -6,7 +6,6 @@ use std::time::Instant;
 use futures_util::stream::{self, StreamExt};
 use once_cell::sync::Lazy;
 use rusqlite::params;
-use sqlx::Acquire;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::sync::Semaphore;
@@ -14,12 +13,6 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use super::task_mgr::*;
-
-/// Which driver-specific txn path to use in the writer.
-enum TxnDriver {
-    MySql,
-    Postgres,
-}
 
 const MIGRATION_LOG_EVENT: &str = "migration_log";
 const MIGRATION_STATS_EVENT: &str = "migration_stats";
@@ -180,89 +173,25 @@ fn emit_log(app: &AppHandle, job_id: i64, run_id: &str, level: &str, message: &s
 
 type Row = Vec<serde_json::Value>;
 
-struct Batch {
-    rows: Vec<Row>,
-    column_names: Vec<String>,
+/// Messages sent from reader to writer through the channel.
+/// Reader sends Columns once, then streams Row messages.
+enum ChannelMsg {
+    Columns(Vec<String>),
+    Row(Row),
 }
 
-/// Tracks per-transaction bookkeeping for the writer's grouped-commit path.
-///
-/// One `TxnGroupState` is rebuilt after every successful (or failed) `COMMIT`.
-/// The writer calls `record_insert` after each successful `bulk_write_in_txn`
-/// call, then asks `should_commit` whether thresholds have been crossed.
-/// On commit, it calls `drain_success` to get the `(ok, failed)` totals to
-/// publish to stats atomically.
-#[derive(Debug, Default)]
-struct TxnGroupState {
-    /// Number of INSERT statements (i.e. flushes of `write_buf`) issued in the current txn.
-    insert_count: usize,
-    /// Approximate payload bytes accumulated across all INSERTs in the current txn.
-    /// Uses the reader-side row byte estimate (json_value_len sum), not actual SQL bytes.
-    bytes_written: u64,
-    /// Sum of `Ok(n)` rows across all INSERTs in the current txn (rows the driver
-    /// reports as affected). Only applied to stats on successful `COMMIT`.
-    pending_ok: u64,
-    /// Sum of `batch_len - n` (rows the driver silently dropped, e.g. INSERT IGNORE)
-    /// across all INSERTs in the current txn. Applied to `rows_failed` on any outcome.
-    pending_soft_failed: u64,
-    /// Sum of `batch_len` across all INSERTs in the current txn. Used to attribute
-    /// `rows_failed` when the `COMMIT` itself fails (all rows roll back).
-    pending_total: u64,
-}
-
-impl TxnGroupState {
-    /// Record the result of a single `bulk_write_in_txn` call inside the current txn.
-    /// `batch_len` is total rows submitted; `ok` is what the driver reported as affected;
-    /// `batch_bytes` is the estimated payload bytes (same unit as `max_bytes_per_tx`).
-    fn record_insert(&mut self, batch_len: u64, ok: u64, batch_bytes: u64) {
-        self.insert_count += 1;
-        self.bytes_written = self.bytes_written.saturating_add(batch_bytes);
-        self.pending_ok = self.pending_ok.saturating_add(ok);
-        self.pending_soft_failed = self
-            .pending_soft_failed
-            .saturating_add(batch_len.saturating_sub(ok));
-        self.pending_total = self.pending_total.saturating_add(batch_len);
-    }
-
-    /// Return `true` if the current txn has hit either threshold and should be committed.
-    /// `txn_batch_size` is the max INSERTs per txn (hard minimum 1).
-    /// `max_bytes_per_tx == None` disables the byte constraint.
-    fn should_commit(&self, txn_batch_size: usize, max_bytes_per_tx: Option<u64>) -> bool {
-        if self.insert_count == 0 {
-            return false;
-        }
-        if self.insert_count >= txn_batch_size.max(1) {
-            return true;
-        }
-        if let Some(limit) = max_bytes_per_tx {
-            if self.bytes_written >= limit {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Returns `true` iff there is at least one INSERT buffered awaiting commit.
-    fn has_pending(&self) -> bool {
-        self.insert_count > 0
-    }
-
-    /// Take the `(committed_ok, committed_soft_failed)` totals that should be applied
-    /// to stats when the `COMMIT` succeeds, then reset the state for the next group.
-    fn drain_success(&mut self) -> (u64, u64) {
-        let ok = self.pending_ok;
-        let soft = self.pending_soft_failed;
-        *self = Self::default();
-        (ok, soft)
-    }
-
-    /// Take the total row count to attribute to `rows_failed` when the `COMMIT` fails
-    /// (all rows roll back), then reset the state for the next group.
-    fn drain_failure(&mut self) -> u64 {
-        let total = self.pending_total;
-        *self = Self::default();
-        total
-    }
+/// Detect whether an error message indicates a dead connection (not a business error).
+/// Dead connections should NOT increment consecutive_full_fails because the next
+/// pool.acquire() will automatically get a healthy connection (test_before_acquire=true).
+fn is_connection_death(err: &str) -> bool {
+    let e = err.to_lowercase();
+    e.contains("expected to read")
+        || e.contains("got 0 bytes at eof")
+        || e.contains("broken pipe")
+        || e.contains("connection reset")
+        || e.contains("connection closed")
+        || e.contains("connection was closed")
+        || e.contains("pooltimedout")
 }
 
 fn json_value_len(v: &serde_json::Value) -> u64 {
@@ -1107,14 +1036,14 @@ async fn run_reader_writer_pair(
     dst_ds: Arc<dyn crate::datasource::DataSource>,
     target_table: String,
     dst_driver: String,
-    mapped_cols: Option<Vec<String>>,
+    _mapped_cols: Option<Vec<String>>,
     conflict_strategy: ConflictStrategy,
     upsert_keys: Vec<String>,
     read_batch_size: usize,
     write_batch_size: usize,
     channel_cap: usize,
     error_limit: usize,
-    txn_batch_size: usize,
+    _txn_batch_size: usize,
     write_semaphore: Arc<Semaphore>,
     cancel: Arc<AtomicBool>,
     mapping_stats: Arc<PipelineStats>,
@@ -1125,9 +1054,9 @@ async fn run_reader_writer_pair(
     label: String,
     speed_limit_rps: Option<u64>,
     write_pause_ms: Option<u64>,
-    max_bytes_per_tx: Option<u64>,
+    _max_bytes_per_tx: Option<u64>,
 ) -> AppResult<()> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMsg>(channel_cap);
 
     // ── Reader task ───────────────────────────────────────────────────
     let ms_reader = mapping_stats.clone();
@@ -1168,6 +1097,7 @@ async fn run_reader_writer_pair(
                 if columns_opt.is_none() {
                     pk_col_idx = page.columns.iter().position(|c| c.eq_ignore_ascii_case(&pk_col));
                     columns_opt = Some(page.columns.clone());
+                    tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
                 }
 
                 let last_pk = page.rows.last()
@@ -1184,12 +1114,10 @@ async fn run_reader_writer_pair(
                 ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
                 gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
 
-                let batch = Batch {
-                    rows: page.rows,
-                    column_names: columns_opt.as_ref().unwrap().clone(),
-                };
-                if tx.send(batch).await.is_err() {
-                    break;
+                for row in page.rows {
+                    if tx.send(ChannelMsg::Row(row)).await.is_err() {
+                        break;
+                    }
                 }
 
                 // Rate limiting
@@ -1227,6 +1155,7 @@ async fn run_reader_writer_pair(
                 let fetched = page.rows.len();
                 if columns_opt.is_none() {
                     columns_opt = Some(page.columns.clone());
+                    tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
                 }
                 for row in &page.rows {
                     let row_bytes: u64 = row.iter().map(json_value_len).sum();
@@ -1235,12 +1164,11 @@ async fn run_reader_writer_pair(
                 }
                 ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
                 gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
-                let batch = Batch {
-                    rows: page.rows,
-                    column_names: columns_opt.as_ref().unwrap().clone(),
-                };
-                if tx.send(batch).await.is_err() {
-                    break;
+
+                for row in page.rows {
+                    if tx.send(ChannelMsg::Row(row)).await.is_err() {
+                        break;
+                    }
                 }
 
                 // Rate limiting
@@ -1280,120 +1208,51 @@ async fn run_reader_writer_pair(
         let mut error_count = 0usize;
         let mut consecutive_full_fails = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
-        let mut buf_bytes: u64 = 0;
         let mut buf_columns: Vec<String> = Vec::new();
 
-        // Use trait method to detect which driver supports transaction-based bulk writes.
-        let use_txn_bulk = dst_ds.supports_txn_bulk_write();
-        let txn_driver = if use_txn_bulk {
-            match dst_driver.as_str() {
-                "mysql" | "doris" | "tidb" => Some(TxnDriver::MySql),
-                "postgres" | "gaussdb" => Some(TxnDriver::Postgres),
-                _ => None,
-            }
-        } else {
-            None
-        };
-
-        // Pooled connection held for the lifetime of this writer task (so that
-        // successive transactions reuse it and don't pay pool-acquire cost per txn).
-        let mut mysql_conn: Option<sqlx::pool::PoolConnection<sqlx::MySql>> = None;
-        let mut pg_conn: Option<sqlx::pool::PoolConnection<sqlx::Postgres>> = None;
-        // Active transaction (if any) spanning multiple flushes inside a group.
-        let mut mysql_txn: Option<sqlx::Transaction<'static, sqlx::MySql>> = None;
-        let mut pg_txn: Option<sqlx::Transaction<'static, sqlx::Postgres>> = None;
-        // Group bookkeeping.
-        let mut group = TxnGroupState::default();
-
-        // ── Commit helpers ──────────────────────────────────────────────
-        // These macros exist because MySQL and Postgres use different types and
-        // `dyn Transaction<'_, _>` is not object-safe; a macro keeps the code DRY
-        // without sacrificing type safety.
-
-        /// Commit the currently active MySQL transaction, apply deferred stats,
-        /// and optionally sleep `write_pause_ms`. Resets `group` either way.
-        macro_rules! commit_mysql_group {
-            () => {{
-                if let Some(txn) = mysql_txn.take() {
-                    match txn.commit().await {
-                        Ok(()) => {
-                            let (ok, soft) = group.drain_success();
-                            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            if soft > 0 {
-                                ms_writer.rows_failed.fetch_add(soft, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(soft, Ordering::Relaxed);
-                                error_count = error_count.saturating_add(soft as usize);
-                            }
-                            consecutive_full_fails = 0;
-                            if let Some(pause_ms) = write_pause_ms {
-                                if pause_ms > 0 {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
-                                }
-                            }
+        /// Handle write result: update stats, check circuit breakers.
+        macro_rules! handle_write_result {
+            ($res:expr, $batch_len:expr) => {{
+                match &$res {
+                    Ok(n) => {
+                        let ok = *n as u64;
+                        let fail = $batch_len.saturating_sub(ok);
+                        ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                        gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                        if fail > 0 {
+                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                            error_count = error_count.saturating_add(fail as usize);
                         }
-                        Err(e) => {
+                        if ok == 0 && fail > 0 {
+                            consecutive_full_fails += 1;
+                        } else {
+                            consecutive_full_fails = 0;
+                        }
+                    }
+                    Err(e) => {
+                        let err_msg = e.to_string();
+                        if is_connection_death(&err_msg) {
+                            emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                &format!("[{}] Connection lost: {} ({} rows failed, will reconnect)", label_w, err_msg, $batch_len));
+                            ms_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                            error_count = error_count.saturating_add($batch_len as usize);
+                        } else {
                             emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                &format!("[{}] MySQL txn commit failed: {} ({} rows rolled back)",
-                                    label_w, e, group.pending_total));
-                            let total = group.drain_failure();
-                            ms_writer.rows_failed.fetch_add(total, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(total, Ordering::Relaxed);
-                            error_count = error_count.saturating_add(total as usize);
+                                &format!("[{}] bulk_write failed: {}", label_w, err_msg));
+                            ms_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                            gs_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                            error_count = error_count.saturating_add($batch_len as usize);
                             consecutive_full_fails += 1;
                         }
                     }
                 }
-            }};
-        }
-
-        /// Commit the currently active Postgres transaction, apply deferred stats,
-        /// and optionally sleep `write_pause_ms`. Resets `group` either way.
-        macro_rules! commit_pg_group {
-            () => {{
-                if let Some(txn) = pg_txn.take() {
-                    match txn.commit().await {
-                        Ok(()) => {
-                            let (ok, soft) = group.drain_success();
-                            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            if soft > 0 {
-                                ms_writer.rows_failed.fetch_add(soft, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(soft, Ordering::Relaxed);
-                                error_count = error_count.saturating_add(soft as usize);
-                            }
-                            consecutive_full_fails = 0;
-                            if let Some(pause_ms) = write_pause_ms {
-                                if pause_ms > 0 {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                &format!("[{}] PostgreSQL txn commit failed: {} ({} rows rolled back)",
-                                    label_w, e, group.pending_total));
-                            let total = group.drain_failure();
-                            ms_writer.rows_failed.fetch_add(total, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(total, Ordering::Relaxed);
-                            error_count = error_count.saturating_add(total as usize);
-                            consecutive_full_fails += 1;
-                        }
-                    }
-                }
-            }};
-        }
-
-        /// Check circuit breakers — identical to the pre-refactor logic.
-        macro_rules! check_circuit {
-            () => {{
                 if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
                     emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                        &format!("[{}] Circuit breaker: {} consecutive groups fully failed",
-                            label_w, consecutive_full_fails));
+                        &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
                     return Err(AppError::Other(format!(
-                        "Circuit breaker: {} consecutive write groups fully failed",
-                        consecutive_full_fails
+                        "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
                     )));
                 }
                 if error_limit > 0 && error_count >= error_limit {
@@ -1404,227 +1263,61 @@ async fn run_reader_writer_pair(
             }};
         }
 
-        while let Some(batch) = rx.recv().await {
+        while let Some(msg) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
                 break;
             }
-            if buf_columns.is_empty() {
-                buf_columns = mapped_cols
-                    .clone()
-                    .unwrap_or_else(|| batch.column_names.clone());
-            }
-
-            for row in batch.rows {
-                let row_bytes: u64 = row.iter().map(json_value_len).sum();
-                buf_bytes += row_bytes;
-                write_buf.push(row);
-                if write_buf.len() < write_batch_size {
-                    continue;
+            match msg {
+                ChannelMsg::Columns(cols) => {
+                    buf_columns = cols;
                 }
+                ChannelMsg::Row(row) => {
+                    write_buf.push(row);
+                    if write_buf.len() >= write_batch_size {
+                        let rows = std::mem::replace(&mut write_buf, Vec::with_capacity(write_batch_size));
+                        let batch_len = rows.len() as u64;
+                        let _permit = semaphore.clone().acquire_owned().await
+                            .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
 
-                // ── Flush write_buf as one INSERT ────────────────────────
-                let rows_to_write = std::mem::replace(
-                    &mut write_buf,
-                    Vec::with_capacity(write_batch_size),
-                );
-                let insert_bytes = std::mem::replace(&mut buf_bytes, 0);
-                let batch_len = rows_to_write.len() as u64;
-                let _permit = semaphore.clone().acquire_owned().await
-                    .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+                        let res = tokio::time::timeout(
+                            tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                            dst_ds.bulk_write(
+                                &target_table, &buf_columns, &rows,
+                                &conflict_strategy, &upsert_keys, &dst_driver,
+                            ),
+                        ).await;
 
-                if let Some(txn_driver) = &txn_driver {
-                    match txn_driver {
-                        TxnDriver::MySql => {
-                            let my_ds = dst_ds.as_any().downcast_ref::<crate::datasource::mysql::MySqlDataSource>()
-                                .ok_or_else(|| AppError::Other("dst_ds is not MySqlDataSource".into()))?;
-
-                            if mysql_conn.is_none() {
-                                let conn = my_ds.pool.acquire().await
-                                    .map_err(|e| AppError::Other(format!("Failed to acquire MySQL connection: {}", e)))?;
-                                mysql_conn = Some(conn);
-                            }
-                            if mysql_txn.is_none() {
-                                // SAFETY: the borrow of `conn` lives for the task lifetime; we
-                                // never drop `mysql_conn` while `mysql_txn` is `Some`. We use
-                                // `'static` by transmuting the lifetime — see comment below.
-                                let conn = mysql_conn.as_mut().unwrap();
-                                let txn = conn.begin().await
-                                    .map_err(|e| AppError::Other(format!("Failed to begin MySQL txn: {}", e)))?;
-                                // The transaction borrows `conn` for as long as it is alive.
-                                // Since `mysql_conn` is held by this task and never moved/dropped
-                                // while `mysql_txn` is `Some`, we can safely extend its lifetime
-                                // to `'static` for storage in the task-local `Option`.
-                                let txn: sqlx::Transaction<'static, sqlx::MySql> =
-                                    unsafe { std::mem::transmute(txn) };
-                                mysql_txn = Some(txn);
-                            }
-
-                            let res = tokio::time::timeout(
-                                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                                my_ds.bulk_write_in_txn(
-                                    mysql_txn.as_mut().unwrap(),
-                                    &target_table, &buf_columns, &rows_to_write,
-                                    &conflict_strategy, &upsert_keys, &dst_driver,
-                                ),
-                            ).await;
-
-                            match res {
-                                Err(_) => {
-                                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                        &format!("[{}] bulk_write timed out after {}s ({} rows failed, group rolled back)",
-                                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                                    // Roll back the entire group; anything previously
-                                    // buffered in this txn is also lost.
-                                    let group_total = group.pending_total + batch_len;
-                                    if let Some(txn) = mysql_txn.take() {
-                                        let _ = txn.rollback().await;
-                                    }
-                                    let _ = group.drain_failure();
-                                    ms_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    gs_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    error_count = error_count.saturating_add(group_total as usize);
-                                    consecutive_full_fails += 1;
-                                    check_circuit!();
-                                    continue;
-                                }
-                                Ok(Err(e)) => {
-                                    emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                        &format!("[{}] bulk_write failed: {} (group rolled back)", label_w, e));
-                                    let group_total = group.pending_total + batch_len;
-                                    if let Some(txn) = mysql_txn.take() {
-                                        let _ = txn.rollback().await;
-                                    }
-                                    let _ = group.drain_failure();
-                                    ms_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    gs_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    error_count = error_count.saturating_add(group_total as usize);
-                                    consecutive_full_fails += 1;
-                                    check_circuit!();
-                                    continue;
-                                }
-                                Ok(Ok(n)) => {
-                                    group.record_insert(batch_len, n as u64, insert_bytes);
-                                }
-                            }
-
-                            if group.should_commit(txn_batch_size, max_bytes_per_tx) {
-                                commit_mysql_group!();
-                                check_circuit!();
-                            }
-                        }
-                        TxnDriver::Postgres => {
-                            let pg_ds = dst_ds.as_any().downcast_ref::<crate::datasource::postgres::PostgresDataSource>()
-                                .ok_or_else(|| AppError::Other("dst_ds is not PostgresDataSource".into()))?;
-
-                            if pg_conn.is_none() {
-                                let conn: sqlx::pool::PoolConnection<sqlx::Postgres> = pg_ds.pool.acquire().await
-                                    .map_err(|e| AppError::Other(format!("Failed to acquire PostgreSQL connection: {}", e)))?;
-                                pg_conn = Some(conn);
-                            }
-                            if pg_txn.is_none() {
-                                let conn = pg_conn.as_mut().unwrap();
-                                let txn = conn.begin().await
-                                    .map_err(|e| AppError::Other(format!("Failed to begin PostgreSQL txn: {}", e)))?;
-                                let txn: sqlx::Transaction<'static, sqlx::Postgres> =
-                                    unsafe { std::mem::transmute(txn) };
-                                pg_txn = Some(txn);
-                            }
-
-                            let res = tokio::time::timeout(
-                                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                                pg_ds.bulk_write_in_txn(
-                                    pg_txn.as_mut().unwrap(),
-                                    &target_table, &buf_columns, &rows_to_write,
-                                    &conflict_strategy, &upsert_keys, &dst_driver,
-                                ),
-                            ).await;
-
-                            match res {
-                                Err(_) => {
-                                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                        &format!("[{}] bulk_write timed out after {}s ({} rows failed, group rolled back)",
-                                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                                    let group_total = group.pending_total + batch_len;
-                                    if let Some(txn) = pg_txn.take() {
-                                        let _ = txn.rollback().await;
-                                    }
-                                    let _ = group.drain_failure();
-                                    ms_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    gs_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    error_count = error_count.saturating_add(group_total as usize);
-                                    consecutive_full_fails += 1;
-                                    check_circuit!();
-                                    continue;
-                                }
-                                Ok(Err(e)) => {
-                                    emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                        &format!("[{}] bulk_write failed: {} (group rolled back)", label_w, e));
-                                    let group_total = group.pending_total + batch_len;
-                                    if let Some(txn) = pg_txn.take() {
-                                        let _ = txn.rollback().await;
-                                    }
-                                    let _ = group.drain_failure();
-                                    ms_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    gs_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                    error_count = error_count.saturating_add(group_total as usize);
-                                    consecutive_full_fails += 1;
-                                    check_circuit!();
-                                    continue;
-                                }
-                                Ok(Ok(n)) => {
-                                    group.record_insert(batch_len, n as u64, insert_bytes);
-                                }
-                            }
-
-                            if group.should_commit(txn_batch_size, max_bytes_per_tx) {
-                                commit_pg_group!();
-                                check_circuit!();
-                            }
-                        }
-                    }
-                } else {
-                    // Non-MySQL/PG: autocommit path (one INSERT = one "group").
-                    let res = tokio::time::timeout(
-                        tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                        dst_ds.bulk_write(
-                            &target_table, &buf_columns, &rows_to_write,
-                            &conflict_strategy, &upsert_keys, &dst_driver,
-                        ),
-                    ).await;
-
-                    match res {
-                        Err(_) => {
-                            emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
-                                    label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                            ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                            error_count = error_count.saturating_add(batch_len as usize);
-                            consecutive_full_fails += 1;
-                        }
-                        Ok(Err(e)) => {
-                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                &format!("[{}] bulk_write failed: {}", label_w, e));
-                            ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                            error_count = error_count.saturating_add(batch_len as usize);
-                            consecutive_full_fails += 1;
-                        }
-                        Ok(Ok(n)) => {
-                            let ok = n as u64;
-                            let fail = batch_len.saturating_sub(ok);
-                            ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                            if fail > 0 {
-                                ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                                error_count = error_count.saturating_add(fail as usize);
-                            }
-                            if ok == 0 && fail > 0 {
+                        let write_res = match res {
+                            Err(_) => {
+                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                    &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
+                                        label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                                ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                error_count = error_count.saturating_add(batch_len as usize);
                                 consecutive_full_fails += 1;
-                            } else {
-                                consecutive_full_fails = 0;
+                                // Check circuit breaker after timeout
+                                if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                                    emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                        &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
+                                    return Err(AppError::Other(format!(
+                                        "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                                    )));
+                                }
+                                if error_limit > 0 && error_count >= error_limit {
+                                    return Err(AppError::Other(format!(
+                                        "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                                    )));
+                                }
+                                continue;
                             }
+                            Ok(r) => r,
+                        };
+
+                        handle_write_result!(write_res, batch_len);
+
+                        // write_pause_ms after successful write
+                        if write_res.is_ok() {
                             if let Some(pause_ms) = write_pause_ms {
                                 if pause_ms > 0 {
                                     tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
@@ -1632,133 +1325,36 @@ async fn run_reader_writer_pair(
                             }
                         }
                     }
-                    check_circuit!();
                 }
             }
         }
 
-        // ── Drain: flush remaining rows, then commit any open txn ────────
+        // Drain remainder
         if !write_buf.is_empty() {
-            let rows_to_write = std::mem::take(&mut write_buf);
-            let insert_bytes = std::mem::replace(&mut buf_bytes, 0);
-            let batch_len = rows_to_write.len() as u64;
+            let rows = std::mem::replace(&mut write_buf, Vec::new());
+            let batch_len = rows.len() as u64;
             let _permit = semaphore.clone().acquire_owned().await
                 .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
 
-            if let Some(txn_driver) = &txn_driver {
-                match txn_driver {
-                    TxnDriver::MySql => {
-                        let my_ds = dst_ds.as_any().downcast_ref::<crate::datasource::mysql::MySqlDataSource>()
-                            .ok_or_else(|| AppError::Other("dst_ds is not MySqlDataSource".into()))?;
-                        if mysql_conn.is_none() {
-                            let conn = my_ds.pool.acquire().await
-                                .map_err(|e| AppError::Other(format!("Failed to acquire MySQL connection for flush: {}", e)))?;
-                            mysql_conn = Some(conn);
-                        }
-                        if mysql_txn.is_none() {
-                            let conn = mysql_conn.as_mut().unwrap();
-                            let txn = conn.begin().await
-                                .map_err(|e| AppError::Other(format!("Failed to begin MySQL txn for flush: {}", e)))?;
-                            let txn: sqlx::Transaction<'static, sqlx::MySql> =
-                                unsafe { std::mem::transmute(txn) };
-                            mysql_txn = Some(txn);
-                        }
-                        match my_ds.bulk_write_in_txn(
-                            mysql_txn.as_mut().unwrap(),
-                            &target_table, &buf_columns, &rows_to_write,
-                            &conflict_strategy, &upsert_keys, &dst_driver,
-                        ).await {
-                            Ok(n) => group.record_insert(batch_len, n as u64, insert_bytes),
-                            Err(e) => {
-                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                    &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
-                                let group_total = group.pending_total + batch_len;
-                                if let Some(txn) = mysql_txn.take() {
-                                    let _ = txn.rollback().await;
-                                }
-                                let _ = group.drain_failure();
-                                ms_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                            }
-                        }
-                    }
-                    TxnDriver::Postgres => {
-                        let pg_ds = dst_ds.as_any().downcast_ref::<crate::datasource::postgres::PostgresDataSource>()
-                            .ok_or_else(|| AppError::Other("dst_ds is not PostgresDataSource".into()))?;
-                        if pg_conn.is_none() {
-                            let conn: sqlx::pool::PoolConnection<sqlx::Postgres> = pg_ds.pool.acquire().await
-                                .map_err(|e| AppError::Other(format!("Failed to acquire PostgreSQL connection for flush: {}", e)))?;
-                            pg_conn = Some(conn);
-                        }
-                        if pg_txn.is_none() {
-                            let conn = pg_conn.as_mut().unwrap();
-                            let txn = conn.begin().await
-                                .map_err(|e| AppError::Other(format!("Failed to begin PostgreSQL txn for flush: {}", e)))?;
-                            let txn: sqlx::Transaction<'static, sqlx::Postgres> =
-                                unsafe { std::mem::transmute(txn) };
-                            pg_txn = Some(txn);
-                        }
-                        match pg_ds.bulk_write_in_txn(
-                            pg_txn.as_mut().unwrap(),
-                            &target_table, &buf_columns, &rows_to_write,
-                            &conflict_strategy, &upsert_keys, &dst_driver,
-                        ).await {
-                            Ok(n) => group.record_insert(batch_len, n as u64, insert_bytes),
-                            Err(e) => {
-                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                    &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
-                                let group_total = group.pending_total + batch_len;
-                                if let Some(txn) = pg_txn.take() {
-                                    let _ = txn.rollback().await;
-                                }
-                                let _ = group.drain_failure();
-                                ms_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(group_total, Ordering::Relaxed);
-                            }
-                        }
-                    }
-                }
-            } else {
-                match dst_ds.bulk_write(
-                    &target_table, &buf_columns, &rows_to_write,
+            let res = tokio::time::timeout(
+                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                dst_ds.bulk_write(
+                    &target_table, &buf_columns, &rows,
                     &conflict_strategy, &upsert_keys, &dst_driver,
-                ).await {
-                    Ok(n) => {
-                        let ok = n as u64;
-                        let fail = batch_len.saturating_sub(ok);
-                        ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                        gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                        if fail > 0 {
-                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                        }
-                    }
-                    Err(e) => {
-                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                            &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
-                        ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                        gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    }
-                }
-            }
-        }
+                ),
+            ).await;
 
-        // Commit any lingering open txn (group accumulated < txn_batch_size when reader closed).
-        #[allow(unused_assignments)]
-        {
-            if group.has_pending() {
-                if mysql_txn.is_some() {
-                    commit_mysql_group!();
-                } else if pg_txn.is_some() {
-                    commit_pg_group!();
+            match res {
+                Err(_) => {
+                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                        &format!("[{}] Final flush timed out after {}s ({} rows failed)",
+                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                    // Don't check circuit breaker on final flush — pipeline is ending anyway.
                 }
-            } else {
-                // No pending inserts but maybe a stray empty txn; roll it back just in case.
-                if let Some(txn) = mysql_txn.take() {
-                    let _ = txn.rollback().await;
-                }
-                if let Some(txn) = pg_txn.take() {
-                    let _ = txn.rollback().await;
+                Ok(r) => {
+                    handle_write_result!(r, batch_len);
                 }
             }
         }
@@ -1962,87 +1558,3 @@ async fn writeback_incremental_checkpoint(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn txn_group_empty_never_commits() {
-        let g = TxnGroupState::default();
-        assert!(!g.should_commit(10, Some(4 * 1024 * 1024)));
-        assert!(!g.should_commit(1, None));
-        assert!(!g.has_pending());
-    }
-
-    #[test]
-    fn txn_group_commits_on_insert_count_threshold() {
-        let mut g = TxnGroupState::default();
-        // 3 inserts @ 100 rows each, 1KB each → well below byte limit
-        for _ in 0..3 {
-            g.record_insert(100, 100, 1024);
-        }
-        assert!(!g.should_commit(10, Some(10 * 1024 * 1024)));
-        // Add 7 more to reach the count threshold
-        for _ in 0..7 {
-            g.record_insert(100, 100, 1024);
-        }
-        assert!(g.should_commit(10, Some(10 * 1024 * 1024)));
-    }
-
-    #[test]
-    fn txn_group_commits_on_byte_threshold() {
-        let mut g = TxnGroupState::default();
-        // One huge insert that alone blows the byte limit
-        g.record_insert(1_000, 1_000, 5 * 1024 * 1024);
-        assert!(g.should_commit(100, Some(4 * 1024 * 1024)));
-    }
-
-    #[test]
-    fn txn_group_byte_limit_none_disables_byte_check() {
-        let mut g = TxnGroupState::default();
-        g.record_insert(1_000, 1_000, u64::MAX / 2);
-        assert!(!g.should_commit(100, None));
-    }
-
-    #[test]
-    fn txn_group_txn_batch_size_zero_clamped_to_one() {
-        let mut g = TxnGroupState::default();
-        g.record_insert(10, 10, 64);
-        // A misconfigured `0` must not deadlock (never commit) — clamp to 1.
-        assert!(g.should_commit(0, None));
-    }
-
-    #[test]
-    fn txn_group_drain_success_returns_ok_and_soft_fail_then_resets() {
-        let mut g = TxnGroupState::default();
-        g.record_insert(100, 95, 1024); // 5 silently dropped (INSERT IGNORE etc.)
-        g.record_insert(100, 100, 1024);
-        let (ok, soft) = g.drain_success();
-        assert_eq!(ok, 195);
-        assert_eq!(soft, 5);
-        // State is reset
-        assert_eq!(g.insert_count, 0);
-        assert_eq!(g.bytes_written, 0);
-        assert_eq!(g.pending_total, 0);
-        assert!(!g.has_pending());
-    }
-
-    #[test]
-    fn txn_group_drain_failure_returns_total_then_resets() {
-        let mut g = TxnGroupState::default();
-        g.record_insert(100, 100, 1024);
-        g.record_insert(100, 90, 1024);
-        let total = g.drain_failure();
-        assert_eq!(total, 200);
-        assert!(!g.has_pending());
-    }
-
-    #[test]
-    fn txn_group_saturating_arithmetic_does_not_panic() {
-        let mut g = TxnGroupState::default();
-        g.record_insert(u64::MAX, u64::MAX, u64::MAX);
-        g.record_insert(u64::MAX, u64::MAX, u64::MAX);
-        // No panic; should_commit still answers sensibly.
-        assert!(g.should_commit(1, None));
-    }
-}

@@ -367,6 +367,7 @@ impl PostgresDataSource {
     /// Execute chunked INSERT within an explicit transaction to reduce fsync overhead.
     /// Mirrors MySQL's `bulk_write_in_txn` approach: chunk rows by estimated SQL size,
     /// execute multi-row INSERT per chunk, all within a single txn (one COMMIT).
+    #[allow(dead_code)]
     pub async fn bulk_write_in_txn(
         &self,
         txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -888,6 +889,46 @@ impl DataSource for PostgresDataSource {
 
     fn supports_txn_bulk_write(&self) -> bool { true }
 
+    async fn execute_streaming(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+    ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<Vec<serde_json::Value>>)> {
+        use sqlx::Column;
+        use sqlx::Row;
+        use futures_util::TryStreamExt;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+
+        // Fetch columns first via a separate query
+        let col_sql = format!("SELECT * FROM ({}) AS _mig_cols_ LIMIT 0", sql);
+        let col_rows = sqlx::query(&col_sql).fetch_all(&self.pool).await?;
+        let columns: Vec<String> = if let Some(first) = col_rows.first() {
+            first.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            vec![]
+        };
+
+        // Stream rows
+        let pool = self.pool.clone();
+        let sql_owned = sql.to_string();
+        let cols = columns.clone();
+        tokio::spawn(async move {
+            let mut stream = sqlx::query(&sql_owned).fetch(&pool);
+            while let Ok(Some(row)) = stream.try_next().await {
+                let num_cols = cols.len();
+                let values: Vec<serde_json::Value> = (0..num_cols)
+                    .map(|i| pg_row_value(&row, i))
+                    .collect();
+                if tx.send(values).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok((columns, rx))
+    }
+
     async fn bulk_write(
         &self,
         table: &str,
@@ -934,6 +975,7 @@ impl DataSource for PostgresDataSource {
 // ============================================================
 /// Estimate the SQL size for a single row (used for chunk pre-computation).
 /// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
+#[allow(dead_code)]
 fn estimate_row_sql_size(
     row: &[serde_json::Value],
     _escape_style: &crate::datasource::StringEscapeStyle,

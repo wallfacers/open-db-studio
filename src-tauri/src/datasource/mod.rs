@@ -388,6 +388,7 @@ pub enum StringEscapeStyle {
 
 /// 数据源统一抽象 trait
 #[async_trait]
+#[allow(dead_code)]
 pub trait DataSource: Send + Sync {
     /// Downcast to `Any` for type-specific operations (e.g., transaction wrapping in pipeline).
     fn as_any(&self) -> &dyn std::any::Any;
@@ -593,6 +594,28 @@ pub trait DataSource: Send + Sync {
             sql, limit, offset
         );
         self.execute(&paged).await
+    }
+
+    /// Stream query results row-by-row through a channel.
+    /// Returns `(columns, receiver)` where the receiver yields one row at a time.
+    /// Used by the migration pipeline to avoid materializing all rows in memory.
+    /// Default implementation batches via `execute()` then streams through a channel.
+    async fn execute_streaming(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+    ) -> AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<Vec<serde_json::Value>>)> {
+        let qr = self.execute(sql).await?;
+        let cols = qr.columns;
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+        tokio::spawn(async move {
+            for row in qr.rows {
+                if tx.send(row).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Ok((cols, rx))
     }
 }
 

@@ -637,6 +637,75 @@ impl DataSource for MySqlDataSource {
 
     fn supports_txn_bulk_write(&self) -> bool { true }
 
+    async fn execute_streaming(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+    ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<Vec<serde_json::Value>>)> {
+        use sqlx::Column;
+        use sqlx::Row;
+        use futures_util::TryStreamExt;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+
+        // Fetch columns first via a separate query, since streaming loses the
+        // column metadata until the first row arrives.
+        let col_sql = format!("SELECT * FROM ({}) AS _mig_cols_ LIMIT 0", sql);
+        let col_rows = sqlx::query(&col_sql).fetch_all(&self.pool).await?;
+        let columns: Vec<String> = if let Some(first) = col_rows.first() {
+            first.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            vec![]
+        };
+
+        // Stream rows
+        let pool = self.pool.clone();
+        let sql_owned = sql.to_string();
+        let cols = columns.clone();
+        tokio::spawn(async move {
+            let mut stream = sqlx::query(&sql_owned).fetch(&pool);
+            while let Ok(Some(row)) = stream.try_next().await {
+                let num_cols = cols.len();
+                let values: Vec<serde_json::Value> = (0..num_cols)
+                    .map(|i| {
+                        if let Ok(val) = row.try_get::<Option<String>, _>(i) {
+                            val.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<chrono::NaiveDateTime>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<chrono::NaiveDate>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<chrono::NaiveTime>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<rust_decimal::Decimal>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<u64>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<i64>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<u16>, _>(i) {
+                            val.map(|v| serde_json::json!(v)).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<f64>, _>(i) {
+                            val.map(|v| serde_json::json!(v)).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<bool>, _>(i) {
+                            val.map(|v| serde_json::json!(v)).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<serde_json::Value>, _>(i) {
+                            val.map(|v| serde_json::Value::String(v.to_string())).unwrap_or(serde_json::Value::Null)
+                        } else if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(i) {
+                            val.map(|b| serde_json::Value::String(format!("0x{}", hex::encode(&b)))).unwrap_or(serde_json::Value::Null)
+                        } else {
+                            serde_json::Value::Null
+                        }
+                    })
+                    .collect();
+                if tx.send(values).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok((columns, rx))
+    }
+
     async fn bulk_write(
         &self,
         table: &str,
@@ -728,6 +797,7 @@ impl MySqlDataSource {
 
     /// Same as `bulk_write_insert_chunked` but executes within an explicit
     /// transaction, so that multiple calls share a single COMMIT/fsync.
+    #[allow(dead_code)]
     pub async fn bulk_write_in_txn(
         &self,
         txn: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -898,6 +968,7 @@ impl MySqlDataSource {
 
 /// Estimate the SQL size for a single row (used for chunk pre-computation).
 /// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
+#[allow(dead_code)]
 fn estimate_row_sql_size(
     row: &[serde_json::Value],
     _escape_style: &crate::datasource::StringEscapeStyle,

@@ -486,6 +486,12 @@ pub trait DataSource: Send + Sync {
         StringEscapeStyle::Standard
     }
 
+    /// 返回该驱动是否支持在显式事务内进行 bulk_write（BEGIN → chunked INSERT → COMMIT）。
+    /// 用于 pipeline writer 减少 autocommit fsync 开销。默认 false，sqlx 池化驱动按需覆盖。
+    fn supports_txn_bulk_write(&self) -> bool {
+        false
+    }
+
     /// 在单个事务中执行多条 SQL 语句（一次 COMMIT），减少 fsync 次数。
     /// 默认实现逐条 execute（无事务包裹），各驱动按需覆盖以使用原生事务。
     /// 返回所有语句影响的总行数。

@@ -635,6 +635,8 @@ impl DataSource for MySqlDataSource {
         Ok(())
     }
 
+    fn supports_txn_bulk_write(&self) -> bool { true }
+
     async fn bulk_write(
         &self,
         table: &str,

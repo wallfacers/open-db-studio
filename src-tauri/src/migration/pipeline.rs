@@ -15,6 +15,12 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use super::task_mgr::*;
 
+/// Which driver-specific txn path to use in the writer.
+enum TxnDriver {
+    MySql,
+    Postgres,
+}
+
 const MIGRATION_LOG_EVENT: &str = "migration_log";
 const MIGRATION_STATS_EVENT: &str = "migration_stats";
 const MIGRATION_FINISHED_EVENT: &str = "migration_finished";
@@ -1188,10 +1194,19 @@ async fn run_reader_writer_pair(
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
 
-        // MySQL transaction state: use a persistent connection and wrap each
-        // batch in a mini-txn to reduce fsync overhead.
-        let use_mysql_txn = dst_driver == "mysql";
+        // Use trait method to detect which driver supports transaction-based bulk writes.
+        let use_txn_bulk = dst_ds.supports_txn_bulk_write();
+        let txn_driver = if use_txn_bulk {
+            match dst_driver.as_str() {
+                "mysql" | "doris" | "tidb" => Some(TxnDriver::MySql),
+                "postgres" | "gaussdb" => Some(TxnDriver::Postgres),
+                _ => None,
+            }
+        } else {
+            None
+        };
         let mut mysql_conn: Option<sqlx::pool::PoolConnection<sqlx::MySql>> = None;
+        let mut pg_conn: Option<sqlx::pool::PoolConnection<sqlx::Postgres>> = None;
 
         /// Handle write result: update stats, check circuit breakers.
         macro_rules! handle_write_result {
@@ -1258,67 +1273,124 @@ async fn run_reader_writer_pair(
                     let _permit = semaphore.clone().acquire_owned().await
                         .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
 
-                    if use_mysql_txn {
-                        let my_ds = dst_ds.as_any().downcast_ref::<crate::datasource::mysql::MySqlDataSource>()
-                            .ok_or_else(|| AppError::Other("dst_ds is not MySqlDataSource".into()))?;
+                    if let Some(txn_driver) = &txn_driver {
+                        match txn_driver {
+                            TxnDriver::MySql => {
+                                let my_ds = dst_ds.as_any().downcast_ref::<crate::datasource::mysql::MySqlDataSource>()
+                                    .ok_or_else(|| AppError::Other("dst_ds is not MySqlDataSource".into()))?;
 
-                        // Acquire a persistent connection for this writer.
-                        if mysql_conn.is_none() {
-                            let conn = my_ds.pool.acquire().await
-                                .map_err(|e| AppError::Other(format!("Failed to acquire MySQL connection: {}", e)))?;
-                            mysql_conn = Some(conn);
-                        }
-
-                        // Each batch gets its own mini-transaction (begin → write → commit).
-                        // This reduces fsync overhead compared to autocommit because the
-                        // multi-row INSERT already batches thousands of rows per COMMIT.
-                        let conn = mysql_conn.as_mut().unwrap();
-                        let mut txn = conn.begin().await
-                            .map_err(|e| AppError::Other(format!("Failed to begin MySQL txn: {}", e)))?;
-
-                        let res = tokio::time::timeout(
-                            tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                            my_ds.bulk_write_in_txn(
-                                &mut txn,
-                                &target_table, &buf_columns, &rows_to_write,
-                                &conflict_strategy, &upsert_keys, &dst_driver,
-                            ),
-                        ).await;
-
-                        let write_res = match res {
-                            Ok(r) => r,
-                            Err(_) => {
-                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                    &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
-                                        label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                                ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                                error_count += batch_len as usize;
-                                consecutive_full_fails += 1;
-                                let _ = txn.rollback().await;
-
-                                if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                                    return Err(AppError::Other(format!(
-                                        "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                                    )));
+                                if mysql_conn.is_none() {
+                                    let conn = my_ds.pool.acquire().await
+                                        .map_err(|e| AppError::Other(format!("Failed to acquire MySQL connection: {}", e)))?;
+                                    mysql_conn = Some(conn);
                                 }
-                                if error_limit > 0 && error_count >= error_limit {
-                                    return Err(AppError::Other(format!(
-                                        "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                                    )));
+
+                                let conn = mysql_conn.as_mut().unwrap();
+                                let mut txn = conn.begin().await
+                                    .map_err(|e| AppError::Other(format!("Failed to begin MySQL txn: {}", e)))?;
+
+                                let res = tokio::time::timeout(
+                                    tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                                    my_ds.bulk_write_in_txn(
+                                        &mut txn,
+                                        &target_table, &buf_columns, &rows_to_write,
+                                        &conflict_strategy, &upsert_keys, &dst_driver,
+                                    ),
+                                ).await;
+
+                                let write_res = match res {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                            &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
+                                                label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                                        ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                        gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                        error_count += batch_len as usize;
+                                        consecutive_full_fails += 1;
+                                        let _ = txn.rollback().await;
+
+                                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                                            return Err(AppError::Other(format!(
+                                                "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                                            )));
+                                        }
+                                        if error_limit > 0 && error_count >= error_limit {
+                                            return Err(AppError::Other(format!(
+                                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                                            )));
+                                        }
+                                        continue;
+                                    }
+                                };
+
+                                handle_write_result!(write_res, batch_len);
+
+                                if write_res.is_ok() {
+                                    txn.commit().await
+                                        .map_err(|e| AppError::Other(format!("MySQL txn commit failed: {}", e)))?;
+                                } else {
+                                    let _ = txn.rollback().await;
                                 }
-                                continue;
                             }
-                        };
+                            TxnDriver::Postgres => {
+                                let pg_ds = dst_ds.as_any().downcast_ref::<crate::datasource::postgres::PostgresDataSource>()
+                                    .ok_or_else(|| AppError::Other("dst_ds is not PostgresDataSource".into()))?;
 
-                        handle_write_result!(write_res, batch_len);
+                                if pg_conn.is_none() {
+                                    let conn: sqlx::pool::PoolConnection<sqlx::Postgres> = pg_ds.pool.acquire().await
+                                        .map_err(|e| AppError::Other(format!("Failed to acquire PostgreSQL connection: {}", e)))?;
+                                    pg_conn = Some(conn);
+                                }
 
-                        // Commit on success, rollback on failure.
-                        if write_res.is_ok() {
-                            txn.commit().await
-                                .map_err(|e| AppError::Other(format!("MySQL txn commit failed: {}", e)))?;
-                        } else {
-                            let _ = txn.rollback().await;
+                                let conn = pg_conn.as_mut().unwrap();
+                                let mut txn = conn.begin().await
+                                    .map_err(|e| AppError::Other(format!("Failed to begin PostgreSQL txn: {}", e)))?;
+
+                                let res = tokio::time::timeout(
+                                    tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                                    pg_ds.bulk_write_in_txn(
+                                        &mut txn,
+                                        &target_table, &buf_columns, &rows_to_write,
+                                        &conflict_strategy, &upsert_keys, &dst_driver,
+                                    ),
+                                ).await;
+
+                                let write_res = match res {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                            &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
+                                                label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                                        ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                        gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                        error_count += batch_len as usize;
+                                        consecutive_full_fails += 1;
+                                        let _ = txn.rollback().await;
+
+                                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                                            return Err(AppError::Other(format!(
+                                                "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                                            )));
+                                        }
+                                        if error_limit > 0 && error_count >= error_limit {
+                                            return Err(AppError::Other(format!(
+                                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                                            )));
+                                        }
+                                        continue;
+                                    }
+                                };
+
+                                handle_write_result!(write_res, batch_len);
+
+                                if write_res.is_ok() {
+                                    txn.commit().await
+                                        .map_err(|e| AppError::Other(format!("PostgreSQL txn commit failed: {}", e)))?;
+                                } else {
+                                    let _ = txn.rollback().await;
+                                }
+                            }
                         }
                     } else {
                         // Non-MySQL: original autocommit path.
@@ -1367,43 +1439,85 @@ async fn run_reader_writer_pair(
             let _permit = semaphore.clone().acquire_owned().await
                 .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
 
-            if use_mysql_txn {
-                let my_ds = dst_ds.as_any().downcast_ref::<crate::datasource::mysql::MySqlDataSource>()
-                    .ok_or_else(|| AppError::Other("dst_ds is not MySqlDataSource".into()))?;
+            if let Some(txn_driver) = &txn_driver {
+                match txn_driver {
+                    TxnDriver::MySql => {
+                        let my_ds = dst_ds.as_any().downcast_ref::<crate::datasource::mysql::MySqlDataSource>()
+                            .ok_or_else(|| AppError::Other("dst_ds is not MySqlDataSource".into()))?;
 
-                if mysql_conn.is_none() {
-                    let conn = my_ds.pool.acquire().await
-                        .map_err(|e| AppError::Other(format!("Failed to acquire MySQL connection for flush: {}", e)))?;
-                    mysql_conn = Some(conn);
-                }
-
-                let conn = mysql_conn.as_mut().unwrap();
-                let mut txn = conn.begin().await
-                    .map_err(|e| AppError::Other(format!("Failed to begin MySQL txn for flush: {}", e)))?;
-
-                match my_ds.bulk_write_in_txn(
-                    &mut txn,
-                    &target_table, &buf_columns, &write_buf,
-                    &conflict_strategy, &upsert_keys, &dst_driver,
-                ).await {
-                    Ok(n) => {
-                        ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
-                        gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
-                        let fail = batch_len.saturating_sub(n as u64);
-                        if fail > 0 {
-                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        if mysql_conn.is_none() {
+                            let conn = my_ds.pool.acquire().await
+                                .map_err(|e| AppError::Other(format!("Failed to acquire MySQL connection for flush: {}", e)))?;
+                            mysql_conn = Some(conn);
                         }
+
+                        let conn = mysql_conn.as_mut().unwrap();
+                        let mut txn = conn.begin().await
+                            .map_err(|e| AppError::Other(format!("Failed to begin MySQL txn for flush: {}", e)))?;
+
+                        match my_ds.bulk_write_in_txn(
+                            &mut txn,
+                            &target_table, &buf_columns, &write_buf,
+                            &conflict_strategy, &upsert_keys, &dst_driver,
+                        ).await {
+                            Ok(n) => {
+                                ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                                gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                                let fail = batch_len.saturating_sub(n as u64);
+                                if fail > 0 {
+                                    ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                    gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                }
+                            }
+                            Err(e) => {
+                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                    &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
+                                ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            }
+                        }
+
+                        let _ = txn.commit().await;
                     }
-                    Err(e) => {
-                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                            &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
-                        ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                        gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                    TxnDriver::Postgres => {
+                        let pg_ds = dst_ds.as_any().downcast_ref::<crate::datasource::postgres::PostgresDataSource>()
+                            .ok_or_else(|| AppError::Other("dst_ds is not PostgresDataSource".into()))?;
+
+                        if pg_conn.is_none() {
+                            let conn: sqlx::pool::PoolConnection<sqlx::Postgres> = pg_ds.pool.acquire().await
+                                .map_err(|e| AppError::Other(format!("Failed to acquire PostgreSQL connection for flush: {}", e)))?;
+                            pg_conn = Some(conn);
+                        }
+
+                        let conn = pg_conn.as_mut().unwrap();
+                        let mut txn = conn.begin().await
+                            .map_err(|e| AppError::Other(format!("Failed to begin PostgreSQL txn for flush: {}", e)))?;
+
+                        match pg_ds.bulk_write_in_txn(
+                            &mut txn,
+                            &target_table, &buf_columns, &write_buf,
+                            &conflict_strategy, &upsert_keys, &dst_driver,
+                        ).await {
+                            Ok(n) => {
+                                ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                                gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                                let fail = batch_len.saturating_sub(n as u64);
+                                if fail > 0 {
+                                    ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                    gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                                }
+                            }
+                            Err(e) => {
+                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                    &format!("[{}] Final flush bulk_write failed: {}", label_w, e));
+                                ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            }
+                        }
+
+                        let _ = txn.commit().await;
                     }
                 }
-
-                let _ = txn.commit().await;
             } else {
                 match dst_ds.bulk_write(
                     &target_table, &buf_columns, &write_buf,

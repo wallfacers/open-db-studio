@@ -9,7 +9,7 @@ use super::utils::format_size;
 use crate::{AppError, AppResult};
 
 pub struct PostgresDataSource {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
     mig_session_active: std::sync::atomic::AtomicBool,
 }
 
@@ -293,6 +293,7 @@ impl PostgresDataSource {
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+        let password = config.password.as_deref().unwrap_or("");
         // SSL 模式映射
         let ssl_mode = match config.ssl_mode.as_deref().unwrap_or("disable") {
             "disable" => PgSslMode::Disable,
@@ -306,12 +307,9 @@ impl PostgresDataSource {
             .host(host)
             .port(port)
             .username(username)
+            .password(password)
             .ssl_mode(ssl_mode);
-        if let Some(pw) = config.password.as_deref() {
-            opts = opts.password(pw);
-        }
         // database 为空时显式使用用户名（PG 规范：默认库 = 用户名）
-        // 不能省略，否则 sqlx PgConnectOptions::new() 可能读取 PGDATABASE 环境变量导致连接到错误的库
         let db = config.database.as_deref().filter(|s| !s.is_empty()).unwrap_or(username);
         opts = opts.database(db);
 
@@ -351,6 +349,55 @@ impl PostgresDataSource {
             .connect_with(opts)
             .await?;
         Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false) })
+    }
+
+    /// Execute chunked INSERT within an explicit transaction to reduce fsync overhead.
+    /// Mirrors MySQL's `bulk_write_in_txn` approach: chunk rows by estimated SQL size,
+    /// execute multi-row INSERT per chunk, all within a single txn (one COMMIT).
+    pub async fn bulk_write_in_txn(
+        &self,
+        txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        // PostgreSQL has no max_allowed_packet, but large single statements can
+        // exhaust memory. Use a fixed 16 MB chunk limit.
+        const MAX_SQL_BYTES: usize = 16 * 1024 * 1024;
+
+        let escape_style = self.string_escape_style();
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
+            );
+            let result = sqlx::query(&sql).execute(&mut **txn).await
+                .map_err(|e| AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
     }
 
     async fn bulk_write_copy(&self, table: &str, columns: &[String], rows: &[Vec<serde_json::Value>]) -> AppResult<usize> {
@@ -820,6 +867,8 @@ impl DataSource for PostgresDataSource {
         Ok(())
     }
 
+    fn supports_txn_bulk_write(&self) -> bool { true }
+
     async fn bulk_write(
         &self,
         table: &str,
@@ -861,6 +910,31 @@ impl DataSource for PostgresDataSource {
             }
         }
     }
+}
+
+// ============================================================
+/// Estimate the SQL size for a single row (used for chunk pre-computation).
+/// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
+fn estimate_row_sql_size(
+    row: &[serde_json::Value],
+    _escape_style: &crate::datasource::StringEscapeStyle,
+    columns: &[String],
+    _table: &str,
+    _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+    _upsert_keys: &[String],
+    _driver: &str,
+) -> usize {
+    let mut size = columns.len() * 3;
+    for val in row {
+        size += match val {
+            serde_json::Value::Null => 4,
+            serde_json::Value::Bool(b) => if *b { 4 } else { 5 },
+            serde_json::Value::Number(n) => n.to_string().len() + 1,
+            serde_json::Value::String(s) => 2 + s.len().min(64) + 4,
+            _ => 70,
+        };
+    }
+    size
 }
 
 // ============================================================

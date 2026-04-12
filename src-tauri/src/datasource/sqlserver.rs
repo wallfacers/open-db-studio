@@ -13,6 +13,8 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 pub struct SqlServerDataSource {
     config: tiberius::Config,
     connect_timeout: Duration,
+    /// Session setup done flag (for migration bulk_write context).
+    session_ready: std::sync::atomic::AtomicBool,
 }
 
 impl SqlServerDataSource {
@@ -61,7 +63,7 @@ impl SqlServerDataSource {
         // 超时参数
         let connect_timeout = Duration::from_secs(cfg.connect_timeout_secs.unwrap_or(30) as u64);
 
-        Ok(Self { config, connect_timeout })
+        Ok(Self { config, connect_timeout, session_ready: std::sync::atomic::AtomicBool::new(false) })
     }
 
     async fn connect(&self) -> AppResult<Client<tokio_util::compat::Compat<TcpStream>>> {
@@ -74,9 +76,17 @@ impl SqlServerDataSource {
         .map_err(|e| AppError::Datasource(format!("SQL Server connection failed: {}", e)))?;
         tcp.set_nodelay(true)
             .map_err(|e| AppError::Datasource(e.to_string()))?;
-        Client::connect(self.config.clone(), tcp.compat_write())
+        let mut client = Client::connect(self.config.clone(), tcp.compat_write())
             .await
-            .map_err(|e| AppError::Datasource(e.to_string()))
+            .map_err(|e| AppError::Datasource(e.to_string()))?;
+        // Apply session optimizations on every connection.
+        Self::apply_session_opts(&mut client).await;
+        Ok(client)
+    }
+
+    /// Apply session-level optimizations for bulk writes.
+    async fn apply_session_opts(client: &mut Client<tokio_util::compat::Compat<TcpStream>>) {
+        let _ = client.execute("SET NOCOUNT ON", &[]).await;
     }
 
     /// 带参数查询，返回第一个结果集的所有行。
@@ -482,5 +492,76 @@ impl DataSource for SqlServerDataSource {
             sql, offset, limit
         );
         self.execute(&paged).await
+    }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        // For SQL Server, session opts are already applied per-connection in connect().
+        // This method sets the session_ready flag so bulk_write uses BULK INSERT.
+        self.session_ready.store(true, std::sync::atomic::Ordering::Relaxed);
+        log::info!("SQL Server migration session optimizations enabled (per-connection)");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        self.session_ready.store(false, std::sync::atomic::Ordering::Relaxed);
+        log::info!("SQL Server migration session optimizations reverted");
+        Ok(())
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // BULK INSERT doesn't support ON CONFLICT / UPSERT
+        if !matches!(
+            conflict_strategy,
+            crate::migration::task_mgr::ConflictStrategy::Insert
+                | crate::migration::task_mgr::ConflictStrategy::Overwrite
+        ) {
+            let escape_style = self.string_escape_style();
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            return Ok(result.row_count.min(rows.len()));
+        }
+
+        // Use BULK INSERT from a temp CSV file.
+        let csv_data = crate::datasource::bulk_write::rows_to_csv(rows);
+
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!("odb_bulk_{}.csv", uuid::Uuid::new_v4()));
+        std::fs::write(&file_path, &csv_data)
+            .map_err(|e| AppError::Datasource(format!("Write temp CSV: {}", e)))?;
+
+        // Normalize path for SQL Server (escape single quotes in path).
+        let file_path_str = file_path.to_string_lossy().replace('\'', "''");
+
+        let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "sqlserver");
+        let _col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+
+        let bulk_sql = format!(
+            "BULK INSERT {} FROM '{}' WITH (FIELDTERMINATOR = ',', ROWTERMINATOR = '\\n', FIRSTROW = 1)",
+            quote(table), file_path_str
+        );
+
+        // Execute BULK INSERT on a fresh connection (session opts auto-applied).
+        let mut client = self.connect().await?;
+        let result = client.execute(&bulk_sql, &[]).await
+            .map_err(|e| AppError::Datasource(format!("BULK INSERT: {}", e)))?;
+
+        // Clean up temp file.
+        let _ = std::fs::remove_file(&file_path);
+
+        Ok(result.total() as usize)
     }
 }

@@ -12,6 +12,27 @@ pub struct OracleDataSource {
     username: String,
     #[cfg(feature = "oracle-driver")]
     password: String,
+    mig_session_active: std::sync::atomic::AtomicBool,
+}
+
+/// Convert a serde_json::Value to an Oracle-compatible parameter type.
+#[cfg(feature = "oracle-driver")]
+fn json_to_oracle_param(val: &serde_json::Value) -> oracle_crate::Param {
+    match val {
+        serde_json::Value::Null => oracle_crate::Param::Null,
+        serde_json::Value::Bool(b) => oracle_crate::Param::from(if *b { 1i32 } else { 0i32 }),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                oracle_crate::Param::from(i)
+            } else if let Some(f) = n.as_f64() {
+                oracle_crate::Param::from(f)
+            } else {
+                oracle_crate::Param::from(n.to_string())
+            }
+        }
+        serde_json::Value::String(s) => oracle_crate::Param::from(s.as_str()),
+        other => oracle_crate::Param::from(other.to_string()),
+    }
 }
 
 impl OracleDataSource {
@@ -36,6 +57,7 @@ impl OracleDataSource {
                 connection_string: format!("//{}:{}/{}", host, port, database),
                 username: config.username.as_deref().unwrap_or("").to_string(),
                 password: config.password.as_deref().unwrap_or("").to_string(),
+                mig_session_active: std::sync::atomic::AtomicBool::new(false),
             })
         }
     }
@@ -183,5 +205,134 @@ impl DataSource for OracleDataSource {
 
     fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
         crate::datasource::StringEscapeStyle::TSql
+    }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        // Oracle: disable constraints and optimize session for bulk inserts.
+        // These are applied per-connection in the execute() path.
+        self.mig_session_active.store(true, std::sync::atomic::Ordering::Relaxed);
+        log::info!("Oracle migration session optimizations enabled (per-connection)");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        self.mig_session_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        log::info!("Oracle migration session optimizations reverted");
+        Ok(())
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        #[cfg(not(feature = "oracle-driver"))]
+        {
+            let _ = (table, columns, rows, conflict_strategy, upsert_keys, driver);
+            return Err(AppError::Datasource("Oracle driver not enabled.".into()));
+        }
+
+        #[cfg(feature = "oracle-driver")]
+        {
+            use oracle_crate::Batch;
+
+            let conn_str = self.connection_string.clone();
+            let user = self.username.clone();
+            let pass = self.password.clone();
+            let table = table.to_string();
+            let columns = columns.to_vec();
+            let rows = rows.to_vec();
+            let conflict_strategy = conflict_strategy.clone();
+            let upsert_keys = upsert_keys.to_vec();
+            let driver = driver.to_string();
+
+            // Oracle per-query connection: open connection, do batch insert in txn.
+            let total = tokio::task::spawn_blocking(move || {
+                let conn = oracle_crate::Connection::connect(&user, &pass, &conn_str)
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+                // Session optimizations
+                let _ = conn.execute("ALTER SESSION SET SKIP_UNUSABLE_INDEXES = TRUE", &[]);
+                let _ = conn.execute("ALTER SESSION SET COMMIT_WRITE = 'BATCH,NOWAIT'", &[]);
+
+                let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "oracle");
+                let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+                let placeholders: Vec<String> = (0..columns.len())
+                    .map(|i| format!(":{}", i + 1))
+                    .collect();
+                let values_clause = placeholders.join(", ");
+
+                let sql = match &conflict_strategy {
+                    crate::migration::task_mgr::ConflictStrategy::Insert => {
+                        format!("INSERT INTO {} ({}) VALUES ({})", quote(&table), col_list, values_clause)
+                    }
+                    crate::migration::task_mgr::ConflictStrategy::Replace => {
+                        // Oracle uses MERGE for replace semantics
+                        let pk_cols = if upsert_keys.is_empty() {
+                            columns.iter().take(1).map(|c| quote(c)).collect::<Vec<_>>()
+                        } else {
+                            upsert_keys.iter().map(|c| quote(c)).collect::<Vec<_>>()
+                        };
+                        let merge_on = pk_cols.iter()
+                            .map(|c| format!("T.{0} = S.{0}", c))
+                            .collect::<Vec<_>>().join(" AND ");
+                        let update_set = columns.iter().map(|c| {
+                            let q = quote(c);
+                            format!("T.{q} = S.{q}")
+                        }).collect::<Vec<_>>().join(", ");
+                        format!(
+                            "MERGE INTO {} T USING (SELECT {} FROM DUAL) S ({}) \
+                             ON ({}) \
+                             WHEN MATCHED THEN UPDATE SET {} \
+                             WHEN NOT MATCHED THEN INSERT ({}) VALUES ({})",
+                            quote(&table), values_clause, col_list, merge_on,
+                            update_set, col_list, values_clause,
+                        )
+                    }
+                    crate::migration::task_mgr::ConflictStrategy::Skip => {
+                        format!(
+                            "INSERT /*+ IGNORE_ROW_ON_DUPKEY_INDEX({}) */ INTO {} ({}) VALUES ({})",
+                            quote(&table), quote(&table), col_list, values_clause
+                        )
+                    }
+                    crate::migration::task_mgr::ConflictStrategy::Overwrite => {
+                        format!("INSERT INTO {} ({}) VALUES ({})", quote(&table), col_list, values_clause)
+                    }
+                };
+
+                let mut stmt = conn.statement(&sql).build()
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+                // Batch insert: bind rows and execute in a single transaction
+                let mut batch = Batch::new();
+                for row in &rows {
+                    let mut params: Vec<oracle_crate::Param> = Vec::with_capacity(columns.len());
+                    for val in row {
+                        params.push(json_to_oracle_param(val));
+                    }
+                    batch.add_row(&params);
+                }
+
+                let total_executed = stmt.execute_batch(&batch)
+                    .map_err(|e| AppError::Datasource(format!("Oracle batch insert: {}", e)))?;
+
+                conn.commit()
+                    .map_err(|e| AppError::Datasource(e.to_string()))?;
+
+                Ok::<usize, AppError>(total_executed as usize)
+            })
+            .await
+            .map_err(|e| AppError::Datasource(e.to_string()))??;
+
+            Ok(total)
+        }
     }
 }

@@ -66,13 +66,11 @@ pub async fn run_precheck_for_job(
             continue;
         }
 
-        // 1. Type compatibility check
         let type_issues = super::ddl_convert::check_type_compatibility(
             &src_config.driver, &dst_config.driver, table_name, &src_cols,
         );
         all_items.extend(type_issues);
 
-        // 2. NOT NULL constraint check
         for col in &src_cols {
             if !col.is_nullable && col.column_default.is_none() && !col.is_primary_key {
                 all_items.push(CheckItem {
@@ -85,7 +83,6 @@ pub async fn run_precheck_for_job(
             }
         }
 
-        // 3. Primary key check
         let has_pk = src_cols.iter().any(|c| c.is_primary_key);
         if !has_pk {
             all_items.push(CheckItem {

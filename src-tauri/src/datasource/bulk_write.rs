@@ -8,7 +8,7 @@ use crate::migration::task_mgr::ConflictStrategy;
 
 type Row = Vec<serde_json::Value>;
 
-// ── TSV serialization (MySQL LOAD DATA / PostgreSQL COPY) ─────────────────
+// -- TSV serialization (MySQL LOAD DATA LOCAL INFILE) --
 
 /// Escape a string value for TSV format.
 pub fn tsv_escape_into(s: &str, buf: &mut Vec<u8>) {
@@ -76,7 +76,7 @@ pub fn rows_to_tsv(rows: &[Row]) -> Vec<u8> {
 
 // ── PostgreSQL COPY CSV serialization ─────────────────────────────────────
 
-fn csv_escape_into(s: &str, buf: &mut Vec<u8>) {
+pub fn csv_escape_into(s: &str, buf: &mut Vec<u8>) {
     let needs_quoting = s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r');
     if needs_quoting {
         buf.push(b'"');
@@ -227,6 +227,57 @@ pub fn build_insert_sql_optimized(
 ) -> String {
     let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
     tmpl.build_chunk_sql(rows, escape_style, columns.len())
+}
+
+/// Build multi-row INSERT SQL from native MigrationRows using an InsertTemplate.
+/// Shared between MySQL and PostgreSQL to avoid byte-for-byte duplication.
+pub fn build_native_chunk_sql(
+    tmpl: &InsertTemplate,
+    rows: &[crate::migration::native_row::MigrationRow],
+    escape_style: &crate::datasource::StringEscapeStyle,
+) -> String {
+    let num_cols = rows.first().map(|r| r.values.len()).unwrap_or(0);
+    let estimated_size = tmpl.prefix.len() + rows.len() * num_cols * 30 + tmpl.suffix.len();
+    let mut sql = String::with_capacity(estimated_size);
+    sql.push_str(&tmpl.prefix);
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        if row_idx > 0 {
+            sql.push_str(", ");
+        }
+        sql.push('(');
+        for (col_idx, v) in row.values.iter().enumerate() {
+            if col_idx > 0 {
+                sql.push_str(", ");
+            }
+            v.to_sql_literal_into(escape_style, &mut sql);
+        }
+        sql.push(')');
+    }
+
+    sql.push_str(&tmpl.suffix);
+    sql
+}
+
+/// Estimate the SQL size for a single row (used for chunk pre-computation).
+/// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
+/// Uses the more accurate Postgres strategy: actually computes number display length
+/// rather than MySQL's fixed 25-byte assumption.
+pub fn estimate_row_sql_size(
+    row: &[serde_json::Value],
+    num_cols: usize,
+) -> usize {
+    let mut size = num_cols * 3;
+    for val in row {
+        size += match val {
+            serde_json::Value::Null => 4,
+            serde_json::Value::Bool(b) => if *b { 4 } else { 5 },
+            serde_json::Value::Number(n) => n.to_string().len() + 1,
+            serde_json::Value::String(s) => 6 + s.len().min(64),
+            _ => 70,
+        };
+    }
+    size
 }
 
 /// Build conflict clause — extracted for reuse by drivers (e.g., PostgreSQL temp table merge).

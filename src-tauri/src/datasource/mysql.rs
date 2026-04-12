@@ -883,7 +883,7 @@ impl MySqlDataSource {
         let tmpl = bulk_write::InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
 
         let row_sizes: Vec<usize> = rows.iter()
-            .map(|r| estimate_row_sql_size(r, &escape_style, num_cols))
+            .map(|r| estimate_row_sql_size(r, num_cols))
             .collect();
 
         let mut total_written = 0usize;
@@ -937,34 +937,8 @@ impl MySqlDataSource {
 
 }
 
-/// Build multi-row INSERT SQL from native MigrationRows using an InsertTemplate.
-fn build_native_chunk_sql(
-    tmpl: &crate::datasource::bulk_write::InsertTemplate,
-    rows: &[crate::migration::native_row::MigrationRow],
-    escape_style: &crate::datasource::StringEscapeStyle,
-) -> String {
-    let num_cols = rows.first().map(|r| r.values.len()).unwrap_or(0);
-    let estimated_size = tmpl.prefix.len() + rows.len() * num_cols * 30 + tmpl.suffix.len();
-    let mut sql = String::with_capacity(estimated_size);
-    sql.push_str(&tmpl.prefix);
-
-    for (row_idx, row) in rows.iter().enumerate() {
-        if row_idx > 0 {
-            sql.push_str(", ");
-        }
-        sql.push('(');
-        for (col_idx, v) in row.values.iter().enumerate() {
-            if col_idx > 0 {
-                sql.push_str(", ");
-            }
-            v.to_sql_literal_into(escape_style, &mut sql);
-        }
-        sql.push(')');
-    }
-
-    sql.push_str(&tmpl.suffix);
-    sql
-}
+// Removed: build_native_chunk_sql and estimate_row_sql_size — now in bulk_write.rs
+use crate::datasource::bulk_write::{build_native_chunk_sql, estimate_row_sql_size};
 
 /// Shared INSERT chunking logic using a pool reference for execution.
 async fn bulk_write_chunked_impl(
@@ -987,7 +961,7 @@ async fn bulk_write_chunked_impl(
     let tmpl = bulk_write::InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
 
     let row_sizes: Vec<usize> = rows.iter()
-        .map(|r| estimate_row_sql_size(r, &escape_style, num_cols))
+        .map(|r| estimate_row_sql_size(r, num_cols))
         .collect();
 
     let mut total_written = 0usize;
@@ -1060,35 +1034,7 @@ impl MySqlDataSource {
     }
 }
 
-/// Estimate the SQL size for a single row (used for chunk pre-computation).
-/// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
-#[allow(dead_code)]
-fn estimate_row_sql_size(
-    row: &[serde_json::Value],
-    _escape_style: &crate::datasource::StringEscapeStyle,
-    num_cols: usize,
-) -> usize {
-    // Overhead: "(NULL, NULL, ...)," ≈ cols*3 bytes
-    let mut size = num_cols * 3;
-    for val in row {
-        size += match val {
-            serde_json::Value::Null => 4,          // "NULL"
-            serde_json::Value::Bool(b) => if *b { 4 } else { 5 }, // "true"/"false" as literals
-            serde_json::Value::Number(_) => {
-                // Max number display length without allocating.
-                // u64::MAX = 20 digits, i64::MIN = 20 chars, f64 max ≈ 24 chars.
-                // Use 24 as conservative upper bound + 1 for comma overhead.
-                25
-            }
-            serde_json::Value::String(s) => {
-                // Opening/closing quotes + content + escape headroom + separator
-                3 + s.len() + (s.len() / 16)
-            }
-            _ => 70, // array/object: conservative default
-        };
-    }
-    size
-}
+// estimate_row_sql_size moved to bulk_write.rs — imported above
 
 impl MySqlDataSource {
     /// LOAD DATA LOCAL INFILE from native MigrationRows (avoids serde_json::Value).

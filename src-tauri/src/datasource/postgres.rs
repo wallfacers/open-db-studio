@@ -384,7 +384,7 @@ impl PostgresDataSource {
 
         let escape_style = self.string_escape_style();
         let row_sizes: Vec<usize> = rows.iter()
-            .map(|r| estimate_row_sql_size(r, &escape_style, columns, table, conflict_strategy, upsert_keys, driver))
+            .map(|r| estimate_row_sql_size(r, columns.len()))
             .collect();
 
         let mut total_written = 0usize;
@@ -521,7 +521,7 @@ impl PostgresDataSource {
             }
 
             let chunk = &rows[chunk_start..chunk_end];
-            let sql = build_pg_native_chunk_sql(&tmpl, chunk, &escape_style);
+            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
 
             let result = self.execute(&sql).await?;
             total_written += result.row_count.min(chunk.len());
@@ -1122,60 +1122,8 @@ impl DataSource for PostgresDataSource {
     }
 }
 
-// ============================================================
-/// Build multi-row INSERT SQL from native MigrationRows (PostgreSQL).
-fn build_pg_native_chunk_sql(
-    tmpl: &crate::datasource::bulk_write::InsertTemplate,
-    rows: &[crate::migration::native_row::MigrationRow],
-    escape_style: &crate::datasource::StringEscapeStyle,
-) -> String {
-    let num_cols = rows.first().map(|r| r.values.len()).unwrap_or(0);
-    let estimated_size = tmpl.prefix.len() + rows.len() * num_cols * 30 + tmpl.suffix.len();
-    let mut sql = String::with_capacity(estimated_size);
-    sql.push_str(&tmpl.prefix);
-
-    for (row_idx, row) in rows.iter().enumerate() {
-        if row_idx > 0 {
-            sql.push_str(", ");
-        }
-        sql.push('(');
-        for (col_idx, v) in row.values.iter().enumerate() {
-            if col_idx > 0 {
-                sql.push_str(", ");
-            }
-            v.to_sql_literal_into(escape_style, &mut sql);
-        }
-        sql.push(')');
-    }
-
-    sql.push_str(&tmpl.suffix);
-    sql
-}
-
-/// Estimate the SQL size for a single row (used for chunk pre-computation).
-/// Lightweight O(cols) estimation — no SQL string construction, no heap allocations.
-#[allow(dead_code)]
-fn estimate_row_sql_size(
-    row: &[serde_json::Value],
-    _escape_style: &crate::datasource::StringEscapeStyle,
-    columns: &[String],
-    _table: &str,
-    _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
-    _upsert_keys: &[String],
-    _driver: &str,
-) -> usize {
-    let mut size = columns.len() * 3;
-    for val in row {
-        size += match val {
-            serde_json::Value::Null => 4,
-            serde_json::Value::Bool(b) => if *b { 4 } else { 5 },
-            serde_json::Value::Number(n) => n.to_string().len() + 1,
-            serde_json::Value::String(s) => 2 + s.len().min(64) + 4,
-            _ => 70,
-        };
-    }
-    size
-}
+// build_pg_native_chunk_sql and estimate_row_sql_size moved to bulk_write.rs
+use crate::datasource::bulk_write::{build_native_chunk_sql, estimate_row_sql_size};
 
 // ============================================================
 // 集成测试：验证 PG schema 相关查询行为

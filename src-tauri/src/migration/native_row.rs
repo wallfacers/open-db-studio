@@ -10,6 +10,7 @@
 
 use crate::datasource::StringEscapeStyle;
 use crate::datasource::utils::escape_string_literal_into;
+use crate::datasource::bulk_write::{tsv_escape_into, csv_escape_into};
 use std::fmt::Write;
 use std::io::Write as IoWrite;
 
@@ -46,11 +47,9 @@ pub fn decode_mysql_column(
 ) -> MigrationValue {
     use sqlx::Row;
 
-    // String types
     if let Ok(val) = row.try_get::<Option<String>, _>(col_idx) {
         return val.map(MigrationValue::Text).unwrap_or(MigrationValue::Null);
     }
-    // Date/Time types
     if let Ok(val) = row.try_get::<Option<chrono::NaiveDateTime>, _>(col_idx) {
         return val.map(|v| MigrationValue::Text(v.to_string())).unwrap_or(MigrationValue::Null);
     }
@@ -60,35 +59,27 @@ pub fn decode_mysql_column(
     if let Ok(val) = row.try_get::<Option<chrono::NaiveTime>, _>(col_idx) {
         return val.map(|v| MigrationValue::Text(v.to_string())).unwrap_or(MigrationValue::Null);
     }
-    // Decimal → keep as string (exact representation)
     if let Ok(val) = row.try_get::<Option<rust_decimal::Decimal>, _>(col_idx) {
         return val.map(|v| MigrationValue::Decimal(v.to_string())).unwrap_or(MigrationValue::Null);
     }
-    // BIGINT UNSIGNED
     if let Ok(val) = row.try_get::<Option<u64>, _>(col_idx) {
         return val.map(MigrationValue::UInt).unwrap_or(MigrationValue::Null);
     }
-    // BIGINT SIGNED / INT / SMALLINT / TINYINT
     if let Ok(val) = row.try_get::<Option<i64>, _>(col_idx) {
         return val.map(MigrationValue::Int).unwrap_or(MigrationValue::Null);
     }
-    // YEAR (u16)
     if let Ok(val) = row.try_get::<Option<u16>, _>(col_idx) {
         return val.map(|v| MigrationValue::Int(v as i64)).unwrap_or(MigrationValue::Null);
     }
-    // FLOAT / DOUBLE
     if let Ok(val) = row.try_get::<Option<f64>, _>(col_idx) {
         return val.map(MigrationValue::Float).unwrap_or(MigrationValue::Null);
     }
-    // TINYINT(1) as bool
     if let Ok(val) = row.try_get::<Option<bool>, _>(col_idx) {
         return val.map(MigrationValue::Bool).unwrap_or(MigrationValue::Null);
     }
-    // JSON column
     if let Ok(val) = row.try_get::<Option<serde_json::Value>, _>(col_idx) {
         return val.map(|v| MigrationValue::Text(v.to_string())).unwrap_or(MigrationValue::Null);
     }
-    // BLOB / VARBINARY / BINARY
     if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(col_idx) {
         return val.map(MigrationValue::Blob).unwrap_or(MigrationValue::Null);
     }
@@ -105,7 +96,6 @@ pub fn decode_postgres_column(
 ) -> MigrationValue {
     use sqlx::Row;
 
-    // Integer types (check widest first)
     if let Ok(val) = row.try_get::<Option<i64>, _>(col_idx) {
         return val.map(MigrationValue::Int).unwrap_or(MigrationValue::Null);
     }
@@ -115,34 +105,27 @@ pub fn decode_postgres_column(
     if let Ok(val) = row.try_get::<Option<i16>, _>(col_idx) {
         return val.map(|v| MigrationValue::Int(v as i64)).unwrap_or(MigrationValue::Null);
     }
-    // Float types
     if let Ok(val) = row.try_get::<Option<f64>, _>(col_idx) {
         return val.map(MigrationValue::Float).unwrap_or(MigrationValue::Null);
     }
     if let Ok(val) = row.try_get::<Option<f32>, _>(col_idx) {
         return val.map(|v| MigrationValue::Float(v as f64)).unwrap_or(MigrationValue::Null);
     }
-    // Numeric/Decimal
     if let Ok(val) = row.try_get::<Option<rust_decimal::Decimal>, _>(col_idx) {
         return val.map(|v| MigrationValue::Decimal(v.to_string())).unwrap_or(MigrationValue::Null);
     }
-    // Bool
     if let Ok(val) = row.try_get::<Option<bool>, _>(col_idx) {
         return val.map(MigrationValue::Bool).unwrap_or(MigrationValue::Null);
     }
-    // UUID
     if let Ok(val) = row.try_get::<Option<uuid::Uuid>, _>(col_idx) {
         return val.map(|v| MigrationValue::Text(v.to_string())).unwrap_or(MigrationValue::Null);
     }
-    // JSON/JSONB
     if let Ok(val) = row.try_get::<Option<serde_json::Value>, _>(col_idx) {
         return val.map(|v| MigrationValue::Text(v.to_string())).unwrap_or(MigrationValue::Null);
     }
-    // Bytea
     if let Ok(val) = row.try_get::<Option<Vec<u8>>, _>(col_idx) {
         return val.map(MigrationValue::Blob).unwrap_or(MigrationValue::Null);
     }
-    // Text / varchar / bpchar / timestamp / date / time / inet / etc.
     if let Ok(val) = row.try_get::<Option<String>, _>(col_idx) {
         return val.map(MigrationValue::Text).unwrap_or(MigrationValue::Null);
     }
@@ -309,40 +292,6 @@ impl MigrationValue {
                 serde_json::Value::String(format!("0x{}", hex::encode(bytes)))
             }
         }
-    }
-}
-
-// ── TSV/CSV helpers ──────────────────────────────────────────────────────────
-
-/// Escape a string for TSV format (shared with bulk_write.rs).
-fn tsv_escape_into(s: &str, buf: &mut Vec<u8>) {
-    for b in s.bytes() {
-        match b {
-            b'\t' => buf.extend_from_slice(b"\\t"),
-            b'\n' => buf.extend_from_slice(b"\\n"),
-            b'\r' => buf.extend_from_slice(b"\\r"),
-            b'\\' => buf.extend_from_slice(b"\\\\"),
-            b'\0' => buf.extend_from_slice(b"\\0"),
-            _ => buf.push(b),
-        }
-    }
-}
-
-/// Escape a string for CSV format (PostgreSQL COPY).
-fn csv_escape_into(s: &str, buf: &mut Vec<u8>) {
-    let needs_quoting = s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r');
-    if needs_quoting {
-        buf.push(b'"');
-        for b in s.bytes() {
-            if b == b'"' {
-                buf.extend_from_slice(b"\"\"");
-            } else {
-                buf.push(b);
-            }
-        }
-        buf.push(b'"');
-    } else {
-        buf.extend_from_slice(s.as_bytes());
     }
 }
 

@@ -44,6 +44,121 @@ const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 /// is unreachable (e.g., disk full, server down).
 const CONSECUTIVE_FAIL_LIMIT: usize = 5;
 
+/// Which bulk write method to use.
+enum WriteMethod<'a> {
+    BulkWrite {
+        rows: &'a Vec<Row>,
+    },
+    BulkWriteNative {
+        rows: &'a Vec<crate::migration::native_row::MigrationRow>,
+    },
+}
+
+/// Execute a batch write with semaphore guard and timeout.
+/// Returns (write_result, success). On timeout, logs warning and updates stats.
+async fn flush_write_batch(
+    dst_ds: Arc<dyn crate::datasource::DataSource>,
+    semaphore: Arc<Semaphore>,
+    target_table: &str,
+    buf_columns: &[String],
+    write_method: WriteMethod<'_>,
+    conflict_strategy: &ConflictStrategy,
+    upsert_keys: &[String],
+    dst_driver: &str,
+    batch_len: u64,
+    app_writer: &AppHandle,
+    job_id: i64,
+    run_id_w: &str,
+    label_w: &str,
+    ms_writer: &PipelineStats,
+    gs_writer: &PipelineStats,
+) -> Result<(Result<usize, AppError>, bool), AppError> {
+    let _permit = semaphore.acquire_owned().await
+        .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+    let dst_ds_ref = dst_ds.as_ref();
+    let fut = match write_method {
+        WriteMethod::BulkWrite { rows } => dst_ds_ref.bulk_write(
+            target_table, buf_columns, rows, conflict_strategy, upsert_keys, dst_driver,
+        ),
+        WriteMethod::BulkWriteNative { rows } => dst_ds_ref.bulk_write_native(
+            target_table, buf_columns, rows, conflict_strategy, upsert_keys, dst_driver,
+        ),
+    };
+
+    let res = tokio::time::timeout(
+        tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+        fut,
+    ).await;
+
+    match res {
+        Err(_) => {
+            ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+            gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+            emit_log(app_writer, job_id, run_id_w, "WARN",
+                &format!("[{}] Write batch timed out after {}s ({} rows failed)",
+                    label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+            Ok((Err(AppError::Other("write timeout".into())), false))
+        }
+        Ok(r) => Ok((r, true)),
+    }
+}
+
+/// Handle write result: update stats, check circuit breakers.
+macro_rules! handle_write_result {
+    ($error_count:expr, $consecutive_full_fails:expr, $res:expr, $batch_len:expr,
+     $app_writer:expr, $job_id:expr, $run_id_w:expr, $label_w:expr,
+     $ms_writer:expr, $gs_writer:expr, $error_limit:expr) => {{
+        match &$res {
+            Ok(n) => {
+                let ok = *n as u64;
+                let fail = $batch_len.saturating_sub(ok);
+                $ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                $gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                if fail > 0 {
+                    $ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                    $gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                    $error_count = $error_count.saturating_add(fail as usize);
+                }
+                if ok == 0 && fail > 0 {
+                    $consecutive_full_fails += 1;
+                } else {
+                    $consecutive_full_fails = 0;
+                }
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                if is_connection_death(&err_msg) {
+                    emit_log($app_writer, $job_id, $run_id_w, "WARN",
+                        &format!("[{}] Connection lost: {} ({} rows failed, will reconnect)", $label_w, err_msg, $batch_len));
+                    $ms_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                    $gs_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                    $error_count = $error_count.saturating_add($batch_len as usize);
+                } else {
+                    emit_log($app_writer, $job_id, $run_id_w, "ERROR",
+                        &format!("[{}] bulk_write failed: {}", $label_w, err_msg));
+                    $ms_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                    $gs_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
+                    $error_count = $error_count.saturating_add($batch_len as usize);
+                    $consecutive_full_fails += 1;
+                }
+            }
+        }
+        if $consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+            emit_log($app_writer, $job_id, $run_id_w, "ERROR",
+                &format!("[{}] Circuit breaker: {} consecutive batches fully failed", $label_w, $consecutive_full_fails));
+            return Err(AppError::Other(format!(
+                "Circuit breaker: {} consecutive write batches fully failed", $consecutive_full_fails
+            )));
+        }
+        if $error_limit > 0 && $error_count >= $error_limit {
+            return Err(AppError::Other(format!(
+                "Error limit ({}) exceeded: {} errors", $error_limit, $error_count
+            )));
+        }
+    }};
+}
+
 // ── Log collector (thread-safe) ──────────────────────────────────────────────
 
 fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> MigrationLogEvent {
@@ -1128,7 +1243,8 @@ async fn run_reader_writer_pair(
     let gs_reader = global_stats.clone();
     let cancel_r = cancel.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
-        use crate::migration::splitter::{parse_i64_from_json, quote_col_for_driver};
+        use crate::datasource::utils::quote_identifier_for_driver;
+        use crate::migration::splitter::parse_i64_from_json;
         use std::time::Duration;
 
         // Detect native read support: MySQL/Doris/TiDB and PostgreSQL override migration_read_sql
@@ -1141,7 +1257,7 @@ async fn run_reader_writer_pair(
 
         if let Some((pk_col, split)) = pk_split {
             // ── Cursor-based split reader (O(n)) ──────────────────────────────
-            let pk_q = quote_col_for_driver(&pk_col, &src_driver);
+            let pk_q = quote_identifier_for_driver(&pk_col, &src_driver);
             let mut cursor = split.start;
             let mut pk_col_idx: Option<usize> = None;
             let mut columns_opt: Option<Vec<String>> = None;
@@ -1357,145 +1473,6 @@ async fn run_reader_writer_pair(
         let mut native_buf: Vec<crate::migration::native_row::MigrationRow> = Vec::with_capacity(write_batch_size);
         let mut buf_columns: Vec<String> = Vec::new();
 
-        /// Handle write result: update stats, check circuit breakers.
-        macro_rules! handle_write_result {
-            ($res:expr, $batch_len:expr) => {{
-                match &$res {
-                    Ok(n) => {
-                        let ok = *n as u64;
-                        let fail = $batch_len.saturating_sub(ok);
-                        ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                        gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
-                        if fail > 0 {
-                            ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
-                            error_count = error_count.saturating_add(fail as usize);
-                        }
-                        if ok == 0 && fail > 0 {
-                            consecutive_full_fails += 1;
-                        } else {
-                            consecutive_full_fails = 0;
-                        }
-                    }
-                    Err(e) => {
-                        let err_msg = e.to_string();
-                        if is_connection_death(&err_msg) {
-                            emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                &format!("[{}] Connection lost: {} ({} rows failed, will reconnect)", label_w, err_msg, $batch_len));
-                            ms_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
-                            error_count = error_count.saturating_add($batch_len as usize);
-                        } else {
-                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                &format!("[{}] bulk_write failed: {}", label_w, err_msg));
-                            ms_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
-                            gs_writer.rows_failed.fetch_add($batch_len, Ordering::Relaxed);
-                            error_count = error_count.saturating_add($batch_len as usize);
-                            consecutive_full_fails += 1;
-                        }
-                    }
-                }
-                if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                    emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                        &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
-                    return Err(AppError::Other(format!(
-                        "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                    )));
-                }
-                if error_limit > 0 && error_count >= error_limit {
-                    return Err(AppError::Other(format!(
-                        "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                    )));
-                }
-            }};
-        }
-
-        /// Execute a single bulk_write with timeout, return (result, wrote_ok).
-        /// On timeout, logs the error and updates stats (circuit breaker checks done inline).
-        async fn flush_write_batch(
-            dst_ds: &dyn crate::datasource::DataSource,
-            semaphore: Arc<Semaphore>,
-            target_table: &str,
-            buf_columns: &[String],
-            rows: Vec<Row>,
-            conflict_strategy: &ConflictStrategy,
-            upsert_keys: &[String],
-            dst_driver: &str,
-            app_writer: &AppHandle,
-            job_id: i64,
-            run_id_w: &str,
-            label_w: &str,
-            ms_writer: &PipelineStats,
-            gs_writer: &PipelineStats,
-        ) -> Result<(Result<usize, AppError>, bool), AppError> {
-            let batch_len = rows.len() as u64;
-            let _permit = semaphore.acquire_owned().await
-                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-
-            let res = tokio::time::timeout(
-                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                dst_ds.bulk_write(
-                    target_table, buf_columns, &rows,
-                    conflict_strategy, upsert_keys, dst_driver,
-                ),
-            ).await;
-
-            match res {
-                Err(_) => {
-                    emit_log(app_writer, job_id, run_id_w, "WARN",
-                        &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
-                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    // Caller handles circuit breaker checks
-                    Ok((Err(AppError::Other("write timeout".into())), false))
-                }
-                Ok(r) => Ok((r, true)),
-            }
-        }
-
-        /// Execute a single bulk_write_native with timeout, return (result, wrote_ok).
-        async fn flush_write_batch_native(
-            dst_ds: &dyn crate::datasource::DataSource,
-            semaphore: Arc<Semaphore>,
-            target_table: &str,
-            buf_columns: &[String],
-            rows: &[crate::migration::native_row::MigrationRow],
-            conflict_strategy: &ConflictStrategy,
-            upsert_keys: &[String],
-            dst_driver: &str,
-            app_writer: &AppHandle,
-            job_id: i64,
-            run_id_w: &str,
-            label_w: &str,
-            ms_writer: &PipelineStats,
-            gs_writer: &PipelineStats,
-        ) -> Result<(Result<usize, AppError>, bool), AppError> {
-            let batch_len = rows.len() as u64;
-            let _permit = semaphore.acquire_owned().await
-                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-
-            let res = tokio::time::timeout(
-                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                dst_ds.bulk_write_native(
-                    target_table, buf_columns, rows,
-                    conflict_strategy, upsert_keys, dst_driver,
-                ),
-            ).await;
-
-            match res {
-                Err(_) => {
-                    emit_log(app_writer, job_id, run_id_w, "WARN",
-                        &format!("[{}] bulk_write_native timed out after {}s ({} rows failed)",
-                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    Ok((Err(AppError::Other("write timeout".into())), false))
-                }
-                Ok(r) => Ok((r, true)),
-            }
-        }
-
         while let Some(msg) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
                 break;
@@ -1511,8 +1488,11 @@ async fn run_reader_writer_pair(
                         let batch_len = rows.len() as u64;
 
                         let (write_res, wrote_ok) = flush_write_batch(
-                            dst_ds.as_ref(), semaphore.clone(), &target_table, &buf_columns, rows,
+                            dst_ds.clone(), semaphore.clone(),
+                            &target_table, &buf_columns,
+                            WriteMethod::BulkWrite { rows: &rows },
                             &conflict_strategy, &upsert_keys, &dst_driver,
+                            batch_len,
                             &app_writer, job_id, &run_id_w, &label_w,
                             &ms_writer, &gs_writer,
                         ).await?;
@@ -1520,6 +1500,7 @@ async fn run_reader_writer_pair(
                         if !wrote_ok {
                             // Timeout: update circuit breaker state
                             consecutive_full_fails += 1;
+                            error_count = error_count.saturating_add(batch_len as usize);
                             if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
                                 emit_log(&app_writer, job_id, &run_id_w, "ERROR",
                                     &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
@@ -1535,9 +1516,8 @@ async fn run_reader_writer_pair(
                             continue;
                         }
 
-                        handle_write_result!(write_res, batch_len);
-
-                        // write_pause_ms after successful write
+                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len,
+                            &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
                         if write_res.is_ok() {
                             if let Some(pause_ms) = write_pause_ms {
                                 if pause_ms > 0 {
@@ -1565,9 +1545,12 @@ async fn run_reader_writer_pair(
                         let batch_rows: Vec<_> = native_buf.drain(..write_batch_size).collect();
                         let batch_len = batch_rows.len() as u64;
 
-                        let (write_res, wrote_ok) = flush_write_batch_native(
-                            dst_ds.as_ref(), semaphore.clone(), &target_table, &buf_columns, &batch_rows,
+                        let (write_res, wrote_ok) = flush_write_batch(
+                            dst_ds.clone(), semaphore.clone(),
+                            &target_table, &buf_columns,
+                            WriteMethod::BulkWriteNative { rows: &batch_rows },
                             &conflict_strategy, &upsert_keys, &dst_driver,
+                            batch_len,
                             &app_writer, job_id, &run_id_w, &label_w,
                             &ms_writer, &gs_writer,
                         ).await?;
@@ -1590,7 +1573,8 @@ async fn run_reader_writer_pair(
                             continue;
                         }
 
-                        handle_write_result!(write_res, batch_len);
+                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len,
+                            &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
                         if write_res.is_ok() {
                             if let Some(pause_ms) = write_pause_ms {
                                 if pause_ms > 0 {
@@ -1607,57 +1591,41 @@ async fn run_reader_writer_pair(
         if !write_buf.is_empty() {
             let rows = std::mem::replace(&mut write_buf, Vec::new());
             let batch_len = rows.len() as u64;
-            let _permit = semaphore.clone().acquire_owned().await
-                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-
-            let res = tokio::time::timeout(
-                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                dst_ds.bulk_write(
-                    &target_table, &buf_columns, &rows,
-                    &conflict_strategy, &upsert_keys, &dst_driver,
-                ),
-            ).await;
-
-            match res {
-                Err(_) => {
-                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                        &format!("[{}] Final flush timed out after {}s ({} rows failed)",
-                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                }
-                Ok(r) => {
-                    handle_write_result!(r, batch_len);
-                }
+            let (r, wrote_ok) = flush_write_batch(
+                dst_ds.clone(), semaphore.clone(),
+                &target_table, &buf_columns,
+                WriteMethod::BulkWrite { rows: &rows },
+                &conflict_strategy, &upsert_keys, &dst_driver,
+                batch_len,
+                &app_writer, job_id, &run_id_w, &label_w,
+                &ms_writer, &gs_writer,
+            ).await?;
+            if !wrote_ok {
+                error_count = error_count.saturating_add(batch_len as usize);
+                consecutive_full_fails += 1;
             }
+            handle_write_result!(error_count, consecutive_full_fails, r, batch_len,
+                &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
         }
 
         // Drain remainder (MigrationBatch path)
         if !native_buf.is_empty() {
             let batch_len = native_buf.len() as u64;
-            let _permit = semaphore.clone().acquire_owned().await
-                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
-
-            let res = tokio::time::timeout(
-                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                dst_ds.bulk_write_native(
-                    &target_table, &buf_columns, &native_buf,
-                    &conflict_strategy, &upsert_keys, &dst_driver,
-                ),
-            ).await;
-
-            match res {
-                Err(_) => {
-                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                        &format!("[{}] Final native flush timed out ({} rows failed)",
-                            label_w, batch_len));
-                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                }
-                Ok(r) => {
-                    handle_write_result!(r, batch_len);
-                }
+            let (r, wrote_ok) = flush_write_batch(
+                dst_ds.clone(), semaphore.clone(),
+                &target_table, &buf_columns,
+                WriteMethod::BulkWriteNative { rows: &native_buf },
+                &conflict_strategy, &upsert_keys, &dst_driver,
+                batch_len,
+                &app_writer, job_id, &run_id_w, &label_w,
+                &ms_writer, &gs_writer,
+            ).await?;
+            if !wrote_ok {
+                error_count = error_count.saturating_add(batch_len as usize);
+                consecutive_full_fails += 1;
             }
+            handle_write_result!(error_count, consecutive_full_fails, r, batch_len,
+                &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
         }
 
         Ok(())

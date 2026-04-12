@@ -47,17 +47,6 @@ pub fn parse_i64_from_json(v: &Value) -> Option<i64> {
         .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
 }
 
-/// Quote a column identifier for the given driver.
-pub fn quote_col_for_driver(col: &str, driver: &str) -> String {
-    match driver {
-        "mysql" | "doris" | "tidb" | "clickhouse" => {
-            format!("`{}`", col.replace('`', "``"))
-        }
-        "sqlserver" => format!("[{}]", col.replace(']', "]]")),
-        _ => format!("\"{}\"", col.replace('"', "\"\"")),
-    }
-}
-
 /// Query MIN and MAX of `pk_col` over `source_query`, then return PK range splits.
 ///
 /// Returns `None` when:
@@ -74,7 +63,7 @@ pub async fn compute_pk_splits(
     driver: &str,
     split_count: usize,
 ) -> Option<Vec<PkSplit>> {
-    let pk_q = quote_col_for_driver(pk_col, driver);
+    let pk_q = crate::datasource::utils::quote_identifier_for_driver(pk_col, driver);
     let sql = format!(
         "SELECT MIN({pk}), MAX({pk}) FROM ({src}) AS _mig_minmax_",
         pk = pk_q,
@@ -148,12 +137,12 @@ mod tests {
 
     #[test]
     fn quote_col_variants() {
-        assert_eq!(quote_col_for_driver("id", "mysql"), "`id`");
-        assert_eq!(quote_col_for_driver("id", "tidb"), "`id`");
-        assert_eq!(quote_col_for_driver("id", "postgres"), "\"id\"");
-        assert_eq!(quote_col_for_driver("id", "sqlserver"), "[id]");
+        assert_eq!(crate::datasource::utils::quote_identifier_for_driver("id", "mysql"), "`id`");
+        assert_eq!(crate::datasource::utils::quote_identifier_for_driver("id", "tidb"), "`id`");
+        assert_eq!(crate::datasource::utils::quote_identifier_for_driver("id", "postgres"), "\"id\"");
+        assert_eq!(crate::datasource::utils::quote_identifier_for_driver("id", "sqlserver"), "[id]");
         // injection prevention
-        assert_eq!(quote_col_for_driver("a`b", "mysql"), "`a``b`");
-        assert_eq!(quote_col_for_driver("a]b", "sqlserver"), "[a]]b]");
+        assert_eq!(crate::datasource::utils::quote_identifier_for_driver("a`b", "mysql"), "`a``b`");
+        assert_eq!(crate::datasource::utils::quote_identifier_for_driver("a]b", "sqlserver"), "[a]]b]");
     }
 }

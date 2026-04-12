@@ -157,9 +157,9 @@ fn default_byte_capacity() -> Option<u64> {
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            read_batch_size: 5_000,
-            write_batch_size: 5_000,
-            channel_capacity: 16,
+            read_batch_size: 1_024,
+            write_batch_size: 1_024,
+            channel_capacity: 32,
             parallelism: 4,
             speed_limit_rps: None,
             error_limit: 0,
@@ -167,7 +167,7 @@ impl Default for PipelineConfig {
             transaction_batch_size: 3,
             write_pause_ms: None,
             max_bytes_per_tx: Some(4 * 1024 * 1024),
-            byte_capacity: Some(64 * 1024 * 1024),
+            byte_capacity: Some(16 * 1024 * 1024),
         }
     }
 }

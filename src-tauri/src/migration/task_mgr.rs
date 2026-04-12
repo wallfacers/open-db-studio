@@ -130,6 +130,12 @@ pub struct PipelineConfig {
     /// Default: Some(4MB) — matches DataX typical batch size, avoids 36MB redo log spikes.
     #[serde(default = "default_max_bytes_per_tx")]
     pub max_bytes_per_tx: Option<u64>,
+    /// Maximum bytes allowed in the reader→writer channel at any time (byte-level backpressure).
+    /// When the channel's in-flight data exceeds this limit, the reader blocks until the writer
+    /// consumes messages. Mirrors DataX's `byteCapacity` (default 8MB).
+    /// Default: Some(8MB). Set to None to disable byte gating (legacy behavior).
+    #[serde(default = "default_byte_capacity")]
+    pub byte_capacity: Option<u64>,
 }
 
 fn default_transaction_batch_size() -> usize {
@@ -142,6 +148,10 @@ fn default_write_pause_ms() -> Option<u64> {
 
 fn default_max_bytes_per_tx() -> Option<u64> {
     Some(4 * 1024 * 1024)
+}
+
+fn default_byte_capacity() -> Option<u64> {
+    Some(8 * 1024 * 1024) // 8 MB — matches DataX default byteCapacity
 }
 
 impl Default for PipelineConfig {
@@ -157,6 +167,7 @@ impl Default for PipelineConfig {
             transaction_batch_size: 10,
             write_pause_ms: None,
             max_bytes_per_tx: Some(4 * 1024 * 1024),
+            byte_capacity: Some(8 * 1024 * 1024),
         }
     }
 }

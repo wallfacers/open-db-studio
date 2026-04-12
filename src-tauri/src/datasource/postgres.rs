@@ -1023,26 +1023,44 @@ impl DataSource for PostgresDataSource {
         &self,
         sql: &str,
     ) -> crate::AppResult<Option<(Vec<String>, Vec<crate::migration::native_row::MigrationRow>)>> {
+        // Stream-based read: rows are pulled one-by-one via fetch() and accumulated
+        // into a batch. Backpressure from the pipeline's byte-gated channel prevents
+        // unbounded memory growth when the writer is slower than the reader.
         use crate::migration::native_row::{MigrationRow, MigrationValue};
         use crate::migration::native_row::decode_postgres_column;
         use sqlx::Column;
         use sqlx::Row;
+        use futures_util::TryStreamExt;
 
-        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-        if rows.is_empty() {
-            return Ok(None);
-        }
+        let mut stream = sqlx::query(sql).fetch(&self.pool);
 
-        let columns: Vec<String> = rows[0].columns().iter()
+        // Fetch the first row to get columns and detect empty result
+        let first_row = match stream.try_next().await? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let columns: Vec<String> = first_row.columns().iter()
             .map(|c| c.name().to_string()).collect();
         let num_cols = columns.len();
 
-        let mig_rows: Vec<MigrationRow> = rows.iter().map(|row| {
+        let mut mig_rows = Vec::new();
+
+        // Process first row
+        {
             let values: Vec<MigrationValue> = (0..num_cols)
-                .map(|i| decode_postgres_column(row, i))
+                .map(|i| decode_postgres_column(&first_row, i))
                 .collect();
-            MigrationRow { values }
-        }).collect();
+            mig_rows.push(MigrationRow { values });
+        }
+
+        // Stream remaining rows one-by-one
+        while let Ok(Some(row)) = stream.try_next().await {
+            let values: Vec<MigrationValue> = (0..num_cols)
+                .map(|i| decode_postgres_column(&row, i))
+                .collect();
+            mig_rows.push(MigrationRow { values });
+        }
 
         Ok(Some((columns, mig_rows)))
     }

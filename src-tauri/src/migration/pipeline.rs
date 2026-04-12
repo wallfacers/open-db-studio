@@ -305,6 +305,10 @@ type Row = Vec<serde_json::Value>;
 /// Reduces channel send calls from N_rows to N_pages (e.g., 10M → 5K).
 struct RowBatch {
     rows: Vec<Row>,
+    /// Byte permit released when the writer consumes this batch.
+    /// Tied to the ByteGate semaphore for backpressure.
+    #[allow(dead_code)]
+    byte_permit: Option<crate::migration::byte_gate::BytePermit>,
 }
 
 /// Native-typed row batch for the dedicated migration read path (Phase 3).
@@ -312,6 +316,9 @@ struct RowBatch {
 struct MigrationRowBatch {
     columns: Vec<String>,
     rows: Vec<crate::migration::native_row::MigrationRow>,
+    /// Byte permit released when the writer consumes this batch.
+    #[allow(dead_code)]
+    byte_permit: Option<crate::migration::byte_gate::BytePermit>,
 }
 
 /// Messages sent from reader to writer through the channel.
@@ -1024,6 +1031,7 @@ async fn execute_single_mapping(
                     config.pipeline.speed_limit_rps,
                     config.pipeline.write_pause_ms,
                     config.pipeline.max_bytes_per_tx,
+                    config.pipeline.byte_capacity,
                 ).await
             }
             Some(splits) => {
@@ -1078,6 +1086,7 @@ async fn execute_single_mapping(
                         config.pipeline.speed_limit_rps,
                         config.pipeline.write_pause_ms,
                         config.pipeline.max_bytes_per_tx,
+                        config.pipeline.byte_capacity,
                     ));
                     split_handles.push(handle);
                 }
@@ -1160,6 +1169,7 @@ async fn execute_single_mapping(
             config.pipeline.speed_limit_rps,
             config.pipeline.write_pause_ms,
             config.pipeline.max_bytes_per_tx,
+            config.pipeline.byte_capacity,
         ).await
     };
 
@@ -1235,8 +1245,13 @@ async fn run_reader_writer_pair(
     speed_limit_rps: Option<u64>,
     write_pause_ms: Option<u64>,
     _max_bytes_per_tx: Option<u64>,
+    byte_capacity: Option<u64>,
 ) -> AppResult<()> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMsg>(channel_cap);
+
+    // Byte-level backpressure gate (DataX byteCapacity equivalent).
+    // When None, byte gating is disabled (legacy behavior).
+    let byte_gate = byte_capacity.map(|cap| crate::migration::byte_gate::ByteGate::new(cap as usize));
 
     // ── Reader task ───────────────────────────────────────────────────
     let ms_reader = mapping_stats.clone();
@@ -1304,9 +1319,22 @@ async fn run_reader_writer_pair(
                     ms_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
                     gs_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
 
+                    // Byte-level backpressure: acquire permit before sending
+                    let batch_bytes = crate::migration::byte_gate::estimate_native_batch_bytes(&mig_rows);
+                    let permit = if let Some(ref gate) = byte_gate {
+                        match gate.acquire(batch_bytes as usize).await {
+                            Ok(p) => Some(p),
+                            Err(_) => {
+                                // Gate closed — likely shutdown
+                                break;
+                            }
+                        }
+                    } else { None };
+
                     if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
                         columns: columns_opt.as_ref().unwrap().clone(),
                         rows: mig_rows,
+                        byte_permit: permit,
                     })).await.is_err() {
                         break;
                     }
@@ -1338,7 +1366,19 @@ async fn run_reader_writer_pair(
                     ms_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
                     gs_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
 
-                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows })).await.is_err() {
+                    // Byte-level backpressure: acquire permit before sending
+                    let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&page.rows);
+                    let permit = if let Some(ref gate) = byte_gate {
+                        match gate.acquire(batch_bytes as usize).await {
+                            Ok(p) => Some(p),
+                            Err(_) => break,
+                        }
+                    } else { None };
+
+                    if tx.send(ChannelMsg::RowBatch(RowBatch {
+                        rows: page.rows,
+                        byte_permit: permit,
+                    })).await.is_err() {
                         break;
                     }
                     n
@@ -1399,9 +1439,19 @@ async fn run_reader_writer_pair(
                     ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
                     gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
 
+                    // Byte-level backpressure
+                    let batch_bytes = crate::migration::byte_gate::estimate_native_batch_bytes(&mig_rows);
+                    let permit = if let Some(ref gate) = byte_gate {
+                        match gate.acquire(batch_bytes as usize).await {
+                            Ok(p) => Some(p),
+                            Err(_) => break,
+                        }
+                    } else { None };
+
                     if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
                         columns: columns_opt.as_ref().unwrap().clone(),
                         rows: mig_rows,
+                        byte_permit: permit,
                     })).await.is_err() {
                         break;
                     }
@@ -1428,7 +1478,19 @@ async fn run_reader_writer_pair(
                     ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
                     gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
 
-                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows })).await.is_err() {
+                    // Byte-level backpressure
+                    let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&page.rows);
+                    let permit = if let Some(ref gate) = byte_gate {
+                        match gate.acquire(batch_bytes as usize).await {
+                            Ok(p) => Some(p),
+                            Err(_) => break,
+                        }
+                    } else { None };
+
+                    if tx.send(ChannelMsg::RowBatch(RowBatch {
+                        rows: page.rows,
+                        byte_permit: permit,
+                    })).await.is_err() {
                         break;
                     }
 

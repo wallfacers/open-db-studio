@@ -1,3 +1,4 @@
+pub mod byte_gate;
 pub mod ddl_convert;
 pub mod lang;
 pub mod lsp;

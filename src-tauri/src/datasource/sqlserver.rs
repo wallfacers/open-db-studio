@@ -564,4 +564,93 @@ impl DataSource for SqlServerDataSource {
 
         Ok(result.total() as usize)
     }
+
+    /// Native bulk write from MigrationRow using SQL string construction.
+    /// Tiberius has limited dynamic parameter binding support (requires compile-time types),
+    /// so we use direct SQL literal serialization from MigrationValue.
+    /// This avoids MigrationValue → serde_json::Value → SQL conversion overhead.
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // SQL Server uses T-SQL: single-quoted strings, backslash has no special meaning.
+        let escape_style = crate::datasource::StringEscapeStyle::TSql;
+
+        use crate::datasource::bulk_write::InsertTemplate;
+        use crate::datasource::bulk_write::build_native_chunk_sql;
+
+        // Chunk rows to ~4MB to avoid statement size limits
+        const MAX_SQL_BYTES: usize = 4 * 1024 * 1024;
+        let num_cols = columns.len();
+
+        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+
+        // Estimate row SQL sizes
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for v in &r.values {
+                    size += v.estimated_sql_size();
+                }
+                size
+            })
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
+
+            // Binary search fallback if estimation underestimates
+            if sql.len() > MAX_SQL_BYTES && chunk.len() > 1 {
+                let mut hi = chunk.len() - 1;
+                let mut lo = 1;
+                let mut best = 1;
+                while lo <= hi {
+                    let mid = (lo + hi) / 2;
+                    let test_sql = build_native_chunk_sql(&tmpl, &chunk[..mid], &escape_style);
+                    if test_sql.len() <= MAX_SQL_BYTES {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                let sql = build_native_chunk_sql(&tmpl, &chunk[..best], &escape_style);
+                let result = self.execute(&sql).await?;
+                total_written += result.row_count.min(best);
+                chunk_start += best;
+                continue;
+            }
+
+            let result = self.execute(&sql).await?;
+            total_written += result.row_count.min(chunk.len());
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
+    }
 }

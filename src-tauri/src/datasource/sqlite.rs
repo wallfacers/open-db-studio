@@ -588,6 +588,135 @@ impl DataSource for SqliteDataSource {
         .await
         .map_err(|e| AppError::Datasource(e.to_string()))?
     }
+
+    /// Native bulk write from MigrationRow using parameterized INSERT.
+    /// Avoids MigrationValue → serde_json::Value → SQL string conversion.
+    /// SQLite fully supports parameterized queries with `?` placeholders.
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        let table = table.to_string();
+        let columns = columns.to_vec();
+        let rows = rows;
+        let conflict_strategy = conflict_strategy.clone();
+        let upsert_keys = upsert_keys.to_vec();
+        let driver = driver.to_string();
+        let conn = Arc::clone(&self.conn);
+
+        tokio::task::spawn_blocking(move || -> AppResult<usize> {
+            let guard = conn.blocking_lock();
+
+            // Build column list with quoting
+            let mut col_list = String::with_capacity(columns.len() * 20);
+            for (i, col) in columns.iter().enumerate() {
+                if i > 0 { col_list.push_str(", "); }
+                crate::datasource::utils::quote_identifier_for_driver_into(col, "sqlite", &mut col_list);
+            }
+
+            // Build placeholders: ?1, ?2, ?3...
+            let placeholders: Vec<String> = (1..=columns.len())
+                .map(|i| format!("?{}", i))
+                .collect();
+            let placeholders_str = placeholders.join(", ");
+
+            // Determine INSERT keyword based on conflict strategy
+            let (keyword, suffix) = crate::datasource::bulk_write::build_conflict_clause(
+                &conflict_strategy,
+                &driver,
+                &columns,
+                &upsert_keys.iter().map(|s| s.as_str()).collect(),
+                &upsert_keys,
+                &|c: &str| {
+                    let mut buf = String::new();
+                    crate::datasource::utils::quote_identifier_for_driver_into(c, "sqlite", &mut buf);
+                    buf
+                },
+            );
+
+            let mut quoted_table = String::new();
+            crate::datasource::utils::quote_identifier_for_driver_into(&table, "sqlite", &mut quoted_table);
+
+            let sql = format!(
+                "{} {} ({}) VALUES ({}){}",
+                keyword,
+                quoted_table,
+                col_list,
+                placeholders_str,
+                suffix
+            );
+
+            let tx = guard
+                .unchecked_transaction()
+                .map_err(|e| AppError::Datasource(format!("SQLite transaction: {}", e)))?;
+
+            let mut total_written = 0usize;
+            {
+                let mut stmt = tx
+                    .prepare(&sql)
+                    .map_err(|e| AppError::Datasource(format!("SQLite prepare: {}", e)))?;
+
+                for row in &rows {
+                    // Convert MigrationValue to rusqlite Value directly
+                    let params: Vec<rusqlite::types::Value> = row.values
+                        .iter()
+                        .map(migration_value_to_rusqlite)
+                        .collect();
+
+                    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                        params.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+
+                    let affected = stmt.execute(params_ref.as_slice())
+                        .map_err(|e| AppError::Datasource(format!("SQLite execute: {}", e)))?;
+                    total_written += affected;
+                }
+            }
+
+            tx.commit()
+                .map_err(|e| AppError::Datasource(format!("SQLite commit: {}", e)))?;
+
+            Ok(total_written)
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))?
+    }
+}
+
+/// Convert MigrationValue to rusqlite Value for parameterized INSERT.
+/// Direct conversion without intermediate serde_json::Value.
+fn migration_value_to_rusqlite(val: &crate::migration::native_row::MigrationValue) -> rusqlite::types::Value {
+    use crate::migration::native_row::MigrationValue;
+    match val {
+        MigrationValue::Null => rusqlite::types::Value::Null,
+        MigrationValue::Bool(b) => rusqlite::types::Value::Integer(if *b { 1 } else { 0 }),
+        MigrationValue::Int(i) => rusqlite::types::Value::Integer(*i),
+        MigrationValue::UInt(u) => {
+            // SQLite uses INTEGER (signed i64) for all integer types.
+            // For u64 > i64::MAX, we store as string to preserve value.
+            if *u > i64::MAX as u64 {
+                rusqlite::types::Value::Text(u.to_string())
+            } else {
+                rusqlite::types::Value::Integer(*u as i64)
+            }
+        }
+        MigrationValue::Float(f) => rusqlite::types::Value::Real(*f),
+        MigrationValue::Decimal(d) => {
+            // SQLite has no DECIMAL type; store as string or REAL.
+            // Prefer string to preserve exact decimal representation.
+            rusqlite::types::Value::Text(d.clone())
+        }
+        MigrationValue::Text(s) => rusqlite::types::Value::Text(s.clone()),
+        MigrationValue::Blob(b) => rusqlite::types::Value::Blob(b.clone()),
+    }
 }
 
 /// 对单张表执行 SELECT COUNT(*)，失败时返回 None

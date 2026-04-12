@@ -139,7 +139,7 @@ pub struct PipelineConfig {
 }
 
 fn default_transaction_batch_size() -> usize {
-    3
+    1
 }
 
 fn default_write_pause_ms() -> Option<u64> {
@@ -151,23 +151,23 @@ fn default_max_bytes_per_tx() -> Option<u64> {
 }
 
 fn default_byte_capacity() -> Option<u64> {
-    Some(64 * 1024 * 1024) // 64 MB — increased for better throughput on home PCs
+    Some(8 * 1024 * 1024) // 8 MB — reduced for lower memory peak
 }
 
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            read_batch_size: 1_024,
-            write_batch_size: 1_024,
+            read_batch_size: 512,
+            write_batch_size: 512,
             channel_capacity: 32,
             parallelism: 4,
             speed_limit_rps: None,
             error_limit: 0,
             shard_count: None,
-            transaction_batch_size: 3,
+            transaction_batch_size: 1,
             write_pause_ms: None,
             max_bytes_per_tx: Some(4 * 1024 * 1024),
-            byte_capacity: Some(16 * 1024 * 1024),
+            byte_capacity: Some(8 * 1024 * 1024),
         }
     }
 }

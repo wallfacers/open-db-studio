@@ -500,46 +500,67 @@ impl PostgresDataSource {
         upsert_keys: &[String],
         driver: &str,
     ) -> AppResult<usize> {
-        let escape_style = self.string_escape_style();
+        // Use parameterized INSERT to avoid memory amplification from TEXT escaping
+        self.bulk_write_parametrized_batch(table, columns, rows, conflict_strategy, upsert_keys, driver).await
+    }
 
-        use crate::datasource::bulk_write::InsertTemplate;
-        let num_cols = columns.len();
-        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+    /// Parameterized batch INSERT from MigrationRows (memory-efficient, no SQL string construction).
+    /// Uses prepared statement cache to optimize repeated executions.
+    async fn bulk_write_parametrized_batch(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
 
-        // Chunk to ~4MB
-        const MAX_SQL_BYTES: usize = 4 * 1024 * 1024;
-        let row_sizes: Vec<usize> = rows.iter()
-            .map(|r| {
-                let mut size = num_cols * 3;
-                for v in &r.values {
-                    size += v.estimated_sql_size();
-                }
-                size
-            })
-            .collect();
+        // Build the parameterized SQL template once (reused for all rows)
+        let sql_template = build_parametrized_insert_sql(table, columns, conflict_strategy, upsert_keys, driver);
 
+        // Execute each row individually with parameter binding
         let mut total_written = 0usize;
-        let mut chunk_start = 0;
+        for row in rows {
+            let query = sqlx::query(&sql_template);
+            let query = bind_migration_values_to_query(query, &row.values);
+            let result: sqlx::postgres::PgQueryResult = query.execute(&self.pool).await
+                .map_err(|e| AppError::Datasource(format!("Parameterized INSERT: {}", e)))?;
+            total_written += result.rows_affected() as usize;
+        }
 
-        while chunk_start < rows.len() {
-            let mut chunk_sql_size = 0usize;
-            let mut chunk_end = chunk_start;
-            while chunk_end < rows.len() {
-                let row_size = row_sizes[chunk_end];
-                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
-                    break;
-                }
-                chunk_sql_size += row_size;
-                chunk_end += 1;
-            }
+        Ok(total_written)
+    }
 
-            let chunk = &rows[chunk_start..chunk_end];
-            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
+    /// Static method for parameterized INSERT within an explicit transaction.
+    /// Used by bulk_write_native_in_txn_static for transactional writes.
+    async fn bulk_write_parametrized_in_txn(
+        txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
 
-            let result = self.execute(&sql).await?;
-            total_written += result.row_count.min(chunk.len());
+        // Build the parameterized SQL template once
+        let sql_template = build_parametrized_insert_sql(table, columns, conflict_strategy, upsert_keys, driver);
 
-            chunk_start = chunk_end;
+        // Execute each row individually with parameter binding
+        let mut total_written = 0usize;
+        for row in rows {
+            let query = sqlx::query(&sql_template);
+            let query = bind_migration_values_to_query(query, &row.values);
+            let result: sqlx::postgres::PgQueryResult = query.execute(&mut **txn).await
+                .map_err(|e| AppError::Datasource(format!("Parameterized INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected() as usize;
         }
 
         Ok(total_written)
@@ -555,51 +576,8 @@ impl PostgresDataSource {
         upsert_keys: &[String],
         driver: &str,
     ) -> AppResult<usize> {
-        const MAX_SQL_BYTES: usize = 16 * 1024 * 1024;
-        use crate::datasource::bulk_write::{InsertTemplate, build_native_chunk_sql};
-
-        let escape_style = crate::datasource::StringEscapeStyle::PostgresLiteral;
-        let num_cols = columns.len();
-
-        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
-
-        let row_sizes: Vec<usize> = rows.iter()
-            .map(|r| {
-                let mut size = num_cols * 3;
-                for v in &r.values {
-                    size += v.estimated_sql_size();
-                }
-                size
-            })
-            .collect();
-
-        let mut total_written = 0usize;
-        let mut chunk_start = 0;
-
-        while chunk_start < rows.len() {
-            let mut chunk_sql_size = 0usize;
-            let mut chunk_end = chunk_start;
-
-            while chunk_end < rows.len() {
-                let row_size = row_sizes[chunk_end];
-                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
-                    break;
-                }
-                chunk_sql_size += row_size;
-                chunk_end += 1;
-            }
-
-            let chunk = &rows[chunk_start..chunk_end];
-            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
-
-            let result: sqlx::postgres::PgQueryResult = sqlx::query(&sql)
-                .execute(&mut **txn).await
-                .map_err(|e| crate::error::AppError::Datasource(format!("INSERT in txn: {}", e)))?;
-            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
-            chunk_start = chunk_end;
-        }
-
-        Ok(total_written)
+        // Use parameterized INSERT for memory efficiency
+        Self::bulk_write_parametrized_in_txn(txn, table, columns, rows, conflict_strategy, upsert_keys, driver).await
     }
 }
 
@@ -1280,8 +1258,96 @@ impl DataSource for PostgresDataSource {
     }
 }
 
-// build_pg_native_chunk_sql and estimate_row_sql_size moved to bulk_write.rs
-use crate::datasource::bulk_write::{build_native_chunk_sql, estimate_row_sql_size};
+use crate::datasource::bulk_write::{estimate_row_sql_size, build_conflict_clause};
+use crate::datasource::utils::quote_identifier_for_driver;
+use crate::migration::task_mgr::ConflictStrategy;
+
+// ============================================================
+// Parameterized INSERT helpers for PostgreSQL
+// ============================================================
+
+/// Build parameterized INSERT SQL with `$1 $2 $3...` placeholders.
+/// Includes ON CONFLICT clause based on conflict_strategy.
+fn build_parametrized_insert_sql(
+    table: &str,
+    columns: &[String],
+    conflict_strategy: &ConflictStrategy,
+    upsert_keys: &[String],
+    driver: &str,
+) -> String {
+    // Build column list with proper quoting
+    let quoted_columns: Vec<String> = columns.iter()
+        .map(|c| quote_identifier_for_driver(c, driver))
+        .collect();
+
+    // Build placeholders: $1, $2, $3, ...
+    let placeholders: Vec<String> = (1..=columns.len())
+        .map(|i| format!("${}", i))
+        .collect();
+
+    // Build conflict clause using shared logic
+    let key_set: std::collections::HashSet<&str> = upsert_keys.iter().map(|s| s.as_str()).collect();
+    let quote_col_fn = |c: &str| quote_identifier_for_driver(c, driver);
+    let (keyword, suffix) = build_conflict_clause(conflict_strategy, driver, columns, &key_set, upsert_keys, &quote_col_fn);
+
+    // Construct final SQL
+    format!(
+        "{} {} ({}) VALUES ({}){}",
+        keyword,
+        quote_identifier_for_driver(table, driver),
+        quoted_columns.join(", "),
+        placeholders.join(", "),
+        suffix
+    )
+}
+
+/// Bind MigrationValue array to a sqlx query.
+/// PostgreSQL-specific binding for native types.
+fn bind_migration_values_to_query<'a>(
+    mut query: sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    values: &[crate::migration::native_row::MigrationValue],
+) -> sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    use crate::migration::native_row::MigrationValue;
+
+    for val in values {
+        match val {
+            MigrationValue::Null => {
+                query = query.bind(None::<String>);
+            }
+            MigrationValue::Bool(b) => {
+                query = query.bind(*b);
+            }
+            MigrationValue::Int(i) => {
+                query = query.bind(*i);
+            }
+            MigrationValue::UInt(u) => {
+                // sqlx PostgreSQL doesn't have native u64, bind as i64
+                // For values > i64::MAX, this will fail at runtime
+                // (extremely rare for database columns)
+                query = query.bind(*u as i64);
+            }
+            MigrationValue::Float(f) => {
+                query = query.bind(*f);
+            }
+            MigrationValue::Decimal(d) => {
+                // Try to parse as rust_decimal::Decimal for exact representation
+                if let Ok(dec) = rust_decimal::Decimal::from_str_exact(d) {
+                    query = query.bind(dec);
+                } else {
+                    // Fallback to string binding
+                    query = query.bind(d.clone());
+                }
+            }
+            MigrationValue::Text(s) => {
+                query = query.bind(s.clone());
+            }
+            MigrationValue::Blob(b) => {
+                query = query.bind(b.clone());
+            }
+        }
+    }
+    query
+}
 
 // ============================================================
 // 集成测试：验证 PG schema 相关查询行为

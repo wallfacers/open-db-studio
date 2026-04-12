@@ -531,6 +531,63 @@ impl PostgresDataSource {
 
         Ok(total_written)
     }
+
+    /// Static method for bulk_write_native_in_txn.
+    async fn bulk_write_native_in_txn_static(
+        txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        const MAX_SQL_BYTES: usize = 16 * 1024 * 1024;
+        use crate::datasource::bulk_write::{InsertTemplate, build_native_chunk_sql};
+
+        let escape_style = crate::datasource::StringEscapeStyle::PostgresLiteral;
+        let num_cols = columns.len();
+
+        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for v in &r.values {
+                    size += v.estimated_sql_size();
+                }
+                size
+            })
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
+
+            let result: sqlx::postgres::PgQueryResult = sqlx::query(&sql)
+                .execute(&mut **txn).await
+                .map_err(|e| crate::error::AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
+    }
 }
 
 #[async_trait]
@@ -978,6 +1035,42 @@ impl DataSource for PostgresDataSource {
     }
 
     fn supports_txn_bulk_write(&self) -> bool { true }
+
+    async fn begin_bulk_write_txn(&self) -> crate::AppResult<Option<crate::datasource::BulkWriteTxn>> {
+        let tx = self.pool.begin().await?;
+        Ok(Some(crate::datasource::BulkWriteTxn::Postgres(tx)))
+    }
+
+    async fn bulk_write_in_txn(
+        &self,
+        txn: &mut crate::datasource::BulkWriteTxn,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> crate::AppResult<usize> {
+        match txn {
+            crate::datasource::BulkWriteTxn::Postgres(tx) => {
+                Self::bulk_write_native_in_txn_static(
+                    tx, table, columns, rows,
+                    conflict_strategy, upsert_keys, driver,
+                ).await
+            }
+            _ => Err(crate::error::AppError::Other("Invalid txn handle for PostgreSQL".into())),
+        }
+    }
+
+    async fn commit_bulk_write_txn(&self, txn: crate::datasource::BulkWriteTxn) -> crate::AppResult<()> {
+        match txn {
+            crate::datasource::BulkWriteTxn::Postgres(tx) => {
+                tx.commit().await?;
+                Ok(())
+            }
+            _ => Err(crate::error::AppError::Other("Invalid txn handle for PostgreSQL".into())),
+        }
+    }
 
     async fn execute_streaming(
         &self,

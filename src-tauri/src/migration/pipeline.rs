@@ -185,6 +185,86 @@ struct Batch {
     column_names: Vec<String>,
 }
 
+/// Tracks per-transaction bookkeeping for the writer's grouped-commit path.
+///
+/// One `TxnGroupState` is rebuilt after every successful (or failed) `COMMIT`.
+/// The writer calls `record_insert` after each successful `bulk_write_in_txn`
+/// call, then asks `should_commit` whether thresholds have been crossed.
+/// On commit, it calls `drain_success` to get the `(ok, failed)` totals to
+/// publish to stats atomically.
+#[derive(Debug, Default)]
+struct TxnGroupState {
+    /// Number of INSERT statements (i.e. flushes of `write_buf`) issued in the current txn.
+    insert_count: usize,
+    /// Approximate payload bytes accumulated across all INSERTs in the current txn.
+    /// Uses the reader-side row byte estimate (json_value_len sum), not actual SQL bytes.
+    bytes_written: u64,
+    /// Sum of `Ok(n)` rows across all INSERTs in the current txn (rows the driver
+    /// reports as affected). Only applied to stats on successful `COMMIT`.
+    pending_ok: u64,
+    /// Sum of `batch_len - n` (rows the driver silently dropped, e.g. INSERT IGNORE)
+    /// across all INSERTs in the current txn. Applied to `rows_failed` on any outcome.
+    pending_soft_failed: u64,
+    /// Sum of `batch_len` across all INSERTs in the current txn. Used to attribute
+    /// `rows_failed` when the `COMMIT` itself fails (all rows roll back).
+    pending_total: u64,
+}
+
+impl TxnGroupState {
+    /// Record the result of a single `bulk_write_in_txn` call inside the current txn.
+    /// `batch_len` is total rows submitted; `ok` is what the driver reported as affected;
+    /// `batch_bytes` is the estimated payload bytes (same unit as `max_bytes_per_tx`).
+    fn record_insert(&mut self, batch_len: u64, ok: u64, batch_bytes: u64) {
+        self.insert_count += 1;
+        self.bytes_written = self.bytes_written.saturating_add(batch_bytes);
+        self.pending_ok = self.pending_ok.saturating_add(ok);
+        self.pending_soft_failed = self
+            .pending_soft_failed
+            .saturating_add(batch_len.saturating_sub(ok));
+        self.pending_total = self.pending_total.saturating_add(batch_len);
+    }
+
+    /// Return `true` if the current txn has hit either threshold and should be committed.
+    /// `txn_batch_size` is the max INSERTs per txn (hard minimum 1).
+    /// `max_bytes_per_tx == None` disables the byte constraint.
+    fn should_commit(&self, txn_batch_size: usize, max_bytes_per_tx: Option<u64>) -> bool {
+        if self.insert_count == 0 {
+            return false;
+        }
+        if self.insert_count >= txn_batch_size.max(1) {
+            return true;
+        }
+        if let Some(limit) = max_bytes_per_tx {
+            if self.bytes_written >= limit {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns `true` iff there is at least one INSERT buffered awaiting commit.
+    fn has_pending(&self) -> bool {
+        self.insert_count > 0
+    }
+
+    /// Take the `(committed_ok, committed_soft_failed)` totals that should be applied
+    /// to stats when the `COMMIT` succeeds, then reset the state for the next group.
+    fn drain_success(&mut self) -> (u64, u64) {
+        let ok = self.pending_ok;
+        let soft = self.pending_soft_failed;
+        *self = Self::default();
+        (ok, soft)
+    }
+
+    /// Take the total row count to attribute to `rows_failed` when the `COMMIT` fails
+    /// (all rows roll back), then reset the state for the next group.
+    fn drain_failure(&mut self) -> u64 {
+        let total = self.pending_total;
+        *self = Self::default();
+        total
+    }
+}
+
 fn json_value_len(v: &serde_json::Value) -> u64 {
     match v {
         serde_json::Value::Null => 4, // "NULL"
@@ -1786,4 +1866,87 @@ async fn writeback_incremental_checkpoint(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn txn_group_empty_never_commits() {
+        let g = TxnGroupState::default();
+        assert!(!g.should_commit(10, Some(4 * 1024 * 1024)));
+        assert!(!g.should_commit(1, None));
+        assert!(!g.has_pending());
+    }
+
+    #[test]
+    fn txn_group_commits_on_insert_count_threshold() {
+        let mut g = TxnGroupState::default();
+        // 3 inserts @ 100 rows each, 1KB each → well below byte limit
+        for _ in 0..3 {
+            g.record_insert(100, 100, 1024);
+        }
+        assert!(!g.should_commit(10, Some(10 * 1024 * 1024)));
+        // Add 7 more to reach the count threshold
+        for _ in 0..7 {
+            g.record_insert(100, 100, 1024);
+        }
+        assert!(g.should_commit(10, Some(10 * 1024 * 1024)));
+    }
+
+    #[test]
+    fn txn_group_commits_on_byte_threshold() {
+        let mut g = TxnGroupState::default();
+        // One huge insert that alone blows the byte limit
+        g.record_insert(1_000, 1_000, 5 * 1024 * 1024);
+        assert!(g.should_commit(100, Some(4 * 1024 * 1024)));
+    }
+
+    #[test]
+    fn txn_group_byte_limit_none_disables_byte_check() {
+        let mut g = TxnGroupState::default();
+        g.record_insert(1_000, 1_000, u64::MAX / 2);
+        assert!(!g.should_commit(100, None));
+    }
+
+    #[test]
+    fn txn_group_txn_batch_size_zero_clamped_to_one() {
+        let mut g = TxnGroupState::default();
+        g.record_insert(10, 10, 64);
+        // A misconfigured `0` must not deadlock (never commit) — clamp to 1.
+        assert!(g.should_commit(0, None));
+    }
+
+    #[test]
+    fn txn_group_drain_success_returns_ok_and_soft_fail_then_resets() {
+        let mut g = TxnGroupState::default();
+        g.record_insert(100, 95, 1024); // 5 silently dropped (INSERT IGNORE etc.)
+        g.record_insert(100, 100, 1024);
+        let (ok, soft) = g.drain_success();
+        assert_eq!(ok, 195);
+        assert_eq!(soft, 5);
+        // State is reset
+        assert_eq!(g.insert_count, 0);
+        assert_eq!(g.bytes_written, 0);
+        assert_eq!(g.pending_total, 0);
+        assert!(!g.has_pending());
+    }
+
+    #[test]
+    fn txn_group_drain_failure_returns_total_then_resets() {
+        let mut g = TxnGroupState::default();
+        g.record_insert(100, 100, 1024);
+        g.record_insert(100, 90, 1024);
+        let total = g.drain_failure();
+        assert_eq!(total, 200);
+        assert!(!g.has_pending());
+    }
+
+    #[test]
+    fn txn_group_saturating_arithmetic_does_not_panic() {
+        let mut g = TxnGroupState::default();
+        g.record_insert(u64::MAX, u64::MAX, u64::MAX);
+        g.record_insert(u64::MAX, u64::MAX, u64::MAX);
+        // No panic; should_commit still answers sensibly.
+        assert!(g.should_commit(1, None));
+    }
+}

@@ -159,6 +159,32 @@ macro_rules! handle_write_result {
     }};
 }
 
+/// Check circuit breaker conditions after a write result (success or timeout).
+#[inline]
+fn check_circuit_breaker(
+    label: &str,
+    consecutive_full_fails: usize,
+    error_count: usize,
+    error_limit: usize,
+    job_id: i64,
+    run_id: &str,
+    app: &tauri::AppHandle,
+) -> AppResult<()> {
+    if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+        emit_log(app, job_id, run_id, "ERROR",
+            &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label, consecutive_full_fails));
+        return Err(AppError::Other(format!(
+            "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+        )));
+    }
+    if error_limit > 0 && error_count >= error_limit {
+        return Err(AppError::Other(format!(
+            "Error limit ({}) exceeded: {} errors", error_limit, error_count
+        )));
+    }
+    Ok(())
+}
+
 // ── Log collector (thread-safe) ──────────────────────────────────────────────
 
 fn build_log_event(job_id: i64, run_id: &str, level: &str, message: &str) -> MigrationLogEvent {
@@ -835,7 +861,6 @@ async fn execute_single_mapping(
     // ── Pipeline config ───────────────────────────────────────────────────
     let target_table = mapping.target.table.clone();
     let dst_driver = dst_cfg.driver.clone();
-    let column_mapping = mapping.column_mappings.clone();
     let conflict_strategy = mapping.target.conflict_strategy.clone();
     let upsert_keys = mapping.target.upsert_keys.clone();
 
@@ -881,13 +906,6 @@ async fn execute_single_mapping(
             );
         }
     }
-
-    // ── Mapped columns ───────────────────────────────────────────────────
-    let mapped_cols: Option<Vec<String>> = if !column_mapping.is_empty() {
-        Some(column_mapping.iter().map(|m| m.target_col.clone()).collect())
-    } else {
-        None
-    };
 
     // ── Per-mapping stats ─────────────────────────────────────────────────
     let mapping_stats = PipelineStats::new();
@@ -1012,7 +1030,6 @@ async fn execute_single_mapping(
                     dst_ds,
                     target_table.clone(),
                     dst_driver.clone(),
-                    mapped_cols,
                     conflict_strategy.clone(),
                     upsert_keys.clone(),
                     read_batch_size,
@@ -1030,7 +1047,6 @@ async fn execute_single_mapping(
                     mapping_label.clone(),
                     config.pipeline.speed_limit_rps,
                     config.pipeline.write_pause_ms,
-                    config.pipeline.max_bytes_per_tx,
                     config.pipeline.byte_capacity,
                 ).await
             }
@@ -1067,7 +1083,6 @@ async fn execute_single_mapping(
                         dst_ds.clone(),
                         target_table.clone(),
                         dst_driver.clone(),
-                        mapped_cols.clone(),
                         conflict_strategy.clone(),
                         upsert_keys.clone(),
                         read_batch_size,
@@ -1085,7 +1100,6 @@ async fn execute_single_mapping(
                         split_label,
                         config.pipeline.speed_limit_rps,
                         config.pipeline.write_pause_ms,
-                        config.pipeline.max_bytes_per_tx,
                         config.pipeline.byte_capacity,
                     ));
                     split_handles.push(handle);
@@ -1150,7 +1164,6 @@ async fn execute_single_mapping(
             dst_ds,
             target_table.clone(),
             dst_driver.clone(),
-            mapped_cols,
             conflict_strategy.clone(),
             upsert_keys.clone(),
             read_batch_size,
@@ -1168,7 +1181,6 @@ async fn execute_single_mapping(
             mapping_label.clone(),
             config.pipeline.speed_limit_rps,
             config.pipeline.write_pause_ms,
-            config.pipeline.max_bytes_per_tx,
             config.pipeline.byte_capacity,
         ).await
     };
@@ -1226,7 +1238,6 @@ async fn run_reader_writer_pair(
     dst_ds: Arc<dyn crate::datasource::DataSource>,
     target_table: String,
     dst_driver: String,
-    _mapped_cols: Option<Vec<String>>,
     conflict_strategy: ConflictStrategy,
     upsert_keys: Vec<String>,
     read_batch_size: usize,
@@ -1244,7 +1255,6 @@ async fn run_reader_writer_pair(
     label: String,
     speed_limit_rps: Option<u64>,
     write_pause_ms: Option<u64>,
-    _max_bytes_per_tx: Option<u64>,
     byte_capacity: Option<u64>,
 ) -> AppResult<()> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMsg>(channel_cap);
@@ -1571,18 +1581,10 @@ async fn run_reader_writer_pair(
                             // Timeout: update circuit breaker state
                             consecutive_full_fails += 1;
                             error_count = error_count.saturating_add(batch_len as usize);
-                            if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                    &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
-                                return Err(AppError::Other(format!(
-                                    "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                                )));
-                            }
-                            if error_limit > 0 && error_count >= error_limit {
-                                return Err(AppError::Other(format!(
-                                    "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                                )));
-                            }
+                            check_circuit_breaker(
+                                &label_w, consecutive_full_fails, error_count, error_limit,
+                                job_id, &run_id_w, &app_writer,
+                            )?;
                             continue;
                         }
 
@@ -1715,18 +1717,10 @@ async fn run_reader_writer_pair(
                                         }
 
                                         // Circuit breaker check
-                                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                                &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
-                                            return Err(AppError::Other(format!(
-                                                "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                                            )));
-                                        }
-                                        if error_limit > 0 && error_count >= error_limit {
-                                            return Err(AppError::Other(format!(
-                                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                                            )));
-                                        }
+                                        check_circuit_breaker(
+                                            &label_w, consecutive_full_fails, error_count, error_limit,
+                                            job_id, &run_id_w, &app_writer,
+                                        )?;
                                     }
                                 }
                                 continue;
@@ -1748,18 +1742,10 @@ async fn run_reader_writer_pair(
                         if !wrote_ok {
                             consecutive_full_fails += 1;
                             error_count = error_count.saturating_add(batch_len as usize);
-                            if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                    &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
-                                return Err(AppError::Other(format!(
-                                    "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                                )));
-                            }
-                            if error_limit > 0 && error_count >= error_limit {
-                                return Err(AppError::Other(format!(
-                                    "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                                )));
-                            }
+                            check_circuit_breaker(
+                                &label_w, consecutive_full_fails, error_count, error_limit,
+                                job_id, &run_id_w, &app_writer,
+                            )?;
                             continue;
                         }
 
@@ -1852,18 +1838,10 @@ async fn run_reader_writer_pair(
                         txn_handle = None;
 
                         // Circuit breaker check
-                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
-                            return Err(AppError::Other(format!(
-                                "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                            )));
-                        }
-                        if error_limit > 0 && error_count >= error_limit {
-                            return Err(AppError::Other(format!(
-                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                            )));
-                        }
+                        check_circuit_breaker(
+                            &label_w, consecutive_full_fails, error_count, error_limit,
+                            job_id, &run_id_w, &app_writer,
+                        )?;
                     }
                 }
             } else {

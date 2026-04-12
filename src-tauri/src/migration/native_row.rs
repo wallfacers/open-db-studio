@@ -163,46 +163,13 @@ impl MigrationValue {
             }
             MigrationValue::Text(s) => {
                 if crate::datasource::utils::is_hex_binary(s) {
-                    // Binary data encoded as 0x... or \x... hex
-                    let hex_data = &s[2..];
-                    match style {
-                        StringEscapeStyle::Standard | StringEscapeStyle::SQLiteLiteral => {
-                            buf.push_str("X'");
-                            buf.push_str(hex_data);
-                            buf.push('\'');
-                        }
-                        StringEscapeStyle::PostgresLiteral => {
-                            buf.push_str("E'\\\\x");
-                            buf.push_str(hex_data);
-                            buf.push('\'');
-                        }
-                        StringEscapeStyle::TSql => {
-                            buf.push_str("0x");
-                            buf.push_str(hex_data);
-                        }
-                    }
+                    crate::datasource::utils::hex_to_binary_literal_into(s, style, buf);
                 } else {
                     escape_string_literal_into(s, style, buf);
                 }
             }
             MigrationValue::Blob(bytes) => {
-                let hex = hex::encode(bytes);
-                match style {
-                    StringEscapeStyle::Standard | StringEscapeStyle::SQLiteLiteral => {
-                        buf.push_str("X'");
-                        buf.push_str(&hex);
-                        buf.push('\'');
-                    }
-                    StringEscapeStyle::PostgresLiteral => {
-                        buf.push_str("E'\\\\x");
-                        buf.push_str(&hex);
-                        buf.push('\'');
-                    }
-                    StringEscapeStyle::TSql => {
-                        buf.push_str("0x");
-                        buf.push_str(&hex);
-                    }
-                }
+                crate::datasource::utils::hex_bytes_to_literal_into(bytes, style, buf);
             }
         }
     }

@@ -883,13 +883,10 @@ impl MySqlDataSource {
         }).await
     }
 
-    /// Tear down the ephemeral mysql_async pool if it was created.
-    /// Called from teardown_migration_session to release server connections early.
+    /// mysql_async pool teardown: OnceCell doesn't support taking the value out,
+    /// so connections are released when the MySqlDataSource is dropped.
     fn teardown_mig_pool(&self) {
-        // OnceCell doesn't support taking the value out, so we rely on the pool's
-        // Drop implementation to close connections when the MySqlDataSource is dropped.
-        // This method is a no-op placeholder for future explicit teardown support.
-        let _ = self.mig_async_pool.get();
+        // No-op: the pool lives until MySqlDataSource is dropped.
     }
 
     /// Build INSERT SQL respecting MySQL's max_allowed_packet by chunking rows.
@@ -931,7 +928,7 @@ impl MySqlDataSource {
     ) -> AppResult<usize> {
         use crate::datasource::bulk_write;
 
-        let max_packet = 48 * 1024 * 1024;
+        let max_packet = self.query_and_cache_max_allowed_packet().await;
         let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
         let escape_style = self.string_escape_style();
         let num_cols = columns.len();

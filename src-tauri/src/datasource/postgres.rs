@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use chrono;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgRow, PgSslMode};
 use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use std::time::{Duration, Instant};
@@ -11,6 +10,9 @@ use crate::{AppError, AppResult};
 pub struct PostgresDataSource {
     pub(crate) pool: PgPool,
     mig_session_active: std::sync::atomic::AtomicBool,
+    /// Tracks whether COPY FROM STDIN is unsupported. Once set, skips COPY
+    /// entirely and goes directly to INSERT, avoiding repeated log warnings.
+    copy_disabled: std::sync::atomic::AtomicBool,
 }
 
 /// 将 PgRow 第 i 列转换为 serde_json::Value，按类型名精确派发。
@@ -361,7 +363,7 @@ impl PostgresDataSource {
         }
 
         let pool = pool_opts.connect_with(opts).await?;
-        Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false) })
+        Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false), copy_disabled: std::sync::atomic::AtomicBool::new(false) })
     }
 
     /// Execute chunked INSERT within an explicit transaction to reduce fsync overhead.
@@ -1180,10 +1182,16 @@ impl DataSource for PostgresDataSource {
             return self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
         }
 
+        // Cached: skip COPY if previously failed
+        if self.copy_disabled.load(std::sync::atomic::Ordering::Acquire) {
+            return self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
         // Try COPY FROM STDIN with native CSV serialization
         match self.bulk_write_copy_native(table, columns, rows).await {
             Ok(n) => Ok(n),
             Err(e) => {
+                self.copy_disabled.store(true, std::sync::atomic::Ordering::Release);
                 log::warn!("PostgreSQL native COPY failed ({}), falling back to INSERT", e);
                 self.bulk_write_native_insert(table, columns, rows, conflict_strategy, upsert_keys, driver).await
             }
@@ -1217,10 +1225,21 @@ impl DataSource for PostgresDataSource {
             return Ok(result.row_count.min(rows.len()));
         }
 
+        // Cached: skip COPY if previously failed
+        if self.copy_disabled.load(std::sync::atomic::Ordering::Acquire) {
+            let escape_style = self.string_escape_style();
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            return Ok(result.row_count.min(rows.len()));
+        }
+
         // Try COPY FROM STDIN for simple INSERT / Overwrite
         match self.bulk_write_copy(table, columns, rows).await {
             Ok(n) => Ok(n),
             Err(e) => {
+                self.copy_disabled.store(true, std::sync::atomic::Ordering::Release);
                 log::warn!("PostgreSQL COPY failed ({}), falling back to INSERT", e);
                 let escape_style = self.string_escape_style();
                 let sql = crate::datasource::bulk_write::build_insert_sql_optimized(

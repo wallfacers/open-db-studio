@@ -10,7 +10,7 @@ pub fn is_hex_binary(s: &str) -> bool {
 }
 
 /// Zero-allocation variant: appends the binary literal directly into `buf`.
-fn hex_to_binary_literal_into(hex_str: &str, style: &StringEscapeStyle, buf: &mut String) {
+pub(crate) fn hex_to_binary_literal_into(hex_str: &str, style: &StringEscapeStyle, buf: &mut String) {
     let hex_data = if hex_str.starts_with("0x") || hex_str.starts_with("\\x") {
         &hex_str[2..]
     } else {
@@ -31,6 +31,27 @@ fn hex_to_binary_literal_into(hex_str: &str, style: &StringEscapeStyle, buf: &mu
         StringEscapeStyle::TSql => {
             buf.push_str("0x");
             buf.push_str(hex_data);
+        }
+    }
+}
+
+/// Encode raw bytes as a SQL binary literal into `buf`, using driver-specific syntax.
+pub(crate) fn hex_bytes_to_literal_into(bytes: &[u8], style: &StringEscapeStyle, buf: &mut String) {
+    let hex = hex::encode(bytes);
+    match style {
+        StringEscapeStyle::Standard | StringEscapeStyle::SQLiteLiteral => {
+            buf.push_str("X'");
+            buf.push_str(&hex);
+            buf.push('\'');
+        }
+        StringEscapeStyle::PostgresLiteral => {
+            buf.push_str("E'\\\\x");
+            buf.push_str(&hex);
+            buf.push('\'');
+        }
+        StringEscapeStyle::TSql => {
+            buf.push_str("0x");
+            buf.push_str(&hex);
         }
     }
 }

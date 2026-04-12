@@ -154,7 +154,7 @@ impl Default for PipelineConfig {
             speed_limit_rps: None,
             error_limit: 0,
             shard_count: None,
-            transaction_batch_size: 1,
+            transaction_batch_size: 10,
             write_pause_ms: Some(20),
             max_bytes_per_tx: Some(4 * 1024 * 1024),
         }

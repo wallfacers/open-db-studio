@@ -637,6 +637,43 @@ impl DataSource for MySqlDataSource {
 
     fn supports_txn_bulk_write(&self) -> bool { true }
 
+    async fn begin_bulk_write_txn(&self) -> crate::AppResult<Option<crate::datasource::BulkWriteTxn>> {
+        let tx = self.pool.begin().await?;
+        Ok(Some(crate::datasource::BulkWriteTxn::MySql(tx)))
+    }
+
+    async fn bulk_write_in_txn(
+        &self,
+        txn: &mut crate::datasource::BulkWriteTxn,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> crate::AppResult<usize> {
+        match txn {
+            crate::datasource::BulkWriteTxn::MySql(tx) => {
+                let max_packet = self.query_and_cache_max_allowed_packet().await;
+                Self::bulk_write_native_in_txn_static(
+                    tx, table, columns, rows,
+                    conflict_strategy, upsert_keys, driver, max_packet,
+                ).await
+            }
+            _ => Err(crate::error::AppError::Other("Invalid txn handle for MySQL".into())),
+        }
+    }
+
+    async fn commit_bulk_write_txn(&self, txn: crate::datasource::BulkWriteTxn) -> crate::AppResult<()> {
+        match txn {
+            crate::datasource::BulkWriteTxn::MySql(tx) => {
+                tx.commit().await?;
+                Ok(())
+            }
+            _ => Err(crate::error::AppError::Other("Invalid txn handle for MySQL".into())),
+        }
+    }
+
     async fn execute_streaming(
         &self,
         sql: &str,
@@ -1106,6 +1143,89 @@ impl MySqlDataSource {
 
         let affected = conn.affected_rows();
         Ok(affected as usize)
+    }
+
+    /// Static method for bulk_write_native_in_txn (called from trait impl).
+    /// Executes chunked INSERT within a transaction, respecting max_allowed_packet.
+    async fn bulk_write_native_in_txn_static(
+        txn: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+        max_packet: usize,
+    ) -> AppResult<usize> {
+        use crate::datasource::bulk_write::{InsertTemplate, build_native_chunk_sql};
+
+        let max_sql_bytes = (max_packet as f64 * 0.75).round() as usize;
+        let escape_style = crate::datasource::StringEscapeStyle::Standard;
+        let num_cols = columns.len();
+
+        let tmpl = InsertTemplate::new(table, columns, conflict_strategy, upsert_keys, driver);
+
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for v in &r.values {
+                    size += v.estimated_sql_size();
+                }
+                size
+            })
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > max_sql_bytes {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = build_native_chunk_sql(&tmpl, chunk, &escape_style);
+
+            // Binary search fallback if estimation underestimates
+            if sql.len() > max_sql_bytes && chunk.len() > 1 {
+                let mut hi = chunk.len() - 1;
+                let mut lo = 1;
+                let mut best = 1;
+                while lo <= hi {
+                    let mid = (lo + hi) / 2;
+                    let test_sql = build_native_chunk_sql(&tmpl, &chunk[..mid], &escape_style);
+                    if test_sql.len() <= max_sql_bytes {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                let sql = build_native_chunk_sql(&tmpl, &chunk[..best], &escape_style);
+                let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql)
+                    .execute(&mut **txn).await
+                    .map_err(|e| crate::error::AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+                total_written += result.rows_affected().min(best as u64) as usize;
+                chunk_start += best;
+                continue;
+            }
+
+            let result: sqlx::mysql::MySqlQueryResult = sqlx::query(&sql)
+                .execute(&mut **txn).await
+                .map_err(|e| crate::error::AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
     }
 
     /// Native INSERT chunked: MigrationRow → SQL literal directly (no serde_json intermediate).

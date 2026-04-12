@@ -135,15 +135,6 @@ pub fn decode_postgres_column(
 // ── SQL literal generation ────────────────────────────────────────────────────
 
 impl MigrationValue {
-    /// Extract i64 for cursor-based pagination (used by range-split reader).
-    pub fn as_i64_for_cursor(&self) -> Option<i64> {
-        match self {
-            MigrationValue::Int(v) => Some(*v),
-            MigrationValue::UInt(v) => (*v).try_into().ok(),
-            _ => None,
-        }
-    }
-
     /// Write this value as a SQL literal into the buffer.
     pub fn to_sql_literal_into(&self, style: &StringEscapeStyle, buf: &mut String) {
         match self {
@@ -291,24 +282,6 @@ impl MigrationRow {
     pub fn to_json_row(&self) -> Vec<serde_json::Value> {
         self.values.iter().map(|v| v.to_json_value()).collect()
     }
-}
-
-/// Serialize multiple MigrationRows into a TSV byte buffer (MySQL LOAD DATA).
-pub fn migration_rows_to_tsv(rows: &[MigrationRow]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(rows.len() * 100);
-    for row in rows {
-        row.to_tsv_line(&mut buf);
-    }
-    buf
-}
-
-/// Serialize multiple MigrationRows into a CSV byte buffer (PostgreSQL COPY).
-pub fn migration_rows_to_csv(rows: &[MigrationRow]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(rows.len() * 100);
-    for row in rows {
-        row.to_csv_line(&mut buf);
-    }
-    buf
 }
 
 #[cfg(test)]

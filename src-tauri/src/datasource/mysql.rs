@@ -743,51 +743,67 @@ impl DataSource for MySqlDataSource {
         Ok((columns, rx))
     }
 
-    async fn migration_read_sql(
+    async fn migration_read_sql_stream(
         &self,
         sql: &str,
-    ) -> crate::AppResult<Option<(Vec<String>, Vec<crate::migration::native_row::MigrationRow>)>> {
-        // Stream-based read: rows are pulled one-by-one via fetch() and accumulated
-        // into a batch. This prevents materializing the entire result set at once.
-        // The channel byte-gate (pipeline layer) provides backpressure: if the writer
-        // is slow, the reader blocks mid-stream rather than buffering millions of rows.
-        use crate::migration::native_row::{MigrationRow, MigrationValue};
+        channel_cap: usize,
+    ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
         use crate::migration::native_row::decode_mysql_column;
+        use crate::migration::native_row::MigrationRow;
         use sqlx::Column;
         use sqlx::Row;
         use futures_util::TryStreamExt;
 
-        let mut stream = sqlx::query(sql).fetch(&self.pool);
+        let sql_owned = sql.to_string();
+        let pool = self.pool.clone();
+        let (col_tx, col_rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
 
-        // Fetch the first row to get columns and detect empty result
-        let first_row = match stream.try_next().await? {
-            Some(r) => r,
-            None => return Ok(None),
-        };
+        tokio::spawn(async move {
+            let mut stream = sqlx::query(&sql_owned).fetch(&pool);
+            
+            match stream.try_next().await {
+                Ok(Some(first_row)) => {
+                    let columns: Vec<String> = first_row.columns().iter()
+                        .map(|c| c.name().to_string()).collect();
+                    let num_cols = columns.len();
+                    
+                    if col_tx.send(columns).is_err() {
+                        return;
+                    }
 
-        let columns: Vec<String> = first_row.columns().iter()
-            .map(|c| c.name().to_string()).collect();
-        let num_cols = columns.len();
+                    // Send first row
+                    let values = (0..num_cols)
+                        .map(|i| decode_mysql_column(&first_row, i))
+                        .collect();
+                    if tx.send(MigrationRow { values }).await.is_err() {
+                        return;
+                    }
 
-        let mut mig_rows = Vec::new();
+                    // Stream remaining rows
+                    while let Ok(Some(row)) = stream.try_next().await {
+                        let values = (0..num_cols)
+                            .map(|i| decode_mysql_column(&row, i))
+                            .collect();
+                        if tx.send(MigrationRow { values }).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Ok(None) => {
+                    let _ = col_tx.send(Vec::new());
+                }
+                Err(_e) => {
+                    // In a real app we might want to return the error, 
+                    // but the channel will just close and the caller will get an error from col_rx
+                    // if we drop col_tx. Wait, we can send error or just empty columns?
+                    // Let's just drop it, col_rx will return RecvError.
+                }
+            }
+        });
 
-        // Process first row
-        {
-            let values: Vec<MigrationValue> = (0..num_cols)
-                .map(|i| decode_mysql_column(&first_row, i))
-                .collect();
-            mig_rows.push(MigrationRow { values });
-        }
-
-        // Stream remaining rows one-by-one
-        while let Ok(Some(row)) = stream.try_next().await {
-            let values: Vec<MigrationValue> = (0..num_cols)
-                .map(|i| decode_mysql_column(&row, i))
-                .collect();
-            mig_rows.push(MigrationRow { values });
-        }
-
-        Ok(Some((columns, mig_rows)))
+        let columns = col_rx.await.map_err(|_| crate::AppError::Other("Failed to read columns from stream task".to_string()))?;
+        Ok((columns, rx))
     }
 
     async fn bulk_write_native(
@@ -1100,7 +1116,6 @@ impl MySqlDataSource {
     ) -> AppResult<usize> {
         use mysql_async::prelude::*;
         use futures_util::StreamExt;
-        use crate::migration::native_row::migration_rows_to_tsv;
 
         let pool = self.get_mig_pool().await?;
         let mut conn = pool.get_conn().await
@@ -1108,13 +1123,18 @@ impl MySqlDataSource {
 
         let _ = conn.query_drop("SET SESSION unique_checks = 0; SET SESSION foreign_key_checks = 0; SET SESSION sql_log_bin = 0;").await;
 
-        let tsv_data = migration_rows_to_tsv(rows);
-        let tsv_bytes = bytes::Bytes::from(tsv_data);
-
+        let rows_vec = rows.to_vec();
         conn.set_infile_handler(async move {
-            Ok(futures_util::stream::once(
-                async move { Ok(tsv_bytes) }
-            ).boxed())
+            let stream = futures_util::stream::iter(rows_vec)
+                .chunks(1000) // Batch 1000 rows into one TSV chunk for better throughput
+                .map(|chunk| {
+                    let mut buf = Vec::with_capacity(chunk.len() * 128);
+                    for row in chunk {
+                        row.to_tsv_line(&mut buf);
+                    }
+                    Ok(bytes::Bytes::from(buf))
+                });
+            Ok(stream.boxed())
         });
 
         let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "mysql");

@@ -684,6 +684,31 @@ pub trait DataSource: Send + Sync {
         Ok(Some((columns, mig_rows)))
     }
 
+    /// Read query results with native-typed values as a stream.
+    /// Returns `(columns, receiver)` where the receiver yields `MigrationRow` one-by-one.
+    /// Default implementation: falls back to `migration_read_sql()` and batches through a channel.
+    async fn migration_read_sql_stream(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+    ) -> AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
+        let res = self.migration_read_sql(sql).await?;
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+        match res {
+            Some((cols, rows)) => {
+                tokio::spawn(async move {
+                    for row in rows {
+                        if tx.send(row).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+                Ok((cols, rx))
+            }
+            None => Ok((Vec::new(), rx)),
+        }
+    }
+
     /// Batch-write native-typed rows to a table.
     ///
     /// This is the dedicated write path for migration when the source produced

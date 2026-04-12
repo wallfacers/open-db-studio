@@ -452,14 +452,12 @@ impl PostgresDataSource {
         rows: &[crate::migration::native_row::MigrationRow],
     ) -> AppResult<usize> {
         use sqlx::postgres::PgPoolCopyExt;
-        use crate::migration::native_row::migration_rows_to_csv;
 
         let mut col_list = String::with_capacity(columns.len() * 32);
         for (i, col) in columns.iter().enumerate() {
             if i > 0 { col_list.push_str(", "); }
             crate::datasource::utils::quote_identifier_for_driver_into(col, "postgres", &mut col_list);
         }
-        let csv_data = migration_rows_to_csv(rows);
 
         let mut quoted_table = String::new();
         crate::datasource::utils::quote_identifier_for_driver_into(table, "postgres", &mut quoted_table);
@@ -471,8 +469,21 @@ impl PostgresDataSource {
 
         let mut copy_in = self.pool.copy_in_raw(&copy_sql).await
             .map_err(|e| AppError::Datasource(format!("COPY native: {}", e)))?;
-        copy_in.send(csv_data.as_slice()).await
-            .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY native send: {}", e)))?;
+
+        let mut buf = Vec::with_capacity(1000 * 128);
+        for (i, row) in rows.iter().enumerate() {
+            row.to_csv_line(&mut buf);
+            if (i + 1) % 1000 == 0 {
+                copy_in.send(buf.as_slice()).await
+                    .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY native send: {}", e)))?;
+                buf.clear();
+            }
+        }
+        if !buf.is_empty() {
+            copy_in.send(buf.as_slice()).await
+                .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY native send: {}", e)))?;
+        }
+
         let rows_copied = copy_in.finish().await
             .map_err(|e| AppError::Datasource(format!("COPY native finish: {}", e)))?;
 
@@ -1114,50 +1125,67 @@ impl DataSource for PostgresDataSource {
         Ok((columns, rx))
     }
 
-    async fn migration_read_sql(
+    async fn migration_read_sql_stream(
         &self,
         sql: &str,
-    ) -> crate::AppResult<Option<(Vec<String>, Vec<crate::migration::native_row::MigrationRow>)>> {
-        // Stream-based read: rows are pulled one-by-one via fetch() and accumulated
-        // into a batch. Backpressure from the pipeline's byte-gated channel prevents
-        // unbounded memory growth when the writer is slower than the reader.
-        use crate::migration::native_row::{MigrationRow, MigrationValue};
+        channel_cap: usize,
+    ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
         use crate::migration::native_row::decode_postgres_column;
+        use crate::migration::native_row::MigrationRow;
         use sqlx::Column;
         use sqlx::Row;
         use futures_util::TryStreamExt;
 
-        let mut stream = sqlx::query(sql).fetch(&self.pool);
+        let sql_owned = sql.to_string();
+        let pool = self.pool.clone();
+        let (col_tx, col_rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
 
-        // Fetch the first row to get columns and detect empty result
-        let first_row = match stream.try_next().await? {
-            Some(r) => r,
-            None => return Ok(None),
-        };
+        tokio::spawn(async move {
+            let mut stream = sqlx::query(&sql_owned).fetch(&pool);
+            
+            match stream.try_next().await {
+                Ok(Some(first_row)) => {
+                    let columns: Vec<String> = first_row.columns().iter()
+                        .map(|c| c.name().to_string()).collect();
+                    let num_cols = columns.len();
+                    
+                    if col_tx.send(columns).is_err() {
+                        return;
+                    }
 
-        let columns: Vec<String> = first_row.columns().iter()
-            .map(|c| c.name().to_string()).collect();
-        let num_cols = columns.len();
+                    // Send first row
+                    let values = (0..num_cols)
+                        .map(|i| decode_postgres_column(&first_row, i))
+                        .collect();
+                    if tx.send(MigrationRow { values }).await.is_err() {
+                        return;
+                    }
 
-        let mut mig_rows = Vec::new();
+                    // Stream remaining rows
+                    while let Ok(Some(row)) = stream.try_next().await {
+                        let values = (0..num_cols)
+                            .map(|i| decode_postgres_column(&row, i))
+                            .collect();
+                        if tx.send(MigrationRow { values }).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+                Ok(None) => {
+                    let _ = col_tx.send(Vec::new());
+                }
+                Err(_e) => {
+                    // In a real app we might want to return the error, 
+                    // but the channel will just close and the caller will get an error from col_rx
+                    // if we drop col_tx. Wait, we can send error or just empty columns?
+                    // Let's just drop it, col_rx will return RecvError.
+                }
+            }
+        });
 
-        // Process first row
-        {
-            let values: Vec<MigrationValue> = (0..num_cols)
-                .map(|i| decode_postgres_column(&first_row, i))
-                .collect();
-            mig_rows.push(MigrationRow { values });
-        }
-
-        // Stream remaining rows one-by-one
-        while let Ok(Some(row)) = stream.try_next().await {
-            let values: Vec<MigrationValue> = (0..num_cols)
-                .map(|i| decode_postgres_column(&row, i))
-                .collect();
-            mig_rows.push(MigrationRow { values });
-        }
-
-        Ok(Some((columns, mig_rows)))
+        let columns = col_rx.await.map_err(|_| crate::AppError::Other("Failed to read columns from stream task".to_string()))?;
+        Ok((columns, rx))
     }
 
     async fn bulk_write_native(

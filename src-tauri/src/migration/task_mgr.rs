@@ -122,7 +122,7 @@ pub struct PipelineConfig {
     #[serde(default = "default_transaction_batch_size")]
     pub transaction_batch_size: usize,
     /// Optional cooldown (ms) between transaction commits, giving disk I/O breathing room.
-    /// Default: Some(20) — 20ms pause per commit keeps InnoDB flush pace with write rate.
+    /// Default: None — no pause; set manually only if target disk is slow.
     #[serde(default = "default_write_pause_ms")]
     pub write_pause_ms: Option<u64>,
     /// Maximum bytes per transaction. Flush early when accumulated row bytes exceed this
@@ -137,7 +137,7 @@ fn default_transaction_batch_size() -> usize {
 }
 
 fn default_write_pause_ms() -> Option<u64> {
-    Some(20)
+    None
 }
 
 fn default_max_bytes_per_tx() -> Option<u64> {
@@ -155,7 +155,7 @@ impl Default for PipelineConfig {
             error_limit: 0,
             shard_count: None,
             transaction_batch_size: 10,
-            write_pause_ms: Some(20),
+            write_pause_ms: None,
             max_bytes_per_tx: Some(4 * 1024 * 1024),
         }
     }

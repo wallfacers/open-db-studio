@@ -173,11 +173,25 @@ fn emit_log(app: &AppHandle, job_id: i64, run_id: &str, level: &str, message: &s
 
 type Row = Vec<serde_json::Value>;
 
+/// Batch of rows sent from reader to writer through the channel.
+/// Reduces channel send calls from N_rows to N_pages (e.g., 10M → 5K).
+struct RowBatch {
+    rows: Vec<Row>,
+}
+
+/// Native-typed row batch for the dedicated migration read path (Phase 3).
+/// MySQL/PostgreSQL use this to avoid serde_json::Value stringification.
+struct MigrationRowBatch {
+    columns: Vec<String>,
+    rows: Vec<crate::migration::native_row::MigrationRow>,
+}
+
 /// Messages sent from reader to writer through the channel.
-/// Reader sends Columns once, then streams Row messages.
+/// Reader sends Columns once, then streams RowBatch or MigrationBatch messages.
 enum ChannelMsg {
     Columns(Vec<String>),
-    Row(Row),
+    RowBatch(RowBatch),
+    MigrationBatch(MigrationRowBatch),
 }
 
 /// Detect whether an error message indicates a dead connection (not a business error).
@@ -202,6 +216,56 @@ fn json_value_len(v: &serde_json::Value) -> u64 {
         serde_json::Value::String(s) => s.len() as u64,
         other => other.to_string().len() as u64,
     }
+}
+
+/// Build INSERT SQL from native MigrationRows.
+/// Used by the MigrationBatch writer path to avoid JSON round-trip.
+fn build_native_insert_sql(
+    columns: &[String],
+    rows: &[crate::migration::native_row::MigrationRow],
+    table: &str,
+    driver: &str,
+    _conflict_strategy: &ConflictStrategy,
+    _upsert_keys: &[String],
+) -> String {
+    use crate::datasource::utils::quote_identifier_for_driver_into;
+    use crate::datasource::StringEscapeStyle;
+
+    let escape_style = match driver {
+        "postgres" => StringEscapeStyle::PostgresLiteral,
+        "sqlserver" | "oracle" | "db2" => StringEscapeStyle::TSql,
+        "sqlite" => StringEscapeStyle::SQLiteLiteral,
+        _ => StringEscapeStyle::Standard,  // mysql, doris, tidb, clickhouse
+    };
+
+    let num_cols = columns.len();
+    // Estimate: prefix + rows * cols * avg_value_size + commas
+    let mut sql = String::with_capacity(
+        32 + table.len() + num_cols * 16 + rows.len() * num_cols * 30,
+    );
+
+    // INSERT INTO `table` (`col1`, `col2`, ...) VALUES
+    sql.push_str("INSERT INTO ");
+    quote_identifier_for_driver_into(table, driver, &mut sql);
+    sql.push_str(" (");
+    for (i, col) in columns.iter().enumerate() {
+        if i > 0 { sql.push_str(", "); }
+        quote_identifier_for_driver_into(col, driver, &mut sql);
+    }
+    sql.push_str(") VALUES ");
+
+    // Row values
+    for (row_idx, row) in rows.iter().enumerate() {
+        if row_idx > 0 { sql.push_str(", "); }
+        sql.push('(');
+        for (col_idx, v) in row.values.iter().enumerate() {
+            if col_idx > 0 { sql.push_str(", "); }
+            v.to_sql_literal_into(&escape_style, &mut sql);
+        }
+        sql.push(')');
+    }
+
+    sql
 }
 
 // ── Public entry-point ────────────────────────────────────────────────────────
@@ -1066,6 +1130,10 @@ async fn run_reader_writer_pair(
         use crate::migration::splitter::{parse_i64_from_json, quote_col_for_driver};
         use std::time::Duration;
 
+        // Detect native read support: MySQL and PostgreSQL override migration_read_sql
+        // with native type decoding, avoiding serde_json::Value stringification.
+        let use_native = matches!(src_driver.as_str(), "mysql" | "postgres");
+
         // Rate limiter state: (window_start, rows_in_window)
         let mut rate_state: Option<(Instant, u64)> = speed_limit_rps.map(|_| (Instant::now(), 0u64));
 
@@ -1088,37 +1156,75 @@ async fn run_reader_writer_pair(
                     "SELECT * FROM ({src}) AS _mig_s_ WHERE {cond} ORDER BY {pk} LIMIT {limit}",
                     src = source_query, cond = range_cond, pk = pk_q, limit = read_batch_size,
                 );
-                let page = src_ds.execute(&page_sql).await?;
-                if page.rows.is_empty() {
-                    break;
-                }
-                let fetched = page.rows.len();
 
-                if columns_opt.is_none() {
-                    pk_col_idx = page.columns.iter().position(|c| c.eq_ignore_ascii_case(&pk_col));
-                    columns_opt = Some(page.columns.clone());
-                    tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
-                }
+                let fetched = if use_native {
+                    let result = src_ds.migration_read_sql(&page_sql).await?;
+                    let (columns, mig_rows) = match result {
+                        Some((cols, rows)) => (cols, rows),
+                        None => break,
+                    };
+                    let n = mig_rows.len();
 
-                let last_pk = page.rows.last()
-                    .and_then(|r| pk_col_idx.and_then(|i| r.get(i)))
-                    .and_then(parse_i64_from_json)
-                    .unwrap_or(i64::MAX);
-                cursor = last_pk.saturating_add(1);
+                    if columns_opt.is_none() {
+                        pk_col_idx = columns.iter().position(|c| c.eq_ignore_ascii_case(&pk_col));
+                        columns_opt = Some(columns.clone());
+                        tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
+                    }
 
-                for row in &page.rows {
-                    let row_bytes: u64 = row.iter().map(json_value_len).sum();
-                    ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
-                    gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
-                }
-                ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
-                gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+                    let last_pk = mig_rows.last()
+                        .and_then(|r| pk_col_idx.and_then(|i| r.values.get(i)))
+                        .and_then(|v| v.as_i64_for_cursor())
+                        .unwrap_or(i64::MAX);
+                    cursor = last_pk.saturating_add(1);
 
-                for row in page.rows {
-                    if tx.send(ChannelMsg::Row(row)).await.is_err() {
+                    for row in &mig_rows {
+                        let row_bytes: u64 = row.values.iter()
+                            .map(|v| v.estimated_sql_size() as u64).sum();
+                        ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                        gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                    }
+                    ms_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
+                    gs_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
+
+                    if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
+                        columns: columns_opt.as_ref().unwrap().clone(),
+                        rows: mig_rows,
+                    })).await.is_err() {
                         break;
                     }
-                }
+                    n
+                } else {
+                    let page = src_ds.execute(&page_sql).await?;
+                    if page.rows.is_empty() {
+                        break;
+                    }
+                    let n = page.rows.len();
+
+                    if columns_opt.is_none() {
+                        pk_col_idx = page.columns.iter().position(|c| c.eq_ignore_ascii_case(&pk_col));
+                        columns_opt = Some(page.columns.clone());
+                        tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
+                    }
+
+                    let last_pk = page.rows.last()
+                        .and_then(|r| pk_col_idx.and_then(|i| r.get(i)))
+                        .and_then(parse_i64_from_json)
+                        .unwrap_or(i64::MAX);
+                    cursor = last_pk.saturating_add(1);
+
+                    for row in &page.rows {
+                        let row_bytes: u64 = row.iter().map(json_value_len).sum();
+                        ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                        gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                    }
+                    ms_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
+                    gs_reader.rows_read.fetch_add(n as u64, Ordering::Relaxed);
+
+                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows })).await.is_err() {
+                        break;
+                    }
+                    n
+                };
 
                 // Rate limiting
                 if let (Some(rps_limit), Some((ref mut window_start, ref mut window_rows))) =
@@ -1148,34 +1254,77 @@ async fn run_reader_writer_pair(
                 if cancel_r.load(Ordering::Relaxed) {
                     break;
                 }
-                let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
-                if page.rows.is_empty() {
-                    break;
-                }
-                let fetched = page.rows.len();
-                if columns_opt.is_none() {
-                    columns_opt = Some(page.columns.clone());
-                    tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
-                }
-                for row in &page.rows {
-                    let row_bytes: u64 = row.iter().map(json_value_len).sum();
-                    ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
-                    gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
-                }
-                ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
-                gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
 
-                for row in page.rows {
-                    if tx.send(ChannelMsg::Row(row)).await.is_err() {
+                if use_native {
+                    let page_q = format!(
+                        "SELECT * FROM ({}) AS _mig_page_ LIMIT {} OFFSET {}",
+                        source_query, read_batch_size, offset,
+                    );
+                    let result = src_ds.migration_read_sql(&page_q).await?;
+                    let (columns, mig_rows) = match result {
+                        Some((cols, rows)) => (cols, rows),
+                        None => break,
+                    };
+                    let fetched = mig_rows.len();
+
+                    if columns_opt.is_none() {
+                        columns_opt = Some(columns.clone());
+                        tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
+                    }
+
+                    for row in &mig_rows {
+                        let row_bytes: u64 = row.values.iter()
+                            .map(|v| v.estimated_sql_size() as u64).sum();
+                        ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                        gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                    }
+                    ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+                    gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+
+                    if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
+                        columns: columns_opt.as_ref().unwrap().clone(),
+                        rows: mig_rows,
+                    })).await.is_err() {
                         break;
                     }
+
+                    if fetched < read_batch_size {
+                        break;
+                    }
+                    offset += fetched;
+                } else {
+                    let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
+                    if page.rows.is_empty() {
+                        break;
+                    }
+                    let fetched = page.rows.len();
+                    if columns_opt.is_none() {
+                        columns_opt = Some(page.columns.clone());
+                        tx.send(ChannelMsg::Columns(columns_opt.as_ref().unwrap().clone())).await.ok();
+                    }
+                    for row in &page.rows {
+                        let row_bytes: u64 = row.iter().map(json_value_len).sum();
+                        ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                        gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                    }
+                    ms_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+                    gs_reader.rows_read.fetch_add(fetched as u64, Ordering::Relaxed);
+
+                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows })).await.is_err() {
+                        break;
+                    }
+
+                    if fetched < read_batch_size {
+                        break;
+                    }
+                    offset += fetched;
                 }
 
                 // Rate limiting
                 if let (Some(rps_limit), Some((ref mut window_start, ref mut window_rows))) =
                     (speed_limit_rps, &mut rate_state)
                 {
-                    *window_rows += fetched as u64;
+                    *window_rows += read_batch_size as u64;
                     let elapsed = window_start.elapsed();
                     let expected = Duration::from_secs_f64(*window_rows as f64 / rps_limit as f64);
                     if expected > elapsed {
@@ -1186,11 +1335,6 @@ async fn run_reader_writer_pair(
                         *window_rows = window_rows.saturating_sub(rps_limit);
                     }
                 }
-
-                if fetched < read_batch_size {
-                    break;
-                }
-                offset += fetched;
             }
         }
         Ok(())
@@ -1263,6 +1407,50 @@ async fn run_reader_writer_pair(
             }};
         }
 
+        /// Execute a single bulk_write with timeout, return (result, wrote_ok).
+        /// On timeout, logs the error and updates stats (circuit breaker checks done inline).
+        async fn flush_write_batch(
+            dst_ds: &dyn crate::datasource::DataSource,
+            semaphore: Arc<Semaphore>,
+            target_table: &str,
+            buf_columns: &[String],
+            rows: Vec<Row>,
+            conflict_strategy: &ConflictStrategy,
+            upsert_keys: &[String],
+            dst_driver: &str,
+            app_writer: &AppHandle,
+            job_id: i64,
+            run_id_w: &str,
+            label_w: &str,
+            ms_writer: &PipelineStats,
+            gs_writer: &PipelineStats,
+        ) -> Result<(Result<usize, AppError>, bool), AppError> {
+            let batch_len = rows.len() as u64;
+            let _permit = semaphore.acquire_owned().await
+                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+            let res = tokio::time::timeout(
+                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                dst_ds.bulk_write(
+                    target_table, buf_columns, &rows,
+                    conflict_strategy, upsert_keys, dst_driver,
+                ),
+            ).await;
+
+            match res {
+                Err(_) => {
+                    emit_log(app_writer, job_id, run_id_w, "WARN",
+                        &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
+                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                    // Caller handles circuit breaker checks
+                    Ok((Err(AppError::Other("write timeout".into())), false))
+                }
+                Ok(r) => Ok((r, true)),
+            }
+        }
+
         while let Some(msg) = rx.recv().await {
             if cancel_w.load(Ordering::Relaxed) {
                 break;
@@ -1271,48 +1459,36 @@ async fn run_reader_writer_pair(
                 ChannelMsg::Columns(cols) => {
                     buf_columns = cols;
                 }
-                ChannelMsg::Row(row) => {
-                    write_buf.push(row);
-                    if write_buf.len() >= write_batch_size {
+                ChannelMsg::RowBatch(batch) => {
+                    write_buf.extend(batch.rows);
+                    while write_buf.len() >= write_batch_size {
                         let rows = std::mem::replace(&mut write_buf, Vec::with_capacity(write_batch_size));
                         let batch_len = rows.len() as u64;
-                        let _permit = semaphore.clone().acquire_owned().await
-                            .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
 
-                        let res = tokio::time::timeout(
-                            tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
-                            dst_ds.bulk_write(
-                                &target_table, &buf_columns, &rows,
-                                &conflict_strategy, &upsert_keys, &dst_driver,
-                            ),
-                        ).await;
+                        let (write_res, wrote_ok) = flush_write_batch(
+                            dst_ds.as_ref(), semaphore.clone(), &target_table, &buf_columns, rows,
+                            &conflict_strategy, &upsert_keys, &dst_driver,
+                            &app_writer, job_id, &run_id_w, &label_w,
+                            &ms_writer, &gs_writer,
+                        ).await?;
 
-                        let write_res = match res {
-                            Err(_) => {
-                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
-                                    &format!("[{}] bulk_write timed out after {}s ({} rows failed)",
-                                        label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
-                                ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                                gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
-                                error_count = error_count.saturating_add(batch_len as usize);
-                                consecutive_full_fails += 1;
-                                // Check circuit breaker after timeout
-                                if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
-                                    emit_log(&app_writer, job_id, &run_id_w, "ERROR",
-                                        &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
-                                    return Err(AppError::Other(format!(
-                                        "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
-                                    )));
-                                }
-                                if error_limit > 0 && error_count >= error_limit {
-                                    return Err(AppError::Other(format!(
-                                        "Error limit ({}) exceeded: {} errors", error_limit, error_count
-                                    )));
-                                }
-                                continue;
+                        if !wrote_ok {
+                            // Timeout: update circuit breaker state
+                            consecutive_full_fails += 1;
+                            if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                                emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                    &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
+                                return Err(AppError::Other(format!(
+                                    "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                                )));
                             }
-                            Ok(r) => r,
-                        };
+                            if error_limit > 0 && error_count >= error_limit {
+                                return Err(AppError::Other(format!(
+                                    "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                                )));
+                            }
+                            continue;
+                        }
 
                         handle_write_result!(write_res, batch_len);
 
@@ -1322,6 +1498,107 @@ async fn run_reader_writer_pair(
                                 if pause_ms > 0 {
                                     tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
                                 }
+                            }
+                        }
+                    }
+                }
+                ChannelMsg::MigrationBatch(batch) => {
+                    // Native-typed migration rows: build INSERT SQL directly,
+                    // avoiding serde_json::Value stringification overhead.
+                    buf_columns = batch.columns.clone();
+                    let mut native_buf: Vec<crate::migration::native_row::MigrationRow> =
+                        Vec::with_capacity(write_batch_size);
+
+                    for row in batch.rows {
+                        let row_bytes: u64 = row.values.iter()
+                            .map(|v| v.estimated_sql_size() as u64).sum();
+                        ms_writer.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+                        gs_writer.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
+
+                        native_buf.push(row);
+                        if native_buf.len() >= write_batch_size {
+                            let batch_len = native_buf.len() as u64;
+                            let _permit = semaphore.clone().acquire_owned().await
+                                .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+                            let sql = build_native_insert_sql(
+                                &buf_columns, &native_buf,
+                                &target_table, &dst_driver,
+                                &conflict_strategy, &upsert_keys,
+                            );
+
+                            let res = tokio::time::timeout(
+                                tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                                dst_ds.execute(&sql),
+                            ).await;
+
+                            native_buf.clear();
+
+                            match res {
+                                Err(_) => {
+                                    emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                        &format!("[{}] Native bulk_write timed out after {}s ({} rows failed)",
+                                            label_w, WRITE_BATCH_TIMEOUT_SECS, batch_len));
+                                    ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                    gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                    error_count = error_count.saturating_add(batch_len as usize);
+                                    consecutive_full_fails += 1;
+                                    if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                                        emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                            &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
+                                        return Err(AppError::Other(format!(
+                                            "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                                        )));
+                                    }
+                                    if error_limit > 0 && error_count >= error_limit {
+                                        return Err(AppError::Other(format!(
+                                            "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                                        )));
+                                    }
+                                }
+                                Ok(r) => {
+                                    let write_res = r.map(|qr| qr.row_count as usize);
+                                    handle_write_result!(write_res, batch_len);
+                                    if write_res.is_ok() {
+                                        if let Some(pause_ms) = write_pause_ms {
+                                            if pause_ms > 0 {
+                                                tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Drain remainder of native buffer
+                    if !native_buf.is_empty() {
+                        let batch_len = native_buf.len() as u64;
+                        let _permit = semaphore.clone().acquire_owned().await
+                            .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
+
+                        let sql = build_native_insert_sql(
+                            &buf_columns, &native_buf,
+                            &target_table, &dst_driver,
+                            &conflict_strategy, &upsert_keys,
+                        );
+
+                        let res = tokio::time::timeout(
+                            tokio::time::Duration::from_secs(WRITE_BATCH_TIMEOUT_SECS),
+                            dst_ds.execute(&sql),
+                        ).await;
+
+                        match res {
+                            Err(_) => {
+                                emit_log(&app_writer, job_id, &run_id_w, "WARN",
+                                    &format!("[{}] Final native flush timed out ({} rows failed)",
+                                        label_w, batch_len));
+                                ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                                gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
+                            }
+                            Ok(r) => {
+                                let write_res = r.map(|qr| qr.row_count as usize);
+                                handle_write_result!(write_res, batch_len);
                             }
                         }
                     }

@@ -706,6 +706,34 @@ impl DataSource for MySqlDataSource {
         Ok((columns, rx))
     }
 
+    async fn migration_read_sql(
+        &self,
+        sql: &str,
+    ) -> crate::AppResult<Option<(Vec<String>, Vec<crate::migration::native_row::MigrationRow>)>> {
+        use crate::migration::native_row::{MigrationRow, MigrationValue};
+        use crate::migration::native_row::decode_mysql_column;
+        use sqlx::Column;
+        use sqlx::Row;
+
+        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let columns: Vec<String> = rows[0].columns().iter()
+            .map(|c| c.name().to_string()).collect();
+        let num_cols = columns.len();
+
+        let mig_rows: Vec<MigrationRow> = rows.iter().map(|row| {
+            let values: Vec<MigrationValue> = (0..num_cols)
+                .map(|i| decode_mysql_column(row, i))
+                .collect();
+            MigrationRow { values }
+        }).collect();
+
+        Ok(Some((columns, mig_rows)))
+    }
+
     async fn bulk_write(
         &self,
         table: &str,

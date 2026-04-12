@@ -531,15 +531,16 @@ impl DataSource for ClickHouseDataSource {
             body.push('\n');
         }
 
-        let quote = |c: &str| format!("`{}`", c.replace('`', "``"));
-        let col_list = columns
-            .iter()
-            .map(|c| quote(c))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let mut col_list = String::with_capacity(columns.len() * 20);
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 { col_list.push_str(", "); }
+            crate::datasource::utils::quote_identifier_for_driver_into(col, "clickhouse", &mut col_list);
+        }
+        let mut quoted_table = String::new();
+        crate::datasource::utils::quote_identifier_for_driver_into(table, "clickhouse", &mut quoted_table);
         let insert_sql = format!(
             "INSERT INTO {} ({}) FORMAT JSONEachRow",
-            quote(table),
+            quoted_table,
             col_list
         );
 

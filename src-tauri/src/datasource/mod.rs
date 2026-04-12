@@ -505,33 +505,64 @@ pub trait DataSource: Send + Sync {
     }
 
     /// 批量写入行数据到指定表。
-    /// 默认实现使用逐行 INSERT，各驱动按需覆盖以使用原生批量写入协议。
+    /// 默认实现使用共享的 build_insert_sql_optimized（多行 INSERT + 零分配），
+    /// 按 ~4MB 分块。各驱动按需覆盖以使用原生批量写入协议。
     async fn bulk_write(
         &self,
         table: &str,
         columns: &[String],
         rows: &[Vec<serde_json::Value>],
-        _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
-        _upsert_keys: &[String],
-        _driver: &str,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
     ) -> AppResult<usize> {
         if rows.is_empty() || columns.is_empty() {
             return Ok(0);
         }
-        // Fallback: build simple INSERT VALUES statements and execute
         let escape_style = self.string_escape_style();
-        let mut total = 0;
-        for row in rows {
-            let vals: Vec<String> = row.iter()
-                .map(|v| crate::datasource::utils::value_to_sql_safe(v, &escape_style))
-                .collect();
-            let sql = format!("INSERT INTO `{}` ({}) VALUES ({})",
-                table,
-                columns.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(", "),
-                vals.join(", "),
-            );
-            self.execute(&sql).await?;
-            total += 1;
+
+        // Chunk rows to keep each INSERT under ~4 MB (conservative default
+        // for drivers where we can't query the server's packet limit).
+        const MAX_SQL_BYTES: usize = 4 * 1024 * 1024;
+        let num_cols = columns.len();
+        let tmpl = crate::datasource::bulk_write::InsertTemplate::new(
+            table, columns, conflict_strategy, upsert_keys, driver,
+        );
+
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for val in r {
+                    size += match val {
+                        serde_json::Value::Null => 4,
+                        serde_json::Value::Bool(_) => 5,
+                        serde_json::Value::Number(_) => 25,
+                        serde_json::Value::String(s) => 3 + s.len() + (s.len() / 16),
+                        _ => 70,
+                    };
+                }
+                size
+            })
+            .collect();
+
+        let mut total = 0usize;
+        let mut chunk_start = 0;
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = tmpl.build_chunk_sql(chunk, &escape_style, num_cols);
+            let result = self.execute(&sql).await?;
+            total += result.row_count.min(chunk.len());
+            chunk_start = chunk_end;
         }
         Ok(total)
     }

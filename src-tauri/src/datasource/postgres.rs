@@ -285,6 +285,16 @@ impl PostgresDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        Self::build(config, schema, false).await
+    }
+
+    /// Constructor for migration pipelines — applies session-level optimizations
+    /// on every connection. Normal UI pools do NOT get these settings.
+    pub async fn new_for_migration(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        Self::build(config, schema, true).await
+    }
+
+    async fn build(config: &ConnectionConfig, schema: Option<&str>, for_migration: bool) -> AppResult<Self> {
         let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
         // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
@@ -334,20 +344,23 @@ impl PostgresDataSource {
         let idle_timeout = config.pool_idle_timeout_secs.unwrap_or(300);
         let acquire_timeout = config.connect_timeout_secs.unwrap_or(30);
 
-        let pool = PgPoolOptions::new()
+        let mut pool_opts = PgPoolOptions::new()
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
-            .idle_timeout(Duration::from_secs(idle_timeout as u64))
-            // Apply session-level optimizations on every connection for bulk writes.
-            .after_connect(|conn, _meta| Box::pin(async move {
+            .idle_timeout(Duration::from_secs(idle_timeout as u64));
+
+        // Migration pools: apply session optimizations on every connection.
+        if for_migration {
+            pool_opts = pool_opts.after_connect(|conn, _meta| Box::pin(async move {
                 use sqlx::Executor;
                 let _ = conn.execute("SET session_replication_role = 'replica'").await;
                 let _ = conn.execute("SET synchronous_commit = 'off'").await;
                 let _ = conn.execute("SET work_mem = '256MB'").await;
                 Ok(())
-            }))
-            .connect_with(opts)
-            .await?;
+            }));
+        }
+
+        let pool = pool_opts.connect_with(opts).await?;
         Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false) })
     }
 
@@ -403,13 +416,19 @@ impl PostgresDataSource {
     async fn bulk_write_copy(&self, table: &str, columns: &[String], rows: &[Vec<serde_json::Value>]) -> AppResult<usize> {
         use sqlx::postgres::PgPoolCopyExt;
 
-        let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "postgres");
-        let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
+        let mut col_list = String::with_capacity(columns.len() * 32);
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 { col_list.push_str(", "); }
+            crate::datasource::utils::quote_identifier_for_driver_into(col, "postgres", &mut col_list);
+        }
         let csv_data = crate::datasource::bulk_write::rows_to_csv(rows);
+
+        let mut quoted_table = String::new();
+        crate::datasource::utils::quote_identifier_for_driver_into(table, "postgres", &mut quoted_table);
 
         let copy_sql = format!(
             "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '')",
-            quote(table), col_list
+            quoted_table, col_list
         );
 
         let mut copy_in = self.pool.copy_in_raw(&copy_sql).await

@@ -40,6 +40,15 @@ impl GaussDbDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        Self::build(config, schema, false).await
+    }
+
+    /// Constructor for migration pipelines — applies session-level optimizations.
+    pub async fn new_for_migration(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        Self::build(config, schema, true).await
+    }
+
+    async fn build(config: &ConnectionConfig, schema: Option<&str>, for_migration: bool) -> AppResult<Self> {
         let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
         // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
@@ -74,6 +83,13 @@ impl GaussDbDataSource {
             .execute(&format!("SET search_path TO {}", quoted_schema), &[])
             .await
             .map_err(|e| AppError::Datasource(format!("Failed to set search_path: {}", e)))?;
+
+        // Migration pools: apply session optimizations immediately on this single connection.
+        if for_migration {
+            let _ = client.execute("SET synchronous_commit = 'off'", &[]).await;
+            let _ = client.execute("SET work_mem = '256MB'", &[]).await;
+            log::info!("GaussDB migration session optimizations applied at construction");
+        }
 
         Ok(Self {
             client: Arc::new(client),

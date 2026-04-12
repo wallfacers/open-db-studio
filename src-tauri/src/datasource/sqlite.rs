@@ -521,9 +521,11 @@ impl DataSource for SqliteDataSource {
 
         tokio::task::spawn_blocking(move || -> AppResult<usize> {
             let guard = conn.blocking_lock();
-            let quote = |c: &str| crate::datasource::utils::quote_identifier_for_driver(c, "sqlite");
-            let col_list = columns.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ");
-            let placeholders = (1..=columns.len())
+            let mut col_list = String::with_capacity(columns.len() * 20);
+            for (i, col) in columns.iter().enumerate() {
+                if i > 0 { col_list.push_str(", "); }
+                crate::datasource::utils::quote_identifier_for_driver_into(col, "sqlite", &mut col_list);
+            }            let placeholders = (1..=columns.len())
                 .map(|i| format!("?{}", i))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -533,10 +535,12 @@ impl DataSource for SqliteDataSource {
                 crate::migration::task_mgr::ConflictStrategy::Replace => "INSERT OR REPLACE INTO",
                 _ => "INSERT INTO",
             };
+            let mut quoted_table = String::new();
+            crate::datasource::utils::quote_identifier_for_driver_into(&table, "sqlite", &mut quoted_table);
             let sql = format!(
                 "{} {} ({}) VALUES ({})",
                 keyword,
-                quote(&table),
+                quoted_table,
                 col_list,
                 placeholders
             );

@@ -35,7 +35,8 @@ fn hex_to_binary_literal_into(hex_str: &str, style: &StringEscapeStyle, buf: &mu
     }
 }
 
-/// Allocating version — kept for callers outside the hot path.
+/// Allocating version — kept for test use.
+#[allow(dead_code)]
 fn hex_to_binary_literal(hex_str: &str, style: &StringEscapeStyle) -> String {
     let hex_data = if hex_str.starts_with("0x") {
         &hex_str[2..]
@@ -78,7 +79,8 @@ fn is_pure_integer(s: &str) -> bool {
         && (s.len() == 1 || !s.starts_with('0'))
 }
 
-/// 将 serde_json::Value 安全转换为 SQL 字面量字符串。
+/// Allocating version — kept for test and non-hot-path callers.
+#[allow(dead_code)]
 /// 根据目标驱动的 StringEscapeStyle 选择正确的转义规则，避免 SQL 注入和数据损坏。
 /// 特殊处理：
 ///   - "0x<hex>" / "\\x<hex>" 二进制编码 → 目标驱动的二进制字面量（防止 "Data too long"）
@@ -127,6 +129,8 @@ pub fn value_to_sql_safe_into(v: &serde_json::Value, style: &StringEscapeStyle, 
     }
 }
 
+/// Allocating version — delegates to `escape_string_literal_into`.
+#[allow(dead_code)]
 fn escape_string_literal(s: &str, style: &StringEscapeStyle) -> String {
     let mut buf = String::with_capacity(s.len() + 4);
     escape_string_literal_into(s, style, &mut buf);

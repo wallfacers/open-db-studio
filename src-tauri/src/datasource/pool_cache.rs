@@ -171,7 +171,7 @@ async fn create_datasource_arc_for_migration(
         "mysql" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::MySQL).await?),
         "postgres" => {
             let s = if schema.is_empty() { None } else { Some(schema) };
-            Arc::new(super::postgres::PostgresDataSource::new_with_schema(&cfg, s).await?)
+            Arc::new(super::postgres::PostgresDataSource::new_for_migration(&cfg, s).await?)
         }
         "oracle" => Arc::new(super::oracle::OracleDataSource::new(&cfg).await?),
         "sqlserver" => Arc::new(super::sqlserver::SqlServerDataSource::new(&cfg).await?),
@@ -181,7 +181,7 @@ async fn create_datasource_arc_for_migration(
         "clickhouse" => Arc::new(super::clickhouse::ClickHouseDataSource::new(&cfg).await?),
         "gaussdb" => {
             let s = if schema.is_empty() { None } else { Some(schema) };
-            Arc::new(super::gaussdb::GaussDbDataSource::new_with_schema(&cfg, s).await?)
+            Arc::new(super::gaussdb::GaussDbDataSource::new_for_migration(&cfg, s).await?)
         }
         "db2" => Arc::new(super::db2::Db2DataSource::new(&cfg).await?),
         d => return Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),

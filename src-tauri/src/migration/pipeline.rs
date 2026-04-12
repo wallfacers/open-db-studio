@@ -833,6 +833,8 @@ async fn execute_single_mapping(
                     run_id.to_string(),
                     mapping_label.clone(),
                     config.pipeline.speed_limit_rps,
+                    config.pipeline.write_pause_ms,
+                    config.pipeline.max_bytes_per_tx,
                 ).await
             }
             Some(splits) => {
@@ -885,6 +887,8 @@ async fn execute_single_mapping(
                         run_id.to_string(),
                         split_label,
                         config.pipeline.speed_limit_rps,
+                        config.pipeline.write_pause_ms,
+                        config.pipeline.max_bytes_per_tx,
                     ));
                     split_handles.push(handle);
                 }
@@ -965,6 +969,8 @@ async fn execute_single_mapping(
             run_id.to_string(),
             mapping_label.clone(),
             config.pipeline.speed_limit_rps,
+            config.pipeline.write_pause_ms,
+            config.pipeline.max_bytes_per_tx,
         ).await
     };
 
@@ -1038,6 +1044,8 @@ async fn run_reader_writer_pair(
     run_id: String,
     label: String,
     speed_limit_rps: Option<u64>,
+    write_pause_ms: Option<u64>,
+    max_bytes_per_tx: Option<u64>,
 ) -> AppResult<()> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Batch>(channel_cap);
 
@@ -1114,9 +1122,9 @@ async fn run_reader_writer_pair(
                     if expected > elapsed {
                         tokio::time::sleep(expected - elapsed).await;
                     }
-                    if elapsed >= Duration::from_secs(1) {
-                        *window_start = Instant::now();
-                        *window_rows = 0;
+                    while window_start.elapsed() >= Duration::from_secs(1) {
+                        *window_start += Duration::from_secs(1);
+                        *window_rows = window_rows.saturating_sub(rps_limit);
                     }
                 }
 
@@ -1165,9 +1173,9 @@ async fn run_reader_writer_pair(
                     if expected > elapsed {
                         tokio::time::sleep(expected - elapsed).await;
                     }
-                    if elapsed >= Duration::from_secs(1) {
-                        *window_start = Instant::now();
-                        *window_rows = 0;
+                    while window_start.elapsed() >= Duration::from_secs(1) {
+                        *window_start += Duration::from_secs(1);
+                        *window_rows = window_rows.saturating_sub(rps_limit);
                     }
                 }
 
@@ -1192,6 +1200,7 @@ async fn run_reader_writer_pair(
         let mut error_count = 0usize;
         let mut consecutive_full_fails = 0usize;
         let mut write_buf: Vec<Row> = Vec::with_capacity(write_batch_size);
+        let mut buf_bytes: u64 = 0;
         let mut buf_columns: Vec<String> = Vec::new();
 
         // Use trait method to detect which driver supports transaction-based bulk writes.
@@ -1263,12 +1272,16 @@ async fn run_reader_writer_pair(
             }
 
             for row in batch.rows {
+                let row_bytes: u64 = row.iter().map(json_value_len).sum();
+                buf_bytes += row_bytes;
                 write_buf.push(row);
-                if write_buf.len() >= write_batch_size {
+                let bytes_exceeded = max_bytes_per_tx.map_or(false, |m| buf_bytes >= m);
+                if write_buf.len() >= write_batch_size || bytes_exceeded {
                     let rows_to_write = std::mem::replace(
                         &mut write_buf,
                         Vec::with_capacity(write_batch_size),
                     );
+                    buf_bytes = 0;
                     let batch_len = rows_to_write.len() as u64;
                     let _permit = semaphore.clone().acquire_owned().await
                         .map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
@@ -1329,6 +1342,11 @@ async fn run_reader_writer_pair(
                                 if write_res.is_ok() {
                                     txn.commit().await
                                         .map_err(|e| AppError::Other(format!("MySQL txn commit failed: {}", e)))?;
+                                    if let Some(pause_ms) = write_pause_ms {
+                                        if pause_ms > 0 {
+                                            tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                                        }
+                                    }
                                 } else {
                                     let _ = txn.rollback().await;
                                 }
@@ -1387,6 +1405,11 @@ async fn run_reader_writer_pair(
                                 if write_res.is_ok() {
                                     txn.commit().await
                                         .map_err(|e| AppError::Other(format!("PostgreSQL txn commit failed: {}", e)))?;
+                                    if let Some(pause_ms) = write_pause_ms {
+                                        if pause_ms > 0 {
+                                            tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                                        }
+                                    }
                                 } else {
                                     let _ = txn.rollback().await;
                                 }
@@ -1428,6 +1451,13 @@ async fn run_reader_writer_pair(
                         };
 
                         handle_write_result!(write_res, batch_len);
+                        if write_res.is_ok() {
+                            if let Some(pause_ms) = write_pause_ms {
+                                if pause_ms > 0 {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1478,6 +1508,11 @@ async fn run_reader_writer_pair(
                         }
 
                         let _ = txn.commit().await;
+                        if let Some(pause_ms) = write_pause_ms {
+                            if pause_ms > 0 {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                            }
+                        }
                     }
                     TxnDriver::Postgres => {
                         let pg_ds = dst_ds.as_any().downcast_ref::<crate::datasource::postgres::PostgresDataSource>()
@@ -1516,6 +1551,11 @@ async fn run_reader_writer_pair(
                         }
 
                         let _ = txn.commit().await;
+                        if let Some(pause_ms) = write_pause_ms {
+                            if pause_ms > 0 {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                            }
+                        }
                     }
                 }
             } else {
@@ -1530,6 +1570,11 @@ async fn run_reader_writer_pair(
                         if fail > 0 {
                             ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
                             gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
+                        }
+                        if let Some(pause_ms) = write_pause_ms {
+                            if pause_ms > 0 {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(pause_ms)).await;
+                            }
                         }
                     }
                     Err(e) => {

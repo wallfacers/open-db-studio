@@ -122,18 +122,32 @@ pub struct PipelineConfig {
     #[serde(default = "default_transaction_batch_size")]
     pub transaction_batch_size: usize,
     /// Optional cooldown (ms) between transaction commits, giving disk I/O breathing room.
-    #[serde(default)]
+    /// Default: Some(20) — 20ms pause per commit keeps InnoDB flush pace with write rate.
+    #[serde(default = "default_write_pause_ms")]
     pub write_pause_ms: Option<u64>,
+    /// Maximum bytes per transaction. Flush early when accumulated row bytes exceed this
+    /// threshold, even if write_batch_size rows have not been reached.
+    /// Default: Some(4MB) — matches DataX typical batch size, avoids 36MB redo log spikes.
+    #[serde(default = "default_max_bytes_per_tx")]
+    pub max_bytes_per_tx: Option<u64>,
 }
 
 fn default_transaction_batch_size() -> usize {
     10
 }
 
+fn default_write_pause_ms() -> Option<u64> {
+    Some(20)
+}
+
+fn default_max_bytes_per_tx() -> Option<u64> {
+    Some(4 * 1024 * 1024)
+}
+
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            read_batch_size: 5_000,
+            read_batch_size: 2_000,
             write_batch_size: 2_048,
             channel_capacity: 32,
             parallelism: 4,
@@ -141,7 +155,8 @@ impl Default for PipelineConfig {
             error_limit: 0,
             shard_count: None,
             transaction_batch_size: 1,
-            write_pause_ms: None,
+            write_pause_ms: Some(20),
+            max_bytes_per_tx: Some(4 * 1024 * 1024),
         }
     }
 }

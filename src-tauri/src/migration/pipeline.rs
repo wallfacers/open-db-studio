@@ -1828,9 +1828,18 @@ async fn run_reader_writer_pair(
                             gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
                             error_count = error_count.saturating_add(fail as usize);
                         }
+                        // Note: consecutive_full_fails reset omitted here since this is the
+                        // final drain - no more batches to process. Only error handling matters.
                         batches_in_txn += 1;
                         emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
                             &format!("[{}] Drain remainder: {} rows in transaction", label_w, batch_len));
+
+                        // Check error limit after partial failures
+                        if error_limit > 0 && error_count >= error_limit {
+                            return Err(AppError::Other(format!(
+                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                            )));
+                        }
                     }
                     Err(e) => {
                         emit_log(&app_writer, job_id, &run_id_w, "ERROR",
@@ -1838,8 +1847,23 @@ async fn run_reader_writer_pair(
                         ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
                         gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
                         error_count = error_count.saturating_add(batch_len as usize);
+                        consecutive_full_fails += 1;
                         // Drop transaction (rollback)
                         txn_handle = None;
+
+                        // Circuit breaker check
+                        if consecutive_full_fails >= CONSECUTIVE_FAIL_LIMIT {
+                            emit_log(&app_writer, job_id, &run_id_w, "ERROR",
+                                &format!("[{}] Circuit breaker: {} consecutive batches fully failed", label_w, consecutive_full_fails));
+                            return Err(AppError::Other(format!(
+                                "Circuit breaker: {} consecutive write batches fully failed", consecutive_full_fails
+                            )));
+                        }
+                        if error_limit > 0 && error_count >= error_limit {
+                            return Err(AppError::Other(format!(
+                                "Error limit ({}) exceeded: {} errors", error_limit, error_count
+                            )));
+                        }
                     }
                 }
             } else {

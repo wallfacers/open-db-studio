@@ -37,7 +37,14 @@ export function MigrationJobTab({ jobId }: Props) {
   useEffect(() => {
     if (!adapter) return
     adapter.getScriptText = () => scriptTextRef.current
-    adapter.setScriptText = (value: string) => setScriptText(value)
+    adapter.setScriptText = (value: string) => {
+      // Sync ref immediately so subsequent ui_read / triggerSave / runJob
+      // see the new value before React finishes re-rendering. Without this,
+      // `ui_patch /scriptText` returns "applied" but the ref (read path)
+      // still holds the old value until the next render tick.
+      scriptTextRef.current = value
+      setScriptText(value)
+    }
     adapter.triggerSave = async () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       await invoke('update_migration_job_script', { id: jobId, scriptText: scriptTextRef.current })

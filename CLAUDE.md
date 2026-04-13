@@ -128,3 +128,5 @@ await invoke('ai_generate_sql', { prompt: 'Query first 10 rows from users table'
 2. Consult relevant documents based on task type (see Documentation Navigation)
 3. Understand existing code in related modules before making changes
 4. Follow the quality standards in [docs/QUALITY_SCORE.md](./docs/QUALITY_SCORE.md)
+
+Codex will review your output once you are done.

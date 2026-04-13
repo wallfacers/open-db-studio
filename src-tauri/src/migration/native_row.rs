@@ -179,6 +179,35 @@ impl MigrationValue {
         }
     }
 
+    /// Estimate actual heap memory usage (for byte_gate backpressure).
+    /// This accounts for Rust structure overhead, not just data length.
+    ///
+    /// Memory breakdown per value:
+    /// - MigrationValue enum discriminant: ~8 bytes (hidden in enum)
+    /// - String/Vec heap allocation: 24 bytes struct + len + alignment
+    /// - Total enum size: 32 bytes (stack)
+    pub fn heap_memory_size(&self) -> usize {
+        match self {
+            MigrationValue::Null => 32,                          // enum only
+            MigrationValue::Bool(_) => 32,                       // enum only
+            MigrationValue::Int(_) => 32,                        // enum only
+            MigrationValue::UInt(_) => 32,                       // enum only
+            MigrationValue::Float(_) => 32,                      // enum only
+            MigrationValue::Decimal(d) => {
+                // String struct (24) + heap allocation (len + alignment to 8)
+                32 + 24 + d.len() + ((d.len() % 8).max(1))
+            },
+            MigrationValue::Text(s) => {
+                // String struct (24) + heap allocation (len + alignment)
+                32 + 24 + s.len() + ((s.len() % 8).max(1))
+            },
+            MigrationValue::Blob(b) => {
+                // Vec<u8> struct (24) + heap allocation (len + alignment)
+                32 + 24 + b.len() + ((b.len() % 8).max(1))
+            },
+        }
+    }
+
     // ── TSV serialization (MySQL LOAD DATA LOCAL INFILE) ──────────────────────
 
     /// Write this value in TSV format into the buffer.

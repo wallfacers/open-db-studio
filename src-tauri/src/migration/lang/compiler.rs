@@ -63,6 +63,16 @@ pub fn compile(
                             pipeline.channel_capacity = *v as usize;
                         }
                     }
+                    "byte_capacity" => {
+                        if let SetValue::Int(v) = &a.value {
+                            pipeline.byte_capacity = Some(*v as u64);
+                        }
+                    }
+                    "max_bytes_per_tx" => {
+                        if let SetValue::Int(v) = &a.value {
+                            pipeline.max_bytes_per_tx = Some(*v as u64);
+                        }
+                    }
                     "shard_count" => {
                         if let SetValue::Int(v) = &a.value {
                             pipeline.shard_count = Some(*v as usize);

@@ -1088,6 +1088,10 @@ use crate::migration::native_row::MigrationValue;
 /// Bind a MigrationValue to a sqlx MySQL query.
 /// This enables parametrized INSERT without SQL string construction,
 /// avoiding 3-5x memory amplification from TEXT column escaping.
+///
+/// IMPORTANT: sqlx MySQL does not support binding u64 directly (MySQL protocol
+/// only has signed integer types). For large u64 values (> i64::MAX), we bind
+/// as string to avoid overflow. MySQL will parse the string on the server side.
 fn bind_migration_value_to_mysql_query<'a>(
     query: sqlx::query::Query<'a, sqlx::mysql::MySql, sqlx::mysql::MySqlArguments>,
     val: &MigrationValue,
@@ -1096,9 +1100,16 @@ fn bind_migration_value_to_mysql_query<'a>(
         MigrationValue::Null => query.bind(None::<String>),
         MigrationValue::Bool(b) => query.bind(*b),
         MigrationValue::Int(i) => query.bind(*i),
-        // MySQL sqlx doesn't support u64 directly; cast to i64 for binding.
-        // Large u64 values (> i64::MAX) will overflow but are rare in practice.
-        MigrationValue::UInt(u) => query.bind(*u as i64),
+        MigrationValue::UInt(u) => {
+            // sqlx MySQL cannot bind u64 directly. For values within i64 range,
+            // cast to i64. For values exceeding i64::MAX (BIGINT UNSIGNED upper range),
+            // bind as string to prevent overflow — MySQL will parse on server side.
+            if *u <= i64::MAX as u64 {
+                query.bind(*u as i64)
+            } else {
+                query.bind(u.to_string())
+            }
+        }
         MigrationValue::Float(f) => query.bind(*f),
         MigrationValue::Decimal(d) => query.bind(d.clone()),
         MigrationValue::Text(s) => query.bind(s.clone()),

@@ -1317,7 +1317,9 @@ async fn run_reader_writer_pair(
                 while let Some(row) = rx_db.recv().await {
                     if cancel_r.load(Ordering::Relaxed) { break; }
 
-                    let row_bytes: u64 = row.values.iter().map(|v| v.estimated_sql_size() as u64).sum();
+                    // Use heap_memory_size() for accurate memory tracking (byte_gate backpressure)
+                    // estimated_sql_size() only measures SQL literal length, missing Rust struct overhead
+                    let row_bytes: u64 = row.values.iter().map(|v| v.heap_memory_size() as u64).sum();
                     ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     ms_reader.rows_read.fetch_add(1, Ordering::Relaxed);
@@ -1406,7 +1408,8 @@ async fn run_reader_writer_pair(
                 let mut batch_bytes = 0u64;
                 while let Some(row) = rx_db.recv().await {
                     if cancel_r.load(Ordering::Relaxed) { break; }
-                    let row_bytes: u64 = row.values.iter().map(|v| v.estimated_sql_size() as u64).sum();
+                    // Use heap_memory_size() for accurate memory tracking
+                    let row_bytes: u64 = row.values.iter().map(|v| v.heap_memory_size() as u64).sum();
                     ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     ms_reader.rows_read.fetch_add(1, Ordering::Relaxed);

@@ -97,10 +97,10 @@ pub fn estimate_native_batch_bytes(
 ) -> u64 {
     let mut total = 0u64;
     for row in rows {
-        total += 24; // Vec overhead
+        total += 24; // Vec overhead (MigrationRow struct)
         for v in &row.values {
-            // Approx 32 bytes for MigrationValue enum and nested field overheads
-            total += 32 + v.estimated_sql_size() as u64;
+            // Use heap_memory_size() for accurate memory tracking
+            total += v.heap_memory_size() as u64;
         }
     }
     total

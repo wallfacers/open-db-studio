@@ -14,26 +14,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "open-db-studio"
 path = "src/main.rs"
 
-[[example]]
-name = "bigint_u_binding_test"
-path = "tests/bigint_u_binding_test.rs"
-
-[[example]]
-name = "migration_perf_standalone"
-path = "tests/migration_perf_standalone.rs"
-
-[[example]]
-name = "memory_detailed_test"
-path = "tests/memory_detailed_test.rs"
-
-[[example]]
-name = "memory_real_analysis"
-path = "tests/memory_real_analysis.rs"
-
-[[example]]
-name = "pipeline_channel_test"
-path = "tests/pipeline_channel_test.rs"
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

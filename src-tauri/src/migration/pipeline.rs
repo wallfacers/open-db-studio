@@ -37,6 +37,37 @@ fn format_number(n: u64) -> String {
 /// a complete pipeline freeze. This timeout breaks the deadlock and turns it into a countable failure.
 const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 
+/// Recommended parameter ranges (soft limits). Values outside these ranges trigger warnings.
+const READ_BATCH_RECOMMENDED_MIN: usize = 1000;
+const READ_BATCH_RECOMMENDED_MAX: usize = 10_000;
+const WRITE_BATCH_RECOMMENDED_MIN: usize = 512;
+const WRITE_BATCH_RECOMMENDED_MAX: usize = 2_000;
+const CHANNEL_CAPACITY_RECOMMENDED_MIN: usize = 4;
+const CHANNEL_CAPACITY_RECOMMENDED_MAX: usize = 32;
+const PARALLELISM_RECOMMENDED_MIN: usize = 1;
+const PARALLELISM_RECOMMENDED_MAX: usize = 8;
+const TXN_BATCH_SIZE_RECOMMENDED_MIN: usize = 1;
+const TXN_BATCH_SIZE_RECOMMENDED_MAX: usize = 10;
+const BYTE_CAPACITY_RECOMMENDED_MIN_MB: u64 = 4;  // 4MB
+const BYTE_CAPACITY_RECOMMENDED_MAX_MB: u64 = 64; // 64MB
+const MAX_BYTES_PER_TX_RECOMMENDED_MIN_MB: u64 = 4;  // 4MB
+const MAX_BYTES_PER_TX_RECOMMENDED_MAX_MB: u64 = 16; // 16MB
+
+/// Format bytes as human-readable string (e.g., 16777216 -> "16MB")
+fn format_bytes(bytes: u64) -> String {
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+    if bytes >= GB {
+        format!("{}GB", bytes / GB)
+    } else if bytes >= MB {
+        format!("{}MB", bytes / MB)
+    } else if bytes >= 1024 {
+        format!("{}KB", bytes / 1024)
+    } else {
+        format!("{}B", bytes)
+    }
+}
+
 /// Maximum estimated SQL payload size (bytes) for a single INSERT statement.
 
 /// Number of consecutive fully-failed write batches (0 rows written) before the writer
@@ -760,6 +791,86 @@ async fn execute_single_mapping(
     let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
     let parallelism = config.pipeline.parallelism.max(1).min(16);
     let txn_batch_size = config.pipeline.transaction_batch_size.max(1).min(100);
+
+    // ── Parameter range warnings (soft limits) ────────────────────────────────
+    // Warn if user-set values are outside recommended ranges
+    let original_read_batch = config.pipeline.read_batch_size;
+    let original_write_batch = config.pipeline.write_batch_size;
+    let original_channel_cap = config.pipeline.channel_capacity;
+    let original_parallelism = config.pipeline.parallelism;
+    let original_txn_batch = config.pipeline.transaction_batch_size;
+    let original_byte_capacity = config.pipeline.byte_capacity;
+    let original_max_bytes_per_tx = config.pipeline.max_bytes_per_tx;
+
+    if original_read_batch < READ_BATCH_RECOMMENDED_MIN || original_read_batch > READ_BATCH_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] read_batch={} outside recommended range [{}-{}]; clamped to {}",
+                mapping_label, original_read_batch, READ_BATCH_RECOMMENDED_MIN, READ_BATCH_RECOMMENDED_MAX, read_batch_size
+            ),
+        );
+    }
+    if original_write_batch < WRITE_BATCH_RECOMMENDED_MIN || original_write_batch > WRITE_BATCH_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] write_batch={} outside recommended range [{}-{}]; clamped to {}",
+                mapping_label, original_write_batch, WRITE_BATCH_RECOMMENDED_MIN, WRITE_BATCH_RECOMMENDED_MAX, write_batch_size
+            ),
+        );
+    }
+    if original_channel_cap < CHANNEL_CAPACITY_RECOMMENDED_MIN || original_channel_cap > CHANNEL_CAPACITY_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] channel_capacity={} outside recommended range [{}-{}]; clamped to {}",
+                mapping_label, original_channel_cap, CHANNEL_CAPACITY_RECOMMENDED_MIN, CHANNEL_CAPACITY_RECOMMENDED_MAX, channel_cap
+            ),
+        );
+    }
+    if original_parallelism < PARALLELISM_RECOMMENDED_MIN || original_parallelism > PARALLELISM_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] parallelism={} outside recommended range [{}-{}]; clamped to {}. Higher values require integer PK for range-split, else falls back to single-cursor",
+                mapping_label, original_parallelism, PARALLELISM_RECOMMENDED_MIN, PARALLELISM_RECOMMENDED_MAX, parallelism
+            ),
+        );
+    }
+    if original_txn_batch < TXN_BATCH_SIZE_RECOMMENDED_MIN || original_txn_batch > TXN_BATCH_SIZE_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] transaction_batch_size={} outside recommended range [{}-{}]; clamped to {}. Higher values increase failure blast radius",
+                mapping_label, original_txn_batch, TXN_BATCH_SIZE_RECOMMENDED_MIN, TXN_BATCH_SIZE_RECOMMENDED_MAX, txn_batch_size
+            ),
+        );
+    }
+    if let Some(bc) = original_byte_capacity {
+        let bc_mb = bc / (1024 * 1024);
+        if bc_mb < BYTE_CAPACITY_RECOMMENDED_MIN_MB || bc_mb > BYTE_CAPACITY_RECOMMENDED_MAX_MB {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] byte_capacity={} outside recommended range [{}MB-{}MB]. Low values may throttle throughput; high values increase memory peak",
+                    mapping_label, format_bytes(bc), BYTE_CAPACITY_RECOMMENDED_MIN_MB, BYTE_CAPACITY_RECOMMENDED_MAX_MB
+                ),
+            );
+        }
+    }
+    if let Some(mbpt) = original_max_bytes_per_tx {
+        let mbpt_mb = mbpt / (1024 * 1024);
+        if mbpt_mb < MAX_BYTES_PER_TX_RECOMMENDED_MIN_MB || mbpt_mb > MAX_BYTES_PER_TX_RECOMMENDED_MAX_MB {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] max_bytes_per_tx={} outside recommended range [{}MB-{}MB]. Low values may reduce throughput; high values increase redo log pressure",
+                    mapping_label, format_bytes(mbpt), MAX_BYTES_PER_TX_RECOMMENDED_MIN_MB, MAX_BYTES_PER_TX_RECOMMENDED_MAX_MB
+                ),
+            );
+        }
+    }
 
     // ── Dedicated ephemeral connection pools for this mapping ─────────────
     // Migration pools are intentionally NOT cached in the global pool cache so that:

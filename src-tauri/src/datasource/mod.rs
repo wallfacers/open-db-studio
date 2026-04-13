@@ -691,14 +691,16 @@ pub trait DataSource: Send + Sync {
         &self,
         sql: &str,
         channel_cap: usize,
+        _cancel: &tokio_util::sync::CancellationToken,
     ) -> AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
         let res = self.migration_read_sql(sql).await?;
         let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
         match res {
             Some((cols, rows)) => {
+                let cancel = _cancel.clone();
                 tokio::spawn(async move {
                     for row in rows {
-                        if tx.send(row).await.is_err() {
+                        if cancel.is_cancelled() || tx.send(row).await.is_err() {
                             break;
                         }
                     }

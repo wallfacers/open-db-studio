@@ -72,7 +72,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # SQL Server 驱动
 tiberius = { version = "0.12", features = ["tds73", "winauth"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "rt"] }
 
 # PNG 解码（用于运行时设置窗口图标）
 image = { version = "0.25", default-features = false, features = ["png"] }

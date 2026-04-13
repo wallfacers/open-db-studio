@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -9,6 +11,7 @@ use rusqlite::params;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -280,14 +283,14 @@ impl PipelineStats {
 
 // ── Cancel registry ───────────────────────────────────────────────────────────
 
-static ACTIVE_RUNS: Lazy<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
+static ACTIVE_RUNS: Lazy<Mutex<HashMap<i64, Arc<CancellationToken>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Sets the cancel flag for an active run. Returns `true` if the job was active, `false` if not found.
 pub fn cancel_run(job_id: i64) -> bool {
     if let Ok(runs) = ACTIVE_RUNS.lock() {
-        if let Some(flag) = runs.get(&job_id) {
-            flag.store(true, Ordering::SeqCst);
+        if let Some(token) = runs.get(&job_id) {
+            token.cancel();
             return true;
         }
     }
@@ -440,11 +443,11 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
         })?;
 
     let run_id = Uuid::new_v4().to_string();
-    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel = CancellationToken::new();
 
     {
         let mut runs = ACTIVE_RUNS.lock().unwrap();
-        runs.insert(job_id, cancel.clone());
+        runs.insert(job_id, Arc::new(cancel.clone()));
     }
 
     // Write RUNNING status + run history row
@@ -478,12 +481,13 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
     let log_collector_clone = log_collector.clone();
 
     tokio::spawn(async move {
-        let cancel_ref = cancel.clone();
+        let cancel_token = cancel.clone();
+        let cancel_arc = Arc::new(cancel);
         let result =
-            execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel, log_collector_clone.clone())
+            execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel_arc, log_collector_clone.clone())
                 .await;
 
-        let was_cancelled = cancel_ref.load(Ordering::Relaxed);
+        let was_cancelled = cancel_token.is_cancelled();
         let final_status = match &result {
             Ok(_) => "FINISHED",
             Err(e) if e.to_string().starts_with("PARTIAL_FAILED") => "PARTIAL_FAILED",
@@ -591,7 +595,7 @@ async fn execute_pipeline(
     run_id: String,
     config: MigrationJobConfig,
     app: AppHandle,
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<CancellationToken>,
     logs: Arc<Mutex<LogCollector>>,
 ) -> AppResult<String> {
     let stats = PipelineStats::new();
@@ -636,7 +640,7 @@ async fn execute_pipeline(
         let global_byte_gate = global_byte_gate.clone();
         async move {
             let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return (idx, mapping_label, Err(AppError::Other("Cancelled".into())));
             }
             logs.lock().unwrap().emit_and_record(
@@ -739,7 +743,7 @@ async fn execute_single_mapping(
     config: &MigrationJobConfig,
     mapping: &TableMapping,
     app: &AppHandle,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<CancellationToken>,
     global_stats: &Arc<PipelineStats>,
     mapping_idx: usize,
     total_mappings: usize,
@@ -1047,7 +1051,7 @@ async fn execute_single_mapping(
         let mut prev_failed = 0u64;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            if cancel_s.load(Ordering::Relaxed) {
+            if cancel_s.is_cancelled() {
                 break;
             }
             let rows_read = ms_clone.rows_read.load(Ordering::Relaxed);
@@ -1373,7 +1377,7 @@ async fn run_reader_writer_pair(
     error_limit: usize,
     txn_batch_size: usize,
     write_semaphore: Arc<Semaphore>,
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<CancellationToken>,
     mapping_stats: Arc<PipelineStats>,
     global_stats: Arc<PipelineStats>,
     app: AppHandle,
@@ -1418,15 +1422,19 @@ async fn run_reader_writer_pair(
             );
 
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&shard_sql, 1000).await?;
+                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&shard_sql, 1000, &cancel_r).await?;
                 if columns.is_empty() { return Ok(()); }
+                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
                 let mut batch = Vec::with_capacity(read_batch_size);
                 let mut batch_bytes = 0u64;
 
-                while let Some(row) = rx_db.recv().await {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
+                loop {
+                    let row = tokio::select! {
+                        row = rx_db.recv() => match row { Some(r) => r, None => break },
+                        _ = cancel_r.cancelled() => break,
+                    };
 
                     // Use heap_memory_size() for accurate memory tracking (byte_gate backpressure)
                     // estimated_sql_size() only measures SQL literal length, missing Rust struct overhead
@@ -1441,23 +1449,38 @@ async fn run_reader_writer_pair(
 
                     if batch.len() >= read_batch_size {
                         let permit = if let Some(ref gate) = byte_gate {
-                            match gate.acquire(batch_bytes as usize).await {
-                                Ok(p) => Some(p),
-                                Err(_) => break,
+                            let gate_result = tokio::select! {
+                                result = gate.acquire(batch_bytes as usize) => Some(result),
+                                _ = cancel_r.cancelled() => None,
+                            };
+                            match gate_result {
+                                Some(Ok(p)) => Some(p),
+                                _ => break,
                             }
                         } else { None };
 
-                        if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
-                            columns: columns.clone(),
-                            rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
-                            byte_permit: permit,
-                        })).await.is_err() { break; }
+                        let send_result = tokio::select! {
+                            result = tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
+                                columns: columns.clone(),
+                                rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
+                                byte_permit: permit,
+                            })) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        if send_result.map_or(true, |r| r.is_err()) { break; }
                         batch_bytes = 0;
                     }
                 }
                 if !batch.is_empty() {
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => None }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => None,
+                        }
                     } else { None };
                     tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch { columns, rows: batch, byte_permit: permit })).await.ok();
                 }
@@ -1466,7 +1489,7 @@ async fn run_reader_writer_pair(
                 let mut pk_col_idx: Option<usize> = None;
                 let mut columns_opt: Option<Vec<String>> = None;
                 loop {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
+                    if cancel_r.is_cancelled() { break; }
                     let page_cond = match split.end {
                         Some(end) => format!("{pk} >= {cursor} AND {pk} < {end}", pk = pk_q, cursor = cursor, end = end),
                         None      => format!("{pk} >= {cursor}", pk = pk_q, cursor = cursor),
@@ -1475,7 +1498,10 @@ async fn run_reader_writer_pair(
                         "SELECT * FROM ({src}) AS _mig_s_ WHERE {cond} ORDER BY {pk} LIMIT {limit}",
                         src = source_query, cond = page_cond, pk = pk_q, limit = read_batch_size,
                     );
-                    let page = src_ds.execute(&page_sql).await?;
+                    let page = tokio::select! {
+                        result = src_ds.execute(&page_sql) => result?,
+                        _ = cancel_r.cancelled() => break,
+                    };
                     if page.rows.is_empty() { break; }
                     let n = page.rows.len();
 
@@ -1501,24 +1527,39 @@ async fn run_reader_writer_pair(
 
                     let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&page.rows);
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => break }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => break,
+                        }
                     } else { None };
 
-                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })).await.is_err() { break; }
+                    let send_result = tokio::select! {
+                        result = tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })) => Some(result),
+                        _ = cancel_r.cancelled() => None,
+                    };
+                    if send_result.map_or(true, |r| r.is_err()) { break; }
                     if n < read_batch_size { break; }
                 }
             }
         } else {
             // ── Fallback: OFFSET-based reader ────
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&source_query, 1000).await?;
+                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&source_query, 1000, &cancel_r).await?;
                 if columns.is_empty() { return Ok(()); }
+                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
                 let mut batch = Vec::with_capacity(read_batch_size);
                 let mut batch_bytes = 0u64;
-                while let Some(row) = rx_db.recv().await {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
+                loop {
+                    let row = tokio::select! {
+                        row = rx_db.recv() => match row { Some(r) => r, None => break },
+                        _ = cancel_r.cancelled() => break,
+                    };
                     // Use heap_memory_size() for accurate memory tracking
                     let row_bytes: u64 = row.values.iter().map(|v| v.heap_memory_size() as u64).sum();
                     ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
@@ -1529,19 +1570,37 @@ async fn run_reader_writer_pair(
                     batch_bytes += row_bytes;
                     if batch.len() >= read_batch_size {
                         let permit = if let Some(ref gate) = byte_gate {
-                            match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => break }
+                            let gate_result = tokio::select! {
+                                result = gate.acquire(batch_bytes as usize) => Some(result),
+                                _ = cancel_r.cancelled() => None,
+                            };
+                            match gate_result {
+                                Some(Ok(p)) => Some(p),
+                                _ => break,
+                            }
                         } else { None };
-                        if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
-                            columns: columns.clone(),
-                            rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
-                            byte_permit: permit,
-                        })).await.is_err() { break; }
+                        let send_result = tokio::select! {
+                            result = tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
+                                columns: columns.clone(),
+                                rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
+                                byte_permit: permit,
+                            })) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        if send_result.map_or(true, |r| r.is_err()) { break; }
                         batch_bytes = 0;
                     }
                 }
                 if !batch.is_empty() {
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => None }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => None,
+                        }
                     } else { None };
                     tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch { columns, rows: batch, byte_permit: permit })).await.ok();
                 }
@@ -1549,8 +1608,11 @@ async fn run_reader_writer_pair(
                 let mut offset = 0usize;
                 let mut columns_opt: Option<Vec<String>> = None;
                 loop {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
-                    let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
+                    if cancel_r.is_cancelled() { break; }
+                    let page = tokio::select! {
+                        result = src_ds.execute_paginated(&source_query, read_batch_size, offset) => result?,
+                        _ = cancel_r.cancelled() => break,
+                    };
                     if page.rows.is_empty() { break; }
                     let fetched = page.rows.len();
                     if columns_opt.is_none() {
@@ -1567,10 +1629,21 @@ async fn run_reader_writer_pair(
 
                     let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&page.rows);
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => break }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => break,
+                        }
                     } else { None };
 
-                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })).await.is_err() { break; }
+                    let send_result = tokio::select! {
+                        result = tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })) => Some(result),
+                        _ = cancel_r.cancelled() => None,
+                    };
+                    if send_result.map_or(true, |r| r.is_err()) { break; }
                     if fetched < read_batch_size { break; }
                     offset += fetched;
                 }
@@ -1608,8 +1681,11 @@ async fn run_reader_writer_pair(
         let mut batches_in_txn = 0usize;
         let mut txn_mode_active = supports_txn && txn_batch_size > 1;
 
-        while let Some(msg) = rx.recv().await {
-            if cancel_w.load(Ordering::Relaxed) { break; }
+        while let Some(msg) = tokio::select! {
+            msg = rx.recv() => msg,
+            _ = cancel_w.cancelled() => None,
+        } {
+            if cancel_w.is_cancelled() { break; }
             match msg {
                 ChannelMsg::Columns(cols) => { buf_columns = cols; }
                 ChannelMsg::RowBatch(batch) => {

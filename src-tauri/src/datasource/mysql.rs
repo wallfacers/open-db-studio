@@ -47,6 +47,11 @@ pub struct MySqlDataSource {
     mig_async_pool: tokio::sync::OnceCell<mysql_async::Pool>,
     /// Connection config stored for building mysql_async pool on demand.
     conn_url: String,
+    /// Desired max size for the mysql_async migration pool. Set by
+    /// `set_migration_pool_size` before the first LOAD DATA call. Must be
+    /// written before `mig_async_pool` is initialized — once the OnceCell is
+    /// materialized, later changes are ignored.
+    mig_async_pool_max: std::sync::atomic::AtomicU32,
     /// Tracks whether LOAD DATA LOCAL INFILE is unsupported by the server.
     /// Once set to true, all future bulk_write calls skip LOAD DATA entirely
     /// and use optimized INSERT directly, avoiding log spam.
@@ -54,6 +59,15 @@ pub struct MySqlDataSource {
     /// Cached max_allowed_packet value (queried once from server).
     max_allowed_packet: std::sync::OnceLock<usize>,
 }
+
+/// Default max size for the migration-only mysql_async pool. Kept in sync with
+/// the historical hardcoded value so non-migration callers behave identically.
+const DEFAULT_MIG_ASYNC_POOL_MAX: u32 = 4;
+/// Lower bound on mig_async_pool max to preserve keep-alive behavior.
+const MIG_ASYNC_POOL_MIN: u32 = 1;
+/// Upper bound on mig_async_pool max. Migration `parallelism` is clamped to 16
+/// in the pipeline, so any request beyond this is a misconfiguration.
+const MIG_ASYNC_POOL_MAX: u32 = 32;
 
 impl MySqlDataSource {
     pub async fn new(config: &ConnectionConfig) -> AppResult<Self> {
@@ -150,6 +164,7 @@ impl MySqlDataSource {
             mig_session_active: std::sync::atomic::AtomicBool::new(false),
             mig_async_pool: tokio::sync::OnceCell::new(),
             conn_url,
+            mig_async_pool_max: std::sync::atomic::AtomicU32::new(DEFAULT_MIG_ASYNC_POOL_MAX),
             load_data_disabled: std::sync::atomic::AtomicBool::new(false),
             max_allowed_packet: std::sync::OnceLock::new(),
         })
@@ -621,6 +636,21 @@ impl DataSource for MySqlDataSource {
         Ok(())
     }
 
+    fn set_migration_pool_size(&self, size: u32) {
+        let clamped = size.clamp(MIG_ASYNC_POOL_MIN, MIG_ASYNC_POOL_MAX);
+        self.mig_async_pool_max
+            .store(clamped, std::sync::atomic::Ordering::Relaxed);
+        if self.mig_async_pool.initialized() {
+            // mysql_async::Pool has no live-resize API; the cap set here only
+            // affects pools created after this call. Log so operators can
+            // diagnose "parallelism=N but LOAD DATA serialized on 4" reports.
+            log::warn!(
+                "set_migration_pool_size({}) called after mig_async_pool was initialized; cap will not take effect until teardown",
+                clamped
+            );
+        }
+    }
+
     async fn teardown_migration_session(&self) -> AppResult<()> {
         if !self.mig_session_active.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
@@ -896,10 +926,18 @@ impl MySqlDataSource {
         self.mig_async_pool.get_or_try_init(|| async {
             let opts = mysql_async::Opts::from_url(&self.conn_url)
                 .map_err(|e| AppError::Datasource(format!("mysql_async URL parse: {}", e)))?;
-            let pool_opts = mysql_async::PoolOpts::default()
-                .with_constraints(
-                    mysql_async::PoolConstraints::new(1, 4).unwrap()
-                );
+            // Size the LOAD DATA pool to match the migration's parallelism.
+            // Writers serialize on this pool during LOAD DATA; a too-small cap
+            // (the historical hardcoded 4) throttles parallelism > 4.
+            let max = self
+                .mig_async_pool_max
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .clamp(MIG_ASYNC_POOL_MIN.max(1), MIG_ASYNC_POOL_MAX);
+            let constraints = mysql_async::PoolConstraints::new(MIG_ASYNC_POOL_MIN as usize, max as usize)
+                .ok_or_else(|| AppError::Datasource(
+                    format!("invalid mig_async_pool constraints: min={} max={}", MIG_ASYNC_POOL_MIN, max)
+                ))?;
+            let pool_opts = mysql_async::PoolOpts::default().with_constraints(constraints);
             let opts = mysql_async::OptsBuilder::from_opts(opts)
                 .pool_opts(pool_opts);
             Ok(mysql_async::Pool::new(opts))
@@ -1248,74 +1286,6 @@ impl MySqlDataSource {
                 .map_err(|e| crate::error::AppError::Datasource(format!("INSERT in txn: {}", e)))?;
             total_written += result.rows_affected().min(chunk.len() as u64) as usize;
             chunk_start = chunk_end;
-        }
-
-        Ok(total_written)
-    }
-
-    /// Single-row parametrized INSERT (memory-friendly fallback).
-    /// Uses prepared statement binding instead of SQL string construction,
-    /// eliminating 3-5x memory amplification from TEXT column escaping.
-    ///
-    /// Note: Does NOT support ON DUPLICATE KEY UPDATE. Only used for
-    /// Skip/Error conflict strategies (where no upsert clause is needed).
-    async fn bulk_write_parametrized_single(
-        pool: &MySqlPool,
-        table: &str,
-        columns: &[String],
-        rows: &[crate::migration::native_row::MigrationRow],
-        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
-        driver: &str,
-    ) -> AppResult<usize> {
-        use crate::datasource::utils::quote_identifier_for_driver_into;
-
-        // Build INSERT prefix with conflict clause prefix
-        let (keyword, _suffix) = crate::datasource::bulk_write::build_conflict_clause(
-            conflict_strategy,
-            driver,
-            columns,
-            &std::collections::HashSet::new(), // empty key_set for non-upsert
-            &[], // empty upsert_keys for non-upsert
-            &|c: &str| {
-                let mut buf = String::new();
-                quote_identifier_for_driver_into(c, driver, &mut buf);
-                buf
-            },
-        );
-
-        // Build column list
-        let mut col_list = String::with_capacity(columns.len() * 32);
-        for (i, col) in columns.iter().enumerate() {
-            if i > 0 {
-                col_list.push_str(", ");
-            }
-            quote_identifier_for_driver_into(col, driver, &mut col_list);
-        }
-
-        // Build placeholder list: (?, ?, ...)
-        let placeholders: String = columns.iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        // Build quoted table name
-        let mut table_quoted = String::new();
-        quote_identifier_for_driver_into(table, driver, &mut table_quoted);
-
-        // Final INSERT SQL: INSERT [IGNORE] INTO `table` (`col1`, ...) VALUES (?, ...)
-        let sql = format!("{} {} ({}) VALUES ({})", keyword, table_quoted, col_list, placeholders);
-
-        // Execute each row with parametrized binding
-        // sqlx's prepared statement cache avoids per-row SQL parsing overhead
-        let mut total_written = 0usize;
-        for row in rows {
-            let mut query = sqlx::query(&sql);
-            for val in &row.values {
-                query = bind_migration_value_to_mysql_query(query, val);
-            }
-            let result: sqlx::mysql::MySqlQueryResult = query.execute(pool).await
-                .map_err(|e| AppError::Datasource(format!("Parametrized INSERT: {}", e)))?;
-            total_written += result.rows_affected() as usize;
         }
 
         Ok(total_written)

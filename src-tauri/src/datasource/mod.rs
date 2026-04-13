@@ -619,6 +619,14 @@ pub trait DataSource: Send + Sync {
         Ok(())
     }
 
+    /// Hint the maximum concurrent migration-path connections this datasource
+    /// should accept. MySQL family uses a dedicated `mysql_async` pool for
+    /// LOAD DATA LOCAL INFILE whose size must match `parallelism`; otherwise
+    /// writers serialize on a small hardcoded pool.
+    ///
+    /// Called once per mapping, before the first write. Default: no-op.
+    fn set_migration_pool_size(&self, _size: u32) {}
+
     /// 分页执行查询，返回第 `offset` 行起的 `limit` 行数据。
     /// 默认实现通过子查询包裹原始 SQL，适用于 MySQL / PostgreSQL / SQLite / ClickHouse。
     /// SQL Server 需覆盖此方法以使用 OFFSET/FETCH NEXT 语法。

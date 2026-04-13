@@ -1101,6 +1101,7 @@
     "open": "Open",
     "run": "Run",
     "stop": "Stop",
+    "stopping": "Stopping...",
     "targetCategory": "Category",
     "rootCategory": "Root",
     "selectTargetCategory": "Select target category",

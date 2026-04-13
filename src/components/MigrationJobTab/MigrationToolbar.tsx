@@ -1,10 +1,11 @@
 import { useTranslation } from 'react-i18next'
-import { Play, Square, FileEdit, Sparkles, History } from 'lucide-react'
+import { Play, Square, FileEdit, Sparkles, History, Loader2 } from 'lucide-react'
 import { Tooltip } from '../common/Tooltip'
 
 interface Props {
   jobId: number
   isRunning: boolean
+  isStopping: boolean
   ghostTextEnabled: boolean
   onRun: () => void
   onStop: () => void
@@ -15,6 +16,7 @@ interface Props {
 
 export function MigrationToolbar({
   isRunning,
+  isStopping,
   ghostTextEnabled,
   onRun,
   onStop,
@@ -27,16 +29,24 @@ export function MigrationToolbar({
   return (
     <div className="flex-shrink-0 h-10 flex items-center px-3 gap-1 bg-background-void border-b border-border-default">
       {/* Run / Stop */}
-      <Tooltip content={isRunning ? t('migration.stop') : t('migration.run')}>
+      <Tooltip content={isStopping ? t('migration.stopping') : isRunning ? t('migration.stop') : t('migration.run')}>
         <button
           className={`p-1.5 rounded transition-colors ${
-            isRunning
-              ? 'text-error hover:bg-border-default'
-              : 'text-accent hover:bg-border-default'
+            isStopping
+              ? 'text-foreground-muted cursor-not-allowed'
+              : isRunning
+                ? 'text-error hover:bg-border-default'
+                : 'text-accent hover:bg-border-default'
           }`}
-          onClick={isRunning ? onStop : onRun}
+          onClick={isStopping ? undefined : isRunning ? onStop : onRun}
+          disabled={isStopping}
         >
-          {isRunning ? <Square size={16} /> : <Play size={16} />}
+          {isStopping
+            ? <Loader2 size={16} className="animate-spin" />
+            : isRunning
+              ? <Square size={16} />
+              : <Play size={16} />
+          }
         </button>
       </Tooltip>
 

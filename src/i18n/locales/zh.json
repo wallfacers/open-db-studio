@@ -1102,6 +1102,7 @@
     "open": "打开",
     "run": "运行",
     "stop": "停止",
+    "stopping": "停止中...",
     "targetCategory": "所属目录",
     "rootCategory": "根目录",
     "selectTargetCategory": "选择目标分类",

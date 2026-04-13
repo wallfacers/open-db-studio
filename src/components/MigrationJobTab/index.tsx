@@ -17,6 +17,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const [resultHeight, setResultHeight] = useState(0)
   const [ghostTextEnabled, setGhostTextEnabled] = useState(false)
   const [activeResultTab, setActiveResultTab] = useState<PanelTab>('logs')
+  const [isStopping, setIsStopping] = useState(false)
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scriptTextRef = useRef(scriptText)
@@ -72,6 +73,11 @@ export function MigrationJobTab({ jobId }: Props) {
     if (isRunning && resultHeight === 0) setResultHeight(250)
   }, [isRunning]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset isStopping when the run actually finishes (migration_finished event)
+  useEffect(() => {
+    if (!isRunning && isStopping) setIsStopping(false)
+  }, [isRunning, isStopping])
+
   const handleOpenHistory = useCallback(() => {
     if (resultHeight === 0) setResultHeight(250)
     setActiveResultTab('stats')
@@ -116,8 +122,10 @@ export function MigrationJobTab({ jobId }: Props) {
   }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStop = useCallback(async () => {
+    if (isStopping) return
+    setIsStopping(true)
     await invoke('stop_migration_job', { jobId })
-  }, [jobId])
+  }, [jobId, isStopping])
 
   // Format via LSP
   const handleFormat = useCallback(async () => {
@@ -158,6 +166,7 @@ export function MigrationJobTab({ jobId }: Props) {
       <MigrationToolbar
         jobId={jobId}
         isRunning={isRunning}
+        isStopping={isStopping}
         ghostTextEnabled={ghostTextEnabled}
         onRun={handleRun}
         onStop={handleStop}

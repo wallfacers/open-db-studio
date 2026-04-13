@@ -393,8 +393,12 @@ mod tests {
             make_row(vec![MigrationValue::Int(1), MigrationValue::Null]),
             make_row(vec![MigrationValue::Int(2), MigrationValue::Text("x".into())]),
         ];
-        let tsv = migration_rows_to_tsv(&rows);
-        assert_eq!(tsv, b"1\t\\N\n2\tx\n");
+        // 手动构建 TSV（helper 函数不存在）
+        let mut buf = Vec::new();
+        for row in &rows {
+            row.to_tsv_line(&mut buf);
+        }
+        assert_eq!(buf, b"1\t\\N\n2\tx\n");
     }
 
     // ── CSV serialization tests ─────────────────────────────────────────────
@@ -437,8 +441,12 @@ mod tests {
             make_row(vec![MigrationValue::Int(1), MigrationValue::Null]),
             make_row(vec![MigrationValue::Int(2), MigrationValue::Text("y".into())]),
         ];
-        let csv = migration_rows_to_csv(&rows);
-        assert_eq!(csv, b"1,\n2,y\n");
+        // 手动构建 CSV（helper 函数不存在）
+        let mut buf = Vec::new();
+        for row in &rows {
+            row.to_csv_line(&mut buf);
+        }
+        assert_eq!(buf, b"1,\n2,y\n");
     }
 
     // ── SQL literal tests ───────────────────────────────────────────────────

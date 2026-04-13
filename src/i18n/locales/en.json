@@ -1217,6 +1217,8 @@
     "noLogs": "No log content",
     "deleteRunConfirm": "Delete this run record?",
     "runDeleted": "Run record deleted",
+    "invalidRecords": "Invalid records",
+    "clearInvalid": "Clear invalid records",
     "total": "Total",
     "firstPage": "First",
     "prevPage": "Previous",

@@ -1218,6 +1218,8 @@
     "noLogs": "无日志内容",
     "deleteRunConfirm": "确定删除这条运行记录？",
     "runDeleted": "运行记录已删除",
+    "invalidRecords": "无效记录",
+    "clearInvalid": "清理无效记录",
     "total": "共",
     "firstPage": "首页",
     "prevPage": "上一页",

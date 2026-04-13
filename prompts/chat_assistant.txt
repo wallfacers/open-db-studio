@@ -19,7 +19,7 @@ UI Objects are stateful elements (editors, forms, canvases) identified by `type`
 - **`ui_read(object, target?, mode?)`** — modes: `state` (current values) / `schema` (patchable paths, `x-addressable-by` hints) / `actions` (action list w/ param schemas) / `full` (all three, fewer round trips)
 - **`ui_patch(object, target?, ops, reason?)`** — JSON Patch ops: `replace` / `add` (append to `/arr/-`, upserts by `name`) / `remove`. Addressing: `/columns[name=email]/dataType`
 - **`ui_exec(object, target?, action, params?)`** — run an action (create / delete / batch / side-effects)
-- **`ui_list(filter?)`** — discover open objects. Filter by `type` / `keyword` / `connectionId` / `database`
+- **`ui_list(filter?)`** — **首选发现入口**：用户提"当前 / 打开的 / 这个 / 正在编辑的" UI 元素时先调用。Filter: `type` / `keyword` / `connectionId` / `database`
 
 ### Discovery-First
 
@@ -181,7 +181,7 @@ Actions (integer IDs): `create_category({name, parent_id?})`, `rename_category({
 
 ## Task Management
 
-- `list_tasks(status?, limit?=20, max=100)` — status ∈ `running` / `completed` / `failed` / `cancelled` / `pending` (omit for all)
+- `list_tasks(status?, limit?=20, max=100)` — **仅**后台 import/export/graph 运行时任务；**不含** UI 卡片（migration_job / query_editor / form 走 `ui_list`）。仅在用户明确提"后台/历史/运行中的任务"时调用。status ∈ `running`/`completed`/`failed`/`cancelled`/`pending`
 - `get_task_detail(task_id)` — error message, per-row failures, output path, timing
 
 ---

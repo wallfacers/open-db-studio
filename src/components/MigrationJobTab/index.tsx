@@ -44,6 +44,13 @@ export function MigrationJobTab({ jobId }: Props) {
       // still holds the old value until the next render tick.
       scriptTextRef.current = value
       setScriptText(value)
+      // Persist immediately. AI patches are full replacements (not per-keystroke),
+      // so the keyboard-input debounce (handleScriptChange) does not apply — and
+      // since AI patches don't go through Monaco's onChange, no auto-save would
+      // fire at all without this. Skipping it loses AI edits when the tab closes.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      invoke('update_migration_job_script', { id: jobId, scriptText: value })
+        .catch((e) => console.error('AI patch save failed:', e))
     }
     adapter.triggerSave = async () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)

@@ -17,6 +17,30 @@ const makeDefaultTitle = (firstMsg: string): string => {
 const uuid = () => crypto.randomUUID();
 
 /**
+ * 合并 streamingParts 中连续的同类型 text/reasoning 片段，用于 commit 或 cancel 时构造最终消息。
+ * tool-use / tool-result 保持原样。
+ */
+function mergeStreamingParts(
+  parts: import('../types').MessagePart[]
+): import('../types').MessagePart[] {
+  return parts.reduce<import('../types').MessagePart[]>((merged, part) => {
+    const last = merged[merged.length - 1];
+    if (last && last.type === part.type) {
+      if (part.type === 'reasoning' && last.type === 'reasoning') {
+        merged[merged.length - 1] = { type: 'reasoning', content: last.content + part.content };
+        return merged;
+      }
+      if (part.type === 'text' && last.type === 'text') {
+        merged[merged.length - 1] = { type: 'text', content: last.content + part.content };
+        return merged;
+      }
+    }
+    merged.push(part);
+    return merged;
+  }, []);
+}
+
+/**
  * 后台调用 AI 生成会话标题（复用 agent_request_ai_title 命令）。
  * 失败时静默忽略，保留默认标题。
  */
@@ -342,13 +366,21 @@ export const useAiStore = create<AiState>()(
         const state = get().chatStates[sessionId];
         const streamingContent = state?.streamingContent ?? '';
         const streamingThinkingContent = state?.streamingThinkingContent ?? '';
+        const rawParts = state?.streamingParts ?? [];
         const isCurrentSession = get().currentSessionId === sessionId;
 
-        if (streamingContent) {
+        // 只要已收到任何内容（正文、思考、或 parts）就保留为截断消息，
+        // 防止用户在推理阶段点击停止时丢失已显示的思考内容。
+        const hasAnyContent =
+          !!streamingContent || !!streamingThinkingContent || rawParts.length > 0;
+
+        if (hasAnyContent) {
+          const finalParts = mergeStreamingParts(rawParts);
           const truncatedMsg = {
             role: 'assistant' as const,
             content: streamingContent,
             thinkingContent: streamingThinkingContent || undefined,
+            parts: finalParts.length > 0 ? finalParts : undefined,
           };
           const now = Date.now();
           set((s) => {
@@ -737,21 +769,7 @@ export const useAiStore = create<AiState>()(
 
           // 获取流式构建的 parts 快照，合并连续的同类型 text/reasoning parts
           const rawParts = get().chatStates[sessionId]?.streamingParts ?? [];
-          const finalParts = rawParts.reduce<typeof rawParts>((merged, part) => {
-            const last = merged[merged.length - 1];
-            if (last && last.type === part.type) {
-              if (part.type === 'reasoning' && last.type === 'reasoning') {
-                merged[merged.length - 1] = { type: 'reasoning', content: last.content + part.content };
-                return merged;
-              }
-              if (part.type === 'text' && last.type === 'text') {
-                merged[merged.length - 1] = { type: 'text', content: last.content + part.content };
-                return merged;
-              }
-            }
-            merged.push(part);
-            return merged;
-          }, []);
+          const finalParts = mergeStreamingParts(rawParts);
           const newMsg = {
             role: 'assistant' as const,
             content,

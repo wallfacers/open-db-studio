@@ -1154,6 +1154,8 @@
     "loadingDatabases": "Loading databases...",
     "loadingTables": "Loading tables...",
     "realtimeProgress": "Realtime Progress",
+    "readSpeed": "Read",
+    "writeSpeed": "Write",
     "noRunHistory": "No run history",
     "historyLabel": "History:",
     "success": "Success",

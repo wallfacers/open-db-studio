@@ -344,3 +344,105 @@ pub fn build_conflict_clause(
         _ => ("INSERT INTO", String::new()),
     }
 }
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+//
+// These exercise the multi-row INSERT path that the migration writer hits for
+// every non-LOAD-DATA flush. A regression here resurfaces the "1 INSERT per
+// row" bug that capped MySQL write throughput at ~3k rows/s.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::migration::native_row::{MigrationRow, MigrationValue};
+
+    fn row(values: Vec<MigrationValue>) -> MigrationRow {
+        MigrationRow { values }
+    }
+
+    fn cols() -> Vec<String> {
+        vec!["id".to_string(), "name".to_string()]
+    }
+
+    fn rows() -> Vec<MigrationRow> {
+        vec![
+            row(vec![MigrationValue::Int(1), MigrationValue::Text("a".into())]),
+            row(vec![MigrationValue::Int(2), MigrationValue::Text("b".into())]),
+            row(vec![MigrationValue::Int(3), MigrationValue::Text("c".into())]),
+        ]
+    }
+
+    fn build_for(strategy: ConflictStrategy, driver: &str, upsert_keys: &[String]) -> String {
+        let columns = cols();
+        let tmpl = InsertTemplate::new("t", &columns, &strategy, upsert_keys, driver);
+        build_native_chunk_sql(&tmpl, &rows(), &StringEscapeStyle::Standard)
+    }
+
+    /// Default strategy — the user's case: one round-trip flushes all 3 rows.
+    #[test]
+    fn insert_default_emits_single_multi_row_statement() {
+        let sql = build_for(ConflictStrategy::Insert, "mysql", &[]);
+        assert!(sql.starts_with("INSERT INTO `t` (`id`, `name`) VALUES "), "sql={}", sql);
+        assert!(sql.contains("(1, 'a')"), "missing row 1: {}", sql);
+        assert!(sql.contains("(2, 'b')"), "missing row 2: {}", sql);
+        assert!(sql.contains("(3, 'c')"), "missing row 3: {}", sql);
+        // Exactly one VALUES keyword — proves we did NOT regress to 1 INSERT per row.
+        assert_eq!(sql.matches(" VALUES ").count(), 1, "should be a single multi-row INSERT: {}", sql);
+        assert!(!sql.contains("ON DUPLICATE KEY UPDATE"), "no upsert clause: {}", sql);
+    }
+
+    #[test]
+    fn skip_mysql_uses_insert_ignore_multirow() {
+        let sql = build_for(ConflictStrategy::Skip, "mysql", &[]);
+        assert!(sql.starts_with("INSERT IGNORE INTO `t` (`id`, `name`) VALUES "), "sql={}", sql);
+        assert_eq!(sql.matches(" VALUES ").count(), 1);
+    }
+
+    #[test]
+    fn replace_mysql_uses_replace_into_multirow() {
+        let sql = build_for(ConflictStrategy::Replace, "mysql", &[]);
+        assert!(sql.starts_with("REPLACE INTO `t` (`id`, `name`) VALUES "), "sql={}", sql);
+        assert_eq!(sql.matches(" VALUES ").count(), 1);
+    }
+
+    #[test]
+    fn upsert_mysql_emits_on_duplicate_key_update() {
+        let keys = vec!["id".to_string()];
+        let sql = build_for(ConflictStrategy::Upsert, "mysql", &keys);
+        assert!(sql.starts_with("INSERT INTO `t` (`id`, `name`) VALUES "), "sql={}", sql);
+        assert!(sql.contains(" ON DUPLICATE KEY UPDATE `name`=VALUES(`name`)"), "sql={}", sql);
+        // `id` is the conflict key, so it must NOT appear in the UPDATE list.
+        assert!(!sql.contains("`id`=VALUES(`id`)"), "key column must not self-update: {}", sql);
+    }
+
+    #[test]
+    fn skip_postgres_uses_on_conflict_do_nothing() {
+        let sql = build_for(ConflictStrategy::Skip, "postgres", &[]);
+        assert!(sql.starts_with("INSERT INTO \"t\" (\"id\", \"name\") VALUES "), "sql={}", sql);
+        assert!(sql.ends_with(" ON CONFLICT DO NOTHING"), "sql={}", sql);
+    }
+
+    #[test]
+    fn upsert_postgres_with_keys_emits_on_conflict_do_update() {
+        let keys = vec!["id".to_string()];
+        let sql = build_for(ConflictStrategy::Upsert, "postgres", &keys);
+        assert!(sql.contains(" ON CONFLICT (\"id\") DO UPDATE SET \"name\"=EXCLUDED.\"name\""), "sql={}", sql);
+    }
+
+    #[test]
+    fn null_values_render_as_sql_null() {
+        let columns = cols();
+        let tmpl = InsertTemplate::new("t", &columns, &ConflictStrategy::Insert, &[], "mysql");
+        let mixed = vec![row(vec![MigrationValue::Int(1), MigrationValue::Null])];
+        let sql = build_native_chunk_sql(&tmpl, &mixed, &StringEscapeStyle::Standard);
+        assert!(sql.contains("(1, NULL)"), "sql={}", sql);
+    }
+
+    #[test]
+    fn empty_rows_yields_prefix_only_no_panic() {
+        let columns = cols();
+        let tmpl = InsertTemplate::new("t", &columns, &ConflictStrategy::Insert, &[], "mysql");
+        let sql = build_native_chunk_sql(&tmpl, &[], &StringEscapeStyle::Standard);
+        assert_eq!(sql, "INSERT INTO `t` (`id`, `name`) VALUES ");
+    }
+}

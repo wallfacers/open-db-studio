@@ -1155,6 +1155,8 @@
     "loadingDatabases": "加载数据库...",
     "loadingTables": "加载表列表...",
     "realtimeProgress": "实时进度",
+    "readSpeed": "读速度",
+    "writeSpeed": "写速度",
     "noRunHistory": "暂无运行记录",
     "historyLabel": "历史记录：",
     "success": "成功",

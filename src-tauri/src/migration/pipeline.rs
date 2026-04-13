@@ -44,7 +44,7 @@ const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 const READ_BATCH_RECOMMENDED_MIN: usize = 1000;
 const READ_BATCH_RECOMMENDED_MAX: usize = 10_000;
 const WRITE_BATCH_RECOMMENDED_MIN: usize = 512;
-const WRITE_BATCH_RECOMMENDED_MAX: usize = 2_000;
+const WRITE_BATCH_RECOMMENDED_MAX: usize = 5_000;
 const CHANNEL_CAPACITY_RECOMMENDED_MIN: usize = 4;
 const CHANNEL_CAPACITY_RECOMMENDED_MAX: usize = 32;
 const PARALLELISM_RECOMMENDED_MIN: usize = 1;
@@ -141,6 +141,7 @@ async fn flush_write_batch(
 /// Handle write result: update stats, check circuit breakers.
 macro_rules! handle_write_result {
     ($error_count:expr, $consecutive_full_fails:expr, $res:expr, $batch_len:expr,
+     $batch_bytes:expr,
      $app_writer:expr, $job_id:expr, $run_id_w:expr, $label_w:expr,
      $ms_writer:expr, $gs_writer:expr, $error_limit:expr) => {{
         match &$res {
@@ -149,6 +150,16 @@ macro_rules! handle_write_result {
                 let fail = $batch_len.saturating_sub(ok);
                 $ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
                 $gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                // Bytes successfully written: pro-rate the batch byte budget
+                // by the actual success count. saturating_mul guards against
+                // overflow on pathological inputs.
+                let written_bytes: u64 = if $batch_len > 0 {
+                    ($batch_bytes as u64).saturating_mul(ok) / $batch_len
+                } else {
+                    0
+                };
+                $ms_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                $gs_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
                 if fail > 0 {
                     $ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
                     $gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
@@ -267,7 +278,13 @@ pub struct PipelineStats {
     pub rows_read: AtomicU64,
     pub rows_written: AtomicU64,
     pub rows_failed: AtomicU64,
+    /// Cumulative bytes read from the source. Incremented in the reader task
+    /// once per decoded row. Drives the UI "read throughput" gauge.
     pub bytes_transferred: AtomicU64,
+    /// Cumulative bytes successfully written to the target. Incremented in the
+    /// writer task per successful batch (proportional to rows_written/batch_len
+    /// of the original byte budget). Drives the UI "write throughput" gauge.
+    pub bytes_written: AtomicU64,
 }
 
 impl PipelineStats {
@@ -277,6 +294,7 @@ impl PipelineStats {
             rows_written: AtomicU64::new(0),
             rows_failed: AtomicU64::new(0),
             bytes_transferred: AtomicU64::new(0),
+            bytes_written: AtomicU64::new(0),
         })
     }
 }
@@ -791,7 +809,7 @@ async fn execute_single_mapping(
 
     let error_limit = config.pipeline.error_limit.min(100_000);
     let read_batch_size = config.pipeline.read_batch_size.max(1).min(50_000);
-    let write_batch_size = config.pipeline.write_batch_size.max(1).min(5_000);
+    let write_batch_size = config.pipeline.write_batch_size.max(1).min(20_000);
     let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
     let parallelism = config.pipeline.parallelism.max(1).min(16);
     let txn_batch_size = config.pipeline.transaction_batch_size.max(1).min(100);
@@ -899,6 +917,11 @@ async fn execute_single_mapping(
         required_pool,
     )
     .await?;
+
+    // Size the LOAD DATA (or equivalent) pool to parallelism so writers don't
+    // serialize on a small hardcoded cap. Trait default is no-op for drivers
+    // that don't have a secondary migration pool.
+    dst_ds.set_migration_pool_size(required_pool);
 
     // ── Setup migration session on target datasource ─────────────────────
     if let Err(e) = dst_ds.setup_migration_session().await {
@@ -1048,6 +1071,7 @@ async fn execute_single_mapping(
         let mut prev_read = 0u64;
         let mut prev_written = 0u64;
         let mut prev_bytes = 0u64;
+        let mut prev_bytes_written = 0u64;
         let mut prev_failed = 0u64;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -1058,10 +1082,12 @@ async fn execute_single_mapping(
             let rows_written = ms_clone.rows_written.load(Ordering::Relaxed);
             let rows_failed = ms_clone.rows_failed.load(Ordering::Relaxed);
             let bytes_now = ms_clone.bytes_transferred.load(Ordering::Relaxed);
+            let bytes_written_now = ms_clone.bytes_written.load(Ordering::Relaxed);
 
             // Skip emit if nothing changed since last tick
             if rows_read == prev_read && rows_written == prev_written
                 && rows_failed == prev_failed && bytes_now == prev_bytes
+                && bytes_written_now == prev_bytes_written
             {
                 continue;
             }
@@ -1069,6 +1095,7 @@ async fn execute_single_mapping(
             let delta_read = rows_read.saturating_sub(prev_read) as f64;
             let delta_written = rows_written.saturating_sub(prev_written) as f64;
             let delta_bytes = bytes_now.saturating_sub(prev_bytes) as f64;
+            let delta_bytes_written = bytes_written_now.saturating_sub(prev_bytes_written) as f64;
             let (eta, pct) = if let Some(total) = total_rows {
                 if rows_read < total {
                     // Use cumulative average RPS to avoid absurd ETAs when a single
@@ -1096,9 +1123,13 @@ async fn execute_single_mapping(
                 rows_written: gs.rows_written.load(Ordering::Relaxed),
                 rows_failed: gs.rows_failed.load(Ordering::Relaxed),
                 bytes_transferred: gs.bytes_transferred.load(Ordering::Relaxed),
+                bytes_written: gs.bytes_written.load(Ordering::Relaxed),
                 read_speed_rps: delta_read,
                 write_speed_rps: delta_written,
+                // Legacy alias = read bytes/sec; new code reads `read_bytes_speed_bps`.
                 bytes_speed_bps: delta_bytes,
+                read_bytes_speed_bps: delta_bytes,
+                write_bytes_speed_bps: delta_bytes_written,
                 eta_seconds: eta,
                 progress_pct: pct,
                 current_mapping: Some(ml.clone()),
@@ -1113,11 +1144,21 @@ async fn execute_single_mapping(
             prev_written = rows_written;
             prev_failed = rows_failed;
             prev_bytes = bytes_now;
+            prev_bytes_written = bytes_written_now;
         }
     });
 
+    // ── Strategy dispatch: attempt same-instance direct transfer first ─────
+    // Falls back to the reader/writer pipeline on failure (e.g. cross-schema
+    // permission errors, function-reference mismatches).
+    let direct_transfer_done = try_direct_transfer(
+        &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*dst_ds,
+        app, job_id, run_id, &mapping_label,
+        &mapping_stats, global_stats, &logs,
+    ).await;
+
     // ── Detect parallelism mode ──────────────────────────────────────────
-    let shard_pk = if parallelism > 1 {
+    let shard_pk = if !direct_transfer_done && parallelism > 1 {
         match src_ds.get_columns(&mapping.source_table, None).await {
             Ok(columns) => detect_integer_pk(&columns),
             Err(_) => None,
@@ -1127,7 +1168,9 @@ async fn execute_single_mapping(
     };
 
     let dst_ds_teardown = dst_ds.clone();
-    let pipeline_result = if let Some(pk_col) = shard_pk {
+    let pipeline_result = if direct_transfer_done {
+        Ok(())
+    } else if let Some(pk_col) = shard_pk {
         // ── Range-Split Mode: N independent cursor reader+writer pairs ───
         // DataX/SeaTunnel style: divide [MIN(pk), MAX(pk)] into `parallelism`
         // non-overlapping ranges. Each range spawns its own reader+writer.
@@ -1356,6 +1399,119 @@ async fn detect_integer_pk_from_ds(
     table: &str,
 ) -> Option<String> {
     ds.get_columns(table, None).await.ok().as_deref().and_then(detect_integer_pk)
+}
+
+// ── Direct transfer dispatch (same-instance INSERT ... SELECT) ───────────────
+
+/// Try to execute a same-instance direct transfer. Returns `true` when the
+/// transfer succeeded and the caller should skip the reader/writer pipeline.
+/// Any failure (wrong strategy, permission error, SQL error) logs a WARN and
+/// returns `false`, letting the caller fall back to the regular pipeline.
+#[allow(clippy::too_many_arguments)]
+async fn try_direct_transfer(
+    src_cfg: &crate::datasource::ConnectionConfig,
+    dst_cfg: &crate::datasource::ConnectionConfig,
+    src_db: &str,
+    dst_db: &str,
+    mapping: &TableMapping,
+    dst_ds: &dyn crate::datasource::DataSource,
+    app: &AppHandle,
+    job_id: i64,
+    run_id: &str,
+    mapping_label: &str,
+    mapping_stats: &Arc<PipelineStats>,
+    global_stats: &Arc<PipelineStats>,
+    logs: &Arc<Mutex<LogCollector>>,
+) -> bool {
+    use crate::migration::direct_transfer::{DirectTransferConfig, DirectTransferExecutor};
+    use crate::migration::strategy_selector::{select_strategy, MigrationStrategy};
+
+    let decision = select_strategy(src_cfg, dst_cfg, mapping);
+
+    logs.lock().unwrap().emit_and_record(
+        app, job_id, run_id, "SYSTEM",
+        &format!(
+            "[{}] Strategy: {} (same_instance={})",
+            mapping_label, decision.strategy, decision.same_instance
+        ),
+    );
+
+    if decision.strategy != MigrationStrategy::DirectTransfer {
+        return false;
+    }
+
+    // Resolve effective source/target database names. Fall back to the
+    // connection's default database when the mapping didn't override it —
+    // this matches how `execute_single_mapping` already resolves `src_db`.
+    let effective_src_db = if src_db.is_empty() {
+        src_cfg.database.clone().unwrap_or_default()
+    } else {
+        src_db.to_string()
+    };
+    let effective_dst_db = if dst_db.is_empty() {
+        dst_cfg.database.clone().unwrap_or_default()
+    } else {
+        dst_db.to_string()
+    };
+
+    if effective_src_db.is_empty() || effective_dst_db.is_empty() {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] DirectTransfer skipped: source or target database unresolved",
+                mapping_label
+            ),
+        );
+        return false;
+    }
+
+    let cfg = DirectTransferConfig {
+        src_db: effective_src_db,
+        src_table: mapping.source_table.clone(),
+        dst_db: effective_dst_db,
+        dst_table: mapping.target.table.clone(),
+        column_mappings: mapping.column_mappings.clone(),
+        where_clause: mapping.filter_condition.clone(),
+    };
+
+    match DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver).await {
+        Ok(res) => {
+            let rows = res.rows_written;
+            // Synthesize read/written counters so stats event + final summary
+            // are self-consistent (reader path had no chance to increment them).
+            mapping_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            mapping_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            global_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            global_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+
+            let truncated_sql = if res.sql_executed.len() > 200 {
+                &res.sql_executed[..200]
+            } else {
+                &res.sql_executed
+            };
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "SYSTEM",
+                &format!(
+                    "[{}] DirectTransfer OK: {} rows in {}ms — SQL: {}",
+                    mapping_label,
+                    format_number(rows),
+                    res.elapsed_ms,
+                    truncated_sql
+                ),
+            );
+            true
+        }
+        Err(e) => {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] DirectTransfer failed, falling back to reader/writer pipeline: {}",
+                    mapping_label, e
+                ),
+            );
+            false
+        }
+    }
 }
 
 // ── Reader + Writer sub-pipeline (reusable per split or full table) ──────────
@@ -1693,6 +1849,7 @@ async fn run_reader_writer_pair(
                     while write_buf.len() >= write_batch_size {
                         let rows = std::mem::replace(&mut write_buf, Vec::with_capacity(write_batch_size));
                         let batch_len = rows.len() as u64;
+                        let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&rows);
                         let (write_res, wrote_ok) = flush_write_batch(
                             dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns,
                             WriteMethod::BulkWrite { rows: &rows }, &conflict_strategy, &upsert_keys, &dst_driver,
@@ -1703,7 +1860,7 @@ async fn run_reader_writer_pair(
                             check_circuit_breaker(&label_w, consecutive_full_fails, error_count, error_limit, job_id, &run_id_w, &app_writer)?;
                             continue;
                         }
-                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
                         if write_res.is_ok() { if let Some(p) = write_pause_ms { if p > 0 { tokio::time::sleep(std::time::Duration::from_millis(p)).await; } } }
                     }
                 }
@@ -1713,6 +1870,7 @@ async fn run_reader_writer_pair(
                     while native_buf.len() >= write_batch_size {
                         let batch_rows: Vec<_> = native_buf.drain(..write_batch_size).collect();
                         let batch_len = batch_rows.len() as u64;
+                        let batch_bytes = crate::migration::byte_gate::estimate_native_batch_bytes(&batch_rows);
 
                         if txn_mode_active {
                             if txn_handle.is_none() {
@@ -1727,6 +1885,11 @@ async fn run_reader_writer_pair(
                                     Ok(n) => {
                                         let ok = n as u64; let fail = batch_len.saturating_sub(ok);
                                         ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed); gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                                        let written_bytes: u64 = if batch_len > 0 {
+                                            batch_bytes.saturating_mul(ok) / batch_len
+                                        } else { 0 };
+                                        ms_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                                        gs_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
                                         if fail > 0 { ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed); gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed); error_count = error_count.saturating_add(fail as usize); }
                                         consecutive_full_fails = 0; batches_in_txn += 1;
                                         if batches_in_txn >= txn_batch_size {
@@ -1758,7 +1921,7 @@ async fn run_reader_writer_pair(
                             check_circuit_breaker(&label_w, consecutive_full_fails, error_count, error_limit, job_id, &run_id_w, &app_writer)?;
                             continue;
                         }
-                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
                         if write_res.is_ok() { if let Some(p) = write_pause_ms { if p > 0 { tokio::time::sleep(std::time::Duration::from_millis(p)).await; } } }
                     }
                 }
@@ -1769,22 +1932,28 @@ async fn run_reader_writer_pair(
         if !write_buf.is_empty() {
             let rows = std::mem::replace(&mut write_buf, Vec::new());
             let batch_len = rows.len() as u64;
+            let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&rows);
             let (r, _) = flush_write_batch(dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns, WriteMethod::BulkWrite { rows: &rows }, &conflict_strategy, &upsert_keys, &dst_driver, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer).await?;
-            handle_write_result!(error_count, consecutive_full_fails, r, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+            handle_write_result!(error_count, consecutive_full_fails, r, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
         }
         if !native_buf.is_empty() {
             let batch_len = native_buf.len() as u64;
+            let batch_bytes = crate::migration::byte_gate::estimate_native_batch_bytes(&native_buf);
             if let Some(ref mut txn) = txn_handle {
                 let _permit = semaphore.clone().acquire_owned().await.map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
                 let write_res = dst_ds.bulk_write_in_txn(txn, &target_table, &buf_columns, std::mem::take(&mut native_buf), &conflict_strategy, &upsert_keys, &dst_driver).await;
                 if let Ok(n) = write_res {
-                    ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed); gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                    let ok = n as u64;
+                    ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed); gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                    let written_bytes: u64 = if batch_len > 0 { batch_bytes.saturating_mul(ok) / batch_len } else { 0 };
+                    ms_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                    gs_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
                 } else {
                     ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed); gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
                 }
             } else {
                 let (r, _) = flush_write_batch(dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns, WriteMethod::BulkWriteNative { rows: std::mem::take(&mut native_buf) }, &conflict_strategy, &upsert_keys, &dst_driver, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer).await?;
-                handle_write_result!(error_count, consecutive_full_fails, r, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+                handle_write_result!(error_count, consecutive_full_fails, r, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
             }
         }
         if let Some(txn) = txn_handle { dst_ds.commit_bulk_write_txn(txn).await?; }

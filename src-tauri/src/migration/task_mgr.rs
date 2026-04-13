@@ -371,10 +371,18 @@ pub struct MigrationStatsEvent {
     pub rows_read: u64,
     pub rows_written: u64,
     pub rows_failed: u64,
+    /// 累计**读取**字节数。保留旧名 `bytes_transferred` 以兼容前端，但含义=读字节。
     pub bytes_transferred: u64,
+    /// 累计**写入**字节数（成功写入的行对应的字节）。
+    pub bytes_written: u64,
     pub read_speed_rps: f64,
     pub write_speed_rps: f64,
-    pub bytes_speed_bps: f64,  // 瞬时字节速度（字节/秒），每秒差分计算
+    /// 瞬时**读**字节速度（字节/秒）；旧字段名，保留以兼容前端。
+    pub bytes_speed_bps: f64,
+    /// 瞬时**读**字节速度（字节/秒）。与 `bytes_speed_bps` 同义，新代码应使用此字段。
+    pub read_bytes_speed_bps: f64,
+    /// 瞬时**写**字节速度（字节/秒）。
+    pub write_bytes_speed_bps: f64,
     pub eta_seconds: Option<f64>,
     pub progress_pct: Option<f64>,
     pub current_mapping: Option<String>,

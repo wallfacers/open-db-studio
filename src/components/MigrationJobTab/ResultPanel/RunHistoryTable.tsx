@@ -70,6 +70,7 @@ export function RunHistoryTable({ jobId, history }: Props) {
               <th className="text-right px-3 py-2 font-medium">{t('migration.colRowsWritten')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colRowsFailed')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colTransferredSize')}</th>
+              <th className="text-right px-3 py-2 font-medium">{t('migration.colDuration')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colSpeed')}</th>
               <th className="text-center px-3 py-2 font-medium w-20">{t('migration.colLogDetails')}</th>
               <th className="text-center px-3 py-2 font-medium w-16">{t('migration.colActions')}</th>
@@ -83,15 +84,15 @@ export function RunHistoryTable({ jobId, history }: Props) {
                   <div className="flex items-center gap-1.5">
                     <MigrationStatusIcon status={run.status} />
                     <span className="text-foreground-default">{statusLabel(run.status, t)}</span>
-                    {run.durationMs != null && run.durationMs > 0 && (
-                      <span className="text-foreground-muted text-[10px] ml-1">{fmtDuration(run.durationMs)}</span>
-                    )}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsRead ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsWritten ?? 0).toLocaleString()}</td>
                 <td className={`px-3 py-2.5 text-right font-mono ${(run.rowsFailed ?? 0) > 0 ? 'text-error' : 'text-foreground-muted'}`}>{(run.rowsFailed ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{fmtBytes(run.bytesTransferred ?? 0)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-foreground-default">
+                  {run.durationMs != null && run.durationMs > 0 ? fmtDuration(run.durationMs) : '-'}
+                </td>
                 <td className="px-3 py-2.5 text-right">
                   {(() => {
                     const durationSec = (run.durationMs ?? 0) / 1000

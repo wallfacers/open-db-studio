@@ -289,18 +289,27 @@ If the table has a primary key, you can also estimate via `get_table_schema` to 
 
 Use the row count to choose appropriate parameters:
 
-| Source Rows | `parallelism` | `read_batch` | `write_batch` | Notes |
-|---|---|---|---|---|
-| < 100K | 1–2 | 2000 | 2048 | Defaults are fine; parallelism overhead > benefit |
-| 100K – 1M | 4 | 3000 | 2048 | Use default `parallelism=4`; range-split kicks in |
-| 1M – 10M | 6–8 | 5000 | 2048 | Needs integer PK; 8 splits ≈ 18 DB connections |
-| 10M – 100M | 8 | 5000 | 2048 | Sweet spot; >8 parallelism strains source DB pool |
-| > 100M | 8 | 5000–8000 | 2048–3000 | Chunk with `WHERE` clauses; don't rely on parallelism alone |
+| Source Rows | `parallelism` | `read_batch` | `write_batch` | `byte_capacity` | Notes |
+|---|---|---|---|---|---|
+| < 100K | 2 | 1000 | 512 | 4MB | Defaults work well; low overhead |
+| 100K – 1M | 4 | 2000 | 1024 | 8MB | Default `parallelism=8` fine; range-split |
+| 1M – 10M | 8 | 5000 | 2048 | 16MB | Sweet spot; 8 splits, byte_gate controls memory |
+| 10M – 100M | 8 | 5000 | 2048 | 32MB | Use `error_limit`; byte_capacity prevents 38GB spike |
+| > 100M | 8 | 5000 | 2048 | 64MB | Chunk with `WHERE` clauses; don't rely on parallelism alone |
 
-**Memory per split** (approximate, for a 50-column table):
-- Channel buffer: `(channel_cap / parallelism) × read_batch` rows
-- Writer buffer: `write_batch` rows
-- Example at `parallelism=8, read_batch=5000, write_batch=2048`: ~66MB/split × 8 = ~530MB total
+**Memory estimation (after heap_memory_size fix)**:
+- Tested with 10M rows, 33-column table: **185 MB peak** (vs previously estimated 530MB)
+- `byte_capacity` is the primary memory limiter via ByteGate backpressure
+- `channel_capacity=8` reduces message backlog
+- Formula: `byte_capacity + (parallelism × write_batch × row_size)` ≈ total peak
+
+**Default values (optimized for 1M–10M range)**:
+- `parallelism`: 8
+- `read_batch`: 2000
+- `write_batch`: 1024
+- `channel_capacity`: 8
+- `byte_capacity`: 16MB (16777216)
+- `max_bytes_per_tx`: 8MB
 
 **Hard limits enforced by the engine:**
 - `read_batch`: clamped to `[1, 50000]`
@@ -308,12 +317,14 @@ Use the row count to choose appropriate parameters:
 - `parallelism`: clamped to `[1, 16]`
 - `channel_capacity`: clamped to `[1, 64]`
 - `transaction_batch_size`: clamped to `[1, 100]`
+- `byte_capacity`: any u64 (None disables backpressure, dangerous!)
 
 **Important rules:**
 - `parallelism > 1` **requires an integer primary key** on the source table for range-split mode. Without it, the engine falls back to single-cursor OFFSET pagination regardless of the parallelism setting.
+- **Always set `byte_capacity`** (default 16MB). Without it, in-flight data accumulates unbounded, causing memory spikes to 38GB+ on large tables.
 - For tables > 10M rows, **always recommend** `error_limit` (e.g. 100) so the pipeline stops on unexpected data issues instead of silently skipping millions of bad rows.
 - For tables > 50M rows, recommend adding `WHERE` clauses to split the migration into chunks (e.g. by date range or ID range) rather than migrating the entire table in one job.
-- `read_batch > 5000` is rarely beneficial — it increases channel memory linearly but doesn't improve throughput (the bottleneck is usually source DB query speed, not batch size).
+- `read_batch > 5000` rarely improves throughput — the bottleneck is usually source DB query speed, not batch size.
 
 ### Migration Tree Management
 

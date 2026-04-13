@@ -157,17 +157,17 @@ fn default_byte_capacity() -> Option<u64> {
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            read_batch_size: 512,
-            write_batch_size: 512,
-            channel_capacity: 32,
-            parallelism: 4,
+            read_batch_size: 2000,          // 调大：512 -> 2000（提高吞吐）
+            write_batch_size: 1024,         // 调大：512 -> 1024
+            channel_capacity: 8,            // 调小：32 -> 8（减少消息积压）
+            parallelism: 8,                 // 调大：4 -> 8（现代机器支持）
             speed_limit_rps: None,
             error_limit: 0,
             shard_count: None,
             transaction_batch_size: 1,
             write_pause_ms: None,
-            max_bytes_per_tx: Some(4 * 1024 * 1024),
-            byte_capacity: Some(8 * 1024 * 1024),
+            max_bytes_per_tx: Some(8 * 1024 * 1024),   // 调大：4MB -> 8MB
+            byte_capacity: Some(16 * 1024 * 1024),     // 调大：8MB -> 16MB（背压控制）
         }
     }
 }

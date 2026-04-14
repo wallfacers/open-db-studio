@@ -1486,12 +1486,14 @@ async fn try_direct_transfer(
     let timeout_duration = tokio::time::Duration::from_secs(DIRECT_TRANSFER_TIMEOUT_SECS);
     let dt_start = std::time::Instant::now();
 
-    // Heartbeat task: emits a "still running" log every 5 seconds
+    // Heartbeat task: emits a "still running" log AND stats event every 5 seconds
+    // so the UI status bar (read/write counters, speed gauge) stays alive.
     let app_h = app.clone();
     let job_id_h = job_id;
     let run_id_h = run_id.to_string();
     let label_h = mapping_label.to_string();
     let dt_start_h = dt_start;
+    let gs_h = global_stats.clone();
     let heartbeat_handle = tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -1503,6 +1505,26 @@ async fn try_direct_transfer(
                     label_h, elapsed
                 ),
             );
+            // Also emit a stats event so the UI status bar (read/write/failed,
+            // speed gauge) updates instead of showing all zeroes.
+            let _ = app_h.emit(MIGRATION_STATS_EVENT, &MigrationStatsEvent {
+                job_id: job_id_h,
+                run_id: run_id_h.clone(),
+                rows_read: gs_h.rows_read.load(Ordering::Relaxed),
+                rows_written: gs_h.rows_written.load(Ordering::Relaxed),
+                rows_failed: gs_h.rows_failed.load(Ordering::Relaxed),
+                bytes_transferred: gs_h.bytes_transferred.load(Ordering::Relaxed),
+                bytes_written: gs_h.bytes_written.load(Ordering::Relaxed),
+                read_speed_rps: 0.0,
+                write_speed_rps: 0.0,
+                bytes_speed_bps: 0.0,
+                read_bytes_speed_bps: 0.0,
+                write_bytes_speed_bps: 0.0,
+                eta_seconds: None,
+                progress_pct: None,
+                current_mapping: Some(label_h.clone()),
+                mapping_progress: None,
+            });
         }
     });
 

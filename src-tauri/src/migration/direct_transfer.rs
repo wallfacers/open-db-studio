@@ -14,6 +14,7 @@ pub struct DirectTransferConfig {
 }
 
 /// Result of direct transfer execution.
+#[derive(Debug)]
 pub struct DirectTransferResult {
     pub rows_written: u64,
     pub sql_executed: String,

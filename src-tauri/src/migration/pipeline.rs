@@ -1154,14 +1154,31 @@ async fn execute_single_mapping(
         }
     });
 
+    // Clone for post-pipeline teardown (and for Abort early-return cleanup).
+    // Declared before DirectTransfer so the Abort path below can reuse it.
+    let dst_ds_teardown = dst_ds.clone();
+
     // ── Strategy dispatch: attempt same-instance direct transfer first ─────
-    // Falls back to the reader/writer pipeline on failure (e.g. cross-schema
-    // permission errors, function-reference mismatches).
-    let direct_transfer_done = try_direct_transfer(
+    // Falls back to the reader/writer pipeline on `Skip` (strategy mismatch)
+    // or `FallbackOnError` (SQL error — server already rolled back).
+    // On `Abort` (timeout / user cancel) we do NOT fall back: the server
+    // INSERT statement may still be running and a second writer would
+    // deadlock on the target-table lock.
+    let dt_outcome = try_direct_transfer(
         &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*dst_ds,
         app, job_id, run_id, &mapping_label,
         &mapping_stats, global_stats, &logs,
+        cancel,
     ).await;
+
+    if let DirectTransferOutcome::Abort(reason) = &dt_outcome {
+        // Cleanup spawned stats task and target session before bailing out.
+        stats_handle.abort();
+        let _ = dst_ds_teardown.teardown_migration_session().await;
+        return Err(AppError::Other(reason.clone()));
+    }
+
+    let direct_transfer_done = matches!(dt_outcome, DirectTransferOutcome::Done(_));
 
     // ── Detect parallelism mode ──────────────────────────────────────────
     let shard_pk = if !direct_transfer_done && parallelism > 1 {
@@ -1173,7 +1190,6 @@ async fn execute_single_mapping(
         None
     };
 
-    let dst_ds_teardown = dst_ds.clone();
     let pipeline_result = if direct_transfer_done {
         Ok(())
     } else if let Some(pk_col) = shard_pk {
@@ -1409,10 +1425,69 @@ async fn detect_integer_pk_from_ds(
 
 // ── Direct transfer dispatch (same-instance INSERT ... SELECT) ───────────────
 
-/// Try to execute a same-instance direct transfer. Returns `true` when the
-/// transfer succeeded and the caller should skip the reader/writer pipeline.
-/// Any failure (wrong strategy, permission error, SQL error) logs a WARN and
-/// returns `false`, letting the caller fall back to the regular pipeline.
+/// Result of attempting a same-instance DirectTransfer.
+///
+/// The three "proceed to reader/writer fallback" outcomes (`Skip`,
+/// `FallbackOnError`) are distinguished from the "must abort mapping" outcome
+/// (`Abort`) because a timeout or user cancel leaves the server still executing
+/// the `INSERT INTO ... SELECT`. Falling back in that state would launch a
+/// second writer that fights the original statement for the target-table lock,
+/// leaving the UI "stuck" with an empty target — the very bug this type fixes.
+#[derive(Debug)]
+enum DirectTransferOutcome {
+    /// DirectTransfer succeeded — skip the reader/writer pipeline.
+    /// Payload is the executor result, consumed by the caller to update stats.
+    Done(crate::migration::direct_transfer::DirectTransferResult),
+    /// Strategy did not choose DirectTransfer, or a pre-flight guard (empty
+    /// database name) declined it. Safe to fall back to reader/writer.
+    Skip,
+    /// `dst_ds.execute` returned a SQL/permission error. The server already
+    /// rolled back, so fallback is safe. Payload is the error message for logs.
+    FallbackOnError(String),
+    /// Timeout or user cancel. The server statement may still be running;
+    /// abort the mapping to avoid double execution and resource conflict.
+    /// The contained string is the user-facing reason.
+    Abort(String),
+}
+
+/// Race the DirectTransfer execution against cancel and timeout.
+///
+/// Extracted from `try_direct_transfer` so it can be unit-tested without a
+/// Tauri `AppHandle` or a real `DataSource`. Priorities (via `biased`):
+/// 1. `cancel.cancelled()` — user stop is honored immediately
+/// 2. timeout — server statement may still be running; must abort, not fallback
+/// 3. `exec_fut` completion — success or SQL error
+async fn direct_transfer_race<F>(
+    exec_fut: F,
+    cancel: &Arc<CancellationToken>,
+    timeout_duration: std::time::Duration,
+) -> DirectTransferOutcome
+where
+    F: std::future::Future<Output = AppResult<crate::migration::direct_transfer::DirectTransferResult>>,
+{
+    tokio::pin!(exec_fut);
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            DirectTransferOutcome::Abort("Cancelled by user".into())
+        }
+        _ = tokio::time::sleep(timeout_duration) => {
+            DirectTransferOutcome::Abort(format!(
+                "DirectTransfer timed out after {}s — server statement may still be running; aborting mapping to avoid conflict",
+                timeout_duration.as_secs()
+            ))
+        }
+        r = &mut exec_fut => match r {
+            Ok(res) => DirectTransferOutcome::Done(res),
+            Err(e) => DirectTransferOutcome::FallbackOnError(e.to_string()),
+        }
+    }
+}
+
+/// Try to execute a same-instance direct transfer. Returns `DirectTransferOutcome`:
+/// - `Done`      → skip the reader/writer pipeline
+/// - `Skip` / `FallbackOnError` → fall back to reader/writer
+/// - `Abort`     → fail this mapping (do NOT fall back; server may still be running)
 #[allow(clippy::too_many_arguments)]
 async fn try_direct_transfer(
     src_cfg: &crate::datasource::ConnectionConfig,
@@ -1428,7 +1503,8 @@ async fn try_direct_transfer(
     mapping_stats: &Arc<PipelineStats>,
     global_stats: &Arc<PipelineStats>,
     logs: &Arc<Mutex<LogCollector>>,
-) -> bool {
+    cancel: &Arc<CancellationToken>,
+) -> DirectTransferOutcome {
     use crate::migration::direct_transfer::{DirectTransferConfig, DirectTransferExecutor};
     use crate::migration::strategy_selector::{select_strategy, MigrationStrategy};
 
@@ -1443,7 +1519,7 @@ async fn try_direct_transfer(
     );
 
     if decision.strategy != MigrationStrategy::DirectTransfer {
-        return false;
+        return DirectTransferOutcome::Skip;
     }
 
     // Resolve effective source/target database names. Fall back to the
@@ -1468,7 +1544,7 @@ async fn try_direct_transfer(
                 mapping_label
             ),
         );
-        return false;
+        return DirectTransferOutcome::Skip;
     }
 
     let cfg = DirectTransferConfig {
@@ -1528,26 +1604,16 @@ async fn try_direct_transfer(
         }
     });
 
-    let exec_result = tokio::time::timeout(
-        timeout_duration,
+    let outcome = direct_transfer_race(
         DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver),
+        cancel,
+        timeout_duration,
     ).await;
 
     heartbeat_handle.abort();
 
-    match exec_result {
-        Err(_) => {
-            // Timeout: fall back to reader/writer pipeline
-            logs.lock().unwrap().emit_and_record(
-                app, job_id, run_id, "WARN",
-                &format!(
-                    "[{}] DirectTransfer timed out after {}s, falling back to reader/writer pipeline",
-                    mapping_label, DIRECT_TRANSFER_TIMEOUT_SECS
-                ),
-            );
-            false
-        }
-        Ok(Ok(res)) => {
+    match outcome {
+        DirectTransferOutcome::Done(res) => {
             let rows = res.rows_written;
             // Synthesize read/written counters so stats event + final summary
             // are self-consistent (reader path had no chance to increment them).
@@ -1571,17 +1637,32 @@ async fn try_direct_transfer(
                     truncated_sql
                 ),
             );
-            true
+            DirectTransferOutcome::Done(res)
         }
-        Ok(Err(e)) => {
+        DirectTransferOutcome::FallbackOnError(msg) => {
             logs.lock().unwrap().emit_and_record(
                 app, job_id, run_id, "WARN",
                 &format!(
                     "[{}] DirectTransfer failed, falling back to reader/writer pipeline: {}",
-                    mapping_label, e
+                    mapping_label, msg
                 ),
             );
-            false
+            DirectTransferOutcome::FallbackOnError(msg)
+        }
+        DirectTransferOutcome::Abort(reason) => {
+            // Timeout or user cancel: do NOT fall back. The server statement
+            // may still be executing, and a second writer would deadlock on
+            // the target-table lock (the exact "stuck job + empty target"
+            // symptom this path was designed to prevent).
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "ERROR",
+                &format!("[{}] DirectTransfer aborted: {}", mapping_label, reason),
+            );
+            DirectTransferOutcome::Abort(reason)
+        }
+        DirectTransferOutcome::Skip => {
+            // Unreachable: the race only returns Done / FallbackOnError / Abort.
+            DirectTransferOutcome::Skip
         }
     }
 }
@@ -2220,6 +2301,97 @@ async fn writeback_incremental_checkpoint(
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    // ── direct_transfer_race: cancel / timeout / success / error ──────────
+    //
+    // Covers the root-cause fix for "same-instance INSERT INTO SELECT stuck
+    // on running, target empty". These tests exercise the decision logic
+    // without a Tauri AppHandle or a real DataSource — see `try_direct_transfer`
+    // for the full plumbing.
+
+    use crate::migration::direct_transfer::DirectTransferResult;
+
+    fn fake_cancel() -> Arc<CancellationToken> {
+        Arc::new(CancellationToken::new())
+    }
+
+    fn ok_result(rows: u64) -> DirectTransferResult {
+        DirectTransferResult {
+            rows_written: rows,
+            sql_executed: "INSERT INTO t SELECT * FROM s".into(),
+            elapsed_ms: 0,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_done_on_exec_success() {
+        let cancel = fake_cancel();
+        let fut = async { Ok(ok_result(42)) };
+        let out = direct_transfer_race(fut, &cancel, Duration::from_secs(600)).await;
+        match out {
+            DirectTransferOutcome::Done(res) => assert_eq!(res.rows_written, 42),
+            other => panic!("expected Done, got {:?}", other),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_fallback_on_sql_error() {
+        let cancel = fake_cancel();
+        let fut = async { Err(AppError::Other("permission denied".into())) };
+        let out = direct_transfer_race(fut, &cancel, Duration::from_secs(600)).await;
+        match out {
+            DirectTransferOutcome::FallbackOnError(msg) => {
+                assert!(msg.contains("permission denied"), "got: {}", msg);
+            }
+            other => panic!("expected FallbackOnError, got {:?}", other),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_abort_on_timeout() {
+        let cancel = fake_cancel();
+        // Exec future never completes — server statement "still running".
+        let fut = async {
+            std::future::pending::<()>().await;
+            unreachable!()
+        };
+        // Use a short wall-clock timeout so the test completes quickly without
+        // depending on tokio's `test-util` feature.
+        let out = direct_transfer_race(fut, &cancel, Duration::from_millis(50)).await;
+        match out {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("timed out"), "got: {}", reason);
+                assert!(
+                    reason.contains("server statement may still be running"),
+                    "reason should warn about server-side leak; got: {}",
+                    reason
+                );
+            }
+            other => panic!("expected Abort(timeout), got {:?}", other),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_abort_on_cancel_beats_timeout() {
+        // Verify `biased` gives cancel priority over timeout when both fire.
+        let cancel = fake_cancel();
+        let cancel_trigger = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            cancel_trigger.cancel();
+        });
+        let fut = async {
+            std::future::pending::<()>().await;
+            unreachable!()
+        };
+        let out = direct_transfer_race(fut, &cancel, Duration::from_secs(600)).await;
+        match out {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("Cancelled"), "got: {}", reason);
+            }
+            other => panic!("expected Abort(cancelled), got {:?}", other),
+        }
+    }
 
     /// 内存采样器
     struct MemorySampler {

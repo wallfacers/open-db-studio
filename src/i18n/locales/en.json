@@ -785,6 +785,7 @@
   "graphExplorer": {
     "title": "Knowledge Graph",
     "selectConnection": "Please select a database connection first",
+    "allDatabases": "All Databases",
     "searchPlaceholder": "Search nodes...",
     "autoLayout": "Auto Layout",
     "building": "Building...",

@@ -786,6 +786,7 @@
   "graphExplorer": {
     "title": "知识图谱",
     "selectConnection": "请先选择数据库连接",
+    "allDatabases": "全部数据库",
     "searchPlaceholder": "搜索节点...",
     "autoLayout": "自动布局",
     "building": "构建中...",

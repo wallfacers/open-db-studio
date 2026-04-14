@@ -1164,11 +1164,18 @@ async fn execute_single_mapping(
     // On `Abort` (timeout / user cancel) we do NOT fall back: the server
     // INSERT statement may still be running and a second writer would
     // deadlock on the target-table lock.
+    // Batched DirectTransfer splits: (parallelism * 2) gives ~6% progress
+    // granularity at parallelism=8. Sequential execution — progress visibility,
+    // not parallelism. Clamp [1, 64] to bound redo-log pressure on the
+    // per-chunk transaction.
+    let direct_transfer_split_count = (parallelism.saturating_mul(2)).clamp(1, 64);
+
     let dt_outcome = try_direct_transfer(
-        &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*dst_ds,
+        &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*src_ds, &*dst_ds,
         app, job_id, run_id, &mapping_label,
         &mapping_stats, global_stats, &logs,
         cancel,
+        direct_transfer_split_count,
     ).await;
 
     if let DirectTransferOutcome::Abort(reason) = &dt_outcome {
@@ -1499,6 +1506,41 @@ where
     }
 }
 
+/// Map a `BatchedError` to the `DirectTransferOutcome` the mapping dispatcher
+/// expects. Kept as a pure function so the failure policy is unit-testable
+/// without mocking a full `DataSource` or `AppHandle`.
+///
+/// Policy:
+/// - Chunk-0 SQL failure: server never committed anything → `FallbackOnError`.
+/// - Later-chunk SQL failure: chunks `[0..chunk_index)` are committed in the
+///   target; a reader/writer fallback would double-insert them → `Abort`.
+/// - Cancelled (mid-chunk or between-chunks): the in-flight INSERT may still
+///   be running server-side, and rerunning committed chunks would double-insert
+///   → `Abort`.
+fn map_batched_error_to_outcome(
+    err: crate::migration::direct_transfer::BatchedError,
+    total_chunks: usize,
+) -> DirectTransferOutcome {
+    use crate::migration::direct_transfer::BatchedError;
+    match err {
+        BatchedError::SqlFailure { chunk_index: 0, message, .. } => {
+            DirectTransferOutcome::FallbackOnError(message)
+        }
+        BatchedError::SqlFailure { chunk_index, message, rows_written_so_far } => {
+            DirectTransferOutcome::Abort(format!(
+                "DirectTransfer aborted at chunk {}/{}: {}. {} rows already committed — cannot safely fall back.",
+                chunk_index, total_chunks, message, rows_written_so_far,
+            ))
+        }
+        BatchedError::Cancelled { completed_chunks, rows_written_so_far } => {
+            DirectTransferOutcome::Abort(format!(
+                "DirectTransfer cancelled after {}/{} chunks ({} rows committed)",
+                completed_chunks, total_chunks, rows_written_so_far,
+            ))
+        }
+    }
+}
+
 /// Try to execute a same-instance direct transfer. Returns `DirectTransferOutcome`:
 /// - `Done`      → skip the reader/writer pipeline
 /// - `Skip` / `FallbackOnError` → fall back to reader/writer
@@ -1510,6 +1552,7 @@ async fn try_direct_transfer(
     src_db: &str,
     dst_db: &str,
     mapping: &TableMapping,
+    src_ds: &dyn crate::datasource::DataSource,
     dst_ds: &dyn crate::datasource::DataSource,
     app: &AppHandle,
     job_id: i64,
@@ -1519,6 +1562,7 @@ async fn try_direct_transfer(
     global_stats: &Arc<PipelineStats>,
     logs: &Arc<Mutex<LogCollector>>,
     cancel: &Arc<CancellationToken>,
+    split_count: usize,
 ) -> DirectTransferOutcome {
     use crate::migration::direct_transfer::{DirectTransferConfig, DirectTransferExecutor};
     use crate::migration::strategy_selector::{select_strategy, MigrationStrategy};
@@ -1571,6 +1615,35 @@ async fn try_direct_transfer(
         where_clause: mapping.filter_condition.clone(),
     };
 
+    // ── Decide between batched and single-SQL paths ──────────────────────
+    // Batched: split the INSERT ... SELECT by integer PK range so the
+    //   existing heartbeat/stats loop can show live progress instead of
+    //   sitting at 0% until the single server statement returns.
+    // Single-SQL: one atomic server statement — only path available when
+    //   there is no integer PK or the caller asked for 1 chunk.
+    let pk_col_opt: Option<String> = if split_count > 1 {
+        detect_integer_pk_from_ds(src_ds, &mapping.source_table).await
+    } else {
+        None
+    };
+    let splits_opt: Option<Vec<crate::migration::splitter::PkSplit>> = match &pk_col_opt {
+        Some(pk) => {
+            // compute_pk_splits wraps `source_query` in `SELECT MIN/MAX FROM (...)`;
+            // we pass a SELECT over the quoted db.table (not mapping.filter_condition)
+            // so MIN/MAX scans the full table. The per-chunk predicate later adds
+            // both the user filter and the PK range — see build_chunk_predicate.
+            let src_query = format!(
+                "SELECT * FROM {}.{}",
+                crate::datasource::utils::quote_identifier_for_driver(&cfg.src_db, &src_cfg.driver),
+                crate::datasource::utils::quote_identifier_for_driver(&cfg.src_table, &src_cfg.driver),
+            );
+            crate::migration::splitter::compute_pk_splits(
+                src_ds, &src_query, pk, &src_cfg.driver, split_count,
+            ).await
+        }
+        None => None,
+    };
+
     // Run the DirectTransfer execute with a timeout and heartbeat.
     // A large `INSERT INTO ... SELECT` can run for minutes with zero stats
     // — the heartbeat gives the UI feedback that the migration is alive.
@@ -1619,23 +1692,71 @@ async fn try_direct_transfer(
         }
     });
 
-    let outcome = direct_transfer_race(
-        DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver),
-        cancel,
-        timeout_duration,
-    ).await;
+    let outcome = if let (Some(pk), Some(splits)) =
+        (pk_col_opt.as_deref(), splits_opt.as_ref())
+    {
+        // Batched path: sequential chunks, per-chunk stats callback.
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "SYSTEM",
+            &format!(
+                "[{}] DirectTransfer batched: pk='{}', {} chunks sequential (progress visibility, not parallelism)",
+                mapping_label, pk, splits.len(),
+            ),
+        );
+        let m_stats = mapping_stats.clone();
+        let g_stats = global_stats.clone();
+        let on_chunk = move |_i: usize, rows: u64| {
+            // DirectTransfer never actually reads rows into Rust, but the
+            // pipeline treats rows_read == rows_written — keep the invariant.
+            m_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            m_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            g_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            g_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+        };
+        let total_chunks = splits.len();
+        match DirectTransferExecutor::execute_batched(
+            dst_ds, &cfg, &dst_cfg.driver, pk, splits, cancel, on_chunk,
+        ).await {
+            Ok(res) => DirectTransferOutcome::Done(res),
+            Err(e) => map_batched_error_to_outcome(e, total_chunks),
+        }
+    } else {
+        // Single-SQL path: unchanged race against timeout + cancel.
+        let reason = if split_count <= 1 {
+            "split_count<=1"
+        } else {
+            "no integer PK detected"
+        };
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "SYSTEM",
+            &format!(
+                "[{}] DirectTransfer single-SQL: {} ({}s timeout)",
+                mapping_label, reason, DIRECT_TRANSFER_TIMEOUT_SECS,
+            ),
+        );
+        direct_transfer_race(
+            DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver),
+            cancel,
+            timeout_duration,
+        ).await
+    };
 
     heartbeat_handle.abort();
 
     match outcome {
         DirectTransferOutcome::Done(res) => {
             let rows = res.rows_written;
-            // Synthesize read/written counters so stats event + final summary
-            // are self-consistent (reader path had no chance to increment them).
-            mapping_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
-            mapping_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
-            global_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
-            global_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            // Single-SQL path leaves `already_accounted = false` — synthesize
+            // read/written counters so stats event + final summary are
+            // self-consistent (reader path had no chance to increment them).
+            // Batched path sets `already_accounted = true` because the
+            // on_chunk callback already accumulated per chunk.
+            if !res.already_accounted {
+                mapping_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+                mapping_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+                global_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+                global_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            }
 
             let truncated_sql = if res.sql_executed.len() > 200 {
                 &res.sql_executed[..200]
@@ -1645,11 +1766,13 @@ async fn try_direct_transfer(
             logs.lock().unwrap().emit_and_record(
                 app, job_id, run_id, "SYSTEM",
                 &format!(
-                    "[{}] DirectTransfer OK: {} rows in {}ms — SQL: {}",
+                    "[{}] DirectTransfer OK: {} rows in {}ms ({} chunk{}) — SQL: {}",
                     mapping_label,
                     format_number(rows),
                     res.elapsed_ms,
-                    truncated_sql
+                    res.chunk_count,
+                    if res.chunk_count == 1 { "" } else { "s" },
+                    truncated_sql,
                 ),
             );
             DirectTransferOutcome::Done(res)
@@ -2416,6 +2539,8 @@ mod tests {
             rows_written: rows,
             sql_executed: "INSERT INTO t SELECT * FROM s".into(),
             elapsed_ms: 0,
+            chunk_count: 1,
+            already_accounted: false,
         }
     }
 
@@ -2486,6 +2611,91 @@ mod tests {
                 assert!(reason.contains("Cancelled"), "got: {}", reason);
             }
             other => panic!("expected Abort(cancelled), got {:?}", other),
+        }
+    }
+
+    // ── map_batched_error_to_outcome: failure policy (tests 5-7 from plan) ─
+
+    use crate::migration::direct_transfer::BatchedError;
+
+    /// Plan test 5: a chunk-0 SQL failure means the server never committed
+    /// anything, so falling back to the reader/writer pipeline is safe.
+    #[test]
+    fn map_first_chunk_sql_failure_to_fallback() {
+        let err = BatchedError::SqlFailure {
+            chunk_index: 0,
+            message: "permission denied for table dst".into(),
+            rows_written_so_far: 0,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::FallbackOnError(msg) => {
+                assert!(msg.contains("permission denied"), "got: {}", msg);
+            }
+            other => panic!("expected FallbackOnError, got {:?}", other),
+        }
+    }
+
+    /// Plan test 6: a mid/late chunk SQL failure leaves `[0..chunk_index)`
+    /// committed. Falling back would double-insert them, so Abort.
+    #[test]
+    fn map_later_chunk_sql_failure_to_abort_with_rows_written() {
+        let err = BatchedError::SqlFailure {
+            chunk_index: 3,
+            message: "deadlock found when trying to get lock".into(),
+            rows_written_so_far: 1_875_000,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("3/8"), "chunk index/total missing: {}", reason);
+                assert!(
+                    reason.contains("1875000"),
+                    "rows_written_so_far missing: {}",
+                    reason
+                );
+                assert!(
+                    reason.contains("already committed"),
+                    "abort reason should warn about committed chunks: {}",
+                    reason
+                );
+                assert!(
+                    reason.contains("deadlock found"),
+                    "original SQL error should be preserved: {}",
+                    reason
+                );
+            }
+            other => panic!("expected Abort, got {:?}", other),
+        }
+    }
+
+    /// Plan test 7: Cancelled always maps to Abort — even when nothing has
+    /// been committed yet, the in-flight server statement may still be
+    /// running and restarting the mapping could double-insert.
+    #[test]
+    fn map_cancelled_to_abort_regardless_of_chunk_index() {
+        // Cancelled mid-chunk-0, nothing committed.
+        let err = BatchedError::Cancelled {
+            completed_chunks: 0,
+            rows_written_so_far: 0,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("cancelled"), "got: {}", reason);
+                assert!(reason.contains("0/8"), "chunk info missing: {}", reason);
+            }
+            other => panic!("expected Abort, got {:?}", other),
+        }
+
+        // Cancelled between chunks 5 and 6.
+        let err = BatchedError::Cancelled {
+            completed_chunks: 5,
+            rows_written_so_far: 3_125_000,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("5/8"), "got: {}", reason);
+                assert!(reason.contains("3125000"), "got: {}", reason);
+            }
+            other => panic!("expected Abort, got {:?}", other),
         }
     }
 

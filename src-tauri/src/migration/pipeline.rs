@@ -40,6 +40,12 @@ fn format_number(n: u64) -> String {
 /// a complete pipeline freeze. This timeout breaks the deadlock and turns it into a countable failure.
 const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 
+/// Maximum time to wait for a DirectTransfer (`INSERT INTO ... SELECT`) to complete.
+/// Same-instance direct transfer runs as a single SQL statement on the server. For
+/// large tables this can take minutes, but without a timeout a connection issue or
+/// lock contention would freeze the pipeline indefinitely with zero progress.
+const DIRECT_TRANSFER_TIMEOUT_SECS: u64 = 600; // 10 minutes
+
 /// Recommended parameter ranges (soft limits). Values outside these ranges trigger warnings.
 const READ_BATCH_RECOMMENDED_MIN: usize = 1000;
 const READ_BATCH_RECOMMENDED_MAX: usize = 10_000;
@@ -1474,8 +1480,52 @@ async fn try_direct_transfer(
         where_clause: mapping.filter_condition.clone(),
     };
 
-    match DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver).await {
-        Ok(res) => {
+    // Run the DirectTransfer execute with a timeout and heartbeat.
+    // A large `INSERT INTO ... SELECT` can run for minutes with zero stats
+    // — the heartbeat gives the UI feedback that the migration is alive.
+    let timeout_duration = tokio::time::Duration::from_secs(DIRECT_TRANSFER_TIMEOUT_SECS);
+    let dt_start = std::time::Instant::now();
+
+    // Heartbeat task: emits a "still running" log every 5 seconds
+    let app_h = app.clone();
+    let job_id_h = job_id;
+    let run_id_h = run_id.to_string();
+    let label_h = mapping_label.to_string();
+    let dt_start_h = dt_start;
+    let heartbeat_handle = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            let elapsed = dt_start_h.elapsed().as_secs();
+            emit_log(
+                &app_h, job_id_h, &run_id_h, "SYSTEM",
+                &format!(
+                    "[{}] DirectTransfer in progress ({}s elapsed, server executing INSERT...SELECT)...",
+                    label_h, elapsed
+                ),
+            );
+        }
+    });
+
+    let exec_result = tokio::time::timeout(
+        timeout_duration,
+        DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver),
+    ).await;
+
+    heartbeat_handle.abort();
+
+    match exec_result {
+        Err(_) => {
+            // Timeout: fall back to reader/writer pipeline
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] DirectTransfer timed out after {}s, falling back to reader/writer pipeline",
+                    mapping_label, DIRECT_TRANSFER_TIMEOUT_SECS
+                ),
+            );
+            false
+        }
+        Ok(Ok(res)) => {
             let rows = res.rows_written;
             // Synthesize read/written counters so stats event + final summary
             // are self-consistent (reader path had no chance to increment them).
@@ -1501,7 +1551,7 @@ async fn try_direct_transfer(
             );
             true
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             logs.lock().unwrap().emit_and_record(
                 app, job_id, run_id, "WARN",
                 &format!(

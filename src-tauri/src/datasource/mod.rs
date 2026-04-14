@@ -619,6 +619,14 @@ pub trait DataSource: Send + Sync {
         Ok(())
     }
 
+    /// Hint the maximum concurrent migration-path connections this datasource
+    /// should accept. MySQL family uses a dedicated `mysql_async` pool for
+    /// LOAD DATA LOCAL INFILE whose size must match `parallelism`; otherwise
+    /// writers serialize on a small hardcoded pool.
+    ///
+    /// Called once per mapping, before the first write. Default: no-op.
+    fn set_migration_pool_size(&self, _size: u32) {}
+
     /// 分页执行查询，返回第 `offset` 行起的 `limit` 行数据。
     /// 默认实现通过子查询包裹原始 SQL，适用于 MySQL / PostgreSQL / SQLite / ClickHouse。
     /// SQL Server 需覆盖此方法以使用 OFFSET/FETCH NEXT 语法。
@@ -691,14 +699,16 @@ pub trait DataSource: Send + Sync {
         &self,
         sql: &str,
         channel_cap: usize,
+        _cancel: &tokio_util::sync::CancellationToken,
     ) -> AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
         let res = self.migration_read_sql(sql).await?;
         let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
         match res {
             Some((cols, rows)) => {
+                let cancel = _cancel.clone();
                 tokio::spawn(async move {
                     for row in rows {
-                        if tx.send(row).await.is_err() {
+                        if cancel.is_cancelled() || tx.send(row).await.is_err() {
                             break;
                         }
                     }

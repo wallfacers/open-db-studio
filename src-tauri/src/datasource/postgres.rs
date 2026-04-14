@@ -1107,6 +1107,7 @@ impl DataSource for PostgresDataSource {
         &self,
         sql: &str,
         channel_cap: usize,
+        cancel: &tokio_util::sync::CancellationToken,
     ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
         use crate::migration::native_row::decode_postgres_column;
         use crate::migration::native_row::MigrationRow;
@@ -1118,46 +1119,52 @@ impl DataSource for PostgresDataSource {
         let pool = self.pool.clone();
         let (col_tx, col_rx) = tokio::sync::oneshot::channel();
         let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+        let cancel_token = cancel.clone();
 
         tokio::spawn(async move {
             let mut stream = sqlx::query(&sql_owned).fetch(&pool);
-            
-            match stream.try_next().await {
-                Ok(Some(first_row)) => {
-                    let columns: Vec<String> = first_row.columns().iter()
-                        .map(|c| c.name().to_string()).collect();
-                    let num_cols = columns.len();
-                    
-                    if col_tx.send(columns).is_err() {
-                        return;
-                    }
+            let mut col_tx = Some(col_tx);
 
-                    // Send first row
-                    let values = (0..num_cols)
-                        .map(|i| decode_postgres_column(&first_row, i))
-                        .collect();
-                    if tx.send(MigrationRow { values }).await.is_err() {
-                        return;
-                    }
+            tokio::select! {
+                result = async {
+                    match stream.try_next().await {
+                        Ok(Some(first_row)) => {
+                            let columns: Vec<String> = first_row.columns().iter()
+                                .map(|c| c.name().to_string()).collect();
+                            let num_cols = columns.len();
 
-                    // Stream remaining rows
-                    while let Ok(Some(row)) = stream.try_next().await {
-                        let values = (0..num_cols)
-                            .map(|i| decode_postgres_column(&row, i))
-                            .collect();
-                        if tx.send(MigrationRow { values }).await.is_err() {
-                            break;
+                            if let Some(tx) = col_tx.take() {
+                                let _ = tx.send(columns);
+                            }
+
+                            let values = (0..num_cols)
+                                .map(|i| decode_postgres_column(&first_row, i))
+                                .collect();
+                            if tx.send(MigrationRow { values }).await.is_err() {
+                                return;
+                            }
+
+                            while let Ok(Some(row)) = stream.try_next().await {
+                                let values = (0..num_cols)
+                                    .map(|i| decode_postgres_column(&row, i))
+                                    .collect();
+                                if tx.send(MigrationRow { values }).await.is_err() {
+                                    break;
+                                }
+                            }
                         }
+                        Ok(None) => {
+                            if let Some(tx) = col_tx.take() {
+                                let _ = tx.send(Vec::new());
+                            }
+                        }
+                        Err(_) => {}
                     }
-                }
-                Ok(None) => {
-                    let _ = col_tx.send(Vec::new());
-                }
-                Err(_e) => {
-                    // In a real app we might want to return the error, 
-                    // but the channel will just close and the caller will get an error from col_rx
-                    // if we drop col_tx. Wait, we can send error or just empty columns?
-                    // Let's just drop it, col_rx will return RecvError.
+                } => result,
+                _ = cancel_token.cancelled() => {
+                    if let Some(tx) = col_tx.take() {
+                        let _ = tx.send(Vec::new());
+                    }
                 }
             }
         });

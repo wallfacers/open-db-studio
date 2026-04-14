@@ -65,7 +65,10 @@ export function LogTab({ stats, logs, viewMode, hasFailed }: Props) {
             <span className="flex-shrink-0"><span className="text-foreground-subtle">{t('migration.dirtyRows')} </span><span className={stats.rowsFailed > 0 ? 'text-error font-medium' : 'text-foreground-default'}>{stats.rowsFailed.toLocaleString()}</span></span>
             <span className="text-border-strong flex-shrink-0">|</span>
             <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{Math.round(stats.writeSpeedRps).toLocaleString()} {t('migration.rowsPerSec')}</span>
-            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`}>{fmtBytesSpeed(stats.bytesSpeedBps)}</span>
+            {/* 分别显示读/写字节速度。旧后端只填 bytesSpeedBps（=读字节）、不填新字段，
+                此时 readBytesSpeedBps 为 undefined，回退到 bytesSpeedBps；写速度 0 显示为 "—"。 */}
+            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-accent'}`} title={t('migration.readSpeed') ?? 'Read'}>↓ {fmtBytesSpeed(stats.readBytesSpeedBps ?? stats.bytesSpeedBps)}</span>
+            <span className={`flex-shrink-0 ${hasFailed ? 'text-error' : 'text-foreground-default'}`} title={t('migration.writeSpeed') ?? 'Write'}>↑ {stats.writeBytesSpeedBps !== undefined ? fmtBytesSpeed(stats.writeBytesSpeedBps) : '—'}</span>
             {stats.etaSeconds !== null && (
               <>
                 <span className="text-border-strong flex-shrink-0">|</span>

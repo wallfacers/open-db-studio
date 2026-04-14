@@ -17,6 +17,7 @@ export function MigrationJobTab({ jobId }: Props) {
   const [resultHeight, setResultHeight] = useState(0)
   const [ghostTextEnabled, setGhostTextEnabled] = useState(false)
   const [activeResultTab, setActiveResultTab] = useState<PanelTab>('logs')
+  const [isStopping, setIsStopping] = useState(false)
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scriptTextRef = useRef(scriptText)
@@ -37,7 +38,21 @@ export function MigrationJobTab({ jobId }: Props) {
   useEffect(() => {
     if (!adapter) return
     adapter.getScriptText = () => scriptTextRef.current
-    adapter.setScriptText = (value: string) => setScriptText(value)
+    adapter.setScriptText = (value: string) => {
+      // Sync ref immediately so subsequent ui_read / triggerSave / runJob
+      // see the new value before React finishes re-rendering. Without this,
+      // `ui_patch /scriptText` returns "applied" but the ref (read path)
+      // still holds the old value until the next render tick.
+      scriptTextRef.current = value
+      setScriptText(value)
+      // Persist immediately. AI patches are full replacements (not per-keystroke),
+      // so the keyboard-input debounce (handleScriptChange) does not apply — and
+      // since AI patches don't go through Monaco's onChange, no auto-save would
+      // fire at all without this. Skipping it loses AI edits when the tab closes.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      invoke('update_migration_job_script', { id: jobId, scriptText: value })
+        .catch((e) => console.error('AI patch save failed:', e))
+    }
     adapter.triggerSave = async () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       await invoke('update_migration_job_script', { id: jobId, scriptText: scriptTextRef.current })
@@ -57,6 +72,11 @@ export function MigrationJobTab({ jobId }: Props) {
   useEffect(() => {
     if (isRunning && resultHeight === 0) setResultHeight(250)
   }, [isRunning]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset isStopping when the run actually finishes (migration_finished event)
+  useEffect(() => {
+    if (!isRunning && isStopping) setIsStopping(false)
+  }, [isRunning, isStopping])
 
   const handleOpenHistory = useCallback(() => {
     if (resultHeight === 0) setResultHeight(250)
@@ -102,8 +122,10 @@ export function MigrationJobTab({ jobId }: Props) {
   }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStop = useCallback(async () => {
+    if (isStopping) return
+    setIsStopping(true)
     await invoke('stop_migration_job', { jobId })
-  }, [jobId])
+  }, [jobId, isStopping])
 
   // Format via LSP
   const handleFormat = useCallback(async () => {
@@ -144,6 +166,7 @@ export function MigrationJobTab({ jobId }: Props) {
       <MigrationToolbar
         jobId={jobId}
         isRunning={isRunning}
+        isStopping={isStopping}
         ghostTextEnabled={ghostTextEnabled}
         onRun={handleRun}
         onStop={handleStop}

@@ -144,6 +144,7 @@ fn parse_set(pair: pest::iterators::Pair<Rule>, input: &str) -> Result<Statement
 fn parse_set_value(pair: pest::iterators::Pair<Rule>) -> SetValue {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
+        Rule::byte_literal => SetValue::Ident(inner.as_str().to_string()),
         Rule::number => SetValue::Int(inner.as_str().parse().unwrap()),
         Rule::string => {
             let s = inner.as_str();

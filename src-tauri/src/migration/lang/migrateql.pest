@@ -5,7 +5,10 @@ use_stmt = { ^"USE" ~ ident ~ "=" ~ ^"CONNECTION" ~ "(" ~ string ~ ")" }
 
 set_stmt = { ^"SET" ~ assignment ~ ("," ~ assignment)* }
 assignment = { ident ~ "=" ~ value }
-value = { number | string | ident }
+value = { byte_literal | number | string | ident }
+
+// Byte literal for memory/batch size: 16M, 1K, 2G, etc.
+byte_literal = @{ ASCII_DIGIT+ ~ ("K" | "M" | "G" | "k" | "m" | "g") }
 
 migrate_stmt = {
     ^"MIGRATE" ~ ^"FROM" ~ table_ref ~ ^"INTO" ~ table_ref

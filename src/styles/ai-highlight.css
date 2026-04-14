@@ -1,7 +1,7 @@
 /* ── AI Change Highlight: Pulse + Residual ────────────────────── */
 
 @keyframes ai-pulse {
-  0%   { background-color: transparent; box-shadow: none; }
+  0%   { box-shadow: none; }
   15%  { background-color: rgba(99, 102, 241, 0.35); box-shadow: 0 0 12px rgba(99, 102, 241, 0.25); }
   30%  { background-color: rgba(99, 102, 241, 0.08); box-shadow: none; }
   45%  { background-color: rgba(99, 102, 241, 0.30); box-shadow: 0 0 10px rgba(99, 102, 241, 0.2); }

@@ -1,13 +1,13 @@
 import { useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Trash2, Ellipsis } from 'lucide-react'
+import { Trash2, Ellipsis, CircleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { MigrationRunHistory, MigrationLogEvent, useMigrationStore } from '../../../store/migrationStore'
 import { LogDetailModal } from '../LogDetailModal'
 import { MigrationStatusIcon } from '../StatusIcons'
 import { formatDateTime, fmtBytesSpeed, fmtBytes, fmtDuration } from '../../../utils/migrationLogParser'
 
-interface Props { jobId: number; history: MigrationRunHistory[] }
+interface Props { jobId: number; history: MigrationRunHistory[]; onRefresh: () => void }
 
 const PAGE_SIZE = 10
 
@@ -22,11 +22,12 @@ function statusLabel(status: string, t: (key: string) => string): string {
   return map[status] || status
 }
 
-export function RunHistoryTable({ jobId, history }: Props) {
+export function RunHistoryTable({ jobId, history, onRefresh }: Props) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
   const [logModalOpen, setLogModalOpen] = useState(false)
   const [selectedLogs, setSelectedLogs] = useState<MigrationLogEvent[]>([])
+  const [confirmDelete, setConfirmDelete] = useState<MigrationRunHistory | null>(null)
 
   const totalPages = Math.max(1, Math.ceil(history.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -49,8 +50,29 @@ export function RunHistoryTable({ jobId, history }: Props) {
     if (run.status === 'RUNNING') return
     try {
       await invoke('delete_migration_run_history', { jobId, runId: run.runId })
+      onRefresh()
     } catch { /* ignore */ }
-  }, [jobId])
+  }, [jobId, onRefresh])
+
+  const handleConfirmDelete = useCallback(() => {
+    if (confirmDelete) {
+      handleDelete(confirmDelete)
+      setConfirmDelete(null)
+    }
+  }, [confirmDelete, handleDelete])
+
+  const invalidCount = history.filter(r => r.status === 'FAILED' || r.status === 'STOPPED').length
+
+  const handleClearInvalid = useCallback(async () => {
+    if (invalidCount === 0) return
+    const toDelete = history.filter(r => r.status === 'FAILED' || r.status === 'STOPPED')
+    for (const run of toDelete) {
+      try {
+        await invoke('delete_migration_run_history', { jobId, runId: run.runId })
+      } catch { /* ignore */ }
+    }
+    onRefresh()
+  }, [jobId, history, invalidCount, onRefresh])
 
   if (!history.length) return (
     <div className="flex items-center justify-center h-full text-foreground-muted text-[13px]">
@@ -60,6 +82,19 @@ export function RunHistoryTable({ jobId, history }: Props) {
 
   return (
     <div className="flex flex-col h-full">
+      {invalidCount > 0 && (
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle bg-background-elevated/20 flex-shrink-0">
+          <span className="text-[12px] text-foreground-muted">
+            {t('migration.invalidRecords')}: {invalidCount}
+          </span>
+          <button onClick={handleClearInvalid}
+            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded text-error hover:text-error hover:bg-background-hover transition-colors"
+          >
+            <CircleAlert size={12} />
+            {t('migration.clearInvalid')}
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-[12px]">
           <thead className="sticky top-0 z-10 bg-background-base">
@@ -70,6 +105,7 @@ export function RunHistoryTable({ jobId, history }: Props) {
               <th className="text-right px-3 py-2 font-medium">{t('migration.colRowsWritten')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colRowsFailed')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colTransferredSize')}</th>
+              <th className="text-right px-3 py-2 font-medium">{t('migration.colDuration')}</th>
               <th className="text-right px-3 py-2 font-medium">{t('migration.colSpeed')}</th>
               <th className="text-center px-3 py-2 font-medium w-20">{t('migration.colLogDetails')}</th>
               <th className="text-center px-3 py-2 font-medium w-16">{t('migration.colActions')}</th>
@@ -83,15 +119,15 @@ export function RunHistoryTable({ jobId, history }: Props) {
                   <div className="flex items-center gap-1.5">
                     <MigrationStatusIcon status={run.status} />
                     <span className="text-foreground-default">{statusLabel(run.status, t)}</span>
-                    {run.durationMs != null && run.durationMs > 0 && (
-                      <span className="text-foreground-muted text-[10px] ml-1">{fmtDuration(run.durationMs)}</span>
-                    )}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsRead ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{(run.rowsWritten ?? 0).toLocaleString()}</td>
                 <td className={`px-3 py-2.5 text-right font-mono ${(run.rowsFailed ?? 0) > 0 ? 'text-error' : 'text-foreground-muted'}`}>{(run.rowsFailed ?? 0).toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-foreground-default">{fmtBytes(run.bytesTransferred ?? 0)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-foreground-default">
+                  {run.durationMs != null && run.durationMs > 0 ? fmtDuration(run.durationMs) : '-'}
+                </td>
                 <td className="px-3 py-2.5 text-right">
                   {(() => {
                     const durationSec = (run.durationMs ?? 0) / 1000
@@ -116,7 +152,7 @@ export function RunHistoryTable({ jobId, history }: Props) {
                 </td>
                 <td className="px-3 py-2.5 text-center">
                   {run.status !== 'RUNNING' && (
-                    <button onClick={() => handleDelete(run)}
+                    <button onClick={() => setConfirmDelete(run)}
                       className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-background-hover text-foreground-muted hover:text-error transition-colors"
                       title={t('common.delete')}
                     >
@@ -156,6 +192,24 @@ export function RunHistoryTable({ jobId, history }: Props) {
       )}
 
       {logModalOpen && <LogDetailModal logs={selectedLogs} onClose={() => setLogModalOpen(false)} />}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background-base rounded-lg shadow-xl border border-border-subtle p-6 max-w-sm mx-4">
+            <p className="text-[14px] text-foreground-default mb-4">{t('migration.deleteRunConfirm')}</p>
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setConfirmDelete(null)}
+                className="px-3 py-1.5 text-[13px] rounded text-foreground-muted hover:text-foreground-default hover:bg-background-hover transition-colors">
+                {t('common.cancel')}
+              </button>
+              <button onClick={handleConfirmDelete}
+                className="px-3 py-1.5 text-[13px] rounded bg-error text-white hover:bg-error/80 transition-colors">
+                {t('common.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,68 @@
 use super::ast::*;
 use crate::migration::task_mgr::*;
 
+/// Maximum allowed byte_capacity (4GB).
+const BYTE_CAPACITY_MAX: u64 = 4 * 1024 * 1024 * 1024;
+
+/// Standard byte capacity values (powers of 2 in MB).
+/// 1M, 2M, 4M, 8M, 16M, 32M, 64M, 128M, 256M, 512M, 1G, 2G, 4G
+const BYTE_CAPACITY_STANDARDS: [u64; 13] = [
+    1 * 1024 * 1024,           // 1M
+    2 * 1024 * 1024,           // 2M
+    4 * 1024 * 1024,           // 4M
+    8 * 1024 * 1024,           // 8M
+    16 * 1024 * 1024,          // 16M
+    32 * 1024 * 1024,          // 32M
+    64 * 1024 * 1024,          // 64M
+    128 * 1024 * 1024,         // 128M
+    256 * 1024 * 1024,         // 256M
+    512 * 1024 * 1024,         // 512M
+    1024 * 1024 * 1024,        // 1G
+    2 * 1024 * 1024 * 1024,    // 2G
+    4 * 1024 * 1024 * 1024,    // 4G (max)
+];
+
+/// Parse a byte literal like "16M", "1K", "2G" into bytes.
+/// Supports K (kilobytes), M (megabytes), G (gigabytes).
+/// Returns None if the format is invalid.
+fn parse_byte_literal(s: &str) -> Option<u64> {
+    let s = s.trim().to_uppercase();
+    let (num_part, multiplier) = if s.ends_with('K') {
+        (&s[..s.len()-1], 1024)
+    } else if s.ends_with('M') {
+        (&s[..s.len()-1], 1024 * 1024)
+    } else if s.ends_with('G') {
+        (&s[..s.len()-1], 1024 * 1024 * 1024)
+    } else {
+        (s.as_str(), 1)  // no suffix = bytes
+    };
+    let num: u64 = num_part.parse().ok()?;
+    Some(num * multiplier)
+}
+
+/// Normalize a byte value to the nearest standard capacity.
+/// Rounds down to the nearest power-of-2 MB value, capped at 4GB.
+fn normalize_byte_capacity(value: u64) -> u64 {
+    // Cap at maximum
+    let capped = value.min(BYTE_CAPACITY_MAX);
+
+    // Find the nearest standard value (prefer lower to avoid over-allocation)
+    // Strategy: find the closest standard value, preferring the lower one if tied
+    let mut best = BYTE_CAPACITY_STANDARDS[0];
+    let mut best_diff = (capped as i64 - best as i64).abs();
+
+    for std_val in BYTE_CAPACITY_STANDARDS.iter() {
+        let diff = (capped as i64 - *std_val as i64).abs();
+        // Prefer lower value when tied (safer for memory)
+        if diff < best_diff || (diff == best_diff && *std_val < best) {
+            best = *std_val;
+            best_diff = diff;
+        }
+    }
+
+    best
+}
+
 #[derive(Debug, Clone)]
 pub struct CompileError {
     pub message: String,
@@ -61,6 +123,30 @@ pub fn compile(
                     "channel_capacity" => {
                         if let SetValue::Int(v) = &a.value {
                             pipeline.channel_capacity = *v as usize;
+                        }
+                    }
+                    "byte_capacity" => {
+                        // Support both raw integers and byte literals (16M, 1K, 2G)
+                        let raw_bytes = match &a.value {
+                            SetValue::Int(v) => Some(*v),
+                            SetValue::Ident(s) => parse_byte_literal(s),
+                            _ => None,
+                        };
+                        if let Some(bytes) = raw_bytes {
+                            let normalized = normalize_byte_capacity(bytes);
+                            pipeline.byte_capacity = Some(normalized);
+                        }
+                    }
+                    "max_bytes_per_tx" => {
+                        // Support both raw integers and byte literals (8M, 4M)
+                        let raw_bytes = match &a.value {
+                            SetValue::Int(v) => Some(*v),
+                            SetValue::Ident(s) => parse_byte_literal(s),
+                            _ => None,
+                        };
+                        if let Some(bytes) = raw_bytes {
+                            let normalized = normalize_byte_capacity(bytes);
+                            pipeline.max_bytes_per_tx = Some(normalized);
                         }
                     }
                     "shard_count" => {
@@ -326,5 +412,151 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors[0].message.contains("unknown"));
+    }
+
+    // ── Byte literal parsing tests ──
+
+    #[test]
+    fn test_parse_byte_literal_simple() {
+        assert_eq!(parse_byte_literal("16M"), Some(16 * 1024 * 1024));
+        assert_eq!(parse_byte_literal("1K"), Some(1024));
+        assert_eq!(parse_byte_literal("2G"), Some(2 * 1024 * 1024 * 1024));
+        assert_eq!(parse_byte_literal("33554432"), Some(33554432)); // no suffix = bytes
+    }
+
+    #[test]
+    fn test_parse_byte_literal_case_insensitive() {
+        assert_eq!(parse_byte_literal("16m"), Some(16 * 1024 * 1024));
+        assert_eq!(parse_byte_literal("16M"), Some(16 * 1024 * 1024));
+        assert_eq!(parse_byte_literal("1k"), Some(1024));
+        assert_eq!(parse_byte_literal("1K"), Some(1024));
+    }
+
+    #[test]
+    fn test_parse_byte_literal_invalid() {
+        assert_eq!(parse_byte_literal("abc"), None);
+        assert_eq!(parse_byte_literal("16X"), None); // invalid suffix
+        assert_eq!(parse_byte_literal(""), None);
+    }
+
+    // ── Byte capacity normalization tests ──
+
+    #[test]
+    fn test_normalize_standard_values() {
+        // Standard values should remain unchanged
+        assert_eq!(normalize_byte_capacity(1 * 1024 * 1024), 1 * 1024 * 1024);    // 1M
+        assert_eq!(normalize_byte_capacity(8 * 1024 * 1024), 8 * 1024 * 1024);    // 8M
+        assert_eq!(normalize_byte_capacity(16 * 1024 * 1024), 16 * 1024 * 1024);  // 16M
+        assert_eq!(normalize_byte_capacity(32 * 1024 * 1024), 32 * 1024 * 1024);  // 32M
+        assert_eq!(normalize_byte_capacity(4 * 1024 * 1024 * 1024), 4 * 1024 * 1024 * 1024); // 4G (max)
+    }
+
+    #[test]
+    fn test_normalize_round_down() {
+        // Values closer to lower standard should round down
+        // 9M = 9437184, distance to 8M = 1048576, distance to 16M = 7340032 -> 8M
+        assert_eq!(normalize_byte_capacity(9437184), 8 * 1024 * 1024); // 9M -> 8M
+
+        // 6M = 6291456, closer to 8M = 8388608 than to 4M = 4194304
+        // distance to 4M = 2097152, distance to 8M = 2097152 (tie, prefer lower = 4M)
+        assert_eq!(normalize_byte_capacity(6291456), 4 * 1024 * 1024); // 6M -> 4M (tie, prefer lower)
+    }
+
+    #[test]
+    fn test_normalize_round_up() {
+        // Values closer to higher standard should round up
+        // 15M = 15728640, distance to 8M = 7340032, distance to 16M = 2097152 -> 16M
+        assert_eq!(normalize_byte_capacity(15728640), 16 * 1024 * 1024); // 15M -> 16M
+
+        // 14M = 14680064, distance to 8M = 6291456, distance to 16M = 2097152 -> 16M
+        assert_eq!(normalize_byte_capacity(14680064), 16 * 1024 * 1024);
+
+        // 30M = 31457280, closer to 32M = 33554432
+        assert_eq!(normalize_byte_capacity(31457280), 32 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_normalize_cap_at_max() {
+        // Values over 4GB should be capped
+        assert_eq!(normalize_byte_capacity(5 * 1024 * 1024 * 1024), 4 * 1024 * 1024 * 1024);
+        assert_eq!(normalize_byte_capacity(10 * 1024 * 1024 * 1024), 4 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_normalize_small_values() {
+        // Values below 1M should round to 1M (minimum standard)
+        assert_eq!(normalize_byte_capacity(100), 1 * 1024 * 1024);
+        assert_eq!(normalize_byte_capacity(512), 1 * 1024 * 1024);
+        assert_eq!(normalize_byte_capacity(1024), 1 * 1024 * 1024); // 1K -> 1M
+    }
+
+    // ── Integration tests with SET byte_capacity ──
+
+    #[test]
+    fn test_compile_byte_capacity_literal() {
+        let script = parser::parse(
+            r#"
+            SET byte_capacity = 16M;
+            MIGRATE FROM mysql_prod.shop.users INTO pg_warehouse.public.users;
+        "#,
+        )
+        .unwrap();
+        let config = compile(&script, &mock_resolve).unwrap();
+        assert_eq!(config.pipeline.byte_capacity, Some(16 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_compile_byte_capacity_integer() {
+        let script = parser::parse(
+            r#"
+            SET byte_capacity = 33554432;
+            MIGRATE FROM mysql_prod.shop.users INTO pg_warehouse.public.users;
+        "#,
+        )
+        .unwrap();
+        let config = compile(&script, &mock_resolve).unwrap();
+        // 33554432 = 32M (exact standard)
+        assert_eq!(config.pipeline.byte_capacity, Some(32 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_compile_byte_capacity_normalized() {
+        let script = parser::parse(
+            r#"
+            SET byte_capacity = 15728640;
+            MIGRATE FROM mysql_prod.shop.users INTO pg_warehouse.public.users;
+        "#,
+        )
+        .unwrap();
+        let config = compile(&script, &mock_resolve).unwrap();
+        // 15728640 (15M) -> normalized to 16M (closest standard)
+        assert_eq!(config.pipeline.byte_capacity, Some(16 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_compile_byte_capacity_capped() {
+        let script = parser::parse(
+            r#"
+            SET byte_capacity = 5G;
+            MIGRATE FROM mysql_prod.shop.users INTO pg_warehouse.public.users;
+        "#,
+        )
+        .unwrap();
+        let config = compile(&script, &mock_resolve).unwrap();
+        // 5G capped to 4G
+        assert_eq!(config.pipeline.byte_capacity, Some(4 * 1024 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_compile_max_bytes_per_tx_literal() {
+        let script = parser::parse(
+            r#"
+            SET max_bytes_per_tx = 8M;
+            MIGRATE FROM mysql_prod.shop.users INTO pg_warehouse.public.users;
+        "#,
+        )
+        .unwrap();
+        let config = compile(&script, &mock_resolve).unwrap();
+        assert_eq!(config.pipeline.max_bytes_per_tx, Some(8 * 1024 * 1024));
     }
 }

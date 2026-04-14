@@ -18,8 +18,11 @@ export class MigrationJobAdapter implements UIObject {
   objectId: string
   title: string
   private jobId: number
-  /** The actual tab ID (timestamp-based). Used only for the focus action. */
-  private tabId: string
+  /**
+   * The actual tab ID (timestamp-based). Used for the focus action and by
+   * UIRouter to resolve `target="active"` (since objectId ≠ tabId for this adapter).
+   */
+  tabId: string
 
   /** Injected by MigrationJobTab — reads current editor content */
   getScriptText: () => string = () => ''

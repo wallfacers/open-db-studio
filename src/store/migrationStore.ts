@@ -80,10 +80,18 @@ export interface MigrationStatsEvent {
   rowsRead: number
   rowsWritten: number
   rowsFailed: number
+  /** 累计读取字节。保留旧字段名，含义=读字节。 */
   bytesTransferred: number
+  /** 累计写入字节。对应 Rust 端新增的 PipelineStats.bytes_written。 */
+  bytesWritten: number
   readSpeedRps: number
   writeSpeedRps: number
+  /** @deprecated 与 readBytesSpeedBps 同义，保留用于兼容旧事件。新代码使用 readBytesSpeedBps。 */
   bytesSpeedBps: number
+  /** 瞬时读字节速度（字节/秒）。 */
+  readBytesSpeedBps: number
+  /** 瞬时写字节速度（字节/秒）。 */
+  writeBytesSpeedBps: number
   etaSeconds: number | null
   progressPct: number | null
   currentMapping: string | null
@@ -444,16 +452,19 @@ export const useMigrationStore = create<MigrationStore>((set, get) => ({
         const runs = new Map(s.activeRuns)
         const existing = runs.get(payload.jobId)
         if (existing && existing.runId === payload.runId) {
-          const stats = existing.stats ? { ...existing.stats } : {
+          const stats: MigrationStatsEvent = existing.stats ? { ...existing.stats } : {
             jobId: payload.jobId,
             runId: payload.runId,
             rowsRead: payload.rowsRead ?? 0,
             rowsWritten: payload.rowsWritten ?? 0,
             rowsFailed: payload.rowsFailed ?? 0,
             bytesTransferred: payload.bytesTransferred ?? 0,
+            bytesWritten: 0,
             readSpeedRps: 0,
             writeSpeedRps: 0,
             bytesSpeedBps: 0,
+            readBytesSpeedBps: 0,
+            writeBytesSpeedBps: 0,
             etaSeconds: 0,
             progressPct: 100,
             currentMapping: null,

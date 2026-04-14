@@ -32,6 +32,14 @@ export interface UIObject {
   connectionId?: number
   database?: string
 
+  /**
+   * Owning tab ID. Used by UIRouter to resolve `target="active"` when the
+   * adapter's objectId is decoupled from the tab id (e.g. MigrationJobAdapter
+   * uses `migration_job_<jobId>` as a stable id). Adapters whose objectId IS
+   * the tabId may leave this undefined.
+   */
+  tabId?: string
+
   /** Declare supported patch paths. If present, UIRouter validates before forwarding. */
   patchCapabilities?: PatchCapability[]
 

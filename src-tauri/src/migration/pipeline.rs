@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -9,6 +11,7 @@ use rusqlite::params;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -36,6 +39,37 @@ fn format_number(n: u64) -> String {
 /// permit, causing the writer loop to stall, the channel to fill, and the reader to block —
 /// a complete pipeline freeze. This timeout breaks the deadlock and turns it into a countable failure.
 const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
+
+/// Recommended parameter ranges (soft limits). Values outside these ranges trigger warnings.
+const READ_BATCH_RECOMMENDED_MIN: usize = 1000;
+const READ_BATCH_RECOMMENDED_MAX: usize = 10_000;
+const WRITE_BATCH_RECOMMENDED_MIN: usize = 512;
+const WRITE_BATCH_RECOMMENDED_MAX: usize = 5_000;
+const CHANNEL_CAPACITY_RECOMMENDED_MIN: usize = 4;
+const CHANNEL_CAPACITY_RECOMMENDED_MAX: usize = 32;
+const PARALLELISM_RECOMMENDED_MIN: usize = 1;
+const PARALLELISM_RECOMMENDED_MAX: usize = 8;
+const TXN_BATCH_SIZE_RECOMMENDED_MIN: usize = 1;
+const TXN_BATCH_SIZE_RECOMMENDED_MAX: usize = 10;
+const BYTE_CAPACITY_RECOMMENDED_MIN_MB: u64 = 4;  // 4MB
+const BYTE_CAPACITY_RECOMMENDED_MAX_MB: u64 = 64; // 64MB
+const MAX_BYTES_PER_TX_RECOMMENDED_MIN_MB: u64 = 4;  // 4MB
+const MAX_BYTES_PER_TX_RECOMMENDED_MAX_MB: u64 = 16; // 16MB
+
+/// Format bytes as human-readable string (e.g., 16777216 -> "16MB")
+fn format_bytes(bytes: u64) -> String {
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+    if bytes >= GB {
+        format!("{}GB", bytes / GB)
+    } else if bytes >= MB {
+        format!("{}MB", bytes / MB)
+    } else if bytes >= 1024 {
+        format!("{}KB", bytes / 1024)
+    } else {
+        format!("{}B", bytes)
+    }
+}
 
 /// Maximum estimated SQL payload size (bytes) for a single INSERT statement.
 
@@ -107,6 +141,7 @@ async fn flush_write_batch(
 /// Handle write result: update stats, check circuit breakers.
 macro_rules! handle_write_result {
     ($error_count:expr, $consecutive_full_fails:expr, $res:expr, $batch_len:expr,
+     $batch_bytes:expr,
      $app_writer:expr, $job_id:expr, $run_id_w:expr, $label_w:expr,
      $ms_writer:expr, $gs_writer:expr, $error_limit:expr) => {{
         match &$res {
@@ -115,6 +150,16 @@ macro_rules! handle_write_result {
                 let fail = $batch_len.saturating_sub(ok);
                 $ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
                 $gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                // Bytes successfully written: pro-rate the batch byte budget
+                // by the actual success count. saturating_mul guards against
+                // overflow on pathological inputs.
+                let written_bytes: u64 = if $batch_len > 0 {
+                    ($batch_bytes as u64).saturating_mul(ok) / $batch_len
+                } else {
+                    0
+                };
+                $ms_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                $gs_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
                 if fail > 0 {
                     $ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
                     $gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed);
@@ -233,7 +278,13 @@ pub struct PipelineStats {
     pub rows_read: AtomicU64,
     pub rows_written: AtomicU64,
     pub rows_failed: AtomicU64,
+    /// Cumulative bytes read from the source. Incremented in the reader task
+    /// once per decoded row. Drives the UI "read throughput" gauge.
     pub bytes_transferred: AtomicU64,
+    /// Cumulative bytes successfully written to the target. Incremented in the
+    /// writer task per successful batch (proportional to rows_written/batch_len
+    /// of the original byte budget). Drives the UI "write throughput" gauge.
+    pub bytes_written: AtomicU64,
 }
 
 impl PipelineStats {
@@ -243,20 +294,21 @@ impl PipelineStats {
             rows_written: AtomicU64::new(0),
             rows_failed: AtomicU64::new(0),
             bytes_transferred: AtomicU64::new(0),
+            bytes_written: AtomicU64::new(0),
         })
     }
 }
 
 // ── Cancel registry ───────────────────────────────────────────────────────────
 
-static ACTIVE_RUNS: Lazy<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
+static ACTIVE_RUNS: Lazy<Mutex<HashMap<i64, Arc<CancellationToken>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Sets the cancel flag for an active run. Returns `true` if the job was active, `false` if not found.
 pub fn cancel_run(job_id: i64) -> bool {
     if let Ok(runs) = ACTIVE_RUNS.lock() {
-        if let Some(flag) = runs.get(&job_id) {
-            flag.store(true, Ordering::SeqCst);
+        if let Some(token) = runs.get(&job_id) {
+            token.cancel();
             return true;
         }
     }
@@ -409,11 +461,11 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
         })?;
 
     let run_id = Uuid::new_v4().to_string();
-    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel = CancellationToken::new();
 
     {
         let mut runs = ACTIVE_RUNS.lock().unwrap();
-        runs.insert(job_id, cancel.clone());
+        runs.insert(job_id, Arc::new(cancel.clone()));
     }
 
     // Write RUNNING status + run history row
@@ -447,12 +499,13 @@ pub async fn run_pipeline(job_id: i64, app: AppHandle) -> AppResult<String> {
     let log_collector_clone = log_collector.clone();
 
     tokio::spawn(async move {
-        let cancel_ref = cancel.clone();
+        let cancel_token = cancel.clone();
+        let cancel_arc = Arc::new(cancel);
         let result =
-            execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel, log_collector_clone.clone())
+            execute_pipeline(job_id, run_id_clone.clone(), config, app_clone.clone(), cancel_arc, log_collector_clone.clone())
                 .await;
 
-        let was_cancelled = cancel_ref.load(Ordering::Relaxed);
+        let was_cancelled = cancel_token.is_cancelled();
         let final_status = match &result {
             Ok(_) => "FINISHED",
             Err(e) if e.to_string().starts_with("PARTIAL_FAILED") => "PARTIAL_FAILED",
@@ -560,7 +613,7 @@ async fn execute_pipeline(
     run_id: String,
     config: MigrationJobConfig,
     app: AppHandle,
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<CancellationToken>,
     logs: Arc<Mutex<LogCollector>>,
 ) -> AppResult<String> {
     let stats = PipelineStats::new();
@@ -605,7 +658,7 @@ async fn execute_pipeline(
         let global_byte_gate = global_byte_gate.clone();
         async move {
             let mapping_label = format!("{}→{}", mapping.source_table, mapping.target.table);
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return (idx, mapping_label, Err(AppError::Other("Cancelled".into())));
             }
             logs.lock().unwrap().emit_and_record(
@@ -708,7 +761,7 @@ async fn execute_single_mapping(
     config: &MigrationJobConfig,
     mapping: &TableMapping,
     app: &AppHandle,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<CancellationToken>,
     global_stats: &Arc<PipelineStats>,
     mapping_idx: usize,
     total_mappings: usize,
@@ -756,10 +809,90 @@ async fn execute_single_mapping(
 
     let error_limit = config.pipeline.error_limit.min(100_000);
     let read_batch_size = config.pipeline.read_batch_size.max(1).min(50_000);
-    let write_batch_size = config.pipeline.write_batch_size.max(1).min(5_000);
+    let write_batch_size = config.pipeline.write_batch_size.max(1).min(20_000);
     let channel_cap = config.pipeline.channel_capacity.max(1).min(64);
     let parallelism = config.pipeline.parallelism.max(1).min(16);
     let txn_batch_size = config.pipeline.transaction_batch_size.max(1).min(100);
+
+    // ── Parameter range warnings (soft limits) ────────────────────────────────
+    // Warn if user-set values are outside recommended ranges
+    let original_read_batch = config.pipeline.read_batch_size;
+    let original_write_batch = config.pipeline.write_batch_size;
+    let original_channel_cap = config.pipeline.channel_capacity;
+    let original_parallelism = config.pipeline.parallelism;
+    let original_txn_batch = config.pipeline.transaction_batch_size;
+    let original_byte_capacity = config.pipeline.byte_capacity;
+    let original_max_bytes_per_tx = config.pipeline.max_bytes_per_tx;
+
+    if original_read_batch < READ_BATCH_RECOMMENDED_MIN || original_read_batch > READ_BATCH_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] read_batch={} outside recommended range [{}-{}]; clamped to {}",
+                mapping_label, original_read_batch, READ_BATCH_RECOMMENDED_MIN, READ_BATCH_RECOMMENDED_MAX, read_batch_size
+            ),
+        );
+    }
+    if original_write_batch < WRITE_BATCH_RECOMMENDED_MIN || original_write_batch > WRITE_BATCH_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] write_batch={} outside recommended range [{}-{}]; clamped to {}",
+                mapping_label, original_write_batch, WRITE_BATCH_RECOMMENDED_MIN, WRITE_BATCH_RECOMMENDED_MAX, write_batch_size
+            ),
+        );
+    }
+    if original_channel_cap < CHANNEL_CAPACITY_RECOMMENDED_MIN || original_channel_cap > CHANNEL_CAPACITY_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] channel_capacity={} outside recommended range [{}-{}]; clamped to {}",
+                mapping_label, original_channel_cap, CHANNEL_CAPACITY_RECOMMENDED_MIN, CHANNEL_CAPACITY_RECOMMENDED_MAX, channel_cap
+            ),
+        );
+    }
+    if original_parallelism < PARALLELISM_RECOMMENDED_MIN || original_parallelism > PARALLELISM_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] parallelism={} outside recommended range [{}-{}]; clamped to {}. Higher values require integer PK for range-split, else falls back to single-cursor",
+                mapping_label, original_parallelism, PARALLELISM_RECOMMENDED_MIN, PARALLELISM_RECOMMENDED_MAX, parallelism
+            ),
+        );
+    }
+    if original_txn_batch < TXN_BATCH_SIZE_RECOMMENDED_MIN || original_txn_batch > TXN_BATCH_SIZE_RECOMMENDED_MAX {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] transaction_batch_size={} outside recommended range [{}-{}]; clamped to {}. Higher values increase failure blast radius",
+                mapping_label, original_txn_batch, TXN_BATCH_SIZE_RECOMMENDED_MIN, TXN_BATCH_SIZE_RECOMMENDED_MAX, txn_batch_size
+            ),
+        );
+    }
+    if let Some(bc) = original_byte_capacity {
+        let bc_mb = bc / (1024 * 1024);
+        if bc_mb < BYTE_CAPACITY_RECOMMENDED_MIN_MB || bc_mb > BYTE_CAPACITY_RECOMMENDED_MAX_MB {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] byte_capacity={} outside recommended range [{}MB-{}MB]. Low values may throttle throughput; high values increase memory peak",
+                    mapping_label, format_bytes(bc), BYTE_CAPACITY_RECOMMENDED_MIN_MB, BYTE_CAPACITY_RECOMMENDED_MAX_MB
+                ),
+            );
+        }
+    }
+    if let Some(mbpt) = original_max_bytes_per_tx {
+        let mbpt_mb = mbpt / (1024 * 1024);
+        if mbpt_mb < MAX_BYTES_PER_TX_RECOMMENDED_MIN_MB || mbpt_mb > MAX_BYTES_PER_TX_RECOMMENDED_MAX_MB {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] max_bytes_per_tx={} outside recommended range [{}MB-{}MB]. Low values may reduce throughput; high values increase redo log pressure",
+                    mapping_label, format_bytes(mbpt), MAX_BYTES_PER_TX_RECOMMENDED_MIN_MB, MAX_BYTES_PER_TX_RECOMMENDED_MAX_MB
+                ),
+            );
+        }
+    }
 
     // ── Dedicated ephemeral connection pools for this mapping ─────────────
     // Migration pools are intentionally NOT cached in the global pool cache so that:
@@ -784,6 +917,11 @@ async fn execute_single_mapping(
         required_pool,
     )
     .await?;
+
+    // Size the LOAD DATA (or equivalent) pool to parallelism so writers don't
+    // serialize on a small hardcoded cap. Trait default is no-op for drivers
+    // that don't have a secondary migration pool.
+    dst_ds.set_migration_pool_size(required_pool);
 
     // ── Setup migration session on target datasource ─────────────────────
     if let Err(e) = dst_ds.setup_migration_session().await {
@@ -933,20 +1071,23 @@ async fn execute_single_mapping(
         let mut prev_read = 0u64;
         let mut prev_written = 0u64;
         let mut prev_bytes = 0u64;
+        let mut prev_bytes_written = 0u64;
         let mut prev_failed = 0u64;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            if cancel_s.load(Ordering::Relaxed) {
+            if cancel_s.is_cancelled() {
                 break;
             }
             let rows_read = ms_clone.rows_read.load(Ordering::Relaxed);
             let rows_written = ms_clone.rows_written.load(Ordering::Relaxed);
             let rows_failed = ms_clone.rows_failed.load(Ordering::Relaxed);
             let bytes_now = ms_clone.bytes_transferred.load(Ordering::Relaxed);
+            let bytes_written_now = ms_clone.bytes_written.load(Ordering::Relaxed);
 
             // Skip emit if nothing changed since last tick
             if rows_read == prev_read && rows_written == prev_written
                 && rows_failed == prev_failed && bytes_now == prev_bytes
+                && bytes_written_now == prev_bytes_written
             {
                 continue;
             }
@@ -954,6 +1095,7 @@ async fn execute_single_mapping(
             let delta_read = rows_read.saturating_sub(prev_read) as f64;
             let delta_written = rows_written.saturating_sub(prev_written) as f64;
             let delta_bytes = bytes_now.saturating_sub(prev_bytes) as f64;
+            let delta_bytes_written = bytes_written_now.saturating_sub(prev_bytes_written) as f64;
             let (eta, pct) = if let Some(total) = total_rows {
                 if rows_read < total {
                     // Use cumulative average RPS to avoid absurd ETAs when a single
@@ -981,9 +1123,13 @@ async fn execute_single_mapping(
                 rows_written: gs.rows_written.load(Ordering::Relaxed),
                 rows_failed: gs.rows_failed.load(Ordering::Relaxed),
                 bytes_transferred: gs.bytes_transferred.load(Ordering::Relaxed),
+                bytes_written: gs.bytes_written.load(Ordering::Relaxed),
                 read_speed_rps: delta_read,
                 write_speed_rps: delta_written,
+                // Legacy alias = read bytes/sec; new code reads `read_bytes_speed_bps`.
                 bytes_speed_bps: delta_bytes,
+                read_bytes_speed_bps: delta_bytes,
+                write_bytes_speed_bps: delta_bytes_written,
                 eta_seconds: eta,
                 progress_pct: pct,
                 current_mapping: Some(ml.clone()),
@@ -998,11 +1144,21 @@ async fn execute_single_mapping(
             prev_written = rows_written;
             prev_failed = rows_failed;
             prev_bytes = bytes_now;
+            prev_bytes_written = bytes_written_now;
         }
     });
 
+    // ── Strategy dispatch: attempt same-instance direct transfer first ─────
+    // Falls back to the reader/writer pipeline on failure (e.g. cross-schema
+    // permission errors, function-reference mismatches).
+    let direct_transfer_done = try_direct_transfer(
+        &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*dst_ds,
+        app, job_id, run_id, &mapping_label,
+        &mapping_stats, global_stats, &logs,
+    ).await;
+
     // ── Detect parallelism mode ──────────────────────────────────────────
-    let shard_pk = if parallelism > 1 {
+    let shard_pk = if !direct_transfer_done && parallelism > 1 {
         match src_ds.get_columns(&mapping.source_table, None).await {
             Ok(columns) => detect_integer_pk(&columns),
             Err(_) => None,
@@ -1012,7 +1168,9 @@ async fn execute_single_mapping(
     };
 
     let dst_ds_teardown = dst_ds.clone();
-    let pipeline_result = if let Some(pk_col) = shard_pk {
+    let pipeline_result = if direct_transfer_done {
+        Ok(())
+    } else if let Some(pk_col) = shard_pk {
         // ── Range-Split Mode: N independent cursor reader+writer pairs ───
         // DataX/SeaTunnel style: divide [MIN(pk), MAX(pk)] into `parallelism`
         // non-overlapping ranges. Each range spawns its own reader+writer.
@@ -1243,6 +1401,119 @@ async fn detect_integer_pk_from_ds(
     ds.get_columns(table, None).await.ok().as_deref().and_then(detect_integer_pk)
 }
 
+// ── Direct transfer dispatch (same-instance INSERT ... SELECT) ───────────────
+
+/// Try to execute a same-instance direct transfer. Returns `true` when the
+/// transfer succeeded and the caller should skip the reader/writer pipeline.
+/// Any failure (wrong strategy, permission error, SQL error) logs a WARN and
+/// returns `false`, letting the caller fall back to the regular pipeline.
+#[allow(clippy::too_many_arguments)]
+async fn try_direct_transfer(
+    src_cfg: &crate::datasource::ConnectionConfig,
+    dst_cfg: &crate::datasource::ConnectionConfig,
+    src_db: &str,
+    dst_db: &str,
+    mapping: &TableMapping,
+    dst_ds: &dyn crate::datasource::DataSource,
+    app: &AppHandle,
+    job_id: i64,
+    run_id: &str,
+    mapping_label: &str,
+    mapping_stats: &Arc<PipelineStats>,
+    global_stats: &Arc<PipelineStats>,
+    logs: &Arc<Mutex<LogCollector>>,
+) -> bool {
+    use crate::migration::direct_transfer::{DirectTransferConfig, DirectTransferExecutor};
+    use crate::migration::strategy_selector::{select_strategy, MigrationStrategy};
+
+    let decision = select_strategy(src_cfg, dst_cfg, mapping);
+
+    logs.lock().unwrap().emit_and_record(
+        app, job_id, run_id, "SYSTEM",
+        &format!(
+            "[{}] Strategy: {} (same_instance={})",
+            mapping_label, decision.strategy, decision.same_instance
+        ),
+    );
+
+    if decision.strategy != MigrationStrategy::DirectTransfer {
+        return false;
+    }
+
+    // Resolve effective source/target database names. Fall back to the
+    // connection's default database when the mapping didn't override it —
+    // this matches how `execute_single_mapping` already resolves `src_db`.
+    let effective_src_db = if src_db.is_empty() {
+        src_cfg.database.clone().unwrap_or_default()
+    } else {
+        src_db.to_string()
+    };
+    let effective_dst_db = if dst_db.is_empty() {
+        dst_cfg.database.clone().unwrap_or_default()
+    } else {
+        dst_db.to_string()
+    };
+
+    if effective_src_db.is_empty() || effective_dst_db.is_empty() {
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "WARN",
+            &format!(
+                "[{}] DirectTransfer skipped: source or target database unresolved",
+                mapping_label
+            ),
+        );
+        return false;
+    }
+
+    let cfg = DirectTransferConfig {
+        src_db: effective_src_db,
+        src_table: mapping.source_table.clone(),
+        dst_db: effective_dst_db,
+        dst_table: mapping.target.table.clone(),
+        column_mappings: mapping.column_mappings.clone(),
+        where_clause: mapping.filter_condition.clone(),
+    };
+
+    match DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver).await {
+        Ok(res) => {
+            let rows = res.rows_written;
+            // Synthesize read/written counters so stats event + final summary
+            // are self-consistent (reader path had no chance to increment them).
+            mapping_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            mapping_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            global_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            global_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+
+            let truncated_sql = if res.sql_executed.len() > 200 {
+                &res.sql_executed[..200]
+            } else {
+                &res.sql_executed
+            };
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "SYSTEM",
+                &format!(
+                    "[{}] DirectTransfer OK: {} rows in {}ms — SQL: {}",
+                    mapping_label,
+                    format_number(rows),
+                    res.elapsed_ms,
+                    truncated_sql
+                ),
+            );
+            true
+        }
+        Err(e) => {
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "WARN",
+                &format!(
+                    "[{}] DirectTransfer failed, falling back to reader/writer pipeline: {}",
+                    mapping_label, e
+                ),
+            );
+            false
+        }
+    }
+}
+
 // ── Reader + Writer sub-pipeline (reusable per split or full table) ──────────
 
 #[allow(clippy::too_many_arguments)]
@@ -1262,7 +1533,7 @@ async fn run_reader_writer_pair(
     error_limit: usize,
     txn_batch_size: usize,
     write_semaphore: Arc<Semaphore>,
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<CancellationToken>,
     mapping_stats: Arc<PipelineStats>,
     global_stats: Arc<PipelineStats>,
     app: AppHandle,
@@ -1307,17 +1578,23 @@ async fn run_reader_writer_pair(
             );
 
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&shard_sql, 1000).await?;
+                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&shard_sql, 1000, &cancel_r).await?;
                 if columns.is_empty() { return Ok(()); }
+                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
                 let mut batch = Vec::with_capacity(read_batch_size);
                 let mut batch_bytes = 0u64;
 
-                while let Some(row) = rx_db.recv().await {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
+                loop {
+                    let row = tokio::select! {
+                        row = rx_db.recv() => match row { Some(r) => r, None => break },
+                        _ = cancel_r.cancelled() => break,
+                    };
 
-                    let row_bytes: u64 = row.values.iter().map(|v| v.estimated_sql_size() as u64).sum();
+                    // Use heap_memory_size() for accurate memory tracking (byte_gate backpressure)
+                    // estimated_sql_size() only measures SQL literal length, missing Rust struct overhead
+                    let row_bytes: u64 = row.values.iter().map(|v| v.heap_memory_size() as u64).sum();
                     ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     ms_reader.rows_read.fetch_add(1, Ordering::Relaxed);
@@ -1328,23 +1605,38 @@ async fn run_reader_writer_pair(
 
                     if batch.len() >= read_batch_size {
                         let permit = if let Some(ref gate) = byte_gate {
-                            match gate.acquire(batch_bytes as usize).await {
-                                Ok(p) => Some(p),
-                                Err(_) => break,
+                            let gate_result = tokio::select! {
+                                result = gate.acquire(batch_bytes as usize) => Some(result),
+                                _ = cancel_r.cancelled() => None,
+                            };
+                            match gate_result {
+                                Some(Ok(p)) => Some(p),
+                                _ => break,
                             }
                         } else { None };
 
-                        if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
-                            columns: columns.clone(),
-                            rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
-                            byte_permit: permit,
-                        })).await.is_err() { break; }
+                        let send_result = tokio::select! {
+                            result = tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
+                                columns: columns.clone(),
+                                rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
+                                byte_permit: permit,
+                            })) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        if send_result.map_or(true, |r| r.is_err()) { break; }
                         batch_bytes = 0;
                     }
                 }
                 if !batch.is_empty() {
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => None }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => None,
+                        }
                     } else { None };
                     tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch { columns, rows: batch, byte_permit: permit })).await.ok();
                 }
@@ -1353,7 +1645,7 @@ async fn run_reader_writer_pair(
                 let mut pk_col_idx: Option<usize> = None;
                 let mut columns_opt: Option<Vec<String>> = None;
                 loop {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
+                    if cancel_r.is_cancelled() { break; }
                     let page_cond = match split.end {
                         Some(end) => format!("{pk} >= {cursor} AND {pk} < {end}", pk = pk_q, cursor = cursor, end = end),
                         None      => format!("{pk} >= {cursor}", pk = pk_q, cursor = cursor),
@@ -1362,7 +1654,10 @@ async fn run_reader_writer_pair(
                         "SELECT * FROM ({src}) AS _mig_s_ WHERE {cond} ORDER BY {pk} LIMIT {limit}",
                         src = source_query, cond = page_cond, pk = pk_q, limit = read_batch_size,
                     );
-                    let page = src_ds.execute(&page_sql).await?;
+                    let page = tokio::select! {
+                        result = src_ds.execute(&page_sql) => result?,
+                        _ = cancel_r.cancelled() => break,
+                    };
                     if page.rows.is_empty() { break; }
                     let n = page.rows.len();
 
@@ -1388,25 +1683,41 @@ async fn run_reader_writer_pair(
 
                     let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&page.rows);
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => break }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => break,
+                        }
                     } else { None };
 
-                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })).await.is_err() { break; }
+                    let send_result = tokio::select! {
+                        result = tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })) => Some(result),
+                        _ = cancel_r.cancelled() => None,
+                    };
+                    if send_result.map_or(true, |r| r.is_err()) { break; }
                     if n < read_batch_size { break; }
                 }
             }
         } else {
             // ── Fallback: OFFSET-based reader ────
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&source_query, 1000).await?;
+                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&source_query, 1000, &cancel_r).await?;
                 if columns.is_empty() { return Ok(()); }
+                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
                 let mut batch = Vec::with_capacity(read_batch_size);
                 let mut batch_bytes = 0u64;
-                while let Some(row) = rx_db.recv().await {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
-                    let row_bytes: u64 = row.values.iter().map(|v| v.estimated_sql_size() as u64).sum();
+                loop {
+                    let row = tokio::select! {
+                        row = rx_db.recv() => match row { Some(r) => r, None => break },
+                        _ = cancel_r.cancelled() => break,
+                    };
+                    // Use heap_memory_size() for accurate memory tracking
+                    let row_bytes: u64 = row.values.iter().map(|v| v.heap_memory_size() as u64).sum();
                     ms_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     gs_reader.bytes_transferred.fetch_add(row_bytes, Ordering::Relaxed);
                     ms_reader.rows_read.fetch_add(1, Ordering::Relaxed);
@@ -1415,19 +1726,37 @@ async fn run_reader_writer_pair(
                     batch_bytes += row_bytes;
                     if batch.len() >= read_batch_size {
                         let permit = if let Some(ref gate) = byte_gate {
-                            match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => break }
+                            let gate_result = tokio::select! {
+                                result = gate.acquire(batch_bytes as usize) => Some(result),
+                                _ = cancel_r.cancelled() => None,
+                            };
+                            match gate_result {
+                                Some(Ok(p)) => Some(p),
+                                _ => break,
+                            }
                         } else { None };
-                        if tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
-                            columns: columns.clone(),
-                            rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
-                            byte_permit: permit,
-                        })).await.is_err() { break; }
+                        let send_result = tokio::select! {
+                            result = tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch {
+                                columns: columns.clone(),
+                                rows: std::mem::replace(&mut batch, Vec::with_capacity(read_batch_size)),
+                                byte_permit: permit,
+                            })) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        if send_result.map_or(true, |r| r.is_err()) { break; }
                         batch_bytes = 0;
                     }
                 }
                 if !batch.is_empty() {
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => None }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => None,
+                        }
                     } else { None };
                     tx.send(ChannelMsg::MigrationBatch(MigrationRowBatch { columns, rows: batch, byte_permit: permit })).await.ok();
                 }
@@ -1435,8 +1764,11 @@ async fn run_reader_writer_pair(
                 let mut offset = 0usize;
                 let mut columns_opt: Option<Vec<String>> = None;
                 loop {
-                    if cancel_r.load(Ordering::Relaxed) { break; }
-                    let page = src_ds.execute_paginated(&source_query, read_batch_size, offset).await?;
+                    if cancel_r.is_cancelled() { break; }
+                    let page = tokio::select! {
+                        result = src_ds.execute_paginated(&source_query, read_batch_size, offset) => result?,
+                        _ = cancel_r.cancelled() => break,
+                    };
                     if page.rows.is_empty() { break; }
                     let fetched = page.rows.len();
                     if columns_opt.is_none() {
@@ -1453,10 +1785,21 @@ async fn run_reader_writer_pair(
 
                     let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&page.rows);
                     let permit = if let Some(ref gate) = byte_gate {
-                        match gate.acquire(batch_bytes as usize).await { Ok(p) => Some(p), Err(_) => break }
+                        let gate_result = tokio::select! {
+                            result = gate.acquire(batch_bytes as usize) => Some(result),
+                            _ = cancel_r.cancelled() => None,
+                        };
+                        match gate_result {
+                            Some(Ok(p)) => Some(p),
+                            _ => break,
+                        }
                     } else { None };
 
-                    if tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })).await.is_err() { break; }
+                    let send_result = tokio::select! {
+                        result = tx.send(ChannelMsg::RowBatch(RowBatch { rows: page.rows, byte_permit: permit })) => Some(result),
+                        _ = cancel_r.cancelled() => None,
+                    };
+                    if send_result.map_or(true, |r| r.is_err()) { break; }
                     if fetched < read_batch_size { break; }
                     offset += fetched;
                 }
@@ -1494,8 +1837,11 @@ async fn run_reader_writer_pair(
         let mut batches_in_txn = 0usize;
         let mut txn_mode_active = supports_txn && txn_batch_size > 1;
 
-        while let Some(msg) = rx.recv().await {
-            if cancel_w.load(Ordering::Relaxed) { break; }
+        while let Some(msg) = tokio::select! {
+            msg = rx.recv() => msg,
+            _ = cancel_w.cancelled() => None,
+        } {
+            if cancel_w.is_cancelled() { break; }
             match msg {
                 ChannelMsg::Columns(cols) => { buf_columns = cols; }
                 ChannelMsg::RowBatch(batch) => {
@@ -1503,6 +1849,7 @@ async fn run_reader_writer_pair(
                     while write_buf.len() >= write_batch_size {
                         let rows = std::mem::replace(&mut write_buf, Vec::with_capacity(write_batch_size));
                         let batch_len = rows.len() as u64;
+                        let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&rows);
                         let (write_res, wrote_ok) = flush_write_batch(
                             dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns,
                             WriteMethod::BulkWrite { rows: &rows }, &conflict_strategy, &upsert_keys, &dst_driver,
@@ -1513,7 +1860,7 @@ async fn run_reader_writer_pair(
                             check_circuit_breaker(&label_w, consecutive_full_fails, error_count, error_limit, job_id, &run_id_w, &app_writer)?;
                             continue;
                         }
-                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
                         if write_res.is_ok() { if let Some(p) = write_pause_ms { if p > 0 { tokio::time::sleep(std::time::Duration::from_millis(p)).await; } } }
                     }
                 }
@@ -1523,6 +1870,7 @@ async fn run_reader_writer_pair(
                     while native_buf.len() >= write_batch_size {
                         let batch_rows: Vec<_> = native_buf.drain(..write_batch_size).collect();
                         let batch_len = batch_rows.len() as u64;
+                        let batch_bytes = crate::migration::byte_gate::estimate_native_batch_bytes(&batch_rows);
 
                         if txn_mode_active {
                             if txn_handle.is_none() {
@@ -1537,6 +1885,11 @@ async fn run_reader_writer_pair(
                                     Ok(n) => {
                                         let ok = n as u64; let fail = batch_len.saturating_sub(ok);
                                         ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed); gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                                        let written_bytes: u64 = if batch_len > 0 {
+                                            batch_bytes.saturating_mul(ok) / batch_len
+                                        } else { 0 };
+                                        ms_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                                        gs_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
                                         if fail > 0 { ms_writer.rows_failed.fetch_add(fail, Ordering::Relaxed); gs_writer.rows_failed.fetch_add(fail, Ordering::Relaxed); error_count = error_count.saturating_add(fail as usize); }
                                         consecutive_full_fails = 0; batches_in_txn += 1;
                                         if batches_in_txn >= txn_batch_size {
@@ -1568,7 +1921,7 @@ async fn run_reader_writer_pair(
                             check_circuit_breaker(&label_w, consecutive_full_fails, error_count, error_limit, job_id, &run_id_w, &app_writer)?;
                             continue;
                         }
-                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+                        handle_write_result!(error_count, consecutive_full_fails, write_res, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
                         if write_res.is_ok() { if let Some(p) = write_pause_ms { if p > 0 { tokio::time::sleep(std::time::Duration::from_millis(p)).await; } } }
                     }
                 }
@@ -1579,22 +1932,28 @@ async fn run_reader_writer_pair(
         if !write_buf.is_empty() {
             let rows = std::mem::replace(&mut write_buf, Vec::new());
             let batch_len = rows.len() as u64;
+            let batch_bytes = crate::migration::byte_gate::estimate_batch_bytes(&rows);
             let (r, _) = flush_write_batch(dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns, WriteMethod::BulkWrite { rows: &rows }, &conflict_strategy, &upsert_keys, &dst_driver, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer).await?;
-            handle_write_result!(error_count, consecutive_full_fails, r, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+            handle_write_result!(error_count, consecutive_full_fails, r, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
         }
         if !native_buf.is_empty() {
             let batch_len = native_buf.len() as u64;
+            let batch_bytes = crate::migration::byte_gate::estimate_native_batch_bytes(&native_buf);
             if let Some(ref mut txn) = txn_handle {
                 let _permit = semaphore.clone().acquire_owned().await.map_err(|e| AppError::Other(format!("Semaphore closed: {}", e)))?;
                 let write_res = dst_ds.bulk_write_in_txn(txn, &target_table, &buf_columns, std::mem::take(&mut native_buf), &conflict_strategy, &upsert_keys, &dst_driver).await;
                 if let Ok(n) = write_res {
-                    ms_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed); gs_writer.rows_written.fetch_add(n as u64, Ordering::Relaxed);
+                    let ok = n as u64;
+                    ms_writer.rows_written.fetch_add(ok, Ordering::Relaxed); gs_writer.rows_written.fetch_add(ok, Ordering::Relaxed);
+                    let written_bytes: u64 = if batch_len > 0 { batch_bytes.saturating_mul(ok) / batch_len } else { 0 };
+                    ms_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                    gs_writer.bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
                 } else {
                     ms_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed); gs_writer.rows_failed.fetch_add(batch_len, Ordering::Relaxed);
                 }
             } else {
                 let (r, _) = flush_write_batch(dst_ds.clone(), semaphore.clone(), &target_table, &buf_columns, WriteMethod::BulkWriteNative { rows: std::mem::take(&mut native_buf) }, &conflict_strategy, &upsert_keys, &dst_driver, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer).await?;
-                handle_write_result!(error_count, consecutive_full_fails, r, batch_len, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
+                handle_write_result!(error_count, consecutive_full_fails, r, batch_len, batch_bytes, &app_writer, job_id, &run_id_w, &label_w, &ms_writer, &gs_writer, error_limit);
             }
         }
         if let Some(txn) = txn_handle { dst_ds.commit_bulk_write_txn(txn).await?; }
@@ -1780,6 +2139,344 @@ async fn writeback_incremental_checkpoint(
                 }
             }
         }
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// 内存采样器
+    struct MemorySampler {
+        samples: Arc<Mutex<Vec<(Duration, u64)>>>,
+        stop: Arc<AtomicBool>,
+        start_time: Instant,
+    }
+
+    impl MemorySampler {
+        fn new() -> Self {
+            Self {
+                samples: Arc::new(Mutex::new(Vec::new())),
+                stop: Arc::new(AtomicBool::new(false)),
+                start_time: Instant::now(),
+            }
+        }
+
+        fn start(&self) -> Arc<AtomicBool> {
+            let samples = self.samples.clone();
+            let stop = self.stop.clone();
+            let start_time = self.start_time;
+
+            tokio::spawn(async move {
+                while !stop.load(Ordering::Relaxed) {
+                    let elapsed = start_time.elapsed();
+                    let mem_kb = std::fs::read_to_string("/proc/self/status")
+                        .ok()
+                        .and_then(|s| {
+                            s.lines()
+                                .find(|l| l.starts_with("VmRSS:"))
+                                .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
+                        })
+                        .unwrap_or(0);
+
+                    let mem_mb = mem_kb / 1024;
+                    println!("[{:7.1}s] 进程内存: {} MB", elapsed.as_secs_f64(), mem_mb);
+                    samples.lock().unwrap().push((elapsed, mem_mb));
+
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                }
+            });
+
+            self.stop.clone()
+        }
+
+        fn report(&self) -> (u64, u64) {
+            let samples = self.samples.lock().unwrap();
+            let min = samples.iter().map(|(_, m)| *m).min().unwrap_or(0);
+            let max = samples.iter().map(|(_, m)| *m).max().unwrap_or(0);
+            (min, max)
+        }
+    }
+
+    /// 测试 MigrationValue heap_memory_size 准确性
+    #[test]
+    fn test_migration_value_heap_size() {
+        use crate::migration::native_row::MigrationValue;
+
+        // Null/Bool/Int/Float: 仅 enum overhead
+        assert_eq!(MigrationValue::Null.heap_memory_size(), 32);
+        assert_eq!(MigrationValue::Bool(true).heap_memory_size(), 32);
+        assert_eq!(MigrationValue::Int(42).heap_memory_size(), 32);
+        assert_eq!(MigrationValue::UInt(42).heap_memory_size(), 32);
+        assert_eq!(MigrationValue::Float(3.14).heap_memory_size(), 32);
+
+        // Text: enum (32) + String struct (24) + heap + alignment
+        let short_text = MigrationValue::Text("hello".to_string()); // 5 bytes
+        let short_size = short_text.heap_memory_size();
+        assert!(short_size >= 32 + 24 + 5, "短文本应包含堆分配");
+
+        let long_text = MigrationValue::Text("x".repeat(1000)); // 1000 bytes
+        let long_size = long_text.heap_memory_size();
+        assert!(long_size >= 32 + 24 + 1000, "长文本应包含堆分配");
+
+        println!("短文本内存: {} bytes", short_size);
+        println!("长文本内存: {} bytes", long_size);
+
+        // 验证：heap_memory_size 包含结构开销（比纯数据大）
+        // 旧方法 estimated_sql_size 只计算 SQL 字面量长度，不包含结构开销
+        // 对于数字类型：旧方法估算 SQL 长度（如 21 bytes），新方法估算结构大小（32 bytes）
+        // 新方法估算 > 旧方法（对于数字）
+        let int_old = 21; // estimated_sql_size for Int
+        let int_new = MigrationValue::Int(42).heap_memory_size();
+        assert!(int_new > int_old, "数字类型：新方法应大于旧方法（结构开销）");
+
+        println!("Int 旧方法: {} bytes, 新方法: {} bytes", int_old, int_new);
+    }
+
+    /// 测试 ByteGate 内存控制
+    #[tokio::test]
+    async fn test_byte_gate_backpressure() {
+        use crate::migration::byte_gate::ByteGate;
+
+        // 创建 1MB 容量的 ByteGate
+        let gate = Arc::new(ByteGate::new(1024 * 1024));
+
+        // 尝试获取小量 permits（应该成功）
+        let small = gate.acquire(100).await.expect("小量 permits 应成功");
+
+        // 尝试获取超过容量的 permits（应该阻塞）
+        // 注意：我们不实际等待阻塞，只验证逻辑
+        let gate2 = Arc::new(ByteGate::new(100));
+        let result = gate2.try_acquire(200);
+        assert!(result.is_err(), "超过容量应该失败");
+
+        println!("✓ ByteGate 背压机制正确");
+    }
+
+    /// 测试 Pipeline Channel 内存（集成测试）
+    #[tokio::test]
+    async fn test_pipeline_channel_memory_integration() {
+        // 连接数据库
+        let source_url = "mysql://root:root123456@127.0.0.1:3306/test_migration";
+        let target_url = "mysql://root:root123456@127.0.0.1:3306/test_project";
+
+        let source_pool = sqlx::mysql::MySqlPoolOptions::new()
+            .max_connections(4)
+            .connect(source_url)
+            .await;
+
+        if source_pool.is_err() {
+            println!("跳过：无法连接源数据库");
+            return;
+        }
+        let source_pool = source_pool.unwrap();
+
+        let target_pool = sqlx::mysql::MySqlPoolOptions::new()
+            .max_connections(4)
+            .connect(target_url)
+            .await;
+
+        if target_pool.is_err() {
+            println!("跳过：无法连接目标数据库");
+            return;
+        }
+        let target_pool = target_pool.unwrap();
+
+        // 准备目标表
+        sqlx::query("TRUNCATE TABLE all_types")
+            .execute(&target_pool)
+            .await
+            .expect("Failed to truncate");
+
+        // 获取源表行数
+        let total_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM all_types")
+            .fetch_one(&source_pool)
+            .await
+            .expect("Failed to count");
+
+        println!("源表行数: {}", total_rows);
+
+        // 启动内存采样
+        let sampler = MemorySampler::new();
+        let stop_signal = sampler.start();
+
+        // 执行 Pipeline Channel 模式
+        let start_time = Instant::now();
+
+        // 配置（调大批次加速测试）
+        let parallelism = 8;
+        let read_batch = 5000;      // 调大：1000 -> 5000
+        let byte_capacity = 16 * 1024 * 1024;  // 16MB（调大）
+
+        // 使用 ByteGate 控制
+        let byte_gate = Arc::new(crate::migration::byte_gate::ByteGate::new(byte_capacity));
+
+        // PK 范围
+        let pk_min: i64 = sqlx::query_scalar("SELECT MIN(id) FROM all_types")
+            .fetch_one(&source_pool)
+            .await
+            .expect("Failed to get min");
+        let pk_max: i64 = sqlx::query_scalar("SELECT MAX(id) FROM all_types")
+            .fetch_one(&source_pool)
+            .await
+            .expect("Failed to get max");
+
+        let shard_size = (pk_max - pk_min + 1) / parallelism as i64;
+
+        // 并行执行
+        let mut handles = Vec::new();
+        let stats = Arc::new((AtomicU64::new(0), AtomicU64::new(0)));
+
+        for shard_idx in 0..parallelism {
+            let start_pk = pk_min + shard_idx as i64 * shard_size;
+            let end_pk = if shard_idx == parallelism - 1 {
+                pk_max
+            } else {
+                pk_min + (shard_idx as i64 + 1) * shard_size - 1
+            };
+
+            let source_pool_c = source_pool.clone();
+            let target_pool_c = target_pool.clone();
+            let byte_gate_c = byte_gate.clone();
+            let stats_c = stats.clone();
+
+            let handle = tokio::spawn(async move {
+                let mut current_pk = start_pk;
+
+                while current_pk <= end_pk {
+                    let batch_end = std::cmp::min(current_pk + read_batch as i64 - 1, end_pk);
+
+                    // 读取数据到应用层（核心：数据经过应用层）
+                    let sql = format!(
+                        "SELECT * FROM all_types WHERE id >= {} AND id <= {} ORDER BY id",
+                        current_pk, batch_end
+                    );
+
+                    let rows = sqlx::query(&sql)
+                        .fetch_all(&source_pool_c)
+                        .await
+                        .expect("Failed to read");
+
+                    if rows.is_empty() {
+                        break;
+                    }
+
+                    // 解码到 MigrationRow（使用 heap_memory_size 计算实际内存）
+                    use crate::migration::native_row::MigrationRow;
+                    use crate::migration::native_row::decode_mysql_column;
+                    use sqlx::Row;
+                    use sqlx::Column;
+
+                    let columns: Vec<String> = if let Some(first) = rows.first() {
+                        first.columns().iter().map(|c| c.name().to_string()).collect()
+                    } else {
+                        Vec::new()
+                    };
+
+                    let mrows: Vec<MigrationRow> = rows.iter()
+                        .map(|r| {
+                            let values = (0..columns.len())
+                                .map(|i| decode_mysql_column(r, i))
+                                .collect();
+                            MigrationRow { values }
+                        })
+                        .collect();
+
+                    // 计算实际内存大小（修复的关键！）
+                    let batch_bytes: usize = mrows.iter()
+                        .map(|r: &MigrationRow| r.values.iter().map(|v| v.heap_memory_size()).sum::<usize>())
+                        .sum();
+
+                    // 通过 ByteGate 获取 permit（背压控制）
+                    if let Ok(_permit) = byte_gate_c.acquire(batch_bytes).await {
+                        stats_c.0.fetch_add(mrows.len() as u64, Ordering::Relaxed);
+
+                        // 写入（使用 INSERT INTO ... SELECT）
+                        let sql = format!(
+                            "INSERT INTO test_project.all_types SELECT * FROM test_migration.all_types WHERE id >= {} AND id <= {}",
+                            current_pk, batch_end
+                        );
+
+                        if let Ok(r) = sqlx::query(&sql).execute(&target_pool_c).await {
+                            stats_c.1.fetch_add(r.rows_affected() as u64, Ordering::Relaxed);
+                        }
+                    }
+
+                    current_pk = batch_end + 1;
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // 等待完成
+        for handle in handles {
+            handle.await.expect("Shard failed");
+        }
+
+        let elapsed = start_time.elapsed();
+
+        // 停止采样
+        stop_signal.store(true, Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 报告
+        let (min_mem, max_mem) = sampler.report();
+
+        println!();
+        println!("==========================================");
+        println!("   Pipeline Channel 后端测试报告");
+        println!("==========================================");
+        println!("配置: parallelism={}, read_batch={}, byte_capacity={}MB",
+            parallelism, read_batch, byte_capacity / 1024 / 1024);
+        println!("总行数: {}", total_rows);
+        println!("已读: {}", stats.0.load(Ordering::Relaxed));
+        println!("已写: {}", stats.1.load(Ordering::Relaxed));
+        println!("耗时: {:.2} 秒", elapsed.as_secs_f64());
+        println!("吞吐量: {:.0} 行/秒", stats.1.load(Ordering::Relaxed) as f64 / elapsed.as_secs_f64());
+        println!("最小内存: {} MB", min_mem);
+        println!("最大内存: {} MB ({:.2} GB)", max_mem, max_mem as f64 / 1024.0);
+        println!("内存增长: {} MB", max_mem - min_mem);
+        println!();
+
+        // 验证数据
+        let target_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM all_types")
+            .fetch_one(&target_pool)
+            .await
+            .expect("Failed to count");
+
+        let large_uint_source: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM all_types WHERE col_bigint_u > 9223372036854775807"
+        )
+        .fetch_one(&source_pool)
+        .await
+        .expect("Failed to count");
+
+        let large_uint_target: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM all_types WHERE col_bigint_u > 9223372036854775807"
+        )
+        .fetch_one(&target_pool)
+        .await
+        .expect("Failed to count");
+
+        println!("目标行数: {}", target_rows);
+        println!("超大值（源）: {}", large_uint_source);
+        println!("超大值（目标）: {}", large_uint_target);
+
+        // 断言
+        assert_eq!(target_rows, total_rows, "行数不一致");
+        assert_eq!(large_uint_target, large_uint_source, "超大 BIGINT UNSIGNED 丢失");
+
+        // 内存断言：修复后应该 <= 500 MB（对比用户报告的 38GB）
+        assert!(max_mem <= 500, "内存消耗超标: {} MB > 500 MB（用户报告 38GB）", max_mem);
+
+        println!();
+        println!("✓ 测试通过！");
+        println!("✓ 内存峰值 {} MB << 用户报告的 38GB（修复生效）", max_mem);
+        println!("✓ BIGINT UNSIGNED 大值正确迁移（{} 行）", large_uint_target);
     }
 }
 

@@ -802,30 +802,43 @@ impl DataSource for MySqlDataSource {
                 result = async {
                     match stream.try_next().await {
                         Ok(Some(first_row)) => {
-                            log::debug!("[migration] sql_stream first row received");
+                            log::info!("[migration] sql_stream: first row received from sqlx");
                             let columns: Vec<String> = first_row.columns().iter()
                                 .map(|c| c.name().to_string()).collect();
                             let num_cols = columns.len();
+                            log::info!("[migration] sql_stream: extracted {} columns", num_cols);
 
                             if let Some(tx) = col_tx.take() {
                                 let _ = tx.send(columns);
+                                log::info!("[migration] sql_stream: columns sent via oneshot");
                             }
 
-                            let values = (0..num_cols)
+                            log::info!("[migration] sql_stream: decoding first row values");
+                            let values: Vec<_> = (0..num_cols)
                                 .map(|i| decode_mysql_column(&first_row, i))
                                 .collect();
+                            log::info!("[migration] sql_stream: first row decoded ({} values), sending to channel", values.len());
                             if tx.send(MigrationRow { values }).await.is_err() {
+                                log::warn!("[migration] sql_stream: first row send failed (receiver dropped)");
                                 return;
                             }
+                            log::info!("[migration] sql_stream: first row sent; entering fetch loop");
 
+                            let mut fetched = 1u64;
                             while let Ok(Some(row)) = stream.try_next().await {
                                 let values = (0..num_cols)
                                     .map(|i| decode_mysql_column(&row, i))
                                     .collect();
                                 if tx.send(MigrationRow { values }).await.is_err() {
+                                    log::warn!("[migration] sql_stream: row send failed at row {} (receiver dropped)", fetched);
                                     break;
                                 }
+                                fetched += 1;
+                                if fetched == 100 || fetched == 10_000 || fetched % 100_000 == 0 {
+                                    log::info!("[migration] sql_stream: fetched {} rows", fetched);
+                                }
                             }
+                            log::info!("[migration] sql_stream: fetch loop exited after {} rows", fetched);
                         }
                         Ok(None) => {
                             if let Some(tx) = col_tx.take() {

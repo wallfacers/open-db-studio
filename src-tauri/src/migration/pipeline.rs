@@ -1774,16 +1774,26 @@ async fn run_reader_writer_pair(
                 emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
                     &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
                 if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: sending Columns msg to writer", label_reader));
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: waiting for first row from stream", label_reader));
 
                 let mut batch = Vec::with_capacity(read_batch_size);
                 let mut batch_bytes = 0u64;
+                let mut first_row_seen = false;
 
                 loop {
                     let row = tokio::select! {
                         row = rx_db.recv() => match row { Some(r) => r, None => break },
                         _ = cancel_r.cancelled() => break,
                     };
+                    if !first_row_seen {
+                        emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                            &format!("[{}] reader: got first row from stream", label_reader));
+                        first_row_seen = true;
+                    }
 
                     // Use heap_memory_size() for accurate memory tracking (byte_gate backpressure)
                     // estimated_sql_size() only measures SQL literal length, missing Rust struct overhead

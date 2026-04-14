@@ -35,11 +35,12 @@ impl DirectTransferExecutor {
         where_clause: Option<&str>,
         driver: &str,
     ) -> String {
-        // If any mapping is a wildcard `*`, degrade to `SELECT *` + no explicit column list.
+        // Wildcard forms that degrade to `SELECT *` (no explicit column list):
+        //   1) empty slice — compiler emits this for `MAPPING (*)`
+        //   2) an explicit entry with `source_expr == "*"` — legacy/test form
         // Servers handle column-count/order matching themselves when the target has identical shape.
-        let is_wildcard = column_mappings
-            .iter()
-            .any(|m| m.source_expr.trim() == "*");
+        let is_wildcard = column_mappings.is_empty()
+            || column_mappings.iter().any(|m| m.source_expr.trim() == "*");
 
         // Build INSERT target columns
         let insert_cols: Vec<String> = if is_wildcard {
@@ -166,6 +167,23 @@ mod tests {
         assert!(sql.contains("INSERT INTO `dst_db`.`dst_t`\nSELECT *"));
         assert!(sql.contains("FROM `src_db`.`src_t`"));
         assert!(!sql.contains("WHERE"));
+    }
+
+    /// Regression: the compiler emits `column_mappings = []` for `MAPPING(*)`.
+    /// Empty slice must also produce `SELECT *`, otherwise we generate an
+    /// invalid `SELECT  FROM ...`.
+    #[test]
+    fn empty_column_mappings_produces_select_star() {
+        let cols: Vec<ColumnMapping> = vec![];
+        let sql = DirectTransferExecutor::build_sql_for_test(
+            "src_db", "src_t", "dst_db", "dst_t",
+            &cols, None, "mysql",
+        );
+        assert!(
+            sql.contains("INSERT INTO `dst_db`.`dst_t`\nSELECT *"),
+            "expected SELECT *, got: {sql}"
+        );
+        assert!(sql.contains("FROM `src_db`.`src_t`"));
     }
 
     #[test]

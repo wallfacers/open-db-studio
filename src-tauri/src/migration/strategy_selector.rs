@@ -85,7 +85,7 @@ async fn query_server_uuid(ds: &dyn DataSource) -> AppResult<String> {
 /// Check if the column mappings are compatible with direct transfer.
 ///
 /// Direct transfer supports:
-/// - `MAPPING (*)` — all columns (degrades to `SELECT *`)
+/// - `MAPPING (*)` — all columns (compiler emits `column_mappings = []`; degrades to `SELECT *`)
 /// - `MAPPING (col_a = col_b)` — simple column mapping/renaming
 /// - `MAPPING (col_c = UPPER(col_d))` — expression mapping (server-side execution)
 ///
@@ -93,9 +93,12 @@ async fn query_server_uuid(ds: &dyn DataSource) -> AppResult<String> {
 /// replace with explicit upsert keys) disable this fast path — even when the
 /// source and target live on the same instance.
 pub fn can_use_direct_transfer(mapping: &TableMapping) -> bool {
-    if mapping.column_mappings.is_empty() {
-        return false;
-    }
+    // NOTE: an empty `column_mappings` is the compiler's canonical form for
+    // `MAPPING (*)`. The SQL builder degrades it to `SELECT *`. This used to
+    // `return false` here, which silently routed MAPPING(*) onto the
+    // reader/writer pipeline and caused multi-GB memory spikes on same-
+    // instance MySQL→MySQL jobs. Keep the wildcard on the DirectTransfer
+    // fast path.
     match mapping.target.conflict_strategy {
         ConflictStrategy::Upsert => false,
         ConflictStrategy::Replace if !mapping.target.upsert_keys.is_empty() => false,
@@ -263,6 +266,32 @@ mod tests {
         assert_eq!(d.strategy, MigrationStrategy::DirectTransfer);
         assert!(d.same_instance);
         assert!(d.can_direct_transfer);
+    }
+
+    /// Regression: MAPPING(*) compiles to an empty `column_mappings` Vec.
+    /// can_use_direct_transfer() used to reject empty mappings and silently
+    /// route the job through the reader/writer pipeline, producing multi-GB
+    /// memory spikes on same-instance MySQL→MySQL jobs.
+    #[test]
+    fn direct_transfer_allows_empty_column_mappings_for_wildcard() {
+        let src = cfg("mysql", "db.local", 3306);
+        let dst = cfg("mysql", "db.local", 3306);
+        let m = TableMapping {
+            source_table: "src".into(),
+            target: TargetConfig {
+                connection_id: 0,
+                database: String::new(),
+                table: "dst".into(),
+                conflict_strategy: ConflictStrategy::Insert,
+                create_if_not_exists: false,
+                upsert_keys: vec![],
+            },
+            filter_condition: None,
+            column_mappings: vec![], // MAPPING(*)
+        };
+        assert!(can_use_direct_transfer(&m));
+        let d = select_strategy(&src, &dst, &m);
+        assert_eq!(d.strategy, MigrationStrategy::DirectTransfer);
     }
 
     #[test]

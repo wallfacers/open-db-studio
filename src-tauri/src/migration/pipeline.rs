@@ -1773,7 +1773,10 @@ async fn run_reader_writer_pair(
                 }
                 emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
                     &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
-                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
+                // BUGFIX: `tokio::select! { _ = f.cancelled() => ..., else => ... }` is NOT
+                // a non-blocking check — the `_` pattern never "disables" the branch, so the
+                // macro blocks on cancelled() forever. Use the sync is_cancelled() instead.
+                if cancel_r.is_cancelled() { return Ok(()); }
                 emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
                     &format!("[{}] reader: sending Columns msg to writer", label_reader));
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
@@ -1924,7 +1927,8 @@ async fn run_reader_writer_pair(
                 }
                 emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
                     &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
-                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
+                // BUGFIX: same as above — use sync is_cancelled() instead of a blocking select!.
+                if cancel_r.is_cancelled() { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
                 let mut batch = Vec::with_capacity(read_batch_size);

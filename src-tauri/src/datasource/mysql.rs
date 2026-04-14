@@ -791,6 +791,9 @@ impl DataSource for MySqlDataSource {
         let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
         let cancel_token = cancel.clone();
 
+        log::info!("[migration] sql_stream starting: {}",
+            if sql_owned.len() > 200 { &sql_owned[..200] } else { &sql_owned });
+
         tokio::spawn(async move {
             let mut stream = sqlx::query(&sql_owned).fetch(&pool);
             let mut col_tx = Some(col_tx);
@@ -799,6 +802,7 @@ impl DataSource for MySqlDataSource {
                 result = async {
                     match stream.try_next().await {
                         Ok(Some(first_row)) => {
+                            log::debug!("[migration] sql_stream first row received");
                             let columns: Vec<String> = first_row.columns().iter()
                                 .map(|c| c.name().to_string()).collect();
                             let num_cols = columns.len();
@@ -828,7 +832,12 @@ impl DataSource for MySqlDataSource {
                                 let _ = tx.send(Vec::new());
                             }
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            log::error!("[migration] sql_stream query failed: {}", e);
+                            // Don't send columns — let col_tx be dropped so col_rx
+                            // returns a RecvError and the caller gets a clear failure.
+                            drop(col_tx.take());
+                        }
                     }
                 } => result,
                 _ = cancel_token.cancelled() => {

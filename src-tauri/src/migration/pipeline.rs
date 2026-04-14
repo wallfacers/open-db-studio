@@ -1303,8 +1303,23 @@ async fn execute_single_mapping(
                 let mut split_errors = Vec::new();
                 for (i, handle) in split_handles.into_iter().enumerate() {
                     match handle.await {
-                        Err(e) => split_errors.push(format!("split {} panicked: {}", i + 1, e)),
-                        Ok(Err(e)) => split_errors.push(format!("split {} failed: {}", i + 1, e)),
+                        Err(e) => {
+                            let msg = format!("split {} panicked: {}", i + 1, e);
+                            // DIAG: surface panic to front-end log (previously only in aggregated error).
+                            logs.lock().unwrap().emit_and_record(
+                                app, job_id, run_id, "ERROR",
+                                &format!("[{}] {}", mapping_label, msg),
+                            );
+                            split_errors.push(msg);
+                        }
+                        Ok(Err(e)) => {
+                            let msg = format!("split {} failed: {}", i + 1, e);
+                            logs.lock().unwrap().emit_and_record(
+                                app, job_id, run_id, "ERROR",
+                                &format!("[{}] {}", mapping_label, msg),
+                            );
+                            split_errors.push(msg);
+                        }
                         Ok(Ok(())) => {}
                     }
                 }
@@ -1698,11 +1713,18 @@ async fn run_reader_writer_pair(
     byte_gate: Option<Arc<crate::migration::byte_gate::ByteGate>>,
     global_parallelism_sem: Arc<Semaphore>,
 ) -> AppResult<()> {
+    // DIAG: announce pair startup so we can see if even one split reached this function.
+    emit_log(&app, job_id, &run_id, "DEBUG",
+        &format!("[{}] reader-writer pair starting, waiting for channel permit", label));
+
     // Acquire a permit from the global parallelism semaphore.
     // This caps the total number of concurrent reader-writer pairs (channels)
     // across the entire job.
     let _channel_permit = global_parallelism_sem.acquire().await
         .map_err(|e| AppError::Other(format!("Global semaphore closed: {}", e)))?;
+
+    emit_log(&app, job_id, &run_id, "DEBUG",
+        &format!("[{}] channel permit acquired", label));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMsg>(channel_cap);
 
@@ -1710,6 +1732,9 @@ async fn run_reader_writer_pair(
     let ms_reader = mapping_stats.clone();
     let gs_reader = global_stats.clone();
     let cancel_r = cancel.clone();
+    let app_reader = app.clone();
+    let run_id_reader = run_id.clone();
+    let label_reader = label.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         use crate::datasource::utils::quote_identifier_for_driver;
         use std::time::Duration;
@@ -1731,8 +1756,23 @@ async fn run_reader_writer_pair(
             );
 
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&shard_sql, 1000, &cancel_r).await?;
-                if columns.is_empty() { return Ok(()); }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: opening native stream | shard_sql={}", label_reader, shard_sql));
+                let (columns, mut rx_db) = match src_ds.migration_read_sql_stream(&shard_sql, 1000, &cancel_r).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        emit_log(&app_reader, job_id, &run_id_reader, "ERROR",
+                            &format!("[{}] reader: stream open failed: {}", label_reader, e));
+                        return Err(e);
+                    }
+                };
+                if columns.is_empty() {
+                    emit_log(&app_reader, job_id, &run_id_reader, "WARN",
+                        &format!("[{}] reader: empty columns — early exit (empty result or stream cancelled)", label_reader));
+                    return Ok(());
+                }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
                 if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
@@ -1857,8 +1897,23 @@ async fn run_reader_writer_pair(
         } else {
             // ── Fallback: OFFSET-based reader ────
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&source_query, 1000, &cancel_r).await?;
-                if columns.is_empty() { return Ok(()); }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: opening native stream (no pk_split) | sql={}", label_reader, source_query));
+                let (columns, mut rx_db) = match src_ds.migration_read_sql_stream(&source_query, 1000, &cancel_r).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        emit_log(&app_reader, job_id, &run_id_reader, "ERROR",
+                            &format!("[{}] reader: stream open failed: {}", label_reader, e));
+                        return Err(e);
+                    }
+                };
+                if columns.is_empty() {
+                    emit_log(&app_reader, job_id, &run_id_reader, "WARN",
+                        &format!("[{}] reader: empty columns — early exit (empty result or stream cancelled)", label_reader));
+                    return Ok(());
+                }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
                 if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
@@ -1967,6 +2022,9 @@ async fn run_reader_writer_pair(
              if expected > elapsed { tokio::time::sleep(expected - elapsed).await; }
         }
 
+        emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+            &format!("[{}] reader: finished (rows_read={})",
+                label_reader, ms_reader.rows_read.load(Ordering::Relaxed)));
         Ok(())
     });
 
@@ -1978,6 +2036,8 @@ async fn run_reader_writer_pair(
     let cancel_w = cancel.clone();
     let label_w = label.clone();
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
+        emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+            &format!("[{}] writer: task started", label_w));
         let semaphore = write_semaphore;
         let mut error_count = 0usize;
         let mut consecutive_full_fails = 0usize;
@@ -2110,10 +2170,32 @@ async fn run_reader_writer_pair(
             }
         }
         if let Some(txn) = txn_handle { dst_ds.commit_bulk_write_txn(txn).await?; }
+        emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+            &format!("[{}] writer: finished (rows_written={}, rows_failed={})",
+                label_w,
+                ms_writer.rows_written.load(Ordering::Relaxed),
+                ms_writer.rows_failed.load(Ordering::Relaxed)));
         Ok(())
     });
 
     let (r1, r2) = tokio::join!(reader_handle, writer_handle);
+    // DIAG: emit join errors to the front-end log stream before propagating,
+    // so split failures aren't invisible (they used to only surface as the
+    // aggregated "Split errors: ..." error from the caller).
+    match &r1 {
+        Err(e) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] reader task panicked: {}", label, e)),
+        Ok(Err(e)) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] reader task failed: {}", label, e)),
+        Ok(Ok(())) => {}
+    }
+    match &r2 {
+        Err(e) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] writer task panicked: {}", label, e)),
+        Ok(Err(e)) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] writer task failed: {}", label, e)),
+        Ok(Ok(())) => {}
+    }
     r1.map_err(|e| AppError::Other(format!("Reader panicked: {}", e)))??;
     r2.map_err(|e| AppError::Other(format!("Writer panicked: {}", e)))??;
     Ok(())

@@ -1158,7 +1158,10 @@ impl DataSource for PostgresDataSource {
                                 let _ = tx.send(Vec::new());
                             }
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            log::error!("[migration] sql_stream query failed: {}", e);
+                            drop(col_tx.take());
+                        }
                     }
                 } => result,
                 _ = cancel_token.cancelled() => {

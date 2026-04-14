@@ -1,6 +1,7 @@
 pub mod byte_gate;
 pub mod ddl_convert;
 pub mod direct_transfer;
+pub mod e2e_test;
 pub mod lang;
 pub mod lsp;
 pub mod mig_commands;

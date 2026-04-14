@@ -360,6 +360,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // 本次会话中拖拽过的节点位置（避免 useEffect 重建时被覆盖）
   const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // 上一次的 hidden 状态，用于检测 hidden→visible 切换
+  const prevHiddenRef = useRef(hidden);
 
   // ── Node click focus state (1-hop neighbor highlight) ────────────────────────
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -844,6 +846,18 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     }
   }, []);
 
+  // ── 当 hidden 从 true→false 时重新 fitView（display:none 时 fitView 是无效的）──
+  useEffect(() => {
+    const wasHidden = prevHiddenRef.current;
+    prevHiddenRef.current = hidden;
+    if (wasHidden && !hidden && rfNodes.length > 0) {
+      const timerId = setTimeout(() => {
+        fitView({ duration: 300, padding: 0.15, maxZoom: 1 });
+      }, 100);
+      return () => clearTimeout(timerId);
+    }
+  }, [hidden, rfNodes.length, fitView]);
+
   // ── Edge hover tooltip ──────────────────────────────────────────────────────
   const onEdgeMouseEnter: EdgeMouseHandler = useCallback((_evt, edge) => {
     setEdgeTooltip({
@@ -1108,7 +1122,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
       {/* Main canvas area */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 relative graph-canvas-container" onMouseMove={onEdgeMouseMove}>
+        <div className="flex-1 relative graph-canvas-container" onMouseMove={onEdgeMouseMove} onMouseLeave={() => setEdgeTooltip(null)}>
           {/* Empty state overlay */}
           {!loading && (!internalConnId || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">

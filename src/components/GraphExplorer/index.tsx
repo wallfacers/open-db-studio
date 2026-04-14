@@ -109,19 +109,22 @@ function buildLayout(
     const needsLayout = groupNodes.filter((n) => forceRelayout || !hasSavedPosition(n));
     if (needsLayout.length === 0) return;
 
-    // ── 本组 Dagre（对 needsLayout 中所有节点建图，只包含两端均在 needsLayout 中的边）────────────────
+    // ── 本组 Dagre（纳入全组节点以保留拓扑上下文，按照 metric→table→link→table 就近原则布局）─────
     const g = new dagre.graphlib.Graph();
     g.setDefaultEdgeLabel(() => ({}));
-    g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
+    // 收紧间距，使指标/表/关系节点更紧凑地聚集
+    g.setGraph({ rankdir: direction, ranksep: 160, nodesep: 60 });
 
-    needsLayout.forEach((n) => {
+    // 将本组全部节点加入 Dagre（包含已保存坐标的节点），以便 Dagre 感知完整拓扑
+    const groupNodeIds = new Set(groupNodes.map((n) => n.id));
+    groupNodes.forEach((n) => {
       const isLink = n.type === 'link';
       g.setNode(n.id, { width: isLink ? LINK_NODE_W : NODE_W, height: isLink ? LINK_NODE_H : NODE_H });
     });
 
-    const needsLayoutIds = new Set(needsLayout.map((n) => n.id));
+    // 纳入组内全部边（而非仅 needsLayout 内部边），让 Dagre 按就近原则安排新节点位置
     edges.forEach((e) => {
-      if (needsLayoutIds.has(e.source) && needsLayoutIds.has(e.target)) {
+      if (groupNodeIds.has(e.source) && groupNodeIds.has(e.target)) {
         g.setEdge(e.source, e.target);
       }
     });
@@ -362,6 +365,11 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   // 上一次的 hidden 状态，用于检测 hidden→visible 切换
   const prevHiddenRef = useRef(hidden);
+  // edge tooltip div ref：通过直接操作 DOM 更新位置，避免 state 更新触发整棵树 re-render
+  const edgeTooltipDivRef = useRef<HTMLDivElement | null>(null);
+  // rfNodes/rfEdges 的最新快照 ref：让 highlight effect 只在高亮状态变化时运行，而非每次拖拽都触发
+  const rfNodesRef = useRef<Node[]>(rfNodes);
+  const rfEdgesRef = useRef<Edge[]>(rfEdges);
 
   // ── Node click focus state (1-hop neighbor highlight) ────────────────────────
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -577,10 +585,17 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Apply highlight / path / focus data without re-layout ───────────────────
   const { updateNode, updateEdge } = useReactFlow();
+
+  // 保持 ref 与最新 rfNodes/rfEdges 同步（不会引起任何 effect 重跑）
+  useEffect(() => { rfNodesRef.current = rfNodes; }, [rfNodes]);
+  useEffect(() => { rfEdgesRef.current = rfEdges; }, [rfEdges]);
+
+  // 注意：依赖中不包含 rfNodes/rfEdges，以避免节点拖拽时位置更新（rfNodes 频繁变化）
+  // 触发 O(n) updateNode 批量调用，造成拖拽卡顿。使用 ref 读取最新节点列表。
   useEffect(() => {
     const hasNodeHL = highlightedNodeIds.size > 0;
     const hasEdgeHL = highlightedEdgeIds.size > 0;
-    for (const node of rfNodes) {
+    for (const node of rfNodesRef.current) {
       updateNode(node.id, {
         data: {
           isHighlighted: hasNodeHL && highlightedNodeIds.has(node.id),
@@ -590,7 +605,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         },
       });
     }
-    for (const edge of rfEdges) {
+    for (const edge of rfEdgesRef.current) {
       const isHL = hasEdgeHL && highlightedEdgeIds.has(edge.id);
       updateEdge(edge.id, {
         data: { highlighted: isHL, dimmed: hasEdgeHL && !isHL },
@@ -602,7 +617,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         animated: isHL,
       });
     }
-  }, [highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, rfNodes, rfEdges, updateNode, updateEdge]);
+  }, [highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, updateNode, updateEdge]);
 
   // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────
   const onNodeDragStop: NodeMouseHandler = useCallback((_event, node) => {
@@ -868,8 +883,12 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     });
   }, []);
 
-  const onEdgeMouseMove = useCallback((evt: React.MouseEvent) => {
-    setEdgeTooltip((prev) => prev ? { ...prev, x: evt.clientX, y: evt.clientY } : prev);
+  // 通过直接操作 DOM ref 更新位置，避免 setEdgeTooltip 触发整棵树 re-render（60fps 鼠标移动）
+  const onEdgeMouseMove: EdgeMouseHandler = useCallback((evt, _edge) => {
+    if (edgeTooltipDivRef.current) {
+      edgeTooltipDivRef.current.style.left = `${evt.clientX + 12}px`;
+      edgeTooltipDivRef.current.style.top = `${evt.clientY - 36}px`;
+    }
   }, []);
 
   const onEdgeMouseLeave: EdgeMouseHandler = useCallback(() => {
@@ -1122,7 +1141,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
       {/* Main canvas area */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 relative graph-canvas-container" onMouseMove={onEdgeMouseMove} onMouseLeave={() => setEdgeTooltip(null)}>
+        <div className="flex-1 relative graph-canvas-container" onMouseLeave={() => setEdgeTooltip(null)}>
           {/* Empty state overlay */}
           {!loading && (!internalConnId || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
@@ -1152,7 +1171,9 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
             onPaneClick={(e) => { closeContextMenu(); onPaneClick(e); }}
             onEdgeContextMenu={onEdgeContextMenu}
             onEdgeMouseEnter={onEdgeMouseEnter}
+            onEdgeMouseMove={onEdgeMouseMove}
             onEdgeMouseLeave={onEdgeMouseLeave}
+            onEdgeClick={() => setEdgeTooltip(null)}
             onConnect={onConnect}
             onBeforeDelete={onBeforeDelete}
             deleteKeyCode={editMode ? 'Delete' : null}
@@ -1189,6 +1210,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           {/* Edge tooltip */}
           {edgeTooltip && (
             <div
+              ref={edgeTooltipDivRef}
               className="fixed z-[9998] pointer-events-none px-2.5 py-1.5 bg-background-elevated border border-border-strong rounded shadow-lg text-foreground-default text-xs"
               style={{ left: edgeTooltip.x + 12, top: edgeTooltip.y - 36 }}
             >

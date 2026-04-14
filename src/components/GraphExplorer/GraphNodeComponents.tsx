@@ -89,7 +89,7 @@ function BaseNode({
 
   return (
     <div
-      className={`w-60 rounded-md border bg-background-panel shadow-lg ${borderClass} group relative transition-opacity ${
+      className={`w-60 rounded-md border bg-background-panel shadow-lg cursor-pointer ${borderClass} group relative transition-opacity ${
         data.isDimmed ? 'opacity-30' : ''
       } ${data.isHighlighted ? 'accent-glow' : ''}`}
     >
@@ -175,7 +175,7 @@ export const TableNodeComponent = memo(({ data }: NodeProps) => {
 
   return (
     <div
-      className={`w-60 rounded-md border border-node-table bg-background-panel shadow-lg group relative transition-opacity ${
+      className={`w-60 rounded-md border border-node-table bg-background-panel shadow-lg cursor-pointer group relative transition-opacity ${
         nodeData.isDimmed ? 'opacity-30' : ''
       } ${nodeData.isHighlighted ? 'accent-glow' : ''}`}
     >
@@ -319,7 +319,7 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
 
   return (
     <div
-      className={`w-64 rounded-md border bg-background-panel shadow-lg ${borderClass} transition-opacity`}
+      className={`w-64 rounded-md border bg-background-panel shadow-lg cursor-pointer ${borderClass} transition-opacity`}
       style={{ opacity: isDimmed ? 0.3 : 1 }}
     >
       {/* Handles: 自引用用 Top/Bottom 避免边交叉，普通用 Left/Right */}

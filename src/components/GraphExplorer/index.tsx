@@ -335,6 +335,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     setHighlightedNodeIds(new Set());
     setHighlightedEdgeIds(new Set());
     setFocusedNodeId(null);
+    // 切换连接/数据库后，下次数据到达时需重新 fitView 定位视口
+    needsFitViewRef.current = true;
   }, [internalConnId, internalDb]);
 
   // ── Auto-close detail panel if selected node is no longer in canvas ───────
@@ -365,6 +367,8 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   // 上一次的 hidden 状态，用于检测 hidden→visible 切换
   const prevHiddenRef = useRef(hidden);
+  // 切换连接/数据库后需要自动 fitView，确保视口定位到节点区域
+  const needsFitViewRef = useRef(true);
   // edge tooltip div ref：通过直接操作 DOM 更新位置，避免 state 更新触发整棵树 re-render
   const edgeTooltipDivRef = useRef<HTMLDivElement | null>(null);
   // rfNodes/rfEdges 的最新快照 ref：让 highlight effect 只在高亮状态变化时运行，而非每次拖拽都触发
@@ -581,6 +585,16 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
+
+    // 初次加载或切换连接/数据库后，自动 fitView 将视口定位到节点区域
+    if (needsFitViewRef.current && laid.length > 0) {
+      needsFitViewRef.current = false;
+      if (layoutTimerRef.current !== null) clearTimeout(layoutTimerRef.current);
+      layoutTimerRef.current = setTimeout(() => {
+        fitView({ duration: 400, padding: 0.15, maxZoom: 1 });
+        layoutTimerRef.current = null;
+      }, 50);
+    }
   }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, selfRefLinkIds]);
 
   // ── Apply highlight / path / focus data without re-layout ───────────────────

@@ -40,6 +40,12 @@ fn format_number(n: u64) -> String {
 /// a complete pipeline freeze. This timeout breaks the deadlock and turns it into a countable failure.
 const WRITE_BATCH_TIMEOUT_SECS: u64 = 300;
 
+/// Maximum time to wait for a DirectTransfer (`INSERT INTO ... SELECT`) to complete.
+/// Same-instance direct transfer runs as a single SQL statement on the server. For
+/// large tables this can take minutes, but without a timeout a connection issue or
+/// lock contention would freeze the pipeline indefinitely with zero progress.
+const DIRECT_TRANSFER_TIMEOUT_SECS: u64 = 600; // 10 minutes
+
 /// Recommended parameter ranges (soft limits). Values outside these ranges trigger warnings.
 const READ_BATCH_RECOMMENDED_MIN: usize = 1000;
 const READ_BATCH_RECOMMENDED_MAX: usize = 10_000;
@@ -1148,14 +1154,38 @@ async fn execute_single_mapping(
         }
     });
 
+    // Clone for post-pipeline teardown (and for Abort early-return cleanup).
+    // Declared before DirectTransfer so the Abort path below can reuse it.
+    let dst_ds_teardown = dst_ds.clone();
+
     // ── Strategy dispatch: attempt same-instance direct transfer first ─────
-    // Falls back to the reader/writer pipeline on failure (e.g. cross-schema
-    // permission errors, function-reference mismatches).
-    let direct_transfer_done = try_direct_transfer(
-        &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*dst_ds,
+    // Falls back to the reader/writer pipeline on `Skip` (strategy mismatch)
+    // or `FallbackOnError` (SQL error — server already rolled back).
+    // On `Abort` (timeout / user cancel) we do NOT fall back: the server
+    // INSERT statement may still be running and a second writer would
+    // deadlock on the target-table lock.
+    // Batched DirectTransfer splits: (parallelism * 2) gives ~6% progress
+    // granularity at parallelism=8. Sequential execution — progress visibility,
+    // not parallelism. Clamp [1, 64] to bound redo-log pressure on the
+    // per-chunk transaction.
+    let direct_transfer_split_count = (parallelism.saturating_mul(2)).clamp(1, 64);
+
+    let dt_outcome = try_direct_transfer(
+        &src_cfg, &dst_cfg, &src_db, &dst_db, mapping, &*src_ds, &*dst_ds,
         app, job_id, run_id, &mapping_label,
         &mapping_stats, global_stats, &logs,
+        cancel,
+        direct_transfer_split_count,
     ).await;
+
+    if let DirectTransferOutcome::Abort(reason) = &dt_outcome {
+        // Cleanup spawned stats task and target session before bailing out.
+        stats_handle.abort();
+        let _ = dst_ds_teardown.teardown_migration_session().await;
+        return Err(AppError::Other(reason.clone()));
+    }
+
+    let direct_transfer_done = matches!(dt_outcome, DirectTransferOutcome::Done(_));
 
     // ── Detect parallelism mode ──────────────────────────────────────────
     let shard_pk = if !direct_transfer_done && parallelism > 1 {
@@ -1167,7 +1197,6 @@ async fn execute_single_mapping(
         None
     };
 
-    let dst_ds_teardown = dst_ds.clone();
     let pipeline_result = if direct_transfer_done {
         Ok(())
     } else if let Some(pk_col) = shard_pk {
@@ -1281,8 +1310,23 @@ async fn execute_single_mapping(
                 let mut split_errors = Vec::new();
                 for (i, handle) in split_handles.into_iter().enumerate() {
                     match handle.await {
-                        Err(e) => split_errors.push(format!("split {} panicked: {}", i + 1, e)),
-                        Ok(Err(e)) => split_errors.push(format!("split {} failed: {}", i + 1, e)),
+                        Err(e) => {
+                            let msg = format!("split {} panicked: {}", i + 1, e);
+                            // DIAG: surface panic to front-end log (previously only in aggregated error).
+                            logs.lock().unwrap().emit_and_record(
+                                app, job_id, run_id, "ERROR",
+                                &format!("[{}] {}", mapping_label, msg),
+                            );
+                            split_errors.push(msg);
+                        }
+                        Ok(Err(e)) => {
+                            let msg = format!("split {} failed: {}", i + 1, e);
+                            logs.lock().unwrap().emit_and_record(
+                                app, job_id, run_id, "ERROR",
+                                &format!("[{}] {}", mapping_label, msg),
+                            );
+                            split_errors.push(msg);
+                        }
                         Ok(Ok(())) => {}
                     }
                 }
@@ -1403,10 +1447,104 @@ async fn detect_integer_pk_from_ds(
 
 // ── Direct transfer dispatch (same-instance INSERT ... SELECT) ───────────────
 
-/// Try to execute a same-instance direct transfer. Returns `true` when the
-/// transfer succeeded and the caller should skip the reader/writer pipeline.
-/// Any failure (wrong strategy, permission error, SQL error) logs a WARN and
-/// returns `false`, letting the caller fall back to the regular pipeline.
+/// Result of attempting a same-instance DirectTransfer.
+///
+/// The three "proceed to reader/writer fallback" outcomes (`Skip`,
+/// `FallbackOnError`) are distinguished from the "must abort mapping" outcome
+/// (`Abort`) because a timeout or user cancel leaves the server still executing
+/// the `INSERT INTO ... SELECT`. Falling back in that state would launch a
+/// second writer that fights the original statement for the target-table lock,
+/// leaving the UI "stuck" with an empty target — the very bug this type fixes.
+#[derive(Debug)]
+enum DirectTransferOutcome {
+    /// DirectTransfer succeeded — skip the reader/writer pipeline.
+    /// Payload is the executor result, consumed by the caller to update stats.
+    Done(crate::migration::direct_transfer::DirectTransferResult),
+    /// Strategy did not choose DirectTransfer, or a pre-flight guard (empty
+    /// database name) declined it. Safe to fall back to reader/writer.
+    Skip,
+    /// `dst_ds.execute` returned a SQL/permission error. The server already
+    /// rolled back, so fallback is safe. Payload is the error message for logs.
+    FallbackOnError(String),
+    /// Timeout or user cancel. The server statement may still be running;
+    /// abort the mapping to avoid double execution and resource conflict.
+    /// The contained string is the user-facing reason.
+    Abort(String),
+}
+
+/// Race the DirectTransfer execution against cancel and timeout.
+///
+/// Extracted from `try_direct_transfer` so it can be unit-tested without a
+/// Tauri `AppHandle` or a real `DataSource`. Priorities (via `biased`):
+/// 1. `cancel.cancelled()` — user stop is honored immediately
+/// 2. timeout — server statement may still be running; must abort, not fallback
+/// 3. `exec_fut` completion — success or SQL error
+async fn direct_transfer_race<F>(
+    exec_fut: F,
+    cancel: &Arc<CancellationToken>,
+    timeout_duration: std::time::Duration,
+) -> DirectTransferOutcome
+where
+    F: std::future::Future<Output = AppResult<crate::migration::direct_transfer::DirectTransferResult>>,
+{
+    tokio::pin!(exec_fut);
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            DirectTransferOutcome::Abort("Cancelled by user".into())
+        }
+        _ = tokio::time::sleep(timeout_duration) => {
+            DirectTransferOutcome::Abort(format!(
+                "DirectTransfer timed out after {}s — server statement may still be running; aborting mapping to avoid conflict",
+                timeout_duration.as_secs()
+            ))
+        }
+        r = &mut exec_fut => match r {
+            Ok(res) => DirectTransferOutcome::Done(res),
+            Err(e) => DirectTransferOutcome::FallbackOnError(e.to_string()),
+        }
+    }
+}
+
+/// Map a `BatchedError` to the `DirectTransferOutcome` the mapping dispatcher
+/// expects. Kept as a pure function so the failure policy is unit-testable
+/// without mocking a full `DataSource` or `AppHandle`.
+///
+/// Policy:
+/// - Chunk-0 SQL failure: server never committed anything → `FallbackOnError`.
+/// - Later-chunk SQL failure: chunks `[0..chunk_index)` are committed in the
+///   target; a reader/writer fallback would double-insert them → `Abort`.
+/// - Cancelled (mid-chunk or between-chunks): the in-flight INSERT may still
+///   be running server-side, and rerunning committed chunks would double-insert
+///   → `Abort`.
+fn map_batched_error_to_outcome(
+    err: crate::migration::direct_transfer::BatchedError,
+    total_chunks: usize,
+) -> DirectTransferOutcome {
+    use crate::migration::direct_transfer::BatchedError;
+    match err {
+        BatchedError::SqlFailure { chunk_index: 0, message, .. } => {
+            DirectTransferOutcome::FallbackOnError(message)
+        }
+        BatchedError::SqlFailure { chunk_index, message, rows_written_so_far } => {
+            DirectTransferOutcome::Abort(format!(
+                "DirectTransfer aborted at chunk {}/{}: {}. {} rows already committed — cannot safely fall back.",
+                chunk_index, total_chunks, message, rows_written_so_far,
+            ))
+        }
+        BatchedError::Cancelled { completed_chunks, rows_written_so_far } => {
+            DirectTransferOutcome::Abort(format!(
+                "DirectTransfer cancelled after {}/{} chunks ({} rows committed)",
+                completed_chunks, total_chunks, rows_written_so_far,
+            ))
+        }
+    }
+}
+
+/// Try to execute a same-instance direct transfer. Returns `DirectTransferOutcome`:
+/// - `Done`      → skip the reader/writer pipeline
+/// - `Skip` / `FallbackOnError` → fall back to reader/writer
+/// - `Abort`     → fail this mapping (do NOT fall back; server may still be running)
 #[allow(clippy::too_many_arguments)]
 async fn try_direct_transfer(
     src_cfg: &crate::datasource::ConnectionConfig,
@@ -1414,6 +1552,7 @@ async fn try_direct_transfer(
     src_db: &str,
     dst_db: &str,
     mapping: &TableMapping,
+    src_ds: &dyn crate::datasource::DataSource,
     dst_ds: &dyn crate::datasource::DataSource,
     app: &AppHandle,
     job_id: i64,
@@ -1422,7 +1561,9 @@ async fn try_direct_transfer(
     mapping_stats: &Arc<PipelineStats>,
     global_stats: &Arc<PipelineStats>,
     logs: &Arc<Mutex<LogCollector>>,
-) -> bool {
+    cancel: &Arc<CancellationToken>,
+    split_count: usize,
+) -> DirectTransferOutcome {
     use crate::migration::direct_transfer::{DirectTransferConfig, DirectTransferExecutor};
     use crate::migration::strategy_selector::{select_strategy, MigrationStrategy};
 
@@ -1437,7 +1578,7 @@ async fn try_direct_transfer(
     );
 
     if decision.strategy != MigrationStrategy::DirectTransfer {
-        return false;
+        return DirectTransferOutcome::Skip;
     }
 
     // Resolve effective source/target database names. Fall back to the
@@ -1462,7 +1603,7 @@ async fn try_direct_transfer(
                 mapping_label
             ),
         );
-        return false;
+        return DirectTransferOutcome::Skip;
     }
 
     let cfg = DirectTransferConfig {
@@ -1474,15 +1615,148 @@ async fn try_direct_transfer(
         where_clause: mapping.filter_condition.clone(),
     };
 
-    match DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver).await {
-        Ok(res) => {
+    // ── Decide between batched and single-SQL paths ──────────────────────
+    // Batched: split the INSERT ... SELECT by integer PK range so the
+    //   existing heartbeat/stats loop can show live progress instead of
+    //   sitting at 0% until the single server statement returns.
+    // Single-SQL: one atomic server statement — only path available when
+    //   there is no integer PK or the caller asked for 1 chunk.
+    let pk_col_opt: Option<String> = if split_count > 1 {
+        detect_integer_pk_from_ds(src_ds, &mapping.source_table).await
+    } else {
+        None
+    };
+    let splits_opt: Option<Vec<crate::migration::splitter::PkSplit>> = match &pk_col_opt {
+        Some(pk) => {
+            // compute_pk_splits wraps `source_query` in `SELECT MIN/MAX FROM (...)`;
+            // we pass a SELECT over the quoted db.table (not mapping.filter_condition)
+            // so MIN/MAX scans the full table. The per-chunk predicate later adds
+            // both the user filter and the PK range — see build_chunk_predicate.
+            let src_query = format!(
+                "SELECT * FROM {}.{}",
+                crate::datasource::utils::quote_identifier_for_driver(&cfg.src_db, &src_cfg.driver),
+                crate::datasource::utils::quote_identifier_for_driver(&cfg.src_table, &src_cfg.driver),
+            );
+            crate::migration::splitter::compute_pk_splits(
+                src_ds, &src_query, pk, &src_cfg.driver, split_count,
+            ).await
+        }
+        None => None,
+    };
+
+    // Run the DirectTransfer execute with a timeout and heartbeat.
+    // A large `INSERT INTO ... SELECT` can run for minutes with zero stats
+    // — the heartbeat gives the UI feedback that the migration is alive.
+    let timeout_duration = tokio::time::Duration::from_secs(DIRECT_TRANSFER_TIMEOUT_SECS);
+    let dt_start = std::time::Instant::now();
+
+    // Heartbeat task: emits a "still running" log AND stats event every 5 seconds
+    // so the UI status bar (read/write counters, speed gauge) stays alive.
+    let app_h = app.clone();
+    let job_id_h = job_id;
+    let run_id_h = run_id.to_string();
+    let label_h = mapping_label.to_string();
+    let dt_start_h = dt_start;
+    let gs_h = global_stats.clone();
+    let heartbeat_handle = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            let elapsed = dt_start_h.elapsed().as_secs();
+            emit_log(
+                &app_h, job_id_h, &run_id_h, "SYSTEM",
+                &format!(
+                    "[{}] DirectTransfer in progress ({}s elapsed, server executing INSERT...SELECT)...",
+                    label_h, elapsed
+                ),
+            );
+            // Also emit a stats event so the UI status bar (read/write/failed,
+            // speed gauge) updates instead of showing all zeroes.
+            let _ = app_h.emit(MIGRATION_STATS_EVENT, &MigrationStatsEvent {
+                job_id: job_id_h,
+                run_id: run_id_h.clone(),
+                rows_read: gs_h.rows_read.load(Ordering::Relaxed),
+                rows_written: gs_h.rows_written.load(Ordering::Relaxed),
+                rows_failed: gs_h.rows_failed.load(Ordering::Relaxed),
+                bytes_transferred: gs_h.bytes_transferred.load(Ordering::Relaxed),
+                bytes_written: gs_h.bytes_written.load(Ordering::Relaxed),
+                read_speed_rps: 0.0,
+                write_speed_rps: 0.0,
+                bytes_speed_bps: 0.0,
+                read_bytes_speed_bps: 0.0,
+                write_bytes_speed_bps: 0.0,
+                eta_seconds: None,
+                progress_pct: None,
+                current_mapping: Some(label_h.clone()),
+                mapping_progress: None,
+            });
+        }
+    });
+
+    let outcome = if let (Some(pk), Some(splits)) =
+        (pk_col_opt.as_deref(), splits_opt.as_ref())
+    {
+        // Batched path: sequential chunks, per-chunk stats callback.
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "SYSTEM",
+            &format!(
+                "[{}] DirectTransfer batched: pk='{}', {} chunks sequential (progress visibility, not parallelism)",
+                mapping_label, pk, splits.len(),
+            ),
+        );
+        let m_stats = mapping_stats.clone();
+        let g_stats = global_stats.clone();
+        let on_chunk = move |_i: usize, rows: u64| {
+            // DirectTransfer never actually reads rows into Rust, but the
+            // pipeline treats rows_read == rows_written — keep the invariant.
+            m_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            m_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            g_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+            g_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+        };
+        let total_chunks = splits.len();
+        match DirectTransferExecutor::execute_batched(
+            dst_ds, &cfg, &dst_cfg.driver, pk, splits, cancel, on_chunk,
+        ).await {
+            Ok(res) => DirectTransferOutcome::Done(res),
+            Err(e) => map_batched_error_to_outcome(e, total_chunks),
+        }
+    } else {
+        // Single-SQL path: unchanged race against timeout + cancel.
+        let reason = if split_count <= 1 {
+            "split_count<=1"
+        } else {
+            "no integer PK detected"
+        };
+        logs.lock().unwrap().emit_and_record(
+            app, job_id, run_id, "SYSTEM",
+            &format!(
+                "[{}] DirectTransfer single-SQL: {} ({}s timeout)",
+                mapping_label, reason, DIRECT_TRANSFER_TIMEOUT_SECS,
+            ),
+        );
+        direct_transfer_race(
+            DirectTransferExecutor::execute(dst_ds, &cfg, &dst_cfg.driver),
+            cancel,
+            timeout_duration,
+        ).await
+    };
+
+    heartbeat_handle.abort();
+
+    match outcome {
+        DirectTransferOutcome::Done(res) => {
             let rows = res.rows_written;
-            // Synthesize read/written counters so stats event + final summary
-            // are self-consistent (reader path had no chance to increment them).
-            mapping_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
-            mapping_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
-            global_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
-            global_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            // Single-SQL path leaves `already_accounted = false` — synthesize
+            // read/written counters so stats event + final summary are
+            // self-consistent (reader path had no chance to increment them).
+            // Batched path sets `already_accounted = true` because the
+            // on_chunk callback already accumulated per chunk.
+            if !res.already_accounted {
+                mapping_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+                mapping_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+                global_stats.rows_read.fetch_add(rows, Ordering::Relaxed);
+                global_stats.rows_written.fetch_add(rows, Ordering::Relaxed);
+            }
 
             let truncated_sql = if res.sql_executed.len() > 200 {
                 &res.sql_executed[..200]
@@ -1492,24 +1766,41 @@ async fn try_direct_transfer(
             logs.lock().unwrap().emit_and_record(
                 app, job_id, run_id, "SYSTEM",
                 &format!(
-                    "[{}] DirectTransfer OK: {} rows in {}ms — SQL: {}",
+                    "[{}] DirectTransfer OK: {} rows in {}ms ({} chunk{}) — SQL: {}",
                     mapping_label,
                     format_number(rows),
                     res.elapsed_ms,
-                    truncated_sql
+                    res.chunk_count,
+                    if res.chunk_count == 1 { "" } else { "s" },
+                    truncated_sql,
                 ),
             );
-            true
+            DirectTransferOutcome::Done(res)
         }
-        Err(e) => {
+        DirectTransferOutcome::FallbackOnError(msg) => {
             logs.lock().unwrap().emit_and_record(
                 app, job_id, run_id, "WARN",
                 &format!(
                     "[{}] DirectTransfer failed, falling back to reader/writer pipeline: {}",
-                    mapping_label, e
+                    mapping_label, msg
                 ),
             );
-            false
+            DirectTransferOutcome::FallbackOnError(msg)
+        }
+        DirectTransferOutcome::Abort(reason) => {
+            // Timeout or user cancel: do NOT fall back. The server statement
+            // may still be executing, and a second writer would deadlock on
+            // the target-table lock (the exact "stuck job + empty target"
+            // symptom this path was designed to prevent).
+            logs.lock().unwrap().emit_and_record(
+                app, job_id, run_id, "ERROR",
+                &format!("[{}] DirectTransfer aborted: {}", mapping_label, reason),
+            );
+            DirectTransferOutcome::Abort(reason)
+        }
+        DirectTransferOutcome::Skip => {
+            // Unreachable: the race only returns Done / FallbackOnError / Abort.
+            DirectTransferOutcome::Skip
         }
     }
 }
@@ -1545,11 +1836,18 @@ async fn run_reader_writer_pair(
     byte_gate: Option<Arc<crate::migration::byte_gate::ByteGate>>,
     global_parallelism_sem: Arc<Semaphore>,
 ) -> AppResult<()> {
+    // DIAG: announce pair startup so we can see if even one split reached this function.
+    emit_log(&app, job_id, &run_id, "DEBUG",
+        &format!("[{}] reader-writer pair starting, waiting for channel permit", label));
+
     // Acquire a permit from the global parallelism semaphore.
     // This caps the total number of concurrent reader-writer pairs (channels)
     // across the entire job.
     let _channel_permit = global_parallelism_sem.acquire().await
         .map_err(|e| AppError::Other(format!("Global semaphore closed: {}", e)))?;
+
+    emit_log(&app, job_id, &run_id, "DEBUG",
+        &format!("[{}] channel permit acquired", label));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<ChannelMsg>(channel_cap);
 
@@ -1557,6 +1855,9 @@ async fn run_reader_writer_pair(
     let ms_reader = mapping_stats.clone();
     let gs_reader = global_stats.clone();
     let cancel_r = cancel.clone();
+    let app_reader = app.clone();
+    let run_id_reader = run_id.clone();
+    let label_reader = label.clone();
     let reader_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
         use crate::datasource::utils::quote_identifier_for_driver;
         use std::time::Duration;
@@ -1578,19 +1879,47 @@ async fn run_reader_writer_pair(
             );
 
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&shard_sql, 1000, &cancel_r).await?;
-                if columns.is_empty() { return Ok(()); }
-                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: opening native stream | shard_sql={}", label_reader, shard_sql));
+                let (columns, mut rx_db) = match src_ds.migration_read_sql_stream(&shard_sql, 1000, &cancel_r).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        emit_log(&app_reader, job_id, &run_id_reader, "ERROR",
+                            &format!("[{}] reader: stream open failed: {}", label_reader, e));
+                        return Err(e);
+                    }
+                };
+                if columns.is_empty() {
+                    emit_log(&app_reader, job_id, &run_id_reader, "WARN",
+                        &format!("[{}] reader: empty columns — early exit (empty result or stream cancelled)", label_reader));
+                    return Ok(());
+                }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
+                // BUGFIX: `tokio::select! { _ = f.cancelled() => ..., else => ... }` is NOT
+                // a non-blocking check — the `_` pattern never "disables" the branch, so the
+                // macro blocks on cancelled() forever. Use the sync is_cancelled() instead.
+                if cancel_r.is_cancelled() { return Ok(()); }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: sending Columns msg to writer", label_reader));
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: waiting for first row from stream", label_reader));
 
                 let mut batch = Vec::with_capacity(read_batch_size);
                 let mut batch_bytes = 0u64;
+                let mut first_row_seen = false;
 
                 loop {
                     let row = tokio::select! {
                         row = rx_db.recv() => match row { Some(r) => r, None => break },
                         _ = cancel_r.cancelled() => break,
                     };
+                    if !first_row_seen {
+                        emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                            &format!("[{}] reader: got first row from stream", label_reader));
+                        first_row_seen = true;
+                    }
 
                     // Use heap_memory_size() for accurate memory tracking (byte_gate backpressure)
                     // estimated_sql_size() only measures SQL literal length, missing Rust struct overhead
@@ -1704,9 +2033,25 @@ async fn run_reader_writer_pair(
         } else {
             // ── Fallback: OFFSET-based reader ────
             if use_native {
-                let (columns, mut rx_db) = src_ds.migration_read_sql_stream(&source_query, 1000, &cancel_r).await?;
-                if columns.is_empty() { return Ok(()); }
-                if tokio::select! { _ = cancel_r.cancelled() => true, else => false } { return Ok(()); }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: opening native stream (no pk_split) | sql={}", label_reader, source_query));
+                let (columns, mut rx_db) = match src_ds.migration_read_sql_stream(&source_query, 1000, &cancel_r).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        emit_log(&app_reader, job_id, &run_id_reader, "ERROR",
+                            &format!("[{}] reader: stream open failed: {}", label_reader, e));
+                        return Err(e);
+                    }
+                };
+                if columns.is_empty() {
+                    emit_log(&app_reader, job_id, &run_id_reader, "WARN",
+                        &format!("[{}] reader: empty columns — early exit (empty result or stream cancelled)", label_reader));
+                    return Ok(());
+                }
+                emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+                    &format!("[{}] reader: stream opened, {} columns", label_reader, columns.len()));
+                // BUGFIX: same as above — use sync is_cancelled() instead of a blocking select!.
+                if cancel_r.is_cancelled() { return Ok(()); }
                 tx.send(ChannelMsg::Columns(columns.clone())).await.ok();
 
                 let mut batch = Vec::with_capacity(read_batch_size);
@@ -1814,6 +2159,9 @@ async fn run_reader_writer_pair(
              if expected > elapsed { tokio::time::sleep(expected - elapsed).await; }
         }
 
+        emit_log(&app_reader, job_id, &run_id_reader, "DEBUG",
+            &format!("[{}] reader: finished (rows_read={})",
+                label_reader, ms_reader.rows_read.load(Ordering::Relaxed)));
         Ok(())
     });
 
@@ -1825,6 +2173,8 @@ async fn run_reader_writer_pair(
     let cancel_w = cancel.clone();
     let label_w = label.clone();
     let writer_handle: tokio::task::JoinHandle<AppResult<()>> = tokio::spawn(async move {
+        emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+            &format!("[{}] writer: task started", label_w));
         let semaphore = write_semaphore;
         let mut error_count = 0usize;
         let mut consecutive_full_fails = 0usize;
@@ -1957,10 +2307,32 @@ async fn run_reader_writer_pair(
             }
         }
         if let Some(txn) = txn_handle { dst_ds.commit_bulk_write_txn(txn).await?; }
+        emit_log(&app_writer, job_id, &run_id_w, "DEBUG",
+            &format!("[{}] writer: finished (rows_written={}, rows_failed={})",
+                label_w,
+                ms_writer.rows_written.load(Ordering::Relaxed),
+                ms_writer.rows_failed.load(Ordering::Relaxed)));
         Ok(())
     });
 
     let (r1, r2) = tokio::join!(reader_handle, writer_handle);
+    // DIAG: emit join errors to the front-end log stream before propagating,
+    // so split failures aren't invisible (they used to only surface as the
+    // aggregated "Split errors: ..." error from the caller).
+    match &r1 {
+        Err(e) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] reader task panicked: {}", label, e)),
+        Ok(Err(e)) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] reader task failed: {}", label, e)),
+        Ok(Ok(())) => {}
+    }
+    match &r2 {
+        Err(e) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] writer task panicked: {}", label, e)),
+        Ok(Err(e)) => emit_log(&app, job_id, &run_id, "ERROR",
+            &format!("[{}] writer task failed: {}", label, e)),
+        Ok(Ok(())) => {}
+    }
     r1.map_err(|e| AppError::Other(format!("Reader panicked: {}", e)))??;
     r2.map_err(|e| AppError::Other(format!("Writer panicked: {}", e)))??;
     Ok(())
@@ -2148,6 +2520,184 @@ async fn writeback_incremental_checkpoint(
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    // ── direct_transfer_race: cancel / timeout / success / error ──────────
+    //
+    // Covers the root-cause fix for "same-instance INSERT INTO SELECT stuck
+    // on running, target empty". These tests exercise the decision logic
+    // without a Tauri AppHandle or a real DataSource — see `try_direct_transfer`
+    // for the full plumbing.
+
+    use crate::migration::direct_transfer::DirectTransferResult;
+
+    fn fake_cancel() -> Arc<CancellationToken> {
+        Arc::new(CancellationToken::new())
+    }
+
+    fn ok_result(rows: u64) -> DirectTransferResult {
+        DirectTransferResult {
+            rows_written: rows,
+            sql_executed: "INSERT INTO t SELECT * FROM s".into(),
+            elapsed_ms: 0,
+            chunk_count: 1,
+            already_accounted: false,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_done_on_exec_success() {
+        let cancel = fake_cancel();
+        let fut = async { Ok(ok_result(42)) };
+        let out = direct_transfer_race(fut, &cancel, Duration::from_secs(600)).await;
+        match out {
+            DirectTransferOutcome::Done(res) => assert_eq!(res.rows_written, 42),
+            other => panic!("expected Done, got {:?}", other),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_fallback_on_sql_error() {
+        let cancel = fake_cancel();
+        let fut = async { Err(AppError::Other("permission denied".into())) };
+        let out = direct_transfer_race(fut, &cancel, Duration::from_secs(600)).await;
+        match out {
+            DirectTransferOutcome::FallbackOnError(msg) => {
+                assert!(msg.contains("permission denied"), "got: {}", msg);
+            }
+            other => panic!("expected FallbackOnError, got {:?}", other),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_abort_on_timeout() {
+        let cancel = fake_cancel();
+        // Exec future never completes — server statement "still running".
+        let fut = async {
+            std::future::pending::<()>().await;
+            unreachable!()
+        };
+        // Use a short wall-clock timeout so the test completes quickly without
+        // depending on tokio's `test-util` feature.
+        let out = direct_transfer_race(fut, &cancel, Duration::from_millis(50)).await;
+        match out {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("timed out"), "got: {}", reason);
+                assert!(
+                    reason.contains("server statement may still be running"),
+                    "reason should warn about server-side leak; got: {}",
+                    reason
+                );
+            }
+            other => panic!("expected Abort(timeout), got {:?}", other),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn race_abort_on_cancel_beats_timeout() {
+        // Verify `biased` gives cancel priority over timeout when both fire.
+        let cancel = fake_cancel();
+        let cancel_trigger = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            cancel_trigger.cancel();
+        });
+        let fut = async {
+            std::future::pending::<()>().await;
+            unreachable!()
+        };
+        let out = direct_transfer_race(fut, &cancel, Duration::from_secs(600)).await;
+        match out {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("Cancelled"), "got: {}", reason);
+            }
+            other => panic!("expected Abort(cancelled), got {:?}", other),
+        }
+    }
+
+    // ── map_batched_error_to_outcome: failure policy (tests 5-7 from plan) ─
+
+    use crate::migration::direct_transfer::BatchedError;
+
+    /// Plan test 5: a chunk-0 SQL failure means the server never committed
+    /// anything, so falling back to the reader/writer pipeline is safe.
+    #[test]
+    fn map_first_chunk_sql_failure_to_fallback() {
+        let err = BatchedError::SqlFailure {
+            chunk_index: 0,
+            message: "permission denied for table dst".into(),
+            rows_written_so_far: 0,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::FallbackOnError(msg) => {
+                assert!(msg.contains("permission denied"), "got: {}", msg);
+            }
+            other => panic!("expected FallbackOnError, got {:?}", other),
+        }
+    }
+
+    /// Plan test 6: a mid/late chunk SQL failure leaves `[0..chunk_index)`
+    /// committed. Falling back would double-insert them, so Abort.
+    #[test]
+    fn map_later_chunk_sql_failure_to_abort_with_rows_written() {
+        let err = BatchedError::SqlFailure {
+            chunk_index: 3,
+            message: "deadlock found when trying to get lock".into(),
+            rows_written_so_far: 1_875_000,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("3/8"), "chunk index/total missing: {}", reason);
+                assert!(
+                    reason.contains("1875000"),
+                    "rows_written_so_far missing: {}",
+                    reason
+                );
+                assert!(
+                    reason.contains("already committed"),
+                    "abort reason should warn about committed chunks: {}",
+                    reason
+                );
+                assert!(
+                    reason.contains("deadlock found"),
+                    "original SQL error should be preserved: {}",
+                    reason
+                );
+            }
+            other => panic!("expected Abort, got {:?}", other),
+        }
+    }
+
+    /// Plan test 7: Cancelled always maps to Abort — even when nothing has
+    /// been committed yet, the in-flight server statement may still be
+    /// running and restarting the mapping could double-insert.
+    #[test]
+    fn map_cancelled_to_abort_regardless_of_chunk_index() {
+        // Cancelled mid-chunk-0, nothing committed.
+        let err = BatchedError::Cancelled {
+            completed_chunks: 0,
+            rows_written_so_far: 0,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("cancelled"), "got: {}", reason);
+                assert!(reason.contains("0/8"), "chunk info missing: {}", reason);
+            }
+            other => panic!("expected Abort, got {:?}", other),
+        }
+
+        // Cancelled between chunks 5 and 6.
+        let err = BatchedError::Cancelled {
+            completed_chunks: 5,
+            rows_written_so_far: 3_125_000,
+        };
+        match map_batched_error_to_outcome(err, 8) {
+            DirectTransferOutcome::Abort(reason) => {
+                assert!(reason.contains("5/8"), "got: {}", reason);
+                assert!(reason.contains("3125000"), "got: {}", reason);
+            }
+            other => panic!("expected Abort, got {:?}", other),
+        }
+    }
 
     /// 内存采样器
     struct MemorySampler {

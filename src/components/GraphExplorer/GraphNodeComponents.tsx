@@ -322,12 +322,14 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
       className={`w-64 rounded-md border bg-background-panel shadow-lg cursor-pointer ${borderClass} transition-opacity`}
       style={{ opacity: isDimmed ? 0.3 : 1 }}
     >
-      {/* Handles: 自引用用 Top/Bottom 避免边交叉，普通用 Left/Right */}
-      {isSelfRef ? (
-        <Handle type="target" position={Position.Top} id="self-target" className="!bg-border-default !border-edge-reference" />
-      ) : (
-        <Handle type="target" position={Position.Left} className="!bg-border-default !border-border-strong" />
-      )}
+      {/* Handles: 始终渲染全部4个，避免 React Flow 在 handle 挂载前注册边时找不到 ID 报 #008 */}
+      {/* 自引用时 Top/Bottom 可见，Left/Right 隐藏；普通时相反 */}
+      <Handle type="target" position={Position.Top} id="self-target"
+        className="!bg-border-default !border-edge-reference"
+        style={{ display: isSelfRef ? undefined : 'none' }} />
+      <Handle type="target" position={Position.Left}
+        className="!bg-border-default !border-border-strong"
+        style={{ display: isSelfRef ? 'none' : undefined }} />
 
       {/* Row 1: edge_type + cardinality */}
       <div className="px-3 py-1.5 border-b border-border-default flex items-center gap-2">
@@ -377,11 +379,12 @@ export const LinkNodeComponent = memo(({ data }: NodeProps) => {
         </div>
       )}
 
-      {isSelfRef ? (
-        <Handle type="source" position={Position.Bottom} id="self-source" className="!bg-border-default !border-edge-reference" />
-      ) : (
-        <Handle type="source" position={Position.Right} className="!bg-border-default !border-border-strong" />
-      )}
+      <Handle type="source" position={Position.Bottom} id="self-source"
+        className="!bg-border-default !border-edge-reference"
+        style={{ display: isSelfRef ? undefined : 'none' }} />
+      <Handle type="source" position={Position.Right}
+        className="!bg-border-default !border-border-strong"
+        style={{ display: isSelfRef ? 'none' : undefined }} />
     </div>
   );
 });

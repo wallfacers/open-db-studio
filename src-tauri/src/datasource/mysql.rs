@@ -807,20 +807,24 @@ impl DataSource for MySqlDataSource {
                                 let _ = tx.send(columns);
                             }
 
-                            let values = (0..num_cols)
+                            let values: Vec<_> = (0..num_cols)
                                 .map(|i| decode_mysql_column(&first_row, i))
                                 .collect();
                             if tx.send(MigrationRow { values }).await.is_err() {
+                                log::warn!("[migration] sql_stream: first row send failed (receiver dropped)");
                                 return;
                             }
 
+                            let mut fetched = 1u64;
                             while let Ok(Some(row)) = stream.try_next().await {
                                 let values = (0..num_cols)
                                     .map(|i| decode_mysql_column(&row, i))
                                     .collect();
                                 if tx.send(MigrationRow { values }).await.is_err() {
+                                    log::warn!("[migration] sql_stream: row send failed at row {} (receiver dropped)", fetched);
                                     break;
                                 }
+                                fetched += 1;
                             }
                         }
                         Ok(None) => {
@@ -828,7 +832,12 @@ impl DataSource for MySqlDataSource {
                                 let _ = tx.send(Vec::new());
                             }
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            log::error!("[migration] sql_stream query failed: {}", e);
+                            // Don't send columns — let col_tx be dropped so col_rx
+                            // returns a RecvError and the caller gets a clear failure.
+                            drop(col_tx.take());
+                        }
                     }
                 } => result,
                 _ = cancel_token.cancelled() => {

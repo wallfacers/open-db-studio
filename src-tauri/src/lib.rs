@@ -30,6 +30,37 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             use tauri::Manager;
+
+            // ── 手动创建窗口，添加 WebView2 缓存禁用参数 ─────────────────────────
+            // tauri.conf.json 中的 "app.windows" 声明式配置会被跳过，
+            // 因为我们在这里手动创建了 "main" 窗口。
+            #[cfg(target_os = "windows")]
+            let _window = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Open DB Studio")
+            .inner_size(1280.0, 800.0)
+            .maximized(true)
+            .resizable(true)
+            .decorations(false)
+            .additional_browser_args("--disable-http-cache --disable-gpu-shader-disk-cache")
+            .build()?;
+
+            #[cfg(not(target_os = "windows"))]
+            let _window = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Open DB Studio")
+            .inner_size(1280.0, 800.0)
+            .maximized(true)
+            .resizable(true)
+            .decorations(false)
+            .build()?;
+
             // 运行时设置窗口图标（dev 模式下 .exe 内嵌图标尚未更新时也能生效）
             if let Some(window) = app.get_webview_window("main") {
                 let icon_bytes = include_bytes!("../icons/icon.png");

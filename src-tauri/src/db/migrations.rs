@@ -784,6 +784,59 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         }
     }
 
+    // V20: 清空图谱数据（node ID 格式变更：加入 database 段以修复多库同名表碰撞）
+    // 旧格式 "8:table:users" 不含库名，多库构建时同名表互相覆盖 database 字段。
+    // 新格式 "8:table:test_project:users"。无法自动迁移旧 ID，直接清空让用户重建。
+    {
+        let need_v20: bool = conn.query_row(
+            "SELECT 1 FROM graph_nodes WHERE id NOT LIKE '%:%:%:%' AND node_type IN ('table','column') LIMIT 1",
+            [],
+            |r| r.get::<_, i64>(0),
+        ).unwrap_or(0) > 0;
+        if need_v20 {
+            conn.execute_batch(
+                "DELETE FROM graph_edges;
+                 DELETE FROM graph_nodes;
+                 DELETE FROM schema_change_log;"
+            )?;
+            log::info!("V20: cleared graph data for node ID format migration (database segment added)");
+        }
+    }
+
+    // V21: migration_run_history 新增 log_content 列（运行日志持久化）
+    {
+        let has_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('migration_run_history') WHERE name='log_content'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_col {
+            conn.execute_batch("ALTER TABLE migration_run_history ADD COLUMN log_content TEXT")?;
+            log::info!("V21: added migration_run_history.log_content column");
+        }
+    }
+
+    // V22: migration_jobs 列重命名 config_json -> script_text
+    {
+        let has_old_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('migration_jobs') WHERE name='config_json'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if has_old_col {
+            conn.execute_batch(
+                "ALTER TABLE migration_jobs RENAME COLUMN config_json TO script_text",
+            )?;
+            log::info!("V22: renamed migration_jobs.config_json -> script_text");
+        }
+    }
+
     log::info!("Database migrations completed");
     Ok(())
 }

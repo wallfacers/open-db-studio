@@ -84,7 +84,7 @@ pub struct TaskLogLine {
 
 ```typescript
 // TaskType 新增
-export type TaskType = 'export' | 'import' | 'migration' | 'seatunnel' | 'ai_generate_metrics';
+export type TaskType = 'export' | 'import' | 'migration' | 'ai_generate_metrics';
 
 // Task 新增字段
 export interface Task {

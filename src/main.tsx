@@ -18,9 +18,21 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
+// 启动画面超时兜底：如果 React 因资源加载失败未能挂载，10 秒后强制隐藏启动画面
+const SPLASH_TIMEOUT = 10000;
+const splashTimeout = setTimeout(() => {
+  const splash = document.getElementById('splash');
+  if (splash) {
+    splash.classList.add('fade-out');
+    setTimeout(() => splash.remove(), 500);
+    console.error('[App] Splash timeout — resources may have failed to load');
+  }
+}, SPLASH_TIMEOUT);
+
 // React 渲染完成后淡出启动画面
 requestAnimationFrame(() => {
   requestAnimationFrame(() => {
+    clearTimeout(splashTimeout);
     const splash = document.getElementById('splash');
     if (!splash) return;
     splash.classList.add('fade-out');

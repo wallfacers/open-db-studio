@@ -136,8 +136,7 @@
 
 ### 基础设施
 - [x] 全局连接池缓存（消除树导航重复握手开销）
-- [x] SeaTunnel 前端集成（连接配置 + Job 状态展示面板，基础 UI 就绪）
-- [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / SeaTunnel）
+- [x] i18n 全量化（Assistant / GraphExplorer / MetricsExplorer / Migration Center）
 
 ### 未实现（唯一未完成项，设计文档保留）
 - [x] SQL 编辑器 AI Ghost Text 补全（停止输入 600ms 触发，Tab 接受）— `ai_inline_complete` 命令 + Monaco InlineCompletionsProvider 已实现
@@ -168,11 +167,6 @@
 - [ ] SQL 片段共享库
 - [ ] 指标库导出/导入（JSON）
 - [ ] 连接配置脱敏导出
-
-### SeaTunnel 外部引擎接入
-- [x] SeaTunnel 连接配置
-- [x] 迁移 job 生成 + REST API 提交
-- [x] 任务状态同步展示
 
 ---
 
@@ -278,9 +272,19 @@
 
 ## 技术债
 
-| 项目 | 描述 | 优先级 | 备注 |
-|------|------|--------|------|
-| ERCanvasAdapter AI 变更高亮 | ER 画布基于 Canvas/SVG 渲染，需要独立的高亮方案（元素描边动画等），与 DOM 表单/Monaco 编辑器的通用高亮体系不同 | 低 | 当前无确认机制且支持 undo，用户感知变更的途径已存在；待其他 Adapter 高亮全部落地后再评估 ROI |
+| 项目 | 描述 | 优先级 | 修复方案 | 备注 |
+|------|------|--------|---------|------|
+| ERCanvasAdapter AI 变更高亮 | ER 画布基于 Canvas/SVG 渲染，需要独立的高亮方案（元素描边动画等），与 DOM 表单/Monaco 编辑器的通用高亮体系不同 | 低 | — | 当前无确认机制且支持 undo，用户感知变更的途径已存在；待其他 Adapter 高亮全部落地后再评估 ROI |
+| 侧边栏/树组件/Store 整体复制 | MigrationExplorer 的 MigrationTaskTree + migrationStore 与其他树型侧边栏（MetricsExplorer 等）结构高度相似（分类树 + 任务节点 + 右键菜单 + 展开持久化） | 低 | 提取通用工厂：`createTreeStore(options)` Zustand 工厂函数、`GenericTree<NodeType>` 组件、`SidebarPanel` 布局组件。可在新增同类树模块时一并提取 | — |
+
+### 已解决的技术债 ✅
+
+| 项目 | 解决方案 | 解决日期 |
+|------|---------|---------|
+| Reader 全量加载到内存 | DataSource trait 新增 `execute_paginated(query, limit, offset)`；pipeline.rs 已改为分页循环读取 | 2026-04-08 |
+| SQL 值拼接未参数化 | 删除 `data_pump.rs`，改用 `datasource/utils.rs::value_to_sql_safe`（支持多方言转义风格） | 2026-04-08 |
+| Rust 未使用 Repository 分层 | 新建 `migration/repository.rs`，CRUD SQL 已封装为独立函数 | V2 阶段 |
+| async 命令内同步阻塞 tokio 线程 | `mig_commands.rs` 所有命令已用 `tokio::task::spawn_blocking` 包裹 SQLite 操作 | V2 阶段 |
 
 ---
 

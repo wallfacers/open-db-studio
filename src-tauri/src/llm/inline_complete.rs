@@ -161,7 +161,7 @@ pub async fn update_last_request(
 
 // ─── postprocess_completion ─────────────────────────────────────────────────
 
-pub fn postprocess_completion(raw: &str, sql_before: &str) -> String {
+pub fn postprocess_completion(raw: &str, sql_before: &str, sql_after: &str) -> String {
     let mut result = raw.to_string();
 
     // LLMs sometimes wrap output in markdown code blocks
@@ -174,18 +174,42 @@ pub fn postprocess_completion(raw: &str, sql_before: &str) -> String {
         }
     }
 
-    // Remove overlap where LLM repeats the end of sql_before
+    // Remove overlap where LLM repeats the end of sql_before (prefix dedup)
     const OVERLAP_WINDOW: usize = 50;
     let tail = if sql_before.len() > OVERLAP_WINDOW {
-        &sql_before[sql_before.len() - OVERLAP_WINDOW..]
+        let mut start = sql_before.len() - OVERLAP_WINDOW;
+        while !sql_before.is_char_boundary(start) { start += 1; }
+        &sql_before[start..]
     } else {
         sql_before
     };
     for i in 0..tail.len() {
+        if !tail.is_char_boundary(i) { continue; }
         let suffix = &tail[i..];
         if result.starts_with(suffix) {
             result = result[suffix.len()..].to_string();
             break;
+        }
+    }
+
+    // Remove overlap where LLM included what's already after the cursor (suffix dedup)
+    if !sql_after.is_empty() {
+        let head = if sql_after.len() > OVERLAP_WINDOW {
+            let mut end = OVERLAP_WINDOW;
+            while !sql_after.is_char_boundary(end) { end -= 1; }
+            &sql_after[..end]
+        } else {
+            sql_after
+        };
+        // Find longest suffix of result that matches a prefix of sql_after
+        for i in (0..head.len()).rev() {
+            if !head.is_char_boundary(i) { continue; }
+            let prefix = &head[..i];
+            if prefix.is_empty() { continue; }
+            if result.ends_with(prefix) {
+                result = result[..result.len() - prefix.len()].to_string();
+                break;
+            }
         }
     }
 

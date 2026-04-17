@@ -1,0 +1,52 @@
+script = { SOI ~ (statement ~ ";")* ~ EOI }
+statement = { use_stmt | set_stmt | migrate_stmt }
+
+use_stmt = { ^"USE" ~ ident ~ "=" ~ ^"CONNECTION" ~ "(" ~ string ~ ")" }
+
+set_stmt = { ^"SET" ~ assignment ~ ("," ~ assignment)* }
+assignment = { ident ~ "=" ~ value }
+value = { byte_literal | number | string | ident }
+
+// Byte literal for memory/batch size: 16M, 1K, 2G, etc.
+byte_literal = @{ ASCII_DIGIT+ ~ ("K" | "M" | "G" | "k" | "m" | "g") }
+
+migrate_stmt = {
+    ^"MIGRATE" ~ ^"FROM" ~ table_ref ~ ^"INTO" ~ table_ref
+    ~ mapping_clause?
+    ~ where_clause?
+    ~ conflict_clause?
+    ~ incremental_clause?
+    ~ create_clause?
+}
+
+table_ref = { ident ~ "." ~ ident ~ ("." ~ ident)? }
+
+mapping_clause = { ^"MAPPING" ~ "(" ~ (star_mapping | mapping_list) ~ ")" }
+star_mapping = { "*" }
+mapping_list = { mapping_entry ~ ("," ~ mapping_entry)* }
+mapping_entry = { expr ~ "->" ~ ident ~ type_cast? }
+type_cast = { "::" ~ type_name }
+type_name = { ident ~ ("(" ~ number ~ ("," ~ number)? ~ ")")? }
+
+expr = { function_call | dotted_ident | string | ident }
+function_call = { ident ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
+dotted_ident = { ident ~ ("." ~ ident)+ }
+
+where_clause = { ^"WHERE" ~ condition }
+condition = { (!(^"ON" | ^"INCREMENTAL" | ^"CREATE" | ";") ~ ANY)+ }
+
+conflict_clause = { ^"ON" ~ ^"CONFLICT" ~ strategy ~ (^"BY" ~ "(" ~ col_list ~ ")")? }
+strategy = { ^"UPSERT" | ^"REPLACE" | ^"SKIP" | ^"INSERT" | ^"OVERWRITE" }
+col_list = { ident ~ ("," ~ ident)* }
+
+incremental_clause = { ^"INCREMENTAL" ~ ^"ON" ~ ident }
+create_clause = { ^"CREATE" ~ ^"IF" ~ ^"NOT" ~ ^"EXISTS" }
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+string = @{ "'" ~ (!"'" ~ ANY)* ~ "'" }
+number = @{ ASCII_DIGIT+ }
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ line_comment | block_comment }
+line_comment = { "--" ~ (!"\n" ~ ANY)* }
+block_comment = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

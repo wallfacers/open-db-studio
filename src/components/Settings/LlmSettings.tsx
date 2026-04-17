@@ -225,14 +225,16 @@ function ConfigFormDialog({
     if (autoName) setForm((f) => ({ ...f, name: autoName }));
   }, [form.model, form.opencode_provider_id, form.config_mode, nameTouched]);
 
-  // 切换供应商时，重置模型
+  // 切换供应商时，重置模型，并根据供应商 SDK 设置 api_type
   const handleProviderChange = (pid: string) => {
     const isCustom = pid === 'custom';
+    const provider = providers.find((p) => p.id === pid);
     setForm((f) => ({
       ...f,
       opencode_provider_id: isCustom ? '' : pid,
       config_mode: (isCustom ? 'custom' : 'opencode') as ConfigMode,
       model: '',
+      api_type: isCustom ? f.api_type : (provider?.api_type ?? 'openai'),
       opencode_model_options: isCustom
         ? (f.opencode_model_options || DEFAULT_CUSTOM_MODEL_OPTIONS)
         : f.opencode_model_options,

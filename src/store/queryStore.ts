@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { QueryResult, QueryHistory, Tab, EditorInfo, MetricScope, QueryContext } from '../types';
 import { useAppStore } from './appStore';
 import { parseStatements } from '../utils/sqlParser';
-import { metricTabId, newMetricTabId, metricListTabId, queryTabId, tableDataTabId, tableStructureTabId, newTableStructureTabId, stJobTabId, erDesignTabId } from '../utils/nodeId';
+import { metricTabId, newMetricTabId, metricListTabId, queryTabId, tableDataTabId, tableStructureTabId, newTableStructureTabId, erDesignTabId } from '../utils/nodeId';
 
 /** 判断是否为返回结果集的查询语句 */
 function isSelectLike(sql: string): boolean {
@@ -54,9 +54,9 @@ interface QueryState {
   openQueryTab: (connId: number, connName: string, database?: string, schema?: string, initialSql?: string) => void;
   openTableDataTab: (tableName: string, connectionId: number, database?: string, schema?: string) => void;
   openTableStructureTab: (connectionId: number, database?: string, schema?: string, tableName?: string) => void;
-  openSeaTunnelJobTab: (jobId: number, title: string, connectionId?: number) => void;
-  closeSeaTunnelJobTab: (jobId: number) => void;
-  updateSeaTunnelJobTabTitle: (jobId: number, title: string) => void;
+  openMigrationJobTab: (jobId: number, title: string) => void;
+  closeMigrationJobTab: (jobId: number) => void;
+  updateMigrationJobTabTitle: (jobId: number, title: string) => void;
   openERDesignTab: (projectId: number, projectName: string) => void;
   updateERDesignTabTitle: (projectId: number, title: string) => void;
   closeERDesignTab: (projectId: number) => void;
@@ -266,27 +266,19 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     });
   },
 
-  openSeaTunnelJobTab: (jobId, title, connectionId) => {
+  openMigrationJobTab: (jobId, title) => {
     set(s => {
-      const existing = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
+      const existing = s.tabs.find(t => t.type === 'migration_job' && t.migrationJobId === jobId);
       if (existing) return { activeTabId: existing.id };
-      const id = stJobTabId(jobId, Date.now());
-      const tab: Tab = { id, type: 'seatunnel_job', title, stJobId: jobId, stConnectionId: connectionId };
+      const id = `migration_job_${jobId}_${Date.now()}`;
+      const tab: Tab = { id, type: 'migration_job', title, migrationJobId: jobId };
       return { tabs: [...s.tabs, tab], activeTabId: id };
     });
   },
 
-  updateSeaTunnelJobTabTitle: (jobId, title) => {
+  closeMigrationJobTab: (jobId) => {
     set(s => {
-      const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
-      if (!tab) return {};
-      return { tabs: s.tabs.map(t => t.id === tab.id ? { ...t, title } : t) };
-    });
-  },
-
-  closeSeaTunnelJobTab: (jobId) => {
-    set(s => {
-      const tab = s.tabs.find(t => t.type === 'seatunnel_job' && t.stJobId === jobId);
+      const tab = s.tabs.find(t => t.type === 'migration_job' && t.migrationJobId === jobId);
       if (!tab) return {};
       const newTabs = s.tabs.filter(t => t.id !== tab.id);
       const newActiveId = s.activeTabId === tab.id
@@ -294,6 +286,14 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         : s.activeTabId;
       return { tabs: newTabs, activeTabId: newActiveId };
     });
+  },
+
+  updateMigrationJobTabTitle: (jobId, title) => {
+    set(s => ({
+      tabs: s.tabs.map(t =>
+        t.type === 'migration_job' && t.migrationJobId === jobId ? { ...t, title } : t
+      ),
+    }));
   },
 
   updateERDesignTabTitle: (projectId, title) => {

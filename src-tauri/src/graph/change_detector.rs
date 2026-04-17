@@ -155,6 +155,11 @@ struct ChangeEvent<'a> {
     schema: Option<&'a str>,
 }
 
+/// 生成 FK link 节点 ID（委托给 event_processor 共享函数）
+fn make_link_id(connection_id: i64, database: Option<&str>, table: &str, ref_table: &str, column: &str) -> String {
+    super::event_processor::make_fk_link_id(connection_id, database, table, ref_table, column)
+}
+
 /// 向 schema_change_log 插入一条变更记录。
 fn insert_change_log(
     conn: &rusqlite::Connection,
@@ -260,10 +265,7 @@ pub fn detect_and_log_changes(
         // 新表的外键：直接生成 ADD_FK
         if let Some(fks) = table_fks.get(tname) {
             for fk in fks {
-                let would_be_link_id = format!(
-                    "link:{}:{}:{}:{}",
-                    connection_id, tname, fk.referenced_table, fk.column
-                );
+                let would_be_link_id = make_link_id(connection_id, database, tname, &fk.referenced_table, &fk.column);
                 if !existing_link_ids.contains(&would_be_link_id) {
                     let fk_meta = serde_json::json!({
                         "constraint_name": fk.constraint_name,
@@ -336,10 +338,7 @@ pub fn detect_and_log_changes(
         // --- 外键对比（ADD_FK，不检测删除）---
         if let Some(fks) = table_fks.get(tname) {
             for fk in fks {
-                let would_be_link_id = format!(
-                    "link:{}:{}:{}:{}",
-                    connection_id, tname, fk.referenced_table, fk.column
-                );
+                let would_be_link_id = make_link_id(connection_id, database, tname, &fk.referenced_table, &fk.column);
                 if !existing_link_ids.contains(&would_be_link_id) {
                     let meta = serde_json::json!({
                         "constraint_name": fk.constraint_name,

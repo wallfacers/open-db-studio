@@ -12,7 +12,6 @@ mod mcp;
 mod metrics;
 mod migration;
 mod pipeline;
-mod seatunnel;
 mod er;
 mod skill_sync;
 mod state;
@@ -31,6 +30,37 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             use tauri::Manager;
+
+            // ── 手动创建窗口，添加 WebView2 缓存禁用参数 ─────────────────────────
+            // tauri.conf.json 中的 "app.windows" 声明式配置会被跳过，
+            // 因为我们在这里手动创建了 "main" 窗口。
+            #[cfg(target_os = "windows")]
+            let _window = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Open DB Studio")
+            .inner_size(1280.0, 800.0)
+            .maximized(true)
+            .resizable(true)
+            .decorations(false)
+            .additional_browser_args("--disable-http-cache --disable-gpu-shader-disk-cache")
+            .build()?;
+
+            #[cfg(not(target_os = "windows"))]
+            let _window = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Open DB Studio")
+            .inner_size(1280.0, 800.0)
+            .maximized(true)
+            .resizable(true)
+            .decorations(false)
+            .build()?;
+
             // 运行时设置窗口图标（dev 模式下 .exe 内嵌图标尚未更新时也能生效）
             if let Some(window) = app.get_webview_window("main") {
                 let icon_bytes = include_bytes!("../icons/icon.png");
@@ -59,7 +89,7 @@ pub fn run() {
             log::info!("Using app data dir: {:?}", app_data_dir);
             crate::db::init(&app_data_dir.to_string_lossy())?;
             crate::db::migrate_legacy_llm_settings()?;
-
+            crate::migration::pipeline::cleanup_stale_running_jobs();
             // MCP server 只绑 TCP 端口，速度极快，需要端口号写入 AppState
             let mcp_port = tauri::async_runtime::block_on(
                 crate::mcp::start_mcp_server(app.handle().clone())
@@ -287,6 +317,7 @@ pub fn run() {
             commands::update_graph_node_metadata,
             commands::save_graph_node_position,
             commands::clear_graph_node_positions,
+            commands::auto_layout_graph,
             commands::ai_generate_metrics,
             commands::list_tables_with_column_count,
             commands::ai_generate_sql_v2,
@@ -326,27 +357,6 @@ pub fn run() {
             commands::agent_unrevert_message,
             commands::agent_summarize_session,
             commands::agent_get_last_user_message_id,
-            seatunnel::commands::list_st_connections,
-            seatunnel::commands::create_st_connection,
-            seatunnel::commands::update_st_connection,
-            seatunnel::commands::delete_st_connection,
-            seatunnel::commands::list_st_categories,
-            seatunnel::commands::create_st_category,
-            seatunnel::commands::rename_st_category,
-            seatunnel::commands::delete_st_category,
-            seatunnel::commands::move_st_category,
-            seatunnel::commands::list_st_jobs,
-            seatunnel::commands::create_st_job,
-            seatunnel::commands::update_st_job,
-            seatunnel::commands::delete_st_job,
-            seatunnel::commands::rename_st_job,
-            seatunnel::commands::move_st_job,
-            seatunnel::commands::submit_st_job,
-            seatunnel::commands::stop_st_job,
-            seatunnel::commands::get_st_job_status,
-            seatunnel::commands::stream_st_job_logs,
-            seatunnel::commands::cancel_st_job_stream,
-            seatunnel::commands::test_st_connection,
             commands::add_user_node,
             commands::delete_graph_node,
             commands::add_user_edge,
@@ -391,6 +401,23 @@ pub fn run() {
             er::commands::er_import_json,
             er::commands::er_preview_import,
             er::commands::er_execute_import,
+            migration::mig_commands::list_migration_categories,
+            migration::mig_commands::create_migration_category,
+            migration::mig_commands::rename_migration_category,
+            migration::mig_commands::delete_migration_category,
+            migration::mig_commands::move_migration_category,
+            migration::mig_commands::list_migration_jobs,
+            migration::mig_commands::create_migration_job,
+            migration::mig_commands::update_migration_job_script,
+            migration::mig_commands::rename_migration_job,
+            migration::mig_commands::delete_migration_job,
+            migration::mig_commands::move_migration_job,
+            migration::mig_commands::get_migration_dirty_records,
+            migration::mig_commands::get_migration_run_history,
+            migration::mig_commands::run_migration_job,
+            migration::mig_commands::stop_migration_job,
+            migration::mig_commands::delete_migration_run_history,
+            migration::mig_commands::lsp_request,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

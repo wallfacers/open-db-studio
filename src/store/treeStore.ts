@@ -90,7 +90,7 @@ interface TreeStore {
 
   init: () => Promise<void>;
   refresh: () => Promise<void>;
-  loadChildren: (nodeId: string) => Promise<void>;
+  loadChildren: (nodeId: string) => Promise<string[]>;
   toggleExpand: (nodeId: string) => void;
   selectNode: (nodeId: string) => void;
   refreshNode: (nodeId: string) => Promise<void>;
@@ -184,10 +184,10 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
     }
   },
 
-  loadChildren: async (nodeId: string) => {
+  loadChildren: async (nodeId: string): Promise<string[]> => {
     const { nodes, loadingIds } = get();
     const node = nodes.get(nodeId);
-    if (!node || node.loaded || loadingIds.has(nodeId)) return;
+    if (!node || node.loaded || loadingIds.has(nodeId)) return [];
 
     set(s => ({ loadingIds: new Set([...s.loadingIds, nodeId]) }));
 
@@ -247,6 +247,9 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
           }
           // metrics_folder 放在所有 schema 节点之前
           children.unshift(makeMetricsFolderNode(nodeId, node.meta));
+        } else {
+          children.push(makeMetricsFolderNode(nodeId, node.meta));
+          children.push(...makeCategoryNodes(nodeId, driver, { ...node.meta }));
         }
       } else if (node.nodeType === 'schema') {
         const driver = node.meta.driver ?? 'postgres';
@@ -314,9 +317,6 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
       // 在创建 metrics_folder 节点后立即获取指标计数（未展开时也显示徽章）
       const metricsFolderNodes = children.filter(c => c.nodeType === 'metrics_folder');
       if (metricsFolderNodes.length > 0) {
-        const newCounts = new Map(get().metricCounts);
-        const newNodes = new Map(get().nodes);
-
         if (node.nodeType === 'connection') {
           // connection 分支：使用 count_metrics_batch 批量获取
           const driver = node.meta.driver ?? 'mysql';
@@ -327,13 +327,18 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
               connectionId: node.meta.connectionId,
               database: null,
             });
-            for (const folder of metricsFolderNodes) {
-              const db = folder.meta.database;
-              const cnt = db ? (counts[db] ?? 0) : 0;
-              newCounts.set(folder.id, cnt);
-              const f = newNodes.get(folder.id);
-              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
-            }
+            set(s => {
+              const newCounts = new Map(s.metricCounts);
+              const newNodes = new Map(s.nodes);
+              for (const folder of metricsFolderNodes) {
+                const db = folder.meta.database;
+                const cnt = db ? (counts[db] ?? 0) : 0;
+                newCounts.set(folder.id, cnt);
+                const f = newNodes.get(folder.id);
+                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+              }
+              return { metricCounts: newCounts, nodes: newNodes };
+            });
           } else {
             // 单数据库（SQLite）或 schema 型驱动在 connection 层无 metrics_folder
             for (const folder of metricsFolderNodes) {
@@ -343,9 +348,14 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
                   database: folder.meta.database ?? null,
                   schema: null,
                 });
-                newCounts.set(folder.id, cnt);
-                const f = newNodes.get(folder.id);
-                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+                set(s => {
+                  const newCounts = new Map(s.metricCounts);
+                  const newNodes = new Map(s.nodes);
+                  newCounts.set(folder.id, cnt);
+                  const f = newNodes.get(folder.id);
+                  if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+                  return { metricCounts: newCounts, nodes: newNodes };
+                });
               } catch { /* ignore */ }
             }
           }
@@ -358,14 +368,17 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
                 database: folder.meta.database ?? null,
                 schema: null,
               });
-              newCounts.set(folder.id, cnt);
-              const f = newNodes.get(folder.id);
-              if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+              set(s => {
+                const newCounts = new Map(s.metricCounts);
+                const newNodes = new Map(s.nodes);
+                newCounts.set(folder.id, cnt);
+                const f = newNodes.get(folder.id);
+                if (f) newNodes.set(folder.id, { ...f, hasChildren: cnt > 0 });
+                return { metricCounts: newCounts, nodes: newNodes };
+              });
             } catch { /* ignore */ }
           }
         }
-
-        set({ metricCounts: newCounts, nodes: newNodes });
       }
 
       // metrics_folder 节点加载后更新 metricCounts 和 hasChildren
@@ -388,6 +401,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         if (updated) newNodes.set(nodeId, { ...updated, loaded: true });
         return { nodes: newNodes };
       });
+      return children.map(c => c.id);
     } catch (e) {
       set(s => {
         const newNodes = new Map(s.nodes);
@@ -397,6 +411,7 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
         expandedIds.delete(nodeId); // 加载失败时折叠，避免"展开但无内容"
         return { nodes: newNodes, error: String(e), expandedIds };
       });
+      return [];
     } finally {
       set(s => {
         const newLoading = new Set(s.loadingIds);
@@ -442,30 +457,47 @@ export const useTreeStore = create<TreeStore>((set, get) => ({
   selectNode: (nodeId: string) => set({ selectedId: nodeId }),
 
   refreshNode: async (nodeId: string) => {
-    const wasExpanded = get().expandedIds.has(nodeId);
-    // Collapse first so the UI never shows "expanded with no children"
-    set(s => {
-      const expandedIds = new Set(s.expandedIds);
-      expandedIds.delete(nodeId);
-      return { expandedIds };
-    });
-    get()._removeSubtree(nodeId);
+    const { nodes } = get();
+    // 1. 记下当前子节点 ID，用于加载后清理已删除的节点
+    const oldChildrenIds = Array.from(nodes.values())
+      .filter(n => n.parentId === nodeId)
+      .map(n => n.id);
+
+    // 2. 重置 loaded 状态以允许 loadChildren 重新执行
     set(s => {
       const newNodes = new Map(s.nodes);
       const node = newNodes.get(nodeId);
       if (node) newNodes.set(nodeId, { ...node, loaded: false });
       return { nodes: newNodes };
     });
-    if (wasExpanded) {
-      await get().loadChildren(nodeId);
-      // Re-expand only if loading succeeded
-      if (get().nodes.get(nodeId)?.loaded === true) {
-        set(s => {
-          const expandedIds = new Set(s.expandedIds);
-          expandedIds.add(nodeId);
-          return { expandedIds };
-        });
-      }
+
+    // 3. 加载新子节点（loadChildren 内部会调用 _addNodes 更新/添加节点）
+    const newChildrenIds = await get().loadChildren(nodeId);
+
+    // 4. 清理那些在数据库中已不存在的旧节点
+    const toRemove = oldChildrenIds.filter(id => !newChildrenIds.includes(id));
+    if (toRemove.length > 0) {
+      set(s => {
+        const nodesMap = new Map(s.nodes);
+        const searchIndex = new Map(s.searchIndex);
+        const expandedIds = new Set(s.expandedIds);
+        const metricCounts = new Map(s.metricCounts);
+
+        const removeRecursive = (id: string) => {
+          nodesMap.delete(id);
+          searchIndex.delete(id);
+          expandedIds.delete(id);
+          metricCounts.delete(id);
+          for (const [nodeKey, node] of nodesMap.entries()) {
+            if (node.parentId === id) removeRecursive(nodeKey);
+          }
+        };
+
+        for (const id of toRemove) {
+          removeRecursive(id);
+        }
+        return { nodes: nodesMap, searchIndex, expandedIds, metricCounts };
+      });
     }
   },
 

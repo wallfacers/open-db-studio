@@ -116,7 +116,7 @@ export const DBTree: React.FC<DBTreeProps> = ({
   const [tableManageDialog, setTableManageDialog] = useState<{ connectionId: number; tableName?: string; database?: string; schema?: string } | null>(null);
   const [indexManagerState, setIndexManagerState] = useState<{ connectionId: number; tableName: string } | null>(null);
   const [ddlViewer, setDdlViewer] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string } | null>(null);
-  const [truncateConfirm, setTruncateConfirm] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string } | null>(null);
+  const [truncateConfirm, setTruncateConfirm] = useState<{ connectionId: number; tableName: string; database?: string; schema?: string; parentId?: string | null } | null>(null);
 const [editingConnId, setEditingConnId] = useState<number | null>(null);
   const [editingGroup, setEditingGroup] = useState<{ id: number; name: string; color: string | null } | null>(null);
   const [newConnGroupId, setNewConnGroupId] = useState<number | null | undefined>(undefined); // undefined=关闭，null=无分组，number=指定分组
@@ -388,7 +388,13 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           onTruncateTable={() => {
             const n = contextMenu.node;
             setContextMenu(null);
-            setTruncateConfirm({ connectionId: getConnectionId(n), tableName: n.label, database: n.meta.database, schema: n.meta.schema });
+            setTruncateConfirm({
+              connectionId: getConnectionId(n),
+              tableName: n.label,
+              database: n.meta.database,
+              schema: n.meta.schema,
+              parentId: n.parentId
+            });
           }}
           onDropTable={async () => {
             const n = contextMenu.node;
@@ -408,9 +414,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
                 database: n.meta.database ?? null,
                 schema: n.meta.schema ?? null,
               });
-              const parentId = Array.from(useTreeStore.getState().nodes.values())
-                .find(nd => nd.label === n.label && nd.nodeType === 'table')?.parentId ?? '';
-              if (parentId) refreshNode(parentId);
+              if (n.parentId) refreshNode(n.parentId);
               // 关闭与该表关联的 Tab
               const connId = getConnectionId(n);
               const dbName = n.meta.database ?? `conn_${connId}`;
@@ -673,9 +677,7 @@ const [editingConnId, setEditingConnId] = useState<number | null>(null);
           schema={truncateConfirm.schema}
           onClose={() => setTruncateConfirm(null)}
           onSuccess={() => {
-            const parentId = Array.from(useTreeStore.getState().nodes.values())
-              .find(n => n.label === truncateConfirm.tableName && n.nodeType === 'table')?.parentId ?? '';
-            if (parentId) refreshNode(parentId);
+            if (truncateConfirm.parentId) refreshNode(truncateConfirm.parentId);
             // 如果表数据 Tab 已打开且为活跃 Tab，触发数据刷新
             const dbName = truncateConfirm.database ?? `conn_${truncateConfirm.connectionId}`;
             const tabId = tableDataTabId(truncateConfirm.connectionId, dbName, truncateConfirm.schema ?? '', truncateConfirm.tableName);

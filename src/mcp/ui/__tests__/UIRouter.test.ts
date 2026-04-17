@@ -195,4 +195,61 @@ describe('UIRouter', () => {
     })
     expect(obj.patch).toHaveBeenCalled()
   })
+
+  // ── "active" target resolution ──────────────────────────
+  // Regression: when objectId ≠ tabId (e.g. MigrationJobAdapter), resolving
+  // target="active" used to fall through to "return first instance of type",
+  // which silently leaked state across unrelated tabs.
+
+  it('active target: resolves by objectId when objectId === tabId', async () => {
+    const tabA = mockUIObject({ objectId: 'tab-A', type: 'query_editor', title: 'A' })
+    const tabB = mockUIObject({ objectId: 'tab-B', type: 'query_editor', title: 'B' })
+    router.registerInstance('tab-A', tabA)
+    router.registerInstance('tab-B', tabB)
+    router.setActiveTabIdProvider(() => 'tab-B')
+
+    const res = await router.handle({
+      tool: 'ui_read', object: 'query_editor', target: 'active',
+      payload: { mode: 'state' },
+    })
+    expect(tabB.read).toHaveBeenCalled()
+    expect(tabA.read).not.toHaveBeenCalled()
+    expect(res.data).toBeDefined()
+  })
+
+  it('active target: resolves by tabId field when objectId ≠ tabId', async () => {
+    // Simulates MigrationJobAdapter: objectId is stable (migration_job_<jobId>)
+    // while tabId is the timestamp-based tab identifier.
+    const job8 = mockUIObject({ objectId: 'migration_job_8',  type: 'migration_job', title: 'Job 8',  tabId: 'tab-111' })
+    const job11 = mockUIObject({ objectId: 'migration_job_11', type: 'migration_job', title: 'Job 11', tabId: 'tab-222' })
+    router.registerInstance('migration_job_8', job8)
+    router.registerInstance('migration_job_11', job11)
+    router.setActiveTabIdProvider(() => 'tab-222')
+
+    const res = await router.handle({
+      tool: 'ui_read', object: 'migration_job', target: 'active',
+      payload: { mode: 'state' },
+    })
+    expect(job11.read).toHaveBeenCalled()
+    expect(job8.read).not.toHaveBeenCalled()
+    expect(res.data).toBeDefined()
+  })
+
+  it('active target: does not leak to a sibling instance when active tab differs', async () => {
+    // Flipped order from the previous test: active is now job_8. This guards
+    // against the old "return first-in-map" fallback that would always return
+    // whichever was registered first, regardless of which tab is active.
+    const job8 = mockUIObject({ objectId: 'migration_job_8',  type: 'migration_job', title: 'Job 8',  tabId: 'tab-111' })
+    const job11 = mockUIObject({ objectId: 'migration_job_11', type: 'migration_job', title: 'Job 11', tabId: 'tab-222' })
+    router.registerInstance('migration_job_11', job11) // registered first
+    router.registerInstance('migration_job_8', job8)
+    router.setActiveTabIdProvider(() => 'tab-111')
+
+    await router.handle({
+      tool: 'ui_read', object: 'migration_job', target: 'active',
+      payload: { mode: 'state' },
+    })
+    expect(job8.read).toHaveBeenCalled()
+    expect(job11.read).not.toHaveBeenCalled()
+  })
 })

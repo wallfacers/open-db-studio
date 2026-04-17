@@ -40,6 +40,11 @@ sqlx = { version = "0.8", features = [
   "rust_decimal",
   "uuid",
 ] }
+
+# MySQL bulk write (LOAD DATA LOCAL INFILE) for migration pipeline
+mysql_async = "0.34"
+urlencoding = "2"
+
 rust_decimal = "1"
 
 # HTTP 客户端（LLM 代理）
@@ -67,7 +72,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # SQL Server 驱动
 tiberius = { version = "0.12", features = ["tds73", "winauth"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "rt"] }
 
 # PNG 解码（用于运行时设置窗口图标）
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -77,6 +82,9 @@ regex = "1"
 
 # SHA-256（知识图谱列哈希）
 sha2 = "0.10"
+
+# Bytes (used by mysql_async LOAD DATA handler)
+bytes = "1"
 
 # 其他
 lru = "0.12"
@@ -102,6 +110,10 @@ tokio-gaussdb = "0.1"
 
 # DB2 ODBC 驱动（通用 ODBC 桥接，可选）
 odbc-api = { version = "23", optional = true }
+
+# PEG 解析器（MigrateQL DSL）
+pest = "2.7"
+pest_derive = "2.7"
 
 # Oracle 驱动（可选，需要 Oracle Instant Client）
 [target.'cfg(target_os = "windows")'.dependencies]

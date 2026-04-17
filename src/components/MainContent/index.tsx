@@ -54,7 +54,7 @@ const handleEditorWillMount: BeforeMount = (monaco) => {
 import {
   FileCode2, X, Play, Square, FileEdit, Settings, DatabaseZap, ChevronDown, ChevronRight, ChevronLeft, Folder,
   RefreshCw, Download, Search, Filter, Table, TableProperties, Plus, Lightbulb, Bot, Maximize2,
-  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3, Sparkles,
+  BarChart2, Scissors, Copy, Clipboard, CirclePlay, TextSelect, MessageSquare, Workflow, Grid3x3, Sparkles, ArrowLeftRight,
 } from 'lucide-react';
 import { DropdownSelect } from '../common/DropdownSelect';
 import { TableDataView } from './TableDataView';
@@ -64,7 +64,7 @@ import ERDiagram from '../ERDiagram';
 import ERCanvas from '../ERDesigner/ERCanvas';
 import { MetricTab } from '../MetricsExplorer/MetricTab';
 import { MetricListPanel } from '../MetricsExplorer/MetricListPanel';
-import SeaTunnelJobTab from '../SeaTunnelJobTab';
+import { MigrationJobTab } from '../MigrationJobTab';
 import { useQueryStore, useConnectionStore, useAiStore } from '../../store';
 import { useTreeStore } from '../../store/treeStore';
 import { connNodeId as connNid, dbNodeId, schemaNodeId, catNodeId } from '../../utils/nodeId';
@@ -535,7 +535,10 @@ export const MainContent: React.FC<MainContentProps> = ({
 
         const mentionedTables = extractMentionedTables(sqlBefore + sqlAfter);
         const lineBeforeCursor = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
-        const hint = lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
+        const charBefore = lineBeforeCursor.slice(-1);
+        const charAfter = sqlAfter.slice(0, 1);
+        const isMidWord = /\w/.test(charBefore) && /\w/.test(charAfter);
+        const hint = isMidWord ? 'word' : lineBeforeCursor.trim().length > 0 ? 'single_line' : 'multi_line';
 
         try {
           setGhostTextLoading(true);
@@ -929,8 +932,8 @@ export const MainContent: React.FC<MainContentProps> = ({
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : tab.type === 'table' ? (
               <Table size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
-            ) : tab.type === 'seatunnel_job' ? (
-              <Workflow size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
+            ) : tab.type === 'migration_job' ? (
+              <ArrowLeftRight size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             ) : (
               <TableProperties size={14} className={`mr-2 flex-shrink-0 ${activeTab === tab.id ? 'text-accent' : 'text-foreground-muted'}`} />
             )}
@@ -1041,20 +1044,20 @@ export const MainContent: React.FC<MainContentProps> = ({
         </div>
       ))}
 
-      {/* seatunnel_job */}
-      {tabs.filter(t => t.type === 'seatunnel_job').map(tab => (
+      {/* migration_job */}
+      {tabs.filter(t => t.type === 'migration_job').map(tab => (
         <div
           key={tab.id}
           className="flex-1 flex flex-col overflow-hidden min-h-0"
           style={{ display: activeTab === tab.id ? 'flex' : 'none' }}
         >
-          <SeaTunnelJobTab tab={tab} key={tab.id} showToast={showToast} />
+          {tab.migrationJobId != null && <MigrationJobTab jobId={tab.migrationJobId} />}
         </div>
       ))}
 
       {/* ── Active-only tabs (too heavy to keep all mounted) ── */}
       {activeTabObj ? (
-        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'seatunnel_job' ? null
+        activeTabObj.type === 'table' || activeTabObj.type === 'er_design' || activeTabObj.type === 'table_structure' || activeTabObj.type === 'metric' || activeTabObj.type === 'migration_job' ? null
         : activeTabObj.type === 'metric_list' && activeTabObj.metricScope ? (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <MetricListPanel
@@ -1292,20 +1295,19 @@ export const MainContent: React.FC<MainContentProps> = ({
               />
             </div>
 
-            {/* Results Resizer */}
-            <div
-              className="h-1 cursor-row-resize z-10 hover:bg-accent transition-colors"
-              onMouseDown={handleResultsResize}
-            />
-
             {/* Results Area */}
-            <div className="flex flex-col bg-background-void flex-shrink-0" style={{ height: resultsHeight }}>
+            <div className="flex flex-col bg-background-void flex-shrink-0 relative border-t border-border-default" style={{ height: resultsHeight }}>
+              {/* Results Resizer — absolute overlay */}
+              <div
+                className="absolute left-0 right-0 top-[-2px] h-[4.5px] cursor-row-resize z-10 hover:bg-accent transition-colors"
+                onMouseDown={handleResultsResize}
+              />
               {/* Result tabs — one per result set, numbered from 1 */}
               <div className="flex items-center bg-background-base border-b border-border-default overflow-x-auto">
                 {currentResults.map((result, idx) => (
                   <div
                     key={idx}
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-border-default flex-shrink-0 transition-colors duration-200 ${selectedResultPane === idx ? `bg-background-void ${result.kind === 'error' ? 'text-error border-t-error' : 'text-accent border-t-accent'}` : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-[3px] border-r border-r-border-default flex-shrink-0 transition-colors duration-200 pt-[1px] ${selectedResultPane === idx ? `bg-background-void ${result.kind === 'error' ? 'text-error border-t-error' : 'text-accent border-t-accent'}` : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
                     onClick={() => setSelectedResultPane(idx)}
                     onContextMenu={(e) => { e.preventDefault(); setResultContextMenu({ idx, x: e.clientX, y: e.clientY }); }}
                   >
@@ -1332,7 +1334,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 {/* SQL 解释 Tab — 仅在有内容或正在解释时显示 */}
                 {(explanationStreaming[activeTab] || explanationContent[activeTab]) && (
                   <div
-                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-2 border-r border-r-border-default flex-shrink-0 transition-colors duration-200 ${selectedResultPane === 'explanation' ? 'bg-background-void text-accent border-t-accent' : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
+                    className={`px-3 h-[38px] flex items-center gap-1.5 text-xs cursor-pointer border-t-[3px] border-r border-r-border-default flex-shrink-0 transition-colors duration-200 pt-[1px] ${selectedResultPane === 'explanation' ? 'bg-background-void text-accent border-t-accent' : 'bg-background-hover text-foreground-muted border-t-transparent hover:bg-background-elevated'}`}
                     onClick={() => setSelectedResultPane('explanation')}
                     onContextMenu={(e) => { e.preventDefault(); setExplanationContextMenu({ x: e.clientX, y: e.clientY }); }}
                   >

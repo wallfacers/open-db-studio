@@ -1,0 +1,306 @@
+import { MigrationLogEvent, MigrationMilestone, MappingCardState } from '../store/migrationStore'
+
+const ARROW = '\u{2192}' // →
+const TABLE_START_RE = /^\[(\d+)\/(\d+)\]\s+Starting:\s+(.+)$/
+const TABLE_COMPLETE_RE = /^\[(\d+)\/(\d+)\]\s+Completed:\s+(.+?)\s+—\s+read=(\d+)\s+written=(\d+)\s+failed=(\d+)$/
+const TABLE_FAILED_RE = /^\[(\d+)\/(\d+)\]\s+Failed:\s+(.+?)\s+—\s+(.+)$/
+const PIPELINE_START_RE = /^Pipeline started: job_id=(\d+)$/
+const PIPELINE_FINISH_RE = /^Pipeline (FINISHED|PARTIAL_FAILED|FAILED):.*rows_written=(\d+)\s+rows_failed=(\d+).*elapsed=([\d.]+)s$/
+const TABLE_MAPPINGS_RE = /^Pipeline started:\s+(\d+)\s+table mapping\(s\)$/
+
+interface ParseResult {
+  milestones: MigrationMilestone[]
+  cards: MappingCardState[]
+}
+
+export function parseMilestones(logs: MigrationLogEvent[]): ParseResult {
+  const cardMap = new Map<string, MappingCardState>()
+  const milestones: MigrationMilestone[] = []
+  let totalMappings = 0
+
+  for (const log of logs) {
+    const { message, timestamp } = log
+
+    // Pipeline start
+    const psMatch = message.match(PIPELINE_START_RE)
+    if (psMatch) {
+      milestones.push({
+        id: `pipeline_start:${timestamp}`,
+        type: 'pipeline_start',
+        label: 'pipeline_started',
+        status: 'running',
+        timestamp,
+      })
+      continue
+    }
+
+    // Total mappings count
+    const tmMatch = message.match(TABLE_MAPPINGS_RE)
+    if (tmMatch) {
+      totalMappings = parseInt(tmMatch[1], 10)
+      continue
+    }
+
+    // Table start
+    const tsMatch = message.match(TABLE_START_RE)
+    if (tsMatch) {
+      const idx = parseInt(tsMatch[1], 10)
+      const total = parseInt(tsMatch[2], 10)
+      const label = tsMatch[3] // "src→tgt"
+      const parts = label.split(ARROW)
+      const sourceTable = parts[0]?.trim() ?? label
+      const targetTable = parts[1]?.trim() ?? ''
+
+      milestones.push({
+        id: `table_start:${label}`,
+        type: 'table_start',
+        label,
+        status: 'running',
+        timestamp,
+        mappingIndex: idx,
+        totalMappings: total,
+      })
+
+      cardMap.set(label, {
+        sourceTable,
+        targetTable,
+        status: 'running',
+        rowsRead: 0,
+        rowsWritten: 0,
+        rowsFailed: 0,
+        startedAt: timestamp,
+        mappingIndex: idx,
+        totalMappings: total,
+      })
+      continue
+    }
+
+    // Table complete
+    const tcMatch = message.match(TABLE_COMPLETE_RE)
+    if (tcMatch) {
+      const label = tcMatch[3]
+      const rowsRead = parseInt(tcMatch[4], 10)
+      const rowsWritten = parseInt(tcMatch[5], 10)
+      const rowsFailed = parseInt(tcMatch[6], 10)
+
+      milestones.push({
+        id: `table_complete:${label}`,
+        type: 'table_complete',
+        label,
+        status: 'success',
+        timestamp,
+        rowsRead,
+        rowsWritten,
+        rowsFailed,
+        mappingIndex: parseInt(tcMatch[1], 10),
+        totalMappings: parseInt(tcMatch[2], 10),
+      })
+
+      const card = cardMap.get(label)
+      if (card) {
+        card.status = 'success'
+        card.rowsRead = rowsRead
+        card.rowsWritten = rowsWritten
+        card.rowsFailed = rowsFailed
+        card.finishedAt = timestamp
+      }
+      continue
+    }
+
+    // Table failed
+    const tfMatch = message.match(TABLE_FAILED_RE)
+    if (tfMatch) {
+      const label = tfMatch[3]
+      const error = tfMatch[4]
+
+      milestones.push({
+        id: `table_failed:${label}`,
+        type: 'table_failed',
+        label,
+        status: 'failed',
+        timestamp,
+        error,
+        mappingIndex: parseInt(tfMatch[1], 10),
+        totalMappings: parseInt(tfMatch[2], 10),
+      })
+
+      const card = cardMap.get(label)
+      if (card) {
+        card.status = 'failed'
+        card.error = error
+        card.finishedAt = timestamp
+      }
+      continue
+    }
+
+    // Pipeline finish
+    const pfMatch = message.match(PIPELINE_FINISH_RE)
+    if (pfMatch) {
+      const status = pfMatch[1] === 'FINISHED' ? 'success' : 'failed'
+      const rowsWritten = parseInt(pfMatch[2], 10)
+      const rowsFailed = parseInt(pfMatch[3], 10)
+      const elapsedSec = parseFloat(pfMatch[4])
+
+      milestones.push({
+        id: `pipeline_finish:${timestamp}`,
+        type: 'pipeline_finish',
+        label: status === 'success' ? 'pipeline_finished' : `pipeline_${pfMatch[1]}`,
+        status,
+        timestamp,
+        rowsWritten,
+        rowsFailed,
+        elapsedMs: elapsedSec * 1000,
+      })
+
+      // Mark the pipeline_start milestone as success/failed
+      const startM = milestones.find(m => m.type === 'pipeline_start')
+      if (startM) startM.status = status
+
+      continue
+    }
+  }
+
+  // Post-processing: reconcile table_start milestones with completion events
+  const hasPipelineStart = milestones.some(m => m.type === 'pipeline_start')
+  const hasPipelineFinish = milestones.some(m => m.type === 'pipeline_finish')
+
+  const completedLabels = new Set<string>()
+  const failedLabels = new Set<string>()
+  for (const m of milestones) {
+    if (m.type === 'table_complete') completedLabels.add(m.label)
+    if (m.type === 'table_failed') failedLabels.add(m.label)
+  }
+
+  // When pipeline is finished, remove table_start milestones that have a corresponding
+  // table_complete or table_failed — they would otherwise appear as duplicate rows
+  if (hasPipelineFinish) {
+    const toRemove = new Set<string>()
+    for (const m of milestones) {
+      if (m.type === 'table_start' && (completedLabels.has(m.label) || failedLabels.has(m.label))) {
+        toRemove.add(m.id)
+      }
+    }
+    // Rebuild milestones without duplicate table_start entries
+    milestones.splice(
+      0,
+      milestones.length,
+      ...milestones.filter(m => !toRemove.has(m.id)),
+    )
+  }
+
+  // Mark table_start milestones: running tables during an active pipeline keep 'running' status
+  for (const m of milestones) {
+    if (m.type === 'table_start' && m.status === 'running') {
+      if (completedLabels.has(m.label)) m.status = 'success'
+      else if (failedLabels.has(m.label)) m.status = 'failed'
+    }
+  }
+
+  if (hasPipelineStart && !hasPipelineFinish) {
+    // Pipeline is still running — mark tables that haven't started yet as 'pending'
+    const startedLabels = new Set<string>()
+    for (const m of milestones) {
+      if (m.type === 'table_start') startedLabels.add(m.label)
+    }
+    for (const [label, card] of cardMap) {
+      if (!completedLabels.has(label) && !failedLabels.has(label) && card.status === 'running') {
+        if (!startedLabels.has(label)) {
+          card.status = 'pending'
+        }
+      }
+    }
+  }
+
+  // When pipeline finished with failures, mark tables that never got completion as pending
+  if (hasPipelineFinish) {
+    const finishedIndices = new Set<number>()
+    for (const m of milestones) {
+      if ((m.type === 'table_complete' || m.type === 'table_failed') && m.mappingIndex !== undefined) {
+        finishedIndices.add(m.mappingIndex)
+      }
+    }
+    for (const card of cardMap.values()) {
+      if (card.status === 'running' && !finishedIndices.has(card.mappingIndex)) {
+        card.status = 'pending'
+        card.error = 'notRunUpstreamFailed'
+      }
+    }
+  }
+
+  // Compute elapsedMs for cards
+  for (const card of cardMap.values()) {
+    if (card.startedAt && card.finishedAt) {
+      card.elapsedMs = new Date(card.finishedAt).getTime() - new Date(card.startedAt).getTime()
+    }
+  }
+
+  const cards = [...cardMap.values()].sort((a, b) => a.mappingIndex - b.mappingIndex)
+
+  return { milestones, cards }
+}
+
+/** Format ISO timestamp to local datetime string without T separator.
+ *  e.g. "2026-04-09T17:23:41.851Z" -> "2026-04-10 01:23:41" (UTC+8)
+ */
+export function formatDateTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  const MM = pad(d.getMonth() + 1)
+  const dd = pad(d.getDate())
+  const hh = pad(d.getHours())
+  const mm = pad(d.getMinutes())
+  const ss = pad(d.getSeconds())
+  return `${yyyy}-${MM}-${dd} ${hh}:${mm}:${ss}`
+}
+
+/** Format ISO timestamp to local time-only string (24h).
+ *  e.g. "2026-04-09T17:23:41.851Z" -> "01:23:41" (UTC+8)
+ */
+export function formatTimestamp(ts: string): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+/** Format elapsed milliseconds to human-readable duration.
+ *  e.g. 500 -> "500ms", 30000 -> "30.0s", 125000 -> "2m5s"
+ */
+export function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms.toFixed(0)}ms`
+  const sec = ms / 1000
+  if (sec < 60) return `${sec.toFixed(1)}s`
+  const min = Math.floor(sec / 60)
+  const rem = (sec % 60).toFixed(0)
+  return `${min}m${rem}s`
+}
+
+/** Format bytes to human-readable string.
+ *  e.g. 0 -> "0 B", 500 -> "500 B", 2048 -> "2 KB", 5242880 -> "5.00 MB", 1073741824 -> "1.00 GB"
+ */
+export function fmtBytes(b: number): string {
+  if (b <= 0) return '0 B'
+  if (b > 1e9) return `${(b / 1e9).toFixed(2)} GB`
+  if (b > 1e6) return `${(b / 1e6).toFixed(1)} MB`
+  if (b > 1024) return `${(b / 1024).toFixed(0)} KB`
+  return `${b} B`
+}
+
+/** Format duration milliseconds to human-readable string.
+ *  e.g. 500 -> "0.5s", 30000 -> "30.0s", 125000 -> "2m5s"
+ */
+export function fmtDuration(ms: number | null): string {
+  if (ms == null || ms <= 0) return '-'
+  if (ms > 60000) return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+/** Format bytes-per-second speed to human-readable string.
+ *  < 1 MiB/s → KB/s (1 decimal), ≥ 1 MiB/s → MB/s (2 decimals)
+ *  e.g. 512000 -> "500.0 KB/s", 2097152 -> "2.00 MB/s"
+ */
+export function fmtBytesSpeed(bps: number): string {
+  if (bps < 1_048_576) return `${(bps / 1024).toFixed(1)} KB/s`
+  return `${(bps / 1_048_576).toFixed(2)} MB/s`
+}

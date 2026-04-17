@@ -49,3 +49,4 @@ src-tauri/gen/schemas/
 
 # Accidentally copied app data files
 src-tauri/C*/
+test_migration_10m.sql

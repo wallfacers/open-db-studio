@@ -1,15 +1,18 @@
 use async_trait::async_trait;
-use chrono;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgRow, PgSslMode};
 use sqlx::{Column, ConnectOptions, Row, TypeInfo};
 use std::time::{Duration, Instant};
 
 use super::{ColumnMeta, ConnectionConfig, DataSource, DbStats, DbSummary, DriverCapabilities, ForeignKeyMeta, IndexMeta, ProcedureMeta, QueryResult, RoutineType, SchemaInfo, SqlDialect, TableMeta, TableStat, TableStatInfo, ViewMeta};
 use super::utils::format_size;
-use crate::AppResult;
+use crate::{AppError, AppResult};
 
 pub struct PostgresDataSource {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
+    mig_session_active: std::sync::atomic::AtomicBool,
+    /// Tracks whether COPY FROM STDIN is unsupported. Once set, skips COPY
+    /// entirely and goes directly to INSERT, avoiding repeated log warnings.
+    copy_disabled: std::sync::atomic::AtomicBool,
 }
 
 /// 将 PgRow 第 i 列转换为 serde_json::Value，按类型名精确派发。
@@ -131,10 +134,11 @@ fn pg_row_value(row: &PgRow, i: usize) -> serde_json::Value {
                 .map(|v| serde_json::Value::String(v.format("%H:%M:%S").to_string()))
                 .unwrap_or(serde_json::Value::Null)
         }
-        // json / jsonb
+        // json / jsonb：序列化为字符串，避免前端 String(obj) → "[object Object]"
         "json" | "jsonb" => {
             row.try_get::<Option<serde_json::Value>, _>(i)
                 .ok().flatten()
+                .map(|v| serde_json::Value::String(v.to_string()))
                 .unwrap_or(serde_json::Value::Null)
         }
         // uuid
@@ -170,62 +174,67 @@ fn pg_row_value(row: &PgRow, i: usize) -> serde_json::Value {
     }
 }
 
-/// 处理数组类型，按元素类型名派发到对应的 Vec<T>。
+/// 处理数组类型，按元素类型名派发到对应的 Vec<T>，结果序列化为 JSON 字符串。
+/// 数组值序列化为字符串（如 "[1,2,3]"），避免前端 String(arr) → "1,2,3" 逗号拼接。
 fn pg_array_value(row: &PgRow, i: usize, elem: &str) -> serde_json::Value {
+    fn to_json_str(v: serde_json::Value) -> serde_json::Value {
+        serde_json::Value::String(v.to_string())
+    }
+
     match elem {
         "text" | "varchar" | "bpchar" | "char" | "name" | "citext" => {
             row.try_get::<Option<Vec<String>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int8" | "bigint" => {
             row.try_get::<Option<Vec<i64>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v.iter().map(|n| n.to_string()).collect::<Vec<_>>()))
+                .map(|v| to_json_str(serde_json::json!(v.iter().map(|n| n.to_string()).collect::<Vec<_>>())))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int4" | "integer" | "int" => {
             row.try_get::<Option<Vec<i32>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "int2" | "smallint" => {
             row.try_get::<Option<Vec<i16>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "float8" | "double precision" => {
             row.try_get::<Option<Vec<f64>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "float4" | "real" => {
             row.try_get::<Option<Vec<f32>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "bool" | "boolean" => {
             row.try_get::<Option<Vec<bool>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
         "uuid" => {
             row.try_get::<Option<Vec<uuid::Uuid>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v.iter().map(|u| u.to_string()).collect::<Vec<_>>()))
+                .map(|v| to_json_str(serde_json::json!(v.iter().map(|u| u.to_string()).collect::<Vec<_>>())))
                 .unwrap_or(serde_json::Value::Null)
         }
         // numeric 数组、其他：回退字符串数组
         _ => {
             row.try_get::<Option<Vec<String>>, _>(i)
                 .ok().flatten()
-                .map(|v| serde_json::json!(v))
+                .map(|v| to_json_str(serde_json::json!(v)))
                 .unwrap_or(serde_json::Value::Null)
         }
     }
@@ -278,7 +287,16 @@ impl PostgresDataSource {
     }
 
     pub async fn new_with_schema(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
-        use crate::AppError;
+        Self::build(config, schema, false).await
+    }
+
+    /// Constructor for migration pipelines — applies session-level optimizations
+    /// on every connection. Normal UI pools do NOT get these settings.
+    pub async fn new_for_migration(config: &ConnectionConfig, schema: Option<&str>) -> AppResult<Self> {
+        Self::build(config, schema, true).await
+    }
+
+    async fn build(config: &ConnectionConfig, schema: Option<&str>, for_migration: bool) -> AppResult<Self> {
         let raw_host = config.host.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing host".into()))?;
         // 将 localhost 替换为 127.0.0.1，避免 IPv6 DNS 解析导致连接延迟
@@ -287,6 +305,7 @@ impl PostgresDataSource {
             .ok_or_else(|| AppError::Datasource("Missing port".into()))?;
         let username = config.username.as_deref()
             .ok_or_else(|| AppError::Datasource("Missing username".into()))?;
+        let password = config.password.as_deref().unwrap_or("");
         // SSL 模式映射
         let ssl_mode = match config.ssl_mode.as_deref().unwrap_or("disable") {
             "disable" => PgSslMode::Disable,
@@ -300,12 +319,9 @@ impl PostgresDataSource {
             .host(host)
             .port(port)
             .username(username)
+            .password(password)
             .ssl_mode(ssl_mode);
-        if let Some(pw) = config.password.as_deref() {
-            opts = opts.password(pw);
-        }
         // database 为空时显式使用用户名（PG 规范：默认库 = 用户名）
-        // 不能省略，否则 sqlx PgConnectOptions::new() 可能读取 PGDATABASE 环境变量导致连接到错误的库
         let db = config.database.as_deref().filter(|s| !s.is_empty()).unwrap_or(username);
         opts = opts.database(db);
 
@@ -330,18 +346,245 @@ impl PostgresDataSource {
         let idle_timeout = config.pool_idle_timeout_secs.unwrap_or(300);
         let acquire_timeout = config.connect_timeout_secs.unwrap_or(30);
 
-        let pool = PgPoolOptions::new()
+        let mut pool_opts = PgPoolOptions::new()
             .max_connections(max_conn)
             .acquire_timeout(Duration::from_secs(acquire_timeout as u64))
-            .idle_timeout(Duration::from_secs(idle_timeout as u64))
-            .connect_with(opts)
-            .await?;
-        Ok(Self { pool })
+            .idle_timeout(Duration::from_secs(idle_timeout as u64));
+
+        // Migration pools: apply session optimizations on every connection.
+        if for_migration {
+            pool_opts = pool_opts.after_connect(|conn, _meta| Box::pin(async move {
+                use sqlx::Executor;
+                let _ = conn.execute("SET session_replication_role = 'replica'").await;
+                let _ = conn.execute("SET synchronous_commit = 'off'").await;
+                let _ = conn.execute("SET work_mem = '256MB'").await;
+                Ok(())
+            }));
+        }
+
+        let pool = pool_opts.connect_with(opts).await?;
+        Ok(Self { pool, mig_session_active: std::sync::atomic::AtomicBool::new(false), copy_disabled: std::sync::atomic::AtomicBool::new(false) })
+    }
+
+    /// Execute chunked INSERT within an explicit transaction to reduce fsync overhead.
+    /// Mirrors MySQL's `bulk_write_in_txn` approach: chunk rows by estimated SQL size,
+    /// execute multi-row INSERT per chunk, all within a single txn (one COMMIT).
+    #[allow(dead_code)]
+    pub async fn bulk_write_in_txn(
+        &self,
+        txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        // PostgreSQL has no max_allowed_packet, but large single statements can
+        // exhaust memory. Use a fixed 16 MB chunk limit.
+        const MAX_SQL_BYTES: usize = 16 * 1024 * 1024;
+
+        let escape_style = self.string_escape_style();
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| estimate_row_sql_size(r, columns.len()))
+            .collect();
+
+        let mut total_written = 0usize;
+        let mut chunk_start = 0;
+
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, chunk, conflict_strategy, upsert_keys, driver,
+            );
+            let result = sqlx::query(&sql).execute(&mut **txn).await
+                .map_err(|e| AppError::Datasource(format!("INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected().min(chunk.len() as u64) as usize;
+            chunk_start = chunk_end;
+        }
+
+        Ok(total_written)
+    }
+
+    async fn bulk_write_copy(&self, table: &str, columns: &[String], rows: &[Vec<serde_json::Value>]) -> AppResult<usize> {
+        use sqlx::postgres::PgPoolCopyExt;
+
+        let mut col_list = String::with_capacity(columns.len() * 32);
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 { col_list.push_str(", "); }
+            crate::datasource::utils::quote_identifier_for_driver_into(col, "postgres", &mut col_list);
+        }
+        let csv_data = crate::datasource::bulk_write::rows_to_csv(rows);
+
+        let mut quoted_table = String::new();
+        crate::datasource::utils::quote_identifier_for_driver_into(table, "postgres", &mut quoted_table);
+
+        let copy_sql = format!(
+            "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '')",
+            quoted_table, col_list
+        );
+
+        let mut copy_in = self.pool.copy_in_raw(&copy_sql).await
+            .map_err(|e| AppError::Datasource(format!("COPY FROM STDIN: {}", e)))?;
+        copy_in.send(csv_data.as_slice()).await
+            .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY send: {}", e)))?;
+        let rows_copied = copy_in.finish().await
+            .map_err(|e| AppError::Datasource(format!("COPY finish: {}", e)))?;
+
+        Ok(rows_copied as usize)
+    }
+
+    /// COPY FROM STDIN from native MigrationRows (avoids serde_json::Value).
+    async fn bulk_write_copy_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+    ) -> AppResult<usize> {
+        use sqlx::postgres::PgPoolCopyExt;
+
+        let mut col_list = String::with_capacity(columns.len() * 32);
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 { col_list.push_str(", "); }
+            crate::datasource::utils::quote_identifier_for_driver_into(col, "postgres", &mut col_list);
+        }
+
+        let mut quoted_table = String::new();
+        crate::datasource::utils::quote_identifier_for_driver_into(table, "postgres", &mut quoted_table);
+
+        let copy_sql = format!(
+            "COPY {} ({}) FROM STDIN WITH (FORMAT csv, NULL '')",
+            quoted_table, col_list
+        );
+
+        let mut copy_in = self.pool.copy_in_raw(&copy_sql).await
+            .map_err(|e| AppError::Datasource(format!("COPY native: {}", e)))?;
+
+        let mut buf = Vec::with_capacity(1000 * 128);
+        for (i, row) in rows.iter().enumerate() {
+            row.to_csv_line(&mut buf);
+            if (i + 1) % 1000 == 0 {
+                copy_in.send(buf.as_slice()).await
+                    .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY native send: {}", e)))?;
+                buf.clear();
+            }
+        }
+        if !buf.is_empty() {
+            copy_in.send(buf.as_slice()).await
+                .map_err(|e: sqlx::Error| AppError::Datasource(format!("COPY native send: {}", e)))?;
+        }
+
+        let rows_copied = copy_in.finish().await
+            .map_err(|e| AppError::Datasource(format!("COPY native finish: {}", e)))?;
+
+        Ok(rows_copied as usize)
+    }
+
+    /// Native INSERT from MigrationRows using SQL literal serialization.
+    async fn bulk_write_native_insert(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        // Use parameterized INSERT to avoid memory amplification from TEXT escaping
+        self.bulk_write_parametrized_batch(table, columns, rows, conflict_strategy, upsert_keys, driver).await
+    }
+
+    /// Parameterized batch INSERT from MigrationRows (memory-efficient, no SQL string construction).
+    /// Uses prepared statement cache to optimize repeated executions.
+    async fn bulk_write_parametrized_batch(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // Build the parameterized SQL template once (reused for all rows)
+        let sql_template = build_parametrized_insert_sql(table, columns, conflict_strategy, upsert_keys, driver);
+
+        // Execute each row individually with parameter binding
+        let mut total_written = 0usize;
+        for row in rows {
+            let query = sqlx::query(&sql_template);
+            let query = bind_migration_values_to_query(query, &row.values);
+            let result: sqlx::postgres::PgQueryResult = query.execute(&self.pool).await
+                .map_err(|e| AppError::Datasource(format!("Parameterized INSERT: {}", e)))?;
+            total_written += result.rows_affected() as usize;
+        }
+
+        Ok(total_written)
+    }
+
+    /// Static method for parameterized INSERT within an explicit transaction.
+    /// Used by bulk_write_native_in_txn_static for transactional writes.
+    async fn bulk_write_parametrized_in_txn(
+        txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // Build the parameterized SQL template once
+        let sql_template = build_parametrized_insert_sql(table, columns, conflict_strategy, upsert_keys, driver);
+
+        // Execute each row individually with parameter binding
+        let mut total_written = 0usize;
+        for row in rows {
+            let query = sqlx::query(&sql_template);
+            let query = bind_migration_values_to_query(query, &row.values);
+            let result: sqlx::postgres::PgQueryResult = query.execute(&mut **txn).await
+                .map_err(|e| AppError::Datasource(format!("Parameterized INSERT in txn: {}", e)))?;
+            total_written += result.rows_affected() as usize;
+        }
+
+        Ok(total_written)
+    }
+
+    /// Static method for bulk_write_native_in_txn.
+    async fn bulk_write_native_in_txn_static(
+        txn: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        table: &str,
+        columns: &[String],
+        rows: &[crate::migration::native_row::MigrationRow],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        // Use parameterized INSERT for memory efficiency
+        Self::bulk_write_parametrized_in_txn(txn, table, columns, rows, conflict_strategy, upsert_keys, driver).await
     }
 }
 
 #[async_trait]
 impl DataSource for PostgresDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
@@ -684,6 +927,20 @@ impl DataSource for PostgresDataSource {
         }
     }
 
+    #[allow(dead_code)]
+    async fn execute_in_transaction(&self, statements: &[String]) -> AppResult<usize> {
+        use sqlx::Acquire;
+        let mut conn = self.pool.acquire().await?;
+        let mut tx = conn.begin().await?;
+        let mut total = 0usize;
+        for stmt in statements {
+            let result = sqlx::query(stmt).execute(&mut *tx).await?;
+            total += result.rows_affected() as usize;
+        }
+        tx.commit().await?;
+        Ok(total)
+    }
+
     async fn get_db_stats(&self, _database: Option<&str>) -> AppResult<DbStats> {
         let rows: Vec<(String, i64, i64)> = sqlx::query_as(
             "SELECT s.relname, \
@@ -741,6 +998,365 @@ impl DataSource for PostgresDataSource {
             TableStatInfo { name, row_count: Some(row_count), size }
         }).collect())
     }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::PostgresLiteral
+    }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        let mut conn = self.pool.acquire().await?;
+        let _ = sqlx::query("SET session_replication_role = 'replica'").execute(&mut *conn).await;
+        let _ = sqlx::query("SET synchronous_commit = 'off'").execute(&mut *conn).await;
+        let _ = sqlx::query("SET work_mem = '256MB'").execute(&mut *conn).await;
+        self.mig_session_active.store(true, std::sync::atomic::Ordering::Relaxed);
+        log::info!("PostgreSQL migration session optimizations applied");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        if !self.mig_session_active.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut conn = self.pool.acquire().await?;
+        let _ = sqlx::query("SET session_replication_role = 'origin'").execute(&mut *conn).await;
+        let _ = sqlx::query("SET synchronous_commit = 'on'").execute(&mut *conn).await;
+        let _ = sqlx::query("RESET work_mem").execute(&mut *conn).await;
+        self.mig_session_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn supports_txn_bulk_write(&self) -> bool { true }
+
+    async fn begin_bulk_write_txn(&self) -> crate::AppResult<Option<crate::datasource::BulkWriteTxn>> {
+        let tx = self.pool.begin().await?;
+        Ok(Some(crate::datasource::BulkWriteTxn::Postgres(tx)))
+    }
+
+    async fn bulk_write_in_txn(
+        &self,
+        txn: &mut crate::datasource::BulkWriteTxn,
+        table: &str,
+        columns: &[String],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> crate::AppResult<usize> {
+        match txn {
+            crate::datasource::BulkWriteTxn::Postgres(tx) => {
+                Self::bulk_write_native_in_txn_static(
+                    tx, table, columns, &rows,
+                    conflict_strategy, upsert_keys, driver,
+                ).await
+            }
+            _ => Err(crate::error::AppError::Other("Invalid txn handle for PostgreSQL".into())),
+        }
+    }
+
+    async fn commit_bulk_write_txn(&self, txn: crate::datasource::BulkWriteTxn) -> crate::AppResult<()> {
+        match txn {
+            crate::datasource::BulkWriteTxn::Postgres(tx) => {
+                tx.commit().await?;
+                Ok(())
+            }
+            _ => Err(crate::error::AppError::Other("Invalid txn handle for PostgreSQL".into())),
+        }
+    }
+
+    async fn execute_streaming(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+    ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<Vec<serde_json::Value>>)> {
+        use sqlx::Column;
+        use sqlx::Row;
+        use futures_util::TryStreamExt;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+
+        // Fetch columns first via a separate query
+        let col_sql = format!("SELECT * FROM ({}) AS _mig_cols_ LIMIT 0", sql);
+        let col_rows = sqlx::query(&col_sql).fetch_all(&self.pool).await?;
+        let columns: Vec<String> = if let Some(first) = col_rows.first() {
+            first.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            vec![]
+        };
+
+        // Stream rows
+        let pool = self.pool.clone();
+        let sql_owned = sql.to_string();
+        let cols = columns.clone();
+        tokio::spawn(async move {
+            let mut stream = sqlx::query(&sql_owned).fetch(&pool);
+            while let Ok(Some(row)) = stream.try_next().await {
+                let num_cols = cols.len();
+                let values: Vec<serde_json::Value> = (0..num_cols)
+                    .map(|i| pg_row_value(&row, i))
+                    .collect();
+                if tx.send(values).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok((columns, rx))
+    }
+
+    async fn migration_read_sql_stream(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> crate::AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
+        use crate::migration::native_row::decode_postgres_column;
+        use crate::migration::native_row::MigrationRow;
+        use sqlx::Column;
+        use sqlx::Row;
+        use futures_util::TryStreamExt;
+
+        let sql_owned = sql.to_string();
+        let pool = self.pool.clone();
+        let (col_tx, col_rx) = tokio::sync::oneshot::channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+        let cancel_token = cancel.clone();
+
+        tokio::spawn(async move {
+            let mut stream = sqlx::query(&sql_owned).fetch(&pool);
+            let mut col_tx = Some(col_tx);
+
+            tokio::select! {
+                result = async {
+                    match stream.try_next().await {
+                        Ok(Some(first_row)) => {
+                            let columns: Vec<String> = first_row.columns().iter()
+                                .map(|c| c.name().to_string()).collect();
+                            let num_cols = columns.len();
+
+                            if let Some(tx) = col_tx.take() {
+                                let _ = tx.send(columns);
+                            }
+
+                            let values = (0..num_cols)
+                                .map(|i| decode_postgres_column(&first_row, i))
+                                .collect();
+                            if tx.send(MigrationRow { values }).await.is_err() {
+                                return;
+                            }
+
+                            while let Ok(Some(row)) = stream.try_next().await {
+                                let values = (0..num_cols)
+                                    .map(|i| decode_postgres_column(&row, i))
+                                    .collect();
+                                if tx.send(MigrationRow { values }).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            if let Some(tx) = col_tx.take() {
+                                let _ = tx.send(Vec::new());
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("[migration] sql_stream query failed: {}", e);
+                            drop(col_tx.take());
+                        }
+                    }
+                } => result,
+                _ = cancel_token.cancelled() => {
+                    if let Some(tx) = col_tx.take() {
+                        let _ = tx.send(Vec::new());
+                    }
+                }
+            }
+        });
+
+        let columns = col_rx.await.map_err(|_| crate::AppError::Other("Failed to read columns from stream task".to_string()))?;
+        Ok((columns, rx))
+    }
+
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // COPY FROM STDIN doesn't support ON CONFLICT — fall back to INSERT
+        if !matches!(
+            conflict_strategy,
+            crate::migration::task_mgr::ConflictStrategy::Insert
+                | crate::migration::task_mgr::ConflictStrategy::Overwrite
+        ) {
+            return self.bulk_write_native_insert(table, columns, &rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
+        // Cached: skip COPY if previously failed
+        if self.copy_disabled.load(std::sync::atomic::Ordering::Acquire) {
+            return self.bulk_write_native_insert(table, columns, &rows, conflict_strategy, upsert_keys, driver).await;
+        }
+
+        // Try COPY FROM STDIN with native CSV serialization
+        match self.bulk_write_copy_native(table, columns, &rows).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                self.copy_disabled.store(true, std::sync::atomic::Ordering::Release);
+                log::warn!("PostgreSQL native COPY failed ({}), falling back to INSERT", e);
+                self.bulk_write_native_insert(table, columns, &rows, conflict_strategy, upsert_keys, driver).await
+            }
+        }
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // COPY FROM STDIN doesn't support ON CONFLICT, so only use it for simple Insert or Overwrite
+        if !matches!(
+            conflict_strategy,
+            crate::migration::task_mgr::ConflictStrategy::Insert
+                | crate::migration::task_mgr::ConflictStrategy::Overwrite
+        ) {
+            let escape_style = self.string_escape_style();
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            return Ok(result.row_count.min(rows.len()));
+        }
+
+        // Cached: skip COPY if previously failed
+        if self.copy_disabled.load(std::sync::atomic::Ordering::Acquire) {
+            let escape_style = self.string_escape_style();
+            let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+            );
+            let result = self.execute(&sql).await?;
+            return Ok(result.row_count.min(rows.len()));
+        }
+
+        // Try COPY FROM STDIN for simple INSERT / Overwrite
+        match self.bulk_write_copy(table, columns, rows).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                self.copy_disabled.store(true, std::sync::atomic::Ordering::Release);
+                log::warn!("PostgreSQL COPY failed ({}), falling back to INSERT", e);
+                let escape_style = self.string_escape_style();
+                let sql = crate::datasource::bulk_write::build_insert_sql_optimized(
+                    &escape_style, table, columns, rows, conflict_strategy, upsert_keys, driver,
+                );
+                let result = self.execute(&sql).await?;
+                Ok(result.row_count.min(rows.len()))
+            }
+        }
+    }
+}
+
+use crate::datasource::bulk_write::{estimate_row_sql_size, build_conflict_clause};
+use crate::datasource::utils::quote_identifier_for_driver;
+use crate::migration::task_mgr::ConflictStrategy;
+
+// ============================================================
+// Parameterized INSERT helpers for PostgreSQL
+// ============================================================
+
+/// Build parameterized INSERT SQL with `$1 $2 $3...` placeholders.
+/// Includes ON CONFLICT clause based on conflict_strategy.
+fn build_parametrized_insert_sql(
+    table: &str,
+    columns: &[String],
+    conflict_strategy: &ConflictStrategy,
+    upsert_keys: &[String],
+    driver: &str,
+) -> String {
+    // Build column list with proper quoting
+    let quoted_columns: Vec<String> = columns.iter()
+        .map(|c| quote_identifier_for_driver(c, driver))
+        .collect();
+
+    // Build placeholders: $1, $2, $3, ...
+    let placeholders: Vec<String> = (1..=columns.len())
+        .map(|i| format!("${}", i))
+        .collect();
+
+    // Build conflict clause using shared logic
+    let key_set: std::collections::HashSet<&str> = upsert_keys.iter().map(|s| s.as_str()).collect();
+    let quote_col_fn = |c: &str| quote_identifier_for_driver(c, driver);
+    let (keyword, suffix) = build_conflict_clause(conflict_strategy, driver, columns, &key_set, upsert_keys, &quote_col_fn);
+
+    // Construct final SQL
+    format!(
+        "{} {} ({}) VALUES ({}){}",
+        keyword,
+        quote_identifier_for_driver(table, driver),
+        quoted_columns.join(", "),
+        placeholders.join(", "),
+        suffix
+    )
+}
+
+/// Bind MigrationValue array to a sqlx query.
+/// PostgreSQL-specific binding for native types.
+fn bind_migration_values_to_query<'a>(
+    mut query: sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    values: &[crate::migration::native_row::MigrationValue],
+) -> sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    use crate::migration::native_row::MigrationValue;
+
+    for val in values {
+        match val {
+            MigrationValue::Null => {
+                query = query.bind(None::<String>);
+            }
+            MigrationValue::Bool(b) => {
+                query = query.bind(*b);
+            }
+            MigrationValue::Int(i) => {
+                query = query.bind(*i);
+            }
+            MigrationValue::UInt(u) => {
+                // sqlx PostgreSQL doesn't have native u64, bind as i64
+                // For values > i64::MAX, this will fail at runtime
+                // (extremely rare for database columns)
+                query = query.bind(*u as i64);
+            }
+            MigrationValue::Float(f) => {
+                query = query.bind(*f);
+            }
+            MigrationValue::Decimal(d) => {
+                // Try to parse as rust_decimal::Decimal for exact representation
+                if let Ok(dec) = rust_decimal::Decimal::from_str_exact(d) {
+                    query = query.bind(dec);
+                } else {
+                    // Fallback to string binding
+                    query = query.bind(d.clone());
+                }
+            }
+            MigrationValue::Text(s) => {
+                query = query.bind(s.clone());
+            }
+            MigrationValue::Blob(b) => {
+                query = query.bind(b.clone());
+            }
+        }
+    }
+    query
 }
 
 // ============================================================

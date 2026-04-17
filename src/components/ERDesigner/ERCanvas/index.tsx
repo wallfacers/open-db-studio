@@ -5,7 +5,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
   ReactFlow,
   Background,
-  BackgroundVariant,
   Controls,
   useNodesState,
   useEdgesState,
@@ -483,7 +482,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
 
   return (
     <div className="flex-1 flex min-h-0 relative">
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-background-base">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <ERToolbar
         projectId={projectId}
         onOpenDDL={() => setShowDDL(true)}
@@ -502,7 +501,6 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
       />
       <div className="flex-1 overflow-hidden relative graph-canvas-container" style={{ visibility: isActiveTab ? 'visible' : 'hidden', pointerEvents: isActiveTab ? 'auto' : 'none' }}>
         <ReactFlow
-          className="graph-canvas-container"
           nodes={nodes}
           edges={edges}
           panActivationKeyCode={isActiveTab ? 'Space' : null}
@@ -533,7 +531,7 @@ function ERCanvasInner({ projectId, tabId }: ERCanvasProps) {
           minZoom={0.1}
           maxZoom={2}
         >
-          <Background id="er-canvas-bg" variant={BackgroundVariant.Dots} color="var(--border-default)" bgColor="var(--background-base)" gap={20} size={1} />
+          <Background id="er-canvas-bg" color="var(--foreground-ghost)" gap={20} size={1} />
           <Controls />
         </ReactFlow>
       </div>

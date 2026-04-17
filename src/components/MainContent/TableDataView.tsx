@@ -177,11 +177,6 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
   filterOpRef.current = filterOp;
   const filterValueRef = useRef(filterValue);
   filterValueRef.current = filterValue;
-  const sortColRef = useRef(sortCol);
-  sortColRef.current = sortCol;
-  const sortDirRef = useRef(sortDir);
-  sortDirRef.current = sortDir;
-
   const loadData = useCallback(async (forcePage?: number) => {
     if (!activeConnectionId || !tableName) return;
     const reqId = ++requestIdRef.current;
@@ -203,8 +198,8 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           filter_operator: filterOpRef.current || null,
           filter_value: (['IS NULL', 'IS NOT NULL'].includes(filterOpRef.current)) ? null : (filterValueRef.current || null),
           filter_data_type: columnsRef.current.find(c => c.name === filterFieldRef.current)?.data_type || null,
-          sort_column: sortColRef.current,
-          sort_direction: sortDirRef.current,
+          sort_column: sortCol,
+          sort_direction: sortDir,
         }
       });
       if (reqId !== requestIdRef.current) return;
@@ -218,7 +213,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }
-  }, [activeConnectionId, dbName, tableName, schema]);
+  }, [activeConnectionId, dbName, tableName, schema, sortCol, sortDir]);
 
   useEffect(() => {
     if (!activeConnectionId || !tableName) return;
@@ -263,6 +258,12 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
       loadData();
     }
   }, [externalRefreshSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 字段名列表：优先用 columns 元数据，未加载时降级为 data.columns（避免首次点击下拉为空）
+  const columnNames = useMemo(
+    () => columns.length > 0 ? columns.map(c => c.name) : (data?.columns ?? []),
+    [columns, data?.columns]
+  );
 
   const handleSearch = () => {
     // 先同步更新 ref（立即生效）
@@ -620,7 +621,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
         <Filter size={12} className="text-foreground-muted flex-shrink-0"/>
         <DropdownSelect
           value={filterField}
-          options={columns.map(c => ({ value: c.name, label: c.name }))}
+          options={columnNames.map(name => ({ value: name, label: name }))}
           placeholder={t('tableDataView.filterSelectField')}
           onChange={(v) => {
             setFilterField(v);
@@ -674,7 +675,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           onChange={(v) => { latestWhereRef.current = v; setWhereClause(v); }}
           onSearch={handleSearch}
           placeholder={t('tableDataView.enterCondition')}
-          columns={columns.map(c => c.name)}
+          columns={columnNames}
         />
         <span className="text-foreground-muted">ORDER BY</span>
         <AutoCompleteInput
@@ -682,7 +683,7 @@ export const TableDataView: React.FC<TableDataViewProps> = ({
           onChange={(v) => { latestOrderRef.current = v; setOrderClause(v); }}
           onSearch={handleSearch}
           placeholder={t('tableDataView.enterOrder')}
-          columns={columns.map(c => c.name)}
+          columns={columnNames}
         />
       </div>
 

@@ -110,6 +110,8 @@ struct TableStatRow {
 
 #[async_trait]
 impl DataSource for ClickHouseDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         self.client
             .query("SELECT 1")
@@ -498,6 +500,54 @@ impl DataSource for ClickHouseDataSource {
             },
             tables,
         })
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        // Build JSONEachRow format: one JSON object per line
+        let mut body = String::with_capacity(rows.len() * 200);
+        for row in rows {
+            let mut obj = serde_json::Map::new();
+            for (i, col) in columns.iter().enumerate() {
+                if let Some(val) = row.get(i) {
+                    obj.insert(col.clone(), val.clone());
+                }
+            }
+            body.push_str(
+                &serde_json::to_string(&serde_json::Value::Object(obj))
+                    .unwrap_or_default(),
+            );
+            body.push('\n');
+        }
+
+        let mut col_list = String::with_capacity(columns.len() * 20);
+        for (i, col) in columns.iter().enumerate() {
+            if i > 0 { col_list.push_str(", "); }
+            crate::datasource::utils::quote_identifier_for_driver_into(col, "clickhouse", &mut col_list);
+        }
+        let mut quoted_table = String::new();
+        crate::datasource::utils::quote_identifier_for_driver_into(table, "clickhouse", &mut quoted_table);
+        let insert_sql = format!(
+            "INSERT INTO {} ({}) FORMAT JSONEachRow",
+            quoted_table,
+            col_list
+        );
+
+        // Send INSERT + JSONEachRow data via the HTTP interface
+        let sql_with_data = format!("{}\n{}", insert_sql, body);
+        self.execute(&sql_with_data).await?;
+        Ok(rows.len())
     }
 }
 

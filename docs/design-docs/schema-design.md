@@ -28,7 +28,7 @@
 
 | 表 | 用途 |
 |----|------|
-| `task_records` | 后台任务（导入/导出/迁移/SeaTunnel/AI 指标生成），含进度、日志、错误详情 |
+| `task_records` | 后台任务（导入/导出/迁移/AI 指标生成），含进度、日志、错误详情 |
 
 ## GraphRAG 图谱表（2 张）
 
@@ -44,12 +44,16 @@
 | `metrics` | 业务指标定义（draft/approved/rejected 状态流转），原子/复合指标 |
 | `semantic_aliases` | 语义别名（自然语言 → 表/列映射，AI 上下文增强） |
 
-## 跨源迁移表（2 张）
+## 跨源迁移表（6 张）
 
 | 表 | 用途 |
 |----|------|
-| `migration_tasks` | 迁移任务（pending/running/paused/done/failed 状态机） |
-| `migration_checks` | 迁移预检结果（类型兼容/null 约束/主键冲突） |
+| `migration_tasks` | 旧版迁移任务（pending/running/paused/done/failed 状态机） |
+| `migration_checks` | 旧版迁移预检结果（类型兼容/null 约束/主键冲突） |
+| `migration_categories` | 迁移中心任务分类（树形，支持多级嵌套） |
+| `migration_jobs` | 迁移 Job 定义（含 config_json、last_status） |
+| `migration_dirty_records` | 迁移脏数据记录（按 run_id 归属） |
+| `migration_run_history` | 迁移运行历史（行读写统计、耗时、状态） |
 
 ## UI 持久化表（1 张）
 
@@ -75,14 +79,6 @@
 |----|------|
 | `schema_change_log` | 外部数据源 Schema 变更追踪（DDL 审计） |
 
-## SeaTunnel 集成表（3 张）
-
-| 表 | 用途 |
-|----|------|
-| `seatunnel_connections` | SeaTunnel 引擎连接配置 |
-| `seatunnel_categories` | SeaTunnel 任务分类 |
-| `seatunnel_jobs` | SeaTunnel 迁移 Job（CRUD + REST API 提交/停止/状态轮询） |
-
 ## ER 设计器表（5 张）
 
 | 表 | 用途 |
@@ -104,14 +100,13 @@
 | 任务系统 | 1 |
 | GraphRAG | 2 |
 | 业务指标 | 2 |
-| 跨源迁移 | 2 |
+| 跨源迁移 | 6 |
 | UI 持久化 | 1 |
 | 变更追踪 | 1 |
 | Agent 会话 | 1 |
 | Schema 日志 | 1 |
-| SeaTunnel | 3 |
 | ER 设计器 | 5 |
-| **总计** | **25** |
+| **总计** | **26** |
 
 ## 迁移策略
 

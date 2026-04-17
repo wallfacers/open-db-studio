@@ -14,6 +14,7 @@ interface NodeDetailProps {
   nodeNameMap: Record<string, string>;
   onClose: () => void;
   onAliasUpdated: () => void;
+  onNodeClick?: (nodeId: string) => void;
   onRefresh?: () => void;
 }
 
@@ -240,6 +241,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
   nodeNameMap,
   onClose,
   onAliasUpdated,
+  onNodeClick,
   onRefresh,
 }) => {
   const { t } = useTranslation();
@@ -249,9 +251,20 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
   const aliases = parseAliases(node.aliases);
 
   // Edges related to this node
-  const relatedEdges = edges.filter(
+  const rawRelatedEdges = edges.filter(
     (e) => e.from_node === node.id || e.to_node === node.id
   );
+
+  // Deduplicate edges: for self-links, we might see both to_link and from_link
+  // pointing to the same LinkNode. We only need to show it once per peer.
+  const seenPeers = new Set<string>();
+  const relatedEdges = rawRelatedEdges.filter(edge => {
+    const isOutgoing = edge.from_node === node.id;
+    const peerId = isOutgoing ? edge.to_node : edge.from_node;
+    if (seenPeers.has(peerId)) return false;
+    seenPeers.add(peerId);
+    return true;
+  });
 
   const handleAliasSaved = () => {
     setShowAliasEditor(false);
@@ -407,18 +420,19 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                     return (
                       <div
                         key={edge.id}
-                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-background-base transition-colors flex-wrap"
+                        onClick={() => onNodeClick?.(peerId)}
+                        className="flex items-center gap-1.5 py-1.5 px-2 rounded hover:bg-background-hover transition-colors flex-wrap cursor-pointer group/edge"
                       >
                         <ArrowRight
                           size={11}
-                          className={`flex-shrink-0 ${edgeTypeColor(edge.edge_type)}`}
+                          className={`flex-shrink-0 transition-transform group-hover/edge:translate-x-0.5 ${edgeTypeColor(edge.edge_type)}`}
                           style={isOutgoing ? undefined : { transform: 'rotate(180deg)' }}
                         />
                         <span className={`text-[10px] font-medium flex-shrink-0 ${edgeTypeColor(edge.edge_type)}`}>
                           {edge.edge_type}
                         </span>
                         <Tooltip content={peerName} className="truncate flex-1">
-                          <span className="text-foreground-default text-[10px] font-mono truncate">
+                          <span className="text-foreground-default text-[10px] font-mono truncate group-hover/edge:text-accent">
                             {peerName}
                           </span>
                         </Tooltip>

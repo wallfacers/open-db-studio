@@ -158,10 +158,18 @@ export class UIRouter {
     // "active" → use injected provider to find the currently active tab
     const activeTabId = this._getActiveTabId?.()
     if (activeTabId) {
-      const instance = this.instances.get(activeTabId)
-      if (instance && (!objectType || instance.type === objectType)) return instance
+      // Convention A: adapter's objectId === tabId (QueryEditor, TableForm, MetricForm)
+      const direct = this.instances.get(activeTabId)
+      if (direct && (!objectType || direct.type === objectType)) return direct
+      // Convention B: adapter exposes its owning tabId separately (MigrationJob).
+      // This prevents state leakage when multiple instances of the same type
+      // are open — without this branch, the fallback below would return the
+      // first registered instance instead of the actually-active one.
+      for (const [, obj] of this.instances) {
+        if ((!objectType || obj.type === objectType) && obj.tabId === activeTabId) return obj
+      }
     }
-    // fallback: find first instance of matching type
+    // fallback: find first instance of matching type (singleton adapters without a tab)
     for (const [, obj] of this.instances) {
       if (!objectType || obj.type === objectType) return obj
     }

@@ -3,7 +3,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Expand the existing AI change highlight system (built for SeaTunnelJobAdapter) to QueryEditorAdapter, MetricFormAdapter, and TableFormAdapter.
+**Goal:** Expand the existing AI change highlight system to QueryEditorAdapter, MetricFormAdapter, and TableFormAdapter.
 
 **Architecture:** Each adapter independently extracts changed paths in its `patchDirect` method and calls `highlightStore.addHighlights()`. UI components wrap their fields with `useFieldHighlight` (form fields) or `useMonacoHighlight` (Monaco editors). No new shared abstractions needed.
 
@@ -84,7 +84,7 @@ All 11 form fields get highlight support:
 
 **Integration pattern:**
 
-- Use `HighlightedField` wrapper component (same pattern as SeaTunnel VisualBuilder)
+- Use `HighlightedField` wrapper component (same pattern as other form adapters)
 - Each field's container `<div>` gets `className` from `useFieldHighlight`
 - Each field's onChange calls `onUserEdit()` to clear residual on user edit
 
@@ -143,7 +143,7 @@ Deduplicate paths with `new Set()`.
 | Context dropdowns highlight | Yes (useFieldHighlight) | Minimal effort, high value when AI switches database/schema |
 | Table columns highlight granularity | Row-level | Cell-level too visually fragmented in a dense table |
 | Column path merging | `columns.<columnName>` | Natural mapping from addressable-by-name patch paths |
-| Path extraction approach | Each adapter implements its own | SeaTunnel needs JSON deep diff, QueryEditor needs direct compare, TableForm needs index resolution — too different to abstract |
+| Path extraction approach | Each adapter implements its own | QueryEditor needs direct compare, TableForm needs index resolution — too different to abstract |
 | ERCanvas highlight | Deferred (tech debt in PLANS.md) | Canvas/SVG rendering needs different approach; has undo as alternative |
 
 ## 5. Files Modified

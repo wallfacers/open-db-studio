@@ -15,7 +15,7 @@ Use the unified `ui_*` tools to operate on any UI object (tab, panel, workspace)
 query_editor     — SQL editor tab
 table_form       — table structure tab (create / alter)
 metric_form      — metric definition tab
-seatunnel_job    — SeaTunnel job tab
+migration_job    — migration job tab (requires job_id)
 er_canvas        — ER diagram tab
 db_tree          — database tree panel
 history          — change history panel
@@ -81,6 +81,8 @@ ui_exec(object, target, action, params?)
 | `ui_exec("workspace", "", "open", {type: "query_editor", connection_id: 1})` | open new query tab |
 | `ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database: "app"})` | open new table form |
 | `ui_exec("workspace", "", "open", {type: "table_form", connection_id: 1, database: "app", table: "users"})` | open existing table structure |
+| `ui_exec("workspace", "", "open", {type: "new_migration_job", title: "My Migration"})` | create new migration job and open tab (returns job_id) |
+| `ui_exec("workspace", "", "open", {type: "migration_job", job_id: 1, title: "My Migration"})` | open existing migration job tab |
 | `ui_exec("workspace", "", "close", {target: "tab-001"})` | close tab |
 | `ui_exec("workspace", "", "focus", {target: "tab-001"})` | switch to tab |
 | `ui_exec("query_editor", "active", "run_sql")` | execute current SQL |

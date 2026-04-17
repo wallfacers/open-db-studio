@@ -45,6 +45,8 @@ impl SqliteDataSource {
 
 #[async_trait]
 impl DataSource for SqliteDataSource {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+
     async fn test_connection(&self) -> AppResult<()> {
         let conn = Arc::clone(&self.conn);
         tokio::task::spawn_blocking(move || {
@@ -68,11 +70,24 @@ impl DataSource for SqliteDataSource {
             // semicolon-separated statements in a single call.
             let trimmed = crate::datasource::utils::strip_leading_comments(&sql).to_uppercase();
             if !trimmed.starts_with("SELECT") && !trimmed.starts_with("PRAGMA") && !trimmed.starts_with("EXPLAIN") {
-                guard
-                    .execute_batch(&sql)
-                    .map_err(|e| AppError::Datasource(e.to_string()))?;
-                let duration_ms = start.elapsed().as_millis() as u64;
-                return Ok(QueryResult { columns: vec![], rows: vec![], row_count: 0, duration_ms });
+                let stmts = crate::datasource::utils::split_sql_statements(&sql);
+                let duration_ms;
+                let affected = if stmts.len() == 1 {
+                    // Single statement: use execute() to get affected row count
+                    let n = guard
+                        .execute(&sql, [])
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    duration_ms = start.elapsed().as_millis() as u64;
+                    n
+                } else {
+                    // Multi-statement batch (DDL scripts etc.): execute_batch doesn't return count
+                    guard
+                        .execute_batch(&sql)
+                        .map_err(|e| AppError::Datasource(e.to_string()))?;
+                    duration_ms = start.elapsed().as_millis() as u64;
+                    0
+                };
+                return Ok(QueryResult { columns: vec![], rows: vec![], row_count: affected, duration_ms });
             }
 
             let mut stmt = guard
@@ -454,6 +469,253 @@ impl DataSource for SqliteDataSource {
         })
         .await
         .map_err(|e| AppError::Datasource(e.to_string()))?
+    }
+
+    fn string_escape_style(&self) -> crate::datasource::StringEscapeStyle {
+        crate::datasource::StringEscapeStyle::SQLiteLiteral
+    }
+
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let guard = conn.blocking_lock();
+            guard.execute_batch("PRAGMA synchronous = OFF; PRAGMA cache_size = -64000;")
+                .map_err(|e| AppError::Datasource(format!("SQLite session setup: {}", e)))
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))??;
+        log::info!("SQLite migration session optimizations applied");
+        Ok(())
+    }
+
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let guard = conn.blocking_lock();
+            guard.execute_batch("PRAGMA synchronous = FULL; PRAGMA cache_size = -2000;")
+                .map_err(|e| AppError::Datasource(format!("SQLite session teardown: {}", e)))
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))??;
+        Ok(())
+    }
+
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        let table = table.to_string();
+        let columns = columns.to_vec();
+        let rows = rows.to_vec();
+        let conflict_strategy = conflict_strategy.clone();
+        let conn = Arc::clone(&self.conn);
+
+        tokio::task::spawn_blocking(move || -> AppResult<usize> {
+            let guard = conn.blocking_lock();
+            let mut col_list = String::with_capacity(columns.len() * 20);
+            for (i, col) in columns.iter().enumerate() {
+                if i > 0 { col_list.push_str(", "); }
+                crate::datasource::utils::quote_identifier_for_driver_into(col, "sqlite", &mut col_list);
+            }            let placeholders = (1..=columns.len())
+                .map(|i| format!("?{}", i))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let keyword = match conflict_strategy {
+                crate::migration::task_mgr::ConflictStrategy::Skip => "INSERT OR IGNORE INTO",
+                crate::migration::task_mgr::ConflictStrategy::Replace => "INSERT OR REPLACE INTO",
+                _ => "INSERT INTO",
+            };
+            let mut quoted_table = String::new();
+            crate::datasource::utils::quote_identifier_for_driver_into(&table, "sqlite", &mut quoted_table);
+            let sql = format!(
+                "{} {} ({}) VALUES ({})",
+                keyword,
+                quoted_table,
+                col_list,
+                placeholders
+            );
+
+            let tx = guard
+                .unchecked_transaction()
+                .map_err(|e| AppError::Datasource(format!("SQLite transaction: {}", e)))?;
+            {
+                let mut stmt = tx
+                    .prepare(&sql)
+                    .map_err(|e| AppError::Datasource(format!("SQLite prepare: {}", e)))?;
+                for row in &rows {
+                    let params: Vec<rusqlite::types::Value> = row
+                        .iter()
+                        .map(|v| match v {
+                            serde_json::Value::Null => rusqlite::types::Value::Null,
+                            serde_json::Value::Bool(b) => {
+                                rusqlite::types::Value::Integer(if *b { 1 } else { 0 })
+                            }
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    rusqlite::types::Value::Integer(i)
+                                } else if let Some(f) = n.as_f64() {
+                                    rusqlite::types::Value::Real(f)
+                                } else {
+                                    rusqlite::types::Value::Text(n.to_string())
+                                }
+                            }
+                            serde_json::Value::String(s) => {
+                                rusqlite::types::Value::Text(s.clone())
+                            }
+                            other => rusqlite::types::Value::Text(other.to_string()),
+                        })
+                        .collect();
+                    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                        params.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+                    stmt.execute(params_ref.as_slice())
+                        .map_err(|e| AppError::Datasource(format!("SQLite execute: {}", e)))?;
+                }
+            }
+            tx.commit()
+                .map_err(|e| AppError::Datasource(format!("SQLite commit: {}", e)))?;
+            Ok(rows.len())
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))?
+    }
+
+    /// Native bulk write from MigrationRow using parameterized INSERT.
+    /// Avoids MigrationValue → serde_json::Value → SQL string conversion.
+    /// SQLite fully supports parameterized queries with `?` placeholders.
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+
+        let table = table.to_string();
+        let columns = columns.to_vec();
+        let rows = rows;
+        let conflict_strategy = conflict_strategy.clone();
+        let upsert_keys = upsert_keys.to_vec();
+        let driver = driver.to_string();
+        let conn = Arc::clone(&self.conn);
+
+        tokio::task::spawn_blocking(move || -> AppResult<usize> {
+            let guard = conn.blocking_lock();
+
+            // Build column list with quoting
+            let mut col_list = String::with_capacity(columns.len() * 20);
+            for (i, col) in columns.iter().enumerate() {
+                if i > 0 { col_list.push_str(", "); }
+                crate::datasource::utils::quote_identifier_for_driver_into(col, "sqlite", &mut col_list);
+            }
+
+            // Build placeholders: ?1, ?2, ?3...
+            let placeholders: Vec<String> = (1..=columns.len())
+                .map(|i| format!("?{}", i))
+                .collect();
+            let placeholders_str = placeholders.join(", ");
+
+            // Determine INSERT keyword based on conflict strategy
+            let (keyword, suffix) = crate::datasource::bulk_write::build_conflict_clause(
+                &conflict_strategy,
+                &driver,
+                &columns,
+                &upsert_keys.iter().map(|s| s.as_str()).collect(),
+                &upsert_keys,
+                &|c: &str| {
+                    let mut buf = String::new();
+                    crate::datasource::utils::quote_identifier_for_driver_into(c, "sqlite", &mut buf);
+                    buf
+                },
+            );
+
+            let mut quoted_table = String::new();
+            crate::datasource::utils::quote_identifier_for_driver_into(&table, "sqlite", &mut quoted_table);
+
+            let sql = format!(
+                "{} {} ({}) VALUES ({}){}",
+                keyword,
+                quoted_table,
+                col_list,
+                placeholders_str,
+                suffix
+            );
+
+            let tx = guard
+                .unchecked_transaction()
+                .map_err(|e| AppError::Datasource(format!("SQLite transaction: {}", e)))?;
+
+            let mut total_written = 0usize;
+            {
+                let mut stmt = tx
+                    .prepare(&sql)
+                    .map_err(|e| AppError::Datasource(format!("SQLite prepare: {}", e)))?;
+
+                for row in &rows {
+                    // Convert MigrationValue to rusqlite Value directly
+                    let params: Vec<rusqlite::types::Value> = row.values
+                        .iter()
+                        .map(migration_value_to_rusqlite)
+                        .collect();
+
+                    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                        params.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+
+                    let affected = stmt.execute(params_ref.as_slice())
+                        .map_err(|e| AppError::Datasource(format!("SQLite execute: {}", e)))?;
+                    total_written += affected;
+                }
+            }
+
+            tx.commit()
+                .map_err(|e| AppError::Datasource(format!("SQLite commit: {}", e)))?;
+
+            Ok(total_written)
+        })
+        .await
+        .map_err(|e| AppError::Datasource(e.to_string()))?
+    }
+}
+
+/// Convert MigrationValue to rusqlite Value for parameterized INSERT.
+/// Direct conversion without intermediate serde_json::Value.
+fn migration_value_to_rusqlite(val: &crate::migration::native_row::MigrationValue) -> rusqlite::types::Value {
+    use crate::migration::native_row::MigrationValue;
+    match val {
+        MigrationValue::Null => rusqlite::types::Value::Null,
+        MigrationValue::Bool(b) => rusqlite::types::Value::Integer(if *b { 1 } else { 0 }),
+        MigrationValue::Int(i) => rusqlite::types::Value::Integer(*i),
+        MigrationValue::UInt(u) => {
+            // SQLite uses INTEGER (signed i64) for all integer types.
+            // For u64 > i64::MAX, we store as string to preserve value.
+            if *u > i64::MAX as u64 {
+                rusqlite::types::Value::Text(u.to_string())
+            } else {
+                rusqlite::types::Value::Integer(*u as i64)
+            }
+        }
+        MigrationValue::Float(f) => rusqlite::types::Value::Real(*f),
+        MigrationValue::Decimal(d) => {
+            // SQLite has no DECIMAL type; store as string or REAL.
+            // Prefer string to preserve exact decimal representation.
+            rusqlite::types::Value::Text(d.clone())
+        }
+        MigrationValue::Text(s) => rusqlite::types::Value::Text(s.clone()),
+        MigrationValue::Blob(b) => rusqlite::types::Value::Blob(b.clone()),
     }
 }
 

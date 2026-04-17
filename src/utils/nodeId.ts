@@ -25,10 +25,10 @@ export function metricsDbNodeId(connectionId: number, dbName: string): string { 
 export function metricsSchemaNodeId(connectionId: number, database: string, schema: string): string { return `schema_${connectionId}_${database}_${schema}`; }
 export function metricsMetricNodeId(id: number): string { return `metric_${id}`; }
 
-// ---- SeaTunnel 树 — 扁平 ID ----
+// ---- 迁移中心树 — 扁平 ID ----
 
-export function stCatNodeId(id: number): string { return `cat_${id}`; }
-export function stJobNodeId(id: number): string { return `job_${id}`; }
+export function migCatNodeId(id: number): string { return `cat_${id}`; }
+export function migJobNodeId(id: number): string { return `job_${id}`; }
 
 // ---- ER 设计器 — 连字符 ID ----
 
@@ -53,5 +53,4 @@ export function newTableStructureTabId(connectionId: number, dbName: string, sch
 export function metricTabId(metricId: number, ts: number): string { return `metric_${metricId}_${ts}`; }
 export function newMetricTabId(ts: number): string { return `metric_new_${ts}`; }
 export function metricListTabId(connectionId: number, database: string, schema: string): string { return `ml_${connectionId}_${database}_${schema}`; }
-export function stJobTabId(jobId: number, ts: number): string { return `st_job_${jobId}_${ts}`; }
 export function erDesignTabId(projectId: number, ts: number): string { return `er_design_${projectId}_${ts}`; }

@@ -142,7 +142,7 @@ fn tool_definitions() -> Value {
             },
             json!({
                 "name": "list_tasks",
-                "description": "List import/export tasks with their status, progress, and error information. Use this to see what tasks are running, completed, or failed.",
+                "description": "List backend import/export/graph runtime tasks (status, progress, errors). Does NOT include UI cards — for open migration jobs, editors, or forms, use ui_list. Only call when user explicitly asks about background or historical tasks.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -179,7 +179,7 @@ fn tool_definitions() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, seatunnel_job, db_tree, history, er_canvas" },
+                        "object": { "type": "string", "description": "Object type: query_editor, table_form, workspace, metric_form, db_tree, history, er_canvas, migration_job" },
                         "target": { "type": "string", "description": "objectId or 'active'", "default": "active" },
                         "mode": { "type": "string", "enum": ["state", "schema", "actions", "full"], "default": "state", "description": "Use 'full' to get state + actions + schema in one call" }
                     },
@@ -216,7 +216,7 @@ fn tool_definitions() -> Value {
             }),
             json!({
                 "name": "ui_list",
-                "description": "List all currently open UI objects, optionally filtered by type.",
+                "description": "PREFERRED discovery tool. Lists currently open UI objects (query editors, migration jobs, forms, canvases). Call this first whenever the user refers to 'current/open/this' UI element.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

@@ -16,7 +16,7 @@
 - 数据库级别导入导出
 - 跨连接数据迁移
 - 新建数据库功能
-- 统一任务中心（可扩展支持 SeaTunnel 等后续任务）
+- 统一任务中心（可扩展支持后续任务类型）
 
 ### 1.2 范围
 
@@ -332,7 +332,7 @@ PostgreSQL 模式（多 schema 层级）：
 ```typescript
 interface Task {
   id: string;
-  type: 'export' | 'import' | 'migration' | 'seatunnel';
+  type: 'export' | 'import' | 'migration';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   title: string;
   progress: number;        // 0-100
@@ -626,14 +626,7 @@ TaskCenter UI
 
 ## 7. 扩展性考虑
 
-### 7.1 SeaTunnel 集成
-
-任务中心的 `type` 字段已预留 `seatunnel` 类型，后续可实现：
-- 任务详情面板扩展 SeaTunnel 特有信息
-- 新增 `seatunnel_task` 命令
-- 任务列表支持 SeaTunnel 任务的状态展示
-
-### 7.2 任务调度
+### 7.1 任务调度
 
 当前为即时执行，后续可扩展：
 - 定时任务

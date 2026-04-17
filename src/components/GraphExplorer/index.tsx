@@ -29,13 +29,12 @@ import {
 import dagre from 'dagre';
 import { useTranslation } from 'react-i18next';
 import { useTaskStore } from '../../store';
-import { useConnectionStore } from '../../store/connectionStore';
 import { useGraphData } from './useGraphData';
 import { nodeTypes, edgeTypes } from './nodeTypes';
 import { getEdgeStyleBySource } from './graphUtils';
 import { NodeDetail } from './NodeDetail';
 import { AliasEditor } from './AliasEditor';
-import { DropdownSelect } from '../common/DropdownSelect';
+import { ConnectionDbSelector } from '../common/ConnectionDbSelector';
 import type { GraphNode } from './useGraphData';
 import { GraphSearchPanel } from './GraphSearchPanel';
 import { Tooltip } from '../common/Tooltip';
@@ -49,6 +48,11 @@ const NODE_H = 100;
 const LINK_NODE_W = 260;
 const LINK_NODE_H = 70;
 const CLUSTER_THRESHOLD = 200;
+const GROUP_GAP_X = 600;     // 组间横向间距
+const GROUP_GAP_Y = 500;     // 组间纵向间距
+const MAX_COLS = 4;          // 每行最多组数
+const ESTIMATED_GROUP_W = 1400; // 预估每组宽度（用于新组网格定位）
+const ESTIMATED_GROUP_H = 600;  // 预估每组高度
 
 /** 节点是否拥有已保存的坐标（position_x/position_y 非 null） */
 function hasSavedPosition(n: Node): boolean {
@@ -62,40 +66,116 @@ function buildLayout(
   direction: 'LR' | 'TB' = 'LR',
   forceRelayout = false,
 ): { nodes: Node[]; edges: Edge[] } {
-  // 如果所有节点都有已保存坐标且不是强制重排，直接使用保存的坐标
+  // 快速路径：所有节点都有已保存坐标且不强制重排
   const allSaved = !forceRelayout && nodes.length > 0 && nodes.every(hasSavedPosition);
   if (allSaved) return { nodes, edges };
 
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: direction, ranksep: 200, nodesep: 80 });
-
+  // ── 按 connection_id|database 分组 ───────────────────────────────────────
+  const groupMap = new Map<string, Node[]>();
   nodes.forEach((n) => {
-    const isLink = n.type === 'link';
-    g.setNode(n.id, { width: isLink ? LINK_NODE_W : NODE_W, height: isLink ? LINK_NODE_H : NODE_H });
-  });
-  edges.forEach((e) => {
-    if (e.source && e.target) g.setEdge(e.source, e.target);
+    const d = n.data as Record<string, unknown>;
+    const key = `${d?.connection_id ?? 0}|${d?.database ?? ''}`;
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key)!.push(n);
   });
 
-  dagre.layout(g);
-
-  const laid = nodes.map((n) => {
-    // 有已保存坐标且非强制重排时保持原位
-    if (!forceRelayout && hasSavedPosition(n)) return n;
-    const pos = g.node(n.id);
-    const isLink = n.type === 'link';
-    const w = isLink ? LINK_NODE_W : NODE_W;
-    const h = isLink ? LINK_NODE_H : NODE_H;
-    return {
-      ...n,
-      position: {
-        x: pos ? pos.x - w / 2 : 0,
-        y: pos ? pos.y - h / 2 : 0,
-      },
-    };
+  // 有已保存节点的组优先，其次按节点数降序
+  const sortedGroups = [...groupMap.entries()].sort((a, b) => {
+    const aHasPos = a[1].some((n) => !forceRelayout && hasSavedPosition(n));
+    const bHasPos = b[1].some((n) => !forceRelayout && hasSavedPosition(n));
+    if (aHasPos && !bHasPos) return -1;
+    if (!aHasPos && bHasPos) return 1;
+    return b[1].length - a[1].length;
   });
-  return { nodes: laid, edges };
+
+  // 计算所有已有坐标节点的全局最大 X，作为新组的起始基准
+  let existingMaxX = 0;
+  sortedGroups.forEach(([, groupNodes]) => {
+    groupNodes.forEach((n) => {
+      if (!forceRelayout && hasSavedPosition(n)) {
+        const d = n.data as Record<string, unknown>;
+        const nx = (d.position_x as number) + NODE_W;
+        if (nx > existingMaxX) existingMaxX = nx;
+      }
+    });
+  });
+
+  const resultNodes = new Map<string, Node>(nodes.map((n) => [n.id, n]));
+  let newGroupCol = 0;
+  let newGroupRow = 0;
+
+  sortedGroups.forEach(([, groupNodes]) => {
+    // 本组中需要重新分配坐标的节点
+    const needsLayout = groupNodes.filter((n) => forceRelayout || !hasSavedPosition(n));
+    if (needsLayout.length === 0) return;
+
+    // ── 本组 Dagre（纳入全组节点以保留拓扑上下文，按照 metric→table→link→table 就近原则布局）─────
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    // 收紧间距，使指标/表/关系节点更紧凑地聚集
+    g.setGraph({ rankdir: direction, ranksep: 160, nodesep: 60 });
+
+    // 将本组全部节点加入 Dagre（包含已保存坐标的节点），以便 Dagre 感知完整拓扑
+    const groupNodeIds = new Set(groupNodes.map((n) => n.id));
+    groupNodes.forEach((n) => {
+      const isLink = n.type === 'link';
+      g.setNode(n.id, { width: isLink ? LINK_NODE_W : NODE_W, height: isLink ? LINK_NODE_H : NODE_H });
+    });
+
+    // 纳入组内全部边（而非仅 needsLayout 内部边），让 Dagre 按就近原则安排新节点位置
+    edges.forEach((e) => {
+      if (groupNodeIds.has(e.source) && groupNodeIds.has(e.target)) {
+        g.setEdge(e.source, e.target);
+      }
+    });
+
+    dagre.layout(g);
+
+    // ── 计算本组新节点的基准偏移 ──────────────────────────────────────────
+    const positioned = groupNodes.filter((n) => !forceRelayout && hasSavedPosition(n));
+    let baseX: number;
+    let baseY: number;
+
+    if (positioned.length > 0) {
+      // 有已保存节点：在其右侧插入
+      const maxX = positioned.reduce((m, n) => {
+        const d = n.data as Record<string, unknown>;
+        return Math.max(m, (d.position_x as number) + NODE_W);
+      }, -Infinity);
+      const minY = positioned.reduce((m, n) => {
+        const d = n.data as Record<string, unknown>;
+        return Math.min(m, d.position_y as number);
+      }, Infinity);
+      baseX = (isFinite(maxX) ? maxX : 0) + GROUP_GAP_X;
+      baseY = isFinite(minY) ? minY : 0;
+    } else {
+      // 全新组：按网格排列
+      baseX = existingMaxX + newGroupCol * (ESTIMATED_GROUP_W + GROUP_GAP_X);
+      baseY = newGroupRow * (ESTIMATED_GROUP_H + GROUP_GAP_Y);
+      newGroupCol++;
+      if (newGroupCol >= MAX_COLS) {
+        newGroupCol = 0;
+        newGroupRow++;
+      }
+    }
+
+    // ── 应用 Dagre 坐标 ───────────────────────────────────────────────────
+    needsLayout.forEach((n) => {
+      const pos = g.node(n.id);
+      const isLink = n.type === 'link';
+      const w = isLink ? LINK_NODE_W : NODE_W;
+      const h = isLink ? LINK_NODE_H : NODE_H;
+      resultNodes.set(n.id, {
+        ...n,
+        position: {
+          x: baseX + (pos ? pos.x - w / 2 : 0),
+          y: baseY + (pos ? pos.y - h / 2 : 0),
+        },
+      });
+    });
+  });
+
+  return { nodes: nodes.map((n) => resultNodes.get(n.id) ?? n), edges };
 }
 
 // ── Cluster folding ───────────────────────────────────────────────────────────
@@ -218,55 +298,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const { t } = useTranslation();
 
   // ── Independent connection / database selection ────────────────────────────
-  const { connections, loadConnections } = useConnectionStore();
-  const [internalConnId, setInternalConnId] = useState<number | null>(() => connectionId);
-  const [internalDb, setInternalDb] = useState<string | null>(() => database ?? null);
-  const [databases, setDatabases] = useState<string[]>([]);
-  const [dbLoading, setDbLoading] = useState(false);
-  const [dbError, setDbError] = useState<string | null>(null);
+  const [internalConnId, setInternalConnId] = useState<number>(() => connectionId ?? 0);
+  const [internalDb, setInternalDb] = useState<string>(() => database ?? '');
 
-  // Ensure connections are loaded
-  useEffect(() => {
-    if (connections.length === 0) loadConnections();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Load database list when connection changes
-  useEffect(() => {
-    if (internalConnId === null) {
-      setDatabases([]);
-      setDbError(null);
-      return;
-    }
-    let cancelled = false;
-    setDbLoading(true);
-    setDbError(null);
-
-    const timeoutId = setTimeout(() => {
-      if (!cancelled) {
-        cancelled = true;
-        setDbLoading(false);
-        setDbError('加载超时');
-      }
-    }, 15000);
-
-    invoke<string[]>('list_databases_for_metrics', { connectionId: internalConnId })
-      .then(dbs => { if (!cancelled) setDatabases(dbs); })
-      .catch((err) => {
-        if (!cancelled) {
-          setDatabases([]);
-          setDbError(typeof err === 'string' ? err : '加载失败');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setDbLoading(false);
-        clearTimeout(timeoutId);
-      });
-
-    return () => { cancelled = true; clearTimeout(timeoutId); };
-  }, [internalConnId]);
-
-  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId, internalDb);
+  const { nodes: rawNodes, edges: rawEdges, loading, error, refetch } = useGraphData(internalConnId > 0 ? internalConnId : null, internalDb || null);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -289,6 +324,34 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const [subgraphMode, setSubgraphMode] = useState(false);
   const [subgraphNodeIds, setSubgraphNodeIds] = useState<Set<string>>(new Set());
 
+  // ── Auto-clear UI selections when database or connection changes ────────────
+  useEffect(() => {
+    setSelectedNode(null);
+    setActivePanel((prev) => prev === 'detail' ? null : prev);
+    setPathFrom(null);
+    setPathTo(null);
+    setSubgraphMode(false);
+    setSubgraphNodeIds(new Set());
+    setHighlightedNodeIds(new Set());
+    setHighlightedEdgeIds(new Set());
+    setFocusedNodeId(null);
+    // 切换连接/数据库后，下次数据到达时需重新 fitView 定位视口
+    needsFitViewRef.current = true;
+  }, [internalConnId, internalDb]);
+
+  // ── Auto-close detail panel if selected node is no longer in canvas ───────
+  useEffect(() => {
+    if (activePanel === 'detail' && selectedNode) {
+      // Check if selectedNode is still in the rendered nodes
+      // (e.g. filtered out by search or type filter)
+      const existsInCanvas = rfNodes.some(n => n.id === selectedNode.id);
+      if (!existsInCanvas) {
+        setSelectedNode(null);
+        setActivePanel(null);
+      }
+    }
+  }, [rfNodes, selectedNode, activePanel]);
+
   const [editMode, setEditMode] = useState(false);
 
   // ── 编辑模式弹框状态 ──────────────────────────────────────────────────────
@@ -302,6 +365,15 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // 本次会话中拖拽过的节点位置（避免 useEffect 重建时被覆盖）
   const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // 上一次的 hidden 状态，用于检测 hidden→visible 切换
+  const prevHiddenRef = useRef(hidden);
+  // 切换连接/数据库后需要自动 fitView，确保视口定位到节点区域
+  const needsFitViewRef = useRef(true);
+  // edge tooltip div ref：通过直接操作 DOM 更新位置，避免 state 更新触发整棵树 re-render
+  const edgeTooltipDivRef = useRef<HTMLDivElement | null>(null);
+  // rfNodes/rfEdges 的最新快照 ref：让 highlight effect 只在高亮状态变化时运行，而非每次拖拽都触发
+  const rfNodesRef = useRef<Node[]>(rfNodes);
+  const rfEdgesRef = useRef<Edge[]>(rfEdges);
 
   // ── Node click focus state (1-hop neighbor highlight) ────────────────────────
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -318,7 +390,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   const handleAddNodeSubmit = useCallback(async () => {
     const name = addNodeName.trim();
-    if (!name || !internalConnId) return;
+    if (!name || internalConnId === 0) return;
     setAddNodeLoading(true);
     try {
       await invoke('add_user_node', {
@@ -361,7 +433,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     }
   }, [pendingConnect, connectEdgeType, refetch]);
 
-  const { fitView, setCenter, getZoom } = useReactFlow();
+  const { fitView } = useReactFlow();
   const { _addTaskStub, tasks: bgTasks, loadTasks } = useTaskStore();
   const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -375,7 +447,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   // ── Filter + convert nodes ──────────────────────────────────────────────────
   const filteredRaw = useMemo(() => {
     const kw = searchQuery.trim().toLowerCase();
-    return rawNodes.filter((n) => {
+    const result = rawNodes.filter((n) => {
       if (!typeFilter.includes(n.node_type)) return false;
       if (!kw) return true;
       return (
@@ -384,6 +456,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         (n.aliases ?? '').toLowerCase().includes(kw)
       );
     });
+    return result;
   }, [rawNodes, typeFilter, searchQuery]);
 
   const linkCountMap = useMemo<Record<string, number>>(() => {
@@ -406,8 +479,9 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     rawNodes
       .filter(n => n.node_type === 'column')
       .forEach(n => {
-        // 列节点 ID 格式: "{conn_id}:column:{table_name}:{col_name}"
-        // 目标表节点 ID: "{conn_id}:table:{table_name}"
+        // 列节点 ID 格式: "{conn_id}:column:[{db}:]{table_name}:{col_name}"
+        // 目标表节点 ID: "{conn_id}:table:[{db}:]{table_name}"
+        // 贪婪匹配 (.+) 自动兼容有无 database 前缀两种格式
         const match = n.id.match(/^(\d+):column:(.+):.+$/);
         if (!match) return;
         const tableId = `${match[1]}:table:${match[2]}`;
@@ -500,53 +574,64 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Sync to React Flow whenever filtered data changes ───────────────────────
   useEffect(() => {
-    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap).map(n => ({
-      ...n,
-      data: {
-        ...n.data,
-        isHighlighted: highlightedNodeIds.has(n.id),
-        isDimmed: highlightedNodeIds.size > 0 && !highlightedNodeIds.has(n.id),
-        isPathFrom: pathFrom?.id === n.id,
-        isPathTo: pathTo?.id === n.id,
-      },
-    }));
-    const flowEdges = toFlowEdges(filteredEdges, selfRefLinkIds).map(e => {
-      const isHighlighted = highlightedEdgeIds.has(e.id);
-      const isDimmed = highlightedEdgeIds.size > 0 && !highlightedEdgeIds.has(e.id);
-      return {
-        ...e,
-        data: {
-          ...e.data,
-          highlighted: isHighlighted,
-          dimmed: isDimmed,
-        },
-        // Keep style for backwards compatibility with non-RelationEdge edges
-        style: {
-          ...e.style,
-          ...(isHighlighted ? { stroke: 'var(--accent)', strokeWidth: 3 } : {}),
-          ...(isDimmed ? { opacity: 0.3 } : {}),
-        },
-        animated: isHighlighted,
-      };
-    });
+    const flowNodes = toFlowNodes(clustered, handleAddAlias, handleHighlightLinks, linkCountMap, columnMap);
+    const flowEdges = toFlowEdges(filteredEdges, selfRefLinkIds);
     // 合并本次会话拖拽过的坐标，防止高亮/焦点等状态变化导致位置回弹
     const mergedNodes = flowNodes.map(n => {
       const dragged = draggedPositionsRef.current.get(n.id);
-      if (dragged) return { ...n, position: dragged };
+      if (dragged) return { ...n, position: dragged, data: { ...n.data as Record<string, unknown>, position_x: dragged.x, position_y: dragged.y } };
       return n;
     });
     const { nodes: laid, edges: laidEdges } = buildLayout(mergedNodes, flowEdges);
     setRfNodes(laid);
     setRfEdges(laidEdges);
-    // Defer fitView until layout is painted, but skip when a node is focused
-    // (focused node uses setCenter in onNodeClick for smooth centering)
-    if (!focusedNodeId) {
-      const timerId = setTimeout(() => {
-        fitView({ duration: 600, padding: 0.15, maxZoom: 1 });
-      }, 80);
-      return () => clearTimeout(timerId);
+
+    // 初次加载或切换连接/数据库后，自动 fitView 将视口定位到节点区域
+    if (needsFitViewRef.current && laid.length > 0) {
+      needsFitViewRef.current = false;
+      if (layoutTimerRef.current !== null) clearTimeout(layoutTimerRef.current);
+      layoutTimerRef.current = setTimeout(() => {
+        fitView({ duration: 400, padding: 0.15, maxZoom: 1 });
+        layoutTimerRef.current = null;
+      }, 50);
     }
-  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, focusedNodeId, selfRefLinkIds]);
+  }, [clustered, filteredEdges, setRfNodes, setRfEdges, handleAddAlias, handleHighlightLinks, linkCountMap, fitView, selfRefLinkIds]);
+
+  // ── Apply highlight / path / focus data without re-layout ───────────────────
+  const { updateNode, updateEdge } = useReactFlow();
+
+  // 保持 ref 与最新 rfNodes/rfEdges 同步（不会引起任何 effect 重跑）
+  useEffect(() => { rfNodesRef.current = rfNodes; }, [rfNodes]);
+  useEffect(() => { rfEdgesRef.current = rfEdges; }, [rfEdges]);
+
+  // 注意：依赖中不包含 rfNodes/rfEdges，以避免节点拖拽时位置更新（rfNodes 频繁变化）
+  // 触发 O(n) updateNode 批量调用，造成拖拽卡顿。使用 ref 读取最新节点列表。
+  useEffect(() => {
+    const hasNodeHL = highlightedNodeIds.size > 0;
+    const hasEdgeHL = highlightedEdgeIds.size > 0;
+    for (const node of rfNodesRef.current) {
+      updateNode(node.id, {
+        data: {
+          isHighlighted: hasNodeHL && highlightedNodeIds.has(node.id),
+          isDimmed: hasNodeHL && !highlightedNodeIds.has(node.id),
+          isPathFrom: pathFrom?.id === node.id,
+          isPathTo: pathTo?.id === node.id,
+        },
+      });
+    }
+    for (const edge of rfEdgesRef.current) {
+      const isHL = hasEdgeHL && highlightedEdgeIds.has(edge.id);
+      updateEdge(edge.id, {
+        data: { highlighted: isHL, dimmed: hasEdgeHL && !isHL },
+        style: {
+          ...edge.style,
+          ...(isHL ? { stroke: 'var(--accent)', strokeWidth: 3 } : {}),
+          ...(!isHL && hasEdgeHL ? { opacity: 0.3 } : {}),
+        },
+        animated: isHL,
+      });
+    }
+  }, [highlightedNodeIds, highlightedEdgeIds, pathFrom, pathTo, updateNode, updateEdge]);
 
   // ── 拖拽结束保存坐标 ──────────────────────────────────────────────────────
   const onNodeDragStop: NodeMouseHandler = useCallback((_event, node) => {
@@ -563,10 +648,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   const handleAutoLayout = useCallback(async () => {
     // 清除本次拖拽缓存和数据库中的已保存坐标
     draggedPositionsRef.current.clear();
-    if (internalConnId !== null) {
+    if (internalConnId > 0) {
       await invoke('clear_graph_node_positions', {
         connectionId: internalConnId,
-        database: internalDb ?? null,
+        database: internalDb || null,
       }).catch((err) => console.warn('[GraphExplorer] clear positions failed:', err));
     }
     const { nodes: laid, edges: laidEdges } = buildLayout(rfNodes, rfEdges, 'LR', true);
@@ -622,10 +707,10 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Build schema graph (with TaskBar integration) ───────────────────────────
   const handleBuildGraph = useCallback(async () => {
-    if (internalConnId === null) return;
+    if (!internalConnId) return;
     setIsBuilding(true);
     try {
-      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId: internalConnId, database: internalDb ?? null });
+      const result = await invoke<{ task_id?: string } | string>('build_schema_graph', { connectionId: internalConnId, database: internalDb || null });
 
       let taskId: string | null = null;
       if (result && typeof result === 'object' && 'task_id' in result) {
@@ -664,7 +749,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
       // Fallback: still try to refresh
       refetch();
     }
-  }, [connectionId, refetch, _addTaskStub, loadTasks]);
+  }, [internalConnId, internalDb, refetch, _addTaskStub, loadTasks]);
 
   // ── Watch bgTasks for build_schema_graph completion ──────────────────────────
   useEffect(() => {
@@ -693,11 +778,63 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
   // ── Search panel handlers ───────────────────────────────────────────────────
 
+  const selectNodeById = useCallback((nodeId: string) => {
+    const raw = rawNodes.find((n) => n.id === nodeId);
+    const rfNode = rfNodes.find((n) => n.id === nodeId);
+    if (!raw) return;
+
+    // Calculate 1-hop neighbors from filteredEdges
+    const neighborNodeIds = new Set<string>();
+    const neighborEdgeIds = new Set<string>();
+    const potentialLinkNodes = new Set<string>();
+
+    filteredEdges.forEach(edge => {
+      if (edge.from_node === nodeId) {
+        neighborNodeIds.add(edge.to_node);
+        neighborEdgeIds.add(edge.id);
+        if (raw.node_type !== 'link') potentialLinkNodes.add(edge.to_node);
+      } else if (edge.to_node === nodeId) {
+        neighborNodeIds.add(edge.from_node);
+        neighborEdgeIds.add(edge.id);
+        if (raw.node_type !== 'link') potentialLinkNodes.add(edge.from_node);
+      }
+    });
+
+    // 2nd pass: if clicked node is not a link, expand its 1-hop neighbors that ARE links
+    if (raw.node_type !== 'link' && potentialLinkNodes.size > 0) {
+      const actualLinkNodes = new Set(
+        rawNodes.filter(n => n.node_type === 'link' && potentialLinkNodes.has(n.id)).map(n => n.id)
+      );
+      
+      if (actualLinkNodes.size > 0) {
+        filteredEdges.forEach(edge => {
+          if (actualLinkNodes.has(edge.from_node)) {
+            neighborNodeIds.add(edge.to_node);
+            neighborEdgeIds.add(edge.id);
+          } else if (actualLinkNodes.has(edge.to_node)) {
+            neighborNodeIds.add(edge.from_node);
+            neighborEdgeIds.add(edge.id);
+          }
+        });
+      }
+    }
+
+    // Include the clicked node itself
+    neighborNodeIds.add(nodeId);
+
+    // Set focus state
+    setFocusedNodeId(nodeId);
+    setHighlightedNodeIds(neighborNodeIds);
+    setHighlightedEdgeIds(neighborEdgeIds);
+
+    // Open detail panel
+    setSelectedNode(raw);
+    setActivePanel('detail');
+  }, [rawNodes, rfNodes, filteredEdges]);
+
   const handleHighlightNode = useCallback((nodeId: string) => {
-    setHighlightedNodeIds(new Set([nodeId]));
-    setHighlightedEdgeIds(new Set());
-    setTimeout(() => setHighlightedNodeIds(new Set()), 2000);
-  }, []);
+    selectNodeById(nodeId);
+  }, [selectNodeById]);
 
   const handleHighlightPath = useCallback((nodeIds: Set<string>, edgeIds: Set<string>) => {
     setHighlightedNodeIds(new Set(nodeIds));
@@ -719,43 +856,9 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
   // ── Node click → focus 1-hop neighbors + open detail ────────────────────────
   const onNodeClick: NodeMouseHandler = useCallback(
     (_evt, node) => {
-      // Calculate 1-hop neighbors from filteredEdges
-      const neighborNodeIds = new Set<string>();
-      const neighborEdgeIds = new Set<string>();
-
-      filteredEdges.forEach(edge => {
-        if (edge.from_node === node.id) {
-          neighborNodeIds.add(edge.to_node);
-          neighborEdgeIds.add(edge.id);
-        } else if (edge.to_node === node.id) {
-          neighborNodeIds.add(edge.from_node);
-          neighborEdgeIds.add(edge.id);
-        }
-      });
-
-      // Include the clicked node itself
-      neighborNodeIds.add(node.id);
-
-      // Set focus state
-      setFocusedNodeId(node.id);
-      setHighlightedNodeIds(neighborNodeIds);
-      setHighlightedEdgeIds(neighborEdgeIds);
-
-      // Smoothly center the clicked node in viewport
-      const nodeWidth = node.measured?.width ?? (node.type === 'link' ? 260 : 240);
-      const nodeHeight = node.measured?.height ?? (node.type === 'link' ? 70 : 100);
-      const centerX = (node.position?.x ?? 0) + nodeWidth / 2;
-      const centerY = (node.position?.y ?? 0) + nodeHeight / 2;
-      setCenter(centerX, centerY, { zoom: getZoom(), duration: 300 });
-
-      // Open detail panel
-      const raw = rawNodes.find((n) => n.id === node.id);
-      if (raw) {
-        setSelectedNode(raw);
-        setActivePanel('detail');
-      }
+      selectNodeById(node.id);
     },
-    [rawNodes, filteredEdges, setCenter, getZoom],
+    [selectNodeById],
   );
 
   // ── Pane click → clear focus; double-click → close detail ───────────────────
@@ -772,6 +875,18 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     }
   }, []);
 
+  // ── 当 hidden 从 true→false 时重新 fitView（display:none 时 fitView 是无效的）──
+  useEffect(() => {
+    const wasHidden = prevHiddenRef.current;
+    prevHiddenRef.current = hidden;
+    if (wasHidden && !hidden && rfNodes.length > 0) {
+      const timerId = setTimeout(() => {
+        fitView({ duration: 300, padding: 0.15, maxZoom: 1 });
+      }, 100);
+      return () => clearTimeout(timerId);
+    }
+  }, [hidden, rfNodes.length, fitView]);
+
   // ── Edge hover tooltip ──────────────────────────────────────────────────────
   const onEdgeMouseEnter: EdgeMouseHandler = useCallback((_evt, edge) => {
     setEdgeTooltip({
@@ -782,8 +897,12 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
     });
   }, []);
 
-  const onEdgeMouseMove = useCallback((evt: React.MouseEvent) => {
-    setEdgeTooltip((prev) => prev ? { ...prev, x: evt.clientX, y: evt.clientY } : prev);
+  // 通过直接操作 DOM ref 更新位置，避免 setEdgeTooltip 触发整棵树 re-render（60fps 鼠标移动）
+  const onEdgeMouseMove: EdgeMouseHandler = useCallback((evt, _edge) => {
+    if (edgeTooltipDivRef.current) {
+      edgeTooltipDivRef.current.style.left = `${evt.clientX + 12}px`;
+      edgeTooltipDivRef.current.style.top = `${evt.clientY - 36}px`;
+    }
   }, []);
 
   const onEdgeMouseLeave: EdgeMouseHandler = useCallback(() => {
@@ -887,34 +1006,16 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         <Network size={16} className="text-accent flex-shrink-0" />
         <span className="text-foreground-default text-sm font-semibold mr-2">{t('graphExplorer.title')}</span>
 
-        {/* Connection selector */}
-        <DropdownSelect
-          value={internalConnId !== null ? String(internalConnId) : ''}
-          options={connections.map(c => ({ value: String(c.id), label: c.name }))}
-          placeholder={t('graphExplorer.selectConnection')}
-          onChange={(v) => {
-            setInternalConnId(v ? Number(v) : null);
-            setInternalDb(null);
-          }}
-          className="w-36"
+        {/* Connection + Database selector */}
+        <ConnectionDbSelector
+          connectionId={internalConnId}
+          database={internalDb}
+          onConnectionChange={v => { setInternalConnId(v); setInternalDb(''); }}
+          onDatabaseChange={setInternalDb}
+          connectionPlaceholder={t('graphExplorer.selectConnection')}
+          databasePlaceholder={t('graphExplorer.allDatabases', '全部数据库')}
+          direction="horizontal"
         />
-
-        {/* Database selector (optional, shown when databases are available) */}
-        {internalConnId !== null && databases.length > 0 && !dbLoading && (
-          <DropdownSelect
-            value={internalDb ?? ''}
-            options={databases.map(db => ({ value: db, label: db }))}
-            placeholder={t('graphExplorer.allDatabases', '全部数据库')}
-            onChange={(v) => setInternalDb(v || null)}
-            className="w-32"
-          />
-        )}
-        {internalConnId !== null && dbLoading && (
-          <Loader2 size={14} className="animate-spin text-foreground-muted" />
-        )}
-        {internalConnId !== null && !dbLoading && dbError && (
-          <span className="text-[11px] text-error" title={dbError}>{dbError}</span>
-        )}
 
         {/* Type filter */}
         <div className="flex items-center gap-1">
@@ -1054,13 +1155,13 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
 
       {/* Main canvas area */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 relative graph-canvas-container" onMouseMove={onEdgeMouseMove}>
+        <div className="flex-1 relative graph-canvas-container" onMouseLeave={() => setEdgeTooltip(null)}>
           {/* Empty state overlay */}
-          {!loading && (internalConnId === null || rfNodes.length === 0) && (
+          {!loading && (!internalConnId || rfNodes.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
               <Network size={36} className="text-border-strong mb-3" />
               <p className="text-foreground-muted text-sm">
-                {internalConnId === null
+                {!internalConnId
                   ? t('graphExplorer.selectConnection')
                   : rawNodes.length === 0
                     ? t('graphExplorer.noData')
@@ -1084,7 +1185,9 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
             onPaneClick={(e) => { closeContextMenu(); onPaneClick(e); }}
             onEdgeContextMenu={onEdgeContextMenu}
             onEdgeMouseEnter={onEdgeMouseEnter}
+            onEdgeMouseMove={onEdgeMouseMove}
             onEdgeMouseLeave={onEdgeMouseLeave}
+            onEdgeClick={() => setEdgeTooltip(null)}
             onConnect={onConnect}
             onBeforeDelete={onBeforeDelete}
             deleteKeyCode={editMode ? 'Delete' : null}
@@ -1121,6 +1224,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
           {/* Edge tooltip */}
           {edgeTooltip && (
             <div
+              ref={edgeTooltipDivRef}
               className="fixed z-[9998] pointer-events-none px-2.5 py-1.5 bg-background-elevated border border-border-strong rounded shadow-lg text-foreground-default text-xs"
               style={{ left: edgeTooltip.x + 12, top: edgeTooltip.y - 36 }}
             >
@@ -1154,6 +1258,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
             nodeNameMap={nodeNameMap}
             onClose={() => { setSelectedNode(null); setActivePanel(null); }}
             onAliasUpdated={handleAliasUpdated}
+            onNodeClick={handleHighlightNode}
             onRefresh={refetch}
           />
         )}
@@ -1161,7 +1266,7 @@ function GraphExplorerInner({ connectionId, database, hidden }: GraphExplorerInn
         {/* Search / Path panel */}
         {activePanel === 'search' && (
           <GraphSearchPanel
-            connectionId={internalConnId}
+            connectionId={internalConnId > 0 ? internalConnId : null}
             visibleNodeIds={visibleNodeIds}
             pathFrom={pathFrom}
             pathTo={pathTo}

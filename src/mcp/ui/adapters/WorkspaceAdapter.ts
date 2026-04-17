@@ -1,5 +1,6 @@
 import type { UIObject, PatchResult, ExecResult, JsonPatchOp } from '../types'
 import { useQueryStore } from '../../../store/queryStore'
+import { useMigrationStore } from '../../../store/migrationStore'
 
 export class WorkspaceAdapter implements UIObject {
   type = 'workspace'
@@ -14,14 +15,15 @@ export class WorkspaceAdapter implements UIObject {
           paramsSchema: {
             type: 'object',
             properties: {
-              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'seatunnel_job'] },
+              type: { type: 'string', enum: ['query_editor', 'table_form', 'metric_form', 'metric_list', 'new_metric', 'er_canvas', 'migration_job', 'new_migration_job'] },
               connection_id: { type: 'number' },
               database: { type: 'string' },
               schema: { type: 'string' },
               table: { type: 'string' },
               metric_id: { type: 'number' },
               project_id: { type: 'number' },
-              job_id: { type: 'number' },
+              job_id: { type: 'number', description: 'Required when type is "migration_job"' },
+              title: { type: 'string', description: 'Display name for the tab. Required when type is "new_migration_job"' },
             },
             required: ['type'],
           },
@@ -70,9 +72,20 @@ export class WorkspaceAdapter implements UIObject {
           case 'er_canvas':
             if (project_id) store.openERDesignTab(project_id, `ER #${project_id}`)
             break
-          case 'seatunnel_job':
-            if (job_id != null) store.openSeaTunnelJobTab(job_id, `Job #${job_id}`)
-            break
+          case 'migration_job': {
+            if (!job_id) return { success: false, error: 'job_id is required for migration_job' }
+            const jobTitle = params?.title ?? `Migration #${job_id}`
+            store.openMigrationJobTab(job_id, jobTitle)
+            // Return stable objectId (job_id-based, not timestamp-based)
+            return { success: true, data: { objectId: `migration_job_${job_id}` } }
+          }
+          case 'new_migration_job': {
+            const name = params?.title ?? 'New Migration'
+            const newJobId = await useMigrationStore.getState().createJob(name)
+            store.openMigrationJobTab(newJobId, name)
+            // objectId is stable: migration_job_${jobId}, survives tab close/reopen
+            return { success: true, data: { objectId: `migration_job_${newJobId}`, job_id: newJobId } }
+          }
           default:
             return { success: false, error: `Unknown tab type: ${type}` }
         }

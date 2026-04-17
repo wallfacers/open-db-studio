@@ -23,7 +23,9 @@ use crate::AppResult;
 
 type CacheKey = (i64, String, String);
 
-static POOL_CACHE: Lazy<Mutex<HashMap<CacheKey, Arc<dyn DataSource>>>> =
+// Value: (datasource, configured pool_max_connections).
+// The stored size is used to detect whether an existing pool satisfies a larger request.
+static POOL_CACHE: Lazy<Mutex<HashMap<CacheKey, (Arc<dyn DataSource>, u32)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// 获取或创建缓存的数据源。
@@ -36,6 +38,22 @@ pub async fn get_or_create(
     database: &str,
     schema: &str,
 ) -> AppResult<Arc<dyn DataSource>> {
+    get_or_create_with_pool_size(connection_id, config, database, schema, 0).await
+}
+
+/// 获取或创建缓存的数据源，可指定最小连接池大小。
+/// 用于迁移管道等场景需要根据并行度动态扩展连接池。
+///
+/// 若缓存中已有连接池且其 pool_max_connections >= min_pool_size，直接复用；
+/// 否则以覆盖后的 pool_max_connections 重建并替换缓存条目（旧连接池被
+/// 已持有 Arc 的调用方继续使用，新调用方得到扩容后的连接池）。
+pub async fn get_or_create_with_pool_size(
+    connection_id: i64,
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    min_pool_size: u32,
+) -> AppResult<Arc<dyn DataSource>> {
     // SQLite 不走缓存
     if config.driver == "sqlite" {
         return create_datasource_arc(config, database, schema).await;
@@ -43,26 +61,36 @@ pub async fn get_or_create(
 
     let key: CacheKey = (connection_id, database.to_string(), schema.to_string());
 
-    // 快速路径：已有缓存直接返回
+    // 快速路径：已有缓存且满足容量要求时直接返回
     {
         let cache = POOL_CACHE.lock().await;
-        if let Some(ds) = cache.get(&key) {
-            return Ok(Arc::clone(ds));
+        if let Some((ds, cached_size)) = cache.get(&key) {
+            if *cached_size >= min_pool_size {
+                return Ok(Arc::clone(ds));
+            }
         }
     }
 
-    // 慢路径：创建新连接池
-    let ds = create_datasource_arc(config, database, schema).await?;
+    // 慢路径：创建新连接池（覆盖 pool_max_connections）
+    let mut cfg = config.clone();
+    let current = cfg.pool_max_connections.unwrap_or(0) as u32;
+    if min_pool_size > current {
+        cfg.pool_max_connections = Some(min_pool_size);
+    }
+    let actual_pool_size = cfg.pool_max_connections.unwrap_or(0);
+    let ds = create_datasource_arc(&cfg, database, schema).await?;
 
     let mut cache = POOL_CACHE.lock().await;
-    // Double-checked：等锁期间可能已被其他任务插入
-    if let Some(existing) = cache.get(&key) {
-        return Ok(Arc::clone(existing));
+    // Double-checked：等锁期间可能已被其他任务插入或升级
+    if let Some((existing, cached_size)) = cache.get(&key) {
+        if *cached_size >= min_pool_size {
+            return Ok(Arc::clone(existing));
+        }
     }
-    cache.insert(key, Arc::clone(&ds));
+    cache.insert(key, (Arc::clone(&ds), actual_pool_size));
     log::info!(
-        "Pool cache created: connection_id={} database={:?} schema={:?}",
-        connection_id, database, schema
+        "Pool cache created (pool_size={}): connection_id={} database={:?} schema={:?}",
+        actual_pool_size, connection_id, database, schema
     );
     Ok(ds)
 }
@@ -86,10 +114,79 @@ pub async fn invalidate(connection_id: i64) {
 pub async fn close_all() {
     let mut cache = POOL_CACHE.lock().await;
     let count = cache.len();
-    cache.clear();
+    cache.clear(); // Arc drop triggers pool close
     if count > 0 {
         log::info!("Pool cache: closed all {} cached pool(s) on app exit", count);
     }
+}
+
+/// Create a dedicated datasource that is **not** stored in the global cache.
+///
+/// Intended for migration pipelines and other short-lived workloads that need
+/// their own connection pool, sized for the task, and fully closed when the
+/// workload finishes — without interfering with the app's normal connection reuse.
+///
+/// Lifecycle: the returned `Arc` is the sole owner. When every clone of the `Arc`
+/// is dropped (i.e. when the migration task and all its split workers exit), the
+/// underlying connection pool is closed automatically by sqlx.
+///
+/// `min_pool_size` overrides `config.pool_max_connections` when larger, allowing
+/// the caller to request at least as many slots as its parallelism requires.
+///
+/// Uses `new_for_migration` for MySQL-family drivers so that session-level
+/// optimizations (disable binlog, unique checks, etc.) are applied via
+/// `after_connect` on every connection — without polluting normal UI pools.
+pub async fn create_ephemeral(
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+    min_pool_size: u32,
+) -> AppResult<Arc<dyn DataSource>> {
+    let mut cfg = config.clone();
+    let current = cfg.pool_max_connections.unwrap_or(0) as u32;
+    if min_pool_size > current {
+        cfg.pool_max_connections = Some(min_pool_size);
+    }
+    let actual = cfg.pool_max_connections.unwrap_or(0);
+    log::info!(
+        "Migration ephemeral pool created (pool_size={}, driver={}, database={:?})",
+        actual, cfg.driver, database
+    );
+    create_datasource_arc_for_migration(&cfg, database, schema).await
+}
+
+/// Migration-specific datasource creation — uses `new_for_migration` for MySQL-family
+/// drivers so that bulk-write session optimizations are baked into every connection.
+async fn create_datasource_arc_for_migration(
+    config: &ConnectionConfig,
+    database: &str,
+    schema: &str,
+) -> AppResult<Arc<dyn DataSource>> {
+    let mut cfg = config.clone();
+    if !database.is_empty() {
+        cfg.database = Some(database.to_string());
+    }
+    validate_connection_config(&cfg)?;
+    let ds: Arc<dyn DataSource> = match cfg.driver.as_str() {
+        "mysql" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::MySQL).await?),
+        "postgres" => {
+            let s = if schema.is_empty() { None } else { Some(schema) };
+            Arc::new(super::postgres::PostgresDataSource::new_for_migration(&cfg, s).await?)
+        }
+        "oracle" => Arc::new(super::oracle::OracleDataSource::new(&cfg).await?),
+        "sqlserver" => Arc::new(super::sqlserver::SqlServerDataSource::new(&cfg).await?),
+        "sqlite" => Arc::new(super::sqlite::SqliteDataSource::new(&cfg).await?),
+        "doris" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::Doris).await?),
+        "tidb" => Arc::new(super::mysql::MySqlDataSource::new_for_migration(&cfg, super::mysql::Dialect::TiDB).await?),
+        "clickhouse" => Arc::new(super::clickhouse::ClickHouseDataSource::new(&cfg).await?),
+        "gaussdb" => {
+            let s = if schema.is_empty() { None } else { Some(schema) };
+            Arc::new(super::gaussdb::GaussDbDataSource::new_for_migration(&cfg, s).await?)
+        }
+        "db2" => Arc::new(super::db2::Db2DataSource::new(&cfg).await?),
+        d => return Err(crate::AppError::Datasource(format!("Unsupported driver: {}", d))),
+    };
+    Ok(ds)
 }
 
 async fn create_datasource_arc(

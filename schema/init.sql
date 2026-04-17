@@ -281,40 +281,39 @@ USING fts5(
   content_rowid='rowid'
 );
 
--- ============ V6: SeaTunnel 迁移中心 ============
+-- ============ V6: SeaTunnel 迁移中心（已废弃） ============
+-- DEPRECATED: SeaTunnel integration removed in v0.6.0. Tables kept for reference only.
+-- These tables are no longer created. Data from existing installations is abandoned.
 
--- SeaTunnel 集群连接
-CREATE TABLE IF NOT EXISTS seatunnel_connections (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  url        TEXT NOT NULL,        -- REST API base URL, e.g. http://host:5801
-  auth_token_enc TEXT,             -- AES-256-GCM 加密存储（_enc 后缀对齐现有 password_enc/api_key_enc 命名规范）
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
+-- CREATE TABLE IF NOT EXISTS seatunnel_connections (
+--   id         INTEGER PRIMARY KEY AUTOINCREMENT,
+--   name       TEXT NOT NULL,
+--   url        TEXT NOT NULL,
+--   auth_token_enc TEXT,
+--   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- );
 
--- 用户自定义分类（支持无限嵌套；根目录必须有 connection_id 归属集群）
-CREATE TABLE IF NOT EXISTS seatunnel_categories (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
-  parent_id     INTEGER REFERENCES seatunnel_categories(id) ON DELETE CASCADE,
-  connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE CASCADE,
-  sort_order    INTEGER NOT NULL DEFAULT 0,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
+-- CREATE TABLE IF NOT EXISTS seatunnel_categories (
+--   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+--   name          TEXT NOT NULL,
+--   parent_id     INTEGER REFERENCES seatunnel_categories(id) ON DELETE CASCADE,
+--   connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE CASCADE,
+--   sort_order    INTEGER NOT NULL DEFAULT 0,
+--   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- );
 
--- SeaTunnel Job 定义
-CREATE TABLE IF NOT EXISTS seatunnel_jobs (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  name          TEXT NOT NULL,
-  category_id   INTEGER REFERENCES seatunnel_categories(id) ON DELETE SET NULL,
-  connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE SET NULL,
-  config_json   TEXT NOT NULL DEFAULT '{}',
-  last_job_id   TEXT,              -- SeaTunnel 返回的 jobId（字符串）
-  last_status   TEXT,              -- RUNNING / FINISHED / FAILED / CANCELLED
-  submitted_at  TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
+-- CREATE TABLE IF NOT EXISTS seatunnel_jobs (
+--   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+--   name          TEXT NOT NULL,
+--   category_id   INTEGER REFERENCES seatunnel_categories(id) ON DELETE SET NULL,
+--   connection_id INTEGER REFERENCES seatunnel_connections(id) ON DELETE SET NULL,
+--   config_json   TEXT NOT NULL DEFAULT '{}',
+--   last_job_id   TEXT,
+--   last_status   TEXT,
+--   submitted_at  TEXT,
+--   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+--   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- );
 
 -- ============ V7: ER 设计器 ============
 
@@ -406,3 +405,58 @@ CREATE TABLE IF NOT EXISTS er_indexes (
 
 -- 唯一约束：同一项目内表名不重复
 CREATE UNIQUE INDEX IF NOT EXISTS idx_er_tables_project_name ON er_tables(project_id, name);
+
+-- ============================================================
+-- Migration Center (native Rust ETL, replaces SeaTunnel)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS migration_categories (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  parent_id  INTEGER REFERENCES migration_categories(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_jobs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  category_id INTEGER REFERENCES migration_categories(id) ON DELETE SET NULL,
+  script_text TEXT NOT NULL DEFAULT '',
+  last_status TEXT CHECK(last_status IN ('RUNNING','FINISHED','FAILED','STOPPED','PARTIAL_FAILED')),
+  last_run_at TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_dirty_records (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id     INTEGER NOT NULL REFERENCES migration_jobs(id) ON DELETE CASCADE,
+  run_id     TEXT NOT NULL,
+  row_index  INTEGER,
+  field_name TEXT,
+  raw_value  TEXT,
+  error_msg  TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS migration_run_history (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id            INTEGER NOT NULL REFERENCES migration_jobs(id) ON DELETE CASCADE,
+  run_id            TEXT NOT NULL UNIQUE,
+  status            TEXT NOT NULL CHECK(status IN ('RUNNING','FINISHED','FAILED','STOPPED','PARTIAL_FAILED')),
+  rows_read         INTEGER NOT NULL DEFAULT 0,
+  rows_written      INTEGER NOT NULL DEFAULT 0,
+  rows_failed       INTEGER NOT NULL DEFAULT 0,
+  bytes_transferred INTEGER NOT NULL DEFAULT 0,
+  duration_ms       INTEGER,
+  started_at        TEXT NOT NULL,
+  finished_at       TEXT,
+  log_content       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_migration_dirty_records_job_run
+  ON migration_dirty_records(job_id, run_id);
+
+CREATE INDEX IF NOT EXISTS idx_migration_run_history_job
+  ON migration_run_history(job_id);

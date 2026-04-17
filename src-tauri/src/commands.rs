@@ -95,21 +95,6 @@ pub async fn execute_query(
         }
     }
 
-    // Auto-trigger schema graph refresh on DDL changes
-    if result.is_ok() {
-        let sql_upper = sql.trim().to_uppercase();
-        if sql_upper.starts_with("CREATE")
-            || sql_upper.starts_with("ALTER")
-            || sql_upper.starts_with("DROP")
-        {
-            let conn_id = connection_id;
-            let db = database.clone();
-            tokio::spawn(async move {
-                let _ = crate::graph::refresh_schema_graph(conn_id, db).await;
-            });
-        }
-    }
-
     result
 }
 
@@ -121,7 +106,21 @@ pub async fn get_tables(connection_id: i64, database: Option<String>) -> AppResu
     } else {
         crate::datasource::create_datasource(&config).await?
     };
-    ds.get_tables().await
+    let tables = ds.get_tables().await?;
+    
+    // 过滤系统库/Schema 中的表
+    use crate::graph::SYSTEM_SCHEMAS;
+    Ok(tables.into_iter()
+        .filter(|t| {
+            if let Some(ref s) = t.schema {
+                if SYSTEM_SCHEMAS.contains(&s.as_str()) { return false; }
+            }
+            if let Some(ref db) = database {
+                if SYSTEM_SCHEMAS.contains(&db.as_str()) { return false; }
+            }
+            true
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -153,7 +152,7 @@ fn resolve_base_url(config: &crate::db::models::LlmConfig) -> String {
     String::new()
 }
 
-fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
+pub(crate) fn build_llm_client() -> AppResult<crate::llm::client::LlmClient> {
     let config = crate::db::get_default_llm_config()?
         .ok_or_else(|| crate::AppError::Other(
             "No AI model configured. Please add one in Settings → AI Model.".into()
@@ -1161,7 +1160,8 @@ pub async fn ai_inline_complete(
         // 8. Assemble prompt from template
         let mode_instruction = match hint.as_str() {
             "single_line" => "Complete the current line only. Do not add newlines.",
-            _ => "Complete the full SQL statement from the cursor position. Use newlines for readability.",
+            "word" => "Complete the current word or token only.",
+            _ => "Complete the current block or statement. Use newlines where appropriate for readability.",
         };
 
         let sql_before_trimmed = if sql_before.len() > 200 {
@@ -1207,7 +1207,7 @@ pub async fn ai_inline_complete(
         ).await {
             Ok(Ok(raw)) => {
                 inline_complete::record_success(connection_id).await;
-                let processed = inline_complete::postprocess_completion(&raw, &sql_before);
+                let processed = inline_complete::postprocess_completion(&raw, &sql_before, &sql_after);
                 log::debug!("[ai_inline_complete] raw_len={} processed_len={} processed={:?}",
                     raw.len(), processed.len(), &processed[..processed.len().min(100)]);
                 inline_complete::update_last_request(connection_id, sql_before.clone(), mentioned_tables.clone(), processed.clone()).await;
@@ -1388,6 +1388,15 @@ pub async fn list_tables_with_stats(
     schema: Option<String>,
 ) -> AppResult<Vec<crate::datasource::TableStatInfo>> {
     let config = crate::db::get_connection_config(connection_id)?;
+    use crate::graph::SYSTEM_SCHEMAS;
+    if SYSTEM_SCHEMAS.contains(&database.as_str()) {
+        return Ok(vec![]);
+    }
+    if let Some(ref sch) = schema {
+        if SYSTEM_SCHEMAS.contains(&sch.as_str()) {
+            return Ok(vec![]);
+        }
+    }
     let ds = crate::datasource::create_datasource_with_db(&config, &database).await?;
     ds.list_tables_with_stats(&database, schema.as_deref()).await
 }
@@ -2587,40 +2596,43 @@ pub async fn get_graph_edges(
         return Ok(vec![]);
     }
     let conn = crate::db::get().lock().unwrap();
-    // 构建 IN 占位符（?1 .. ?N），from_node 和 to_node 各自独立绑定相同 ID 集合
-    let n = node_ids.len();
-    let ph1: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
-    let ph2: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata, e.source
-         FROM graph_edges e
-         WHERE e.from_node IN ({ph1}) OR e.to_node IN ({ph2})",
-        ph1 = ph1,
-        ph2 = ph2
-    );
-    // 参数绑定：node_ids 出现两次（from_node IN + to_node IN）
-    let params: Vec<Box<dyn rusqlite::ToSql>> = node_ids
-        .iter()
-        .chain(node_ids.iter())
-        .map(|id| Box::new(id.clone()) as Box<dyn rusqlite::ToSql>)
-        .collect();
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-        let meta_str: Option<String> = row.get(5)?;
-        Ok(crate::graph::GraphEdge {
-            id: row.get(0)?,
-            from_node: row.get(1)?,
-            to_node: row.get(2)?,
-            edge_type: row.get(3)?,
-            weight: row.get(4)?,
-            metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
-            source: row.get(6)?,
-        })
-    })?;
-    let mut edges: Vec<crate::graph::GraphEdge> = rows.collect::<Result<Vec<_>, _>>()?;
-    edges.sort_by(|a, b| a.id.cmp(&b.id));
-    edges.dedup_by_key(|e| e.id.clone());
-    Ok(edges)
+    // SQLite 绑定参数上限为 32766，每个 chunk 用 500 个节点 ID（from+to 共 1000 参数）
+    const CHUNK_SIZE: usize = 500;
+    let mut all_edges: Vec<crate::graph::GraphEdge> = Vec::new();
+    for chunk in node_ids.chunks(CHUNK_SIZE) {
+        let n = chunk.len();
+        let ph1: String = (1..=n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let ph2: String = (n + 1..=2 * n).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT e.id, e.from_node, e.to_node, e.edge_type, e.weight, e.metadata, e.source
+             FROM graph_edges e
+             WHERE e.from_node IN ({ph1}) OR e.to_node IN ({ph2})",
+            ph1 = ph1,
+            ph2 = ph2
+        );
+        let params: Vec<Box<dyn rusqlite::ToSql>> = chunk
+            .iter()
+            .chain(chunk.iter())
+            .map(|id| Box::new(id.clone()) as Box<dyn rusqlite::ToSql>)
+            .collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            let meta_str: Option<String> = row.get(5)?;
+            Ok(crate::graph::GraphEdge {
+                id: row.get(0)?,
+                from_node: row.get(1)?,
+                to_node: row.get(2)?,
+                edge_type: row.get(3)?,
+                weight: row.get(4)?,
+                metadata: meta_str.and_then(|s| serde_json::from_str(&s).ok()),
+                source: row.get(6)?,
+            })
+        })?;
+        all_edges.extend(rows.collect::<Result<Vec<_>, _>>()?);
+    }
+    all_edges.sort_by(|a, b| a.id.cmp(&b.id));
+    all_edges.dedup_by_key(|e| e.id.clone());
+    Ok(all_edges)
 }
 
 /// 更新节点别名，并将 source 改为 'user'，同步更新 FTS5 索引
@@ -2693,54 +2705,60 @@ pub async fn clear_graph_node_positions(
     crate::graph::query::clear_node_positions(connection_id, database.as_deref())
 }
 
+#[tauri::command]
+pub async fn auto_layout_graph(
+    connection_id: i64,
+    database: Option<String>,
+) -> AppResult<()> {
+    crate::graph::layout::auto_layout_new_nodes(connection_id, database.as_deref())
+}
+
 // ============ 跨数据源迁移 ============
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn create_migration_task(
-    name: String,
-    src_connection_id: i64,
-    dst_connection_id: i64,
-    config: crate::migration::MigrationConfig,
-) -> AppResult<crate::migration::MigrationTask> {
-    crate::migration::create_task(&name, src_connection_id, dst_connection_id, &config)
+    _name: String,
+    _config: crate::migration::MigrationJobConfig,
+) -> AppResult<crate::migration::MigrationJob> {
+    Err(crate::AppError::Other("create_migration_task: not yet implemented (Task 3)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
-pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationTask>> {
-    crate::migration::list_tasks()
+pub async fn list_migration_tasks() -> AppResult<Vec<crate::migration::MigrationJob>> {
+    Err(crate::AppError::Other("list_migration_tasks: not yet implemented (Task 3)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn run_migration_precheck(
-    task_id: i64,
+    job_id: i64,
+    config: crate::migration::MigrationJobConfig,
 ) -> AppResult<crate::migration::precheck::PreCheckResult> {
-    crate::migration::precheck::run_precheck(task_id).await
+    crate::migration::precheck::run_precheck_for_job(job_id, &config).await
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn get_precheck_report(
-    task_id: i64,
+    job_id: i64,
 ) -> AppResult<crate::migration::precheck::PreCheckResult> {
-    crate::migration::precheck::get_precheck_result(task_id)
+    crate::migration::precheck::get_precheck_result(job_id)
 }
 
 #[allow(dead_code)]
 #[tauri::command]
-pub async fn pause_migration(task_id: i64) -> AppResult<()> {
-    crate::migration::pause_migration(task_id)
+pub async fn pause_migration(_job_id: i64) -> AppResult<()> {
+    Err(crate::AppError::Other("pause_migration: not yet implemented (Task 4)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn get_migration_progress(
-    task_id: i64,
-) -> AppResult<Option<crate::migration::task_mgr::MigrationProgress>> {
-    let task = crate::migration::get_task(task_id)?;
-    Ok(task.progress)
+    _job_id: i64,
+) -> AppResult<Option<String>> {
+    Ok(None)
 }
 
 // ============ AI 指标草稿 + Text-to-SQL v2 ============
@@ -2857,16 +2875,16 @@ pub async fn ai_generate_sql_v2(
 #[allow(dead_code)]
 #[tauri::command]
 pub async fn start_migration(
-    task_id: i64,
-    app_handle: tauri::AppHandle,
+    _job_id: i64,
+    _app_handle: tauri::AppHandle,
 ) -> AppResult<()> {
-    crate::migration::start_migration(task_id, app_handle).await
+    Err(crate::AppError::Other("start_migration: not yet implemented (Task 4)".into()))
 }
 
 #[allow(dead_code)]
 #[tauri::command]
-pub fn get_migration_task(task_id: i64) -> AppResult<crate::migration::MigrationTask> {
-    crate::migration::get_task(task_id)
+pub fn get_migration_task(job_id: i64) -> AppResult<crate::migration::MigrationJob> {
+    Err(crate::AppError::Other(format!("get_migration_task({job_id}): not yet implemented (Task 3)")))
 }
 
 // ============ ACP Elicitation — 权限确认回传（旧版，已废弃，桩函数保留兼容性）============
@@ -3815,6 +3833,7 @@ pub struct OpenCodeProvider {
     pub id: String,
     pub name: String,
     pub source: String,
+    pub api_type: String,
     pub models: Vec<OpenCodeProviderModel>,
 }
 
@@ -3852,13 +3871,20 @@ pub async fn agent_list_providers(
         let id = p["id"].as_str()?.to_string();
         let name = p["name"].as_str().unwrap_or(&id).to_string();
         let source = p["source"].as_str().unwrap_or("").to_string();
+        // 从 npm 字段或 provider id 推断 api_type
+        let npm = p["npm"].as_str().unwrap_or("");
+        let api_type = if npm.contains("anthropic") || id == "anthropic" {
+            "anthropic"
+        } else {
+            "openai"
+        }.to_string();
         let models = p["models"].as_object()
             .map(|m| m.iter().map(|(k, v)| OpenCodeProviderModel {
                 id: k.clone(),
                 name: v["name"].as_str().unwrap_or(k).to_string(),
             }).collect::<Vec<_>>())
             .unwrap_or_default();
-        Some(OpenCodeProvider { id, name, source, models })
+        Some(OpenCodeProvider { id, name, source, api_type, models })
     }).collect();
     Ok(providers)
 }

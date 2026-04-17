@@ -1,3 +1,4 @@
+pub mod bulk_write;
 pub mod clickhouse;
 pub mod db2;
 pub mod gaussdb;
@@ -368,11 +369,40 @@ pub struct DbStats {
     pub db_summary: DbSummary,
 }
 
+// ─── StringEscapeStyle ───────────────────────────────────────────────────────
+
+/// 各驱动的 SQL 字符串字面量转义风格，用于 Migration 模块安全构造 INSERT 值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringEscapeStyle {
+    /// MySQL / MariaDB / TiDB / Doris / ClickHouse：转义 `\` 为 `\\`，转义 `'` 为 `\'`
+    Standard,
+    /// PostgreSQL / GaussDB：仅转义 `'` 为 `''`；若含 `\` 则整体使用 `E'...'` 语法
+    PostgresLiteral,
+    /// SQL Server / Oracle / DB2：`\` 无特殊含义，仅转义 `'` 为 `''`
+    TSql,
+    /// SQLite：同 TSql，仅转义 `'` 为 `''`
+    SQLiteLiteral,
+}
+
+// ─── BulkWriteTxn ─────────────────────────────────────────────────────────────
+
+/// Transaction handle for bulk writes. Driver-specific implementations.
+/// Used by the migration pipeline to batch writes within a single transaction,
+/// reducing fsync frequency from ~5000 per 10GB to ~310.
+pub enum BulkWriteTxn {
+    MySql(sqlx::Transaction<'static, sqlx::MySql>),
+    Postgres(sqlx::Transaction<'static, sqlx::Postgres>),
+}
+
 // ─── DataSource Trait ────────────────────────────────────────────────────────
 
 /// 数据源统一抽象 trait
 #[async_trait]
+#[allow(dead_code)]
 pub trait DataSource: Send + Sync {
+    /// Downcast to `Any` for type-specific operations (e.g., transaction wrapping in pipeline).
+    fn as_any(&self) -> &dyn std::any::Any;
+
     async fn test_connection(&self) -> AppResult<()>;
     async fn execute(&self, sql: &str) -> AppResult<QueryResult>;
     async fn get_tables(&self) -> AppResult<Vec<TableMeta>>;
@@ -459,6 +489,278 @@ pub trait DataSource: Send + Sync {
         let views = self.get_views().await.unwrap_or_default();
         let procedures = self.get_procedures().await.unwrap_or_default();
         Ok(FullSchemaInfo { tables, views, procedures })
+    }
+
+    /// 返回该驱动的字符串字面量转义风格（用于 Migration 模块安全构造 INSERT 值）。
+    /// 各驱动按需覆盖，默认返回 Standard（MySQL 兼容）。
+    fn string_escape_style(&self) -> StringEscapeStyle {
+        StringEscapeStyle::Standard
+    }
+
+    /// 返回该驱动是否支持在显式事务内进行 bulk_write（BEGIN → chunked INSERT → COMMIT）。
+    /// 用于 pipeline writer 减少 autocommit fsync 开销。默认 false，sqlx 池化驱动按需覆盖。
+    fn supports_txn_bulk_write(&self) -> bool {
+        false
+    }
+
+    /// Begin a transaction for batched writes.
+    /// Returns a transaction handle that must be passed to subsequent calls.
+    /// Default: no transaction support (auto-commit mode).
+    async fn begin_bulk_write_txn(&self) -> AppResult<Option<BulkWriteTxn>> {
+        Ok(None)
+    }
+
+    /// Execute bulk write within an existing transaction.
+    /// The handle must come from `begin_bulk_write_txn`.
+    /// Default: returns error (not supported by this driver).
+    async fn bulk_write_in_txn(
+        &self,
+        _txn: &mut BulkWriteTxn,
+        _table: &str,
+        _columns: &[String],
+        _rows: Vec<crate::migration::native_row::MigrationRow>,
+        _conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        _upsert_keys: &[String],
+        _driver: &str,
+    ) -> AppResult<usize> {
+        Err(AppError::Other("bulk_write_in_txn not supported by this driver".into()))
+    }
+
+    /// Commit the transaction, releasing all accumulated writes.
+    /// Default: no-op (transaction was never started).
+    async fn commit_bulk_write_txn(&self, _txn: BulkWriteTxn) -> AppResult<()> {
+        Ok(())
+    }
+
+    /// 在单个事务中执行多条 SQL 语句（一次 COMMIT），减少 fsync 次数。
+    /// 默认实现逐条 execute（无事务包裹），各驱动按需覆盖以使用原生事务。
+    /// 返回所有语句影响的总行数。
+    #[allow(dead_code)]
+    async fn execute_in_transaction(&self, statements: &[String]) -> AppResult<usize> {
+        let mut total = 0;
+        for stmt in statements {
+            total += self.execute(stmt).await?.row_count;
+        }
+        Ok(total)
+    }
+
+    /// 批量写入行数据到指定表。
+    /// 默认实现使用共享的 build_insert_sql_optimized（多行 INSERT + 零分配），
+    /// 按 ~4MB 分块。各驱动按需覆盖以使用原生批量写入协议。
+    async fn bulk_write(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: &[Vec<serde_json::Value>],
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        if rows.is_empty() || columns.is_empty() {
+            return Ok(0);
+        }
+        let escape_style = self.string_escape_style();
+
+        // Chunk rows to keep each INSERT under ~4 MB (conservative default
+        // for drivers where we can't query the server's packet limit).
+        const MAX_SQL_BYTES: usize = 4 * 1024 * 1024;
+        let num_cols = columns.len();
+        let tmpl = crate::datasource::bulk_write::InsertTemplate::new(
+            table, columns, conflict_strategy, upsert_keys, driver,
+        );
+
+        let row_sizes: Vec<usize> = rows.iter()
+            .map(|r| {
+                let mut size = num_cols * 3;
+                for val in r {
+                    size += match val {
+                        serde_json::Value::Null => 4,
+                        serde_json::Value::Bool(_) => 5,
+                        serde_json::Value::Number(_) => 25,
+                        serde_json::Value::String(s) => 3 + s.len() + (s.len() / 16),
+                        _ => 70,
+                    };
+                }
+                size
+            })
+            .collect();
+
+        let mut total = 0usize;
+        let mut chunk_start = 0;
+        while chunk_start < rows.len() {
+            let mut chunk_sql_size = 0usize;
+            let mut chunk_end = chunk_start;
+            while chunk_end < rows.len() {
+                let row_size = row_sizes[chunk_end];
+                if chunk_end > chunk_start && chunk_sql_size + row_size > MAX_SQL_BYTES {
+                    break;
+                }
+                chunk_sql_size += row_size;
+                chunk_end += 1;
+            }
+            let chunk = &rows[chunk_start..chunk_end];
+            let sql = tmpl.build_chunk_sql(chunk, &escape_style, num_cols);
+            let result = self.execute(&sql).await?;
+            total += result.row_count.min(chunk.len());
+            chunk_start = chunk_end;
+        }
+        Ok(total)
+    }
+
+    // ── Migration-specific methods ──────────────────────────────────────────
+
+    /// Set session-level parameters to optimize bulk write throughput.
+    async fn setup_migration_session(&self) -> AppResult<()> {
+        Ok(())
+    }
+
+    /// Restore session-level parameters after migration completes.
+    async fn teardown_migration_session(&self) -> AppResult<()> {
+        Ok(())
+    }
+
+    /// Hint the maximum concurrent migration-path connections this datasource
+    /// should accept. MySQL family uses a dedicated `mysql_async` pool for
+    /// LOAD DATA LOCAL INFILE whose size must match `parallelism`; otherwise
+    /// writers serialize on a small hardcoded pool.
+    ///
+    /// Called once per mapping, before the first write. Default: no-op.
+    fn set_migration_pool_size(&self, _size: u32) {}
+
+    /// 分页执行查询，返回第 `offset` 行起的 `limit` 行数据。
+    /// 默认实现通过子查询包裹原始 SQL，适用于 MySQL / PostgreSQL / SQLite / ClickHouse。
+    /// SQL Server 需覆盖此方法以使用 OFFSET/FETCH NEXT 语法。
+    async fn execute_paginated(
+        &self,
+        sql: &str,
+        limit: usize,
+        offset: usize,
+    ) -> AppResult<QueryResult> {
+        let paged = format!(
+            "SELECT * FROM ({}) AS _mig_page_ LIMIT {} OFFSET {}",
+            sql, limit, offset
+        );
+        self.execute(&paged).await
+    }
+
+    /// Stream query results row-by-row through a channel.
+    /// Returns `(columns, receiver)` where the receiver yields one row at a time.
+    /// Used by the migration pipeline to avoid materializing all rows in memory.
+    /// Default implementation batches via `execute()` then streams through a channel.
+    async fn execute_streaming(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+    ) -> AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<Vec<serde_json::Value>>)> {
+        let qr = self.execute(sql).await?;
+        let cols = qr.columns;
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+        tokio::spawn(async move {
+            for row in qr.rows {
+                if tx.send(row).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Ok((cols, rx))
+    }
+
+    /// Read query results with native-typed values (no JSON stringification).
+    ///
+    /// This is the dedicated read path for migration. Unlike `execute()`,
+    /// which converts all values to `serde_json::Value` (with numeric types
+    /// stringified for JS safety), this returns `MigrationRow` with native
+    /// Rust types (i64, f64, Decimal, etc.), reducing memory usage by 30-80%.
+    ///
+    /// Returns `None` when the query yields no rows.
+    /// Default implementation: falls back to `execute()` + JSON conversion.
+    /// MySQL and PostgreSQL override with native implementations using `try_get_raw`.
+    async fn migration_read_sql(
+        &self,
+        sql: &str,
+    ) -> AppResult<Option<(Vec<String>, Vec<crate::migration::native_row::MigrationRow>)>> {
+        let qr = self.execute(sql).await?;
+        if qr.rows.is_empty() {
+            return Ok(None);
+        }
+        let columns = qr.columns.clone();
+        let mig_rows: Vec<crate::migration::native_row::MigrationRow> = qr.rows.into_iter()
+            .map(|values| crate::migration::native_row::MigrationRow {
+                values: values.into_iter().map(json_value_to_migration_value).collect(),
+            })
+            .collect();
+        Ok(Some((columns, mig_rows)))
+    }
+
+    /// Read query results with native-typed values as a stream.
+    /// Returns `(columns, receiver)` where the receiver yields `MigrationRow` one-by-one.
+    /// Default implementation: falls back to `migration_read_sql()` and batches through a channel.
+    async fn migration_read_sql_stream(
+        &self,
+        sql: &str,
+        channel_cap: usize,
+        _cancel: &tokio_util::sync::CancellationToken,
+    ) -> AppResult<(Vec<String>, tokio::sync::mpsc::Receiver<crate::migration::native_row::MigrationRow>)> {
+        let res = self.migration_read_sql(sql).await?;
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_cap);
+        match res {
+            Some((cols, rows)) => {
+                let cancel = _cancel.clone();
+                tokio::spawn(async move {
+                    for row in rows {
+                        if cancel.is_cancelled() || tx.send(row).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+                Ok((cols, rx))
+            }
+            None => Ok((Vec::new(), rx)),
+        }
+    }
+
+    /// Batch-write native-typed rows to a table.
+    ///
+    /// This is the dedicated write path for migration when the source produced
+    /// `MigrationRow` via `migration_read_sql()`. It avoids converting
+    /// MigrationValue → serde_json::Value → SQL, using direct TSV/COPY/INSERT
+    /// serialization from native types.
+    ///
+    /// Default implementation converts MigrationValue → serde_json::Value and
+    /// delegates to `bulk_write()`. Drivers that support fast bulk protocols
+    /// (MySQL LOAD DATA, PostgreSQL COPY) override this with native paths.
+    async fn bulk_write_native(
+        &self,
+        table: &str,
+        columns: &[String],
+        rows: Vec<crate::migration::native_row::MigrationRow>,
+        conflict_strategy: &crate::migration::task_mgr::ConflictStrategy,
+        upsert_keys: &[String],
+        driver: &str,
+    ) -> AppResult<usize> {
+        // Default: convert to serde_json::Value and delegate to bulk_write
+        let json_rows: Vec<Vec<serde_json::Value>> = rows.into_iter()
+            .map(|r| r.to_json_row())
+            .collect();
+        self.bulk_write(table, columns, &json_rows, conflict_strategy, upsert_keys, driver).await
+    }
+}
+
+/// Convert a serde_json::Value (from execute()) to a native MigrationValue.
+/// Used by the default migration_read_sql implementation.
+fn json_value_to_migration_value(v: serde_json::Value) -> crate::migration::native_row::MigrationValue {
+    use crate::migration::native_row::MigrationValue;
+    match v {
+        serde_json::Value::Null => MigrationValue::Null,
+        serde_json::Value::Bool(b) => MigrationValue::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() { MigrationValue::Int(i) }
+            else if let Some(u) = n.as_u64() { MigrationValue::UInt(u) }
+            else if let Some(f) = n.as_f64() { MigrationValue::Float(f) }
+            else { MigrationValue::Text(n.to_string()) }
+        }
+        serde_json::Value::String(s) => MigrationValue::Text(s),
+        _ => MigrationValue::Text(v.to_string()),
     }
 }
 

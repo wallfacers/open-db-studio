@@ -119,7 +119,7 @@
 | Text-to-SQL v2 管道 | `pipeline/` | entity_extract → context_builder → sql_validator |
 | migration/ DDL 转换 | `migration/ddl_convert.rs` | 跨方言类型映射表（MySQL/PG/Oracle/MSSQL） |
 | migration/ 预检 | `migration/precheck.rs` | type_compat/null_constraint/pk_conflict 三类检查 |
-| migration/ 数据泵 | `migration/data_pump.rs` | 分批读写 + Tauri Event `migration:progress` 广播 |
+| migration/ 数据泵 | `migration/pipeline.rs` | Tokio Reader-Writer 管道 + Tauri Event 进度广播 |
 | migration/ 任务管理 | `migration/task_mgr.rs` | 状态机 pending/running/paused/done/failed |
 | GraphExplorer 前端 | `src/components/GraphExplorer/index.tsx` | 图谱主面板 |
 | MetricsPanel 前端 | `src/components/MetricsPanel/index.tsx` | 指标列表 + draft/approved/rejected 分组 |
@@ -178,8 +178,7 @@
 | 5 个 graph_* MCP 工具注册（Phase 1） | `src-tauri/src/mcp/mod.rs`（`graph_get_node_list` 等） | `docs/superpowers/specs/2026-03-20-graph-mcp-skill-design.md` |
 | find_join_paths_structured + link 节点过滤（规则 1+2） | `src-tauri/src/graph/traversal.rs` | commit `36563e2` |
 | 全局连接池缓存（消除树导航重复握手） | `src-tauri/src/datasource/pool.rs` 或 `mod.rs` | commit `bb1e492` |
-| SeaTunnel 完整实现（连接管理 CRUD、分类/Job 管理、REST API 提交/停止/状态轮询、日志流式拉取） | `src-tauri/src/seatunnel/client.rs`, `src-tauri/src/seatunnel/commands.rs`, `SeaTunnelExplorer/`, `SeaTunnelJobTab/` | `docs/superpowers/specs/2026-03-20-seatunnel-design.md` |
-| i18n 全量国际化（Assistant/GraphExplorer/MetricsExplorer/SeaTunnel） | `src/i18n/` | commits `7eccf9d`, `0baae87` |
+| i18n 全量国际化（Assistant/GraphExplorer/MetricsExplorer/Migration Center） | `src/i18n/` | commits `7eccf9d`, `0baae87` |
 
 
 ### docs/superpowers/plans/ 新增已完成文档清单
@@ -240,7 +239,7 @@
 | `2026-03-20-auto-mode-direct-apply-design.md` | Auto 模式直接应用 |
 | `2026-03-20-graph-mcp-skill-design.md` | 图谱 MCP 工具 |
 | `2026-03-20-knowledge-graph-palantir-redesign.md` | Palantir 图改造 |
-| `2026-03-20-seatunnel-design.md` | SeaTunnel 集成 |
+| `2026-03-20-seatunnel-design.md` | SeaTunnel 集成（已删除：SeaTunnel 于 v0.6.0 被原生 Rust ETL 迁移中心替代） |
 | `2026-03-22-table-data-filter-sort-design.md` | 表数据过滤排序 |
 | `2026-03-23-large-data-table-design.md` | 大数据量表 |
 | `2026-03-25-metrics-in-db-tree-design.md` | 指标嵌入数据库树 |
@@ -310,7 +309,7 @@
 2. **完整 RAG 管道**（向量 + 指标 + GraphRAG 三路融合）
 3. **插件系统**（数据源/AI 提供商/导出格式）
 4. **团队协作**（SQL 片段共享、指标库导出/导入）
-5. **SeaTunnel 外部引擎接入**（已完整实现：连接管理、Job CRUD、REST API 提交/停止/状态轮询、日志流式拉取）
+5. **原生 ETL 迁移中心**（Tokio Reader-Writer 管道；SeaTunnel 集成已于 v0.6.0 移除）
 
 ---
 
@@ -328,3 +327,4 @@
 | 2026-03-29 | 文档清理：删除 25 个过时/废弃/已替代的设计文档（ACP 持久化、Agent Loop、page-agent、FS Abstraction、UI Object Protocol、ER Canvas MCP、Graph Virtual Relation、Graph Search、SeaTunnel Tree Redesign、opencode Sidecar、Copy/Import Connection、Datasource Config Enhancement、DB2/GaussDB、Multi-Datasource Extension、E-commerce Test DB、Question Deadlock Fix）；保留 SQL Ghost Text 为唯一未实现计划 |
 | 2026-03-29 | 全量文档状态标注：为 docs/plans/（29 篇）、docs/superpowers/specs/（37 篇）、docs/superpowers/plans/（25 篇）共 91 篇文档添加 STATUS 标记（✅ 已实现 / ⚠️ 已废弃 / ❌ 未实现）；更新 schema-design.md（5→25 张表）、ai-pipeline.md（V2 pipeline）；补充 IMPLEMENTATION_STATUS.md 完整文档状态索引 |
 | 2026-03-31 | 状态更新：SQL Ghost Text 补全（`ai_inline_complete` 命令 + Monaco InlineCompletionsProvider）已实现；AI 变更高亮系统（`highlightStore` + `useFieldHighlight` + `useMonacoHighlight`）已实现；扩展到 QueryEditorAdapter / MetricFormAdapter / TableFormAdapter；所有计划文档 100% 已实现 |
+| 2026-04-08 | SeaTunnel 集成已移除：删除 `src-tauri/src/seatunnel/`、`SeaTunnelExplorer/`、`SeaTunnelJobTab/`、相关 store 和 MCP adapter；原生 Rust ETL 迁移中心（Migration Center）完全替代；`2026-03-20-seatunnel-design.md` 已删除 |

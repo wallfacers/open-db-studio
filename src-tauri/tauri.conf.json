@@ -1,6 +1,6 @@
 {
   "productName": "open-db-studio",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "identifier": "com.open-db-studio.app",
   "build": {
     "frontendDist": "../dist",
@@ -9,18 +9,6 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Open DB Studio",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false,
-        "maximized": true,
-        "decorations": false,
-        "backgroundColor": "#080d12"
-      }
-    ],
     "security": {
       "csp": null
     }

@@ -2,6 +2,7 @@ pub mod cache;
 pub mod change_detector;
 pub mod comment_parser;
 pub mod event_processor;
+pub mod layout;
 pub mod query;
 pub mod traversal;
 
@@ -9,8 +10,14 @@ pub use cache::{JoinPath, GraphCacheStore};
 pub use change_detector::ChangeEventType;
 pub use query::{GraphNode, GraphEdge, search_graph, SubGraph};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 use tauri::Emitter;
+
+/// 正在刷新的连接 ID 集合，防止同一连接并发/重复触发 refresh_schema_graph
+static REFRESH_IN_PROGRESS: Lazy<Mutex<HashSet<i64>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 
 /// 系统库/系统 schema 名，构建图谱和指标列表时统一过滤
 pub const SYSTEM_SCHEMAS: &[&str] = &[
@@ -104,6 +111,11 @@ fn emit_completed(app: &tauri::AppHandle, task_id: &str, logs: &[TaskLogLine], t
 /// 判断 driver 是否为 PostgreSQL 兼容类型
 pub fn is_pg_driver(driver: &str) -> bool {
     matches!(driver, "postgres" | "gaussdb")
+}
+
+/// 生成 table 节点 ID（含可选 database 段，用于多库驱动区分同名表）
+fn make_table_node_id(connection_id: i64, database: Option<&str>, table_name: &str) -> String {
+    event_processor::make_node_id(connection_id, "table", database, &[table_name])
 }
 
 /// 生成 schema 限定名（PG 等多 schema 数据源使用 schema.table 格式）
@@ -269,6 +281,8 @@ pub async fn run_graph_build(
             return;
         }
     };
+    // 保存 database 值供步骤 9（自动布局）使用，避免被 filter() 移走
+    let layout_database: Option<String> = database.clone();
     // 若调用方指定了 database（如 MySQL 多库场景），覆盖连接配置中存储的默认库名
     if let Some(db) = database.filter(|s| !s.is_empty()) {
         config.database = Some(db);
@@ -369,6 +383,12 @@ pub async fn run_graph_build(
         log_and_emit(&app, &task_id, &mut logs, "INFO", "图缓存已失效，下次查询将重新加载");
     }
 
+    // 9. 为新增节点分配初始坐标（position_x IS NULL → 自动布局）
+    match crate::graph::layout::auto_layout_new_nodes(connection_id, layout_database.as_deref()) {
+        Ok(()) => log_and_emit(&app, &task_id, &mut logs, "INFO", "新节点初始坐标分配完成"),
+        Err(e) => log_and_emit(&app, &task_id, &mut logs, "WARN", &format!("自动布局失败（不影响主流程）: {}", e)),
+    }
+
     emit_completed(&app, &task_id, &logs, table_count);
 }
 
@@ -452,7 +472,7 @@ pub fn sync_metrics_to_graph(connection_id: i64) -> crate::AppResult<usize> {
 
         // 仅在目标表节点存在（is_deleted=0）时建立边，防止死链
         if !table_name.is_empty() {
-            let table_node_id = format!("{}:table:{}", connection_id, table_name);
+            let table_node_id = make_table_node_id(connection_id, m.scope_database.as_deref(), table_name);
             let table_exists: bool = conn.query_row(
                 "SELECT COUNT(*) FROM graph_nodes WHERE id = ?1 AND is_deleted = 0",
                 [&table_node_id],
@@ -622,25 +642,41 @@ fn build_comment_links(
     conn.execute_batch("BEGIN")?;
 
     let result = (|| -> crate::AppResult<usize> {
-    // 1. 清除旧 source='comment' 的边
-    conn.execute(
-        "DELETE FROM graph_edges
-         WHERE source = 'comment'
-           AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1)
-                OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1))",
-        [connection_id],
-    )?;
-    // 清除旧 source='comment' 的 link 节点
-    conn.execute(
-        "DELETE FROM graph_nodes
-         WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link'",
-        [connection_id],
-    )?;
+    // 1. 清除旧 source='comment' 的边和 link 节点
+    //    按 database 范围限定，避免多库遍历时后续库的清除操作误删前面库已建好的注释关系
+    if let Some(db) = database {
+        conn.execute(
+            "DELETE FROM graph_edges
+             WHERE source = 'comment'
+               AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1 AND database = ?2)
+                    OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1 AND database = ?2))",
+            rusqlite::params![connection_id, db],
+        )?;
+        conn.execute(
+            "DELETE FROM graph_nodes
+             WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link' AND database = ?2",
+            rusqlite::params![connection_id, db],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM graph_edges
+             WHERE source = 'comment'
+               AND (from_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1)
+                    OR to_node IN (SELECT id FROM graph_nodes WHERE connection_id = ?1))",
+            [connection_id],
+        )?;
+        conn.execute(
+            "DELETE FROM graph_nodes
+             WHERE connection_id = ?1 AND source = 'comment' AND node_type = 'link'",
+            [connection_id],
+        )?;
+    }
 
     let mut count = 0;
+    let db_seg = database.filter(|s| !s.is_empty()).map(|d| format!("{}:", d)).unwrap_or_default();
 
     for (table_name, columns) in table_columns {
-        let table_node_id = format!("{}:table:{}", connection_id, table_name);
+        let table_node_id = make_table_node_id(connection_id, database, table_name);
 
         for col in columns {
             let comment = match &col.comment {
@@ -675,7 +711,7 @@ fn build_comment_links(
                     continue;
                 }
 
-                let target_node_id = format!("{}:table:{}", connection_id, resolved_target);
+                let target_node_id = make_table_node_id(connection_id, database, &resolved_target);
 
                 // 检查是否已有 source='schema' 的 Link Node 连接这两张表
                 let schema_link_exists: bool = match conn.query_row(
@@ -707,8 +743,8 @@ fn build_comment_links(
 
                 // 生成 comment 来源的 Link Node ID
                 let link_node_id = format!(
-                    "{}:link:comment_{}_{}_{}",
-                    connection_id, table_name, r.target_table, col.name
+                    "{}:link:comment_{}{}_{}_{}",
+                    connection_id, db_seg, table_name, r.target_table, col.name
                 );
 
                 let metadata = serde_json::json!({
@@ -775,7 +811,29 @@ fn build_comment_links(
 /// Lightweight incremental schema graph refresh.
 /// Detects table additions/removals and column changes, updates graph nodes accordingly.
 /// Does NOT re-parse comment links, sync metrics, or sync aliases.
+///
+/// 内置幂等保护：同一连接若已有刷新正在执行，后续所有调用（定时器、DDL 触发、手动点击）
+/// 均立即返回 Ok(())，直到当前刷新完成为止。
 pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) -> crate::AppResult<()> {
+    // ── 幂等入口：同一连接同时只允许一次刷新 ──────────────────────────
+    {
+        let mut in_progress = REFRESH_IN_PROGRESS.lock().unwrap();
+        if in_progress.contains(&connection_id) {
+            log::info!(
+                "[refresh_schema_graph] connection {} already refreshing, skipped",
+                connection_id
+            );
+            return Ok(());
+        }
+        in_progress.insert(connection_id);
+    }
+    // 无论成功还是失败，退出时都释放锁位
+    let result = refresh_schema_graph_inner(connection_id, database).await;
+    REFRESH_IN_PROGRESS.lock().unwrap().remove(&connection_id);
+    result
+}
+
+async fn refresh_schema_graph_inner(connection_id: i64, database: Option<String>) -> crate::AppResult<()> {
     use sha2::{Sha256, Digest};
 
     // 1. Get connection config and reuse pooled datasource
@@ -789,6 +847,7 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
     let db_name = database.filter(|s| !s.is_empty())
         .or_else(|| config.database.clone())
         .unwrap_or_default();
+    let db_opt: Option<&str> = if db_name.is_empty() { None } else { Some(db_name.as_str()) };
 
     let ds = match crate::datasource::pool_cache::get_or_create(
         connection_id, &config, &db_name, "",
@@ -840,7 +899,7 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
         let conn = crate::db::get().lock().unwrap();
         for (name, table) in &current_set {
             if !existing_set.contains_key(name) {
-                let node_id = format!("{}:table:{}", connection_id, name);
+                let node_id = make_table_node_id(connection_id, db_opt, name);
                 let metadata = serde_json::json!({
                     "schema": table.schema,
                     "table_type": table.table_type,
@@ -858,7 +917,7 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
         // 5. Detect removed tables — soft delete
         for name in existing_set.keys() {
             if !current_set.contains_key(name) {
-                let node_id = format!("{}:table:{}", connection_id, name);
+                let node_id = make_table_node_id(connection_id, db_opt, name);
                 conn.execute(
                     "UPDATE graph_nodes SET is_deleted = 1 WHERE id = ?1",
                     [&node_id],
@@ -889,7 +948,7 @@ pub async fn refresh_schema_graph(connection_id: i64, database: Option<String>) 
             hasher.update(b"|");
         }
         let new_hash = format!("{:x}", hasher.finalize());
-        let node_id = format!("{}:table:{}", connection_id, name);
+        let node_id = make_table_node_id(connection_id, db_opt, name);
         let table = current_set[name];
         let meta = serde_json::json!({
             "schema": table.schema,
